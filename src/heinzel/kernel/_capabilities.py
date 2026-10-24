@@ -12,7 +12,7 @@ from types import MappingProxyType
 from typing import Any, Literal, cast
 
 from heinzel.kernel._agents import AgentRunner
-from heinzel.kernel._protocols import Calendar, Chat, CodeHost, Documents, Mail, MailQuery, Meetings, Tracker
+from heinzel.kernel._protocols import Calendar, Chat, CodeHost, Directory, Documents, Mail, MailQuery, Meetings, Tracker
 
 Mode = Literal["read", "write"]
 MODES: tuple[Mode, ...] = ("read", "write")
@@ -65,6 +65,12 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 protocol=CodeHost,
                 summary="Repositories and their merged pull requests on a code host.",
                 methods=MappingProxyType({"merged_pull_requests": "read"}),
+            ),
+            Capability(
+                name="directory",
+                protocol=Directory,
+                summary="Who people are and who reports to whom: a directory of record, or guesses from 1:1s.",
+                methods=MappingProxyType({"person": "read", "reports": "read"}),
             ),
             Capability(
                 name="documents",
