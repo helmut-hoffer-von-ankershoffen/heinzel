@@ -206,6 +206,10 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
       - run: make test-e2e
+        env:
+          # read-only (contents: read): e2e tests ask GitHub's API (`hz system changelog --newer`), which rate-limits
+          # shared runners' unauthenticated requests; hz sends the token to api.github.com only (ADR 0031)
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   template:
     name: Plugin template

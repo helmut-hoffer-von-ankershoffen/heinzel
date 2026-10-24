@@ -11,7 +11,7 @@ from typing import Any, cast, override
 from urllib.parse import urlsplit
 
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from heinzel import InfoLet, Kernel, __version__
 from heinzel.kernel import Installation, ReleaseCache, ReleaseSource
@@ -72,7 +72,8 @@ def _github_link(url: object) -> str | None:
 class GitHubReleases(ReleaseSource):
     """The releases of the GitHub repository Heinzelmännchen was installed from: its `ReleaseSource` (ADR 0031).
 
-    Never sends a token: unauthenticated GETs with only the `heinzel/<version>` User-Agent.
+    The release check (`latest`) never sends a token: unauthenticated GETs with only the `heinzel/<version>`
+    User-Agent. `newer_than`, asked for by someone, sends their GitHub token if given one, to api.github.com only.
     """
 
     def __init__(self, repository: str) -> None:
@@ -105,11 +106,12 @@ class GitHubReleases(ReleaseSource):
         """Where a page of releases, newest first, is asked for."""
         return f"{_github.GITHUB_API}/repos/{self.repository}/releases?per_page={PAGE_SIZE}&page={page}"
 
-    def newer_than(self, version: str, timeout: float) -> list[ReleaseNotes]:
+    def newer_than(self, version: str, timeout: float, token: SecretStr | None = None) -> list[ReleaseNotes]:
         """The notes of every published release newer than `version`, newest first; drafts and pre-releases skipped.
 
         At most `MAX_PAGES` requests, stopping at the first page that is short or reaches `version`. Notes are
-        third-party text: cleaned of control and bidirectional characters, and cut at `MAX_NOTES` characters.
+        third-party text: cleaned of control and bidirectional characters, and cut at `MAX_NOTES` characters. A
+        `token` raises GitHub's rate limit; without one the requests are unauthenticated.
 
         Raises:
             OSError: If GitHub can't be reached or answers with an error, e.g. when rate-limited.
@@ -118,7 +120,7 @@ class GitHubReleases(ReleaseSource):
         """
         installed, found = Version(version), dict[Version, ReleaseNotes]()
         for page in range(1, MAX_PAGES + 1):
-            answer: object = _github.get_json(self.releases_url(page), None, timeout)
+            answer: object = _github.get_json(self.releases_url(page), token, timeout)
             if not isinstance(answer, list):
                 msg = "the answer is no list of releases"
                 raise TypeError(msg)
