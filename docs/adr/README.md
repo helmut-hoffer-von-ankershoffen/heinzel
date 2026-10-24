@@ -43,6 +43,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0036](0036-the-build-installs-its-own-tools.md) | `make install` installs every tool the build needs, pinned and checksummed, on macOS and Linux | proposed | 2026-10-24 |
 | [0037](0037-plugins-bring-playbooks.md) | Plugins bring playbooks: asset types with discovery hints, template contracts and recommended settings | proposed | 2026-10-24 |
 | [0038](0038-drafts-are-approved-in-place.md) | Drafts are approved in place | proposed | 2026-10-24 |
+| [0040](0040-layers-and-playbooks-are-plugins.md) | Layers and playbooks are plugins: a plugin may be a layer with a parent and a site, and layers stack general to specific | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
