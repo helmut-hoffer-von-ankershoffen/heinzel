@@ -76,6 +76,7 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
     assert code == 0
     assert isinstance(info, dict)
     assert info["sections"]["system.capability"] == {
+        "ai.access → ai-access:read": "claude-code → api.anthropic.com",
         "digest → agent-runner:read": "claude-code → api.anthropic.com",
         "org agenda → calendar:read": "optional: not connected: no adapter bound",
         "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
@@ -83,6 +84,7 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
     }
     kernel = make_kernel(builtins=True, digest=digest(), config=command_config(tmp_path))
     assert hz(kernel, "system", "info")[1]["sections"]["system.capability"] == {  # type: ignore[index]
+        "ai.access → ai-access:read": "claude-code → api.anthropic.com",
         "digest → agent-runner:read": "command → unknown (configured)",
         "org agenda → calendar:read": "optional: not connected: no adapter bound",
         "system.runner ask → agent-runner:read": "command → unknown (configured)",
@@ -158,7 +160,8 @@ def test_doctor_asks_claude_code_whether_it_is_logged_in_without_calling_a_model
     config = Config(files=(), data={"system": {"runner": {"claude_executable": str(fake)}}})
     [_, login] = runner_checks(make_kernel(builtins=True, config=config))
     assert (login["status"], login["fix"]) == (status, fix)
-    assert calls.read_text(encoding="utf-8") == "auth status --json\n"  # nothing that would spend money
+    # Asked by the runner's check and by AI access's, and nothing else: nothing that would spend money.
+    assert set(calls.read_text(encoding="utf-8").splitlines()) == {"auth status --json"}
 
 
 def test_doctor_is_quiet_about_runners_from_plugins(make_kernel):
