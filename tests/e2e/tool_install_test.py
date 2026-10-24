@@ -64,10 +64,10 @@ class Sandbox:
             "UV_TOOL_BIN_DIR": str(self.root / "bin"),
             "HZ_SYSTEM_AGENT__SKILL_DIRS": json.dumps([str(self.skills)]),
         }
-        for name in ("VIRTUAL_ENV", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"):
+        for name in ("VIRTUAL_ENV", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"):
             env.pop(name, None)
         if self.own_home:
-            for name in ("HZ_CONFIG", "HZ_CONFIG_HOME", "HZ_DATA_DIR", "HZ_CACHE_DIR"):
+            for name in ("HZ_CONFIG", "HZ_CONFIG_HOME", "HZ_DATA_DIR", "HZ_CACHE_DIR", "HZ_STATE_DIR", "HZ_LOG_DIR"):
                 env.pop(name, None)
             # Keep uv's caches and Pythons from the real home, so the sandbox doesn't download everything again.
             env |= {"HOME": str(self.home), "UV_CACHE_DIR": UV_CACHE_DIR, "UV_PYTHON_INSTALL_DIR": UV_PYTHON_DIR}
@@ -76,6 +76,9 @@ class Sandbox:
                 "HZ_CONFIG_HOME": str(self.root / "config"),
                 "HZ_DATA_DIR": str(self.root / "data"),
                 "HZ_CACHE_DIR": str(self.root / "cache"),
+                "HZ_STATE_DIR": str(self.root / "state"),
+                "HZ_LOG_DIR": str(self.root / "log"),
+                "HZ_SYSTEM_DAEMON__UNIT_DIR": str(self.root / "units"),
             }
         return env
 

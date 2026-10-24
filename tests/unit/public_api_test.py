@@ -12,6 +12,7 @@ import heinzel.kernel
 pytestmark = pytest.mark.unit
 
 HEINZEL = [
+    "CatchUp",
     "Check",
     "Config",
     "CredentialLet",
@@ -19,6 +20,7 @@ HEINZEL = [
     "HealthLet",
     "HeinzelError",
     "InfoLet",
+    "JobLet",
     "Kernel",
     "Let",
     "Module",
@@ -35,6 +37,7 @@ HEINZEL = [
 KERNEL = [
     "BUILTIN_PACKAGE",
     "CORE_DISTRIBUTION",
+    "CatchUp",
     "Check",
     "Config",
     "ConfigFile",
@@ -49,6 +52,7 @@ KERNEL = [
     "HeinzelError",
     "InfoLet",
     "Installation",
+    "JobLet",
     "KERNEL_SECTION",
     "Kernel",
     "Let",
@@ -68,6 +72,7 @@ KERNEL = [
     "discover",
     "env_prefix",
     "environment_variable",
+    "parse_duration",
     "requirement_from_receipt",
     "subprocess_environment",
     "user_config_dir",

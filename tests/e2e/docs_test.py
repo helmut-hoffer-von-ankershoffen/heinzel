@@ -48,6 +48,9 @@ def test_readme_instructions(tmp_path):
         "HZ_CONFIG_HOME": str(tmp_path / "config"),
         "HZ_DATA_DIR": str(tmp_path / "data"),
         "HZ_CACHE_DIR": str(tmp_path / "cache"),
+        "HZ_STATE_DIR": str(tmp_path / "state"),
+        "HZ_LOG_DIR": str(tmp_path / "log"),
+        "HZ_SYSTEM_DAEMON__UNIT_DIR": str(tmp_path / "units"),
         "HZ_SYSTEM_AGENT__SKILL_DIRS": f'["{tmp_path / "skills"}"]',
     }
     env.pop("VIRTUAL_ENV", None)

@@ -27,6 +27,12 @@ Only the latest release receives security fixes while the project is on 0.x.
 - `hz system serve mcp|api` listens on `127.0.0.1` unless you pass another `--host`; the servers have no
   authentication, so don't expose them to a network you don't trust.
 - External commands (uv, git, copier) run without a shell, from argument lists, with timeouts.
+- **The daemon runs jobs unattended.** Once you run `hz system daemon install`, launchd or systemd start
+  `hz system daemon tick` every few minutes, at login too, and it runs the jobs your modules and plugins declare,
+  with your rights, without asking. Nothing is installed unless you run that command on the command line (it is
+  not an MCP tool or REST endpoint). `hz system daemon jobs` lists what would run; `hz system daemon pause` stops
+  all jobs until `resume`, `hz system daemon uninstall` removes the launchd agent or systemd timer, and
+  `disabled_modules` switches off a module's jobs. Receipts, state and logs are readable only by you (0700/0600).
 - Credentials that modules and plugins need are kept in your OS keychain (`hz system credential set NAME` reads
   the value from a hidden prompt or standard input) and are never shown, logged or returned; on Linux without a
   keychain they are read from `HZ_CREDENTIAL_<SERVICE>_<NAME>` variables, and `hz system doctor` warns about it.
@@ -48,6 +54,7 @@ Only the latest release receives security fixes while the project is on 0.x.
 | | Pushes with known secret formats are rejected | GitHub secret scanning with push protection |
 | | Credentials modules need live in the OS keychain behind one injected service, never in plaintext files; values never appear in output, logs or results, and the environment fallback is a doctor warning (ADR 0030) | `heinzel.Credentials`, `hz system credential`, `tests/integration/credential_test.py` |
 | | Confidential names (employers, customers, internal projects) are blocked in files, commit messages, branch names and pull request titles, against a private list kept outside the repository | `scripts/check_confidentiality.py`, hooks, CI, Publish |
+| Background jobs | Installed only from the CLI; jobs run with your rights, each with a timeout, and are listed, paused and removed with `hz system daemon jobs`, `pause` and `uninstall`; receipts, state and logs are private files written atomically; the configuration a project's `hz.toml` sets can't move them (ADR 0020) | `hz system daemon`, `tests/unit/modules/daemon_service_test.py` |
 | Workflows | Actions pinned to full commit SHAs, read-only token by default, least privilege per job, no persisted credentials, no untrusted input in `run:` | zizmor, actionlint (`make lint`) |
 | | Supply-chain posture tracked | OpenSSF Scorecard |
 | Changes | `main` only changes through squash-merged pull requests with green CI (`CI OK`), linear history, no force pushes or deletions | repository ruleset |

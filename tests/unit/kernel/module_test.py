@@ -1,6 +1,8 @@
+from datetime import timedelta
+
 import pytest
 
-from heinzel import InfoLet, Module, OperationLet, ServiceLet
+from heinzel import CatchUp, InfoLet, JobLet, Module, OperationLet, ServiceLet
 
 pytestmark = pytest.mark.unit
 
@@ -88,3 +90,79 @@ def test_credential_service_must_be_a_qualified_module_name(service):
 
 def test_credential_service_may_be_nested():
     assert Module("example", "x").credential("token", purpose="x", service="system.credential").service
+
+
+def test_job_decorator_records_schedule_and_policies():
+    module = Module("example", "x")
+
+    def key(slot):
+        return slot.date().isoformat()
+
+    @module.job(schedule="0 9 * * MON", timeout="2m", retries=2, catch_up="all", idempotency=key)
+    def weekly_digest() -> str:
+        """Draft the weekly digest.
+
+        More detail.
+        """
+        return "draft"
+
+    [job] = module.lets
+    assert isinstance(job, JobLet)
+    assert (job.name, job.summary, job.schedule, job.scope) == (
+        "weekly-digest",
+        "Draft the weekly digest.",
+        "0 9 * * MON",
+        "personal",
+    )
+    assert (job.timeout, job.retries, job.catch_up, job.idempotency) == (timedelta(minutes=2), 2, CatchUp.ALL, key)
+    assert job.func is weekly_digest
+
+
+def test_job_defaults():
+    module = Module("example", "x")
+
+    @module.job(schedule="@daily", name="custom")
+    def _job() -> None:
+        """Do it daily."""
+
+    [job] = module.lets
+    assert isinstance(job, JobLet)
+    assert (job.name, job.timeout, job.retries, job.catch_up, job.idempotency) == (
+        "custom",
+        timedelta(minutes=15),
+        0,
+        CatchUp.LATEST,
+        None,
+    )
+
+
+def test_job_requires_docstring_and_valid_options():
+    module = Module("example", "x")
+    with pytest.raises(ValueError, match="needs a docstring"):
+        module.job(schedule="@daily")(lambda: None)
+    with pytest.raises(ValueError, match="positive whole number"):
+        module.job(schedule="@daily", timeout="soon")
+
+
+def _undecorated() -> None:
+    """Do it."""
+
+
+@pytest.mark.parametrize(
+    ("options", "problem"),
+    [
+        ({"schedule": "@daily", "retries": -1}, "retries must be 0 or more"),
+        ({"schedule": "@daily", "name": "Weekly_Digest"}, "must match"),
+        ({"schedule": "@reboot"}, "five cron fields"),
+        ({"schedule": "0 9 * *"}, "five cron fields"),
+        ({"schedule": "0 9 * * MON; rm"}, "five cron fields"),
+    ],
+)
+def test_jobs_are_validated_when_declared(options, problem):
+    with pytest.raises(ValueError, match=problem):
+        Module("example", "x").job(**options)(_undecorated)
+
+
+def test_a_job_let_refuses_a_timeout_that_is_not_positive():
+    with pytest.raises(ValueError, match="timeout must be positive"):
+        JobLet(name="x", func=_undecorated, summary="x", schedule="@daily", timeout=timedelta(0))

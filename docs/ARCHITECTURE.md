@@ -8,7 +8,7 @@ flowchart LR
         CLI["CLI head<br/>hz ..."]
         MCP["MCP head<br/>hz system serve mcp"]
         REST["REST head<br/>hz system serve api"]
-        Daemon["Daemon head<br/>(planned)"]
+        Daemon["Daemon head<br/>hz system serve daemon"]
     end
     subgraph Kernel
         Discovery["Discovery<br/>heinzel.modules + entry points"]
@@ -16,7 +16,7 @@ flowchart LR
         Injector["Injector<br/>by type"]
     end
     subgraph Modules
-        System["system (built-in)<br/>├ agent ├ changelog ├ config<br/>└ doctor └ plugin"]
+        System["system (built-in)<br/>├ agent ├ changelog ├ config<br/>├ daemon └ doctor └ plugin"]
         Clock["clock<br/>(first-party plugin)"]
         Ext["heinzel-*<br/>(external plugins)"]
     end
@@ -47,8 +47,9 @@ the kinds it understands.
 | `InfoLet` | `@module.info` | `hz system info` |
 | `HealthLet` | `@module.health` returning `Check`s | `hz system doctor` |
 | `CredentialLet` | `module.credential(name, purpose=...)` | `Credentials` (injected) and `hz system credential` with its doctor check ([ADR 0030](adr/0030-credentials-live-in-the-os-keychain.md)) |
+| `JobLet` | `@module.job(schedule="0 9 * * MON")` | `hz system daemon tick`, run by launchd or systemd ([ADR 0020](adr/0020-daemon-head.md)) |
 
-New kinds of lets (contracts, watchers, schedules) extend Heinzelmännchen without changing existing heads; see
+New kinds of lets (contracts, watchers) extend Heinzelmännchen without changing existing heads; see
 [ADR 0010](adr/0010-towards-a-reactive-workflow-engine.md).
 
 **Kernel.** Discovers modules, registers them with a pluggy plugin manager (blocking disabled ones), hands out lets
@@ -59,7 +60,9 @@ by kind with their owning module, and injects dependencies by type: `Kernel`, `S
 **Head.** A view that boots the kernel and exposes operations ([ADR 0019](adr/0019-mcp-and-rest-heads.md)). All heads
 share one exposure rule (`heinzel.heads._exposure`): the same path, public parameters and `heads=` restrictions. The
 **MCP head** makes each operation a tool (`system_doctor`), the **REST head** an endpoint (`GET /system/doctor`,
-OpenAPI at `/docs`). The CLI head turns a module into a command group and
+OpenAPI at `/docs`). The **daemon head** (`hz system serve daemon`) calls the `hz system daemon tick` operation in
+a foreground loop; installed, launchd or systemd start that tick every few minutes instead
+([ADR 0020](adr/0020-daemon-head.md)). The CLI head turns a module into a command group and
 an operation into a command; parameters without defaults become arguments, others options, and
 `Field(description=...)` becomes help text. Every operation's command gets `--json`. A module whose only operation
 shares its name and has no submodules collapses into a single command (`hz system changelog`).
@@ -80,6 +83,8 @@ hz system info | modules | doctor | changelog | release | update
 hz system config  show | get | set | unset | init
 hz system plugin  list | add | remove | new
 hz system agent   skills | install | uninstall
+hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
+hz system serve   mcp | api | daemon
 hz <module> …     work: plugin modules and built-in workflow modules
 ```
 

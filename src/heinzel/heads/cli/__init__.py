@@ -102,7 +102,7 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     mount = _Mount(kernel, progress, footer)
     mount(app, None)
     if system := mount.groups.get("system"):
-        system.add_typer(serve_group(SortedGroup, footer), cls=SortedGroup)
+        system.add_typer(serve_group(SortedGroup, footer, kernel, console, err_console), cls=SortedGroup)
     return app
 
 

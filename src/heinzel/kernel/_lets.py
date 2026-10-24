@@ -5,15 +5,22 @@ would turn the same operations into tools and a REST head into endpoints, withou
 """
 
 import inspect
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 from rich.console import RenderableType
 
 from heinzel.kernel._config import ModuleSettings
+
+NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
+"""Names of modules, jobs and credentials: lowercase words joined by dashes."""
+CRON_ALIASES = frozenset({"@yearly", "@annually", "@monthly", "@weekly", "@daily", "@midnight", "@hourly"})
+_CRON_FIELD = re.compile(r"^[0-9A-Za-z*/,?LW#-]+$")
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -91,6 +98,60 @@ class HealthLet(Let):
     """Health checks for `hz system doctor`. The provider returns checks and may ask for injected services."""
 
     provider: Callable[..., list[Check]]
+
+
+class CatchUp(StrEnum):
+    """What a job does about schedule slots it missed while the machine slept or was off."""
+
+    LATEST = "latest"
+    """Run once, for the most recent missed slot."""
+    ALL = "all"
+    """Run once per missed slot, oldest first."""
+    SKIP = "skip"
+    """Run only for a slot that fell within the last tick interval; record the missed ones as skipped."""
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class JobLet(Let):
+    """Work the daemon runs on a schedule (ADR 0020). `func` is injected like an operation and never prints.
+
+    The kernel checks the shape of the cron expression (five fields, or an alias like `@daily`) when the job is
+    declared; `hz system daemon` checks the values and computes the slots, since the kernel has no cron library.
+    """
+
+    func: Callable[..., Any]
+    summary: str
+    schedule: str
+    """A five-field cron expression in local time, e.g. `0 9 * * MON`."""
+    scope: Literal["personal"] = "personal"
+    """`personal` jobs run on their owner's daemon; team jobs follow with the shared state repository."""
+    timeout: timedelta = timedelta(minutes=15)
+    retries: int = 0
+    """How often a failing run is retried within the same tick."""
+    catch_up: CatchUp = CatchUp.LATEST
+    idempotency: Callable[[datetime], str] | None = None
+    """The key of the run for a schedule slot; `<job>@<slot>` when None. A slot with a rendered key never reruns."""
+
+    def __post_init__(self) -> None:
+        """Refuse a job the daemon could never run.
+
+        Raises:
+            ValueError: If the name, schedule, timeout or retries are invalid.
+        """
+        if not NAME_PATTERN.fullmatch(self.name):
+            msg = f"Job name {self.name!r} must match {NAME_PATTERN.pattern}"
+            raise ValueError(msg)
+        fields = self.schedule.split()
+        if self.schedule not in CRON_ALIASES and (len(fields) != 5 or not all(map(_CRON_FIELD.fullmatch, fields))):  # noqa: PLR2004 - minute hour day month weekday
+            aliases = ", ".join(sorted(CRON_ALIASES))
+            msg = f"Job {self.name!r}: schedule {self.schedule!r} must be five cron fields or one of {aliases}"
+            raise ValueError(msg)
+        if self.timeout <= timedelta(0):
+            msg = f"Job {self.name!r}: timeout must be positive, not {self.timeout}"
+            raise ValueError(msg)
+        if self.retries < 0:
+            msg = f"Job {self.name!r}: retries must be 0 or more, not {self.retries}"
+            raise ValueError(msg)
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)

@@ -12,6 +12,7 @@ modules; `hz system modules` lists what is installed.
 | [`system.changelog`](#systemchangelog) | Release notes of the installed version. |
 | [`system.config`](#systemconfig) | Show, get, set and initialize configuration. |
 | [`system.credential`](#systemcredential) | Store and check the credentials modules need, in the OS keychain. |
+| [`system.daemon`](#systemdaemon) | Run modules' jobs in the background, supervised by launchd or systemd. |
 | [`system.doctor`](#systemdoctor) | Check that Heinzelmännchen and its modules are healthy. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
 
@@ -83,6 +84,25 @@ Store and check the credentials modules need, in the OS keychain.
 | Remove a credential's value from the keychain. | `hz system credential remove` | — | — | yes |
 
 Settings: [`[system.credential]`](CONFIGURATION.md#systemcredential).
+
+Health checks: reported by `hz system doctor`.
+
+## `system.daemon`
+
+Run modules' jobs in the background, supervised by launchd or systemd.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| Install and load the launchd agent or systemd timer that ticks every few minutes. | `hz system daemon install` | — | — | yes |
+| Unload and remove the daemon's unit; receipts and logs stay. | `hz system daemon uninstall` | — | — | yes |
+| Show whether the daemon is installed, loaded and paused, its last tick and failing jobs. | `hz system daemon status` | `system_daemon_status` | `GET /system/daemon/status` |  |
+| Show the latest lines of the daemon's log. | `hz system daemon logs` | `system_daemon_logs` | `GET /system/daemon/logs` |  |
+| Run the jobs that are due and write a receipt for each; exits with 1 if any job failed. | `hz system daemon tick` | `system_daemon_tick` | `POST /system/daemon/tick` | yes |
+| Pause the daemon: ticks run no job until resumed. | `hz system daemon pause` | `system_daemon_pause` | `POST /system/daemon/pause` | yes |
+| Resume a paused daemon. | `hz system daemon resume` | `system_daemon_resume` | `POST /system/daemon/resume` | yes |
+| List every job with its schedule, next slot and last run. | `hz system daemon jobs` | `system_daemon_jobs` | `GET /system/daemon/jobs` |  |
+
+Settings: [`[system.daemon]`](CONFIGURATION.md#systemdaemon).
 
 Health checks: reported by `hz system doctor`.
 

@@ -7,16 +7,29 @@ A module is a package whose `__init__.py` declares `module = Module(...)`. Packa
 import inspect
 import re
 from collections.abc import Callable, Iterable, Sequence
-from typing import Any, overload
+from datetime import datetime, timedelta
+from typing import Any, Literal, overload
 
 from pydantic import BaseModel
 from rich.console import RenderableType
 
 from heinzel.kernel._config import ModuleSettings
-from heinzel.kernel._lets import Check, CredentialLet, HealthLet, InfoLet, Let, OperationLet, ServiceLet, SettingsLet
+from heinzel.kernel._duration import parse_duration
+from heinzel.kernel._lets import (
+    NAME_PATTERN,
+    CatchUp,
+    Check,
+    CredentialLet,
+    HealthLet,
+    InfoLet,
+    JobLet,
+    Let,
+    OperationLet,
+    ServiceLet,
+    SettingsLet,
+)
 from heinzel.kernel._spec import hookimpl
 
-NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 SERVICE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$")
 
 
@@ -126,6 +139,57 @@ class Module:
             return target
 
         return decorate(func) if func is not None else decorate
+
+    def job[F: Callable[..., Any]](  # noqa: PLR0913 - keyword-only options of a decorator
+        self,
+        *,
+        schedule: str,
+        name: str | None = None,
+        scope: Literal["personal"] = "personal",
+        timeout: str | timedelta = "15m",
+        retries: int = 0,
+        catch_up: CatchUp | Literal["latest", "all", "skip"] = CatchUp.LATEST,
+        idempotency: Callable[[datetime], str] | None = None,
+    ) -> Callable[[F], F]:
+        """Advertise a function as a job the daemon runs on a schedule (ADR 0020). Its docstring is required.
+
+        The function asks for services by type, like an operation, returns its result and never prints.
+
+        Args:
+            schedule: Five-field cron expression in local time, e.g. `0 9 * * MON`.
+            name: Job name; defaults to the function name with underscores as dashes.
+            scope: Who runs it; only `personal` (the owner's daemon) for now.
+            timeout: How long one run may take, e.g. `15m`.
+            retries: How often a failing run is retried within the same tick.
+            catch_up: Missed slots: `latest` runs once, `all` once per slot, `skip` none.
+            idempotency: Key of the run for a slot; `<job>@<slot>` by default.
+
+        Raises:
+            ValueError: If the docstring is missing, or the name, schedule, timeout or retries are invalid.
+        """
+        duration = parse_duration(timeout)
+
+        def decorate(target: F) -> F:
+            summary = inspect.getdoc(target)
+            if not summary:
+                msg = f"Job {target.__qualname__} needs a docstring; it describes the job wherever it is listed."
+                raise ValueError(msg)
+            self.add(
+                JobLet(
+                    name=name or target.__name__.strip("_").replace("_", "-"),
+                    func=target,
+                    summary=summary.splitlines()[0],
+                    schedule=schedule,
+                    scope=scope,
+                    timeout=duration,
+                    retries=retries,
+                    catch_up=CatchUp(catch_up),
+                    idempotency=idempotency,
+                )
+            )
+            return target
+
+        return decorate
 
     def service[T](self, provides: type[T], factory: Callable[..., T] | None = None) -> None:
         """Advertise a service the kernel injects wherever `provides` is asked for.

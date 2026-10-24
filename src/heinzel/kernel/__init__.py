@@ -23,14 +23,17 @@ from heinzel.kernel._credentials import (
     subprocess_environment,
 )
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
+from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation, requirement_from_receipt
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._lets import (
+    CatchUp,
     Check,
     CredentialLet,
     HealthLet,
     InfoLet,
+    JobLet,
     Let,
     OperationLet,
     ServiceLet,
@@ -49,6 +52,7 @@ __all__ = [
     "FILENAME",
     "KERNEL_SECTION",
     "PROJECT_FILENAME",
+    "CatchUp",
     "Check",
     "Config",
     "ConfigFile",
@@ -61,6 +65,7 @@ __all__ = [
     "HeinzelError",
     "InfoLet",
     "Installation",
+    "JobLet",
     "Kernel",
     "Let",
     "Module",
@@ -78,6 +83,7 @@ __all__ = [
     "discover",
     "env_prefix",
     "environment_variable",
+    "parse_duration",
     "requirement_from_receipt",
     "subprocess_environment",
     "user_config_dir",
