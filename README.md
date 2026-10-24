@@ -234,12 +234,7 @@ with all the tooling, CI/CD and agent setup: `hz system plugin new ../heinzel-mi
 
 ## Contribute
 
-```bash
-git clone https://github.com/helmut-hoffer-von-ankershoffen/heinzel && cd heinzel
-make setup   # dependencies and git hooks
-make check   # everything CI checks offline, in seconds
-```
-
-[CONTRIBUTING.md](CONTRIBUTING.md) explains the workflow; [AGENTS.md](AGENTS.md) is the guide for coding agents;
+You need git, make and [uv](https://docs.astral.sh/uv/); `make setup` installs everything else.
+[CONTRIBUTING.md](CONTRIBUTING.md) takes you from a clone to a merged pull request; [AGENTS.md](AGENTS.md) is the guide for coding agents;
 [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md) the rules; [docs/adr/](docs/adr/) the decisions.
 Security issues: [SECURITY.md](SECURITY.md).

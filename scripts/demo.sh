@@ -5,16 +5,12 @@
 # recording neither touches your own hz nor shows your plugins or settings.
 set -euo pipefail
 
-missing=()
-for tool in vhs jq uv; do command -v "$tool" >/dev/null || missing+=("$tool"); done
-if [ "${#missing[@]}" -gt 0 ]; then
-  echo "make demo needs ${missing[*]} on PATH. Install: brew install vhs jq (macOS), or see" >&2
-  echo "https://github.com/charmbracelet/vhs#installation and https://jqlang.org/download/ (uv: https://docs.astral.sh/uv/)." >&2
-  exit 2
-fi
-
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
+# vhs, ttyd, ffmpeg and jq: the demo group of scripts/tools.toml, pinned and checksummed into .tools/bin. A platform
+# without a pinned build (ttyd on macOS) needs the program on PATH, and the line for it says how to install it.
+uv run --quiet --script scripts/tools.py install demo || { echo "make demo needs the tools above." >&2; exit 2; }
+export PATH="$repo_root/.tools/bin:$PATH"
 uv run --quiet --script scripts/demo_tape.py
 
 # A short, fixed path: `hz system doctor` shows these directories in the recording.
