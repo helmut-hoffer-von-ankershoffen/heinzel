@@ -1,6 +1,46 @@
 {
   "components": {
     "schemas": {
+      "AdapterCandidate": {
+        "description": "An adapter that can serve a capability, and the state of its connector.",
+        "properties": {
+          "adapter": {
+            "description": "The name bindings use, e.g. `github`.",
+            "title": "Adapter",
+            "type": "string"
+          },
+          "connector": {
+            "description": "Qualified name of the module that provides it.",
+            "title": "Connector",
+            "type": "string"
+          },
+          "state": {
+            "description": "Its connector's state.",
+            "enum": [
+              "connected",
+              "not-signed-in",
+              "not-bound",
+              "attention",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "description": "Its connector's name for people, e.g. `GitHub`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "adapter",
+          "connector",
+          "title",
+          "state"
+        ],
+        "title": "AdapterCandidate",
+        "type": "object"
+      },
       "AdapterInfo": {
         "description": "An installed adapter.",
         "properties": {
@@ -354,6 +394,57 @@
         "title": "AvailablePlugin",
         "type": "object"
       },
+      "Candidate": {
+        "description": "Something a hint found that may be an asset of its type.",
+        "properties": {
+          "asset": {
+            "description": "The asset type, as `--asset <type>=<ref>` takes it.",
+            "title": "Asset",
+            "type": "string"
+          },
+          "hint": {
+            "description": "The read method that found it.",
+            "title": "Hint",
+            "type": "string"
+          },
+          "playbook": {
+            "description": "The module whose playbook's hint found it.",
+            "title": "Playbook",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Its reference, in the adapter's notation: what `--asset <type>=<ref>` takes.",
+            "title": "Ref",
+            "type": "string"
+          },
+          "title": {
+            "description": "Its title.",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open it, if it has a web address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "playbook",
+          "asset",
+          "ref",
+          "title",
+          "hint"
+        ],
+        "title": "Candidate",
+        "type": "object"
+      },
       "CapabilityChoice": {
         "description": "A capability, the adapter serving it and how it was chosen, and every adapter that could.",
         "properties": {
@@ -372,7 +463,7 @@
           "candidates": {
             "description": "Every installed adapter that provides it.",
             "items": {
-              "$ref": "#/components/schemas/heinzel__modules__system__connector___models__Candidate"
+              "$ref": "#/components/schemas/AdapterCandidate"
             },
             "title": "Candidates",
             "type": "array"
@@ -2200,7 +2291,7 @@
           "candidates": {
             "description": "What the hints found, by asset type.",
             "items": {
-              "$ref": "#/components/schemas/heinzel__modules__workflow___playbooks__Candidate"
+              "$ref": "#/components/schemas/Candidate"
             },
             "title": "Candidates",
             "type": "array"
@@ -6105,97 +6196,6 @@
           "late"
         ],
         "title": "Week",
-        "type": "object"
-      },
-      "heinzel__modules__system__connector___models__Candidate": {
-        "description": "An adapter that can serve a capability, and the state of its connector.",
-        "properties": {
-          "adapter": {
-            "description": "The name bindings use, e.g. `github`.",
-            "title": "Adapter",
-            "type": "string"
-          },
-          "connector": {
-            "description": "Qualified name of the module that provides it.",
-            "title": "Connector",
-            "type": "string"
-          },
-          "state": {
-            "description": "Its connector's state.",
-            "enum": [
-              "connected",
-              "not-signed-in",
-              "not-bound",
-              "attention",
-              "unknown"
-            ],
-            "title": "State",
-            "type": "string"
-          },
-          "title": {
-            "description": "Its connector's name for people, e.g. `GitHub`.",
-            "title": "Title",
-            "type": "string"
-          }
-        },
-        "required": [
-          "adapter",
-          "connector",
-          "title",
-          "state"
-        ],
-        "title": "Candidate",
-        "type": "object"
-      },
-      "heinzel__modules__workflow___playbooks__Candidate": {
-        "description": "Something a hint found that may be an asset of its type.",
-        "properties": {
-          "asset": {
-            "description": "The asset type, as `--asset <type>=<ref>` takes it.",
-            "title": "Asset",
-            "type": "string"
-          },
-          "hint": {
-            "description": "The read method that found it.",
-            "title": "Hint",
-            "type": "string"
-          },
-          "playbook": {
-            "description": "The module whose playbook's hint found it.",
-            "title": "Playbook",
-            "type": "string"
-          },
-          "ref": {
-            "description": "Its reference, in the adapter's notation: what `--asset <type>=<ref>` takes.",
-            "title": "Ref",
-            "type": "string"
-          },
-          "title": {
-            "description": "Its title.",
-            "title": "Title",
-            "type": "string"
-          },
-          "url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Where people open it, if it has a web address.",
-            "title": "Url"
-          }
-        },
-        "required": [
-          "playbook",
-          "asset",
-          "ref",
-          "title",
-          "hint"
-        ],
-        "title": "Candidate",
         "type": "object"
       }
     }

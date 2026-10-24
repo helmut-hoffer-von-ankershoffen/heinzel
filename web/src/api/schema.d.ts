@@ -1265,6 +1265,33 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AdapterCandidate
+         * @description An adapter that can serve a capability, and the state of its connector.
+         */
+        AdapterCandidate: {
+            /**
+             * Adapter
+             * @description The name bindings use, e.g. `github`.
+             */
+            adapter: string;
+            /**
+             * Connector
+             * @description Qualified name of the module that provides it.
+             */
+            connector: string;
+            /**
+             * State
+             * @description Its connector's state.
+             * @enum {string}
+             */
+            state: "connected" | "not-signed-in" | "not-bound" | "attention" | "unknown";
+            /**
+             * Title
+             * @description Its connector's name for people, e.g. `GitHub`.
+             */
+            title: string;
+        };
+        /**
          * AdapterInfo
          * @description An installed adapter.
          */
@@ -1479,6 +1506,42 @@ export interface components {
             url: string;
         };
         /**
+         * Candidate
+         * @description Something a hint found that may be an asset of its type.
+         */
+        Candidate: {
+            /**
+             * Asset
+             * @description The asset type, as `--asset <type>=<ref>` takes it.
+             */
+            asset: string;
+            /**
+             * Hint
+             * @description The read method that found it.
+             */
+            hint: string;
+            /**
+             * Playbook
+             * @description The module whose playbook's hint found it.
+             */
+            playbook: string;
+            /**
+             * Ref
+             * @description Its reference, in the adapter's notation: what `--asset <type>=<ref>` takes.
+             */
+            ref: string;
+            /**
+             * Title
+             * @description Its title.
+             */
+            title: string;
+            /**
+             * Url
+             * @description Where people open it, if it has a web address.
+             */
+            url?: string | null;
+        };
+        /**
          * CapabilityChoice
          * @description A capability, the adapter serving it and how it was chosen, and every adapter that could.
          */
@@ -1492,7 +1555,7 @@ export interface components {
              * Candidates
              * @description Every installed adapter that provides it.
              */
-            candidates: components["schemas"]["heinzel__modules__system__connector___models__Candidate"][];
+            candidates: components["schemas"]["AdapterCandidate"][];
             /**
              * Capability
              * @description The capability, e.g. `code-host`.
@@ -2647,7 +2710,7 @@ export interface components {
              * Candidates
              * @description What the hints found, by asset type.
              */
-            candidates: components["schemas"]["heinzel__modules__workflow___playbooks__Candidate"][];
+            candidates: components["schemas"]["Candidate"][];
             /**
              * Next
              * @description What to do next, as commands.
@@ -4959,69 +5022,6 @@ export interface components {
              */
             week: string;
         };
-        /**
-         * Candidate
-         * @description An adapter that can serve a capability, and the state of its connector.
-         */
-        heinzel__modules__system__connector___models__Candidate: {
-            /**
-             * Adapter
-             * @description The name bindings use, e.g. `github`.
-             */
-            adapter: string;
-            /**
-             * Connector
-             * @description Qualified name of the module that provides it.
-             */
-            connector: string;
-            /**
-             * State
-             * @description Its connector's state.
-             * @enum {string}
-             */
-            state: "connected" | "not-signed-in" | "not-bound" | "attention" | "unknown";
-            /**
-             * Title
-             * @description Its connector's name for people, e.g. `GitHub`.
-             */
-            title: string;
-        };
-        /**
-         * Candidate
-         * @description Something a hint found that may be an asset of its type.
-         */
-        heinzel__modules__workflow___playbooks__Candidate: {
-            /**
-             * Asset
-             * @description The asset type, as `--asset <type>=<ref>` takes it.
-             */
-            asset: string;
-            /**
-             * Hint
-             * @description The read method that found it.
-             */
-            hint: string;
-            /**
-             * Playbook
-             * @description The module whose playbook's hint found it.
-             */
-            playbook: string;
-            /**
-             * Ref
-             * @description Its reference, in the adapter's notation: what `--asset <type>=<ref>` takes.
-             */
-            ref: string;
-            /**
-             * Title
-             * @description Its title.
-             */
-            title: string;
-            /**
-             * Url
-             * @description Where people open it, if it has a web address.
-             */
-            url?: string | null;
-        };
     };
     responses: never;
     parameters: never;
@@ -5029,11 +5029,13 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAdapterCandidate = components['schemas']['AdapterCandidate'];
 export type SchemaAdapterInfo = components['schemas']['AdapterInfo'];
 export type SchemaAgenda = components['schemas']['Agenda'];
 export type SchemaAgentResult = components['schemas']['AgentResult'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
+export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
@@ -5137,8 +5139,6 @@ export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWaiting = components['schemas']['Waiting'];
 export type SchemaWeek = components['schemas']['Week'];
-export type SchemaHeinzelModulesSystemConnectorModelsCandidate = components['schemas']['heinzel__modules__system__connector___models__Candidate'];
-export type SchemaHeinzelModulesWorkflowPlaybooksCandidate = components['schemas']['heinzel__modules__workflow___playbooks__Candidate'];
 export type $defs = Record<string, never>;
 export interface operations {
     graph: {

@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable
 from heinzel import Check, HealthLet, HeinzelError, Kernel, Login, ModuleRecord, SetupLet, Status
 from heinzel.kernel import CAPABILITIES, MODES, CapabilityView, ProviderLet, Requirement
 from heinzel.modules.system.connector._models import (
-    Candidate,
+    AdapterCandidate,
     CapabilityChoice,
     Connector,
     ConnectorCapability,
@@ -150,7 +150,7 @@ class ConnectorService:
             # No modes: whether the chosen adapter is installed and unambiguous, whatever a requester needs.
             problem = self._view.serves(Requirement(spec.name, frozenset()))[1] if bound is not None else None
             candidates = [
-                Candidate(
+                AdapterCandidate(
                     adapter=adapter.let.adapter,
                     connector=adapter.module,
                     title=by_name[adapter.module].title if adapter.module in by_name else adapter.let.adapter,

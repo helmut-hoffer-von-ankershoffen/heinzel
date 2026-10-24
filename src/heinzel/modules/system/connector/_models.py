@@ -53,7 +53,7 @@ class Connector(BaseModel):
     testable: bool = Field(description="Whether it has a live test (`hz system connector test`).")
 
 
-class Candidate(BaseModel):
+class AdapterCandidate(BaseModel):
     """An adapter that can serve a capability, and the state of its connector."""
 
     adapter: str = Field(description="The name bindings use, e.g. `github`.")
@@ -74,7 +74,7 @@ class CapabilityChoice(BaseModel):
     problem: str | None = Field(
         description="Why the chosen adapter can't serve it, e.g. not installed; none if it can."
     )
-    candidates: list[Candidate] = Field(description="Every installed adapter that provides it.")
+    candidates: list[AdapterCandidate] = Field(description="Every installed adapter that provides it.")
     find: str = Field(description="The command line that finds a plugin providing it.")
 
 

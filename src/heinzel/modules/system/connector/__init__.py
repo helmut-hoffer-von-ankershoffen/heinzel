@@ -6,7 +6,7 @@ from pydantic import Field
 
 from heinzel import Module
 from heinzel.modules.system.connector._models import (
-    Candidate,
+    AdapterCandidate,
     CapabilityChoice,
     Connector,
     ConnectorCapability,
@@ -39,7 +39,7 @@ def test(service: ConnectorService, name: Name) -> ConnectorTest:
 
 
 __all__ = [
-    "Candidate",
+    "AdapterCandidate",
     "CapabilityChoice",
     "Connector",
     "ConnectorCapability",
