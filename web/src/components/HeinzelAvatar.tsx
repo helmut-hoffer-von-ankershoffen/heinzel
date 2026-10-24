@@ -63,7 +63,7 @@ export function HeinzelAvatar({ view = "full", label, className, ...look }: Prop
       aria-hidden={name ? undefined : true}
       data-state={state}
       data-view={view}
-      className={cn(view === "bust" ? "size-[1.25em]" : "h-[2.1em] w-[1.25em]", "shrink-0 overflow-visible", className)}
+      className={cn(view !== "full" ? "size-[1.25em]" : "h-[2.1em] w-[1.25em]", "shrink-0 overflow-visible", className)}
     >
       <g className={state === "working" ? "motion-safe:animate-[hz-bob_1.6s_ease-in-out_infinite]" : undefined}>
         {body.map((shape, index) => (

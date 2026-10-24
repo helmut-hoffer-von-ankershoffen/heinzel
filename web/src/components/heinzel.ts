@@ -41,7 +41,7 @@ export const BUILDS = ["slim", "regular", "round"] as const;
 export type Build = (typeof BUILDS)[number];
 export const STATES = ["idle", "sleeping", "working", "thinking", "waiting", "blocked", "done"] as const;
 export type HeinzelState = (typeof STATES)[number];
-export const VIEWS = ["full", "bust"] as const;
+export const VIEWS = ["full", "bust", "head"] as const;
 export type View = (typeof VIEWS)[number];
 
 /** The bust's square (x, y, side) on the canvas: the head, its cap and the shoulders, tight for each age's cap. */
@@ -56,6 +56,8 @@ const BUST: Record<Age, [number, number, number]> = {
 export function viewBox(age: Age = "grown", view: View = "full"): string {
   if (view === "full") return "0 0 512 860";
   const [x, y, side] = BUST[age];
+  // The head: the bust without most of its shoulders, for the tiniest slots.
+  if (view === "head") return `${x + side * 0.12} ${y + side * 0.03} ${side * 0.76} ${side * 0.76}`;
   return `${x} ${y} ${side} ${side}`;
 }
 
