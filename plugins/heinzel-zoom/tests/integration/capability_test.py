@@ -215,9 +215,9 @@ def test_a_contract_reads_meetings_and_its_packet_has_names_but_no_addresses(zoo
     runner = Module("fakes", "Test-only agent runner.")
     runner.provides("agent-runner", modes={"read"}, name="fake")(Runner)
     capabilities = {"mail": "inbox", "meetings": "zoom", "agent_runner": "fake"}
-    config = Config(files=(), data={"capabilities": capabilities, "workflow": {"user_dir": str(contracts)}})
+    config = Config(files=(), data={"capabilities": capabilities, "heinzel": {"user_dir": str(contracts)}})
     kernel = zoom_kernel(config, fakes=runner)
-    code, result = hz(kernel, "workflow", "run", "meeting-notes", "--dry-run")
+    code, result = hz(kernel, "heinzel", "wake", "meeting-notes", "--dry-run")
     assert code == 0, result
     packet = json.dumps(result["packet"])
     assert "Jonas Berg" in packet
