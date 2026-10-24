@@ -49,6 +49,8 @@ Settings: [`[clock]`](CONFIGURATION.md#clock).
 
 Health checks: reported by `hz system doctor`.
 
+Setup: `hz clock setup` (optional), also part of `hz setup`.
+
 ## `github`
 
 Read pull requests and issues from GitHub: the code-host and tracker capabilities.
