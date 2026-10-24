@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
-amended-by: 0032
+amended-by: 0032, 0039
 ---
 
 # 0018: One administrative namespace: `hz system`; skills live in `agent-skills/`
