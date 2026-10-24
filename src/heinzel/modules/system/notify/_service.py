@@ -34,7 +34,7 @@ from heinzel.modules.system.notify._macos import QUARANTINE, NotifierApp
 from heinzel.modules.system.notify._models import Delivered, Installed, NoticeList, NotifySettings, Opened, Tested
 from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, Native, native
 from heinzel.modules.system.notify._store import Store
-from heinzel.modules.system.notify._watch import daemon_state, watch
+from heinzel.modules.system.notify._watch import daemon_state, remind, watch
 
 logger = logging.getLogger(__name__)
 MODULE_SECTION = "system.notify"
@@ -81,6 +81,8 @@ class NotifyService(Notifications):
         self._ui_url: Callable[[str], str | None] = ui_url or _no_url
         self.watcher: Callable[[], int] | None = None
         """What `look` runs once an hour; set by `for_user`."""
+        self.reminder: Callable[[], int] | None = None
+        """What `look` runs at every tick, for meetings that start soon; set by `for_user`."""
         self.daemon: Callable[[], DaemonState | None] = lambda: None
         """How the daemon stands, for a test; set by `for_user`."""
         self.opener: Callable[[list[str]], None] = _open
@@ -99,6 +101,7 @@ class NotifyService(Notifications):
             ui_url=lambda route: f"http://127.0.0.1:{settings.ui_port}{route}",  # `hz ui`'s fixed port (ADR 0046)
         )
         service.watcher = lambda: watch(kernel, service, service.wanted)
+        service.reminder = lambda: remind(kernel, service.wanted)
         service.daemon = lambda: daemon_state(kernel)
         return service
 
@@ -108,21 +111,34 @@ class NotifyService(Notifications):
         return {kind for kind in NoticeKind if self.settings.wants(kind)}
 
     def look(self) -> int:
-        """Run the watcher once an hour (doctor's findings, a newer release); how many notices it reported.
+        """Look for meetings that start soon, and once an hour run the watcher (doctor's findings, a newer release).
+
+        How many notices they reported.
 
         Its failure is logged, never raised: it must not stop due notices from popping up.
         """
+        reminded = self._remind()
         if self.watcher is None:
-            return 0
+            return reminded
         now = self._clock()
         last = self.store.looked_at()
         if last is not None and now - LOOK_EVERY < last <= now:
-            return 0
+            return reminded
         self.store.looked(now)
         try:
-            return self.watcher()
+            return reminded + self.watcher()
         except Exception:
             logger.exception("looking for doctor's findings failed")
+            return reminded
+
+    def _remind(self) -> int:
+        """Look for meetings that start soon, at every tick; a failure is logged, never raised."""
+        if self.reminder is None:
+            return 0
+        try:
+            return self.reminder()
+        except Exception:  # isolation boundary: a broken calendar must not stop due notices from popping up
+            logger.exception("looking for meetings that start soon failed")
             return 0
 
     @property

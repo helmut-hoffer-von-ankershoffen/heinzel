@@ -85,3 +85,20 @@ operations that declared them, and run after the person confirmed what they will
 `plugins/heinzel-google/tests/unit/{calendar,mail,gws,setup,contract}_test.py` (requests, refusals, retries, scopes)
 and `plugins/heinzel-google/tests/integration/capability_test.py` (only a publish operation that declared
 `calendar:write` creates an event).
+
+## More Information
+
+- **The calendar module** (`hz calendar`, built in): today, `week`, `show`, `search`, `free`, `now` (the countdown the
+  web app's footer shows) and the writes `new`, `move`, `cancel` and `respond`, each answering what it would do
+  until it runs again with `--confirm`. Reads go to the CLI, MCP and the web head, never the unauthenticated REST
+  head; writes to the CLI, MCP over stdio and the web head. Reads over MCP's streamable HTTP, which has no
+  authentication, are an accepted risk, as for `hz org agenda`: that transport is started on purpose, on localhost. `hz calendar remind` records a `meeting` notice
+  (`[system.notify] meeting`), urgent so working hours don't hold it, `[calendar] remind_minutes` (0, or at least 5)
+  before a meeting, with its join link. The daemon's notify step runs it at every tick, as it runs doctor hourly: a
+  job would write a receipt every five minutes for everyone. In a chat, a proposed call of an operation with a
+  `confirm` parameter is proposed with `confirm` set: the person's confirmation is the confirmation.
+- **Optional publish operations** (amending ADR 0028's "only read-only operations can be optional"): a built-in
+  module that writes a capability nobody connected must not make doctor degraded for everyone. A publish operation
+  may be `optional=True`: while nothing is bound, its unmet requirement is no doctor finding, and an unserved handle
+  refuses on every method, so nothing is written; once served, its adapter is built when it is injected, as before.
+  Doctor shows a module's unconnected optional uses of one capability as one check.

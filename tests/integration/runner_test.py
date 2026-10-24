@@ -75,7 +75,8 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
     code, info = hz(kernel, "system", "info")
     assert code == 0
     assert isinstance(info, dict)
-    assert info["sections"]["system.capability"] == {
+    matrix = {k: v for k, v in info["sections"]["system.capability"].items() if not k.startswith("calendar ")}
+    assert matrix == {
         "ai.access → ai-access:read": "claude-code → api.anthropic.com",
         "digest → agent-runner:read": "claude-code → api.anthropic.com",
         "org agenda → calendar:read": "optional: not connected: no adapter bound",
@@ -83,7 +84,8 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
         "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
     }
     kernel = make_kernel(builtins=True, digest=digest(), config=command_config(tmp_path))
-    assert hz(kernel, "system", "info")[1]["sections"]["system.capability"] == {  # type: ignore[index]
+    sections = hz(kernel, "system", "info")[1]["sections"]  # type: ignore[index]
+    assert {k: v for k, v in sections["system.capability"].items() if not k.startswith("calendar ")} == {
         "ai.access → ai-access:read": "claude-code → api.anthropic.com",
         "digest → agent-runner:read": "command → unknown (configured)",
         "org agenda → calendar:read": "optional: not connected: no adapter bound",

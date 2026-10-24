@@ -6,6 +6,7 @@ import { ApiError } from "@/api/client";
 import { CopyCommand } from "@/components/common";
 import { t } from "@/i18n";
 import { Shell } from "@/layout/Shell";
+import { Calendar } from "@/pages/Calendar";
 import { Contract } from "@/pages/Contract";
 import { Contracts } from "@/pages/Contracts";
 import { Doctor } from "@/pages/Doctor";
@@ -32,6 +33,7 @@ export const routes: RouteObject[] = [
       { path: "contracts", element: <Contracts /> },
       { path: "contracts/:name", element: <Contract /> },
       { path: "graph", element: <GraphView /> },
+      { path: "calendar", element: <Calendar /> },
       { path: "org", element: <OrgChart /> },
       { path: "team", element: <Team /> },
       { path: "inventory/types", element: <AssetTypes /> },

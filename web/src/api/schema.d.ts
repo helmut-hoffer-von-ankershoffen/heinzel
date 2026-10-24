@@ -68,6 +68,212 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show today's events (or another day's), with your answer, the guests and the link to join.
+         * @description Show today's events (or another day's), with your answer, the guests and the link to join.
+         */
+        get: operations["calendar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendar/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel an event you organize, for everyone; shown first, cancelled with `--confirm`.
+         * @description Cancel an event you organize, for everyone; shown first, cancelled with `--confirm`.
+         */
+        post: operations["calendar_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendar/free": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show when you (and the people you name) are free within your working hours on a day.
+         * @description Show when you (and the people you name) are free within your working hours on a day.
+         */
+        get: operations["calendar_free"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendar/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move an event you organize to another time; shown first, moved with `--confirm`.
+         * @description Move an event you organize to another time; shown first, moved with `--confirm`.
+         *
+         *     Raises:
+         *         HeinzelError: If the event isn't found or isn't yours, or the new time is no time hz reads.
+         */
+        post: operations["calendar_move"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendar/new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an event in your calendar and invite its guests; shown first, created with `--confirm`.
+         * @description Create an event in your calendar and invite its guests; shown first, created with `--confirm`.
+         *
+         *     Raises:
+         *         HeinzelError: If the start is no time hz reads, or the event can't be made (a guest's address, its title).
+         */
+        post: operations["calendar_new"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendar/now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the meeting you are in and your next one, counting down, in one line for a status bar.
+         * @description Show the meeting you are in and your next one, counting down, in one line for a status bar.
+         */
+        get: operations["calendar_now"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendar/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer an invitation: accepted, declined or tentative; shown first, answered with `--confirm`.
+         * @description Answer an invitation: accepted, declined or tentative; shown first, answered with `--confirm`.
+         */
+        post: operations["calendar_respond"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendar/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find events around today whose title, location or people hold every word of `query`.
+         * @description Find events around today whose title, location or people hold every word of `query`.
+         */
+        get: operations["calendar_search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendar/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show one event in full: when, where, who, your answer and its links.
+         * @description Show one event in full: when, where, who, your answer and its links.
+         */
+        get: operations["calendar_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calendar/week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show your events of the next seven days, from today.
+         * @description Show your events of the next seven days, from today.
+         */
+        get: operations["calendar_week"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph": {
         parameters: {
             query?: never;
@@ -1763,6 +1969,58 @@ export interface components {
             url: string;
         };
         /**
+         * CalendarAgenda
+         * @description Your events in a window, by start.
+         */
+        CalendarAgenda: {
+            /**
+             * Events
+             * @description Events overlapping the window, cancelled ones left out, by start.
+             */
+            events?: components["schemas"]["Event"][];
+            /**
+             * Now
+             * Format: date-time
+             * @description When it was read.
+             */
+            now: string;
+            /**
+             * Since
+             * Format: date-time
+             * @description Start of the window, in your time zone.
+             */
+            since: string;
+            /**
+             * Until
+             * Format: date-time
+             * @description End of the window, exclusive.
+             */
+            until: string;
+        };
+        /**
+         * CalendarChange
+         * @description What a calendar write would do, or did: shown first, run only with `confirm`.
+         */
+        CalendarChange: {
+            /**
+             * Confirm
+             * @description The command that carries it out, when it wasn't yet; none once done.
+             */
+            confirm?: string | null;
+            /**
+             * Done
+             * @description Whether it was carried out; false: it only says what `confirm` would do.
+             */
+            done: boolean;
+            /** @description The event as it is now (done) or as it is before the change (shown). */
+            event?: components["schemas"]["Event"] | null;
+            /**
+             * Summary
+             * @description What it does, in a sentence.
+             */
+            summary: string;
+        };
+        /**
          * Candidate
          * @description Something a hint found that may be an asset of its type.
          */
@@ -2803,6 +3061,37 @@ export interface components {
             warnings: number;
         };
         /**
+         * Countdown
+         * @description The meeting you are in and your next one, with a line that counts down to either: what the footer shows.
+         */
+        Countdown: {
+            /** @description The meeting in progress, not all-day; the one that started last if several do. */
+            current?: components["schemas"]["Event"] | null;
+            /**
+             * Fix
+             * @description The command that connects a calendar when none is.
+             */
+            fix?: string | null;
+            /**
+             * Line
+             * @description One line for a status bar: `Standup · ends in 12 min`, `Next: 1:1 in 25 min`, or why there is none.
+             */
+            line: string;
+            /** @description The first meeting starting after now, until the end of tomorrow; none if none. */
+            next?: components["schemas"]["Event"] | null;
+            /**
+             * Now
+             * Format: date-time
+             * @description When it was read, in your time zone.
+             */
+            now: string;
+            /**
+             * Problem
+             * @description Why there is no countdown (no calendar, a failed read); none when it was read.
+             */
+            problem?: string | null;
+        };
+        /**
          * CredentialInfo
          * @description A declared credential and whether it has a value; never the value itself.
          */
@@ -3202,6 +3491,63 @@ export interface components {
              * @description Only nodes in this state.
              */
             state: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;
+        };
+        /**
+         * FreeBusy
+         * @description When one person's calendar is busy within a window, as far as the user may see it.
+         */
+        FreeBusy: {
+            /**
+             * Busy
+             * @description Busy spans in the window, by start.
+             */
+            busy?: components["schemas"]["TimeSpan"][];
+            /**
+             * Known
+             * @description Whether the vendor showed this calendar; false when it is hidden from the user or unknown, and then `busy` says nothing.
+             * @default true
+             */
+            known: boolean;
+            /** @description Whose calendar: the user, or a person asked about by address. */
+            who: components["schemas"]["Participant"];
+        };
+        /**
+         * FreeTime
+         * @description When you, and the people asked about, are free within your working hours on a day.
+         */
+        FreeTime: {
+            /**
+             * Calendars
+             * @description Each calendar's busy spans, yours first.
+             */
+            calendars?: components["schemas"]["FreeBusy"][];
+            /**
+             * Minutes
+             * @description The shortest free span listed, in minutes.
+             */
+            minutes: number;
+            /**
+             * Since
+             * Format: date-time
+             * @description Start of the working hours looked at (or now, if later).
+             */
+            since: string;
+            /**
+             * Slots
+             * @description Free spans everybody asked about shares, by start.
+             */
+            slots?: components["schemas"]["TimeSpan"][];
+            /**
+             * Unknown
+             * @description Addresses whose calendar wasn't shown: their free time is unknown.
+             */
+            unknown?: string[];
+            /**
+             * Until
+             * Format: date-time
+             * @description End of the working hours looked at.
+             */
+            until: string;
         };
         /**
          * Graph
@@ -3949,7 +4295,7 @@ export interface components {
          * @description What a notice is about; each kind can be switched off in `[system.notify]`.
          * @enum {string}
          */
-        NoticeKind: "draft" | "failed" | "doctor" | "release" | "test";
+        NoticeKind: "draft" | "failed" | "doctor" | "release" | "meeting" | "test";
         /**
          * NoticeList
          * @description The latest notices, and how they reach you on this machine.
@@ -4678,6 +5024,20 @@ export interface components {
             value: unknown;
         };
         /**
+         * ShownEvent
+         * @description One event, and when it was read, so it shows in your time zone.
+         */
+        ShownEvent: {
+            /** @description The event. */
+            event: components["schemas"]["Event"];
+            /**
+             * Now
+             * Format: date-time
+             * @description When it was read, in your time zone.
+             */
+            now: string;
+        };
+        /**
          * Skill
          * @description An Agent Skill (agentskills.io) that ships with Heinzelmännchen.
          */
@@ -5235,6 +5595,24 @@ export interface components {
             title: string;
         };
         /**
+         * TimeSpan
+         * @description A half-open span of time `[start, end)`.
+         */
+        TimeSpan: {
+            /**
+             * End
+             * Format: date-time
+             * @description When it ends, exclusive.
+             */
+            end: string;
+            /**
+             * Start
+             * Format: date-time
+             * @description When it starts, inclusive.
+             */
+            start: string;
+        };
+        /**
          * Toggled
          * @description The pause flag after `pause` or `resume`.
          */
@@ -5452,6 +5830,8 @@ export type SchemaAgenda = components['schemas']['Agenda'];
 export type SchemaAgentResult = components['schemas']['AgentResult'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
+export type SchemaCalendarAgenda = components['schemas']['CalendarAgenda'];
+export type SchemaCalendarChange = components['schemas']['CalendarChange'];
 export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
@@ -5479,6 +5859,7 @@ export type SchemaConnectorTest = components['schemas']['ConnectorTest'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
 export type SchemaContractList = components['schemas']['ContractList'];
 export type SchemaContractSummary = components['schemas']['ContractSummary'];
+export type SchemaCountdown = components['schemas']['Countdown'];
 export type SchemaCredentialInfo = components['schemas']['CredentialInfo'];
 export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
 export type SchemaDefaultView = components['schemas']['DefaultView'];
@@ -5493,6 +5874,8 @@ export type SchemaEdgeMetadata = components['schemas']['EdgeMetadata'];
 export type SchemaEvent = components['schemas']['Event'];
 export type SchemaExpertMode = components['schemas']['ExpertMode'];
 export type SchemaFilters = components['schemas']['Filters'];
+export type SchemaFreeBusy = components['schemas']['FreeBusy'];
+export type SchemaFreeTime = components['schemas']['FreeTime'];
 export type SchemaGraph = components['schemas']['Graph'];
 export type SchemaGraphEdge = components['schemas']['GraphEdge'];
 export type SchemaGraphMetadata = components['schemas']['GraphMetadata'];
@@ -5538,6 +5921,7 @@ export type SchemaRequirementStatus = components['schemas']['RequirementStatus']
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
+export type SchemaShownEvent = components['schemas']['ShownEvent'];
 export type SchemaSkill = components['schemas']['Skill'];
 export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStatus = components['schemas']['Status'];
@@ -5552,6 +5936,7 @@ export type SchemaThemeFontView = components['schemas']['ThemeFontView'];
 export type SchemaThemeList = components['schemas']['ThemeList'];
 export type SchemaThemeLogoView = components['schemas']['ThemeLogoView'];
 export type SchemaThemeView = components['schemas']['ThemeView'];
+export type SchemaTimeSpan = components['schemas']['TimeSpan'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
@@ -5642,6 +6027,342 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calendar: {
+        parameters: {
+            query?: {
+                /** @description The day: `tomorrow` or a date such as 2026-10-26; today when not given. */
+                on?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarAgenda"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calendar_cancel: {
+        parameters: {
+            query: {
+                /** @description The event's id, as `hz calendar` and `hz calendar week` list it. */
+                event: string;
+                /** @description Tell the guests by mail. */
+                notify?: boolean;
+                /** @description Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calendar_free: {
+        parameters: {
+            query?: {
+                /** @description The day: `tomorrow` or a date such as 2026-10-26; today when not given. */
+                on?: string | null;
+                /** @description Others to find time with, by address, comma-separated: ada@example.com,bo@example.com. */
+                people?: string;
+                /** @description The shortest free time worth listing. */
+                minutes?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FreeTime"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calendar_move: {
+        parameters: {
+            query: {
+                /** @description The event's id, as `hz calendar` and `hz calendar week` list it. */
+                event: string;
+                /** @description The new start: `10:30` (today), `tomorrow 9:00`, `2026-10-26 14:00`. */
+                start: string;
+                /** @description A new length; it keeps its own. */
+                minutes?: number | null;
+                /** @description Tell the guests by mail. */
+                notify?: boolean;
+                /** @description Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calendar_new: {
+        parameters: {
+            query: {
+                /** @description What it is called, one line. */
+                title: string;
+                /** @description When it starts: `10:30` (today), `tomorrow 9:00` or `2026-10-26 14:00`. */
+                start: string;
+                /** @description How long it lasts. */
+                minutes?: number;
+                /** @description Whom to invite, by address, comma-separated: ada@example.com,bo@example.com. */
+                people?: string;
+                /** @description Where it takes place. */
+                location?: string | null;
+                /** @description Notes for the guests. */
+                description?: string | null;
+                /** @description Add a video call from your calendar's conferencing. */
+                video?: boolean;
+                /** @description Tell the guests by mail. */
+                notify?: boolean;
+                /** @description Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calendar_now: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Countdown"];
+                };
+            };
+        };
+    };
+    calendar_respond: {
+        parameters: {
+            query: {
+                /** @description The event's id, as `hz calendar` and `hz calendar week` list it. */
+                event: string;
+                /** @description Your answer: accepted, declined or tentative. */
+                answer: "accepted" | "declined" | "tentative";
+                /** @description Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calendar_search: {
+        parameters: {
+            query: {
+                /** @description Words the title, location or a person's name holds, e.g. `planning`. */
+                query: string;
+                /** @description Days before and after today to look through. */
+                days?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarAgenda"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calendar_show: {
+        parameters: {
+            query: {
+                /** @description The event's id, as `hz calendar` and `hz calendar week` list it. */
+                event: string;
+                /** @description Days before and after today to look through. */
+                days?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShownEvent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    calendar_week: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarAgenda"];
                 };
             };
         };

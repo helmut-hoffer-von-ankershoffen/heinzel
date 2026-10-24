@@ -162,13 +162,13 @@ class Module:
                 `write` modes only with `read_only=False`.
             optional: True if it does without its own `requires` when nothing serves them, asking
                 `CapabilityView.serves` first: an unmet one is then no doctor finding, and its handle refuses only
-                when called. Read-only operations only.
+                when called; a publish operation's refuses before anything is written (ADR 0059).
             audience: `everyday` to list it in help, completion and the web app's navigation for everyone; `expert`
                 (the default) lists it in expert mode only. It runs either way (ADR 0041).
 
         Raises:
             ValueError: If the docstring is missing, the audience unknown, a requirement is malformed or writes from
-                a read-only operation, or a publish operation is optional.
+                a read-only operation.
         """
         requirements = self._requirements(requires)
 

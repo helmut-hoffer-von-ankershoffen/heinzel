@@ -1,5 +1,6 @@
-"""What the daemon looks for on its own, once an hour: doctor's findings and a newer release (ADR 0043).
+"""What the daemon looks for on its own: doctor's findings, a newer release and meetings that start soon.
 
+Once an hour doctor's findings and a newer release (ADR 0043); at every tick the meetings that start soon (ADR 0059).
 It runs at the end of a tick, before notices pop up, rather than as a job of its own: it only records notices, and an
 hourly receipt for it would say nothing a notice doesn't.
 """
@@ -28,6 +29,23 @@ def watch(kernel: Kernel, notifications: Notifications, wants: "set[NoticeKind]"
         )
         reported += notice is not None
     return reported
+
+
+def remind(kernel: Kernel, wants: "set[NoticeKind]") -> int:
+    """Run `hz calendar remind` through the kernel (modules don't import each other): notices of meetings soon.
+
+    Every tick, unlike `watch`, since a meeting's reminder is due within minutes; nothing when meeting notices are off
+    or no module brings the operation.
+    """
+    if NoticeKind.MEETING not in wants:
+        return 0
+    found = next(
+        (let for owner, let in kernel.lets(OperationLet) if (owner.qualname, let.name) == ("calendar", "remind")),
+        None,
+    )
+    if found is None or not kernel.available(found.func):
+        return 0
+    return int(getattr(kernel.invoke(found), "reminded", 0))
 
 
 def daemon_state(kernel: Kernel) -> DaemonState | None:

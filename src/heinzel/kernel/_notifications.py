@@ -25,6 +25,8 @@ class NoticeKind(StrEnum):
     """`hz system doctor` found something degraded or down."""
     RELEASE = "release"
     """A newer release of Heinzelmännchen is available."""
+    MEETING = "meeting"
+    """A meeting in your calendar starts soon (`[calendar] remind_minutes`)."""
     TEST = "test"
     """`hz system notify test`: to see that notifications reach you."""
 

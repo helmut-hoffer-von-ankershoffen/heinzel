@@ -18,6 +18,10 @@ class NotifySettings(ModuleSettings):
     failed: bool = Field(default=True, description="Notify when a contract run on your daemon failed.")
     doctor: bool = Field(default=True, description="Notify when `hz system doctor` finds something degraded or down.")
     release: bool = Field(default=False, description="Notify when a newer release of Heinzelmännchen is out.")
+    meeting: bool = Field(
+        default=True,
+        description="Notify shortly before a meeting starts, with its join link (`[calendar] remind_minutes`).",
+    )
     quiet: bool = Field(
         default=False, description="Quiet mode: record notices in the list, never pop one up, urgent ones included."
     )
@@ -45,6 +49,7 @@ class NotifySettings(ModuleSettings):
             "failed",
             "doctor",
             "release",
+            "meeting",
             "quiet",
             "working_hours",
             "per_hour",

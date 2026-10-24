@@ -133,7 +133,8 @@ class OperationLet(Let):
     optional: bool = False
     """Whether it does without its own requirements when nothing serves them: it asks `CapabilityView.serves` and
     degrades, so an unmet one is listed in the matrix but isn't a doctor finding, and its handle refuses only when
-    called. Read-only operations only (ADR 0028)."""
+    called (ADR 0028). A publish operation may be optional too (ADR 0059): unserved, its handle refuses before
+    anything is written; served, its adapter is built when it is injected, as for any publish operation."""
     audience: Audience = "expert"
     """Who it is for in heads people browse (CLI help and completion, the web app's navigation): `everyday`
     operations are always listed, `expert` ones only in expert mode (`[hz] expert`). Hidden is never disabled: every
@@ -149,12 +150,6 @@ class OperationLet(Let):
             msg = (
                 f"Operation {self.name!r} can't require {', '.join(writes)}: writes happen only in publish operations "
                 f"(read_only=False)"
-            )
-            raise ValueError(msg)
-        if self.optional and not self.read_only:
-            msg = (
-                f"Operation {self.name!r} can't make its requirements optional: a publish operation's are checked "
-                f"before it runs"
             )
             raise ValueError(msg)
         if self.audience not in AUDIENCES:

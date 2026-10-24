@@ -120,6 +120,7 @@ export const noTeam: SchemaTeamShow = {
 
 /** Every read the shell makes, so a screen renders without unanswered calls. */
 const audiences: SchemaExpertMode["operations"] = [
+  { module: "calendar", operation: "calendar", audience: "everyday" },
   { module: "system.doctor", operation: "doctor", audience: "everyday" },
   { module: "team", operation: "show", audience: "everyday" },
   { module: "workflow", operation: "list", audience: "everyday" },

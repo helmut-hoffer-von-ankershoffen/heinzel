@@ -96,11 +96,21 @@ class CapabilityService:
         checks.extend(self._default_checks())
         uses = self.uses()
         checks.extend(self._host_checks(uses))
+        # A module's optional uses of one capability nobody connected are one check, not one per operation.
+        unconnected: dict[tuple[str, str], list[CapabilityUse]] = {}
+        for use in uses:
+            if self.unconnected(use):
+                unconnected.setdefault((use.capability, use.requester.split(" ")[0]), []).append(use)
         for use in uses:
             name = f"{use.requirement} for {use.requester}"
             if use.problem is None:
                 checks.append(Check(name=name, status=Status.UP, detail=f"served by {use.adapter}"))
             elif self.unconnected(use):
+                group = unconnected[use.capability, use.requester.split(" ")[0]]
+                if use is not group[0]:
+                    continue
+                if len(group) > 1:
+                    name = f"{use.capability} for {use.requester.split(' ')[0]} ({len(group)} uses)"
                 detail = f"optional: not connected; to use it: {self.capabilities.command(use.capability)}"
                 checks.append(Check(name=name, status=Status.UP, detail=detail))
             else:

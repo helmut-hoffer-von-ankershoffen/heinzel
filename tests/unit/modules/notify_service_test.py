@@ -354,6 +354,24 @@ def test_a_failing_watcher_never_stops_the_pop_ups(make):
     assert service.post_native() == 1
 
 
+def test_meetings_are_looked_for_at_every_tick_and_a_failing_look_stops_nothing(make):
+    service = make()
+    looks: list[int] = []
+    service.watcher = lambda: 0
+    service.reminder = lambda: looks.append(1) or 1
+    assert service.look() == 1
+    assert service.look() == 1  # within the hour: doctor isn't asked again, meetings are
+    assert len(looks) == 2
+
+    def broken() -> int:
+        msg = "calendar exploded"
+        raise RuntimeError(msg)
+
+    service.reminder = broken
+    draft(service)
+    assert service.post_native() == 1
+
+
 def test_the_rate_limit_holds_back_what_waited_overnight(make, clock, runner):
     clock.now = clock.now.replace(hour=20)
     service = make(per_hour=2)

@@ -38,6 +38,11 @@ def notes(ran: list[str]) -> Module:
         ran.append("publish")
         return "published"
 
+    @module.operation(read_only=False)
+    def send(to: str, confirm: bool = False) -> str:
+        """Send, or show what would be sent."""
+        return "sent" if confirm else "would send"
+
     @module.operation
     def everything() -> str:
         """Show a lot."""
@@ -118,6 +123,14 @@ def test_a_write_is_refused_and_only_proposed_with_its_exact_arguments(kernel, r
     assert call.command == "hz notes publish --title 'Week 43' --pages 2"
     assert "Not run" in reply
     assert "(action a1)" in reply
+
+
+def test_a_proposed_call_that_only_shows_without_confirm_is_proposed_confirmed(kernel, ran):
+    """What the person confirms in the chat must do it, not show a preview of it."""
+    tools(kernel)["notes_send"](to="team", confirm=False)
+    [call] = kernel.resolve(ActionGate).calls
+    assert call.arguments == {"to": "team", "confirm": True}
+    assert call.command == "hz notes send --to team --confirm true"
 
 
 def test_a_write_that_also_spends_is_only_proposed_too(kernel):

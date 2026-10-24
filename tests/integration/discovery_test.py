@@ -16,6 +16,7 @@ def test_discovers_builtin_modules_and_submodules():
     assert [r.qualname for r in records] == [
         "ai",
         "ai.access",
+        "calendar",
         "graph",
         "org",
         "system",

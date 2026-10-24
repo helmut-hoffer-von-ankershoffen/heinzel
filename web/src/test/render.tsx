@@ -41,5 +41,7 @@ export async function expectAccessible(container: HTMLElement) {
     runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] },
     rules: { "color-contrast": { enabled: false } },
   });
-  expect(results.violations.map((violation) => `${violation.id}: ${violation.help}`)).toEqual([]);
+  expect(
+    results.violations.map((violation) => `${violation.id}: ${violation.help} ${violation.nodes[0]?.html ?? ""}`),
+  ).toEqual([]);
 }

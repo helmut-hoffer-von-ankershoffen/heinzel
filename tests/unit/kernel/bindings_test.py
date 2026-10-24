@@ -378,13 +378,35 @@ def test_a_served_optional_operation_gets_the_real_handle(make_kernel):
     assert run(kernel, "optional", "peek") == "notes:weekly"
 
 
-def test_a_publish_operation_cant_be_optional():
-    with pytest.raises(ValueError, match="can't make its requirements optional"):
+def optional_publisher() -> Module:
+    module = Module("publisher", "Publishes when documents are served, and says how to connect them otherwise.")
 
-        @Module("bad", "Publishes optionally.").operation(read_only=False, requires=["documents:write"], optional=True)
-        def publish(documents: Documents) -> str:
-            """Write."""
-            return documents.replace_section("weekly", "summary", "x").ref
+    @module.operation(read_only=False, requires=["documents:read,write"], optional=True)
+    def publish(documents: Documents, view: CapabilityView) -> str:
+        """Write a section if documents are served."""
+        _, problem = view.serves(Requirement.parse("documents:write"))
+        return f"unserved: {problem}" if problem else documents.replace_section("weekly", "summary", "new").ref
+
+    @module.operation(read_only=False, requires=["documents:write"], optional=True)
+    def blind(documents: Documents) -> str:
+        """Write without asking first."""
+        return documents.replace_section("weekly", "summary", "new").ref
+
+    return module
+
+
+def test_an_unserved_optional_publish_operation_writes_nothing_and_is_no_doctor_finding(make_kernel):
+    kernel = make_kernel(notes=notes_module(), publisher=optional_publisher(), config=bind(documents="none"))
+    assert run(kernel, "publisher", "publish") == "unserved: no adapter bound"
+    with pytest.raises(HeinzelError, match="publisher blind needs documents:write: no adapter bound"):
+        run(kernel, "publisher", "blind")
+    uses = {use.requester: use for use in kernel.resolve(CapabilityView).matrix()}
+    assert uses["publisher publish"].optional is True
+
+
+def test_a_served_optional_publish_operation_gets_its_real_handle(make_kernel):
+    kernel = make_kernel(notes=notes_module(), publisher=optional_publisher(), config=bind(documents="notes"))
+    assert run(kernel, "publisher", "publish") == "weekly"
 
 
 def test_a_binding_to_an_unknown_adapter_fails(make_kernel):

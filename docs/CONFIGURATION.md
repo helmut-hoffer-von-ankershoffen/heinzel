@@ -61,6 +61,13 @@ Plugins add their own tables.
 | `acli` | `HZ_ATLASSIAN__ACLI` | `'acli'` | Atlassian's CLI: a name looked up on PATH (only absolute PATH entries count) or an absolute path. Never read from a project hz.toml. |
 | `timeout` | `HZ_ATLASSIAN__TIMEOUT` | `60.0` | Seconds to wait for each acli command before stopping it. |
 
+## `[calendar]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `remind_minutes` | `HZ_CALENDAR__REMIND_MINUTES` | `10` | Remind you this many minutes before a meeting starts (a notice with its join link), at least 5; 0 turns the reminders off. The daemon looks at each tick; when it ticks less often than this, a reminder comes up to a tick early instead of falling between two ticks. |
+| `look_days` | `HZ_CALENDAR__LOOK_DAYS` | `30` | Days before and after today that `show` and `search` look through. |
+
 ## `[clock]`
 
 | Key | Environment variable | Default | Description |
@@ -150,6 +157,7 @@ Plugins add their own tables.
 | `failed` | `HZ_SYSTEM_NOTIFY__FAILED` | `True` | Notify when a contract run on your daemon failed. |
 | `doctor` | `HZ_SYSTEM_NOTIFY__DOCTOR` | `True` | Notify when `hz system doctor` finds something degraded or down. |
 | `release` | `HZ_SYSTEM_NOTIFY__RELEASE` | `False` | Notify when a newer release of Heinzelmännchen is out. |
+| `meeting` | `HZ_SYSTEM_NOTIFY__MEETING` | `True` | Notify shortly before a meeting starts, with its join link (`[calendar] remind_minutes`). |
 | `quiet` | `HZ_SYSTEM_NOTIFY__QUIET` | `False` | Quiet mode: record notices in the list, never pop one up, urgent ones included. |
 | `working_hours` | `HZ_SYSTEM_NOTIFY__WORKING_HOURS` | `True` | Hold notices that aren't urgent until your working hours ([org] working_hours, Monday to Friday, in [org] timezone) start. |
 | `per_hour` | `HZ_SYSTEM_NOTIFY__PER_HOUR` | `6` | At most this many pop-ups an hour; more go to the list only. |

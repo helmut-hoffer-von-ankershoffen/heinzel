@@ -11,6 +11,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`ai`](#ai) | How hz reaches AI: the AI access in use, its status and a live test. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
 | [`atlassian`](#atlassian) | Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. |
+| [`calendar`](#calendar) | Your calendar: today, the week, free time, and events created or answered once you confirm. |
 | [`clock`](#clock) | What time it is for everyone on the team. |
 | [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
 | [`google`](#google) | Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
@@ -69,6 +70,26 @@ First-party plugin `heinzel-atlassian`: `hz system plugin add atlassian --confir
 Settings: [`[atlassian]`](CONFIGURATION.md#atlassian).
 
 Health checks: reported by `hz system doctor`.
+
+## `calendar`
+
+Your calendar: today, the week, free time, and events created or answered once you confirm.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Show today's events (or another day's), with your answer, the guests and the link to join. | `hz calendar` | `calendar` | — | `GET /api/calendar` |  |  |
+| Show your events of the next seven days, from today. | `hz calendar week` | `calendar_week` | — | `GET /api/calendar/week` |  |  |
+| Show one event in full: when, where, who, your answer and its links. | `hz calendar show` | `calendar_show` | — | `GET /api/calendar/show` |  | expert |
+| Find events around today whose title, location or people hold every word of `query`. | `hz calendar search` | `calendar_search` | — | `GET /api/calendar/search` |  | expert |
+| Show when you (and the people you name) are free within your working hours on a day. | `hz calendar free` | `calendar_free` | — | `GET /api/calendar/free` |  |  |
+| Show the meeting you are in and your next one, counting down, in one line for a status bar. | `hz calendar now` | `calendar_now` | — | `GET /api/calendar/now` |  |  |
+| Create an event in your calendar and invite its guests; shown first, created with `--confirm`. | `hz calendar new` | `calendar_new` | — | `POST /api/calendar/new` | yes |  |
+| Move an event you organize to another time; shown first, moved with `--confirm`. | `hz calendar move` | `calendar_move` | — | `POST /api/calendar/move` | yes | expert |
+| Cancel an event you organize, for everyone; shown first, cancelled with `--confirm`. | `hz calendar cancel` | `calendar_cancel` | — | `POST /api/calendar/cancel` | yes | expert |
+| Answer an invitation: accepted, declined or tentative; shown first, answered with `--confirm`. | `hz calendar respond` | `calendar_respond` | — | `POST /api/calendar/respond` | yes |  |
+| Record a notice with the join link for each meeting starting within `[calendar] remind_minutes`. | `hz calendar remind` | — | — | — | yes | expert |
+
+Settings: [`[calendar]`](CONFIGURATION.md#calendar).
 
 ## `clock`
 

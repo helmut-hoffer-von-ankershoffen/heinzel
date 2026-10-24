@@ -674,6 +674,88 @@
         "title": "AvailablePlugin",
         "type": "object"
       },
+      "CalendarAgenda": {
+        "description": "Your events in a window, by start.",
+        "properties": {
+          "events": {
+            "description": "Events overlapping the window, cancelled ones left out, by start.",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "now": {
+            "description": "When it was read.",
+            "format": "date-time",
+            "title": "Now",
+            "type": "string"
+          },
+          "since": {
+            "description": "Start of the window, in your time zone.",
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "description": "End of the window, exclusive.",
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "now"
+        ],
+        "title": "CalendarAgenda",
+        "type": "object"
+      },
+      "CalendarChange": {
+        "description": "What a calendar write would do, or did: shown first, run only with `confirm`.",
+        "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The command that carries it out, when it wasn't yet; none once done.",
+            "title": "Confirm"
+          },
+          "done": {
+            "description": "Whether it was carried out; false: it only says what `confirm` would do.",
+            "title": "Done",
+            "type": "boolean"
+          },
+          "event": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Event"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The event as it is now (done) or as it is before the change (shown)."
+          },
+          "summary": {
+            "description": "What it does, in a sentence.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "done",
+          "summary"
+        ],
+        "title": "CalendarChange",
+        "type": "object"
+      },
       "Candidate": {
         "description": "Something a hint found that may be an asset of its type.",
         "properties": {
@@ -2360,6 +2442,74 @@
         "title": "ContractSummary",
         "type": "object"
       },
+      "Countdown": {
+        "description": "The meeting you are in and your next one, with a line that counts down to either: what the footer shows.",
+        "properties": {
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Event"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The meeting in progress, not all-day; the one that started last if several do."
+          },
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The command that connects a calendar when none is.",
+            "title": "Fix"
+          },
+          "line": {
+            "description": "One line for a status bar: `Standup · ends in 12 min`, `Next: 1:1 in 25 min`, or why there is none.",
+            "title": "Line",
+            "type": "string"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Event"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The first meeting starting after now, until the end of tomorrow; none if none."
+          },
+          "now": {
+            "description": "When it was read, in your time zone.",
+            "format": "date-time",
+            "title": "Now",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why there is no countdown (no calendar, a failed read); none when it was read.",
+            "title": "Problem"
+          }
+        },
+        "required": [
+          "now",
+          "line"
+        ],
+        "title": "Countdown",
+        "type": "object"
+      },
       "CredentialInfo": {
         "description": "A declared credential and whether it has a value; never the value itself.",
         "properties": {
@@ -3033,6 +3183,87 @@
           "state"
         ],
         "title": "Filters",
+        "type": "object"
+      },
+      "FreeBusy": {
+        "description": "When one person's calendar is busy within a window, as far as the user may see it.",
+        "properties": {
+          "busy": {
+            "description": "Busy spans in the window, by start.",
+            "items": {
+              "$ref": "#/components/schemas/TimeSpan"
+            },
+            "title": "Busy",
+            "type": "array"
+          },
+          "known": {
+            "default": true,
+            "description": "Whether the vendor showed this calendar; false when it is hidden from the user or unknown, and then `busy` says nothing.",
+            "title": "Known",
+            "type": "boolean"
+          },
+          "who": {
+            "$ref": "#/components/schemas/Participant",
+            "description": "Whose calendar: the user, or a person asked about by address."
+          }
+        },
+        "required": [
+          "who"
+        ],
+        "title": "FreeBusy",
+        "type": "object"
+      },
+      "FreeTime": {
+        "description": "When you, and the people asked about, are free within your working hours on a day.",
+        "properties": {
+          "calendars": {
+            "description": "Each calendar's busy spans, yours first.",
+            "items": {
+              "$ref": "#/components/schemas/FreeBusy"
+            },
+            "title": "Calendars",
+            "type": "array"
+          },
+          "minutes": {
+            "description": "The shortest free span listed, in minutes.",
+            "title": "Minutes",
+            "type": "integer"
+          },
+          "since": {
+            "description": "Start of the working hours looked at (or now, if later).",
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "slots": {
+            "description": "Free spans everybody asked about shares, by start.",
+            "items": {
+              "$ref": "#/components/schemas/TimeSpan"
+            },
+            "title": "Slots",
+            "type": "array"
+          },
+          "unknown": {
+            "description": "Addresses whose calendar wasn't shown: their free time is unknown.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Unknown",
+            "type": "array"
+          },
+          "until": {
+            "description": "End of the working hours looked at.",
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "minutes"
+        ],
+        "title": "FreeTime",
         "type": "object"
       },
       "Graph": {
@@ -4267,6 +4498,7 @@
           "failed",
           "doctor",
           "release",
+          "meeting",
           "test"
         ],
         "title": "NoticeKind",
@@ -5549,6 +5781,27 @@
         "title": "SettingInfo",
         "type": "object"
       },
+      "ShownEvent": {
+        "description": "One event, and when it was read, so it shows in your time zone.",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/Event",
+            "description": "The event."
+          },
+          "now": {
+            "description": "When it was read, in your time zone.",
+            "format": "date-time",
+            "title": "Now",
+            "type": "string"
+          }
+        },
+        "required": [
+          "now",
+          "event"
+        ],
+        "title": "ShownEvent",
+        "type": "object"
+      },
       "Skill": {
         "description": "An Agent Skill (agentskills.io) that ships with Heinzelmännchen.",
         "properties": {
@@ -6415,6 +6668,29 @@
         "title": "ThemeView",
         "type": "object"
       },
+      "TimeSpan": {
+        "description": "A half-open span of time `[start, end)`.",
+        "properties": {
+          "end": {
+            "description": "When it ends, exclusive.",
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "start": {
+            "description": "When it starts, inclusive.",
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "TimeSpan",
+        "type": "object"
+      },
       "Toggled": {
         "description": "The pause flag after `pause` or `resume`.",
         "properties": {
@@ -6870,6 +7146,696 @@
         "summary": "Use an AI access option: sets capabilities.ai_access, and agent_runner if the option names one.",
         "tags": [
           "ai"
+        ]
+      }
+    },
+    "/calendar": {
+      "get": {
+        "description": "Show today's events (or another day's), with your answer, the guests and the link to join.",
+        "operationId": "calendar",
+        "parameters": [
+          {
+            "description": "The day: `tomorrow` or a date such as 2026-10-26; today when not given.",
+            "in": "query",
+            "name": "on",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The day: `tomorrow` or a date such as 2026-10-26; today when not given.",
+              "title": "On"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarAgenda"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show today's events (or another day's), with your answer, the guests and the link to join.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/calendar/cancel": {
+      "post": {
+        "description": "Cancel an event you organize, for everyone; shown first, cancelled with `--confirm`.",
+        "operationId": "calendar_cancel",
+        "parameters": [
+          {
+            "description": "The event's id, as `hz calendar` and `hz calendar week` list it.",
+            "in": "query",
+            "name": "event",
+            "required": true,
+            "schema": {
+              "description": "The event's id, as `hz calendar` and `hz calendar week` list it.",
+              "title": "Event",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Tell the guests by mail.",
+            "in": "query",
+            "name": "notify",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Tell the guests by mail.",
+              "title": "Notify",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel an event you organize, for everyone; shown first, cancelled with `--confirm`.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/calendar/free": {
+      "get": {
+        "description": "Show when you (and the people you name) are free within your working hours on a day.",
+        "operationId": "calendar_free",
+        "parameters": [
+          {
+            "description": "The day: `tomorrow` or a date such as 2026-10-26; today when not given.",
+            "in": "query",
+            "name": "on",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The day: `tomorrow` or a date such as 2026-10-26; today when not given.",
+              "title": "On"
+            }
+          },
+          {
+            "description": "Others to find time with, by address, comma-separated: ada@example.com,bo@example.com.",
+            "in": "query",
+            "name": "people",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Others to find time with, by address, comma-separated: ada@example.com,bo@example.com.",
+              "title": "People",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The shortest free time worth listing.",
+            "in": "query",
+            "name": "minutes",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "description": "The shortest free time worth listing.",
+              "title": "Minutes",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FreeTime"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show when you (and the people you name) are free within your working hours on a day.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/calendar/move": {
+      "post": {
+        "description": "Move an event you organize to another time; shown first, moved with `--confirm`.\n\nRaises:\n    HeinzelError: If the event isn't found or isn't yours, or the new time is no time hz reads.",
+        "operationId": "calendar_move",
+        "parameters": [
+          {
+            "description": "The event's id, as `hz calendar` and `hz calendar week` list it.",
+            "in": "query",
+            "name": "event",
+            "required": true,
+            "schema": {
+              "description": "The event's id, as `hz calendar` and `hz calendar week` list it.",
+              "title": "Event",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The new start: `10:30` (today), `tomorrow 9:00`, `2026-10-26 14:00`.",
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "description": "The new start: `10:30` (today), `tomorrow 9:00`, `2026-10-26 14:00`.",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A new length; it keeps its own.",
+            "in": "query",
+            "name": "minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A new length; it keeps its own.",
+              "title": "Minutes"
+            }
+          },
+          {
+            "description": "Tell the guests by mail.",
+            "in": "query",
+            "name": "notify",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Tell the guests by mail.",
+              "title": "Notify",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Move an event you organize to another time; shown first, moved with `--confirm`.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/calendar/new": {
+      "post": {
+        "description": "Create an event in your calendar and invite its guests; shown first, created with `--confirm`.\n\nRaises:\n    HeinzelError: If the start is no time hz reads, or the event can't be made (a guest's address, its title).",
+        "operationId": "calendar_new",
+        "parameters": [
+          {
+            "description": "What it is called, one line.",
+            "in": "query",
+            "name": "title",
+            "required": true,
+            "schema": {
+              "description": "What it is called, one line.",
+              "title": "Title",
+              "type": "string"
+            }
+          },
+          {
+            "description": "When it starts: `10:30` (today), `tomorrow 9:00` or `2026-10-26 14:00`.",
+            "in": "query",
+            "name": "start",
+            "required": true,
+            "schema": {
+              "description": "When it starts: `10:30` (today), `tomorrow 9:00` or `2026-10-26 14:00`.",
+              "title": "Start",
+              "type": "string"
+            }
+          },
+          {
+            "description": "How long it lasts.",
+            "in": "query",
+            "name": "minutes",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "description": "How long it lasts.",
+              "title": "Minutes",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Whom to invite, by address, comma-separated: ada@example.com,bo@example.com.",
+            "in": "query",
+            "name": "people",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Whom to invite, by address, comma-separated: ada@example.com,bo@example.com.",
+              "title": "People",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where it takes place.",
+            "in": "query",
+            "name": "location",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where it takes place.",
+              "title": "Location"
+            }
+          },
+          {
+            "description": "Notes for the guests.",
+            "in": "query",
+            "name": "description",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Notes for the guests.",
+              "title": "Description"
+            }
+          },
+          {
+            "description": "Add a video call from your calendar's conferencing.",
+            "in": "query",
+            "name": "video",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Add a video call from your calendar's conferencing.",
+              "title": "Video",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Tell the guests by mail.",
+            "in": "query",
+            "name": "notify",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Tell the guests by mail.",
+              "title": "Notify",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create an event in your calendar and invite its guests; shown first, created with `--confirm`.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/calendar/now": {
+      "get": {
+        "description": "Show the meeting you are in and your next one, counting down, in one line for a status bar.",
+        "operationId": "calendar_now",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Countdown"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show the meeting you are in and your next one, counting down, in one line for a status bar.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/calendar/respond": {
+      "post": {
+        "description": "Answer an invitation: accepted, declined or tentative; shown first, answered with `--confirm`.",
+        "operationId": "calendar_respond",
+        "parameters": [
+          {
+            "description": "The event's id, as `hz calendar` and `hz calendar week` list it.",
+            "in": "query",
+            "name": "event",
+            "required": true,
+            "schema": {
+              "description": "The event's id, as `hz calendar` and `hz calendar week` list it.",
+              "title": "Event",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Your answer: accepted, declined or tentative.",
+            "in": "query",
+            "name": "answer",
+            "required": true,
+            "schema": {
+              "description": "Your answer: accepted, declined or tentative.",
+              "enum": [
+                "accepted",
+                "declined",
+                "tentative"
+              ],
+              "title": "Answer",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer an invitation: accepted, declined or tentative; shown first, answered with `--confirm`.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/calendar/search": {
+      "get": {
+        "description": "Find events around today whose title, location or people hold every word of `query`.",
+        "operationId": "calendar_search",
+        "parameters": [
+          {
+            "description": "Words the title, location or a person's name holds, e.g. `planning`.",
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "description": "Words the title, location or a person's name holds, e.g. `planning`.",
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Days before and after today to look through.",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Days before and after today to look through.",
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarAgenda"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Find events around today whose title, location or people hold every word of `query`.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/calendar/show": {
+      "get": {
+        "description": "Show one event in full: when, where, who, your answer and its links.",
+        "operationId": "calendar_show",
+        "parameters": [
+          {
+            "description": "The event's id, as `hz calendar` and `hz calendar week` list it.",
+            "in": "query",
+            "name": "event",
+            "required": true,
+            "schema": {
+              "description": "The event's id, as `hz calendar` and `hz calendar week` list it.",
+              "title": "Event",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Days before and after today to look through.",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Days before and after today to look through.",
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShownEvent"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show one event in full: when, where, who, your answer and its links.",
+        "tags": [
+          "calendar"
+        ]
+      }
+    },
+    "/calendar/week": {
+      "get": {
+        "description": "Show your events of the next seven days, from today.",
+        "operationId": "calendar_week",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarAgenda"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show your events of the next seven days, from today.",
+        "tags": [
+          "calendar"
         ]
       }
     },

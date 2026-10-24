@@ -19,6 +19,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 * `ai`: (expert) How hz reaches AI: the AI access...
 * `atlassian`: (expert) Read Jira issues and Confluence...
+* `calendar`: Your calendar: today, the week, free time,...
 * `chat`: Chat with the agent runner in this...
 * `clock`: Show the time in each of the team&#x27;s time...
 * `github`: (expert) Read pull requests and issues...
@@ -151,6 +152,241 @@ $ hz atlassian [OPTIONS] COMMAND [ARGS]...
 
 ```console
 $ hz atlassian info [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz calendar`
+
+Your calendar: today, the week, free time, and events created or answered once you confirm.
+
+**Usage**:
+
+```console
+$ hz calendar [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--on <str>`: The day: `tomorrow` or a date such as 2026-10-26; today when not given.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `cancel`: (expert) Cancel an event you organize, for...
+* `free`: Show when you (and the people you name)...
+* `move`: (expert) Move an event you organize to...
+* `new`: Create an event in your calendar and...
+* `now`: Show the meeting you are in and your next...
+* `remind`: (expert) Record a notice with the join...
+* `respond`: Answer an invitation: accepted, declined...
+* `search`: (expert) Find events around today whose...
+* `show`: (expert) Show one event in full: when,...
+* `week`: Show your events of the next seven days,...
+
+### `hz calendar cancel`
+
+(expert) Cancel an event you organize, for everyone; shown first, cancelled with `--confirm`.
+
+**Usage**:
+
+```console
+$ hz calendar cancel [OPTIONS] {event}
+```
+
+**Arguments**:
+
+* `event`: The event&#x27;s id, as `hz calendar` and `hz calendar week` list it.  [required]
+
+**Options**:
+
+* `--notify / --no-notify`: Tell the guests by mail.  [default: notify]
+* `--confirm / --no-confirm`: Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz calendar free`
+
+Show when you (and the people you name) are free within your working hours on a day.
+
+**Usage**:
+
+```console
+$ hz calendar free [OPTIONS]
+```
+
+**Options**:
+
+* `--on <str>`: The day: `tomorrow` or a date such as 2026-10-26; today when not given.
+* `--people <str>`: Others to find time with, by address, comma-separated: ada@example.com,bo@example.com.
+* `--minutes <int>`: The shortest free time worth listing.  [default: 30]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz calendar move`
+
+(expert) Move an event you organize to another time; shown first, moved with `--confirm`.
+
+**Usage**:
+
+```console
+$ hz calendar move [OPTIONS] {event} {start}
+```
+
+**Arguments**:
+
+* `event`: The event&#x27;s id, as `hz calendar` and `hz calendar week` list it.  [required]
+* `start`: The new start: `10:30` (today), `tomorrow 9:00`, `2026-10-26 14:00`.  [required]
+
+**Options**:
+
+* `--minutes <int>`: A new length; it keeps its own.
+* `--notify / --no-notify`: Tell the guests by mail.  [default: notify]
+* `--confirm / --no-confirm`: Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz calendar new`
+
+Create an event in your calendar and invite its guests; shown first, created with `--confirm`.
+
+**Usage**:
+
+```console
+$ hz calendar new [OPTIONS] {title} {start}
+```
+
+**Arguments**:
+
+* `title`: What it is called, one line.  [required]
+* `start`: When it starts: `10:30` (today), `tomorrow 9:00` or `2026-10-26 14:00`.  [required]
+
+**Options**:
+
+* `--minutes <int>`: How long it lasts.  [default: 30]
+* `--people <str>`: Whom to invite, by address, comma-separated: ada@example.com,bo@example.com.
+* `--location <str>`: Where it takes place.
+* `--description <str>`: Notes for the guests.
+* `--video / --no-video`: Add a video call from your calendar&#x27;s conferencing.  [default: no-video]
+* `--notify / --no-notify`: Tell the guests by mail.  [default: notify]
+* `--confirm / --no-confirm`: Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz calendar now`
+
+Show the meeting you are in and your next one, counting down, in one line for a status bar.
+
+**Usage**:
+
+```console
+$ hz calendar now [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz calendar remind`
+
+(expert) Record a notice with the join link for each meeting starting within ` remind_minutes`.
+
+**Usage**:
+
+```console
+$ hz calendar remind [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz calendar respond`
+
+Answer an invitation: accepted, declined or tentative; shown first, answered with `--confirm`.
+
+**Usage**:
+
+```console
+$ hz calendar respond [OPTIONS] {event} {answer}:<accepted|declined|tentative>
+```
+
+**Arguments**:
+
+* `event`: The event&#x27;s id, as `hz calendar` and `hz calendar week` list it.  [required]
+* `answer:<accepted|declined|tentative>`: Your answer: accepted, declined or tentative.  [required]
+
+**Options**:
+
+* `--confirm / --no-confirm`: Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz calendar search`
+
+(expert) Find events around today whose title, location or people hold every word of `query`.
+
+**Usage**:
+
+```console
+$ hz calendar search [OPTIONS] {query}
+```
+
+**Arguments**:
+
+* `query`: Words the title, location or a person&#x27;s name holds, e.g. `planning`.  [required]
+
+**Options**:
+
+* `--days <int>`: Days before and after today to look through.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz calendar show`
+
+(expert) Show one event in full: when, where, who, your answer and its links.
+
+**Usage**:
+
+```console
+$ hz calendar show [OPTIONS] {event}
+```
+
+**Arguments**:
+
+* `event`: The event&#x27;s id, as `hz calendar` and `hz calendar week` list it.  [required]
+
+**Options**:
+
+* `--days <int>`: Days before and after today to look through.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz calendar week`
+
+Show your events of the next seven days, from today.
+
+**Usage**:
+
+```console
+$ hz calendar week [OPTIONS]
 ```
 
 **Options**:

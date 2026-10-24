@@ -6,7 +6,8 @@ description from the docstring, its output schema from the return model, and `re
 With `chat=<session>` (`hz system serve mcp --chat <session>`, started over stdio by the agent of a chat, ADR 0045)
 it serves the same tools to that one chat, and enforces the chat's rule in code: a read-only operation runs and
 returns its result as JSON without email addresses; any other operation does not run. It is handed to the
-`ActionGate` as a proposal, and the tool returns its action id: only the person's `hz chat confirm` (CLI or web head,
+`ActionGate` as a proposal (with `confirm` set, for operations that otherwise only show what they would do), and
+the tool returns its action id: only the person's `hz chat confirm` (CLI or web head,
 never MCP) runs it. Tools follow the MCP head's own exposure, so what a UI hides from beginners is still a tool here.
 """
 
@@ -38,6 +39,8 @@ CHAT_INSTRUCTIONS = (
     "`hz system doctor`. Read-only tools run and return JSON. Any other tool does not run: it is proposed to the "
     "person, who confirms or declines it in the chat, and the call returns its action id."
 )
+CONFIRM = "confirm"
+"""The parameter of operations that show what they would do and act only with it (ADR 0047, ADR 0059)."""
 RESULT_LIMIT = 20000
 """Characters of a tool result an agent in a chat gets; the rest is cut, so one call can't fill its context."""
 
@@ -91,6 +94,10 @@ def chat_tool(kernel: Kernel, item: Exposed, session: str) -> Callable[..., str]
                 text = redact_emails(json.dumps(to_jsonable_python(result, fallback=str), ensure_ascii=False))
                 return text[:RESULT_LIMIT] + ("…(cut)" if len(text) > RESULT_LIMIT else "")
             arguments = to_jsonable_python(kwargs, fallback=str)
+            if any(p.name == CONFIRM and p.annotation is not inspect.Parameter.empty for p in item.parameters):
+                # The person's confirmation in the chat is the confirmation: what runs must do what they approved,
+                # not show a preview of it (`hz calendar respond ... --confirm`, `hz system plugin add --confirm`).
+                arguments[CONFIRM] = True
             call = ProposedCall(
                 session=session,
                 module=item.record.qualname,
