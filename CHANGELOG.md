@@ -4,6 +4,11 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.2.0](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.2.0) - 2026-10-24
 
+Heinzelmännchen now works for you while you're away. A daemon on your machine runs jobs on a schedule and leaves
+a receipt for every run; workflow contracts, Markdown files with frontmatter, compile to those jobs. Modules declare
+the capabilities they need (`tracker:read`, `documents:read,write`) and configuration binds adapters to them; agent
+runners for Claude Code and any command-line agent draft the results. Credentials live in the OS keychain, `hz` tells
+you when a newer release exists, and nothing is sent home. Adapters for GitHub and Atlassian ship as plugins.
 
 ### ✨ Features
 
@@ -25,6 +30,10 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.1.0](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.1.0) - 2026-10-24
 
+The first release: the foundation the workflows will build on. A kernel that discovers modules and the lets they
+advertise; every operation as a CLI command, an MCP tool and a REST endpoint; layered configuration, health checks
+and plugin management with a template and a first-party `clock` plugin; agent skills for coding agents; and releases
+with provenance attestations and an SBOM. What comes next is in the [roadmap](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/INTENT.md#where-we-are).
 
 ### ✨ Features
 
