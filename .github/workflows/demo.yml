@@ -2,7 +2,11 @@ name: Demo
 
 # Re-records the README's demo GIF from docs/assets/demo.tape with VHS when the tape changes or on demand, and opens a
 # pull request with the new GIF. Rendering isn't byte-identical between runs, so it doesn't run on every code change.
-# The tape runs the real `hz` built from this checkout; only the install line is faked. Look at the GIF before merging.
+# The tape is assembled from docs/assets/demo-intro.tape and the modules' demo.tape snippets (`make fix`; `make check`
+# fails while it is stale), so a changed snippet changes the tape and triggers this. It runs the real `hz` built from
+# this checkout; only the install line is faked. `make demo` renders the same locally.
+# macOS, not Linux: a Linux render once lost the last command's output, and macOS is where `make demo` is checked.
+# Look at the GIF's last frames before merging.
 
 on:
   push:
@@ -20,7 +24,7 @@ concurrency:
 jobs:
   demo:
     name: Regenerate the demo GIF
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 15
     permissions:
       contents: write # push the docs/demo branch

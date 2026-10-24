@@ -10,7 +10,7 @@
 | `codeql.yml`, `scorecard.yml` | `main`, PRs, weekly | code scanning and supply-chain checks |
 | `fuzz.yml` | PRs touching the contract parser, weekly, dispatch | fuzzes the workflow contract parser with atheris (`make fuzz`, core only) |
 | `claude-review.yml` | PRs, opt-in (`vars.CLAUDE_REVIEW`) | reviewer agents comment GO / NO-GO |
-| `demo.yml` | push to `main` touching the tape, README, `src/` or clock; dispatch | re-records `docs/assets/demo.gif` with VHS and opens the PR `docs: regenerate the demo` if it changed (core only: it runs `hz` commands) |
+| `demo.yml` | push to `main` changing `docs/assets/demo.tape` (assembled from the intro and modules' snippets), dispatch | re-records `docs/assets/demo.gif` with VHS on macOS and opens the PR `docs: regenerate the demo` if it changed (core only: it runs `hz` commands; locally `make demo`) |
 
 Pin actions to full SHAs with the tag as a comment (`gh api repos/<o>/<r>/commits/<tag> --jq .sha`), `permissions: {}`
 at the top and least privilege per job, `persist-credentials: false`, untrusted `${{ }}` into `run:` only via `env:`.

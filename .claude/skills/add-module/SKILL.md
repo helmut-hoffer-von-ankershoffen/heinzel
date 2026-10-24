@@ -27,6 +27,20 @@ is no registry to edit. A package nested in a module's package that declares its
 5. Regenerate the references with `make docs` (`make lint` fails until you do).
 6. Check it shows up: `uv run hz system modules`, `uv run hz <name> --help`.
 7. Update README (usage) and ARCHITECTURE.md if the module is part of the core story.
+8. Optional, for a built-in module or a first-party plugin under packages/ worth showing in the README demo: add a
+   `demo.tape` next to its `__init__.py` with a few real `hz` commands (`Type`, `Enter`, `Wait`, `Sleep`, `Hide`,
+   `Show`; `Require` for other programs it pipes into), run `make fix` to regenerate docs/assets/demo.tape and
+   `make demo` to render the GIF; look at its last frames before committing it. Rules and an example:
+   CONTRIBUTING.md, "The README demo".
+
+## Setup step (optional)
+
+If people must or may configure the module before using it, declare one setup step: `@module.setup` (or
+`required=True`) on a function that asks through an injected `Prompter` (`text`, `choice`, `choices`, `confirm`,
+`number`, `secret`) and writes through `ConfigEditor.write("<module>.<key>", value)` and `Credentials.set(...)`. It
+becomes `hz <module> setup` and part of `hz setup` ([ADR 0032](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0032-modules-declare-interactive-setup-steps.md)).
+Modules without a declared step get none. Test it with scripted answers: `ScriptedPrompter([...])` bound with
+`kernel.bind(Prompter, ...)`, or the `hz_prompter` fixture.
 
 ## Red flags
 

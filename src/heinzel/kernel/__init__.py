@@ -12,9 +12,11 @@ from heinzel.kernel._config import (
     KERNEL_SECTION,
     PROJECT_FILENAME,
     Config,
+    ConfigEditor,
     ConfigFile,
     ModuleSettings,
     env_prefix,
+    toml_value,
     user_config_dir,
 )
 from heinzel.kernel._credentials import (
@@ -44,11 +46,13 @@ from heinzel.kernel._lets import (
     RequirementLet,
     ServiceLet,
     SettingsLet,
+    SetupLet,
     Status,
     schedule_problem,
 )
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
+from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
     Calendar,
     Chat,
@@ -79,6 +83,7 @@ __all__ = [
     "CORE_DISTRIBUTION",
     "ENTRY_POINT_GROUP",
     "FILENAME",
+    "INTERRUPT",
     "KERNEL_SECTION",
     "MODES",
     "PROJECT_FILENAME",
@@ -94,6 +99,7 @@ __all__ = [
     "CodeHost",
     "CompiledJobs",
     "Config",
+    "ConfigEditor",
     "ConfigFile",
     "CredentialBackend",
     "CredentialLet",
@@ -123,6 +129,7 @@ __all__ = [
     "Participant",
     "PostedMessage",
     "Progress",
+    "Prompter",
     "ProviderLet",
     "PullRequest",
     "ReleaseCache",
@@ -131,10 +138,13 @@ __all__ = [
     "Requirement",
     "RequirementLet",
     "RunStatus",
+    "ScriptExhausted",
+    "ScriptedPrompter",
     "SectionReplacement",
     "ServiceLet",
     "Settings",
     "SettingsLet",
+    "SetupLet",
     "Status",
     "TokenUsage",
     "ToolProfile",
@@ -151,6 +161,7 @@ __all__ = [
     "requirement_from_receipt",
     "schedule_problem",
     "subprocess_environment",
+    "toml_value",
     "user_config_dir",
     "walk",
 ]
