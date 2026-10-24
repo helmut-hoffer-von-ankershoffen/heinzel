@@ -53,6 +53,7 @@ then serves both without extra code.
   no authentication, and a web page in the user's browser can reach `127.0.0.1` too, directly or through DNS
   rebinding. So it refuses with `403` and a message saying why any request whose Host isn't `localhost`,
   `127.0.0.1` or `[::1]` on the port it listens on, unless the user lists the name in `[hz] api_allowed_hosts` (user
-  scope only, for serving on another interface), and any request carrying an Origin that isn't its own. Operations
+  scope only, for serving on another interface; on port 80 or 443 a Host without a port counts), and any request
+  carrying an Origin that isn't its own, or, without an Origin, `Sec-Fetch-Site: cross-site` or `same-site`. Operations
   that spend money or act unattended are not REST endpoints at all: `hz workflow run` and `hz system daemon tick`
   declare `heads={"cli", "mcp"}` (launchd and systemd run the CLI). Tests: `tests/integration/rest_security_test.py`.

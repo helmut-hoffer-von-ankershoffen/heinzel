@@ -65,6 +65,25 @@ def test_a_cross_origin_post_is_refused(app):
     assert "another origin" in response.json()["error"]
 
 
+@pytest.mark.parametrize(
+    ("site", "status"), [("cross-site", 403), ("same-site", 403), ("same-origin", 200), ("none", 200)]
+)
+def test_without_an_origin_a_request_another_site_made_is_refused(app, site, status):
+    client = TestClient(app, base_url="http://localhost:8000")
+    response = client.post("/notes/touch", headers={"Sec-Fetch-Site": site})
+    assert response.status_code == status
+    if status == 403:
+        assert "Sec-Fetch-Site" in response.json()["error"]
+
+
+@pytest.mark.parametrize("port", [80, 443])
+def test_on_a_default_port_a_host_without_a_port_works(make_kernel, port):
+    app = api.build(make_kernel(builtins=True, notes=notes()), port=port)
+    assert TestClient(app, base_url="http://localhost").get("/notes/title").status_code == 200
+    assert TestClient(app, base_url=f"http://localhost:{port}").get("/notes/title").status_code == 200
+    assert TestClient(app, base_url="http://localhost:8000").get("/notes/title").status_code == 403
+
+
 def test_spending_and_unattended_operations_are_not_rest_endpoints(make_kernel):
     client = TestClient(api.build(make_kernel(builtins=True)), base_url="http://localhost")
     assert client.post("/system/daemon/tick").status_code == 404

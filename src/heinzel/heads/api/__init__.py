@@ -25,6 +25,7 @@ from heinzel.kernel import HeinzelError, Kernel, boot
 HEAD = "api"
 UNAVAILABLE = 503
 FORBIDDEN = 403
+DEFAULT_PORTS = frozenset({80, 443})
 LOOPBACK = frozenset({"localhost", "127.0.0.1", "[::1]"})
 """Hosts the REST head always answers; `[hz] api_allowed_hosts` adds others."""
 
@@ -46,7 +47,10 @@ def build(kernel: Kernel, *, port: int | None = None, allowed_hosts: Iterable[st
 
     @app.middleware("http")
     async def local_only(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        if problem := refusal(request.headers.get("host", ""), request.headers.get("origin"), hosts, port):
+        headers = request.headers
+        if problem := refusal(
+            headers.get("host", ""), headers.get("origin"), hosts, port, headers.get("sec-fetch-site")
+        ):
             return JSONResponse(status_code=FORBIDDEN, content={"error": problem})
         return await call_next(request)
 
@@ -68,10 +72,17 @@ def build(kernel: Kernel, *, port: int | None = None, allowed_hosts: Iterable[st
     return app
 
 
-def refusal(host: str, origin: str | None, hosts: frozenset[str], port: int | None) -> str | None:
-    """Why a request is refused, or None: its Host must be an allowed name on our port, its Origin our own."""
+def refusal(
+    host: str, origin: str | None, hosts: frozenset[str], port: int | None, fetch_site: str | None = None
+) -> str | None:
+    """Why a request is refused, or None: its Host must be an allowed name on our port, its Origin our own.
+
+    Without an Origin, a browser's `Sec-Fetch-Site: cross-site` or `same-site` still marks a request another page
+    made. On port 80 or 443 a Host without a port is the same port.
+    """
     name, given = _split(host)
-    if name not in hosts or (port is not None and given != str(port)):
+    default = port in DEFAULT_PORTS and given == ""
+    if name not in hosts or (port is not None and given != str(port) and not default):
         where = f" on port {port}" if port is not None else ""
         return (
             f"Refused: this server answers requests to {', '.join(sorted(hosts))}{where}, not {host!r}. If you serve "
@@ -79,6 +90,8 @@ def refusal(host: str, origin: str | None, hosts: frozenset[str], port: int | No
         )
     if origin is not None and origin.strip().lower() not in {f"http://{host.lower()}", f"https://{host.lower()}"}:
         return f"Refused: a request from another origin ({origin}) can't call operations; use the CLI or MCP."
+    if origin is None and (fetch_site or "").strip().lower() in {"cross-site", "same-site"}:
+        return f"Refused: a request another site made (Sec-Fetch-Site: {fetch_site}) can't call operations."
     return None
 
 
