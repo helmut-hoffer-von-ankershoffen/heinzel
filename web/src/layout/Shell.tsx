@@ -165,7 +165,9 @@ export function Shell() {
             </aside>
           )}
           {terminalOpen && (
-            <div className={cn("min-h-0", chatOpen && !home && !terminalFull ? "h-1/2 border-t border-border" : "flex-1")}>
+            <div
+              className={cn("min-h-0", chatOpen && !home && !terminalFull ? "h-1/2 border-t border-border" : "flex-1")}
+            >
               <TerminalPanel
                 full={terminalFull}
                 onToggleFull={() => setTerminalFull((full) => !full)}
