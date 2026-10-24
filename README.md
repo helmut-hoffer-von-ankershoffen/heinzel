@@ -23,12 +23,12 @@
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py    |       26 |        2 |        0 |        0 |     92% |    36, 64 |
 | src/heinzel/modules/system/plugin/\_service.py       |      124 |        5 |       28 |        2 |     95% |38-\>40, 115-116, 122, 129, 222 |
 | src/heinzel/modules/workflow/\_contracts.py          |      340 |        2 |      132 |        1 |     99% |   462-463 |
-| src/heinzel/modules/workflow/\_models.py             |      283 |        2 |       62 |        2 |     99% |72, 92, 425-\>423 |
-| src/heinzel/modules/workflow/\_render.py             |       81 |        1 |       32 |        1 |     98% |        47 |
-| src/heinzel/modules/workflow/\_service.py            |      309 |        3 |       88 |        2 |     99% |234, 302-303, 652-\>660 |
-| **TOTAL**                                            | **5052** |   **59** | **1148** |   **21** | **99%** |           |
+| src/heinzel/modules/workflow/\_models.py             |      317 |        2 |       62 |        2 |     99% |74, 94, 427-\>425 |
+| src/heinzel/modules/workflow/\_render.py             |      121 |        8 |       50 |        3 |     91% |94, 110, 181-191 |
+| src/heinzel/modules/workflow/\_service.py            |      431 |        5 |      122 |        2 |     99% |269, 336-339, 427-428 |
+| **TOTAL**                                            | **5271** |   **68** | **1200** |   **23** | **98%** |           |
 
-56 files skipped due to complete coverage.
+57 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
