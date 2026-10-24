@@ -104,3 +104,24 @@ def test_isolation_forces_the_environment_backend_and_drops_credential_variables
     isolate_credentials(monkeypatch)
     assert os.environ["HZ_SYSTEM_CREDENTIAL__BACKEND"] == "environment"
     assert "HZ_CREDENTIAL_EXAMPLE_API_TOKEN" not in os.environ
+
+
+def test_the_terminal_is_pinned_to_ci_width_and_no_colour():
+    """CI runs at 80 columns with FORCE_COLOR set; a developer's terminal has neither, so tests pin both."""
+    from heinzel.testing import pin_terminal
+
+    environ = {"FORCE_COLOR": "1", "NO_COLOR": "1", "COLUMNS": "200"}
+    pin_terminal(environ)
+    assert environ["COLUMNS"] == environ["TERMINAL_WIDTH"] == "80"
+    assert environ["_TYPER_FORCE_DISABLE_TERMINAL"] == "1"
+    assert not {"FORCE_COLOR", "NO_COLOR"} & environ.keys()
+
+
+def test_every_test_runs_in_the_pinned_terminal():
+    assert os.environ["COLUMNS"] == "80"
+    assert "FORCE_COLOR" not in os.environ
+
+
+def test_help_wraps_at_the_pinned_width(hz):
+    widest = max(len(line) for line in hz("--help", json=False).output.splitlines())
+    assert widest <= 80

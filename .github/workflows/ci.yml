@@ -203,7 +203,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
-      - run: make template-test
+      - run: make template-test AUDIT=1
 
   build:
     name: Build

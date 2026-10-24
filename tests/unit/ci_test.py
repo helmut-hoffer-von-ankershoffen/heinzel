@@ -211,3 +211,24 @@ def test_the_release_regenerates_derived_files():
         script.index(marker) for marker in ("bump-my-version bump", "make --no-print-directory fix", "git commit")
     )
     assert bump < fix < commit
+
+
+def test_pushing_runs_check_fast_through_a_hook():
+    """What CI would catch first (format, lint, contracts, generated files, unit tests) fails before the push."""
+    config = yaml.safe_load((REPO / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
+    hooks = {hook["id"]: hook for repo in config["repos"] for hook in repo["hooks"]}
+    assert "exec make check-fast" in hooks["check-fast"]["entry"]
+    assert hooks["check-fast"]["stages"] == ["pre-push"]
+    assert "pre-push" in config["default_install_hook_types"]
+    assert "--hook-type pre-push" in (REPO / "Makefile").read_text(encoding="utf-8")
+    assert (REPO / "template" / ".pre-commit-config.yaml").resolve() == REPO / ".pre-commit-config.yaml"
+
+
+def test_the_template_audit_runs_in_ci_and_in_full_preflight():
+    """pip-audit needs network, so the rendered plugin's audit is not part of the offline `make check`."""
+    makefile = (REPO / "Makefile").read_text(encoding="utf-8")
+    assert "\tTEMPLATE_AUDIT=$(AUDIT) bash scripts/template-test.sh" in makefile
+    assert "TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" in makefile
+    assert "make audit" in (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
+    ci = "\n".join(commands(REPO / ".github" / "workflows" / "ci.yml"))
+    assert "make template-test AUDIT=1" in ci

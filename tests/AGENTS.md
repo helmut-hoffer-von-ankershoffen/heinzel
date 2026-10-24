@@ -7,4 +7,6 @@
 - `make_kernel(builtins=True, example=module, example__sub=submodule, config=..., settings_=...)` builds a kernel from
   test modules (`__` becomes `.`); `settings` gives default settings. Every test gets its own `HZ_CONFIG_HOME`,
   `HZ_DATA_DIR`, `HZ_CACHE_DIR`, `HZ_STATE_DIR`, `HZ_LOG_DIR` and `HZ_SYSTEM_DAEMON__UNIT_DIR`.
+- Tests see CI's terminal: 80 columns, no colour (`heinzel.testing.pin_terminal`), so width- or colour-dependent
+  output fails locally too.
 - Fast loop: `uv run pytest tests/unit -x -q` (`--lf` reruns failures).

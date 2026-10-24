@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Render the plugin template from this working tree and run the rendered plugin's checks against this Heinzelmännchen checkout.
-# Usage: scripts/template-test.sh [destination]   (default: a temporary directory)
+# Usage: [TEMPLATE_AUDIT=1] scripts/template-test.sh [destination]   (default: a temporary directory)
+# TEMPLATE_AUDIT=1 also runs the rendered plugin's `make audit` (pip-audit), which needs network.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,4 +27,5 @@ uv lock --quiet
 git add --all
 git -c user.name=template-test -c user.email=template-test@localhost commit --quiet -m "chore: scaffold from template"
 make check
+if [ -n "${TEMPLATE_AUDIT:-}" ]; then make audit; fi
 echo "Template rendered and checked in $destination"

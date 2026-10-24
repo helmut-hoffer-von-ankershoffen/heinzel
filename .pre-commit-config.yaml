@@ -58,6 +58,13 @@ repos:
         entry: uv run python scripts/check_confidentiality.py --commit-msg
         language: system
         stages: [commit-msg]
+      - id: check-fast
+        name: make check-fast (format, lint, contracts, generated files, unit tests)
+        entry: bash -c 'test -f pyproject.toml || exit 0; exec make check-fast' # prek also runs this from template/, which has no project
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
       - id: commitizen
         name: conventional commit message
         entry: uv run cz check --commit-msg-file
