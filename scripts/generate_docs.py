@@ -221,14 +221,9 @@ def badges(owner: str, repository: str) -> str:
             "docs/CODING_STANDARDS.md#python",
         ),
         (
-            "Ruff",
-            f"{shield}/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json",
-            "https://github.com/astral-sh/ruff",
-        ),
-        (
-            "uv",
-            f"{shield}/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json",
-            "https://github.com/astral-sh/uv",
+            "Tooling: Ruff + uv",
+            f"{shield}/badge/tooling-Ruff%20%2B%20uv-261230?logo=ruff&logoColor=d7ff64",
+            "https://astral.sh",
         ),
         ("License: MIT", f"{shield}/badge/license-MIT-green", "LICENSE"),
     ]
