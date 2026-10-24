@@ -64,7 +64,8 @@ describe("Themes", () => {
     expect(acme.querySelector("img")).toHaveAttribute("src", "/theme-assets/acme/light.svg?v=1");
     const builtIn = screen.getByTestId("theme-preview-default");
     expect(builtIn.querySelector("img")).toBeNull();
-    expect(builtIn).toHaveTextContent("🧝Heinzelmännchen");
+    expect(within(builtIn).getByTestId("heinzel-icon")).toBeInTheDocument();
+    expect(builtIn).toHaveTextContent("Heinzelmännchen");
   });
 
   it("names the plugin under a preview only when it says more than the title", async () => {
@@ -104,9 +105,9 @@ describe("Themes", () => {
     renderAt("/doctor");
     const navigation = screen.getByRole("complementary", { name: "Main" });
     expect(await within(navigation).findByText("Heinzelmännchen")).toBeInTheDocument();
-    expect(within(navigation).getByText("🧝")).toBeInTheDocument();
+    expect(within(navigation).getByTestId("heinzel-icon").querySelector("svg")).toBeInTheDocument();
     expect(within(navigation).queryByRole("img")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
-    expect(within(navigation).getByText("🧝")).toBeInTheDocument();
+    expect(within(navigation).getByTestId("heinzel-icon")).toBeInTheDocument();
   });
 });
