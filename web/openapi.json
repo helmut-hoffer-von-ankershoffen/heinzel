@@ -6599,6 +6599,187 @@
         "title": "UpdateResult",
         "type": "object"
       },
+      "UsageReport": {
+        "description": "Today's and this week's tokens and cost, and one period broken down by access, model, Heinzelmännchen, cause.",
+        "properties": {
+          "breakdowns": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/UsageRow"
+              },
+              "type": "array"
+            },
+            "description": "The period's rows by access, model, Heinzelmännchen and cause, most tokens first.",
+            "propertyNames": {
+              "enum": [
+                "access",
+                "model",
+                "heinzel",
+                "cause"
+              ]
+            },
+            "title": "Breakdowns",
+            "type": "object"
+          },
+          "budget_usd": {
+            "description": "`[ai] daily_budget_usd`, what today's meter fills against.",
+            "title": "Budget Usd",
+            "type": "number"
+          },
+          "by": {
+            "description": "The breakdown the CLI shows; all four are in `breakdowns`.",
+            "enum": [
+              "access",
+              "model",
+              "heinzel",
+              "cause"
+            ],
+            "title": "By",
+            "type": "string"
+          },
+          "label": {
+            "description": "A short label for a status item, e.g. `182k tok`.",
+            "title": "Label",
+            "type": "string"
+          },
+          "level": {
+            "description": "Today's cost against the daily budget, 0 to 1 (capped), for a meter.",
+            "title": "Level",
+            "type": "number"
+          },
+          "period": {
+            "description": "The period the breakdowns cover: `today` or `week` (the last seven days).",
+            "enum": [
+              "today",
+              "week"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "today": {
+            "$ref": "#/components/schemas/UsageTotal",
+            "description": "Since local midnight."
+          },
+          "tone": {
+            "description": "`ok` below 75% of the budget, `warn` to 100%, `over`.",
+            "enum": [
+              "ok",
+              "warn",
+              "over"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "week": {
+            "$ref": "#/components/schemas/UsageTotal",
+            "description": "The last seven days."
+          }
+        },
+        "required": [
+          "period",
+          "by",
+          "today",
+          "week",
+          "budget_usd",
+          "level",
+          "tone",
+          "label",
+          "breakdowns"
+        ],
+        "title": "UsageReport",
+        "type": "object"
+      },
+      "UsageRow": {
+        "description": "What one access option, model, Heinzelmännchen or cause spent in the period.",
+        "properties": {
+          "cost_usd": {
+            "description": "What the runs that report a cost cost, in US dollars.",
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "input_tokens": {
+            "description": "Tokens sent, without cache reads.",
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "key": {
+            "description": "The access option, model, Heinzelmännchen or cause; `unknown` when not reported.",
+            "title": "Key",
+            "type": "string"
+          },
+          "output_tokens": {
+            "description": "Tokens produced.",
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "runs": {
+            "description": "Runs counted.",
+            "title": "Runs",
+            "type": "integer"
+          },
+          "tokens": {
+            "description": "Every token moved, cache reads and writes included.",
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "unpriced": {
+            "description": "Runs that reported no cost, so the cost is at least `cost_usd`.",
+            "title": "Unpriced",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "runs",
+          "tokens",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd",
+          "unpriced"
+        ],
+        "title": "UsageRow",
+        "type": "object"
+      },
+      "UsageTotal": {
+        "description": "What a period spent in all.",
+        "properties": {
+          "cost_usd": {
+            "description": "What the priced runs cost, in US dollars.",
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "runs": {
+            "description": "Runs counted.",
+            "title": "Runs",
+            "type": "integer"
+          },
+          "since": {
+            "description": "The start of the period, in UTC: local midnight today, or seven days ago.",
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "tokens": {
+            "description": "Every token moved.",
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "unpriced": {
+            "description": "Runs that reported no cost.",
+            "title": "Unpriced",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "since",
+          "runs",
+          "tokens",
+          "cost_usd",
+          "unpriced"
+        ],
+        "title": "UsageTotal",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -6832,6 +7013,74 @@
           }
         },
         "summary": "Use an AI access option: sets capabilities.ai_access, and agent_runner if the option names one.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/ai/usage": {
+      "get": {
+        "description": "Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.",
+        "operationId": "ai_usage",
+        "parameters": [
+          {
+            "description": "`today` (since local midnight) or `week` (the last seven days).",
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "today",
+              "description": "`today` (since local midnight) or `week` (the last seven days).",
+              "enum": [
+                "today",
+                "week"
+              ],
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Break down by `access`, `model`, `heinzel` or `cause`.",
+            "in": "query",
+            "name": "by",
+            "required": false,
+            "schema": {
+              "default": "model",
+              "description": "Break down by `access`, `model`, `heinzel` or `cause`.",
+              "enum": [
+                "access",
+                "model",
+                "heinzel",
+                "cause"
+              ],
+              "title": "By",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.",
         "tags": [
           "ai"
         ]

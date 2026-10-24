@@ -11,8 +11,8 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import AgentResult, AgentRunner, Budget, Check, HeinzelError, Module, Status, ToolProfile
-from heinzel.kernel import CapabilityView
+from heinzel import AgentResult, AgentRunner, Budget, Check, HeinzelError, Kernel, Module, Status, ToolProfile
+from heinzel.kernel import CapabilityView, UsageEntry, record_usage
 from heinzel.modules.system.runner._access import ClaudeCodeAccess
 from heinzel.modules.system.runner._claude import BIND_COMMAND_RUNNER, HOSTS, ClaudeCodeRunner, login_check
 from heinzel.modules.system.runner._claude import DOCS as CLAUDE_CODE_DOCS
@@ -42,6 +42,7 @@ PROMPT_LIMIT = 6000
 @module.operation(read_only=False, heads={"cli", "mcp", "web"}, requires=["agent-runner:read"])
 def ask(
     runner: AgentRunner,
+    kernel: Kernel,
     settings: RunnerSettings,
     prompt: Annotated[
         str,
@@ -70,13 +71,15 @@ def ask(
         raise HeinzelError(msg)
     # An empty working directory: the answer reads nothing on this machine.
     with tempfile.TemporaryDirectory(prefix="hz-ask-") as directory:
-        return runner.run(
+        result = runner.run(
             ASK_PREAMBLE + prompt.strip(),
             contract="chat",
             tools=ToolProfile(working_dir=Path(directory)),
             timeout=ASK_TIMEOUT,
             budget=Budget(max_usd=cap),
         )
+    record_usage(kernel, UsageEntry.of(result, "ask"))
+    return result
 
 
 def claude_code_checks(settings: RunnerSettings) -> list[Check]:

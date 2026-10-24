@@ -30,6 +30,7 @@ from heinzel import (
     ToolProfile,
     redact_emails,
 )
+from heinzel.kernel import UsageEntry, record_usage
 from heinzel.modules.system.runner.chat._models import ChatAction, ChatContext, ChatMessage, ChatSession
 from heinzel.modules.system.runner.chat._policy import guarded_settings, refusal
 from heinzel.modules.system.runner.chat._store import MAX_MESSAGES, ChatStore, dumps, now
@@ -206,13 +207,15 @@ class ChatService:
         with tempfile.TemporaryDirectory(prefix="hz-chat-") as directory:
             server = McpServer(command=server_command(chat.id, Path.cwd()))
             tools = ToolProfile(working_dir=Path(directory), read_files=False, mcp_servers={SERVER: server})
-            return runner.run(
+            result = runner.run(
                 transcript(chat.messages),
                 contract=contract(chat.context),
                 tools=tools,
                 timeout=CHAT_TIMEOUT,
                 budget=Budget(max_usd=cap),
             )
+        record_usage(self._kernel, UsageEntry.of(result, "chat"))
+        return result
 
     def _answer(self, answered: ChatSession, known: set[str], cap: float, result: AgentResult) -> ChatSession:
         proposed = [action.id for action in answered.actions if action.id not in known]
