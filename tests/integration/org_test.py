@@ -47,6 +47,9 @@ def test_show_reports_the_configured_profile(hz, monkeypatch):
         "missing": [],
         "fix": "hz setup",
     }
+    shown = hz("org", "show", json=False).output
+    assert "08-16" in shown
+    assert "Missing" not in shown
     doctor = hz("system", "doctor").json["checks"]["org"]
     assert doctor == [
         {"name": "profile", "status": "up", "detail": "mira, product-manager, Europe/Lisbon 08-16", "fix": ""}

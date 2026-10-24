@@ -36,12 +36,12 @@ def test_a_profile_says_what_is_missing_and_what_to_run():
     assert profile.fix == "hz setup"
 
 
-@pytest.mark.parametrize("value", ["08-17", " 8 - 17 ", [8, 17], (8, 17)])
+@pytest.mark.parametrize("value", ["08-17", " 8 - 17 ", "[8, 17]", [8, 17], (8, 17)])
 def test_working_hours_are_read_as_text_or_a_pair(value):
     assert OrgSettings(working_hours=value).working_hours == (8, 17)
 
 
-@pytest.mark.parametrize("value", ["17-08", "9 to 5", [9], ["9", "17"], "00-25", 9])
+@pytest.mark.parametrize("value", ["17-08", "9 to 5", "[8, 17", [9], ["9", "17"], [True, 17], "00-25", 9])
 def test_working_hours_must_be_a_working_day(value):
     with pytest.raises(ValidationError, match="working hours"):
         OrgSettings(working_hours=value)
