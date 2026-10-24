@@ -228,7 +228,7 @@ def test_publish_operations_must_exist_and_write(make, dirs):
     put(me, text=EXAMPLE.read_text().replace("notes.publish", "notes.title"))
     found = make().contracts()[0].diagnostics
     assert [(d.code, d.severity, d.line, d.field) for d in found] == [("HZC013", "error", 26, "hz.publishes.0.action")]
-    put(me, text=EXAMPLE.read_text().replace("notes.publish", "mail.send"))
+    put(me, text=EXAMPLE.read_text().replace("notes.publish", "nowhere.send"))
     found = make().contracts()[0].diagnostics
     assert [(d.code, d.severity) for d in found] == [("HZC012", "warning")]
 

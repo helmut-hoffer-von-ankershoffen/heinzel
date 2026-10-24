@@ -1,13 +1,17 @@
-"""What the daemon looks for on its own: doctor's findings, a newer release and meetings that start soon.
+"""What the daemon looks for on its own: doctor's findings, a newer release, meetings soon and important mail.
 
-Once an hour doctor's findings and a newer release (ADR 0043); at every tick the meetings that start soon (ADR 0059).
-It runs at the end of a tick, before notices pop up, rather than as a job of its own: it only records notices, and an
-hourly receipt for it would say nothing a notice doesn't.
+Once an hour doctor's findings and a newer release (ADR 0043); at every tick the meetings that start soon and new
+important mail (ADR 0059). It runs at the end of a tick, before notices pop up, rather than as a job of its own: it
+only records notices, and a receipt for it would say nothing a notice doesn't.
 """
+
+import logging
 
 from heinzel import HeinzelError, Kernel, NoticeKind, Notifications, OperationLet, Status, __version__
 from heinzel.kernel import ReleaseCache
 from heinzel.modules.system.notify._channels import DaemonState
+
+logger = logging.getLogger(__name__)
 
 SHOWN_PROBLEMS = 3
 
@@ -31,21 +35,34 @@ def watch(kernel: Kernel, notifications: Notifications, wants: "set[NoticeKind]"
     return reported
 
 
-def remind(kernel: Kernel, wants: "set[NoticeKind]") -> int:
-    """Run `hz calendar remind` through the kernel (modules don't import each other): notices of meetings soon.
+TICKS = ((NoticeKind.MEETING, "calendar", "remind"), (NoticeKind.MAIL, "mail", "notice"))
+"""What runs at every tick, through the kernel (modules don't import each other): the kind of notice it records, and
+its operation, `hz calendar remind` and `hz mail notice`."""
 
-    Every tick, unlike `watch`, since a meeting's reminder is due within minutes; nothing when meeting notices are off
-    or no module brings the operation.
+
+def remind(kernel: Kernel, wants: "set[NoticeKind]") -> int:
+    """Run what looks for meetings that start soon and new important mail; how many notices they recorded.
+
+    Every tick, unlike `watch`, since a meeting's reminder is due within minutes; each only while its kind of notice
+    is on and a module brings its operation. One that fails is logged and the others still run.
     """
-    if NoticeKind.MEETING not in wants:
-        return 0
-    found = next(
-        (let for owner, let in kernel.lets(OperationLet) if (owner.qualname, let.name) == ("calendar", "remind")),
-        None,
-    )
-    if found is None or not kernel.available(found.func):
-        return 0
-    return int(getattr(kernel.invoke(found), "reminded", 0))
+    noticed = 0
+    for kind, qualname, name in TICKS:
+        if kind not in wants:
+            continue
+        found = next(
+            (let for owner, let in kernel.lets(OperationLet) if (owner.qualname, let.name) == (qualname, name)), None
+        )
+        if found is None or not kernel.available(found.func):
+            continue
+        try:
+            result = kernel.invoke(found)
+        except Exception as exc:  # noqa: BLE001 - isolation boundary: a broken calendar or mailbox can't stop the other
+            # Its type only: an adapter's message may echo a subject or a query, and nothing logs mail.
+            logger.warning("hz %s %s failed: %s", qualname, name, type(exc).__name__)
+            continue
+        noticed += sum(int(getattr(result, field, 0) or 0) for field in ("reminded", "noticed"))
+    return noticed
 
 
 def daemon_state(kernel: Kernel) -> DaemonState | None:

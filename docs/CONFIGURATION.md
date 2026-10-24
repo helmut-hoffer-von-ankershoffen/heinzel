@@ -98,6 +98,14 @@ Plugins add their own tables.
 | `offline_after` | `HZ_GRAPH__OFFLINE_AFTER` | `'2d'` | How long a Heinzelmännchen may be silent (no entry, not even a heartbeat) before it shows as offline, e.g. 36h. |
 | `weeks` | `HZ_GRAPH__WEEKS` | `4` | How many weeks of kept promises the graph counts. |
 
+## `[mail]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `days` | `HZ_MAIL__DAYS` | `7` | Days the inbox (`hz mail`) looks back for unread mail. |
+| `important_label` | `HZ_MAIL__IMPORTANT_LABEL` | `'IMPORTANT'` | The label that marks mail as important, in your mailbox's words (Gmail's is `IMPORTANT`): important unread mail comes first and gets a notice. |
+| `notify_important` | `HZ_MAIL__NOTIFY_IMPORTANT` | `True` | Record a notice for important unread mail as it arrives (`[system.notify] mail` turns all mail notices off). |
+
 ## `[org]`
 
 | Key | Environment variable | Default | Description |
@@ -157,6 +165,7 @@ Plugins add their own tables.
 | `failed` | `HZ_SYSTEM_NOTIFY__FAILED` | `True` | Notify when a contract run on your daemon failed. |
 | `doctor` | `HZ_SYSTEM_NOTIFY__DOCTOR` | `True` | Notify when `hz system doctor` finds something degraded or down. |
 | `release` | `HZ_SYSTEM_NOTIFY__RELEASE` | `False` | Notify when a newer release of Heinzelmännchen is out. |
+| `mail` | `HZ_SYSTEM_NOTIFY__MAIL` | `True` | Notify when important unread mail arrives (`[mail] notify_important`). |
 | `meeting` | `HZ_SYSTEM_NOTIFY__MEETING` | `True` | Notify shortly before a meeting starts, with its join link (`[calendar] remind_minutes`). |
 | `quiet` | `HZ_SYSTEM_NOTIFY__QUIET` | `False` | Quiet mode: record notices in the list, never pop one up, urgent ones included. |
 | `working_hours` | `HZ_SYSTEM_NOTIFY__WORKING_HOURS` | `True` | Hold notices that aren't urgent until your working hours ([org] working_hours, Monday to Friday, in [org] timezone) start. |

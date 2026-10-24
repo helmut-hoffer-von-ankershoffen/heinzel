@@ -372,7 +372,16 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
         sock.close()
         raise
     # Open notice streams end on their own within minutes; on Ctrl+C don't wait for them.
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off", timeout_graceful_shutdown=1))
+    server = uvicorn.Server(
+        uvicorn.Config(
+            # No access log: a request line can carry what an operation's parameters hold, such as a reply's text.
+            app,
+            log_level="warning",
+            access_log=False,
+            lifespan="off",
+            timeout_graceful_shutdown=1,
+        )
+    )
     url = session_url(bound, token, base)
 
     def when_started() -> None:

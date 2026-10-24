@@ -16,6 +16,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
 | [`google`](#google) | Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
 | [`graph`](#graph) | Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits. |
+| [`mail`](#mail) | Your mail: unread and important first, conversations, drafts and confirmed sends. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
 | [`report`](#report) | Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`). |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
@@ -147,6 +148,26 @@ Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flo
 | Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits. | `hz graph` | `graph` | — | `GET /api/graph` |  |  |
 
 Settings: [`[graph]`](CONFIGURATION.md#graph).
+
+## `mail`
+
+Your mail: unread and important first, conversations, drafts and confirmed sends.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the unread mail in your inbox from the last `[mail] days`, the important first. | `hz mail` | `mail` | — | `GET /api/mail` |  |  |
+| Find mail of the last days by sender, subject and label. | `hz mail search` | `mail_search` | — | `GET /api/mail/search` |  | expert |
+| Show a conversation: every message's text, oldest first, as plain text without addresses. | `hz mail show` | `mail_show` | — | `GET /api/mail/show` |  |  |
+| Show a draft as it stands, possibly edited in your mail app since. | `hz mail preview` | `mail_preview` | — | `GET /api/mail/preview` |  | expert |
+| Count the unread mail in your inbox, in one line for a status bar; never fails. | `hz mail unread` | `mail_unread` | — | `GET /api/mail/unread` |  |  |
+| Keep a new message in your drafts, unsent; shown first, kept with `--confirm`. | `hz mail draft` | `mail_draft` | — | `POST /api/mail/draft` | yes | expert |
+| Keep a reply in your drafts, in its conversation, unsent; shown first, kept with `--confirm`. | `hz mail reply` | `mail_reply` | — | `POST /api/mail/reply` | yes | expert |
+| Send a draft: shown first with its recipients and text, sent with `--confirm` if unchanged since. | `hz mail send` | — | — | `POST /api/mail/send` | yes | expert |
+| Archive a conversation (out of the inbox, nothing deleted); shown first, done with `--confirm`. | `hz mail archive` | `mail_archive` | — | `POST /api/mail/archive` | yes | expert |
+| File a conversation under labels (never Spam or Trash); shown first, done with `--confirm`. | `hz mail label` | `mail_label` | — | `POST /api/mail/label` | yes | expert |
+| Record a notice for each important unread message of the last hour, from whom and about what. | `hz mail notice` | — | — | — | yes | expert |
+
+Settings: [`[mail]`](CONFIGURATION.md#mail).
 
 ## `org`
 

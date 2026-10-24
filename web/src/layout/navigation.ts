@@ -1,7 +1,7 @@
 // The navigation tree: sections and their screens. Contracts add one entry each, from `hz workflow list`.
 // A screen names the operation it shows; outside expert mode only screens of everyday operations are listed, the
 // same split `hz --help` makes (ADR 0041). A screen that isn't listed still opens by its URL.
-import { Boxes, CalendarDays, type LucideIcon, Network, Shapes, Share2, Users, Workflow } from "lucide-react";
+import { Boxes, CalendarDays, type LucideIcon, Mail, Network, Shapes, Share2, Users, Workflow } from "lucide-react";
 import type { SchemaExpertMode } from "@/api/client";
 import type { MessageKey } from "@/i18n";
 
@@ -23,7 +23,10 @@ export const CONTRACTS_SECTION: MessageKey = "nav.contracts";
 export const sections: NavSection[] = [
   {
     label: "nav.yourDay",
-    items: [{ to: "/calendar", label: "nav.calendar", icon: CalendarDays, operation: "calendar:calendar" }],
+    items: [
+      { to: "/calendar", label: "nav.calendar", icon: CalendarDays, operation: "calendar:calendar" },
+      { to: "/mail", label: "nav.mail", icon: Mail, operation: "mail:mail" },
+    ],
   },
   {
     label: CONTRACTS_SECTION,

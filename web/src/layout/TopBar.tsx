@@ -16,6 +16,7 @@ const screens: { path: string; title: MessageKey; command: string }[] = [
   { path: "/contracts", title: "nav.graph", command: "hz workflow graph" },
   { path: "/graph", title: "nav.teamGraph", command: "hz graph" },
   { path: "/calendar", title: "nav.calendar", command: "hz calendar" },
+  { path: "/mail", title: "nav.mail", command: "hz mail" },
   { path: "/org", title: "nav.orgChart", command: "hz org show" },
   { path: "/team", title: "nav.team", command: "hz team show" },
   { path: "/inventory/types", title: "nav.assetTypes", command: "hz workflow playbooks" },

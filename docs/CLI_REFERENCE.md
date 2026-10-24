@@ -26,6 +26,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `google`: (expert) Google Docs, Sheets, Drive,...
 * `graph`: Show your team&#x27;s promises: who keeps which...
 * `join`: Join a team from its invite line: finds...
+* `mail`: Your mail: unread and important first,...
 * `org`: Your profile, and the team, org and...
 * `report`: Telemetry: log what a Heinzelmännchen did,...
 * `setup`: Set up what is still missing, wizard...
@@ -707,6 +708,242 @@ $ hz join [OPTIONS] {URL}
 * `--handle, --as <str>`: Your handle in the team&#x27;s roster.
 * `--answers <file>`: Answer in advance from a TOML file with a table per module, e.g. `role = &quot;engineer&quot;` in the org table; runs without a terminal, for coding agents and teams. Never put secrets in it.
 * `--json`: Print what happened as JSON on stdout.
+* `--help`: Show this message and exit.
+
+## `hz mail`
+
+Your mail: unread and important first, conversations, drafts and confirmed sends.
+
+**Usage**:
+
+```console
+$ hz mail [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--everything / --no-everything`: List read mail in the inbox too, not only unread.  [default: no-everything]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `archive`: (expert) Archive a conversation (out of...
+* `draft`: (expert) Keep a new message in your...
+* `label`: (expert) File a conversation under labels...
+* `notice`: (expert) Record a notice for each...
+* `preview`: (expert) Show a draft as it stands,...
+* `reply`: (expert) Keep a reply in your drafts, in...
+* `search`: (expert) Find mail of the last days by...
+* `send`: (expert) Send a draft: shown first with...
+* `show`: Show a conversation: every message&#x27;s text,...
+* `unread`: Count the unread mail in your inbox, in...
+
+### `hz mail archive`
+
+(expert) Archive a conversation (out of the inbox, nothing deleted); shown first, done with `--confirm`.
+
+**Usage**:
+
+```console
+$ hz mail archive [OPTIONS] {thread}
+```
+
+**Arguments**:
+
+* `thread`: The conversation&#x27;s id: `thread` of a message `hz mail` lists.  [required]
+
+**Options**:
+
+* `--confirm / --no-confirm`: Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz mail draft`
+
+(expert) Keep a new message in your drafts, unsent; shown first, kept with `--confirm`.
+
+**Usage**:
+
+```console
+$ hz mail draft [OPTIONS] {to} {subject} {text}
+```
+
+**Arguments**:
+
+* `to`: Email addresses, comma-separated: ada@example.com,bo@example.com.  [required]
+* `subject`: The subject, one line.  [required]
+* `text`: The message, plain text.  [required]
+
+**Options**:
+
+* `--cc <str>`: Email addresses, comma-separated: ada@example.com,bo@example.com.
+* `--confirm / --no-confirm`: Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz mail label`
+
+(expert) File a conversation under labels (never Spam or Trash); shown first, done with `--confirm`.
+
+**Usage**:
+
+```console
+$ hz mail label [OPTIONS] {thread}
+```
+
+**Arguments**:
+
+* `thread`: The conversation&#x27;s id: `thread` of a message `hz mail` lists.  [required]
+
+**Options**:
+
+* `--add <str>`: Labels to add, comma-separated, e.g. `Projects`.
+* `--remove <str>`: Labels to remove, comma-separated; `unread` marks it read.
+* `--confirm / --no-confirm`: Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz mail notice`
+
+(expert) Record a notice for each important unread message of the last hour, from whom and about what.
+
+**Usage**:
+
+```console
+$ hz mail notice [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz mail preview`
+
+(expert) Show a draft as it stands, possibly edited in your mail app since.
+
+**Usage**:
+
+```console
+$ hz mail preview [OPTIONS] {draft}
+```
+
+**Arguments**:
+
+* `draft`: The draft&#x27;s id, as `hz mail draft` or `hz mail reply` answered it.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz mail reply`
+
+(expert) Keep a reply in your drafts, in its conversation, unsent; shown first, kept with `--confirm`.
+
+**Usage**:
+
+```console
+$ hz mail reply [OPTIONS] {message} {text}
+```
+
+**Arguments**:
+
+* `message`: The message to answer: `id` of one `hz mail show` lists.  [required]
+* `text`: The message, plain text.  [required]
+
+**Options**:
+
+* `--everyone / --no-everyone`: Answer everyone it went to, not only its sender.  [default: no-everyone]
+* `--confirm / --no-confirm`: Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz mail search`
+
+(expert) Find mail of the last days by sender, subject and label.
+
+**Usage**:
+
+```console
+$ hz mail search [OPTIONS] {query}
+```
+
+**Arguments**:
+
+* `query`: Terms like `from:ada@example.com subject:&quot;Plan&quot; label:INBOX`; all must match.  [required]
+
+**Options**:
+
+* `--days <int>`: Days back to look through.  [default: 30]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz mail send`
+
+(expert) Send a draft: shown first with its recipients and text, sent with `--confirm` if unchanged since.
+
+**Usage**:
+
+```console
+$ hz mail send [OPTIONS] {draft}
+```
+
+**Arguments**:
+
+* `draft`: The draft&#x27;s id, as `hz mail draft` or `hz mail reply` answered it.  [required]
+
+**Options**:
+
+* `--seen <str>`: The draft version to send: run `hz mail send DRAFT` first and copy the command it prints.
+* `--confirm / --no-confirm`: Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz mail show`
+
+Show a conversation: every message&#x27;s text, oldest first, as plain text without addresses.
+
+**Usage**:
+
+```console
+$ hz mail show [OPTIONS] {thread}
+```
+
+**Arguments**:
+
+* `thread`: The conversation&#x27;s id: `thread` of a message `hz mail` lists.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz mail unread`
+
+Count the unread mail in your inbox, in one line for a status bar; never fails.
+
+**Usage**:
+
+```console
+$ hz mail unread [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
 ## `hz org`

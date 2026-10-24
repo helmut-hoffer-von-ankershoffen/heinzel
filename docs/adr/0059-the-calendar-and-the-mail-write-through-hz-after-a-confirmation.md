@@ -97,6 +97,18 @@ and `plugins/heinzel-google/tests/integration/capability_test.py` (only a publis
   before a meeting, with its join link. The daemon's notify step runs it at every tick, as it runs doctor hourly: a
   job would write a receipt every five minutes for everyone. In a chat, a proposed call of an operation with a
   `confirm` parameter is proposed with `confirm` set: the person's confirmation is the confirmation.
+- **The mail module** (`hz mail`, built in): unread mail in the inbox, the important first (`[mail]
+  important_label`), `search` in the shared query syntax, `show` (a conversation), `preview` (a draft), `unread` (a
+  count for a status bar, never failing), and the writes `draft`, `reply`, `send`, `archive` and `label`, each
+  showing what it would do until `--confirm`. `send` is for people only (CLI and web head): agents read untrusted
+  mail and draft, and a person sends, having seen the whole draft with every recipient; it prints a command with
+  `--seen <its message id>` and sends only that version. Mail reads go to MCP over stdio only, never to an
+  unauthenticated head (REST, MCP over HTTP): mail bodies hold reset links and codes. Texts and subjects that reads and
+  drafts return have their addresses replaced (`redact_emails`) and control characters removed, since MCP hands them
+  to a model; no text is logged, and the web head writes no access log. `hz mail
+  notice`, run at every tick by the notify step like the calendar's reminders, records a `mail` notice for important
+  unread mail of the last hour (`[mail] notify_important`, `[system.notify] mail`). The web app's Mail page shows a
+  message as plain text in a `<pre>`: no HTML is rendered and no image or other remote content loads.
 - **Optional publish operations** (amending ADR 0028's "only read-only operations can be optional"): a built-in
   module that writes a capability nobody connected must not make doctor degraded for everyone. A publish operation
   may be `optional=True`: while nothing is bound, its unmet requirement is no doctor finding, and an unserved handle

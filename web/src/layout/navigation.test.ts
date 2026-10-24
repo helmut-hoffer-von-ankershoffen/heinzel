@@ -31,6 +31,7 @@ describe("visibleSections", () => {
     expect(labels(visibleSections(sections, everyday))).toEqual([
       "nav.yourDay",
       "nav.calendar",
+      "nav.mail",
       "nav.contracts",
       "nav.teamGraph",
       "nav.organisation",

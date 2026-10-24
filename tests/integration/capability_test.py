@@ -228,7 +228,8 @@ def test_doctor_reports_met_requirements_as_up(kernel):
 
 def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_one(make_kernel):
     """The core needs the chat's agent runner (ADR 0039, 0045), which its default binding serves, and, optionally, a
-    calendar for the agenda and the calendar module, whose absence is no finding."""
+    calendar for the agenda and the calendar module, and a mailbox for the mail module, whose absence is no
+    finding."""
     code, report = hz(make_kernel(builtins=True), "system", "doctor")
     assert code == 0
     assert report["checks"]["system.capability"] == [
@@ -237,6 +238,12 @@ def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_o
             "name": "calendar for calendar (11 uses)",  # one check for a module's unconnected optional uses
             "status": "up",
             "detail": "optional: not connected; to use it: hz system plugin search --text calendar",
+            "fix": "",
+        },
+        {
+            "name": "mail for mail (11 uses)",
+            "status": "up",
+            "detail": "optional: not connected; to use it: hz system plugin search --text mail",
             "fix": "",
         },
         {
@@ -450,7 +457,7 @@ def test_capability_list_shows_the_new_capabilities_with_their_adapters(prepared
     assert [
         (u["requester"], u["requirement"], u["adapter"])
         for u in report["uses"]
-        if not u["requester"].startswith("calendar ")  # the calendar module's own, tested in calendar_test
+        if not u["requester"].startswith(("calendar ", "mail "))  # the modules' own, tested in their tests
     ] == [
         ("ai.access", "ai-access:read", "claude-code"),
         ("org agenda", "calendar:read", "agenda"),

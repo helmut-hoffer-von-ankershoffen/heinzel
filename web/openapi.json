@@ -2841,6 +2841,38 @@
         "title": "Disposition",
         "type": "string"
       },
+      "DraftedMail": {
+        "description": "A draft in the mailbox, as it stands now: what `Mail.send_draft` would send.",
+        "properties": {
+          "content": {
+            "$ref": "#/components/schemas/MailContent",
+            "description": "The draft's message: recipients, subject and text, as saved."
+          },
+          "id": {
+            "description": "Identifier of the draft; what `Mail.send_draft` and `Mail.draft` take.",
+            "title": "Id",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open and edit it; none if it has no address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "content"
+        ],
+        "title": "DraftedMail",
+        "type": "object"
+      },
       "Edge": {
         "additionalProperties": false,
         "description": "A JGF edge from a Heinzelmännchen to an artifact: it reads it or writes it.",
@@ -3583,6 +3615,45 @@
         "title": "HintView",
         "type": "object"
       },
+      "Inbox": {
+        "description": "Mail in a window, the important first, then the newest; no bodies.",
+        "properties": {
+          "important": {
+            "description": "Ids of the listed messages that are important.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Important",
+            "type": "array"
+          },
+          "messages": {
+            "description": "The messages listed.",
+            "items": {
+              "$ref": "#/components/schemas/MailMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "since": {
+            "description": "Start of the window.",
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "until": {
+            "description": "End of the window, exclusive.",
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until"
+        ],
+        "title": "Inbox",
+        "type": "object"
+      },
       "InstalledSkill": {
         "description": "A skill copied into an agent's skill directory.",
         "properties": {
@@ -4042,6 +4113,225 @@
         "title": "Login",
         "type": "object"
       },
+      "MailChange": {
+        "description": "What a mail write would do, or did: shown first, run only with `confirm`.",
+        "properties": {
+          "confirm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The command that carries it out, when it wasn't yet.",
+            "title": "Confirm"
+          },
+          "done": {
+            "description": "Whether it was carried out; false: it only says what `confirm` would do.",
+            "title": "Done",
+            "type": "boolean"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftedMail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The draft made, or the one that would be sent."
+          },
+          "labels": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MailLabels"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The conversation's labels after filing it."
+          },
+          "sent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SentMail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What was sent, once sent."
+          },
+          "summary": {
+            "description": "What it does, in a sentence.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "done",
+          "summary"
+        ],
+        "title": "MailChange",
+        "type": "object"
+      },
+      "MailContent": {
+        "description": "One message with its text and headers, for reading.",
+        "properties": {
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Headers that carry no addresses (`MAIL_HEADERS`: `date`, `message-id`, `list-id`, ...) by lower-case name, repeated ones joined with `, `; the model drops every other header, so people's addresses stay in `message.sender` and `recipients`.",
+            "title": "Headers",
+            "type": "object"
+          },
+          "message": {
+            "$ref": "#/components/schemas/MailMessage",
+            "description": "The message, as `Mail.messages` lists it."
+          },
+          "text": {
+            "description": "The body as plain text: the text part, or the HTML part converted to text; attachments left out.",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "text"
+        ],
+        "title": "MailContent",
+        "type": "object"
+      },
+      "MailLabels": {
+        "description": "A conversation's labels after `Mail.relabel`.",
+        "properties": {
+          "labels": {
+            "description": "Its labels now, in the vendor's words.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "thread": {
+            "description": "The conversation relabelled.",
+            "title": "Thread",
+            "type": "string"
+          }
+        },
+        "required": [
+          "thread"
+        ],
+        "title": "MailLabels",
+        "type": "object"
+      },
+      "MailMessage": {
+        "description": "A message in a mailbox, as a list shows it: who sent it to whom, when, and its subject; no body.",
+        "properties": {
+          "id": {
+            "description": "Identifier in the adapter's notation; what `Mail.read` takes.",
+            "title": "Id",
+            "type": "string"
+          },
+          "labels": {
+            "description": "Labels or folders it is filed under, in the vendor's words, e.g. `INBOX`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "received_at": {
+            "description": "When the mailbox received it.",
+            "format": "date-time",
+            "title": "Received At",
+            "type": "string"
+          },
+          "recipients": {
+            "description": "Who it was sent to (To and Cc), as the message names them.",
+            "items": {
+              "$ref": "#/components/schemas/Participant"
+            },
+            "title": "Recipients",
+            "type": "array"
+          },
+          "sender": {
+            "$ref": "#/components/schemas/Participant",
+            "description": "Who sent it (the From header)."
+          },
+          "subject": {
+            "description": "Subject line, decoded; empty if it has none.",
+            "title": "Subject",
+            "type": "string"
+          },
+          "thread": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Identifier of its conversation; none if the vendor has none.",
+            "title": "Thread"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open it; none if it has no web address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "sender",
+          "subject",
+          "received_at"
+        ],
+        "title": "MailMessage",
+        "type": "object"
+      },
+      "MailThread": {
+        "description": "A conversation: its messages with their text, oldest first.",
+        "properties": {
+          "id": {
+            "description": "Identifier of the conversation; `MailMessage.thread` of its messages.",
+            "title": "Id",
+            "type": "string"
+          },
+          "messages": {
+            "description": "Its messages with their text, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/MailContent"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "subject": {
+            "description": "Subject of its first message, decoded; empty if it has none.",
+            "title": "Subject",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "subject"
+        ],
+        "title": "MailThread",
+        "type": "object"
+      },
       "Measurements": {
         "description": "A contract's success test so far: its drafts, how long drafting took and how much was changed.",
         "properties": {
@@ -4499,6 +4789,7 @@
           "doctor",
           "release",
           "meeting",
+          "mail",
           "test"
         ],
         "title": "NoticeKind",
@@ -5720,6 +6011,45 @@
         "title": "RunMeasure",
         "type": "object"
       },
+      "SentMail": {
+        "description": "What `Mail.send_draft` sent.",
+        "properties": {
+          "id": {
+            "description": "Identifier of the sent message; what `Mail.read` takes.",
+            "title": "Id",
+            "type": "string"
+          },
+          "thread": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its conversation; none if the vendor has none.",
+            "title": "Thread"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open it; none if it has no web address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "SentMail",
+        "type": "object"
+      },
       "SettingInfo": {
         "description": "One effective setting.",
         "properties": {
@@ -6843,6 +7173,57 @@
         "title": "Unmaintained",
         "type": "object"
       },
+      "Unread": {
+        "description": "How much unread mail waits in your inbox: what a status bar shows. Never fails; a problem says why.",
+        "properties": {
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The command that connects a mailbox when none is.",
+            "title": "Fix"
+          },
+          "important": {
+            "default": 0,
+            "description": "Of them, the important ones.",
+            "title": "Important",
+            "type": "integer"
+          },
+          "line": {
+            "description": "One line for a status bar, e.g. `3 unread (1 important)`.",
+            "title": "Line",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why there is no count; none when it was read.",
+            "title": "Problem"
+          },
+          "unread": {
+            "default": 0,
+            "description": "Unread messages in the inbox within `[mail] days`.",
+            "title": "Unread",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "line"
+        ],
+        "title": "Unread",
+        "type": "object"
+      },
       "UpdateResult": {
         "description": "What `hz system update` did, or why it left the installation as it was.",
         "properties": {
@@ -7950,6 +8331,605 @@
         "summary": "Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.",
         "tags": [
           "graph"
+        ]
+      }
+    },
+    "/mail": {
+      "get": {
+        "description": "List the unread mail in your inbox from the last `[mail] days`, the important first.",
+        "operationId": "mail",
+        "parameters": [
+          {
+            "description": "List read mail in the inbox too, not only unread.",
+            "in": "query",
+            "name": "everything",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "List read mail in the inbox too, not only unread.",
+              "title": "Everything",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Inbox"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the unread mail in your inbox from the last `[mail] days`, the important first.",
+        "tags": [
+          "mail"
+        ]
+      }
+    },
+    "/mail/archive": {
+      "post": {
+        "description": "Archive a conversation (out of the inbox, nothing deleted); shown first, done with `--confirm`.\n\nRaises:\n    HeinzelError: If nothing writes your mail, or the mailbox refuses.",
+        "operationId": "mail_archive",
+        "parameters": [
+          {
+            "description": "The conversation's id: `thread` of a message `hz mail` lists.",
+            "in": "query",
+            "name": "thread",
+            "required": true,
+            "schema": {
+              "description": "The conversation's id: `thread` of a message `hz mail` lists.",
+              "title": "Thread",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Archive a conversation (out of the inbox, nothing deleted); shown first, done with `--confirm`.",
+        "tags": [
+          "mail"
+        ]
+      }
+    },
+    "/mail/draft": {
+      "post": {
+        "description": "Keep a new message in your drafts, unsent; shown first, kept with `--confirm`.\n\nRaises:\n    HeinzelError: If nothing writes your mail, or the message can't be made (an address, the subject).",
+        "operationId": "mail_draft",
+        "parameters": [
+          {
+            "description": "Email addresses, comma-separated: ada@example.com,bo@example.com.",
+            "in": "query",
+            "name": "to",
+            "required": true,
+            "schema": {
+              "description": "Email addresses, comma-separated: ada@example.com,bo@example.com.",
+              "title": "To",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The subject, one line.",
+            "in": "query",
+            "name": "subject",
+            "required": true,
+            "schema": {
+              "description": "The subject, one line.",
+              "title": "Subject",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The message, plain text.",
+            "in": "query",
+            "name": "text",
+            "required": true,
+            "schema": {
+              "description": "The message, plain text.",
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Email addresses, comma-separated: ada@example.com,bo@example.com.",
+            "in": "query",
+            "name": "cc",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Email addresses, comma-separated: ada@example.com,bo@example.com.",
+              "title": "Cc",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Keep a new message in your drafts, unsent; shown first, kept with `--confirm`.",
+        "tags": [
+          "mail"
+        ]
+      }
+    },
+    "/mail/label": {
+      "post": {
+        "description": "File a conversation under labels (never Spam or Trash); shown first, done with `--confirm`.\n\nRaises:\n    HeinzelError: If nothing writes your mail, nothing would change, or a label doesn't exist.",
+        "operationId": "mail_label",
+        "parameters": [
+          {
+            "description": "The conversation's id: `thread` of a message `hz mail` lists.",
+            "in": "query",
+            "name": "thread",
+            "required": true,
+            "schema": {
+              "description": "The conversation's id: `thread` of a message `hz mail` lists.",
+              "title": "Thread",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Labels to add, comma-separated, e.g. `Projects`.",
+            "in": "query",
+            "name": "add",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Labels to add, comma-separated, e.g. `Projects`.",
+              "title": "Add",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Labels to remove, comma-separated; `unread` marks it read.",
+            "in": "query",
+            "name": "remove",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Labels to remove, comma-separated; `unread` marks it read.",
+              "title": "Remove",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "File a conversation under labels (never Spam or Trash); shown first, done with `--confirm`.",
+        "tags": [
+          "mail"
+        ]
+      }
+    },
+    "/mail/preview": {
+      "get": {
+        "description": "Show a draft as it stands, possibly edited in your mail app since.",
+        "operationId": "mail_preview",
+        "parameters": [
+          {
+            "description": "The draft's id, as `hz mail draft` or `hz mail reply` answered it.",
+            "in": "query",
+            "name": "draft",
+            "required": true,
+            "schema": {
+              "description": "The draft's id, as `hz mail draft` or `hz mail reply` answered it.",
+              "title": "Draft",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftedMail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a draft as it stands, possibly edited in your mail app since.",
+        "tags": [
+          "mail"
+        ]
+      }
+    },
+    "/mail/reply": {
+      "post": {
+        "description": "Keep a reply in your drafts, in its conversation, unsent; shown first, kept with `--confirm`.\n\nRaises:\n    HeinzelError: If nothing writes your mail, or the reply can't be made.",
+        "operationId": "mail_reply",
+        "parameters": [
+          {
+            "description": "The message to answer: `id` of one `hz mail show` lists.",
+            "in": "query",
+            "name": "message",
+            "required": true,
+            "schema": {
+              "description": "The message to answer: `id` of one `hz mail show` lists.",
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The message, plain text.",
+            "in": "query",
+            "name": "text",
+            "required": true,
+            "schema": {
+              "description": "The message, plain text.",
+              "title": "Text",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Answer everyone it went to, not only its sender.",
+            "in": "query",
+            "name": "everyone",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Answer everyone it went to, not only its sender.",
+              "title": "Everyone",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Keep a reply in your drafts, in its conversation, unsent; shown first, kept with `--confirm`.",
+        "tags": [
+          "mail"
+        ]
+      }
+    },
+    "/mail/search": {
+      "get": {
+        "description": "Find mail of the last days by sender, subject and label.",
+        "operationId": "mail_search",
+        "parameters": [
+          {
+            "description": "Terms like `from:ada@example.com subject:\"Plan\" label:INBOX`; all must match.",
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "description": "Terms like `from:ada@example.com subject:\"Plan\" label:INBOX`; all must match.",
+              "title": "Query",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Days back to look through.",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "description": "Days back to look through.",
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Inbox"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Find mail of the last days by sender, subject and label.",
+        "tags": [
+          "mail"
+        ]
+      }
+    },
+    "/mail/send": {
+      "post": {
+        "description": "Send a draft: shown first with its recipients and text, sent with `--confirm` if unchanged since.\n\nRaises:\n    HeinzelError: If nothing writes your mail, `--confirm` comes without `--seen`, or the draft changed.",
+        "operationId": "mail_send",
+        "parameters": [
+          {
+            "description": "The draft's id, as `hz mail draft` or `hz mail reply` answered it.",
+            "in": "query",
+            "name": "draft",
+            "required": true,
+            "schema": {
+              "description": "The draft's id, as `hz mail draft` or `hz mail reply` answered it.",
+              "title": "Draft",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The draft version to send: run `hz mail send DRAFT` first and copy the command it prints.",
+            "in": "query",
+            "name": "seen",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The draft version to send: run `hz mail send DRAFT` first and copy the command it prints.",
+              "title": "Seen"
+            }
+          },
+          {
+            "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary.",
+              "title": "Confirm",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send a draft: shown first with its recipients and text, sent with `--confirm` if unchanged since.",
+        "tags": [
+          "mail"
+        ]
+      }
+    },
+    "/mail/show": {
+      "get": {
+        "description": "Show a conversation: every message's text, oldest first, as plain text without addresses.",
+        "operationId": "mail_show",
+        "parameters": [
+          {
+            "description": "The conversation's id: `thread` of a message `hz mail` lists.",
+            "in": "query",
+            "name": "thread",
+            "required": true,
+            "schema": {
+              "description": "The conversation's id: `thread` of a message `hz mail` lists.",
+              "title": "Thread",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailThread"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a conversation: every message's text, oldest first, as plain text without addresses.",
+        "tags": [
+          "mail"
+        ]
+      }
+    },
+    "/mail/unread": {
+      "get": {
+        "description": "Count the unread mail in your inbox, in one line for a status bar; never fails.",
+        "operationId": "mail_unread",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Unread"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Count the unread mail in your inbox, in one line for a status bar; never fails.",
+        "tags": [
+          "mail"
         ]
       }
     },

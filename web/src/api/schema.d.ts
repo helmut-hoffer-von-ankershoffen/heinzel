@@ -294,6 +294,221 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the unread mail in your inbox from the last `[mail] days`, the important first.
+         * @description List the unread mail in your inbox from the last `[mail] days`, the important first.
+         */
+        get: operations["mail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive a conversation (out of the inbox, nothing deleted); shown first, done with `--confirm`.
+         * @description Archive a conversation (out of the inbox, nothing deleted); shown first, done with `--confirm`.
+         *
+         *     Raises:
+         *         HeinzelError: If nothing writes your mail, or the mailbox refuses.
+         */
+        post: operations["mail_archive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep a new message in your drafts, unsent; shown first, kept with `--confirm`.
+         * @description Keep a new message in your drafts, unsent; shown first, kept with `--confirm`.
+         *
+         *     Raises:
+         *         HeinzelError: If nothing writes your mail, or the message can't be made (an address, the subject).
+         */
+        post: operations["mail_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/label": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * File a conversation under labels (never Spam or Trash); shown first, done with `--confirm`.
+         * @description File a conversation under labels (never Spam or Trash); shown first, done with `--confirm`.
+         *
+         *     Raises:
+         *         HeinzelError: If nothing writes your mail, nothing would change, or a label doesn't exist.
+         */
+        post: operations["mail_label"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a draft as it stands, possibly edited in your mail app since.
+         * @description Show a draft as it stands, possibly edited in your mail app since.
+         */
+        get: operations["mail_preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Keep a reply in your drafts, in its conversation, unsent; shown first, kept with `--confirm`.
+         * @description Keep a reply in your drafts, in its conversation, unsent; shown first, kept with `--confirm`.
+         *
+         *     Raises:
+         *         HeinzelError: If nothing writes your mail, or the reply can't be made.
+         */
+        post: operations["mail_reply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find mail of the last days by sender, subject and label.
+         * @description Find mail of the last days by sender, subject and label.
+         */
+        get: operations["mail_search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a draft: shown first with its recipients and text, sent with `--confirm` if unchanged since.
+         * @description Send a draft: shown first with its recipients and text, sent with `--confirm` if unchanged since.
+         *
+         *     Raises:
+         *         HeinzelError: If nothing writes your mail, `--confirm` comes without `--seen`, or the draft changed.
+         */
+        post: operations["mail_send"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a conversation: every message's text, oldest first, as plain text without addresses.
+         * @description Show a conversation: every message's text, oldest first, as plain text without addresses.
+         */
+        get: operations["mail_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mail/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Count the unread mail in your inbox, in one line for a status bar; never fails.
+         * @description Count the unread mail in your inbox, in one line for a status bar; never fails.
+         */
+        get: operations["mail_unread"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org/agenda": {
         parameters: {
             query?: never;
@@ -3313,6 +3528,24 @@ export interface components {
          */
         Disposition: "rendered" | "skipped" | "failed";
         /**
+         * DraftedMail
+         * @description A draft in the mailbox, as it stands now: what `Mail.send_draft` would send.
+         */
+        DraftedMail: {
+            /** @description The draft's message: recipients, subject and text, as saved. */
+            content: components["schemas"]["MailContent"];
+            /**
+             * Id
+             * @description Identifier of the draft; what `Mail.send_draft` and `Mail.draft` take.
+             */
+            id: string;
+            /**
+             * Url
+             * @description Where people open and edit it; none if it has no address.
+             */
+            url?: string | null;
+        };
+        /**
          * Edge
          * @description A JGF edge from a Heinzelmännchen to an artifact: it reads it or writes it.
          */
@@ -3758,6 +3991,34 @@ export interface components {
             window: string | null;
         };
         /**
+         * Inbox
+         * @description Mail in a window, the important first, then the newest; no bodies.
+         */
+        Inbox: {
+            /**
+             * Important
+             * @description Ids of the listed messages that are important.
+             */
+            important?: string[];
+            /**
+             * Messages
+             * @description The messages listed.
+             */
+            messages?: components["schemas"]["MailMessage"][];
+            /**
+             * Since
+             * Format: date-time
+             * @description Start of the window.
+             */
+            since: string;
+            /**
+             * Until
+             * Format: date-time
+             * @description End of the window, exclusive.
+             */
+            until: string;
+        };
+        /**
          * InstalledSkill
          * @description A skill copied into an agent's skill directory.
          */
@@ -4042,6 +4303,134 @@ export interface components {
             site: string;
         };
         /**
+         * MailChange
+         * @description What a mail write would do, or did: shown first, run only with `confirm`.
+         */
+        MailChange: {
+            /**
+             * Confirm
+             * @description The command that carries it out, when it wasn't yet.
+             */
+            confirm?: string | null;
+            /**
+             * Done
+             * @description Whether it was carried out; false: it only says what `confirm` would do.
+             */
+            done: boolean;
+            /** @description The draft made, or the one that would be sent. */
+            draft?: components["schemas"]["DraftedMail"] | null;
+            /** @description The conversation's labels after filing it. */
+            labels?: components["schemas"]["MailLabels"] | null;
+            /** @description What was sent, once sent. */
+            sent?: components["schemas"]["SentMail"] | null;
+            /**
+             * Summary
+             * @description What it does, in a sentence.
+             */
+            summary: string;
+        };
+        /**
+         * MailContent
+         * @description One message with its text and headers, for reading.
+         */
+        MailContent: {
+            /**
+             * Headers
+             * @description Headers that carry no addresses (`MAIL_HEADERS`: `date`, `message-id`, `list-id`, ...) by lower-case name, repeated ones joined with `, `; the model drops every other header, so people's addresses stay in `message.sender` and `recipients`.
+             */
+            headers?: {
+                [key: string]: string;
+            };
+            /** @description The message, as `Mail.messages` lists it. */
+            message: components["schemas"]["MailMessage"];
+            /**
+             * Text
+             * @description The body as plain text: the text part, or the HTML part converted to text; attachments left out.
+             */
+            text: string;
+        };
+        /**
+         * MailLabels
+         * @description A conversation's labels after `Mail.relabel`.
+         */
+        MailLabels: {
+            /**
+             * Labels
+             * @description Its labels now, in the vendor's words.
+             */
+            labels?: string[];
+            /**
+             * Thread
+             * @description The conversation relabelled.
+             */
+            thread: string;
+        };
+        /**
+         * MailMessage
+         * @description A message in a mailbox, as a list shows it: who sent it to whom, when, and its subject; no body.
+         */
+        MailMessage: {
+            /**
+             * Id
+             * @description Identifier in the adapter's notation; what `Mail.read` takes.
+             */
+            id: string;
+            /**
+             * Labels
+             * @description Labels or folders it is filed under, in the vendor's words, e.g. `INBOX`.
+             */
+            labels?: string[];
+            /**
+             * Received At
+             * Format: date-time
+             * @description When the mailbox received it.
+             */
+            received_at: string;
+            /**
+             * Recipients
+             * @description Who it was sent to (To and Cc), as the message names them.
+             */
+            recipients?: components["schemas"]["Participant"][];
+            /** @description Who sent it (the From header). */
+            sender: components["schemas"]["Participant"];
+            /**
+             * Subject
+             * @description Subject line, decoded; empty if it has none.
+             */
+            subject: string;
+            /**
+             * Thread
+             * @description Identifier of its conversation; none if the vendor has none.
+             */
+            thread?: string | null;
+            /**
+             * Url
+             * @description Where people open it; none if it has no web address.
+             */
+            url?: string | null;
+        };
+        /**
+         * MailThread
+         * @description A conversation: its messages with their text, oldest first.
+         */
+        MailThread: {
+            /**
+             * Id
+             * @description Identifier of the conversation; `MailMessage.thread` of its messages.
+             */
+            id: string;
+            /**
+             * Messages
+             * @description Its messages with their text, oldest first.
+             */
+            messages?: components["schemas"]["MailContent"][];
+            /**
+             * Subject
+             * @description Subject of its first message, decoded; empty if it has none.
+             */
+            subject: string;
+        };
+        /**
          * Measurements
          * @description A contract's success test so far: its drafts, how long drafting took and how much was changed.
          */
@@ -4295,7 +4684,7 @@ export interface components {
          * @description What a notice is about; each kind can be switched off in `[system.notify]`.
          * @enum {string}
          */
-        NoticeKind: "draft" | "failed" | "doctor" | "release" | "meeting" | "test";
+        NoticeKind: "draft" | "failed" | "doctor" | "release" | "meeting" | "mail" | "test";
         /**
          * NoticeList
          * @description The latest notices, and how they reach you on this machine.
@@ -4973,6 +5362,27 @@ export interface components {
             inputs: {
                 [key: string]: string;
             };
+        };
+        /**
+         * SentMail
+         * @description What `Mail.send_draft` sent.
+         */
+        SentMail: {
+            /**
+             * Id
+             * @description Identifier of the sent message; what `Mail.read` takes.
+             */
+            id: string;
+            /**
+             * Thread
+             * @description Its conversation; none if the vendor has none.
+             */
+            thread?: string | null;
+            /**
+             * Url
+             * @description Where people open it; none if it has no web address.
+             */
+            url?: string | null;
         };
         /**
          * SettingInfo
@@ -5708,6 +6118,39 @@ export interface components {
             why: string;
         };
         /**
+         * Unread
+         * @description How much unread mail waits in your inbox: what a status bar shows. Never fails; a problem says why.
+         */
+        Unread: {
+            /**
+             * Fix
+             * @description The command that connects a mailbox when none is.
+             */
+            fix?: string | null;
+            /**
+             * Important
+             * @description Of them, the important ones.
+             * @default 0
+             */
+            important: number;
+            /**
+             * Line
+             * @description One line for a status bar, e.g. `3 unread (1 important)`.
+             */
+            line: string;
+            /**
+             * Problem
+             * @description Why there is no count; none when it was read.
+             */
+            problem?: string | null;
+            /**
+             * Unread
+             * @description Unread messages in the inbox within `[mail] days`.
+             * @default 0
+             */
+            unread: number;
+        };
+        /**
          * UpdateResult
          * @description What `hz system update` did, or why it left the installation as it was.
          */
@@ -5869,6 +6312,7 @@ export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
 export type SchemaDisposition = components['schemas']['Disposition'];
+export type SchemaDraftedMail = components['schemas']['DraftedMail'];
 export type SchemaEdge = components['schemas']['Edge'];
 export type SchemaEdgeMetadata = components['schemas']['EdgeMetadata'];
 export type SchemaEvent = components['schemas']['Event'];
@@ -5884,6 +6328,7 @@ export type SchemaHttpValidationError = components['schemas']['HTTPValidationErr
 export type SchemaHealthReport = components['schemas']['HealthReport'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
 export type SchemaHintView = components['schemas']['HintView'];
+export type SchemaInbox = components['schemas']['Inbox'];
 export type SchemaInstalledSkill = components['schemas']['InstalledSkill'];
 export type SchemaJobInfo = components['schemas']['JobInfo'];
 export type SchemaJsonValue = components['schemas']['JsonValue'];
@@ -5893,6 +6338,11 @@ export type SchemaLayerProblemView = components['schemas']['LayerProblemView'];
 export type SchemaLayerView = components['schemas']['LayerView'];
 export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaLogin = components['schemas']['Login'];
+export type SchemaMailChange = components['schemas']['MailChange'];
+export type SchemaMailContent = components['schemas']['MailContent'];
+export type SchemaMailLabels = components['schemas']['MailLabels'];
+export type SchemaMailMessage = components['schemas']['MailMessage'];
+export type SchemaMailThread = components['schemas']['MailThread'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
@@ -5920,6 +6370,7 @@ export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
+export type SchemaSentMail = components['schemas']['SentMail'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaShownEvent = components['schemas']['ShownEvent'];
 export type SchemaSkill = components['schemas']['Skill'];
@@ -5941,6 +6392,7 @@ export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
+export type SchemaUnread = components['schemas']['Unread'];
 export type SchemaUpdateResult = components['schemas']['UpdateResult'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWaiting = components['schemas']['Waiting'];
@@ -6401,6 +6853,342 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail: {
+        parameters: {
+            query?: {
+                /** @description List read mail in the inbox too, not only unread. */
+                everything?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Inbox"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_archive: {
+        parameters: {
+            query: {
+                /** @description The conversation's id: `thread` of a message `hz mail` lists. */
+                thread: string;
+                /** @description Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_draft: {
+        parameters: {
+            query: {
+                /** @description Email addresses, comma-separated: ada@example.com,bo@example.com. */
+                to: string;
+                /** @description The subject, one line. */
+                subject: string;
+                /** @description The message, plain text. */
+                text: string;
+                /** @description Email addresses, comma-separated: ada@example.com,bo@example.com. */
+                cc?: string;
+                /** @description Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_label: {
+        parameters: {
+            query: {
+                /** @description The conversation's id: `thread` of a message `hz mail` lists. */
+                thread: string;
+                /** @description Labels to add, comma-separated, e.g. `Projects`. */
+                add?: string;
+                /** @description Labels to remove, comma-separated; `unread` marks it read. */
+                remove?: string;
+                /** @description Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_preview: {
+        parameters: {
+            query: {
+                /** @description The draft's id, as `hz mail draft` or `hz mail reply` answered it. */
+                draft: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftedMail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_reply: {
+        parameters: {
+            query: {
+                /** @description The message to answer: `id` of one `hz mail show` lists. */
+                message: string;
+                /** @description The message, plain text. */
+                text: string;
+                /** @description Answer everyone it went to, not only its sender. */
+                everyone?: boolean;
+                /** @description Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_search: {
+        parameters: {
+            query: {
+                /** @description Terms like `from:ada@example.com subject:"Plan" label:INBOX`; all must match. */
+                query: string;
+                /** @description Days back to look through. */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Inbox"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_send: {
+        parameters: {
+            query: {
+                /** @description The draft's id, as `hz mail draft` or `hz mail reply` answered it. */
+                draft: string;
+                /** @description The draft version to send: run `hz mail send DRAFT` first and copy the command it prints. */
+                seen?: string | null;
+                /** @description Carry it out. Without it, nothing changes: the answer says what would happen. An agent passes it only after the person approved that summary. */
+                confirm?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_show: {
+        parameters: {
+            query: {
+                /** @description The conversation's id: `thread` of a message `hz mail` lists. */
+                thread: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailThread"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mail_unread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Unread"];
                 };
             };
         };

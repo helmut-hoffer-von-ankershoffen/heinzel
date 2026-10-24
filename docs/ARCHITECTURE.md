@@ -142,6 +142,8 @@ hz report <verb> | sync                    what a Heinzelmännchen did, for the 
 hz graph                                  are the team's promises kept, and where the flow waits
 hz calendar [week | show | search | free | now | new | move | cancel | respond]
                                           your calendar; writes show first, then run with --confirm (ADR 0059)
+hz mail [search | show | preview | unread | draft | reply | send | archive | label]
+                                          your mail; writes show first, send sends only the draft it showed
 hz <module> …     work: plugin modules and built-in workflow modules
 ```
 

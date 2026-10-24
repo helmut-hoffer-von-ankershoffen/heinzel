@@ -18,6 +18,7 @@ def test_discovers_builtin_modules_and_submodules():
         "ai.access",
         "calendar",
         "graph",
+        "mail",
         "org",
         "system",
         "system.agent",

@@ -1,6 +1,6 @@
 // The notification center: every notice hz recorded (ADR 0043), newest first, beside the sidebar. Read state is this
 // browser's: notices after the last one seen count as unread, on the bell and in the list.
-import { AlertTriangle, Bell, BellRing, CalendarClock, FileText, Gift, Stethoscope, X } from "lucide-react";
+import { AlertTriangle, Bell, BellRing, CalendarClock, FileText, Gift, Mail, Stethoscope, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import type { SchemaNotice } from "@/api/client";
@@ -83,6 +83,7 @@ const icons = {
   doctor: Stethoscope,
   release: Gift,
   meeting: CalendarClock,
+  mail: Mail,
   test: BellRing,
 } as const;
 
@@ -111,7 +112,16 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
     { label: t("notify.today"), items: list.filter((notice) => new Date(notice.at).toDateString() === today) },
     { label: t("notify.earlier"), items: list.filter((notice) => new Date(notice.at).toDateString() !== today) },
   ].filter((group) => group.items.length > 0);
-  const kinds: (SchemaNotice["kind"] | "all")[] = ["all", "draft", "failed", "doctor", "release", "meeting", "test"];
+  const kinds: (SchemaNotice["kind"] | "all")[] = [
+    "all",
+    "draft",
+    "failed",
+    "doctor",
+    "release",
+    "meeting",
+    "mail",
+    "test",
+  ];
   return (
     <section
       aria-label={t("notify.title")}

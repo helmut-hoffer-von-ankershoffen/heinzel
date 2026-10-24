@@ -13,6 +13,7 @@ import { Doctor } from "@/pages/Doctor";
 import { GraphView } from "@/pages/graph/GraphView";
 import { Home } from "@/pages/Home";
 import { Assets, AssetTypes } from "@/pages/Inventory";
+import { Mail } from "@/pages/Mail";
 import { OrgChart, Team } from "@/pages/Organisation";
 import { NotFound, Profile } from "@/pages/Profile";
 
@@ -34,6 +35,7 @@ export const routes: RouteObject[] = [
       { path: "contracts/:name", element: <Contract /> },
       { path: "graph", element: <GraphView /> },
       { path: "calendar", element: <Calendar /> },
+      { path: "mail", element: <Mail /> },
       { path: "org", element: <OrgChart /> },
       { path: "team", element: <Team /> },
       { path: "inventory/types", element: <AssetTypes /> },
