@@ -5,6 +5,7 @@ they are out of date, so they can't drift.
 
 | You want to… | Read |
 | --- | --- |
+| **Get started**: bootstrap a team as its manager, or join one with the line your manager posted | [guides/manager.md](guides/manager.md) · [guides/joining.md](guides/joining.md) |
 | **Use** Heinzelmännchen: install, commands, configuration | [README](../README.md) · [MODULES](MODULES.md) *(generated)* · [CLI_REFERENCE](CLI_REFERENCE.md) *(generated)* · [CONFIGURATION](CONFIGURATION.md) *(generated)* |
 | **Write workflows**: the journey from nothing to a scheduled team contract, and the contract reference | [WORKFLOWS](WORKFLOWS.md) · [playbooks: your first contract from a plugin](PLAYBOOKS.md) |
 | **Work as a team**: create, join and add to the team repository | [TEAMS](TEAMS.md) |
