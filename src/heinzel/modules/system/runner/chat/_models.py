@@ -133,3 +133,7 @@ class ChatSummary(BaseModel):
     messages: int = Field(description="How many messages it has.")
     pending: int = Field(description="Actions waiting for confirmation.")
     spent_usd: float = Field(description="What it cost so far.")
+    context: ChatContext | None = Field(
+        default=None,
+        description="What it was opened about; a Heinzelmännchen's conversation is the one about its contract.",
+    )

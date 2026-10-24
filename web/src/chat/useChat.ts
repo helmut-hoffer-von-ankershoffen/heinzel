@@ -59,11 +59,13 @@ export function useChat() {
       setError(null);
       try {
         adopt(await openChat(context, detail));
+        // The switcher finds a Heinzelmännchen's conversation in the list: a stale one would open a second.
+        void client.invalidateQueries({ queryKey: chatListKey });
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : String(reason));
       }
     },
-    [adopt],
+    [adopt, client],
   );
 
   // A link from a notification: `?chat=<id>` resumes, `?chat-context=event:<id>` opens a chat about it; both are then
@@ -146,11 +148,12 @@ export function useChat() {
     remember(null);
   };
 
-  /** The Workshop: a new session about nothing in particular. */
+  /** Ask hz: a new session about nothing in particular, for questions that are no one Heinzelmännchen's. */
   const openGeneral = async () => {
     leave();
     try {
       adopt(await openChat(null));
+      void client.invalidateQueries({ queryKey: chatListKey });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     }

@@ -240,6 +240,7 @@ class ChatStore:
                         messages=len(chat.messages),
                         pending=len(chat.pending),
                         spent_usd=chat.costs.spent_usd,
+                        context=chat.context,
                     )
                 )
         return sorted(summaries, key=lambda summary: summary.updated, reverse=True)

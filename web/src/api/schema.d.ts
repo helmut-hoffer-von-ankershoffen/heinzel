@@ -2217,6 +2217,8 @@ export interface components {
          * @description A session in a list.
          */
         ChatSummary: {
+            /** @description What it was opened about; a Heinzelmännchen's conversation is the one about its contract. */
+            context?: components["schemas"]["ChatContext"] | null;
             /**
              * Id
              * @description The session's id.

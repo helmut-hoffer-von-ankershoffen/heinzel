@@ -1,38 +1,68 @@
-// Which conversation the chat shows: its title with a chevron that opens a searchable list of the sessions hz keeps
-// (`hz chat list`), a general "Workshop" chat and "New chat". The list is grouped, so the durable Heinzelmännchen of
-// ADR 0049 (`hz heinzel list`) become one more group of items with their own fields, not a new component.
-import { Check, ChevronDown, Hammer, Plus, Search } from "lucide-react";
+// Whose conversation the chat shows: its title with a chevron that opens a searchable list of your Heinzelmännchen
+// (`hz heinzel list`), each with its own conversation, then "Ask hz" for questions that belong to none of them, and the
+// earlier ones. "New Heinzelmännchen" starts a conversation that ends in a contract you approve (ADR 0049, 0051).
+//
+// A bridge until the durable sessions of ADR 0049 exist: a Heinzelmännchen's conversation is the newest chat session
+// opened about its contract (`contract:<namespace>:<name>`); choosing one with none yet opens it.
+import { Check, ChevronDown, MessageCircleQuestion, Plus, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useChatSessions } from "@/api/chat";
-import type { SchemaChatSummary } from "@/api/client";
-import { format, t } from "@/i18n";
+import type { SchemaChatSession, SchemaChatSummary, SchemaHeinzelSummary } from "@/api/client";
+import { useHeinzelmaennchen } from "@/api/queries";
+import { format, type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { Chat } from "./useChat";
 
-/** One row of the switcher. `heinzel` is reserved for the durable Heinzelmännchen, listed once the API offers them. */
+/** One row of the switcher: a Heinzelmännchen, Ask hz, or an earlier question. */
 export type SwitcherItem =
-  | { kind: "workshop"; id: "workshop"; title: string }
-  | { kind: "session"; id: string; title: string; updated: string; spent: number; pending: number; messages: number }
-  | { kind: "heinzel"; id: string; title: string; artifact?: string; state?: string; unread?: number };
+  | { kind: "heinzel"; id: string; title: string; state: SchemaHeinzelSummary["state"]; session?: string }
+  | { kind: "ask"; id: "ask"; title: string }
+  | { kind: "session"; id: string; title: string; updated: string; spent: number; pending: number; messages: number };
 
 export type SwitcherGroup = { label: string; items: SwitcherItem[] };
 
-/** The groups in the order shown: the general chat, then the recent sessions; empty groups go. */
-export function switcherGroups(sessions: SchemaChatSummary[], needle: string): SwitcherGroup[] {
+/** What "New Heinzelmännchen" opens the chat about: the agent asks, then proposes `heinzel_new` for you to confirm. */
+export const NEW_HEINZEL =
+  "text:the person wants a new Heinzelmännchen. They say what it should keep true in one sentence, or pick a template from heinzel_playbooks; then heinzel_new writes it, once they confirm.";
+
+const qualified = (heinzel: SchemaHeinzelSummary) => `${heinzel.namespace}:${heinzel.name}`;
+
+/** The Heinzelmännchen a chat session belongs to, by the contract it was opened about; none for other sessions. */
+export const heinzelOf = (context: SchemaChatSession["context"] | undefined): string | null =>
+  context?.kind === "contract" && context.ref ? context.ref : null;
+
+/** The groups in the order shown: your Heinzelmännchen, Ask hz, then earlier questions; empty groups go. */
+export function switcherGroups(
+  sessions: SchemaChatSummary[],
+  heinzelmaennchen: SchemaHeinzelSummary[],
+  needle: string,
+): SwitcherGroup[] {
   const match = (text: string) => !needle || text.toLowerCase().includes(needle.toLowerCase());
-  const workshop: SwitcherItem = { kind: "workshop", id: "workshop", title: t("chat.workshop") };
-  const recent: SwitcherItem[] = sessions.map((session) => ({
-    kind: "session",
-    id: session.id,
-    title: session.title || t("chat.untitled"),
-    updated: session.updated,
-    spent: session.spent_usd,
-    pending: session.pending,
-    messages: session.messages,
+  const mine = new Set(heinzelmaennchen.map(qualified));
+  const conversation = (name: string) => sessions.find((session) => heinzelOf(session.context) === name)?.id;
+  const heinzel: SwitcherItem[] = heinzelmaennchen.map((found) => ({
+    kind: "heinzel",
+    id: qualified(found),
+    title: found.title || found.name,
+    state: found.state,
+    session: conversation(qualified(found)),
   }));
+  const ask: SwitcherItem = { kind: "ask", id: "ask", title: t("chat.ask") };
+  const earlier: SwitcherItem[] = sessions
+    .filter((session) => !mine.has(heinzelOf(session.context) ?? ""))
+    .map((session) => ({
+      kind: "session",
+      id: session.id,
+      title: session.title || t("chat.untitled"),
+      updated: session.updated,
+      spent: session.spent_usd,
+      pending: session.pending,
+      messages: session.messages,
+    }));
   return [
-    { label: t("chat.start"), items: [workshop].filter((item) => match(item.title)) },
-    { label: t("chat.recent"), items: recent.filter((item) => match(item.title)) },
+    { label: t("chat.heinzelmaennchen"), items: heinzel.filter((item) => match(`${item.title} ${item.id}`)) },
+    { label: t("chat.askGroup"), items: [ask].filter((item) => match(item.title)) },
+    { label: t("chat.earlier"), items: earlier.filter((item) => match(item.title)) },
   ].filter((group) => group.items.length > 0);
 }
 
@@ -52,10 +82,18 @@ export function ago(iso: string, now = Date.now()): string {
   return relative.format(0, "minute");
 }
 
+const stateLabel: Record<SchemaHeinzelSummary["state"], MessageKey> = {
+  scheduled: "heinzel.state.scheduled",
+  manual: "heinzel.state.manual",
+  blocked: "heinzel.state.blocked",
+  broken: "heinzel.state.broken",
+};
+
 export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const sessions = useChatSessions(open);
+  const heinzelmaennchen = useHeinzelmaennchen();
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
@@ -67,15 +105,29 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
     window.addEventListener("mousedown", close);
     return () => window.removeEventListener("mousedown", close);
   }, [open]);
-  const groups = useMemo(() => switcherGroups(sessions.data ?? [], query.trim()), [sessions.data, query]);
-  // A chat is named by its first message; until then it is a new chat, whatever it is about.
-  const current = chat.session?.messages?.length ? chat.session.title || t("chat.untitled") : t("chat.new");
+  const listed = heinzelmaennchen.data?.heinzelmaennchen;
+  const all = useMemo(() => listed ?? [], [listed]);
+  const groups = useMemo(() => switcherGroups(sessions.data ?? [], all, query.trim()), [sessions.data, all, query]);
+  // A Heinzelmännchen's conversation is named after it; any other chat by its first message, until then it is new.
+  const owner = heinzelOf(chat.session?.context);
+  const named = all.find((found) => qualified(found) === owner);
+  const current = named
+    ? named.title || named.name
+    : owner
+      ? owner
+      : chat.session?.messages?.length
+        ? chat.session.title || t("chat.untitled")
+        : t("chat.ask");
   const choose = (item: SwitcherItem) => {
     setOpen(false);
     setQuery("");
     trigger.current?.focus();
-    if (item.kind === "workshop") void chat.openGeneral();
-    else if (item.kind === "session") chat.select(item.id);
+    if (item.kind === "ask") void chat.openGeneral();
+    else if (item.kind === "heinzel") {
+      if (item.id === owner) return; // already its conversation
+      if (item.session) chat.select(item.session);
+      else void chat.openAbout(`contract:${item.id}`);
+    } else chat.select(item.id);
   };
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Escape anywhere inside closes the list, as menus do
@@ -131,10 +183,13 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
             className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent [&_svg]:size-4 [&_svg]:text-icon"
           >
             <Plus aria-hidden />
-            {t("chat.new")}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">{t("chat.new")}</span>
+              <span className="block truncate text-ui-sm text-muted-foreground">{t("chat.newHelp")}</span>
+            </span>
           </button>
           <div id={listId} className="mt-1 max-h-80 overflow-y-auto">
-            {sessions.isLoading && (
+            {(sessions.isLoading || heinzelmaennchen.isLoading) && (
               <p className="px-2.5 py-1.5 text-ui-sm text-muted-foreground">{t("state.loading")}</p>
             )}
             {groups.map((group) => (
@@ -145,7 +200,10 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
                     <li key={`${item.kind}:${item.id}`}>
                       <Row
                         item={item}
-                        current={item.kind === "session" && item.id === chat.session?.id}
+                        current={
+                          (item.kind === "session" && item.id === chat.session?.id) ||
+                          (item.kind === "heinzel" && item.id === owner)
+                        }
                         onChoose={choose}
                       />
                     </li>
@@ -179,28 +237,29 @@ function Row({
         current && "bg-accent text-accent-foreground",
       )}
     >
-      {item.kind === "workshop" ? (
-        <Hammer aria-hidden className="mt-0.5 size-4 shrink-0 text-icon" />
+      {item.kind === "ask" ? (
+        <MessageCircleQuestion aria-hidden className="mt-0.5 size-4 shrink-0 text-icon" />
       ) : (
         <span aria-hidden className="size-4 shrink-0" />
       )}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-ui">{item.title}</span>
-        {item.kind === "session" && (
-          <span className="block truncate text-ui-sm text-muted-foreground">
-            {[
-              ago(item.updated),
-              t("chat.messages", { count: item.messages }),
-              format.usd(item.spent),
-              item.pending ? t("chat.pendingCount", { count: item.pending }) : "",
-            ]
-              .filter(Boolean)
-              .join(" · ")}
-          </span>
-        )}
-        {item.kind === "workshop" && (
-          <span className="block truncate text-ui-sm text-muted-foreground">{t("chat.workshopHelp")}</span>
-        )}
+        <span className="block truncate text-ui-sm text-muted-foreground">
+          {item.kind === "session"
+            ? [
+                ago(item.updated),
+                t("chat.messages", { count: item.messages }),
+                format.usd(item.spent),
+                item.pending ? t("chat.pendingCount", { count: item.pending }) : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            : item.kind === "heinzel"
+              ? [item.id, t(stateLabel[item.state]), item.session ? "" : t("chat.notStarted")]
+                  .filter(Boolean)
+                  .join(" · ")
+              : t("chat.askHelp")}
+        </span>
       </span>
       {current && <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-accent-foreground" />}
     </button>

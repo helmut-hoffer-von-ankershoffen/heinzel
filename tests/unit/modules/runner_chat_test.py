@@ -145,6 +145,8 @@ def test_a_session_is_kept_privately_and_lists_most_recent_first(store, settings
     assert oct((folder / "session.json").stat().st_mode & 0o777) == "0o600"
     assert second.title == "contract weekly"
     assert [s.id for s in store.sessions()] == [second.id, first.id]
+    # The list says what each was opened about: a Heinzelmännchen's conversation is the one about its contract.
+    assert [s.context for s in store.sessions()] == [second.context, None]
     assert store.load(second.id).context == second.context
 
 

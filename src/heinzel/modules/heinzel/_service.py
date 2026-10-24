@@ -713,7 +713,8 @@ class HeinzelService:
             slot = croniter(schedule, now.replace(tzinfo=None)).get_next(datetime)
         except (CroniterBadDateError, ValueError):
             return None
-        return slot.replace(tzinfo=now.tzinfo)
+        # The offset of the slot's own date: a run after a daylight-saving change is an hour from today's offset.
+        return slot.astimezone()
 
     def show(self, name: str) -> CompiledContract:
         """A contract as the daemon runs it: schedule, requirements with their adapters, inputs, publishes, limits.

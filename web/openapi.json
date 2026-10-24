@@ -1394,6 +1394,17 @@
       "ChatSummary": {
         "description": "A session in a list.",
         "properties": {
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What it was opened about; a Heinzelmännchen's conversation is the one about its contract."
+          },
           "id": {
             "description": "The session's id.",
             "title": "Id",

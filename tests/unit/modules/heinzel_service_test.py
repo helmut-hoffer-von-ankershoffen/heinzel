@@ -5,6 +5,7 @@ import os
 import re
 import shlex
 import stat
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -1403,3 +1404,23 @@ def test_doctor_names_settings_still_under_the_old_name(make, monkeypatch):
     assert "workflow.retention_days, HZ_WORKFLOW__MAX_USD" in check.detail
     assert "hz system config unset workflow.retention_days" in check.fix
     assert "rename HZ_WORKFLOW__MAX_USD to HZ_HEINZEL__MAX_USD" in check.fix
+
+
+@pytest.fixture
+def berlin(monkeypatch):
+    """The process's local time zone is Berlin's while the test runs."""
+    monkeypatch.setenv("TZ", "Europe/Berlin")
+    time.tzset()
+    yield
+    monkeypatch.delenv("TZ")
+    time.tzset()
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is Unix only")
+@pytest.mark.usefixtures("berlin")
+def test_the_next_run_after_a_daylight_saving_change_has_that_dates_offset(make):
+    # Saturday 24 October 2026 is summer time (+02:00); clocks go back on the 25th, so Monday is +01:00.
+    service = make(now=datetime(2026, 10, 24, 12, 0, tzinfo=UTC))
+    slot = service._next_run("0 9 * * MON")
+    assert slot is not None
+    assert slot.isoformat() == "2026-10-26T09:00:00+01:00"
