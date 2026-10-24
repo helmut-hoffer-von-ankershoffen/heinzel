@@ -23,6 +23,17 @@ describe("The status bar's clock", () => {
     fireEvent.mouseEnter(wrapper);
     const zones = await screen.findByRole("region", { name: "Time for the team and stakeholders" });
     expect(await within(zones).findByText("New York")).toBeInTheDocument();
+    // The first zone is yours: the clock shows its time, and the panel lists the others.
+    expect(within(zones).getByText("Your time: Berlin, the first of your zones")).toBeInTheDocument();
+    expect(within(zones).getAllByRole("listitem")).toHaveLength(1);
+    const time = clock.querySelector("time") as HTMLTimeElement;
+    const shown = new Date(time.dateTime).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZone: "Europe/Berlin",
+    });
+    expect(time).toHaveTextContent(shown);
     // Leaving the clock for the panel above: the panel is inside the hovered element, so nothing closes.
     fireEvent.mouseLeave(wrapper);
     fireEvent.mouseEnter(wrapper);

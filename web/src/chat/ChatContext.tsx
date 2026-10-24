@@ -1,6 +1,6 @@
 // The app's one chat, shared: the panel beside or below every screen shows it, and Home's cards start a chat about
 // themselves in it, so there is never a second conversation on screen.
-import { createContext, type ReactNode, type RefObject, useContext, useMemo, useRef } from "react";
+import { createContext, type ReactNode, type RefObject, useContext, useRef } from "react";
 import { type Chat, useChat } from "./useChat";
 
 type SharedChat = { chat: Chat; inputRef: RefObject<HTMLTextAreaElement | null>; focus: () => void };
@@ -10,7 +10,8 @@ const ChatContext = createContext<SharedChat | null>(null);
 export function ChatProvider({ children }: { children: ReactNode }) {
   const chat = useChat();
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const value = useMemo(() => ({ chat, inputRef, focus: () => inputRef.current?.focus() }), [chat]);
+  // A new value each render, as `chat` is: its users follow every change of the conversation anyway.
+  const value = { chat, inputRef, focus: () => inputRef.current?.focus() };
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 }
 

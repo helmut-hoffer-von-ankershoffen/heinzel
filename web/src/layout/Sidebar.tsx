@@ -28,7 +28,7 @@ import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { InstallApp } from "@/pwa/InstallApp";
 import { BellButton } from "./NotificationCenter";
-import { CONTRACTS_SECTION, contractPath, railItems, sections, visibleSections } from "./navigation";
+import { CONTRACTS_SECTION, contractPath, railItems, SYSTEM_SECTION, sections, visibleSections } from "./navigation";
 import { useDark } from "./ThemeTokens";
 import { useTheme } from "./theme";
 
@@ -221,10 +221,28 @@ function Rail({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
         </button>
       </div>
       <nav aria-label={t("nav.label")} className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto py-2">
-        {railItems(visibleSections(sections, expert.data)).map((item) => (
-          <NavLink key={item.to} to={item.to} end className={railLink} aria-label={t(item.label)} title={t(item.label)}>
-            <item.icon aria-hidden />
-          </NavLink>
+        {visibleSections(sections, expert.data).map((section) => (
+          // The System group sits apart under a hairline, as it comes last in the full sidebar.
+          <div
+            key={section.label}
+            className={cn(
+              "flex w-full flex-col items-center gap-1",
+              section.label === SYSTEM_SECTION && "mt-1 border-t-[0.5px] border-foreground/20 pt-2",
+            )}
+          >
+            {railItems([section]).map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end
+                className={railLink}
+                aria-label={t(item.label)}
+                title={t(item.label)}
+              >
+                <item.icon aria-hidden />
+              </NavLink>
+            ))}
+          </div>
         ))}
       </nav>
       <Footer compact />

@@ -41,7 +41,7 @@ export function Switch({ id, labelledBy, on, disabled, onToggle }: SwitchProps) 
 
 /** The text `hz system config set` takes for a value: TOML for numbers, booleans and lists, a string as it is. */
 function asConfig(value: unknown): string {
-  return typeof value === "string" ? value : JSON.stringify(value);
+  return typeof value === "string" ? value : toToml(value);
 }
 
 export function Row({ setting }: { setting: SchemaSettingInfo }) {

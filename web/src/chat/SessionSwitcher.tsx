@@ -57,6 +57,7 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
   const [query, setQuery] = useState("");
   const sessions = useChatSessions(open);
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
   useEffect(() => {
     if (!open) return;
@@ -72,6 +73,7 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
   const choose = (item: SwitcherItem) => {
     setOpen(false);
     setQuery("");
+    trigger.current?.focus();
     if (item.kind === "workshop") void chat.openGeneral();
     else if (item.kind === "session") chat.select(item.id);
   };
@@ -84,10 +86,12 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
         if (event.key === "Escape" && open) {
           event.stopPropagation();
           setOpen(false);
+          trigger.current?.focus();
         }
       }}
     >
       <button
+        ref={trigger}
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="dialog"

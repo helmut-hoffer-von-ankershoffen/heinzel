@@ -770,6 +770,10 @@ def test_a_logo_that_is_no_svg_is_refused(tmp_path, content, problem):
         ('<set attributeName="href" to="https://example.com"/>', "animates href"),
         ('<animate attributeName="xlink:href" values="#a;https://example.com"/>', "animates href"),
         ('<set attributeName="onclick" to="alert(1)"/>', "animates onclick"),
+        ('<rect width="1" height="1" style="fill:&#117;rl(https://x.example.com)"/>', "url(...)"),
+        ("<style>rect { fill: &#x75;rl(https://x.example.com) }</style>", "url(...)"),
+        ('<rect width="1" height="1" style="fill: \\75rl(https://x.example.com)"/>', "escapes characters in a style"),
+        ("<style>@\\69mport 'https://css.example.com/x.css';</style>", "escapes characters in a <style>"),
     ],
 )
 def test_a_logo_that_could_run_or_load_something_is_refused(tmp_path, body, problem):

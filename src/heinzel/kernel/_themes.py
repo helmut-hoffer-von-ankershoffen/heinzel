@@ -493,7 +493,19 @@ def _svg_element_problem(element: ET.Element) -> str | None:
             target = value.strip().lower().rpartition(":")[2]
             if target in _REFERENCES or target.startswith("on"):
                 return f"animates {target}, which could point outside the file"
-    return None
+    return _svg_css_problem(tag, element)
+
+
+def _svg_css_problem(tag: str, element: ET.Element) -> str | None:
+    """Why the decoded text and style of one element could load something, or None."""
+    styles = [value for name, value in element.attrib.items() if _local(name) == "style"]
+    if tag == "style":
+        styles.append(element.text or "")
+    if any("\\" in style for style in styles):
+        return f"escapes characters in a {'<style>' if tag == 'style' else 'style'} (\\), which could hide a url(...)"
+    # Character references are decoded by now: `&#117;rl(` is `url(` here, so the text checks run again.
+    decoded = [element.text, element.tail, *element.attrib.values()]
+    return next((problem for text in decoded if text and (problem := _svg_text_problem(text))), None)
 
 
 def svg_problem(content: bytes) -> str | None:

@@ -223,6 +223,37 @@ describe("The time zones editor (a list of tables by its schema)", () => {
     await waitFor(() => expect(lastSet(calls)).toContain(`{ name = "${own}", hours = [9, 18] }`));
   });
 
+  it("marks the first zone as yours, reorders rows, and puts your own zone on top", async () => {
+    const { calls } = mockApi(answers);
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=clock");
+    const zones = await screen.findByRole("group", { name: "Zones" });
+    const [berlin, newYork] = within(zones).getAllByRole("listitem");
+    expect(within(berlin as HTMLElement).getByText("Primary")).toBeInTheDocument();
+    expect(within(newYork as HTMLElement).queryByText("Primary")).not.toBeInTheDocument();
+    expect(within(zones).getByRole("button", { name: "Move Berlin up" })).toBeDisabled();
+    expect(within(zones).getByRole("button", { name: "Move New York down" })).toBeDisabled();
+    await user.click(within(zones).getByRole("button", { name: "Move New York up" }));
+    await waitFor(() =>
+      expect(lastSet(calls)).toBe('[{ name = "America/New_York" }, { name = "Europe/Berlin", hours = [9, 18] }]'),
+    );
+  });
+
+  it("offers your own time zone when it isn't in the list, at the top", async () => {
+    const own = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const other = own === "Asia/Kolkata" ? "Asia/Tokyo" : "Asia/Kolkata";
+    const zones = report.settings.map((setting) =>
+      setting.key === "zones" ? { ...setting, value: [{ name: other, hours: [9, 18] }] } : setting,
+    );
+    const { calls } = mockApi({ ...answers, "/api/system/config/show": { ...report, settings: zones } });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=clock");
+    await user.click(await screen.findByRole("button", { name: /^Use my time zone/ }));
+    await waitFor(() =>
+      expect(lastSet(calls)).toBe(`[{ name = "${own}", hours = [9, 18] }, { name = "${other}", hours = [9, 18] }]`),
+    );
+  });
+
   it("picks a time zone by searching", async () => {
     const { calls } = mockApi(answers);
     const user = userEvent.setup();
@@ -294,5 +325,7 @@ describe("Where settings live", () => {
     expect(toToml([{ name: "Asia/Tokyo", hours: [10, 19] }])).toBe('[{ name = "Asia/Tokyo", hours = [10, 19] }]');
     expect(toToml(["a", 'b"c'])).toBe('["a", "b\\"c"]');
     expect(toToml({ "odd key": true })).toBe('{ "odd key" = true }');
+    expect(toToml([1, null, Number.NaN, Number.NEGATIVE_INFINITY])).toBe("[1, nan, -inf]");
+    expect(toToml("a\x7fb")).toBe('"a\\u007fb"');
   });
 });

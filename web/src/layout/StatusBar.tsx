@@ -109,6 +109,16 @@ const offsetText = (minutes: number) => {
 /** `America/Los_Angeles` → `Los Angeles`. */
 const city = (zone: string) => (zone.split("/").at(-1) ?? zone).replaceAll("_", " ");
 
+/** Whether this browser knows the IANA zone `zone`; formatting an unknown one throws. */
+function knownZone(zone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** How long the zones stay open after the pointer leaves, so it can cross to them. */
 const CLOSE_DELAY = 200;
 
@@ -123,7 +133,11 @@ function Clock({ now }: { now: Date }) {
   const wrapper = useRef<HTMLSpanElement>(null);
   const panelId = useId();
   const open = hovered || focused || pinned;
-  const list = zones.data;
+  // The first zone is yours (`clock.zones` is ordered): the clock shows its time; the others are in the panel. Zones
+  // this browser doesn't know are left out rather than breaking the bar.
+  const known = (zones.data ?? []).filter((zone) => knownZone(zone.zone));
+  const primary = known[0]?.zone;
+  const list = known.slice(1);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   const enter = () => {
     window.clearTimeout(timer.current);
@@ -174,7 +188,7 @@ function Clock({ now }: { now: Date }) {
         className="rounded px-1 font-mono text-foreground/80 tabular-nums hover:bg-accent/60"
       >
         <time dateTime={now.toISOString()}>
-          {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: primary })}
         </time>
         <span id={`${panelId}-hint`} className="sr-only">
           {t("status.zones")}
@@ -187,7 +201,12 @@ function Clock({ now }: { now: Date }) {
             aria-label={t("status.zones")}
             className="w-80 rounded-xl border border-border bg-popover p-1.5 text-sm shadow-xl"
           >
-            {list && list.length > 0 ? (
+            {primary && (
+              <p className="px-2.5 pt-1.5 pb-1 text-xs text-muted-foreground">
+                {t("status.primary", { city: city(primary) })}
+              </p>
+            )}
+            {list.length > 0 ? (
               <ul>
                 {list.map((zone) => {
                   const at = partsIn(zone.zone, now);

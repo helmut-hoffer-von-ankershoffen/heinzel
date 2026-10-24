@@ -11,7 +11,8 @@ export const cityOf = (zone: string) => (zone.split("/").at(-1) ?? zone).replace
 /** Every IANA zone this browser knows; just `fallback` where it can't list them. */
 export function allZones(fallback: string[] = []): string[] {
   const list = (Intl as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
-  return [...new Set([...list, ...fallback.filter(Boolean)])];
+  // Chrome's list leaves out UTC itself.
+  return [...new Set([...list, "UTC", ...fallback.filter(Boolean)])];
 }
 
 /** `UTC+2`, `UTC−5`, `UTC+5:30` now, or "" for a name the browser doesn't know. */
@@ -38,6 +39,7 @@ export function TimeZonePicker({ id, value, disabled, label, onChange }: Props) 
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const zones = useMemo(() => allZones([value]), [value]);
   const needle = query.trim().toLowerCase().replaceAll(" ", "_");
@@ -57,11 +59,13 @@ export function TimeZonePicker({ id, value, disabled, label, onChange }: Props) 
     if (!zone) return;
     setOpen(false);
     setQuery("");
+    trigger.current?.focus(); // back where the person was, not on the page
     if (zone !== value) onChange(zone);
   };
   return (
     <div ref={ref} className="relative min-w-0">
       <button
+        ref={trigger}
         id={id}
         type="button"
         disabled={disabled}
@@ -106,6 +110,7 @@ export function TimeZonePicker({ id, value, disabled, label, onChange }: Props) 
               } else if (event.key === "Escape") {
                 event.stopPropagation();
                 setOpen(false);
+                trigger.current?.focus();
               }
             }}
             className="h-8 w-full rounded-lg bg-input px-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"

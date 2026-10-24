@@ -17,6 +17,7 @@ export type NavSection = {
 };
 
 export const CONTRACTS_SECTION: MessageKey = "nav.contracts";
+export const SYSTEM_SECTION: MessageKey = "nav.system";
 
 export const sections: NavSection[] = [
   {
@@ -41,7 +42,11 @@ export const sections: NavSection[] = [
       { to: "/inventory/assets", label: "nav.assets", icon: Boxes, operation: "workflow:discover" },
     ],
   },
-  { label: "nav.doctor", to: "/doctor", icon: Stethoscope, operation: "system.doctor:doctor", items: [] },
+  // hz itself, not your work: last, apart from the rest (daemon jobs and the like join it later).
+  {
+    label: SYSTEM_SECTION,
+    items: [{ to: "/doctor", label: "nav.doctor", icon: Stethoscope, operation: "system.doctor:doctor" }],
+  },
 ];
 
 /** Whether the screen of `operation` is listed in `mode`; screens without one always are. Unknown mode: only those. */

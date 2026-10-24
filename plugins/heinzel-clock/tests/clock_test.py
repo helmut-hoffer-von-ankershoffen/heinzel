@@ -13,10 +13,16 @@ AT = "2026-10-23T12:00:00Z"
 
 def test_shows_each_zone_with_its_working_hours(hz):
     assert hz("clock", "--at", AT).json == [
-        {"zone": "Europe/Berlin", "time": "Fri 14:00", "hours": [9, 18], "working": True},
-        {"zone": "America/New_York", "time": "Fri 08:00", "hours": [9, 18], "working": False},
-        {"zone": "America/Los_Angeles", "time": "Fri 05:00", "hours": [9, 18], "working": False},
+        {"zone": "Europe/Berlin", "time": "Fri 14:00", "hours": [9, 18], "working": True, "primary": True},
+        {"zone": "America/New_York", "time": "Fri 08:00", "hours": [9, 18], "working": False, "primary": False},
+        {"zone": "America/Los_Angeles", "time": "Fri 05:00", "hours": [9, 18], "working": False, "primary": False},
     ]
+
+
+def test_the_first_zone_is_yours_and_the_table_says_so(hz, monkeypatch):
+    monkeypatch.setenv("HZ_CLOCK__ZONES", '["Asia/Tokyo", "Europe/Berlin"]')
+    assert [zone["primary"] for zone in hz("clock", "--at", AT).json] == [True, False]
+    assert "Asia/Tokyo (yours)" in hz("clock", "--at", AT, json=False).output
 
 
 def test_nobody_is_working_at_the_weekend(hz):
@@ -26,8 +32,8 @@ def test_nobody_is_working_at_the_weekend(hz):
 def test_each_zone_has_its_own_hours(hz, monkeypatch):
     monkeypatch.setenv("HZ_CLOCK__ZONES", '[{"name": "America/New_York", "hours": [7, 15]}, "Asia/Tokyo"]')
     assert hz("clock", "--at", AT).json == [
-        {"zone": "America/New_York", "time": "Fri 08:00", "hours": [7, 15], "working": True},
-        {"zone": "Asia/Tokyo", "time": "Fri 21:00", "hours": [9, 18], "working": False},
+        {"zone": "America/New_York", "time": "Fri 08:00", "hours": [7, 15], "working": True, "primary": True},
+        {"zone": "Asia/Tokyo", "time": "Fri 21:00", "hours": [9, 18], "working": False, "primary": False},
     ]
 
 
@@ -41,7 +47,7 @@ def test_the_old_shape_is_read_with_a_deprecation_warning(hz, monkeypatch):
     monkeypatch.setenv("HZ_CLOCK__WORKING_HOURS", "[8, 22]")
     with pytest.warns(DeprecationWarning, match="clock.working_hours is deprecated"):
         assert hz("clock", "--at", AT).json == [
-            {"zone": "Asia/Tokyo", "time": "Fri 21:00", "hours": [8, 22], "working": True}
+            {"zone": "Asia/Tokyo", "time": "Fri 21:00", "hours": [8, 22], "working": True, "primary": True}
         ]
     doctor = hz("system", "doctor").json  # the settings were read, and warned about, once
     assert doctor["checks"]["clock"][1]["name"] == "working_hours"

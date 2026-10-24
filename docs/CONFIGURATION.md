@@ -48,7 +48,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `zones` | `HZ_CLOCK__ZONES` | `[{'name': 'Europe/Berlin', 'hours': [9, 18]}, {'name': 'America/New_York', 'hours': [9, 18]}, {'name': 'America/Los_Angeles', 'hours': [9, 18]}]` | The team's time zones: IANA names, or tables with hours, e.g. { name = "Asia/Tokyo", hours = [10, 19] }. |
+| `zones` | `HZ_CLOCK__ZONES` | `[{'name': 'Europe/Berlin', 'hours': [9, 18]}, {'name': 'America/New_York', 'hours': [9, 18]}, {'name': 'America/Los_Angeles', 'hours': [9, 18]}]` | The team's time zones, yours first: IANA names, or tables with hours, e.g. { name = "Asia/Tokyo", hours = [10, 19] }. The first zone is your own (primary) one. |
 | `working_hours` | `HZ_CLOCK__WORKING_HOURS` | `None` | Deprecated: the hours of every zone given by name only. Give each zone its hours instead. |
 
 ## `[github]`

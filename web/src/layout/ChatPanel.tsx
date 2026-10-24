@@ -8,7 +8,6 @@ import { useLocation } from "react-router";
 import { useSharedChat } from "@/chat/ChatContext";
 import { Composer, Conversation, Costs } from "@/chat/Conversation";
 import { SessionSwitcher } from "@/chat/SessionSwitcher";
-import { HeinzelIcon } from "@/components/HeinzelIcon";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 
@@ -17,10 +16,14 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   const { chat, inputRef, focus } = useSharedChat();
   const context = chat.session?.context;
   const end = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
   const count = (chat.session?.messages?.length ?? 0) + (chat.live ? 1 : 0);
   // Keep the newest message in view as the conversation grows or the answer streams.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scrolls when the conversation changes
   useEffect(() => {
+    // Only while the person is at the end: someone scrolled up to read stays where they are.
+    const box = scroller.current;
+    if (box && box.scrollHeight - box.scrollTop - box.clientHeight > 120) return;
     end.current?.scrollIntoView?.({ block: "end" });
   }, [count, chat.live?.text]);
   // An empty chat is already a new one: the button then just puts you in its composer.
@@ -32,7 +35,6 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 pr-2 pl-3">
-        <HeinzelIcon className="text-base" />
         <h2 className="sr-only">{t("chat.title")}</h2>
         <SessionSwitcher chat={chat} onNew={fresh} />
         <Button
@@ -56,7 +58,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           <PanelRightClose aria-hidden />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto p-3">
         {context && (
           <p className="mb-3 text-xs text-muted-foreground">
             {t("chat.context", { about: `${context.kind} ${context.ref}`.trim() })}

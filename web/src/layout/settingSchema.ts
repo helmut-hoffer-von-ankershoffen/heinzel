@@ -128,9 +128,19 @@ const BARE = /^[A-Za-z0-9_-]+$/;
 /** `value` as the TOML `hz system config set` reads: inline tables and arrays; JSON's strings are TOML's. */
 export function toToml(value: unknown): string {
   if (value === null || value === undefined) return '""';
-  if (typeof value === "string") return JSON.stringify(value);
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (Array.isArray(value)) return `[${value.map(toToml).join(", ")}]`;
+  // JSON's escapes are TOML's, except that TOML wants DEL escaped too.
+  if (typeof value === "string") return JSON.stringify(value).replaceAll("\x7f", "\\u007f");
+  if (typeof value === "number") {
+    if (Number.isNaN(value)) return "nan";
+    return Number.isFinite(value) ? String(value) : value > 0 ? "inf" : "-inf";
+  }
+  if (typeof value === "boolean") return String(value);
+  // TOML has no null: a missing item is left out, as the server does.
+  if (Array.isArray(value))
+    return `[${value
+      .filter((item) => item != null)
+      .map(toToml)
+      .join(", ")}]`;
   if (typeof value === "object") {
     const pairs = Object.entries(value as Record<string, unknown>)
       .filter(([, item]) => item !== null && item !== undefined)

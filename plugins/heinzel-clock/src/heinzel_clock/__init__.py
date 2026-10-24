@@ -58,8 +58,8 @@ class ClockSettings(ModuleSettings):
 
     zones: list[Zone] = Field(
         default=[Zone(name=name) for name in DEFAULT_ZONES],
-        description='The team\'s time zones: IANA names, or tables with hours, e.g. { name = "Asia/Tokyo", '
-        "hours = [10, 19] }.",
+        description="The team's time zones, yours first: IANA names, or tables with hours, e.g. "
+        '{ name = "Asia/Tokyo", hours = [10, 19] }. The first zone is your own (primary) one.',
     )
     working_hours: tuple[int, int] | None = Field(
         default=None,
@@ -89,6 +89,7 @@ class ZoneTime(BaseModel):
     time: str = Field(description="Local weekday and time there, e.g. Mon 14:05.")
     hours: tuple[int, int] = Field(description="Start and end hour of a working day there.")
     working: bool = Field(description="Whether it is within the working hours there, Monday to Friday.")
+    primary: bool = Field(default=False, description="Whether this is your own zone: the first one configured.")
 
 
 def _render(times: list[ZoneTime]) -> Table:
@@ -96,7 +97,8 @@ def _render(times: list[ZoneTime]) -> Table:
     for column in ("Zone", "Time", "Working hours", "Working"):
         table.add_column(column)
     for item in times:
-        table.add_row(item.zone, item.time, f"{item.hours[0]:02d}-{item.hours[1]:02d}", "yes" if item.working else "no")
+        zone = f"{item.zone} (yours)" if item.primary else item.zone
+        table.add_row(zone, item.time, f"{item.hours[0]:02d}-{item.hours[1]:02d}", "yes" if item.working else "no")
     return table
 
 
@@ -120,8 +122,9 @@ def clock(
             time=local.strftime("%a %H:%M"),
             hours=zone.hours,
             working=local.weekday() < SATURDAY and zone.hours[0] <= local.hour < zone.hours[1],
+            primary=index == 0,
         )
-        for zone in settings.zones
+        for index, zone in enumerate(settings.zones)
         for local in [moment.astimezone(ZoneInfo(zone.name))]
     ]
 
