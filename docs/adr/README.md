@@ -97,7 +97,9 @@ not REST ones; `POST /api/restart`);
 [0029](0029-agent-runners-are-capability-adapters.md) (the runner no longer owns the session),
 [0038](0038-drafts-are-approved-in-place.md) (lessons; `hz drafts` and `hz approve`) and
 [0045](0045-a-chat-that-acts-through-hz-with-confirmation-in-code.md) (the sidebar chat with a Heinzelmännchen is its
-session); [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) amends
+session), and in its durable-turns amendment [0028](0028-integrations-are-capability-adapters.md) (fingerprints per facet) and
+[0052](0052-the-graph-emerges-from-recorded-reads-and-writes.md) (downstream wakes only when the approved output
+moved); [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) amends
 [0029](0029-agent-runners-are-capability-adapters.md) (Pydantic AI in the core as the turn engine; runners are the
 handoff) and [0045](0045-a-chat-that-acts-through-hz-with-confirmation-in-code.md) (the chat on the same engine);
 [0051](0051-the-workflow-module-becomes-the-heinzel-module.md) amends [0021](0021-workflow-contracts.md) (operation
