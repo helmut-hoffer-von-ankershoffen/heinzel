@@ -600,34 +600,18 @@ class PluginService:
         api = f"{GITHUB_REPOS}/{full_name}/contents"
         manifest = self._file(f"{api}/{MANIFEST}")
         if manifest is not None:
-            try:
-                declared = tomllib.loads(manifest).get("plugin", [])
-                return [
-                    (
-                        name if (name := str(entry["name"])).startswith("heinzel-") else f"heinzel-{name}",
-                        str(entry.get("path") or f"plugins/heinzel-{str(entry['name']).removeprefix('heinzel-')}"),
-                        str(entry.get("summary") or ""),
-                    )
-                    for entry in declared
-                ]
-            except (tomllib.TOMLDecodeError, KeyError, TypeError, AttributeError):
-                return []
+            return _declared(manifest)
         try:
             listing = get_json(f"{api}/plugins", self._settings.github_token, TIMEOUT)
         except (OSError, ValueError):
             return []
-        if not isinstance(listing, list):
-            return []
         found: list[tuple[str, str, str]] = []
-        for item in sorted(
-            (i for i in listing if isinstance(i, dict) and i.get("type") == "dir"), key=lambda i: str(i.get("name"))
-        ):
+        for item in sorted(_dicts(listing), key=lambda i: str(i.get("name"))):
+            if item.get("type") != "dir":
+                continue
             path = f"plugins/{item.get('name')}"
             text = self._file(f"{api}/{path}/pyproject.toml")
-            try:
-                project = tomllib.loads(text).get("project", {}) if text is not None else {}
-            except tomllib.TOMLDecodeError:
-                continue
+            project = _table(_toml(text), "project") if text is not None else {}
             dist = project.get("name")
             if isinstance(dist, str) and dist.startswith("heinzel-"):
                 found.append((dist, path, str(project.get("description") or "")))
@@ -636,9 +620,11 @@ class PluginService:
     def _file(self, url: str) -> str | None:
         """The text of a file from GitHub's contents API; None if it is not there or not readable."""
         try:
-            answer = get_json(url, self._settings.github_token, TIMEOUT)
-            if isinstance(answer, dict) and answer.get("encoding") == "base64":
-                return base64.b64decode(str(answer["content"])).decode()
+            answer: object = get_json(url, self._settings.github_token, TIMEOUT)
+            if isinstance(answer, dict):
+                fields = cast("dict[str, object]", answer)
+                if fields.get("encoding") == "base64":
+                    return base64.b64decode(str(fields["content"])).decode()
         except (OSError, ValueError, KeyError):
             return None
         return None
@@ -801,6 +787,41 @@ class PluginService:
             PluginInfo.model_validate(item)
             for item in json.loads(self._installation.hz("system", "plugin", "list", "--json"))
         ]
+
+
+def _dicts(value: object) -> list[dict[str, object]]:
+    """The objects in a free-form JSON or TOML list; anything else yields none."""
+    if not isinstance(value, list):
+        return []
+    return [cast("dict[str, object]", item) for item in cast("list[object]", value) if isinstance(item, dict)]
+
+
+def _toml(text: str | None) -> dict[str, object]:
+    """A TOML document as a table; empty if it is absent or invalid."""
+    if text is None:
+        return {}
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return {}
+
+
+def _table(document: dict[str, object], key: str) -> dict[str, object]:
+    """The table under `key`; empty if there is none."""
+    value = document.get(key)
+    return cast("dict[str, object]", value) if isinstance(value, dict) else {}
+
+
+def _declared(manifest: str) -> list[tuple[str, str, str]]:
+    """(distribution, path, summary) of each `[[plugin]]` of a manifest; nameless ones are skipped."""
+    plugins: list[tuple[str, str, str]] = []
+    for entry in _dicts(_toml(manifest).get("plugin")):
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            continue
+        name = name if name.startswith("heinzel-") else f"heinzel-{name}"
+        plugins.append((name, str(entry.get("path") or f"plugins/{name}"), str(entry.get("summary") or "")))
+    return plugins
 
 
 def _same(a: str, b: str) -> bool:
