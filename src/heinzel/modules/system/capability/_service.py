@@ -5,7 +5,7 @@ from heinzel.kernel import CAPABILITIES, MODES, CapabilityView
 from heinzel.modules.system.capability._models import AdapterInfo, CapabilityInfo, CapabilityReport, CapabilityUse
 
 UNKNOWN_HOSTS = "unknown (configured)"
-"""What the matrix says for an adapter whose hosts depend on its configuration."""
+"""What the matrix says for an adapter whose hosts depend on its configuration and aren't known."""
 
 
 class CapabilityService:
@@ -48,7 +48,7 @@ class CapabilityService:
                     adapter=adapter.let.adapter,
                     capability=adapter.let.capability,
                     modes=[mode for mode in MODES if mode in adapter.let.modes],
-                    hosts=list(adapter.let.hosts) or [UNKNOWN_HOSTS],
+                    hosts=list(self.capabilities.hosts(adapter)[0]) or [UNKNOWN_HOSTS],
                     module=adapter.module,
                     distribution=adapter.distribution,
                 )
@@ -67,7 +67,7 @@ class CapabilityService:
         }
 
     def checks(self) -> list[Check]:
-        """One check per declared requirement, per binding to a missing adapter and per unknown binding key."""
+        """A check per requirement, bad binding or binding key, and used adapter whose hosts are unknown."""
         checks = [
             Check(
                 name=f"binding {key}",
@@ -86,7 +86,9 @@ class CapabilityService:
             )
             for capability, adapter in self.capabilities.unknown_bindings()
         )
-        for use in self.uses():
+        uses = self.uses()
+        checks.extend(self._host_checks(uses))
+        for use in uses:
             name = f"{use.requirement} for {use.requester}"
             if use.problem is None:
                 checks.append(Check(name=name, status=Status.UP, detail=f"served by {use.adapter}"))
@@ -100,3 +102,25 @@ class CapabilityService:
                     )
                 )
         return checks or [Check(name="requirements", status=Status.UP, detail="no module declares capabilities")]
+
+    def _host_checks(self, uses: list[CapabilityUse]) -> list[Check]:
+        """A check per adapter that is bound or serves a requirement and whose hosts couldn't be read.
+
+        An installed adapter nobody uses doesn't make doctor degraded: it sends nothing anywhere.
+        """
+        used = {(use.capability, use.adapter) for use in uses}
+        return [
+            Check(
+                name=f"hosts of {adapter.let.name}",
+                status=Status.DEGRADED,
+                detail=f"{problem}; shown as {UNKNOWN_HOSTS}",
+                fix=(
+                    f"Check the settings of {adapter.module} with `hz system config show` and set a valid URL or "
+                    f"host name in your user configuration; if they are valid, report it to {adapter.distribution}"
+                ),
+            )
+            for adapter in self.capabilities.adapters
+            if (adapter.let.capability, adapter.let.adapter) in used
+            or self.capabilities.bound(adapter.let.capability) == adapter.let.adapter
+            if (problem := self.capabilities.hosts(adapter)[1])
+        ]

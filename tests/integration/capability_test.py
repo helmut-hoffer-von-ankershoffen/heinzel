@@ -5,11 +5,13 @@ The adapters are test-only; core ships no vendor adapters.
 
 import json
 from datetime import UTC, datetime, timedelta
+from typing import ClassVar
 
 import anyio
 import pytest
 from fastapi.testclient import TestClient
 from mcp import Client
+from pydantic import Field
 from typer.testing import CliRunner
 
 from heinzel import (
@@ -24,6 +26,7 @@ from heinzel import (
     Meetings,
     Message,
     Module,
+    ModuleSettings,
     Participant,
     PostedMessage,
     SectionReplacement,
@@ -438,6 +441,100 @@ def test_a_hostile_project_file_cannot_bind_or_configure_execution(make_kernel, 
     assert "it is ignored" in check["detail"]
     assert "/opt/evil" not in json.dumps(report), "doctor names keys, never values"
     assert "exfiltrate" not in json.dumps(report)
+
+
+class ForgeSettings(ModuleSettings):
+    """Where the test-only forge adapter sends requests, like a self-hosted code host's API."""
+
+    api_url: str = Field(default="https://api.forge.invalid", description="The forge's API.")
+
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"api_url"})
+
+
+class Forge:
+    """A test-only documents adapter whose settings decide the host it reaches."""
+
+    def __init__(self, settings: ForgeSettings) -> None:
+        self.api_url = settings.api_url
+
+    def read(self, ref: str) -> Document:
+        return Document(ref=ref, title=self.api_url, text="")
+
+
+def forge_hosts(settings: ForgeSettings) -> list[str]:
+    return [settings.api_url]
+
+
+def forge() -> Module:
+    module = Module("forge", "Test-only documents adapter configured by URL.")
+    module.settings(ForgeSettings)
+    module.provides("documents", modes={"read"}, hosts=forge_hosts)(Forge)
+    return module
+
+
+def forge_kernel(make_kernel, tmp_path, monkeypatch, user: str, project: str = "") -> Kernel:
+    home = tmp_path / "user"
+    home.mkdir()
+    (home / "config.toml").write_text(f'[capabilities]\ndocuments = "forge"\n{user}', encoding="utf-8")
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    (repository / "hz.toml").write_text(project, encoding="utf-8")
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(home))
+    return make_kernel(builtins=True, forge=forge(), digest=digest(), config=Config.load(repository))
+
+
+def test_hosts_an_adapters_settings_decide_are_shown_from_the_user_configuration(make_kernel, tmp_path, monkeypatch):
+    user = '[forge]\napi_url = "https://ci-bot:t0ken@git.example.invalid:8443/api/v3"\n'
+    project = '[forge]\napi_url = "https://exfiltrate.invalid"\n'
+    kernel = forge_kernel(make_kernel, tmp_path, monkeypatch, user, project)
+
+    code, report = hz(kernel, "system", "capability", "list")
+    assert code == 0
+    assert [a["hosts"] for a in report["adapters"] if a["adapter"] == "forge"] == [["git.example.invalid"]]
+    assert ("digest", "forge", ["git.example.invalid"]) in [
+        (u["requester"], u["adapter"], u["hosts"]) for u in report["uses"]
+    ]
+    code, info = hz(kernel, "system", "info")
+    assert info["sections"]["system.capability"]["digest → documents:read"] == "forge → git.example.invalid"
+    code, doctor = hz(kernel, "system", "doctor")
+    assert not [c for c in doctor["checks"]["system.capability"] if c["name"].startswith("hosts of")]
+    assert "project setting forge.api_url" in [c["name"] for c in doctor["checks"]["system.doctor"]]
+    assert hz(kernel, "digest", "title") == (0, "https://ci-bot:t0ken@git.example.invalid:8443/api/v3")
+    everything = json.dumps([report, info, doctor])
+    assert "t0ken" not in everything
+    assert "exfiltrate" not in everything
+
+
+def test_a_bad_configured_host_is_unknown_and_doctor_warns_without_the_value(make_kernel, tmp_path, monkeypatch):
+    kernel = forge_kernel(make_kernel, tmp_path, monkeypatch, '[forge]\napi_url = "not a url, s3cret"\n')
+
+    code, report = hz(kernel, "system", "capability", "list")
+    assert code == 0
+    assert [a["hosts"] for a in report["adapters"] if a["adapter"] == "forge"] == [["unknown (configured)"]]
+    code, info = hz(kernel, "system", "info")
+    assert info["sections"]["system.capability"]["digest → documents:read"] == "forge → unknown (configured)"
+    code, doctor = hz(kernel, "system", "doctor")
+    assert code == 0  # degraded, not down
+    check = next(c for c in doctor["checks"]["system.capability"] if c["name"] == "hosts of forge:documents")
+    assert check["status"] == "degraded"
+    assert check["detail"] == (
+        "the hosts of forge:documents come from its settings, but value 1 of 1 is not a host name or URL; "
+        "shown as unknown (configured)"
+    )
+    assert "hz system config show" in check["fix"]
+    assert "s3cret" not in json.dumps([report, info, doctor])
+
+
+def test_an_unused_adapter_with_a_bad_configured_host_does_not_degrade_doctor(make_kernel, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CAPABILITIES__DOCUMENTS", "elsewhere")  # forge is installed, configured, but unbound
+    kernel = forge_kernel(make_kernel, tmp_path, monkeypatch, '[forge]\napi_url = "not a url"\n')
+
+    code, report = hz(kernel, "system", "capability", "list")
+    assert [a["hosts"] for a in report["adapters"] if a["adapter"] == "forge"] == [["unknown (configured)"]]
+    code, doctor = hz(kernel, "system", "doctor")
+    assert code == 0
+    assert "binding documents" in [c["name"] for c in doctor["checks"]["system.capability"]]  # the env binding won
+    assert not [c for c in doctor["checks"]["system.capability"] if c["name"].startswith("hosts of")]
 
 
 def test_bindings_are_settings_like_any_other(kernel, tmp_path, monkeypatch):

@@ -5,12 +5,14 @@ would turn the same operations into tools and a REST head into endpoints, withou
 """
 
 import inspect
+import ipaddress
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Any, Literal, Self
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, model_validator
 from rich.console import RenderableType
@@ -22,6 +24,9 @@ NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 """Names of modules, jobs and credentials: lowercase words joined by dashes."""
 CRON_ALIASES = frozenset({"@yearly", "@annually", "@monthly", "@weekly", "@daily", "@midnight", "@hourly"})
 _CRON_FIELD = re.compile(r"^[0-9A-Za-z*/,?LW#-]+$", re.ASCII)
+_HOST_NAME = re.compile(
+    r"^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$", re.ASCII
+)
 
 
 def schedule_problem(schedule: str) -> str | None:
@@ -36,6 +41,60 @@ def schedule_problem(schedule: str) -> str | None:
         return None
     aliases = ", ".join(sorted(CRON_ALIASES))
     return f"schedule {schedule!r} must be five cron fields (minute hour day month weekday) or one of {aliases}"
+
+
+def host_of(value: str) -> str | None:
+    """The host name in `value`, a host name or a URL, lowercased; None if it names no valid host.
+
+    Scheme, user information, port, path, query and fragment are dropped, so a URL with a token in it never reaches
+    `hz system info`. Host names are ASCII (the punycode form of an international name); IP addresses are accepted.
+    """
+    try:
+        host = urlsplit(value if "://" in value else f"//{value}").hostname
+    except ValueError:  # malformed IPv6 brackets
+        return None
+    if not host:
+        return None
+    if ":" in host:
+        try:
+            return str(ipaddress.IPv6Address(host))
+        except ValueError:
+            return None
+    return host if _HOST_NAME.fullmatch(host) else None
+
+
+def settings_parameters(func: Callable[..., Any]) -> dict[str, type[ModuleSettings]]:
+    """The parameters of a function that reads only settings, each with the settings class it is annotated with.
+
+    Raises:
+        ValueError: If `func` is a class, takes no parameter, or a parameter is variadic or not annotated with a
+            `ModuleSettings` subclass.
+    """
+    name = getattr(func, "__qualname__", repr(func))
+    if isinstance(func, type):
+        msg = f"Hosts of an adapter come from a function of its settings, not a class ({name})"
+        raise ValueError(msg)  # noqa: TRY004 - a declaration error, like the others raised here
+    try:
+        parameters = inspect.signature(func, eval_str=True).parameters
+    except (NameError, TypeError, ValueError) as exc:
+        msg = f"Can't read the parameters of {name}: {exc}"
+        raise ValueError(msg) from exc
+    found: dict[str, type[ModuleSettings]] = {}
+    for parameter in parameters.values():
+        annotation = parameter.annotation
+        if parameter.kind in {parameter.VAR_POSITIONAL, parameter.VAR_KEYWORD, parameter.POSITIONAL_ONLY} or not (
+            isinstance(annotation, type) and issubclass(annotation, ModuleSettings)
+        ):
+            msg = (
+                f"{name} may only take its module's settings, by type (`settings: MySettings`), so that reading "
+                f"hosts stays cheap and offline; {parameter.name!r} is not one"
+            )
+            raise ValueError(msg)
+        found[parameter.name] = annotation
+    if not found:
+        msg = f"{name} takes no settings; give a list of hosts instead"
+        raise ValueError(msg)
+    return found
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -221,8 +280,26 @@ class ProviderLet(Let):
     modes: frozenset[Mode]
     """The modes it serves; a requester never gets a mode its adapter lacks."""
     hosts: tuple[str, ...] = ()
-    """Hosts it sends data to, e.g. `api.github.com`; empty when that depends on its configuration."""
+    """Hosts it sends data to, e.g. `api.github.com`; empty when its configuration decides them."""
     factory: Callable[..., Any]
+    configured_hosts: Callable[..., Iterable[str]] | None = None
+    """When its settings decide the hosts: a function of the adapter module's settings, injected by type, returning
+    host names or URLs. The kernel calls it when it builds the capability matrix and shows only host names."""
+
+    def __post_init__(self) -> None:
+        """Refuse hosts that aren't host names, and a hosts function that reads more than settings.
+
+        Raises:
+            ValueError: If a host isn't a lowercase host name, both forms are given, or the function is invalid.
+        """
+        if bad := [host for host in self.hosts if host_of(host) != host]:
+            msg = f"Adapter {self.name!r}: hosts must be host names such as api.example.com, not {bad}"
+            raise ValueError(msg)
+        if self.configured_hosts is not None:
+            if self.hosts:
+                msg = f"Adapter {self.name!r}: give hosts as a list or as a function of settings, not both"
+                raise ValueError(msg)
+            settings_parameters(self.configured_hosts)
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
