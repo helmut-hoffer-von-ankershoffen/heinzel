@@ -325,10 +325,10 @@ request (director's decisions, 2026-10-24):
   capability:modes → adapter → hosts; hosts are what the adapter declares, `unknown (configured)` when its
   configuration decides and it doesn't say how (next bullet).
 - **Hosts that settings decide** (director's decision, 2026-10-24). An adapter whose settings decide where data goes,
-  such as a code host adapter whose `api_url` may name a self-hosted server, passes a function instead of a list:
+  such as a code host adapter whose `host` may name a self-hosted server, passes a function instead of a list:
   `@module.provides("code-host", modes={"read"}, hosts=github_hosts)` with
-  `def github_hosts(settings: GithubSettings) -> list[str]: return [settings.api_url]`. A static list stays valid,
-  so the change is additive ([ADR 0026](0026-plugin-api-versioned-with-semver.md)); the function is stored on
+  `def github_hosts(settings: GithubSettings) -> list[str]: return [api_host(settings.host)]`. A static list stays
+  valid, so the change is additive ([ADR 0026](0026-plugin-api-versioned-with-semver.md)); the function is stored on
   `ProviderLet.configured_hosts`, and `ProviderLet.hosts` stays a tuple.
   - *Why a function, not `hosts_from="<setting name>"`*: settings are already injected by type
     ([ADR 0005](0005-dependency-injection-by-type.md)), so the function is type-checked in the plugin, says which
@@ -378,8 +378,9 @@ adapters are first-party plugins, not separate repositories:
 - Vendor code stays out of `src/heinzel`: import-linter forbids the core from importing any first-party plugin and
   any vendor client, and lets each adapter use only the public API (`heinzel`, `heinzel.kernel`), independent of
   the other plugins.
-- Built: GitHub (`code-host`, `tracker`; [ADR 0033](0033-github-rest-api-over-urllib.md)) and Atlassian (`tracker`,
-  `documents`; [ADR 0034](0034-atlassian-cloud-rest-apis-over-urllib.md)), both moved from their own repositories at
+- Built: GitHub (`code-host`, `tracker`; through the `gh` CLI, [ADR 0035](0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md);
+  the pulls list from [ADR 0033](0033-github-rest-api-over-urllib.md)) and Atlassian
+  (`tracker`, `documents`; [ADR 0034](0034-atlassian-cloud-rest-apis-over-urllib.md)), both moved from their own repositories at
   their v0.1.0. Planned: Google Workspace, Zoom and Slack.
 - Separate repositories, scaffolded from `template/`, remain the model for community and company plugins (for
   example `heinzel-example`).
