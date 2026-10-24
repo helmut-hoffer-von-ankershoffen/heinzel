@@ -22,6 +22,9 @@ checks each file again as it reads it (ADR 0044). Themes' logos are served the s
 `POST /api/restart` restarts the server in place, for changes a running process can't load, such as an added plugin
 (`restart_required`, ADR 0047): the process executes `hz` again with the same arguments, handing over its listening
 socket and its token, so the open tab keeps its URL and its token and only waits a moment.
+
+Ctrl-C stops `hz ui` at once: the notice stream and the terminals end before the server waits for them
+(`_shutdown.py`).
 """
 
 import mimetypes
@@ -45,6 +48,8 @@ from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _terminal
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._pairing import add_pairing
+from heinzel.heads.web._shutdown import GRACE_SECONDS, Stopping
+from heinzel.heads.web._shutdown import server as stopping_server
 from heinzel.heads.web._stream import add_stream
 from heinzel.kernel import (
     FONT_ROUTE,
@@ -167,6 +172,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     static: Path | None = STATIC,
     devices: Devices | None = None,
     restart: Callable[[], None] | None = None,
+    stopping: Stopping | None = None,
 ) -> FastAPI:
     """The app `hz ui` serves: the built web app at `/` and the web head's API, behind the token, at `/api`.
 
@@ -177,6 +183,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         static: The built app; None serves the API only (`make web-dev`, where Vite serves the app).
         devices: The paired devices; the user's by default.
         restart: Restarts the server for `POST /api/restart`; None where it can't.
+        stopping: Ends the notice stream and the terminals when the server stops; None where nothing stops it.
 
     Raises:
         HeinzelError: If `static` holds no built app.
@@ -199,7 +206,10 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         return response
 
     paired = devices or devices_for_user()
-    _terminal.add_route(app, token=token, port=port, accept=paired.check)  # before the mount, which takes /api
+    stopping = stopping or Stopping()
+    _terminal.add_route(
+        app, token=token, port=port, accept=paired.check, stopping=stopping
+    )  # before the mount, which takes /api
 
     endpoints = api_app(
         kernel,
@@ -209,7 +219,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         accept=lambda presented: device.id if (device := paired.check(presented)) else None,
     )
     add_pairing(endpoints, paired)
-    add_stream(endpoints, kernel)  # behind the same middleware: Host, Origin and the token
+    add_stream(endpoints, kernel, stopping)  # behind the same middleware: Host, Origin and the token
     app.mount("/api", endpoints)
     add_fonts(app, kernel)
     add_logos(app, kernel)
@@ -328,7 +338,9 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     restartable: bool = True,
     execute: Execute = os.execve,
 ) -> None:
-    """Serve the web head on localhost until interrupted, with a new token, and open the browser at it.
+    """Serve the web head on localhost until Ctrl-C stops it, with a new token, and open the browser at it.
+
+    It returns once stopped; a restart (`POST /api/restart`) replaces the process instead.
 
     Started by a restarting `hz ui` (the `HEINZEL_UI_RESUME` variable), it takes over that process's socket and
     token instead and opens no browser: the tab is still open.
@@ -366,13 +378,16 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
             handover.append(duplicate)
         server.should_exit = True
 
+    stopping = Stopping()
     try:
-        app = build(kernel, port=bound, token=token, static=static, restart=restart if restartable else None)
+        app = build(
+            kernel, port=bound, token=token, static=static, restart=restart if restartable else None, stopping=stopping
+        )
     except BaseException:
         sock.close()
         raise
-    # Open notice streams end on their own within minutes; on Ctrl+C don't wait for them.
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off", timeout_graceful_shutdown=1))
+    config = uvicorn.Config(app, log_level="warning", lifespan="off", timeout_graceful_shutdown=GRACE_SECONDS)
+    server = stopping_server(config, stopping)
     url = session_url(bound, token, base)
 
     def when_started() -> None:
@@ -388,7 +403,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
         server.run(sockets=[sock])
     finally:
         sock.close()
-    if handover:
+    if handover and not stopping.interrupted:  # Ctrl-C while restarting stops it
         command = [sys.executable, "-m", "heinzel", *sys.argv[1:]]
         execute(sys.executable, command, {**os.environ, RESUME: f"{handover[0]}:{token}"})
 
