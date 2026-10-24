@@ -50,3 +50,13 @@ def test_paths_with_spaces_are_quoted_for_systemd():
 def test_intervals_must_divide_an_hour(minutes):
     with pytest.raises(ValueError, match="divide an hour"):
         check_interval(minutes)
+
+
+def test_percent_signs_are_escaped_for_systemd():
+    assert "ExecStart=/home/ada/100%%/bin/hz system daemon tick" in systemd_service(Path("/home/ada/100%/bin/hz"))
+
+
+def test_the_tick_report_is_discarded_and_only_crashes_are_logged():
+    agent = plistlib.loads(launchd_plist(Path("/x/hz"), 5, Path("/logs")).encode())
+    assert (agent["StandardOutPath"], agent["StandardErrorPath"]) == ("/dev/null", "/logs/launchd.err.log")
+    assert "StandardOutput=null" in systemd_service(Path("/x/hz"))
