@@ -5,6 +5,7 @@ import { type FormEvent, type RefObject, useId, useState } from "react";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
 import { useConfig } from "@/api/queries";
 import { CopyCommand } from "@/components/common";
+import { Prose } from "@/components/Prose";
 import { Button } from "@/components/ui/button";
 import { format, t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -100,7 +101,7 @@ function MessageItem({ message }: { message: SchemaChatMessage }) {
           )}
         </>
       ) : (
-        <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
+        <Prose>{message.text}</Prose>
       )}
       {!user && (
         <>
@@ -165,11 +166,7 @@ export function Conversation({ chat, empty }: { chat: Chat; empty?: string }) {
             <p className="whitespace-pre-wrap">{chat.live.message}</p>
           </li>
           <li role="status" className="mr-4 py-1 text-sm">
-            {chat.live.text ? (
-              <p className="whitespace-pre-wrap leading-relaxed">{chat.live.text}</p>
-            ) : (
-              t("chat.thinking")
-            )}
+            {chat.live.text ? <Prose>{chat.live.text}</Prose> : t("chat.thinking")}
             {chat.live.tools.length > 0 && (
               <p className="mt-1 text-xs text-muted-foreground">
                 {t("chat.tools", { tools: chat.live.tools.map((name) => name.replace(/^mcp__hz__/, "")).join(", ") })}
