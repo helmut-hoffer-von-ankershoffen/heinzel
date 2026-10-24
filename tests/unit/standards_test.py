@@ -150,6 +150,18 @@ def test_core_only_files_exist():
     assert [path for path in CORE_ONLY if not (REPO / path).is_file()] == [], "remove stale CORE_ONLY entries"
 
 
+def test_tests_may_use_fake_tokens_in_heinzel_and_in_plugins():
+    """Plugin tests hand fake tokens to adapters; a plugin that ignores S105/S106 in its own pyproject loses that to
+    `make update-template`, so the rule lives in the template, which sync_template.py derives from ours."""
+    core = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+    ignored = core["tool"]["ruff"]["lint"]["per-file-ignores"]["**/tests/**/*.py"]
+    template = (TEMPLATE / "pyproject.toml.jinja").read_text(encoding="utf-8")
+    block = re.search(r'^"\*\*/tests/\*\*/\*\.py" = \[(.*?)^\]', template, re.MULTILINE | re.DOTALL)
+    assert block
+    assert {"S105", "S106"} <= set(ignored)
+    assert re.findall(r'^\s*"([A-Z]+\d*)"', block[1], re.MULTILINE) == ignored
+
+
 # Environment variables: tests and the template use only HZ_* names that something reads.
 
 ENV_NAME = re.compile(r"(?<![A-Za-z0-9_])HZ_[A-Z0-9_]+")
