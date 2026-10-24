@@ -311,8 +311,8 @@ def test_plugin_search_offline_shows_first_party_plugins_and_a_warning(app, monk
 
 
 def test_plugin_search_help_says_it_queries_github(app):
-    result = runner.invoke(app, ["system", "plugin", "search", "--help"], env={"COLUMNS": "200"})
-    assert "by querying the GitHub API" in result.output
+    result = runner.invoke(app, ["system", "plugin", "search", "--help"])
+    assert "by querying the GitHub API" in " ".join(result.output.split())  # the help wraps at the pinned width
 
 
 def test_plugin_remove_refuses_heinzel_itself(app):
