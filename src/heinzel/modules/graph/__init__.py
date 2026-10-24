@@ -1,4 +1,4 @@
-"""The team graph: are the team's promises kept? Built from team contracts and telemetry, never from a model (ADR 0053).
+"""The team graph: are the team's promises kept? Built from team contracts and telemetry, never from a model (ADR 0054).
 
 Nodes are artifacts and Heinzelmännchen; edges are `reads` and `writes`, declared by team contracts and observed in
 what Heinzelmännchen report (`hz report`). Each run of a scheduled team contract promises its artifact by a deadline,

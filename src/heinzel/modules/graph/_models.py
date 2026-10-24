@@ -92,7 +92,7 @@ class EdgeMetadata(_Strict):
 class Edge(_Strict):
     """A JGF edge from a Heinzelmännchen to an artifact: it reads it or writes it."""
 
-    source: str = Field(description="The Heinzelmännchen's node id.")
+    source: str = Field(description="The Heinzelmännchen's node id, `heinzel:<id>`: who reads or writes.")
     target: str = Field(description="The artifact's node id.")
     relation: Relation = Field(description="`reads` or `writes`.")
     metadata: EdgeMetadata = Field(description="How the promise behind it stands.")
@@ -132,6 +132,9 @@ class GraphMetadata(_Strict):
     filters: Filters = Field(description="How the graph was cut.")
     weeks: list[Week] = Field(description="Promises kept per week, oldest first.")
     waiting: list[Waiting] = Field(description="Where the flow waits now.")
+    summary: str = Field(
+        description="The flow in one line, e.g. `Weekly report waiting on 2 updates`, or `Nothing waits`."
+    )
     problems: list[str] = Field(description="Telemetry lines that were skipped, and why.")
 
 

@@ -7,7 +7,7 @@
       "description": "A JGF edge from a Heinzelmännchen to an artifact: it reads it or writes it.",
       "properties": {
         "source": {
-          "description": "The Heinzelmännchen's node id.",
+          "description": "The Heinzelmännchen's node id, `heinzel:<id>`: who reads or writes.",
           "title": "Source",
           "type": "string"
         },
@@ -252,6 +252,11 @@
           "title": "Waiting",
           "type": "array"
         },
+        "summary": {
+          "description": "The flow in one line, e.g. `Weekly report waiting on 2 updates`, or `Nothing waits`.",
+          "title": "Summary",
+          "type": "string"
+        },
         "problems": {
           "description": "Telemetry lines that were skipped, and why.",
           "items": {
@@ -267,6 +272,7 @@
         "filters",
         "weeks",
         "waiting",
+        "summary",
         "problems"
       ],
       "title": "GraphMetadata",

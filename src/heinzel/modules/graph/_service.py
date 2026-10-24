@@ -1,4 +1,4 @@
-"""The graph service: reads the team's promises and telemetry through the kernel and builds the graph (ADR 0053)."""
+"""The graph service: reads the team's promises and telemetry through the kernel and builds the graph (ADR 0054)."""
 
 from collections.abc import Callable
 from datetime import UTC, datetime, tzinfo
@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from heinzel import HeinzelError, TeamPromises, TelemetryLog
 from heinzel.kernel import Kernel, parse_duration
-from heinzel.modules.graph._build import Builder, Inputs, cut
+from heinzel.modules.graph._build import HEINZEL, Builder, Inputs, cut
 from heinzel.modules.graph._models import Filters, GraphSettings, State, TeamGraphDocument
 
 LOCALTIME = Path("/etc/localtime")
@@ -85,6 +85,7 @@ class GraphService:
             weeks=self._settings.weeks,
         )
         document = Builder(inputs).build()
+        heinzel = f"{HEINZEL}{heinzel.removeprefix(HEINZEL)}" if heinzel is not None else None
         for wanted, kind in ((artifact, "artifact"), (heinzel, "heinzel")):
             node = document.graph.nodes.get(wanted or "")
             if wanted is not None and (node is None or node.metadata.kind != kind):

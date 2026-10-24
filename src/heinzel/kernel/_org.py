@@ -69,7 +69,7 @@ class OrgContext:
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class TeamPromise:
-    """What one team contract promises the team: the artifact it keeps, what it reads, and when (ADR 0053).
+    """What one team contract promises the team: the artifact it keeps, what it reads, and when (ADR 0054).
 
     The part of a team contract every member sees and holds it to; its body, its drafts and how its user runs it stay
     with that user.

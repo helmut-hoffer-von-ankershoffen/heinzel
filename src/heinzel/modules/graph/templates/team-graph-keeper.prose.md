@@ -22,7 +22,7 @@ hz:
 
 # Team graph keeper
 
-<!-- A playbook template of the core's graph module (ADR 0053). It drafts; it never sends, posts or tells anyone. -->
+<!-- A playbook template of the core's graph module (ADR 0054). It drafts; it never sends, posts or tells anyone. -->
 
 ### Goal
 

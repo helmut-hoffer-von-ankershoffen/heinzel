@@ -1,4 +1,4 @@
-"""Telemetry, named after OpenTelemetry: where Heinzelmännchen log what they did, as `hz report` (ADR 0053).
+"""Telemetry, named after OpenTelemetry: where Heinzelmännchen log what they did, as `hz report` (ADR 0054).
 
 A Heinzelmännchen reports each action the team should see, one command per verb: what it `read` (and by when its
 contract needs it), what it `drafted`, who `approved` it, where it `published`, when it `fell-back` on a stale input,

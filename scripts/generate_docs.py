@@ -8,7 +8,7 @@
   (BADGE_PAGES), and the same set for a plugin's own repository in the template's README.md and SECURITY.md.
 - docs/schemas/contract-frontmatter-1.json: the JSON Schema of workflow contract frontmatter (ADR 0021).
 - docs/schemas/team-graph-1.json and telemetry-entry-1.json: `hz graph --json` (JSON Graph Format v2, profile
-  `hz-team`) and one line of a Heinzelmännchen's telemetry log (ADR 0053).
+  `hz-team`) and one line of a Heinzelmännchen's telemetry log (ADR 0054).
 
 Usage: uv run python scripts/generate_docs.py [--check]
 """

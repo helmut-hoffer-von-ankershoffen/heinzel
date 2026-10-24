@@ -1,4 +1,4 @@
-"""The `TeamPromises` workflow provides: what each valid team contract promises the team (ADR 0053).
+"""The `TeamPromises` workflow provides: what each valid team contract promises the team (ADR 0054).
 
 The `graph` module holds the team to these promises; it reads them through this kernel type rather than the contracts,
 so it never parses a contract and never sees a body.

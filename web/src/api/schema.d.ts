@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.
+         * @description Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.
+         */
+        get: operations["graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org/agenda": {
         parameters: {
             query?: never;
@@ -2371,6 +2391,61 @@ export interface components {
          */
         Disposition: "rendered" | "skipped" | "failed";
         /**
+         * Edge
+         * @description A JGF edge from a Heinzelmännchen to an artifact: it reads it or writes it.
+         */
+        Edge: {
+            /** @description How the promise behind it stands. */
+            metadata: components["schemas"]["EdgeMetadata"];
+            /**
+             * Relation
+             * @description `reads` or `writes`.
+             * @enum {string}
+             */
+            relation: "reads" | "writes";
+            /**
+             * Source
+             * @description The Heinzelmännchen's node id, `heinzel:<id>`: who reads or writes.
+             */
+            source: string;
+            /**
+             * Target
+             * @description The artifact's node id.
+             */
+            target: string;
+        };
+        /**
+         * EdgeMetadata
+         * @description Whether a read or write is promised, happened, and how the promise behind it stands.
+         */
+        EdgeMetadata: {
+            /**
+             * Declared
+             * @description A team contract says so.
+             */
+            declared: boolean;
+            /**
+             * Last Version
+             * @description The artifact's version last read or published, as reported.
+             */
+            last_version: string | null;
+            /**
+             * Needed By
+             * @description For `reads`: by when the reader said it needs it, as reported.
+             */
+            needed_by: string | null;
+            /**
+             * Observed
+             * @description A Heinzelmännchen reported it.
+             */
+            observed: boolean;
+            /**
+             * State
+             * @description For `writes`: the writer's current promise; for `reads`: the state of what is read.
+             */
+            state: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;
+        };
+        /**
          * Event
          * @description One occurrence of an entry in a calendar; a recurring entry is expanded into its occurrences.
          */
@@ -2459,6 +2534,67 @@ export interface components {
             operations: components["schemas"]["OperationAudience"][];
         };
         /**
+         * Filters
+         * @description The filters the graph was cut with; none means everything.
+         */
+        Filters: {
+            /**
+             * Artifact
+             * @description Only this artifact and what is around it.
+             */
+            artifact: string | null;
+            /**
+             * Heinzel
+             * @description Only this Heinzelmännchen and what is around it.
+             */
+            heinzel: string | null;
+            /**
+             * State
+             * @description Only nodes in this state.
+             */
+            state: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;
+        };
+        /**
+         * Graph
+         * @description A JGF v2 graph of profile `hz-team`.
+         */
+        Graph: {
+            /**
+             * Directed
+             * @description Edges go from a Heinzelmännchen to an artifact.
+             * @default true
+             * @constant
+             */
+            directed: true;
+            /**
+             * Edges
+             * @description Every edge, sorted by source, target and relation.
+             */
+            edges: components["schemas"]["Edge"][];
+            /**
+             * Label
+             * @description What the graph is.
+             * @default Team graph
+             */
+            label: string;
+            /** @description When, how it was cut, the weeks and where the flow waits. */
+            metadata: components["schemas"]["GraphMetadata"];
+            /**
+             * Nodes
+             * @description Every node by its id.
+             */
+            nodes: {
+                [key: string]: components["schemas"]["Node"];
+            };
+            /**
+             * Type
+             * @description The JGF profile: `hz-team`.
+             * @default hz-team
+             * @constant
+             */
+            type: "hz-team";
+        };
+        /**
          * GraphEdge
          * @description A contract maintaining an asset, or a contract reading an asset or a source as one of its inputs.
          */
@@ -2484,6 +2620,45 @@ export interface components {
              * @description The id it ends at: the asset maintained, or the contract that reads.
              */
             target: string;
+        };
+        /**
+         * GraphMetadata
+         * @description When the graph is as of, how it was cut, the weeks, where the flow waits and what was skipped.
+         */
+        GraphMetadata: {
+            /**
+             * As Of
+             * Format: date-time
+             * @description When the graph is as of, in UTC.
+             */
+            as_of: string;
+            /** @description How the graph was cut. */
+            filters: components["schemas"]["Filters"];
+            /**
+             * Problems
+             * @description Telemetry lines that were skipped, and why.
+             */
+            problems: string[];
+            /**
+             * Summary
+             * @description The flow in one line, e.g. `Weekly report waiting on 2 updates`, or `Nothing waits`.
+             */
+            summary: string;
+            /**
+             * Time Zone
+             * @description The zone schedules were read in.
+             */
+            time_zone: string;
+            /**
+             * Waiting
+             * @description Where the flow waits now.
+             */
+            waiting: components["schemas"]["Waiting"][];
+            /**
+             * Weeks
+             * @description Promises kept per week, oldest first.
+             */
+            weeks: components["schemas"]["Week"][];
         };
         /**
          * GraphNode
@@ -2910,6 +3085,71 @@ export interface components {
              * @description Version of that distribution.
              */
             version: string;
+        };
+        /**
+         * Node
+         * @description A JGF node: an artifact or a Heinzelmännchen.
+         */
+        Node: {
+            /**
+             * Label
+             * @description What to call it.
+             */
+            label: string;
+            /** @description What the team sees of it. */
+            metadata: components["schemas"]["NodeMetadata"];
+        };
+        /**
+         * NodeMetadata
+         * @description What the team sees of an artifact or a Heinzelmännchen: never content, descriptions or per-person counts.
+         */
+        NodeMetadata: {
+            /**
+             * Contract
+             * @description The team contract that keeps it, or that it keeps: `team:<name>`.
+             */
+            contract: string | null;
+            /**
+             * Contract Version
+             * @description That contract's version: its `version`, else `sha256:<hex>`.
+             */
+            contract_version: string | null;
+            /**
+             * Deadline
+             * @description When the current promise is due: the next run of a contract that reads it, else its own next run.
+             */
+            deadline: string | null;
+            /**
+             * Kind
+             * @description `artifact` (a thing the team keeps or reads) or `heinzel` (who keeps it).
+             * @enum {string}
+             */
+            kind: "artifact" | "heinzel";
+            /**
+             * Last Seen
+             * @description For a Heinzelmännchen: its newest entry, a heartbeat included.
+             */
+            last_seen: string | null;
+            /**
+             * Owner
+             * @description The roster handle of the user whose Heinzelmännchen keeps it, or who it belongs to; none when several keep it or nobody does.
+             */
+            owner: string | null;
+            /**
+             * Parent
+             * @description For a part of an artifact (a tracker's row): the containing artifact's node id.
+             */
+            parent: string | null;
+            /**
+             * State
+             * @description The current promise's state: on_time, waiting_for_approval, late, fell_back or offline; none when nothing is promised (no schedule, or an artifact nobody on the team keeps).
+             */
+            state: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;
+            /**
+             * Url
+             * @description Where the artifact lives, as last reported; none if never reported.
+             */
+            url: string | null;
         };
         /**
          * Notice
@@ -3842,6 +4082,14 @@ export interface components {
             version: string;
         };
         /**
+         * TeamGraphDocument
+         * @description A JSON Graph Format v2 document holding one graph: `{"graph": {...}}`.
+         */
+        TeamGraphDocument: {
+            /** @description The team graph. */
+            graph: components["schemas"]["Graph"];
+        };
+        /**
          * TeamShow
          * @description Your team as configured and as its repository says.
          */
@@ -4265,6 +4513,58 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /**
+         * Waiting
+         * @description Where the flow waits now: an artifact whose current promise isn't kept yet, and what it waits on.
+         */
+        Waiting: {
+            /**
+             * Artifact
+             * @description The artifact's node id.
+             */
+            artifact: string;
+            /**
+             * On
+             * @description The node ids of the inputs (or their parts) not updated yet.
+             */
+            on: string[];
+            /**
+             * Summary
+             * @description One line, e.g. `Weekly report waiting on 2 updates`.
+             */
+            summary: string;
+        };
+        /**
+         * Week
+         * @description Promises due in one ISO week, by how they ended: the team's flow, never anyone's performance.
+         */
+        Week: {
+            /**
+             * Due
+             * @description Promises whose deadline fell in the week and has passed, or that were kept.
+             */
+            due: number;
+            /**
+             * Fell Back
+             * @description Kept by the deadline on a stale input.
+             */
+            fell_back: number;
+            /**
+             * Late
+             * @description Kept after the deadline, or not at all.
+             */
+            late: number;
+            /**
+             * On Time
+             * @description Kept by the deadline.
+             */
+            on_time: number;
+            /**
+             * Week
+             * @description The ISO week, e.g. 2026-W43.
+             */
+            week: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -4306,9 +4606,14 @@ export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
 export type SchemaDisposition = components['schemas']['Disposition'];
+export type SchemaEdge = components['schemas']['Edge'];
+export type SchemaEdgeMetadata = components['schemas']['EdgeMetadata'];
 export type SchemaEvent = components['schemas']['Event'];
 export type SchemaExpertMode = components['schemas']['ExpertMode'];
+export type SchemaFilters = components['schemas']['Filters'];
+export type SchemaGraph = components['schemas']['Graph'];
 export type SchemaGraphEdge = components['schemas']['GraphEdge'];
+export type SchemaGraphMetadata = components['schemas']['GraphMetadata'];
 export type SchemaGraphNode = components['schemas']['GraphNode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthReport = components['schemas']['HealthReport'];
@@ -4324,6 +4629,8 @@ export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
+export type SchemaNode = components['schemas']['Node'];
+export type SchemaNodeMetadata = components['schemas']['NodeMetadata'];
 export type SchemaNotice = components['schemas']['Notice'];
 export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
@@ -4351,6 +4658,7 @@ export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStatus = components['schemas']['Status'];
 export type SchemaStep = components['schemas']['Step'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
+export type SchemaTeamGraphDocument = components['schemas']['TeamGraphDocument'];
 export type SchemaTeamShow = components['schemas']['TeamShow'];
 export type SchemaTemplateView = components['schemas']['TemplateView'];
 export type SchemaTested = components['schemas']['Tested'];
@@ -4362,8 +4670,48 @@ export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
+export type SchemaWaiting = components['schemas']['Waiting'];
+export type SchemaWeek = components['schemas']['Week'];
 export type $defs = Record<string, never>;
 export interface operations {
+    graph: {
+        parameters: {
+            query?: {
+                /** @description Only this artifact, its parts and what reads or writes them, by node id. */
+                artifact?: string | null;
+                /** @description Only this Heinzelmännchen and what it reads and writes, by its id. */
+                heinzel?: string | null;
+                /** @description Only nodes in this state: on_time, waiting_for_approval, late, fell_back or offline. */
+                state?: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;
+                /** @description The graph as of this time, ISO 8601 with offset; now by default. */
+                at?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamGraphDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     org_agenda: {
         parameters: {
             query?: never;

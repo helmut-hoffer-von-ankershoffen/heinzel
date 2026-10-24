@@ -1,4 +1,4 @@
-"""`hz report` and `hz graph` through the heads: telemetry in, a team graph of kept promises out (ADR 0053).
+"""`hz report` and `hz graph` through the heads: telemetry in, a team graph of kept promises out (ADR 0054).
 
 The scenario is the fixture team under `tests/fixtures/graph/team/`: Priya's and Costas's Heinzelmännchen keep their
 rows of the tracker every Wednesday, Mira's drafts the weekly report from the rows every Friday. On Friday at 15:00
@@ -75,10 +75,10 @@ def test_the_graph_shows_where_the_flow_waits_and_each_promise(kernel):
     assert graph["directed"] is True
     assert graph["type"] == "hz-team"
     (waiting,) = graph["metadata"]["waiting"]
-    assert waiting["summary"] == "Weekly report waiting on 2 updates"
+    assert waiting["summary"] == graph["metadata"]["summary"] == "Weekly report waiting on 2 updates"
     states = {node: value["metadata"]["state"] for node, value in graph["nodes"].items()}
-    assert states["priya-tracker"] == "waiting_for_approval"
-    assert states["costas-tracker"] == "offline"
+    assert states["heinzel:priya-tracker"] == "waiting_for_approval"
+    assert states["heinzel:costas-tracker"] == "offline"
     assert states["contract:team/tracker-update#row"] == "offline"  # the worst of its rows
     assert states["contract:team/weekly-report#report"] == "fell_back"
     row = graph["nodes"]["contract:team/tracker-update#row/priya"]["metadata"]
@@ -100,23 +100,23 @@ def test_no_description_or_content_reaches_the_graph(kernel):
 def test_filters_cut_the_graph_around_what_they_select(kernel):
     _, document = hz(kernel, "graph", "--at", FRIDAY, "--heinzel", "priya-tracker")
     assert set(document["graph"]["nodes"]) == {
-        "priya-tracker",
+        "heinzel:priya-tracker",
         "contract:team/tracker-update#row/priya",
         "contract:team/tracker-update#row",
     }
-    assert document["graph"]["metadata"]["filters"]["heinzel"] == "priya-tracker"
+    assert document["graph"]["metadata"]["filters"]["heinzel"] == "heinzel:priya-tracker"
     _, document = hz(kernel, "graph", "--at", FRIDAY, "--state", "offline")
-    assert {"costas-tracker", "contract:team/tracker-update#row"} <= set(document["graph"]["nodes"])
-    assert "priya-tracker" not in document["graph"]["nodes"]
+    assert {"heinzel:costas-tracker", "contract:team/tracker-update#row"} <= set(document["graph"]["nodes"])
+    assert "heinzel:priya-tracker" not in document["graph"]["nodes"]
     _, document = hz(kernel, "graph", "--at", FRIDAY, "--artifact", "contract:team/tracker-update#row")
-    assert {"priya-tracker", "costas-tracker", "mira-report"} <= set(document["graph"]["nodes"])
+    assert {"heinzel:priya-tracker", "heinzel:costas-tracker", "heinzel:mira-report"} <= set(document["graph"]["nodes"])
 
 
 def test_a_filter_naming_nothing_says_what_there_is(kernel):
     code, output = hz(kernel, "graph", "--at", FRIDAY, "--heinzel", "theo-tracker")
     assert code == 1
-    assert "No heinzel 'theo-tracker'" in str(output)
-    assert "costas-tracker" in str(output)
+    assert "No heinzel 'heinzel:theo-tracker'" in str(output)
+    assert "heinzel:costas-tracker" in str(output)
 
 
 def test_a_report_synced_into_the_team_repository_changes_the_graph(kernel, team):
@@ -139,7 +139,7 @@ def test_a_report_synced_into_the_team_repository_changes_the_graph(kernel, team
     assert reported["entry"]["user"] == "costas"
     assert reported["next"] == ["copy your logs into the team repository: hz report sync"]
     code, graph = hz(kernel, "graph")  # your own unsynced log counts for you at once
-    assert graph["graph"]["nodes"]["costas-tracker"]["metadata"]["state"] in {"on_time", "late"}  # kept, today
+    assert graph["graph"]["nodes"]["heinzel:costas-tracker"]["metadata"]["state"] in {"on_time", "late"}  # kept, today
     code, synced = hz(kernel, "report", "sync")
     assert code == 0, synced
     (log,) = synced["logs"]

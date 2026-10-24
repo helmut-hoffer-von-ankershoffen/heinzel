@@ -51,6 +51,8 @@ from heinzel.modules.graph._models import (
 )
 
 WRITES = frozenset({"drafted", "approved", "published"})
+HEINZEL = "heinzel:"
+"""What a Heinzelmännchen's node id starts with, before its id: `heinzel:costas-tracker`."""
 type Found = tuple[dict[str, "Node"], dict[tuple[str, str, str], "Edge"], dict[str, str]]
 """The nodes and edges found so far, and each team artifact's place."""
 MAX_SLOTS = 400
@@ -59,7 +61,7 @@ MAX_SLOTS = 400
 
 def worst(states: Iterable[State | None]) -> State | None:
     """The worst of `states`, ignoring none; none if all are none."""
-    known = [s for s in states if s is not None]
+    known: list[State] = [s for s in states if s is not None]
     return max(known, key=STATES.index) if known else None
 
 
@@ -128,14 +130,16 @@ class Builder:
         for entry in sorted(inputs.entries, key=lambda e: (e.time, e.heinzel_id)):
             if entry.time > inputs.as_of:
                 continue
-            keeper = self.keepers.setdefault(entry.heinzel_id, Keeper(entry.heinzel_id, entry.user))
+            node = f"{HEINZEL}{entry.heinzel_id}"
+            keeper = self.keepers.setdefault(node, Keeper(node, entry.user))
             keeper.entries.append(entry)
             keeper.last_seen = entry.time
             if entry.contract in self.promises:
                 keeper.contract = entry.contract
         for promise in inputs.promises:
             if not any(k.contract == promise.contract for k in self.keepers.values()):
-                self.keepers[promise.contract] = Keeper(promise.contract, None, contract=promise.contract)
+                node = f"{HEINZEL}{promise.contract}"
+                self.keepers[node] = Keeper(node, None, contract=promise.contract)
         self.readers: dict[str, list[TeamPromise]] = defaultdict(list)
         for promise in inputs.promises:
             for read in promise.reads:
@@ -216,7 +220,8 @@ class Builder:
                     time_zone=self.inputs.zone_name,
                     filters=Filters(artifact=None, heinzel=None, state=None),
                     weeks=self._weeks(history),
-                    waiting=self._waiting(nodes, current),
+                    waiting=(waiting := self._waiting(nodes, current)),
+                    summary="; ".join(w.summary for w in waiting) or "Nothing waits",
                     problems=list(self.inputs.problems),
                 ),
                 nodes=dict(sorted(nodes.items())),
@@ -277,7 +282,7 @@ class Builder:
         stale = keeper.last_seen is None or self.inputs.as_of - keeper.last_seen > self.inputs.offline_after
         state: State | None = occurrence.state if occurrence else ("offline" if stale else None)
         return Node(
-            label=promise.title if promise and keeper.user is None else keeper.id,
+            label=promise.title if promise and keeper.user is None else keeper.id.removeprefix(HEINZEL),
             metadata=NodeMetadata(
                 kind="heinzel",
                 owner=keeper.user,

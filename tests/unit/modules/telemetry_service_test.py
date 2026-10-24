@@ -1,4 +1,4 @@
-"""Each Heinzelmännchen's append-only log, and its copy in the team repository with one writer per file (ADR 0053)."""
+"""Each Heinzelmännchen's append-only log, and its copy in the team repository with one writer per file (ADR 0054)."""
 
 import json
 from datetime import UTC, datetime, timedelta

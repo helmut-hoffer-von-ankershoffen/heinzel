@@ -1,4 +1,4 @@
-"""Append-only logs, one per Heinzelmännchen, and their copies in the team repository (ADR 0053).
+"""Append-only logs, one per Heinzelmännchen, and their copies in the team repository (ADR 0054).
 
 A log is `<state dir>/telemetry/<heinzel_id>.jsonl`, one JSON entry per line. Only `hz report` writes it, appending
 under an exclusive lock so a daemon and a handoff reporting at once don't interleave, and never through a symbolic

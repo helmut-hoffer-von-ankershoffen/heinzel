@@ -489,7 +489,7 @@ class Directory(Protocol):
 
 
 class TeamGraph(Protocol):
-    """The team's graph of kept promises (capability `team-graph`, ADR 0053), as a JSON Graph Format document.
+    """The team's graph of kept promises (capability `team-graph`, ADR 0054), as a JSON Graph Format document.
 
     Served by the core's `hz-graph` adapter (`graph`), which builds it from the team's contracts and the telemetry its
     Heinzelmännchen report. It is how a contract reads the graph: the team graph keeper's input. The document follows

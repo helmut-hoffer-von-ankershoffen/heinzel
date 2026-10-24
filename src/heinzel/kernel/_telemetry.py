@@ -1,4 +1,4 @@
-"""Telemetry: what each Heinzelmännchen says it did, one entry per action, metadata only (ADR 0053).
+"""Telemetry: what each Heinzelmännchen says it did, one entry per action, metadata only (ADR 0054).
 
 A Heinzelmännchen reports what it read, drafted, had approved, published or fell back on, and that it is alive, through
 `hz report`. Each one appends to its own log, a JSON Lines file only it writes, and the log is copied into the team's
