@@ -530,6 +530,27 @@ def test_one_contract_failing_its_checks_doesnt_hide_the_others(make, dirs, monk
     assert "RuntimeError: boom" in contracts[0].diagnostics[-1].message
 
 
+def test_an_unreadable_directory_is_reported_and_the_other_still_read(make, dirs, monkeypatch):
+    put(dirs[0])
+    team_dir = dirs[1] / "workflows"
+    original = service_module.collect
+
+    def refuse(directory: Path) -> list[Path]:
+        if directory == team_dir:
+            raise PermissionError(13, "Permission denied")
+        return original(directory)
+
+    monkeypatch.setattr(service_module, "collect", refuse)
+    contracts = make().contracts()
+    assert [(c.qualified, c.valid) for c in contracts] == [("team:workflows", False), ("me:weekly-digest", True)]
+    problem = contracts[0].diagnostics[0]
+    assert (problem.file, problem.field, problem.message) == (
+        team_dir,
+        "directory",
+        "can't read the directory: Permission denied",
+    )
+
+
 def test_a_manual_run_says_it_has_no_receipt(make, dirs):
     put(dirs[0])
     result = make().run("weekly-digest")

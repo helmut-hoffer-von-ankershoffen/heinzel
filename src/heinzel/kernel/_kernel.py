@@ -207,8 +207,8 @@ class Kernel:
         bound adapter serves. Writes come with approvals (`hz inbox`, ADR 0020), so a publishing requester is refused.
 
         Raises:
-            HeinzelError: If the capability is unknown, the requester publishes, didn't declare the capability, or
-                no adapter serves it.
+            HeinzelError: If the capability is unknown; the requester isn't a job of the enabled module providing
+                `CompiledJobs`, publishes or pins an adapter; it didn't declare the capability; or no adapter serves it.
         """
         spec = CAPABILITIES.get(capability)
         if spec is None:

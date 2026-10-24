@@ -107,7 +107,16 @@ class WorkflowService:
             try:
                 paths = collect(directory)
             except OSError as exc:  # an unreadable directory is reported, not fatal
-                found.append(read_contract(directory / f"(unreadable: {exc.strerror})", namespace))
+                problem = Diagnostic(
+                    file=directory,
+                    line=1,
+                    code="HZC001",
+                    severity="error",
+                    field="directory",
+                    message=f"can't read the directory: {exc.strerror or exc}",
+                    hint="check that it exists and that you may read it",
+                )
+                found.append(Contract(directory, namespace, directory.name, None, "", (problem,)))
                 continue
             for path in paths:
                 contract = read_contract(path, namespace)
