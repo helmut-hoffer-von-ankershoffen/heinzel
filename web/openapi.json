@@ -717,6 +717,77 @@
         "title": "CatchUp",
         "type": "string"
       },
+      "Channel": {
+        "description": "One way a notice can reach you, and whether it can now.",
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The command that fixes it in a terminal, if one does.",
+            "title": "Command"
+          },
+          "detail": {
+            "description": "Why, in words, with the system's own reason when it gave one.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "fix": {
+            "anyOf": [
+              {
+                "enum": [
+                  "open-settings",
+                  "install-notifier",
+                  "install-daemon",
+                  "turn-on"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What fixes it, for a button; none when nothing must.",
+            "title": "Fix"
+          },
+          "name": {
+            "description": "`web`: the open web app; `native`: the system's pop-ups (Heinzel Notifier on macOS); `daemon`: the background ticks that hand due notices to the native notifier when no web app is open.",
+            "enum": [
+              "web",
+              "native",
+              "daemon"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "state": {
+            "description": "`shown`: it popped the test up now; `ready`: it can; `closed`: no web app is open; `blocked`: the system refuses it; `missing`: not installed; `off`: turned off in the settings; `unknown`: can't tell.",
+            "enum": [
+              "shown",
+              "ready",
+              "closed",
+              "blocked",
+              "missing",
+              "off",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "state",
+          "detail"
+        ],
+        "title": "Channel",
+        "type": "object"
+      },
       "ChatAction": {
         "description": "An operation the agent proposed; it runs only when the person confirms it, with exactly these arguments.",
         "properties": {
@@ -3857,6 +3928,27 @@
         "title": "NoticeList",
         "type": "object"
       },
+      "Opened": {
+        "description": "Whether the system's notification settings were opened.",
+        "properties": {
+          "message": {
+            "description": "What happened, or what to open by hand.",
+            "title": "Message",
+            "type": "string"
+          },
+          "opened": {
+            "description": "Whether they were opened on this machine.",
+            "title": "Opened",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "opened",
+          "message"
+        ],
+        "title": "Opened",
+        "type": "object"
+      },
       "OperationAudience": {
         "description": "Who one operation is for.",
         "properties": {
@@ -5466,8 +5558,16 @@
         "type": "object"
       },
       "Tested": {
-        "description": "What `test` recorded, and how the native pop-up went when it was asked for.",
+        "description": "What `test` recorded, how each way of reaching you stands, and whether anything can pop it up.",
         "properties": {
+          "channels": {
+            "description": "The web app, the native notifier, the daemon.",
+            "items": {
+              "$ref": "#/components/schemas/Channel"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
           "native": {
             "anyOf": [
               {
@@ -5483,6 +5583,12 @@
           "notice": {
             "$ref": "#/components/schemas/Notice",
             "description": "The test notice."
+          },
+          "pops_up": {
+            "default": true,
+            "description": "Whether anything pops the test up: it was shown, a web app is open, or the daemon hands it to a native notifier that may show it. False means nothing will: see the channels' fixes.",
+            "title": "Pops Up",
+            "type": "boolean"
           }
         },
         "required": [
@@ -7496,9 +7602,31 @@
         ]
       }
     },
+    "/system/notify/settings": {
+      "post": {
+        "description": "Open the system's notification settings to allow hz's pop-ups (macOS: System Settings).",
+        "operationId": "system_notify_settings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Opened"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Open the system's notification settings to allow hz's pop-ups (macOS: System Settings).",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/notify/test": {
       "post": {
-        "description": "Record an urgent test notice, which the open web app or the next daemon tick pops up.\n\n`hz system notify install` pops one up at once, through the native notifier only.\n\nRaises:\n    HeinzelError: If notifications are off, or quiet mode keeps it from popping up.",
+        "description": "Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up.\n\nThe open web app or the next daemon tick pops it up; `hz system notify install` pops one up at once, through the\nnative notifier only.\n\nRaises:\n    HeinzelError: If notifications are off, or quiet mode keeps it from popping up.",
         "operationId": "system_notify_test",
         "parameters": [
           {
@@ -7534,9 +7662,19 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Tested"
+                }
+              }
+            },
+            "description": "The result, when its exit code is non-zero."
           }
         },
-        "summary": "Record an urgent test notice, which the open web app or the next daemon tick pops up.",
+        "summary": "Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up.",
         "tags": [
           "system"
         ]

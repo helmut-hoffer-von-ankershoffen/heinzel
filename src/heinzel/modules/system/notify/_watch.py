@@ -4,8 +4,9 @@ It runs at the end of a tick, before notices pop up, rather than as a job of its
 hourly receipt for it would say nothing a notice doesn't.
 """
 
-from heinzel import Kernel, NoticeKind, Notifications, OperationLet, Status, __version__
+from heinzel import HeinzelError, Kernel, NoticeKind, Notifications, OperationLet, Status, __version__
 from heinzel.kernel import ReleaseCache
+from heinzel.modules.system.notify._channels import DaemonState
 
 SHOWN_PROBLEMS = 3
 
@@ -27,6 +28,25 @@ def watch(kernel: Kernel, notifications: Notifications, wants: "set[NoticeKind]"
         )
         reported += notice is not None
     return reported
+
+
+def daemon_state(kernel: Kernel) -> DaemonState | None:
+    """`hz system daemon status`, run through the kernel (modules don't import each other); None if it can't answer."""
+    found = next(
+        (let for owner, let in kernel.lets(OperationLet) if (owner.qualname, let.name) == ("system.daemon", "status")),
+        None,
+    )
+    if found is None or not kernel.available(found.func):
+        return None
+    try:
+        status = kernel.invoke(found)
+    except HeinzelError:
+        return None
+    return DaemonState(
+        installed=bool(getattr(status, "installed", False)),
+        loaded=bool(getattr(status, "loaded", False)),
+        paused=bool(getattr(status, "paused", False)),
+    )
 
 
 def _doctor(kernel: Kernel, notifications: Notifications) -> int:

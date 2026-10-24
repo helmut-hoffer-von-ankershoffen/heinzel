@@ -4,10 +4,11 @@ import { AlertTriangle, Bell, BellRing, FileText, Gift, Stethoscope, X } from "l
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import type { SchemaNotice } from "@/api/client";
-import { useNotices, useTestNotice } from "@/api/queries";
+import { useNotices } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { NotificationTest } from "@/notifications/NotificationTest";
 
 const SEEN = "hz.notify.seen";
 const CHANGED = "hz:notify-seen";
@@ -88,7 +89,6 @@ function when(at: string): string {
 
 export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; navOpen: boolean }) {
   const notices = useLiveNotices();
-  const test = useTestNotice();
   const [seen, markSeen] = useSeen();
   const [kind, setKind] = useState<SchemaNotice["kind"] | "all">("all");
   const navigate = useNavigate();
@@ -214,18 +214,9 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
           </section>
         ))}
       </div>
-      <footer className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+      <footer className="flex max-h-[50%] shrink-0 flex-col gap-1.5 overflow-y-auto border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
         <span className="truncate">{notices.data?.native}</span>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto shrink-0"
-          disabled={test.isPending}
-          onClick={() => test.mutate()}
-        >
-          <BellRing aria-hidden />
-          {t("notify.test")}
-        </Button>
+        <NotificationTest />
       </footer>
     </section>
   );

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { InstallApp } from "@/pwa/InstallApp";
 import { setDesktop, useDesktopState } from "./desktop";
+import { NotificationTest } from "./NotificationTest";
 
 export function NotificationSettings() {
   const state = useDesktopState();
@@ -39,6 +40,7 @@ export function NotificationSettings() {
         {t("notify.toggle")}
       </label>
       <p className="text-xs text-muted-foreground">{t(`notify.state.${state}`)}</p>
+      <NotificationTest />
       {paired && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>{t("device.paired")}</span>
