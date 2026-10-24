@@ -51,8 +51,8 @@ You need [uv](https://docs.astral.sh/uv/) (`brew install uv`). Then:
 uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel
 ```
 
-Pin a release with `@vX.Y.Z`; `hz system update` updates in place (`--source <spec>` moves to another version),
-keeping plugins. Shell completion: `hz --install-completion`.
+Pin a release with `@vX.Y.Z`; `hz system update` then moves to the latest release in place, keeping plugins
+(`--source <spec>` moves to another version). Pinned to a branch or a commit, it says which `--source` moves it. Shell completion: `hz --install-completion`.
 
 **From Claude Code**, add the plugin and let `/hz-init` do everything — install, plugins, configuration, agent
 skills:

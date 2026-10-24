@@ -26,6 +26,12 @@ upgrades and resolves their dependencies.
 - `hz system plugin add <spec>` reads the receipt of the environment Heinzelmännchen runs in, and reinstalls the
   tool with `uv tool install --force <heinzel requirement> --with <each plugin> --with <spec>`. Adding a plugin again
   replaces the older entry for the same distribution. `hz system plugin remove` reinstalls without it.
+- `hz system update` keeps every plugin requirement as the receipt has it. `uv tool upgrade` leaves a git requirement
+  at its ref, so a core pinned to a release tag (`@vX.Y.Z`) is reinstalled from the tag of the highest release in
+  SemVer order (pre-releases only if one is installed). A core pinned to a branch, a commit or a local source is left
+  alone with the `--source` that moves it; one that follows a default branch or the package index is upgraded by uv.
+  If a plugin doesn't allow the new core, the error names it; uv replaces the environment only after resolving, so
+  the previous one keeps working (amended 2026-10-24).
 - Outside a tool environment (development checkouts), Heinzelmännchen falls back to `uv pip install`.
 - Plugins depend on `hz` without a source; inside the tool environment the requirement resolves to the installed
   Heinzelmännchen.
@@ -39,5 +45,6 @@ upgrades and resolves their dependencies.
 
 `tests/unit/kernel/installation_test.py::test_requirement_from_receipt`, `tests/unit/modules/plugin_service_test.py`
 (`test_add_in_tool_env_reinstalls_with_plugins`, `test_add_replaces_older_copy_of_same_plugin`,
-`test_outside_tool_env_uses_uv_pip`) and the e2e test of the full lifecycle on macOS and Linux,
+`test_outside_tool_env_uses_uv_pip`), `tests/unit/modules/system_update_test.py` and
+`tests/integration/update_test.py` (`hz system update` per pin, a blocking plugin) and the e2e test of the full lifecycle on macOS and Linux,
 `tests/e2e/tool_install_test.py::test_direct_lifecycle`.

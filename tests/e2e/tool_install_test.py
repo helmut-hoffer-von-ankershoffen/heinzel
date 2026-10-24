@@ -169,7 +169,7 @@ def test_direct_lifecycle(sandbox, wheel):
     assert sections["dummy"] == {"greeting": "hello from dummy"}  # the core's own uses are tested in integration
 
     # `hz system update --source` switches the source and keeps plugins too.
-    assert sandbox.hz("system", "update", "--source", str(wheel)).startswith("hz ")
+    assert sandbox.hz("system", "update", "--source", str(wheel)).startswith(("Reinstalled hz ", "Updated hz "))
     assert sandbox.hz("dummy", "hello").strip() == "hello from dummy"
 
     sandbox.hz("system", "plugin", "remove", "heinzel-dummy")
