@@ -30,6 +30,8 @@ from typer.core import TyperGroup
 from heinzel import __version__
 from heinzel.heads._exposure import collapses, owns_path
 from heinzel.heads.cli import _update
+from heinzel.heads.cli._chat import CHAT, chat_callback
+from heinzel.heads.cli._chat import HELP as CHAT_HELP
 from heinzel.heads.cli._command import command
 from heinzel.heads.cli._join import HELP as JOIN_HELP
 from heinzel.heads.cli._join import JoinCommand
@@ -130,6 +132,16 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     # Top level too, by the maintainer's decision: the web head is how people who don't live in a terminal start
     # (ADR 0039, "a web head: a React app served by the API head").
     app.command(name="ui", help=UI_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(ui_command(kernel, err_console))
+    # `hz chat` at the top level as well, by the maintainer's decision: the chat is what a person talks to, and
+    # without a subcommand it is the interactive chat (ADR 0045).
+    if chat := mount.groups.get(CHAT):
+        chat.callback(invoke_without_command=True, no_args_is_help=False, help=CHAT_HELP)(
+            chat_callback(kernel, console, err_console, progress)
+        )
+        # Only at the top level: one path for one group, so help, docs and messages all say `hz chat`.
+        if runner := mount.groups.get(CHAT.rpartition(".")[0]):
+            runner.registered_groups = [g for g in runner.registered_groups if g.typer_instance is not chat]
+        app.add_typer(chat, name="chat", cls=SortedGroup, rich_help_panel=CORE_PANEL)
     if system := mount.groups.get("system"):
         # Starting servers is for experts: agents and scripts are configured once, by someone who knows `hz`.
         serve = serve_group(SortedGroup, footer, kernel, console, err_console)

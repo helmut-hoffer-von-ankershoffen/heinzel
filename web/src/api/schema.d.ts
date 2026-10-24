@@ -730,6 +730,164 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/runner/chat/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run an action the agent proposed, with exactly the arguments shown; only you can confirm.
+         * @description Run an action the agent proposed, with exactly the arguments shown; only you can confirm.
+         *
+         *     Raises:
+         *         HeinzelError: If there is no such pending action.
+         */
+        post: operations["system_runner_chat_confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decline an action the agent proposed; it never runs.
+         * @description Decline an action the agent proposed; it never runs.
+         *
+         *     Raises:
+         *         HeinzelError: If there is no such pending action.
+         */
+        post: operations["system_runner_chat_decline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List chat sessions, most recent first; they are kept for system.runner.chat.keep_days.
+         * @description List chat sessions, most recent first; they are kept for system.runner.chat.keep_days.
+         */
+        get: operations["system_runner_chat_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open a chat session, optionally about a screen, a contract, a draft or a notification event.
+         * @description Open a chat session, optionally about a screen, a contract, a draft or a notification event.
+         *
+         *     Raises:
+         *         HeinzelError: If the context's kind is unknown.
+         */
+        post: operations["system_runner_chat_open"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Delete a chat session and everything it holds; returns the sessions left.
+         * @description Delete a chat session and everything it holds; returns the sessions left.
+         *
+         *     Raises:
+         *         HeinzelError: If there is no such session.
+         */
+        post: operations["system_runner_chat_remove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a message in a chat session and wait for the answer; this may cost money.
+         * @description Send a message in a chat session and wait for the answer; this may cost money.
+         *
+         *     Raises:
+         *         HeinzelError: If the session is unknown, busy, full or at its cap, or the runner is misconfigured.
+         */
+        post: operations["system_runner_chat_send"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/runner/chat/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a chat session: its context, messages, actions and costs.
+         * @description Show a chat session: its context, messages, actions and costs.
+         *
+         *     Raises:
+         *         HeinzelError: If there is no such session.
+         */
+        get: operations["system_runner_chat_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/theme/list": {
         parameters: {
             query?: never;
@@ -1029,6 +1187,12 @@ export interface components {
              */
             duration_seconds: number;
             /**
+             * Fix
+             * @description A command that fixes why it did not complete, e.g. `claude auth login`; often empty.
+             * @default
+             */
+            fix: string;
+            /**
              * Model
              * @description The model the agent reported using; none if unknown.
              */
@@ -1284,6 +1448,266 @@ export interface components {
          * @enum {string}
          */
         CatchUp: "latest" | "all" | "skip";
+        /**
+         * ChatAction
+         * @description An operation the agent proposed; it runs only when the person confirms it, with exactly these arguments.
+         */
+        ChatAction: {
+            /**
+             * Arguments
+             * @description The arguments it runs with.
+             */
+            arguments?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Command
+             * @description The same as a command line: what the person confirms.
+             */
+            command: string;
+            /**
+             * Decided
+             * @description When the person confirmed or declined it.
+             */
+            decided?: string | null;
+            /**
+             * Id
+             * @description The action's id in its session, e.g. `a1`.
+             */
+            id: string;
+            /**
+             * Module
+             * @description The operation's module, e.g. `system.config`.
+             */
+            module: string;
+            /**
+             * Operation
+             * @description The operation's name, e.g. `set`.
+             */
+            operation: string;
+            /**
+             * Proposed
+             * Format: date-time
+             * @description When the agent proposed it.
+             */
+            proposed: string;
+            /**
+             * Result
+             * @description What it returned, or why it failed; empty while pending.
+             * @default
+             */
+            result: string;
+            /**
+             * Status
+             * @description `pending` until the person confirms it (`running`, then `done` or `failed`) or declines it.
+             * @default pending
+             * @enum {string}
+             */
+            status: "pending" | "running" | "done" | "failed" | "declined";
+            /**
+             * Tool
+             * @description The tool the agent called, e.g. `system_config_set`.
+             */
+            tool: string;
+        };
+        /**
+         * ChatContext
+         * @description What a chat was opened about: the screen, a contract, a draft or a notification event; it seeds the chat.
+         */
+        ChatContext: {
+            /**
+             * Detail
+             * @description What the opener knows about it, in words (a notification's title and body); email addresses are never sent to the agent.
+             * @default
+             */
+            detail: string;
+            /**
+             * Kind
+             * @description `route`, `contract`, `draft`, `event` or `text`.
+             * @enum {string}
+             */
+            kind: "route" | "contract" | "draft" | "event" | "text";
+            /**
+             * Ref
+             * @description Which one: a route such as `/contracts/weekly`, a contract name, an id.
+             * @default
+             */
+            ref: string;
+        };
+        /**
+         * ChatCosts
+         * @description What a session has cost and may still cost: shown before every message.
+         */
+        ChatCosts: {
+            /**
+             * Message Max Usd
+             * @description Most the next message may cost: the per-message cap or what is left.
+             */
+            message_max_usd: number;
+            /**
+             * Session Max Usd
+             * @description Most the whole session may cost.
+             */
+            session_max_usd: number;
+            /**
+             * Spent Usd
+             * @description What its answers cost so far, as reported.
+             */
+            spent_usd: number;
+        };
+        /**
+         * ChatMessage
+         * @description One message of a chat.
+         */
+        ChatMessage: {
+            /**
+             * Actions
+             * @description Ids of the actions the agent proposed in it.
+             */
+            actions?: string[];
+            /**
+             * At
+             * Format: date-time
+             * @description When it was written.
+             */
+            at: string;
+            /**
+             * Budget Usd
+             * @description The cap the answer ran with; what it counts as against the session's cap when no cost is reported.
+             */
+            budget_usd?: number | null;
+            /**
+             * Cost Usd
+             * @description What the answer cost in US dollars, if reported.
+             */
+            cost_usd?: number | null;
+            /**
+             * Detail
+             * @description Why the run did not complete; empty when it did.
+             * @default
+             */
+            detail: string;
+            /**
+             * Fix
+             * @description A command that fixes why it did not complete, if there is one.
+             * @default
+             */
+            fix: string;
+            /**
+             * Role
+             * @description `user`, `assistant`, or `action`: what a confirmed or declined action did.
+             * @enum {string}
+             */
+            role: "user" | "assistant" | "action";
+            /**
+             * Runner
+             * @description The runner that answered, e.g. `claude-code`.
+             * @default
+             */
+            runner: string;
+            /**
+             * Status
+             * @description For an assistant message: how the run ended.
+             * @default completed
+             */
+            status: string;
+            /**
+             * Text
+             * @description The message; for an assistant, empty when the run did not complete.
+             */
+            text: string;
+            /**
+             * Tools
+             * @description Tools the agent called, by name.
+             */
+            tools?: {
+                [key: string]: number;
+            };
+            /**
+             * Warnings
+             * @description Limits the runner could not enforce.
+             */
+            warnings?: string[];
+        };
+        /**
+         * ChatSession
+         * @description A chat: its context, messages and actions, kept locally in the state directory.
+         */
+        ChatSession: {
+            /**
+             * Actions
+             * @description What the agent proposed, oldest first.
+             */
+            actions?: components["schemas"]["ChatAction"][];
+            /** @description What it was opened about, if anything. */
+            context?: components["schemas"]["ChatContext"] | null;
+            /** @description What it cost and may still cost. */
+            costs: components["schemas"]["ChatCosts"];
+            /**
+             * Created
+             * Format: date-time
+             * @description When it was opened.
+             */
+            created: string;
+            /**
+             * Id
+             * @description The session's id, for `hz chat --session` and the web app.
+             */
+            id: string;
+            /**
+             * Messages
+             * @description The conversation, oldest first.
+             */
+            messages?: components["schemas"]["ChatMessage"][];
+            /**
+             * Title
+             * @description Its first message, shortened, or its context.
+             */
+            title: string;
+            /**
+             * Updated
+             * Format: date-time
+             * @description When it last changed.
+             */
+            updated: string;
+        };
+        /**
+         * ChatSummary
+         * @description A session in a list.
+         */
+        ChatSummary: {
+            /**
+             * Id
+             * @description The session's id.
+             */
+            id: string;
+            /**
+             * Messages
+             * @description How many messages it has.
+             */
+            messages: number;
+            /**
+             * Pending
+             * @description Actions waiting for confirmation.
+             */
+            pending: number;
+            /**
+             * Spent Usd
+             * @description What it cost so far.
+             */
+            spent_usd: number;
+            /**
+             * Title
+             * @description Its first message, shortened, or its context.
+             */
+            title: string;
+            /**
+             * Updated
+             * Format: date-time
+             * @description When it last changed.
+             */
+            updated: string;
+        };
         /**
          * Check
          * @description The outcome of one health check. Anything but UP must say what is wrong.
@@ -3515,6 +3939,12 @@ export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
 export type SchemaCatchUp = components['schemas']['CatchUp'];
+export type SchemaChatAction = components['schemas']['ChatAction'];
+export type SchemaChatContext = components['schemas']['ChatContext'];
+export type SchemaChatCosts = components['schemas']['ChatCosts'];
+export type SchemaChatMessage = components['schemas']['ChatMessage'];
+export type SchemaChatSession = components['schemas']['ChatSession'];
+export type SchemaChatSummary = components['schemas']['ChatSummary'];
 export type SchemaCheck = components['schemas']['Check'];
 export type SchemaCheckReport = components['schemas']['CheckReport'];
 export type SchemaCompiledContract = components['schemas']['CompiledContract'];
@@ -4462,6 +4892,228 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_confirm: {
+        parameters: {
+            query: {
+                /** @description The chat session's id, from `hz chat list`. */
+                session: string;
+                /** @description The proposed action's id, e.g. `a1`. */
+                action: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_decline: {
+        parameters: {
+            query: {
+                /** @description The chat session's id, from `hz chat list`. */
+                session: string;
+                /** @description The proposed action's id, e.g. `a1`. */
+                action: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSummary"][];
+                };
+            };
+        };
+    };
+    system_runner_chat_open: {
+        parameters: {
+            query?: {
+                /** @description What the chat is about, as `kind:ref`: `route:/contracts`, `contract:weekly`, `draft:<id>`, `event:<id>`; a bare id is a notification event. */
+                context?: string | null;
+                /** @description What you know about it, in words, e.g. a notification's text. */
+                detail?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_remove: {
+        parameters: {
+            query: {
+                /** @description The chat session's id, from `hz chat list`. */
+                session: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_send: {
+        parameters: {
+            query: {
+                /** @description The chat session's id, from `hz chat list`. */
+                session: string;
+                /** @description What to say. */
+                message: string;
+                /** @description Most this answer may cost in US dollars, within the per-message and session caps. */
+                budget_usd?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_runner_chat_show: {
+        parameters: {
+            query: {
+                /** @description The chat session's id, from `hz chat list`. */
+                session: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSession"];
                 };
             };
             /** @description Validation Error */

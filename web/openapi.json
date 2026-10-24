@@ -150,6 +150,12 @@
             "title": "Duration Seconds",
             "type": "number"
           },
+          "fix": {
+            "default": "",
+            "description": "A command that fixes why it did not complete, e.g. `claude auth login`; often empty.",
+            "title": "Fix",
+            "type": "string"
+          },
           "model": {
             "anyOf": [
               {
@@ -570,6 +576,375 @@
         ],
         "title": "CatchUp",
         "type": "string"
+      },
+      "ChatAction": {
+        "description": "An operation the agent proposed; it runs only when the person confirms it, with exactly these arguments.",
+        "properties": {
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The arguments it runs with.",
+            "title": "Arguments",
+            "type": "object"
+          },
+          "command": {
+            "description": "The same as a command line: what the person confirms.",
+            "title": "Command",
+            "type": "string"
+          },
+          "decided": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the person confirmed or declined it.",
+            "title": "Decided"
+          },
+          "id": {
+            "description": "The action's id in its session, e.g. `a1`.",
+            "pattern": "^a[0-9]{1,4}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "module": {
+            "description": "The operation's module, e.g. `system.config`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The operation's name, e.g. `set`.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "proposed": {
+            "description": "When the agent proposed it.",
+            "format": "date-time",
+            "title": "Proposed",
+            "type": "string"
+          },
+          "result": {
+            "default": "",
+            "description": "What it returned, or why it failed; empty while pending.",
+            "title": "Result",
+            "type": "string"
+          },
+          "status": {
+            "default": "pending",
+            "description": "`pending` until the person confirms it (`running`, then `done` or `failed`) or declines it.",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed",
+              "declined"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tool": {
+            "description": "The tool the agent called, e.g. `system_config_set`.",
+            "title": "Tool",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tool",
+          "module",
+          "operation",
+          "command",
+          "proposed"
+        ],
+        "title": "ChatAction",
+        "type": "object"
+      },
+      "ChatContext": {
+        "description": "What a chat was opened about: the screen, a contract, a draft or a notification event; it seeds the chat.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "description": "What the opener knows about it, in words (a notification's title and body); email addresses are never sent to the agent.",
+            "maxLength": 4000,
+            "title": "Detail",
+            "type": "string"
+          },
+          "kind": {
+            "description": "`route`, `contract`, `draft`, `event` or `text`.",
+            "enum": [
+              "route",
+              "contract",
+              "draft",
+              "event",
+              "text"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "ref": {
+            "default": "",
+            "description": "Which one: a route such as `/contracts/weekly`, a contract name, an id.",
+            "maxLength": 300,
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ChatContext",
+        "type": "object"
+      },
+      "ChatCosts": {
+        "description": "What a session has cost and may still cost: shown before every message.",
+        "properties": {
+          "message_max_usd": {
+            "description": "Most the next message may cost: the per-message cap or what is left.",
+            "title": "Message Max Usd",
+            "type": "number"
+          },
+          "session_max_usd": {
+            "description": "Most the whole session may cost.",
+            "title": "Session Max Usd",
+            "type": "number"
+          },
+          "spent_usd": {
+            "description": "What its answers cost so far, as reported.",
+            "title": "Spent Usd",
+            "type": "number"
+          }
+        },
+        "required": [
+          "spent_usd",
+          "session_max_usd",
+          "message_max_usd"
+        ],
+        "title": "ChatCosts",
+        "type": "object"
+      },
+      "ChatMessage": {
+        "description": "One message of a chat.",
+        "properties": {
+          "actions": {
+            "description": "Ids of the actions the agent proposed in it.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "at": {
+            "description": "When it was written.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "budget_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The cap the answer ran with; what it counts as against the session's cap when no cost is reported.",
+            "title": "Budget Usd"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the answer cost in US dollars, if reported.",
+            "title": "Cost Usd"
+          },
+          "detail": {
+            "default": "",
+            "description": "Why the run did not complete; empty when it did.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "fix": {
+            "default": "",
+            "description": "A command that fixes why it did not complete, if there is one.",
+            "title": "Fix",
+            "type": "string"
+          },
+          "role": {
+            "description": "`user`, `assistant`, or `action`: what a confirmed or declined action did.",
+            "enum": [
+              "user",
+              "assistant",
+              "action"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "runner": {
+            "default": "",
+            "description": "The runner that answered, e.g. `claude-code`.",
+            "title": "Runner",
+            "type": "string"
+          },
+          "status": {
+            "default": "completed",
+            "description": "For an assistant message: how the run ended.",
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "description": "The message; for an assistant, empty when the run did not complete.",
+            "title": "Text",
+            "type": "string"
+          },
+          "tools": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Tools the agent called, by name.",
+            "title": "Tools",
+            "type": "object"
+          },
+          "warnings": {
+            "description": "Limits the runner could not enforce.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "role",
+          "text",
+          "at"
+        ],
+        "title": "ChatMessage",
+        "type": "object"
+      },
+      "ChatSession": {
+        "description": "A chat: its context, messages and actions, kept locally in the state directory.",
+        "properties": {
+          "actions": {
+            "description": "What the agent proposed, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/ChatAction"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatContext"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What it was opened about, if anything."
+          },
+          "costs": {
+            "$ref": "#/components/schemas/ChatCosts",
+            "description": "What it cost and may still cost."
+          },
+          "created": {
+            "description": "When it was opened.",
+            "format": "date-time",
+            "title": "Created",
+            "type": "string"
+          },
+          "id": {
+            "description": "The session's id, for `hz chat --session` and the web app.",
+            "pattern": "^[a-f0-9]{16}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "messages": {
+            "description": "The conversation, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "title": {
+            "description": "Its first message, shortened, or its context.",
+            "title": "Title",
+            "type": "string"
+          },
+          "updated": {
+            "description": "When it last changed.",
+            "format": "date-time",
+            "title": "Updated",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "created",
+          "updated",
+          "costs"
+        ],
+        "title": "ChatSession",
+        "type": "object"
+      },
+      "ChatSummary": {
+        "description": "A session in a list.",
+        "properties": {
+          "id": {
+            "description": "The session's id.",
+            "title": "Id",
+            "type": "string"
+          },
+          "messages": {
+            "description": "How many messages it has.",
+            "title": "Messages",
+            "type": "integer"
+          },
+          "pending": {
+            "description": "Actions waiting for confirmation.",
+            "title": "Pending",
+            "type": "integer"
+          },
+          "spent_usd": {
+            "description": "What it cost so far.",
+            "title": "Spent Usd",
+            "type": "number"
+          },
+          "title": {
+            "description": "Its first message, shortened, or its context.",
+            "title": "Title",
+            "type": "string"
+          },
+          "updated": {
+            "description": "When it last changed.",
+            "format": "date-time",
+            "title": "Updated",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "updated",
+          "messages",
+          "pending",
+          "spent_usd"
+        ],
+        "title": "ChatSummary",
+        "type": "object"
       },
       "Check": {
         "description": "The outcome of one health check. Anything but UP must say what is wrong.",
@@ -5430,6 +5805,382 @@
           }
         },
         "summary": "Ask the bound agent runner, read-only and within a cost cap; this may cost money.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/confirm": {
+      "post": {
+        "description": "Run an action the agent proposed, with exactly the arguments shown; only you can confirm.\n\nRaises:\n    HeinzelError: If there is no such pending action.",
+        "operationId": "system_runner_chat_confirm",
+        "parameters": [
+          {
+            "description": "The chat session's id, from `hz chat list`.",
+            "in": "query",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "The chat session's id, from `hz chat list`.",
+              "title": "Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The proposed action's id, e.g. `a1`.",
+            "in": "query",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "description": "The proposed action's id, e.g. `a1`.",
+              "title": "Action",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run an action the agent proposed, with exactly the arguments shown; only you can confirm.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/decline": {
+      "post": {
+        "description": "Decline an action the agent proposed; it never runs.\n\nRaises:\n    HeinzelError: If there is no such pending action.",
+        "operationId": "system_runner_chat_decline",
+        "parameters": [
+          {
+            "description": "The chat session's id, from `hz chat list`.",
+            "in": "query",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "The chat session's id, from `hz chat list`.",
+              "title": "Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The proposed action's id, e.g. `a1`.",
+            "in": "query",
+            "name": "action",
+            "required": true,
+            "schema": {
+              "description": "The proposed action's id, e.g. `a1`.",
+              "title": "Action",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Decline an action the agent proposed; it never runs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/list": {
+      "get": {
+        "description": "List chat sessions, most recent first; they are kept for system.runner.chat.keep_days.",
+        "operationId": "system_runner_chat_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChatSummary"
+                  },
+                  "title": "Response System Runner Chat List",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List chat sessions, most recent first; they are kept for system.runner.chat.keep_days.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/open": {
+      "post": {
+        "description": "Open a chat session, optionally about a screen, a contract, a draft or a notification event.\n\nRaises:\n    HeinzelError: If the context's kind is unknown.",
+        "operationId": "system_runner_chat_open",
+        "parameters": [
+          {
+            "description": "What the chat is about, as `kind:ref`: `route:/contracts`, `contract:weekly`, `draft:<id>`, `event:<id>`; a bare id is a notification event.",
+            "in": "query",
+            "name": "context",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What the chat is about, as `kind:ref`: `route:/contracts`, `contract:weekly`, `draft:<id>`, `event:<id>`; a bare id is a notification event.",
+              "title": "Context"
+            }
+          },
+          {
+            "description": "What you know about it, in words, e.g. a notification's text.",
+            "in": "query",
+            "name": "detail",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What you know about it, in words, e.g. a notification's text.",
+              "title": "Detail"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open a chat session, optionally about a screen, a contract, a draft or a notification event.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/remove": {
+      "post": {
+        "description": "Delete a chat session and everything it holds; returns the sessions left.\n\nRaises:\n    HeinzelError: If there is no such session.",
+        "operationId": "system_runner_chat_remove",
+        "parameters": [
+          {
+            "description": "The chat session's id, from `hz chat list`.",
+            "in": "query",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "The chat session's id, from `hz chat list`.",
+              "title": "Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChatSummary"
+                  },
+                  "title": "Response System Runner Chat Remove",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete a chat session and everything it holds; returns the sessions left.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/send": {
+      "post": {
+        "description": "Send a message in a chat session and wait for the answer; this may cost money.\n\nRaises:\n    HeinzelError: If the session is unknown, busy, full or at its cap, or the runner is misconfigured.",
+        "operationId": "system_runner_chat_send",
+        "parameters": [
+          {
+            "description": "The chat session's id, from `hz chat list`.",
+            "in": "query",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "The chat session's id, from `hz chat list`.",
+              "title": "Session",
+              "type": "string"
+            }
+          },
+          {
+            "description": "What to say.",
+            "in": "query",
+            "name": "message",
+            "required": true,
+            "schema": {
+              "description": "What to say.",
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Most this answer may cost in US dollars, within the per-message and session caps.",
+            "in": "query",
+            "name": "budget_usd",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Most this answer may cost in US dollars, within the per-message and session caps.",
+              "title": "Budget Usd"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send a message in a chat session and wait for the answer; this may cost money.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/chat/show": {
+      "get": {
+        "description": "Show a chat session: its context, messages, actions and costs.\n\nRaises:\n    HeinzelError: If there is no such session.",
+        "operationId": "system_runner_chat_show",
+        "parameters": [
+          {
+            "description": "The chat session's id, from `hz chat list`.",
+            "in": "query",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "The chat session's id, from `hz chat list`.",
+              "title": "Session",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSession"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a chat session: its context, messages, actions and costs.",
         "tags": [
           "system"
         ]

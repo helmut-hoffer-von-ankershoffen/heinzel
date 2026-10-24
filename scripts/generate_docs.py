@@ -28,6 +28,7 @@ from pydantic_core import PydanticUndefined, to_jsonable_python
 from heinzel import Config, HealthLet, Kernel, Settings, SettingsLet, SetupLet, __version__
 from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
+from heinzel.heads.cli._chat import command_words
 from heinzel.kernel import Origin, discover, env_prefix, walk
 from heinzel.modules.system.plugin._service import FIRST_PARTY
 from heinzel.modules.workflow._models import SCHEMA_VERSION, Frontmatter
@@ -143,7 +144,7 @@ def module_catalog() -> str:
                 verb = "GET" if item.operation.read_only else "POST"
                 path = "/".join(item.path)
                 lines.append(
-                    f"| {item.operation.summary} | `hz {' '.join(item.path)}` | "
+                    f"| {item.operation.summary} | `hz {' '.join(command_words(item.path))}` | "
                     f"{f'`{item.name}`' if in_mcp else '—'} | "
                     f"{f'`{verb} /{path}`' if in_api else '—'} | "
                     f"{f'`{verb} /api/{path}`' if in_web else '—'} | "

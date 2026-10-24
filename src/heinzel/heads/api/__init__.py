@@ -11,6 +11,8 @@ Operations that spend money or act unattended (`hz workflow run`, `hz system dae
 
 The web head (`hz ui`) mounts the same endpoints with `head="web"` and a per-session `token`: every request must then
 carry the token as `Authorization: Bearer <token>` as well, and the operations that list the `web` head are exposed too.
+It also gets `POST /stream/<path>` for each of them: the same operation, answering with server-sent events as it runs
+(`heinzel.heads._stream`, ADR 0045).
 """
 
 import hmac
@@ -24,6 +26,7 @@ from pydantic.fields import FieldInfo
 
 from heinzel import __version__
 from heinzel.heads._exposure import Exposed, exposed
+from heinzel.heads._stream import streamed
 from heinzel.kernel import HeinzelError, Kernel, boot
 
 HEAD = "api"
@@ -106,6 +109,13 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
             tags=[item.record.path[0]],
             operation_id=item.name,
         )
+        if token is not None:  # streams only behind a token: the web head's
+            app.add_api_route(
+                "/stream/" + "/".join(item.path),
+                stream_endpoint(kernel, item),
+                methods=["POST"],
+                include_in_schema=False,
+            )
     return app
 
 
@@ -172,6 +182,17 @@ def endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
         [_query(p) for p in item.parameters] + [response_parameter], return_annotation=item.returns
     )
     run.__name__ = item.name
+    return run
+
+
+def stream_endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
+    """Like `endpoint`, but the answer is the operation's events as a server-sent event stream."""
+
+    async def run(**kwargs: Any) -> Any:  # noqa: ANN401 - a streaming response
+        return streamed(kernel, item.operation, kwargs)
+
+    run.__signature__ = inspect.Signature([_query(p) for p in item.parameters])  # type: ignore[attr-defined]
+    run.__name__ = f"{item.name}_stream"
     return run
 
 

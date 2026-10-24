@@ -22,7 +22,7 @@ from typing import Any, cast
 
 from heinzel import AgentResult, Budget, HeinzelError, TokenUsage, ToolProfile
 from heinzel.kernel import subprocess_environment
-from heinzel.modules.system.runner._claude import resolve, working_dir
+from heinzel.modules.system.runner._claude import mcp_config, resolve, working_dir
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import MAX_OUTPUT, Execute, amount, run_bounded, whole_number
 
@@ -30,7 +30,17 @@ NAME = "command"
 SET_COMMAND = """hz system config set system.runner.command '["mytool", "run", "--prompt", "{prompt_file}"]'"""
 TRUST_COMMAND = "hz system config set system.runner.command_enforces_read_only true"
 PLACEHOLDERS = frozenset(
-    {"prompt_file", "contract_file", "output_file", "working_dir", "tools", "model", "timeout_seconds", "max_usd"}
+    {
+        "prompt_file",
+        "contract_file",
+        "output_file",
+        "working_dir",
+        "tools",
+        "model",
+        "timeout_seconds",
+        "max_usd",
+        "mcp_config",
+    }
 )
 BASE_ENVIRONMENT = frozenset({"PATH", "HOME", "LANG", "TMPDIR"})
 
@@ -152,12 +162,13 @@ class CommandRunner:
         settings = self._settings
         cwd = working_dir(tools)
         executable = self._check(tools)
-        warnings = self._warnings(budget)
+        warnings = self._warnings(budget, tools)
         with tempfile.TemporaryDirectory(prefix="hz-run-") as directory:  # 0700: only this user reads the prompt
             folder = Path(directory)
             (folder / "prompt.md").write_text(prompt, encoding="utf-8")
             (folder / "contract.md").write_text(contract, encoding="utf-8")
             output_file = folder / "output"
+            (folder / "mcp.json").write_text(json.dumps(mcp_config(tools)), encoding="utf-8")
             values = {
                 "prompt_file": str(folder / "prompt.md"),
                 "contract_file": str(folder / "contract.md"),
@@ -167,6 +178,7 @@ class CommandRunner:
                 "model": settings.model or "",
                 "timeout_seconds": str(int(timeout.total_seconds())),
                 "max_usd": "" if budget.max_usd is None else f"{budget.max_usd:g}",
+                "mcp_config": str(folder / "mcp.json"),
             }
             command = [executable, *render(settings.command[1:], values)]
             started = time.monotonic()
@@ -193,11 +205,17 @@ class CommandRunner:
                 output = outcome.stdout
         return self._result(output, base, warnings)
 
-    def _warnings(self, budget: Budget) -> list[str]:
-        takes_budget = any("max_usd" in placeholders(argument) for argument in self._settings.command[1:])
-        if budget.max_usd is not None and not takes_budget:
-            return [f"the budget of {budget.max_usd:g} USD is not passed to the command, so not enforced"]
-        return []
+    def _warnings(self, budget: Budget, tools: ToolProfile) -> list[str]:
+        used = set[str]().union(*(placeholders(argument) for argument in self._settings.command[1:]))
+        warnings: list[str] = []
+        if budget.max_usd is not None and "max_usd" not in used:
+            warnings.append(f"the budget of {budget.max_usd:g} USD is not passed to the command, so not enforced")
+        if not tools.read_files:
+            warnings.append("the command decides its agent's file tools itself; this run asked for none")
+        if tools.mcp_servers and "mcp_config" not in used:
+            names = ", ".join(sorted(tools.mcp_servers))
+            warnings.append(f"the command takes no {{mcp_config}}, so the agent had no tools of {names}")
+        return warnings
 
     def _result(self, output: str, base: dict[str, Any], warnings: list[str]) -> AgentResult:
         settings = self._settings

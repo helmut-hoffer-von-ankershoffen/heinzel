@@ -221,8 +221,8 @@ def test_doctor_reports_met_requirements_as_up(kernel):
 
 
 def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_one(make_kernel):
-    """The core needs the chat's agent runner (ADR 0039), which its default binding serves, and, optionally, a calendar
-    for the agenda, whose absence is no finding."""
+    """The core needs the chat's agent runner (ADR 0039, 0045), which its default binding serves, and, optionally, a
+    calendar for the agenda, whose absence is no finding."""
     code, report = hz(make_kernel(builtins=True), "system", "doctor")
     assert code == 0
     assert report["checks"]["system.capability"] == [
@@ -234,6 +234,12 @@ def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_o
         },
         {
             "name": "agent-runner:read for system.runner ask",
+            "status": "up",
+            "detail": "served by claude-code",
+            "fix": "",
+        },
+        {
+            "name": "agent-runner:read for system.runner.chat send",
             "status": "up",
             "detail": "served by claude-code",
             "fix": "",
@@ -432,6 +438,7 @@ def test_capability_list_shows_the_new_capabilities_with_their_adapters(prepared
         ("prep", "calendar:read", "agenda"),
         ("prep remind", "chat:write", "talk"),
         ("system.runner ask", "agent-runner:read", "claude-code"),
+        ("system.runner.chat send", "agent-runner:read", "claude-code"),
     ]
     rendered = CliRunner().invoke(build(prepared), ["system", "capability", "list"])
     assert rendered.exit_code == 0
