@@ -4,7 +4,7 @@
 
 | Name                                                          |    Stmts |     Miss |   Branch |   BrPart |   Cover |   Missing |
 |-------------------------------------------------------------- | -------: | -------: | -------: | -------: | ------: | --------: |
-| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        0 |       30 |        1 |     99% |   79-\>81 |
+| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        1 |       30 |        2 |     98% |79-\>81, 226 |
 | plugins/heinzel-atlassian/src/heinzel\_atlassian/\_storage.py |      291 |        1 |      150 |        5 |     99% |245, 252-\>exit, 258-\>exit, 262-\>exit, 312-\>exit |
 | plugins/heinzel-github/src/heinzel\_github/\_client.py        |      114 |        2 |       32 |        1 |     98% |   104-105 |
 | src/heinzel/heads/\_stream.py                                 |       56 |        6 |        4 |        0 |     87% | 42-46, 55 |
@@ -41,14 +41,15 @@
 | src/heinzel/modules/system/connector/\_service.py             |       89 |        1 |       22 |        2 |     97% |82-\>81, 126 |
 | src/heinzel/modules/system/daemon/\_schedule.py               |       65 |        3 |       20 |        1 |     95% |43-44, 102 |
 | src/heinzel/modules/system/directory/\_guess.py               |       82 |        0 |       24 |        1 |     99% |  98-\>104 |
-| src/heinzel/modules/system/notify/\_\_init\_\_.py             |       29 |        1 |        0 |        0 |     97% |        89 |
+| src/heinzel/modules/system/notify/\_\_init\_\_.py             |       34 |        2 |        0 |        0 |     94% |  102, 109 |
+| src/heinzel/modules/system/notify/\_channels.py               |       48 |        5 |       26 |        3 |     86% |45, 52, 68-70 |
 | src/heinzel/modules/system/notify/\_macos.py                  |      124 |        7 |       26 |        2 |     94% |67-68, 74-77, 135, 156-\>158 |
 | src/heinzel/modules/system/notify/\_native.py                 |       99 |        7 |       26 |        1 |     94% |71-74, 130-131, 133 |
 | src/heinzel/modules/system/notify/\_policy.py                 |       83 |        5 |       26 |        2 |     94% |57-\>59, 62-64, 90-91 |
-| src/heinzel/modules/system/notify/\_render.py                 |       38 |       14 |       18 |        5 |     59% |14-18, 25, 31, 50-54, 61, 63 |
-| src/heinzel/modules/system/notify/\_service.py                |      222 |       22 |       68 |        9 |     88% |160-162, 237-\>236, 263-264, 267-276, 290-\>298, 293-295, 301, 303, 333-\>336, 364, 398 |
+| src/heinzel/modules/system/notify/\_render.py                 |       46 |       14 |       22 |        5 |     66% |14-18, 25, 31, 50-54, 67, 71 |
+| src/heinzel/modules/system/notify/\_service.py                |      245 |       18 |       70 |        9 |     91% |177-179, 254-\>253, 280-281, 294, 328-\>336, 331-333, 339, 341, 371-\>374, 402, 436, 451-455 |
 | src/heinzel/modules/system/notify/\_store.py                  |      101 |        9 |        0 |        0 |     91% |50-52, 76-77, 91-92, 106-107 |
-| src/heinzel/modules/system/notify/\_watch.py                  |       24 |        4 |        8 |        3 |     78% |20-28, 39, 48 |
+| src/heinzel/modules/system/notify/\_watch.py                  |       34 |        7 |       10 |        4 |     75% |21-29, 40, 43-44, 59, 68 |
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py             |       40 |        3 |        0 |        0 |     92% |74, 92, 117 |
 | src/heinzel/modules/system/plugin/\_render.py                 |       63 |        4 |       20 |        6 |     88% |38, 47, 80, 82, 84-\>83, 93-\>95 |
 | src/heinzel/modules/system/plugin/\_service.py                |      361 |        6 |      100 |        7 |     97% |117-\>119, 169-\>168, 397-398, 439-440, 453-\>458, 633-\>632, 650-\>649, 749-750 |
@@ -76,7 +77,7 @@
 | src/heinzel/modules/workflow/\_render.py                      |      213 |       15 |      104 |       10 |     90% |98, 116, 159-\>161, 164, 165-\>167, 197-203, 229, 263, 284-294, 352 |
 | src/heinzel/modules/workflow/\_retention.py                   |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
 | src/heinzel/modules/workflow/\_service.py                     |      718 |       17 |      236 |        6 |     98% |338, 426-427, 532-533, 573, 587-\>exit, 598-599, 960-961, 977-979, 1206-1207, 1239-1240 |
-| **TOTAL**                                                     | **18463** |  **336** | **4664** |  **150** | **98%** |           |
+| **TOTAL**                                                     | **18571** |  **342** | **4698** |  **155** | **98%** |           |
 
 127 files skipped due to complete coverage.
 
