@@ -5,7 +5,12 @@
 - docs/CONFIGURATION.md: every setting of the kernel and the built-in modules, with environment variable and default.
 - README.md: the module list between `<!-- modules:start -->` and `<!-- modules:end -->`.
 - docs/schemas/contract-frontmatter-1.json: the JSON Schema of workflow contract frontmatter (ADR 0021).
+
+Usage: uv run python scripts/generate_docs.py [--check]
 """
+
+# Project-bound: runs in the project environment (`uv run python`), not as an inline-metadata script, because it
+# imports heinzel and its modules to read their operations, settings and schemas.
 
 import importlib
 import json
