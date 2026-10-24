@@ -3,7 +3,7 @@
 # update the version everywhere bump-my-version knows about, regenerate CHANGELOG.md, and commit
 # "chore(release): vX.Y.Z" on a new branch `release/vX.Y.Z`.
 #
-# Usage: scripts/release.sh [auto|patch|minor|major] [--open-pr]
+# Usage: bash scripts/release.sh [auto|patch|minor|major] [--open-pr]
 #   --open-pr  pushes the branch and opens the release pull request with gh. Merging it tags and publishes the
 #              release (workflow "Release tag"). Prints the tag on the last line.
 set -euo pipefail
