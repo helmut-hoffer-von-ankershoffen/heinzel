@@ -52,7 +52,8 @@ Plugins add their own tables.
 | `gateway_hosts` | `HZ_AI_ACCESS__GATEWAY_HOSTS` | platform-specific | Hosts the gateway sends prompts to, as host names or URLs, e.g. `ai.acme.example`; shown in the listing and the capability matrix. |
 | `gateway_models` | `HZ_AI_ACCESS__GATEWAY_MODELS` | platform-specific | Models the gateway offers, when its status command doesn't say. |
 | `gateway_env` | `HZ_AI_ACCESS__GATEWAY_ENV` | platform-specific | Environment variables passed to the gateway's commands besides PATH, HOME, LANG, LC_* and TMPDIR; HZ_CREDENTIAL_* variables are never passed. |
-| `model` | `HZ_AI_ACCESS__MODEL` | `None` | The model of the `pydantic-ai` option, as Pydantic AI names it, `<vendor>:<model>`, e.g. `anthropic:claude-sonnet-4-5`; its key is the credential `ai.access/api-key` or the vendor's variable. |
+| `model` | `HZ_AI_ACCESS__MODEL` | `None` | The model of the `pydantic-ai` option. For a vendor's API, as Pydantic AI names it, `<vendor>:<model>`, e.g. `anthropic:claude-sonnet-4-5` or `openai:gpt-5`; with `base_url`, the name the endpoint knows, e.g. `llama3.1:8b`. Its key is the credential `ai.access/api-key` or the vendor's variable. |
+| `base_url` | `HZ_AI_ACCESS__BASE_URL` | `None` | An OpenAI-compatible endpoint for the `pydantic-ai` option, e.g. `http://localhost:11434/v1` (Ollama), `http://localhost:1234/v1` (LM Studio), a vLLM server or `https://openrouter.ai/api/v1`. A key is optional and goes only over https, or over http to this machine. |
 
 ## `[atlassian]`
 

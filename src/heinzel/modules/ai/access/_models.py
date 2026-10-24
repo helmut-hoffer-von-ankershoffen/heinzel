@@ -68,14 +68,24 @@ class AccessSettings(ModuleSettings):
 
     model: str | None = Field(
         default=None,
-        pattern=r"^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._:/@-]*$",
-        description="The model of the `pydantic-ai` option, as Pydantic AI names it, `<vendor>:<model>`, e.g. "
-        "`anthropic:claude-sonnet-4-5`; its key is the credential `ai.access/api-key` or the vendor's variable.",
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$",
+        description="The model of the `pydantic-ai` option. For a vendor's API, as Pydantic AI names it, "
+        "`<vendor>:<model>`, e.g. `anthropic:claude-sonnet-4-5` or `openai:gpt-5`; with `base_url`, the name the "
+        "endpoint knows, e.g. `llama3.1:8b`. Its key is the credential `ai.access/api-key` or the vendor's variable.",
+    )
+    base_url: str | None = Field(
+        default=None,
+        pattern=r"^https?://[^\s/?#@]+(/[^\s?#@]*)?$",  # no user:password@, ?query or #fragment: a key never hides here
+        max_length=500,
+        description="An OpenAI-compatible endpoint for the `pydantic-ai` option, e.g. `http://localhost:11434/v1` "
+        "(Ollama), `http://localhost:1234/v1` (LM Studio), a vLLM server or `https://openrouter.ai/api/v1`. A key is "
+        "optional and goes only over https, or over http to this machine.",
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
         {
             "model",
+            "base_url",
             "gateway_title",
             "gateway_summary",
             "gateway_status_command",
