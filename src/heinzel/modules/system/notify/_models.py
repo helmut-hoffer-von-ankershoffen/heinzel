@@ -74,6 +74,15 @@ class Delivered(BaseModel):
     delivered: list[str] = Field(description="Ids of the notices that weren't marked as shown before.")
 
 
+class Tested(BaseModel):
+    """What `test` recorded, and how the native pop-up went when it was asked for."""
+
+    notice: Notice = Field(description="The test notice.")
+    native: str | None = Field(
+        description="`shown` when the native notifier popped it up now, else why not; none when not asked to."
+    )
+
+
 class Installed(BaseModel):
     """What `install` did: the notifier, where it lives, and how the test went."""
 

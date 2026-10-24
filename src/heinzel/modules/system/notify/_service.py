@@ -10,6 +10,7 @@ interrupts you or where notices are kept.
 
 import logging
 import os
+import re
 import secrets
 import shutil
 import sys
@@ -21,7 +22,7 @@ from heinzel import Check, Config, Delivery, HeinzelError, Kernel, Notice, Notic
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.modules.system.notify import _policy as policy
 from heinzel.modules.system.notify._macos import QUARANTINE, NotifierApp
-from heinzel.modules.system.notify._models import Delivered, Installed, NoticeList, NotifySettings
+from heinzel.modules.system.notify._models import Delivered, Installed, NoticeList, NotifySettings, Tested
 from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, Native, native
 from heinzel.modules.system.notify._store import Store
 from heinzel.modules.system.notify._watch import watch
@@ -30,6 +31,8 @@ logger = logging.getLogger(__name__)
 MODULE_SECTION = "system.notify"
 WATCHED_FOR = timedelta(seconds=30)
 """After a head last said it shows notices, the daemon holds back this long: the web app says so every few seconds."""
+ROUTE = re.compile(r"/(?:[A-Za-z0-9._~%!$&'()*+,;=:@?-][A-Za-z0-9._~%!$&'()*+,;=:@/?-]*)?")
+"""A path of the web app: one leading slash, then only URL characters; no `//host`, backslash or whitespace."""
 LOOK_EVERY = timedelta(hours=1)
 """How often the daemon runs doctor to look for problems no one asked about."""
 STALE = timedelta(hours=12)
@@ -72,10 +75,12 @@ class NotifyService(Notifications):
     def for_user(cls, kernel: Kernel) -> "NotifyService":
         """The service with user-scope settings, looking for doctor's findings through `kernel`."""
         config = Config.load(Path.home())  # as the daemon does: user scope, never the project's
+        settings = config.settings(Settings, KERNEL_SECTION)
         service = cls(
-            config.settings(Settings, KERNEL_SECTION),
+            settings,
             config.settings(NotifySettings, MODULE_SECTION),
             config.section("org"),
+            ui_url=lambda route: f"http://127.0.0.1:{settings.ui_port}{route}",  # `hz ui`'s fixed port (ADR 0046)
         )
         service.watcher = lambda: watch(kernel, service, service.wanted)
         return service
@@ -138,7 +143,7 @@ class NotifyService(Notifications):
                 kind=kind,
                 title=title,
                 body=body,
-                route=route if route.startswith("/") and not route.startswith("//") else "/",
+                route=route if ROUTE.fullmatch(route) else "/",
                 command=command,
                 key=key,
                 urgent=urgent,
@@ -212,7 +217,7 @@ class NotifyService(Notifications):
         posted = 0
         problem: str | None = None
         for index, notice in enumerate(claimed):
-            url = self._ui_url(notice.route) if self.notifier.clicks else None
+            url = self._ui_url(event_route(notice)) if self.notifier.clicks else None
             body = notice.body if url is not None else _with_command(notice.body, notice.command)
             if (problem := self.notifier.post(notice.title, body, url=url)) is not None:
                 logger.warning("couldn't show notice %s: %s", notice.id, problem)
@@ -235,6 +240,40 @@ class NotifyService(Notifications):
         self.store.change(self._clock(), release)
 
     # What operations call --------------------------------------------------------------------------------------------
+
+    def test(self, *, native: bool) -> Tested:
+        """Record an urgent test notice; with `native`, pop it up natively now too, for the web app's test button.
+
+        Raises:
+            HeinzelError: If notifications are off, or quiet mode keeps it from popping up.
+        """
+        notice = self.emit(
+            NoticeKind.TEST,
+            "Notifications work",
+            "This is how hz tells you that a draft is ready or a run failed.",
+            route="/notifications",
+            command="hz system notify list",
+            key=f"test:{secrets.token_hex(4)}",  # never a repeat
+            urgent=True,
+        )
+        if notice is None:
+            msg = "Notifications are off: hz system config set system.notify.enabled true"
+            raise HeinzelError(msg)
+        if not notice.popup:
+            msg = f"Recorded, but it won't pop up: {notice.held}"
+            raise HeinzelError(msg)
+        if not native:
+            return Tested(notice=notice, native=None)
+        notifier = self.notifier
+        if notifier.name is None:
+            return Tested(notice=notice, native=notifier.detail)
+        url = self._ui_url(event_route(notice)) if notifier.clicks else None
+        body = notice.body if url is not None else _with_command(notice.body, notice.command)
+        problem = notifier.post(notice.title, body, url=url, asking=True)  # someone pressed the button
+        self.store.native_result(self._clock(), problem)
+        if problem is None:
+            self.deliver([notice.id], Delivery.DAEMON)
+        return Tested(notice=notice, native=problem or "shown")
 
     def install(self) -> Installed:
         """Install the native notifier where that is needed and pop up a test now, bypassing the policy.
@@ -266,9 +305,12 @@ class NotifyService(Notifications):
             notifier=notifier.name, path=path, state=state, shown=problem is None, problem=problem, next=steps
         )
 
-    def listing(self, limit: int) -> NoticeList:
-        """The latest notices and how they reach you."""
-        notices = self.recent(limit)
+    def listing(self, limit: int, *, before: str | None = None) -> NoticeList:
+        """The latest notices (older than `before`, an id, for paging) and how they reach you."""
+        kept = list(reversed(self.store.read()))
+        if before is not None:
+            kept = [notice for notice in kept if notice.id < before]
+        notices = kept[:limit]
         waiting = sum(1 for n in notices if n.popup and n.delivered_by is None)
         return NoticeList(notices=notices, waiting=waiting, native=self.notifier.detail)
 
@@ -355,6 +397,11 @@ def _app_checks(app: NotifierApp) -> list[Check]:
     else:
         checks.append(Check(name="heinzel notifier permission", status=Status.UP, detail=status))
     return checks
+
+
+def event_route(notice: Notice) -> str:
+    """The notice's route with its id, so the app can open on the notice (`?event=<id>`)."""
+    return f"{notice.route}{'&' if '?' in notice.route else '?'}event={notice.id}"
 
 
 def _no_url(route: str) -> str | None:  # noqa: ARG001 - the web app has no stable address yet

@@ -101,11 +101,20 @@ def test_a_kind_that_is_off_records_nothing(make):
     assert make(draft=False).recent() == []
 
 
-def test_a_route_must_be_a_path_of_the_app(make):
-    service = make()
-    notice = service.emit(NoticeKind.TEST, "t", route="//evil.example.test/x", command="hz", key="a")
+@pytest.mark.parametrize(
+    "route", ["//evil.example.test/x", "/\t/evil.example.test", "/\\evil", "https://evil.example.test", "/a b", ""]
+)
+def test_a_route_must_be_a_path_of_the_app(make, route):
+    notice = make().emit(NoticeKind.TEST, "t", route=route, command="hz", key="a")
     assert notice is not None
     assert notice.route == "/"
+
+
+def test_routes_of_the_app_are_kept(make):
+    for route in ("/", "/doctor", "/contracts/me%3Aweekly", "/?settings=&q=x"):
+        notice = make(repeat_hours=0).emit(NoticeKind.TEST, "t", route=route, command="hz", key=route)
+        assert notice is not None
+        assert notice.route == route
 
 
 def test_notices_outside_working_hours_are_due_at_their_start(make, clock):
@@ -356,3 +365,15 @@ def test_the_rate_limit_holds_back_what_waited_overnight(make, clock, runner):
     assert service.post_native() == 0
     clock.now += timedelta(hours=1, minutes=1)
     assert service.post_native() == 2
+
+
+def test_the_list_pages_back_through_everything_kept(make, clock):
+    service = make(repeat_hours=0, per_hour=60)
+    for index in range(5):
+        draft(service, key=str(index))
+        clock.now += timedelta(seconds=1)
+    first = service.listing(2)
+    assert [n.key for n in first.notices] == ["4", "3"]
+    second = service.listing(2, before=first.notices[-1].id)
+    assert [n.key for n in second.notices] == ["2", "1"]
+    assert [n.key for n in service.listing(2, before=second.notices[-1].id).notices] == ["0"]

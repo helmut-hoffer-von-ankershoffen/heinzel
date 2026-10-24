@@ -3147,6 +3147,19 @@ export interface components {
             template: string;
         };
         /**
+         * Tested
+         * @description What `test` recorded, and how the native pop-up went when it was asked for.
+         */
+        Tested: {
+            /**
+             * Native
+             * @description `shown` when the native notifier popped it up now, else why not; none when not asked to.
+             */
+            native: string | null;
+            /** @description The test notice. */
+            notice: components["schemas"]["Notice"];
+        };
+        /**
          * ThemeColours
          * @description The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes).
          */
@@ -3481,6 +3494,7 @@ export type SchemaStep = components['schemas']['Step'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
 export type SchemaTeamShow = components['schemas']['TeamShow'];
 export type SchemaTemplateView = components['schemas']['TemplateView'];
+export type SchemaTested = components['schemas']['Tested'];
 export type SchemaThemeColours = components['schemas']['ThemeColours'];
 export type SchemaThemeList = components['schemas']['ThemeList'];
 export type SchemaThemeView = components['schemas']['ThemeView'];
@@ -4148,6 +4162,8 @@ export interface operations {
             query?: {
                 /** @description How many of the latest notices to show. */
                 limit?: number;
+                /** @description Only notices older than this id, for the next page. */
+                before?: string | null;
             };
             header?: never;
             path?: never;
@@ -4177,7 +4193,10 @@ export interface operations {
     };
     system_notify_test: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Pop it up through the native notifier now too, as the web app's test button does. */
+                native?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4190,7 +4209,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NoticeList"];
+                    "application/json": components["schemas"]["Tested"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

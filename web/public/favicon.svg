@@ -1,1 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><title>Heinzelmännchen</title><path d="M16 2 6 20h20L16 2Z" fill="#c2410c"/><circle cx="16" cy="24" r="6" fill="#f5d0a9"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Heinzelmännchen">
+  <!-- An original drawing, the same shapes as src/heinzel/modules/system/notify/macos/icon.swift draws. -->
+  <rect width="512" height="512" rx="112" fill="#181818"/>
+  <path d="M168 352 C176 500 336 500 344 352 Z" fill="#f5ecd9"/>
+  <circle cx="256" cy="340" r="72" fill="#f2c9a8"/>
+  <circle cx="228" cy="336" r="9" fill="#181818"/>
+  <circle cx="284" cy="336" r="9" fill="#181818"/>
+  <circle cx="256" cy="362" r="14" fill="#e8a07f"/>
+  <path d="M120 292 C160 200 220 110 286 64 C330 140 372 220 392 292 Z" fill="#d97757"/>
+  <rect x="108" y="276" width="296" height="36" rx="18" fill="#f5ecd9"/>
+  <circle cx="286" cy="64" r="20" fill="#f5ecd9"/>
+</svg>

@@ -6,14 +6,13 @@ you want, quiet mode, your profile's working hours unless a notice is urgent, no
 kept on this machine only (the state directory, bounded, pruned); nothing is sent anywhere.
 """
 
-import secrets
 from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Check, HeinzelError, Module, NoticeKind, Notifications
-from heinzel.modules.system.notify._models import Delivered, Installed, NoticeList, NotifySettings
-from heinzel.modules.system.notify._render import render_installed, render_list
+from heinzel import Check, Module, Notifications
+from heinzel.modules.system.notify._models import Delivered, Installed, NoticeList, NotifySettings, Tested
+from heinzel.modules.system.notify._render import render_installed, render_list, render_tested
 from heinzel.modules.system.notify._service import NotifyService
 
 module = Module("notify", "Pop up what deserves your attention: in the web app while it is open, else natively.")
@@ -36,9 +35,13 @@ HEADS = frozenset({"cli", "mcp", "web"})
 def list_(
     service: NotifyService,
     limit: Annotated[int, Field(description="How many of the latest notices to show.", ge=1, le=200)] = 50,
+    before: Annotated[
+        str | None,
+        Field(description="Only notices older than this id, for the next page.", pattern=r"^[A-Za-z0-9-]+$"),
+    ] = None,
 ) -> NoticeList:
     """Show the latest notices, whether each popped up and who showed it, and how they reach you."""
-    return service.listing(limit)
+    return service.listing(limit, before=before)
 
 
 @module.operation(read_only=False, heads=HEADS)
@@ -60,8 +63,15 @@ def ack(
     return service.ack(ids.split(","))
 
 
-@module.operation(read_only=False, render=render_list, heads=HEADS)
-def test(service: NotifyService) -> NoticeList:
+# A test may pop up a native notification and let macOS ask whether to allow it: that's for a person at the screen
+# (the CLI, the web app's button), not for an agent over MCP.
+@module.operation(name="test", read_only=False, render=render_tested, heads={"cli", "web"})
+def send_test(
+    service: NotifyService,
+    native: Annotated[
+        bool, Field(description="Pop it up through the native notifier now too, as the web app's test button does.")
+    ] = False,
+) -> Tested:
     """Record an urgent test notice, which the open web app or the next daemon tick pops up.
 
     `hz system notify install` pops one up at once, through the native notifier only.
@@ -69,22 +79,7 @@ def test(service: NotifyService) -> NoticeList:
     Raises:
         HeinzelError: If notifications are off, or quiet mode keeps it from popping up.
     """
-    notice = service.emit(
-        NoticeKind.TEST,
-        "Notifications work",
-        "This is how hz tells you that a draft is ready or a run failed.",
-        route="/notifications",
-        command="hz system notify list",
-        key=f"test:{secrets.token_hex(4)}",  # never a repeat
-        urgent=True,
-    )
-    if notice is None:
-        msg = "Notifications are off: hz system config set system.notify.enabled true"
-        raise HeinzelError(msg)
-    if not notice.popup:
-        msg = f"Recorded, but it won't pop up: {notice.held}"
-        raise HeinzelError(msg)
-    return service.listing(5)
+    return service.test(native=native)
 
 
 # Installing an app into ~/Applications and popping up a notification is for the person at the terminal.
@@ -100,4 +95,4 @@ def health(service: NotifyService) -> list[Check]:
     return service.health()
 
 
-__all__ = ["Delivered", "Installed", "NoticeList", "NotifyService", "NotifySettings", "module"]
+__all__ = ["Delivered", "Installed", "NoticeList", "NotifyService", "NotifySettings", "Tested", "module"]

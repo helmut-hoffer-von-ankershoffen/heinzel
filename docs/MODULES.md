@@ -242,7 +242,7 @@ Pop up what deserves your attention: in the web app while it is open, else nativ
 | --- | --- | --- | --- | --- | --- | --- |
 | Show the latest notices, whether each popped up and who showed it, and how they reach you. | `hz system notify list` | `system_notify_list` | — | `GET /api/system/notify/list` |  | expert |
 | Mark notices as shown, so the daemon doesn't pop them up again. | `hz system notify ack` | `system_notify_ack` | — | `POST /api/system/notify/ack` | yes | expert |
-| Record an urgent test notice, which the open web app or the next daemon tick pops up. | `hz system notify test` | `system_notify_test` | — | `POST /api/system/notify/test` | yes | expert |
+| Record an urgent test notice, which the open web app or the next daemon tick pops up. | `hz system notify test` | — | — | `POST /api/system/notify/test` | yes | expert |
 | Install the native notifier (Heinzel Notifier on macOS) and pop up a test notification now. | `hz system notify install` | — | — | — | yes | expert |
 
 Settings: [`[system.notify]`](CONFIGURATION.md#systemnotify).

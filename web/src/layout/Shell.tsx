@@ -5,6 +5,7 @@ import { Outlet } from "react-router";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { ChatPanel } from "./ChatPanel";
 import { SearchPalette } from "./SearchPalette";
 import { Sidebar } from "./Sidebar";
@@ -13,6 +14,7 @@ export function Shell() {
   const [navOpen, setNavOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
+  useNoticeStream();
   useEffect(() => {
     const open = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {

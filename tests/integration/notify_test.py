@@ -57,3 +57,8 @@ def test_notices_are_for_the_web_head_behind_its_token_not_the_unauthenticated_r
     listed = client.get("/api/system/notify/list", headers={"Authorization": f"Bearer {TOKEN}"})
     assert listed.status_code == 200
     assert listed.json()["notices"] == []
+
+
+def test_the_native_test_is_for_people_not_agents_over_mcp(kernel):
+    assert not any(item.path == ("system", "notify", "test") for item in exposed(kernel, "mcp"))
+    assert any(item.path == ("system", "notify", "test") for item in exposed(kernel, "web"))

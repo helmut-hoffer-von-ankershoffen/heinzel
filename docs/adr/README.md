@@ -49,6 +49,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0042](0042-google-workspace-through-the-gws-cli.md) | Read Google Workspace through the Google Workspace CLI (`gws`) | accepted | 2026-10-24 |
 | [0043](0043-desktop-notifications-one-policy-shown-once.md) | Desktop notifications: one policy in the core, shown once, by hz's own macOS app | proposed | 2026-10-24 |
 | [0044](0044-themes-are-data-a-plugin-ships.md) | Themes are data a plugin ships: `module.theme(...)` offers them, `hz system theme use` picks one | proposed | 2026-10-24 |
+| [0046](0046-an-installable-web-app-with-paired-devices.md) | An installable web app on a fixed port, with paired devices and notifications from its service worker | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -65,7 +66,9 @@ head doesn't); [0041](0041-expert-mode-newcomers-see-the-everyday-commands.md) a
 [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) (the navigation lists the same ones);
 [0043](0043-desktop-notifications-one-policy-shown-once.md) amends [0020](0020-daemon-head.md) (every tick ends by
 popping up due notices) and [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) (the notify operations are
-web endpoints, not REST ones). ADRs 0021–0024 are
+web endpoints, not REST ones); [0046](0046-an-installable-web-app-with-paired-devices.md) amends
+[0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) (a fixed port and paired devices) and
+[0043](0043-desktop-notifications-one-policy-shown-once.md) (notifications in the web app). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 

@@ -5,6 +5,7 @@ import { useContracts, useExpert, useProfile } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { InstallApp } from "@/pwa/InstallApp";
 import { CONTRACTS_SECTION, contractPath, sections, visibleSections } from "./navigation";
 import { useTheme } from "./theme";
 
@@ -78,6 +79,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
           ))}
         </ul>
       </nav>
+      <InstallApp compact />
       <div className="flex items-center gap-1 border-t border-border pt-2">
         <Button asChild variant="ghost" size="sm" className="min-w-0 flex-1 justify-start">
           <NavLink to="/profile">

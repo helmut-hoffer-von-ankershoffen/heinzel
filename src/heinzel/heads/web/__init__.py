@@ -7,8 +7,14 @@ opens the browser with it in the URL's fragment, which never reaches a server or
 `sessionStorage` and sends it as `Authorization: Bearer <token>` with every call. Requests without it are refused, so
 another page in the browser can't call operations even when it can reach the port. Every response carries a strict
 Content Security Policy that allows this origin only (ADR 0039).
+
+`hz ui` listens on one fixed port (`[hz] ui_port`), so an installed app keeps its origin, and with its session token
+the app pairs once for a device token it keeps, which every later `hz ui` accepts too (`_devices.py`, ADR 0046). The
+app's manifest and service worker are top-level files of the build; the worker shows notifications and caches the
+app's shell, never API data.
 """
 
+import mimetypes
 import secrets
 import socket
 import threading
@@ -21,7 +27,10 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from heinzel.heads import api
-from heinzel.kernel import HeinzelError, Kernel
+from heinzel.heads.web._devices import Devices
+from heinzel.heads.web._pairing import add_pairing
+from heinzel.heads.web._stream import add_stream
+from heinzel.kernel import KERNEL_SECTION, Config, HeinzelError, Kernel, Settings
 
 HEAD = "web"
 STATIC = Path(__file__).parent / "static"
@@ -30,7 +39,8 @@ HOST = "127.0.0.1"
 OK = 200
 CSP = (
     "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
-    "connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    "connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; "
+    "frame-ancestors 'none'"
 )
 """Only this origin, for everything; no inline scripts or styles, no frames, no forms posting elsewhere."""
 SECURITY_HEADERS = {
@@ -41,20 +51,37 @@ SECURITY_HEADERS = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
 }
+NO_CACHE = frozenset({"sw.js", "manifest.webmanifest"})
+"""Top-level files a browser must check for a new version every time: the service worker and the manifest."""
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 NOT_BUILT = (
     "The web app isn't built into this installation. In a checkout of the repository run `make web-build`; an "
     "installed release ships it."
 )
 
 
-def build(kernel: Kernel, *, port: int | None, token: str, static: Path | None = STATIC) -> FastAPI:
+def devices_for_user() -> Devices:
+    """The paired devices in the user's state directory: a project's `hz.toml` can't move them."""
+    settings = Config.load(Path.home()).settings(Settings, KERNEL_SECTION)
+    return Devices(settings.state_dir / "web")
+
+
+def build(
+    kernel: Kernel,
+    *,
+    port: int | None,
+    token: str,
+    static: Path | None = STATIC,
+    devices: Devices | None = None,
+) -> FastAPI:
     """The app `hz ui` serves: the built web app at `/` and the web head's API, behind the token, at `/api`.
 
     Args:
         kernel: The kernel whose operations the API exposes.
         port: The port it listens on; requests naming another are refused.
-        token: The session token every API request must carry.
+        token: The session token every API request must carry, unless it carries a paired device's.
         static: The built app; None serves the API only (`make web-dev`, where Vite serves the app).
+        devices: The paired devices; the user's by default.
 
     Raises:
         HeinzelError: If `static` holds no built app.
@@ -77,11 +104,24 @@ def build(kernel: Kernel, *, port: int | None, token: str, static: Path | None =
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"  # file names carry their hash
         return response
 
-    app.mount("/api", api.build(kernel, port=port, head=HEAD, token=token, docs=False))
+    paired = devices or devices_for_user()
+    endpoints = api.build(
+        kernel,
+        port=port,
+        head=HEAD,
+        token=token,
+        docs=False,
+        accept=lambda presented: device.id if (device := paired.check(presented)) else None,
+    )
+    add_pairing(endpoints, paired)
+    add_stream(endpoints, kernel)  # behind the same middleware: Host, Origin and the token
+    app.mount("/api", endpoints)
     if static is None:
         return app
     if (static / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=static / "assets"), name="assets")
+    if (static / "icons").is_dir():  # the installed app's icons (manifest.webmanifest)
+        app.mount("/icons", StaticFiles(directory=static / "icons"), name="icons")
     index = static / "index.html"
     # The top-level files (favicon.svg), listed once: a request picks one by name and never builds a path.
     files = {file.name: file for file in static.iterdir() if file.is_file() and file != index}
@@ -90,7 +130,8 @@ def build(kernel: Kernel, *, port: int | None, token: str, static: Path | None =
     async def page(path: str) -> Response:
         # Top-level files as themselves; every other path is a route of the app.
         if path in files:
-            return FileResponse(files[path])
+            headers = {"Cache-Control": "no-cache"} if path in NO_CACHE else None
+            return FileResponse(files[path], headers=headers)
         return FileResponse(index, headers={"Cache-Control": "no-store"})
 
     return app
@@ -152,7 +193,8 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     except BaseException:
         sock.close()
         raise
-    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off"))
+    # Open notice streams end on their own within minutes; on Ctrl+C don't wait for them.
+    server = uvicorn.Server(uvicorn.Config(app, log_level="warning", lifespan="off", timeout_graceful_shutdown=1))
     url = session_url(bound, token, base)
 
     def when_started() -> None:

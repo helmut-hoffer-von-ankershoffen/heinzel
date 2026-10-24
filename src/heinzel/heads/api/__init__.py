@@ -43,6 +43,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
     head: str = HEAD,
     token: str | None = None,
     docs: bool = True,
+    accept: Callable[[str], str | None] | None = None,
 ) -> FastAPI:
     """A FastAPI app with one endpoint per exposed operation, answering only local, same-origin requests.
 
@@ -53,6 +54,9 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
         head: Whose operations to expose: `api`, or `web` for the web head, which sets a `token` too.
         token: When set, every request must carry it as `Authorization: Bearer <token>`.
         docs: Serve the interactive docs at `/docs`; they load scripts from a CDN, which the web head's CSP forbids.
+        accept: With a `token`, which other bearer token is accepted too (the web head's device tokens): it returns
+            the device's id, or None. A request records what it carried in `request.state.auth` (`session` or
+            `device`) and, for a device, its id in `request.state.device`.
     """
     app = FastAPI(
         title="🧝 Heinzelmännchen",
@@ -71,7 +75,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
             headers.get("host", ""), headers.get("origin"), hosts, port, headers.get("sec-fetch-site")
         ):
             return JSONResponse(status_code=FORBIDDEN, content={"error": problem})
-        if token is not None and not hmac.compare_digest(headers.get("authorization", "").encode(), bearer):
+        if token is not None and not _authorized(request, headers.get("authorization", ""), bearer, accept):
             # A header, not a cookie: another site can make the browser send cookies along, never this header.
             problem = "Refused: send the session token `hz ui` opened the app with, as `Authorization: Bearer <token>`."
             return JSONResponse(
@@ -103,6 +107,19 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
             operation_id=item.name,
         )
     return app
+
+
+def _authorized(request: Request, header: str, bearer: bytes, accept: Callable[[str], str | None] | None) -> bool:
+    """Whether `header` carries the session token or, through `accept`, another one; notes which in the request."""
+    if hmac.compare_digest(header.encode(), bearer):
+        request.state.auth = "session"
+        return True
+    scheme, _, presented = header.partition(" ")
+    if accept is not None and scheme == "Bearer" and presented and (device := accept(presented)) is not None:
+        request.state.auth = "device"
+        request.state.device = device
+        return True
+    return False
 
 
 def refusal(

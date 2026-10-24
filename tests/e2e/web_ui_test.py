@@ -115,7 +115,9 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
     subprocess.run(install, cwd=REPO, check=True, timeout=600, capture_output=True)
     shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
 
-    ui = subprocess.Popen(["uv", "run", "hz", "ui"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True)
+    ui = subprocess.Popen(
+        ["uv", "run", "hz", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+    )
     try:
         assert ui.stderr is not None
         line = ""

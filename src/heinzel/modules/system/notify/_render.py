@@ -5,7 +5,7 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel import Notice
-from heinzel.modules.system.notify._models import Installed, NoticeList
+from heinzel.modules.system.notify._models import Installed, NoticeList, Tested
 
 
 def _state(notice: Notice) -> str:
@@ -51,4 +51,14 @@ def render_installed(result: Installed) -> RenderableType:
     lines = [Text(f"Native notifier: {result.notifier or 'none'}{where}")]
     lines.append(Text("A test notification is on its way." if result.shown else f"No test: {result.problem}"))
     lines.extend(Text(f"- {step}") for step in result.next)
+    return Group(*lines)
+
+
+def render_tested(result: Tested) -> RenderableType:
+    """What was recorded, and how the native pop-up went."""
+    lines = [Text(f"Recorded {result.notice.id}: the open web app or the daemon's next tick pops it up.")]
+    if result.native == "shown":
+        lines = [Text("A test notification is on its way.")]
+    elif result.native is not None:
+        lines.append(Text(f"No native pop-up: {result.native}"))
     return Group(*lines)
