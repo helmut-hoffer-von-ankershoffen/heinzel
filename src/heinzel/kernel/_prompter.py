@@ -143,7 +143,7 @@ class Prompter:
             HeinzelError: If nobody can answer, or a preset answer is invalid.
         """
         _check_options(options, [] if default is None else [default])
-        if not self._preset(key):
+        if not self.has_preset(key):
             self._list(options)
         answer = self.text(
             question,
@@ -164,7 +164,7 @@ class Prompter:
         """
         defaults = list(default)
         _check_options(options, defaults)
-        if not self._preset(key):
+        if not self.has_preset(key):
             self._list(options)
 
         def check(answer: str) -> str | None:
@@ -186,7 +186,8 @@ class Prompter:
         for number, option in enumerate(options, start=1):
             self.say(f"  {number}) {option}")
 
-    def _preset(self, key: str | None) -> bool:
+    def has_preset(self, key: str | None) -> bool:
+        """Whether the question `key` is answered in advance: a step asks it even where it would otherwise not."""
         return key is not None and self.full_key(key) in self.presets
 
     def _answer(self, prompt: str, key: str | None) -> str:

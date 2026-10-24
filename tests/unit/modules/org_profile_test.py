@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from heinzel import ConfigEditor, HeinzelError
+from heinzel import ConfigEditor, HeinzelError, Prompter
 from heinzel.kernel import Config, ScriptedPrompter
 from heinzel.modules.org import OrgSettings, ProfileService
 from heinzel.modules.org import _discovery as discovery
@@ -185,3 +185,37 @@ def test_the_service_requires_a_complete_profile():
         ProfileService(OrgSettings(handle="mira")).require()
     complete = OrgSettings(handle="mira", role="engineer", timezone="Europe/Berlin")
     assert ProfileService(complete).require().handle == "mira"
+
+
+def answers(presets: dict[str, object]) -> Prompter:
+    """Nobody at a keyboard, only an answers file (`hz setup --answers`)."""
+    prompter = Prompter()
+    prompter.presets = presets
+    prompter.scope = "org"
+    return prompter
+
+
+def test_an_answers_file_sets_up_the_profile_without_a_person(found):
+    found(EVERYTHING)
+    editor = RecordingEditor()
+    ask_profile(OrgSettings(), answers({"org.role": "principal", "org.working_hours": "10-18"}), editor)
+    assert editor.written["org.role"] == "principal"
+    assert editor.written["org.working_hours"] == [10, 18]
+    assert editor.written["org.handle"] == "mira-example"  # found, so nothing needed answering
+
+
+def test_preset_answers_win_over_what_is_found(found):
+    found(EVERYTHING)
+    presets = {"org.handle": "mira", "org.role": "engineer", "org.working_hours": [9, 17], "org.timezone": "Asia/Tokyo"}
+    editor = RecordingEditor()
+    ask_profile(OrgSettings(), answers({**presets, "org.github": "none", "org.coding_agent": "command"}), editor)
+    assert (editor.written["org.handle"], editor.written["org.timezone"]) == ("mira", "Asia/Tokyo")
+    assert editor.written["org.coding_agent"] == "command"
+    assert "org.github" not in editor.written
+
+
+def test_without_an_answer_for_the_role_the_key_is_named():
+    with pytest.raises(HeinzelError, match=r"No answer for org.handle"):
+        ask_profile(OrgSettings(), answers({}), RecordingEditor())
+    with pytest.raises(HeinzelError, match=r"No answer for org.role"):
+        ask_profile(OrgSettings(), answers({"org.handle": "mira"}), RecordingEditor())

@@ -38,7 +38,7 @@ HANDLE = re.compile(r"[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}")
 """Lowercase letters, digits and single dashes inside, at most 39 characters: what GitHub allows for a login."""
 GITHUB_LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}")
 EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
-HOURS = re.compile(r"(\d{1,2})\s*-\s*(\d{1,2})")
+HOURS = re.compile(r"(\d{1,2})\s*[-,]\s*(\d{1,2})")  # 09-18, or 9,18 as a list in an answers file gives it
 DEFAULT_HOURS = (9, 18)
 
 
