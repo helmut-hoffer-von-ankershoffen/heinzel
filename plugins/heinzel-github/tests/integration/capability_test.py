@@ -137,7 +137,7 @@ def test_unbound_the_requester_fails_and_doctor_names_the_binding(github_kernel,
     code, output = hz(kernel, "digest", "merged", "acme/widgets", SINCE, UNTIL)
     assert code != 0
     # The CLI head renders errors as Rich markup, which swallows the `[capabilities]` table name (a core issue).
-    assert 'code_host = "github" (installed: github)' in str(output)
+    assert "hz system config set capabilities.code_host github" in str(output)
     assert fake_github.requests == []
     code, report = hz(kernel, "system", "doctor")
     assert code == 0

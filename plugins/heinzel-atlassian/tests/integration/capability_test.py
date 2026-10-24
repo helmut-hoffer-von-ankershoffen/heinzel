@@ -185,8 +185,7 @@ def test_unbound_the_requester_fails_and_doctor_names_the_binding(atlassian_kern
     kernel = atlassian_kernel(digest=digest())
     code, output = hz(kernel, "digest", "issues", "WID", SINCE, UNTIL)
     assert code != 0
-    # Other installed tracker adapters (heinzel-github in this workspace) follow in the list.
-    assert 'tracker = "atlassian" (installed: atlassian' in str(output)
+    assert "hz system config set capabilities.tracker atlassian" in str(output)
     assert fake_atlassian.requests == []
     code, report = hz(kernel, "system", "doctor")
     assert code == 0
