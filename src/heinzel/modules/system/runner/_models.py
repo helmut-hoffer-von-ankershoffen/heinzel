@@ -30,7 +30,9 @@ class RunnerSettings(ModuleSettings):
         default_factory=list,
         description="The `command` runner's command line, one argument per item, never through a shell. "
         "Placeholders: {prompt_file}, {contract_file}, {output_file}, {working_dir}, {tools}, {model}, "
-        '{timeout_seconds}, {max_usd}; `{{` and `}}` are literal braces; e.g. ["mytool", "ai", "run", "--prompt", '
+        "{timeout_seconds}, {max_usd}, {mcp_config} (a JSON file of MCP servers in the `mcpServers` shape, for a "
+        "chat's hz tools); `{{` and `}}` are literal braces; e.g. "
+        '["mytool", "ai", "run", "--prompt", '
         '"{prompt_file}"].',
     )
     command_output: Literal["stdout", "file"] = Field(
@@ -62,7 +64,7 @@ class RunnerSettings(ModuleSettings):
         default=0.25,
         gt=0,
         allow_inf_nan=False,
-        description="Most one answer of `hz system runner ask` (the web app's chat) may cost in US dollars.",
+        description="Most one answer of `hz system runner ask` or one message of `hz chat` may cost in US dollars.",
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(

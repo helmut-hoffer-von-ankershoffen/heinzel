@@ -3,10 +3,11 @@
 The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets and decide how to expose them.
 """
 
-from heinzel.kernel._agents import AgentResult, AgentRunner, Budget, RunStatus, TokenUsage, ToolProfile
+from heinzel.kernel._agents import AgentResult, AgentRunner, Budget, McpServer, RunStatus, TokenUsage, ToolProfile
 from heinzel.kernel._bindings import CapabilityView, Requester
 from heinzel.kernel._boot import boot
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, Capability, Mode, Requirement
+from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._config import (
     FILENAME,
     KERNEL_SECTION,
@@ -68,7 +69,7 @@ from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, DiscoveryHint, PlaybookLet, PlaybookSetup
-from heinzel.kernel._progress import Progress
+from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
     Calendar,
@@ -99,7 +100,7 @@ from heinzel.kernel._protocols import (
 )
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
 from heinzel.kernel._settings import Settings
-from heinzel.kernel._text import clean_text
+from heinzel.kernel._text import clean_text, redact_emails
 from heinzel.kernel._themes import (
     DEFAULT_THEME,
     FONT_ROUTE,
@@ -126,6 +127,7 @@ __all__ = [
     "PROJECT_FILENAME",
     "SETUP_PHASES",
     "WINDOW_PATTERN",
+    "ActionGate",
     "AgentResult",
     "AgentRunner",
     "AssetType",
@@ -152,6 +154,7 @@ __all__ = [
     "DiscoveryHint",
     "Document",
     "Documents",
+    "Emit",
     "EnvironmentBackend",
     "Event",
     "HealthLet",
@@ -175,6 +178,7 @@ __all__ = [
     "MailContent",
     "MailMessage",
     "MailQuery",
+    "McpServer",
     "Meeting",
     "Meetings",
     "Message",
@@ -195,6 +199,7 @@ __all__ = [
     "PostedMessage",
     "Progress",
     "Prompter",
+    "ProposedCall",
     "ProviderLet",
     "PullRequest",
     "Recommendation",
@@ -238,6 +243,7 @@ __all__ = [
     "format_duration",
     "parse_duration",
     "parse_window",
+    "redact_emails",
     "requirement_from_receipt",
     "schedule_problem",
     "subprocess_environment",

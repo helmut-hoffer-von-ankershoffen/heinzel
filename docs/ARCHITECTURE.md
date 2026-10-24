@@ -86,8 +86,13 @@ OpenAPI at `/docs`). The **web head** (`hz ui`, `heinzel.heads.web`) serves a
 React app (`web/`, built into the package) at `/` and the API head's endpoints for head `web` under `/api`, on
 localhost only, behind a token made per process and sent as `Authorization: Bearer`; every response carries a strict
 CSP. Operations hidden from the unauthenticated REST head because they read your profile or your systems list `web`
-in `heads=`; nothing that spends money is exposed but `hz system runner ask`, the app's chat, which has its own cap
-(ADR 0039, "a web head: a React app served by the API head", proposed). The typed client in `web/src/api/` is
+in `heads=`; nothing that spends money is exposed but `hz system runner ask` and the chat (`hz chat send`), which have
+their own caps (ADR 0039, "a web head: a React app served by the API head", proposed). The web head also streams any of
+its operations as server-sent events at `/api/stream/<path>` (`heinzel.heads._stream`): what the operation emits
+through `Progress.emitter()`, then its result. The chat (`system.runner.chat`, ADR 0045, proposed) runs the agent
+runner with hz's operations as tools from the MCP head in chat mode (`hz system serve mcp --chat <session>`, stdio
+only): read operations run, every other one goes to the kernel's `ActionGate` as a proposal that only the person's
+`hz chat confirm`, on the CLI and web heads only, runs. The typed client in `web/src/api/` is
 generated from the OpenAPI document by `make fix` and checked by `make check`. The **daemon head** (`hz system serve daemon`) calls the `hz system daemon tick` operation in
 a foreground loop; installed, launchd or systemd start that tick every few minutes instead
 ([ADR 0020](adr/0020-daemon-head.md)). The CLI head turns a module into a command group and

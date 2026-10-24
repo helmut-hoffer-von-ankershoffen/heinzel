@@ -1,7 +1,7 @@
 // Three panes at full height: navigation on the left, the screen in the middle, the chat on the right (ADR 0039).
 import { MessageSquare, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Outlet } from "react-router";
+import { Outlet, useLocation } from "react-router";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,8 @@ export function Shell() {
   const [chatOpen, setChatOpen] = useState(true);
   const [searchOpen, setSearchOpen] = useState(false);
   useNoticeStream();
+  // Home is the chat itself (ADR 0045); every other screen has it on the right.
+  const home = useLocation().pathname === "/";
   useEffect(() => {
     const open = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -55,7 +57,7 @@ export function Shell() {
             <span aria-hidden>🧝 </span>
             {t("app.name")}
           </span>
-          {!chatOpen && (
+          {!chatOpen && !home && (
             <Button
               variant="outline"
               size="sm"
@@ -72,7 +74,7 @@ export function Shell() {
           <Outlet />
         </main>
       </div>
-      {chatOpen && (
+      {chatOpen && !home && (
         <aside aria-label={t("chat.title")} className="w-80 shrink-0 border-l border-border bg-card max-md:hidden">
           <ChatPanel onCollapse={() => setChatOpen(false)} />
         </aside>

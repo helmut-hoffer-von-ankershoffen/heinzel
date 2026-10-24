@@ -1,7 +1,9 @@
 """`hz system serve`: start the other heads from the CLI."""
 
+import os
 from collections.abc import Callable
 from enum import StrEnum
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
@@ -42,11 +44,34 @@ def serve_group(
         ] = Transport.STDIO,
         host: Annotated[str, typer.Option(help="Interface for streamable-http.")] = "127.0.0.1",
         port: Annotated[int, typer.Option(help="Port for streamable-http.")] = 8765,
+        chat: Annotated[
+            str | None,
+            typer.Option(
+                help="Serve the tools of this chat session: reads run, everything else waits for your confirmation "
+                "in the chat. Started by `hz chat` for its agent, over stdio only.",
+                metavar="SESSION",
+            ),
+        ] = None,
+        project: Annotated[
+            Path | None,
+            typer.Option(
+                help="Read the configuration as if started in this directory (its hz.toml), as the chat does."
+            ),
+        ] = None,
     ) -> None:
-        """Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`."""
+        """Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
+
+        Raises:
+            typer.Exit: With 2 when --chat is given with another transport than stdio.
+        """
         from heinzel.heads import mcp as head  # noqa: PLC0415 - heavy import, only when serving
 
-        head.serve(transport.value, host, port)
+        if chat is not None and transport is not Transport.STDIO:
+            err_console.print(message("Can't serve:", "--chat serves one chat's agent over stdio only, never a port."))
+            raise typer.Exit(2)
+        if project is not None:
+            os.chdir(project)  # before the head boots its kernel, so it finds the same project file
+        head.serve(transport.value, host, port, chat=chat)
 
     @serve.command(epilog=footer)
     def api(

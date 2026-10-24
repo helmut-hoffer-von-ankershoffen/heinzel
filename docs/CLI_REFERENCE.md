@@ -18,6 +18,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `atlassian`: (expert) Read Jira issues and Confluence...
+* `chat`: Chat with the agent runner in this...
 * `clock`: Show the time in each of the team&#x27;s time...
 * `github`: (expert) Read pull requests and issues...
 * `google`: (expert) Read Google Docs, Sheets, Drive,...
@@ -57,6 +58,172 @@ $ hz atlassian [OPTIONS] COMMAND [ARGS]...
 ```console
 $ hz atlassian info [OPTIONS]
 ```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz chat`
+
+Chat with the agent runner in this terminal: it reads with hz&#x27;s operations and asks you before it changes anything. /exit or Ctrl-D leaves; `hz chat --continue` comes back.
+
+**Usage**:
+
+```console
+$ hz chat [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `-c, --continue`: Continue the most recent chat instead of opening one.
+* `--session <str>`: Continue this chat session (`hz chat list`).
+* `--context <str>`: What a new chat is about: `route:/contracts`, `contract:weekly`, `draft:&lt;id&gt;`, `event:&lt;id&gt;`.
+* `--detail <str>`: What you know about it, in words.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `confirm`: Run an action the agent proposed, with...
+* `decline`: Decline an action the agent proposed; it...
+* `list`: List chat sessions, most recent first;...
+* `open`: Open a chat session, optionally about a...
+* `remove`: (expert) Delete a chat session and...
+* `send`: Send a message in a chat session and wait...
+* `show`: (expert) Show a chat session: its context,...
+
+### `hz chat confirm`
+
+Run an action the agent proposed, with exactly the arguments shown; only you can confirm.
+
+**Usage**:
+
+```console
+$ hz chat confirm [OPTIONS] {session} {action}
+```
+
+**Arguments**:
+
+* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat decline`
+
+Decline an action the agent proposed; it never runs.
+
+**Usage**:
+
+```console
+$ hz chat decline [OPTIONS] {session} {action}
+```
+
+**Arguments**:
+
+* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `action`: The proposed action&#x27;s id, e.g. `a1`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat list`
+
+List chat sessions, most recent first; they are kept for system.runner.chat.keep_days.
+
+**Usage**:
+
+```console
+$ hz chat list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat open`
+
+Open a chat session, optionally about a screen, a contract, a draft or a notification event.
+
+**Usage**:
+
+```console
+$ hz chat open [OPTIONS]
+```
+
+**Options**:
+
+* `--context <str>`: What the chat is about, as `kind:ref`: `route:/contracts`, `contract:weekly`, `draft:&lt;id&gt;`, `event:&lt;id&gt;`; a bare id is a notification event.
+* `--detail <str>`: What you know about it, in words, e.g. a notification&#x27;s text.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat remove`
+
+(expert) Delete a chat session and everything it holds; returns the sessions left.
+
+**Usage**:
+
+```console
+$ hz chat remove [OPTIONS] {session}
+```
+
+**Arguments**:
+
+* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat send`
+
+Send a message in a chat session and wait for the answer; this may cost money.
+
+**Usage**:
+
+```console
+$ hz chat send [OPTIONS] {session} {message}
+```
+
+**Arguments**:
+
+* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
+* `message`: What to say.  [required]
+
+**Options**:
+
+* `--budget-usd <float>`: Most this answer may cost in US dollars, within the per-message and session caps.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz chat show`
+
+(expert) Show a chat session: its context, messages, actions and costs.
+
+**Usage**:
+
+```console
+$ hz chat show [OPTIONS] {session}
+```
+
+**Arguments**:
+
+* `session`: The chat session&#x27;s id, from `hz chat list`.  [required]
 
 **Options**:
 
@@ -313,7 +480,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `notify`: (expert) Pop up what deserves your...
 * `plugin`: (expert) Find, add, remove, list and...
 * `release`: (expert) Ask where Heinzelmännchen was...
-* `runner`: (expert) Run bounded agent sessions with...
+* `runner`: Run bounded agent sessions with Claude...
 * `serve`: (expert) Serve every operation to coding...
 * `theme`: (expert) Pick how the web app looks: the...
 * `update`: Update Heinzelmännchen, keeping plugins;...
@@ -1173,7 +1340,7 @@ $ hz system release [OPTIONS]
 
 ### `hz system runner`
 
-(expert) Run bounded agent sessions with Claude Code or a configured command.
+Run bounded agent sessions with Claude Code or a configured command.
 
 **Usage**:
 
@@ -1265,6 +1432,9 @@ $ hz system serve daemon [OPTIONS]
 
 (expert) Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
 
+Raises:
+    typer.Exit: With 2 when --chat is given with another transport than stdio.
+
 **Usage**:
 
 ```console
@@ -1276,6 +1446,8 @@ $ hz system serve mcp [OPTIONS]
 * `--transport <stdio|streamable-http>`: stdio for agents that start hz; streamable-http to share.  [default: stdio]
 * `--host <str>`: Interface for streamable-http.  [default: 127.0.0.1]
 * `--port <int>`: Port for streamable-http.  [default: 8765]
+* `--chat SESSION`: Serve the tools of this chat session: reads run, everything else waits for your confirmation in the chat. Started by `hz chat` for its agent, over stdio only.
+* `--project <path>`: Read the configuration as if started in this directory (its hz.toml), as the chat does.
 * `--help`: Show this message and exit.
 
 ### `hz system theme`

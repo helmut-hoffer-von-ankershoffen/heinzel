@@ -27,6 +27,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.notify`](#systemnotify) | Pop up what deserves your attention: in the web app while it is open, else natively. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
+| [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
@@ -274,6 +275,22 @@ Run bounded agent sessions with Claude Code or a configured command.
 Settings: [`[system.runner]`](CONFIGURATION.md#systemrunner).
 
 Health checks: reported by `hz system doctor`.
+
+## `system.runner.chat`
+
+Chat with the agent runner about where you are; it acts through hz once you confirm.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Open a chat session, optionally about a screen, a contract, a draft or a notification event. | `hz chat open` | — | — | `POST /api/system/runner/chat/open` | yes |  |
+| Send a message in a chat session and wait for the answer; this may cost money. | `hz chat send` | — | — | `POST /api/system/runner/chat/send` | yes |  |
+| Run an action the agent proposed, with exactly the arguments shown; only you can confirm. | `hz chat confirm` | — | — | `POST /api/system/runner/chat/confirm` | yes |  |
+| Decline an action the agent proposed; it never runs. | `hz chat decline` | — | — | `POST /api/system/runner/chat/decline` | yes |  |
+| Show a chat session: its context, messages, actions and costs. | `hz chat show` | — | — | `GET /api/system/runner/chat/show` |  | expert |
+| List chat sessions, most recent first; they are kept for system.runner.chat.keep_days. | `hz chat list` | — | — | `GET /api/system/runner/chat/list` |  |  |
+| Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |
+
+Settings: [`[system.runner.chat]`](CONFIGURATION.md#systemrunnerchat).
 
 ## `system.theme`
 

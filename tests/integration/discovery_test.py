@@ -29,6 +29,7 @@ def test_discovers_builtin_modules_and_submodules():
         "system.notify",
         "system.plugin",
         "system.runner",
+        "system.runner.chat",
         "system.theme",
         "team",
         "workflow",

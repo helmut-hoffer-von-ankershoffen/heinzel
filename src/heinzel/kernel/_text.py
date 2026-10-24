@@ -23,3 +23,18 @@ def clean_text(text: str) -> str:
     What the text says is still data, never an instruction.
     """
     return _CONTROLS.sub("", text)
+
+
+# Bounded repetitions (RFC 5321's lengths), so a long run of letters costs linear time, not quadratic backtracking.
+_EMAIL = re.compile(r"[\w.%+'-]{1,64}(?:@|%40)[\w-]{1,63}(?:\.[\w-]{1,63}){0,8}\.[^\W\d_]{2,24}(?![\w-])")
+"""Addresses, Unicode ones and `%40`-encoded ones (in links) too; a bare `@handle` or `user@localhost` is none."""
+REDACTED_EMAIL = "[email]"
+
+
+def redact_emails(text: str) -> str:
+    """`text` with every email address replaced by `[email]`, before it goes into an agent's prompt.
+
+    Prompts need names, not addresses (ADR 0024, ADR 0028): an address is personal data a model provider doesn't
+    need, and an agent that sees one could write it somewhere.
+    """
+    return _EMAIL.sub(REDACTED_EMAIL, text)

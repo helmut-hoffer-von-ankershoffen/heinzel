@@ -1,13 +1,13 @@
 """The CLI head's progress: Rich spinners and bars on stderr, silent when the output is JSON."""
 
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 
 from rich.console import Console
 from rich.progress import BarColumn, SpinnerColumn, TaskProgressColumn, TextColumn, TimeElapsedColumn
 from rich.progress import Progress as RichProgress
 
-from heinzel.kernel import Progress
+from heinzel.kernel import Emit, Progress
 from heinzel.kernel._progress import Advance
 
 
@@ -18,6 +18,17 @@ class ConsoleProgress(Progress):
         """Report on `console` (stderr)."""
         self._console = console
         self.enabled = True
+        self.listener: Emit | None = None
+        """Who gets the events operations stream (`hz chat` prints the answer as it comes); none drops them."""
+
+    def emitter(self) -> Emit:
+        """Events go to the listener set when they happen; dropped while there is none."""
+
+        def emit(kind: str, data: Mapping[str, object]) -> None:
+            if self.listener is not None:
+                self.listener(kind, data)
+
+        return emit
 
     @contextmanager
     def task(self, description: str, total: float | None = None) -> Generator[Advance]:

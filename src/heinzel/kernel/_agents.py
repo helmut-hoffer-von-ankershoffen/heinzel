@@ -7,11 +7,23 @@ its timeout or budget is stopped and reported, never extended. Adapters call age
 
 from datetime import timedelta
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Annotated, Literal, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 
 RunStatus = Literal["completed", "timeout", "budget", "failed"]
+
+
+class McpServer(BaseModel):
+    """A local MCP server the agent may use as tools: a process it starts over stdio, never a network port.
+
+    The server decides what its tools do. Heinzelmännchen's own, `hz system serve mcp --chat <session>`, runs read
+    operations and holds every other one until the person confirms it in the chat (ADR 0045), so a session that has
+    it still changes nothing by itself.
+    """
+
+    command: list[str] = Field(min_length=1, description="The server's command line, one argument per item.")
+    env: dict[str, str] = Field(default_factory=dict, description="Variables to set for it besides the run's own.")
 
 
 class ToolProfile(BaseModel):
@@ -24,6 +36,17 @@ class ToolProfile(BaseModel):
     )
     working_dir: Path | None = Field(
         default=None, description="Directory the agent works in and may read; the current one when none."
+    )
+    read_files: bool = Field(
+        default=True,
+        description="Whether the agent gets the runner's read-only file tools; false leaves it only its MCP servers' "
+        "tools (a chat: it reads through hz, never your files).",
+    )
+    mcp_servers: dict[Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_-]{0,31}$")], McpServer] = Field(
+        default_factory=dict,
+        description="Local MCP servers whose tools the agent may call, by name. Each must change nothing on its own "
+        "(hz's chat server only proposes; ADR 0045), so the session stays read-only. A runner that can't hand them to "
+        "its agent says so in the result's warnings.",
     )
 
 
@@ -59,6 +82,9 @@ class AgentResult(BaseModel):
     usage: TokenUsage = Field(default_factory=TokenUsage, description="Tokens and cost, as far as reported.")
     duration_seconds: float = Field(description="Wall-clock time of the run.")
     detail: str = Field(default="", description="Why the run did not complete; empty when it did.")
+    fix: str = Field(
+        default="", description="A command that fixes why it did not complete, e.g. `claude auth login`; often empty."
+    )
     warnings: list[str] = Field(
         default_factory=list, description="Limits the runner could not enforce, e.g. a budget the agent ignores."
     )

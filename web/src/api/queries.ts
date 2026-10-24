@@ -49,13 +49,3 @@ export const useSetExpert = () => {
     },
   });
 };
-
-export const useAsk = () =>
-  useMutation({
-    mutationFn: (variables: { prompt: string; budget?: number }) =>
-      unwrap(
-        api.POST("/system/runner/ask", {
-          params: { query: { prompt: variables.prompt, budget_usd: variables.budget ?? null } },
-        }),
-      ),
-  });

@@ -138,14 +138,22 @@ Plugins add their own tables.
 | `model` | `HZ_SYSTEM_RUNNER__MODEL` | `None` | Model for every run, e.g. `sonnet`; the agent's own default when not set. |
 | `claude_executable` | `HZ_SYSTEM_RUNNER__CLAUDE_EXECUTABLE` | `'claude'` | The Claude Code CLI, a name on PATH or a path. |
 | `read_only_tools` | `HZ_SYSTEM_RUNNER__READ_ONLY_TOOLS` | `['Read', 'Grep', 'Glob']` | Claude Code tools a run may use; a profile asking for anything else is refused. Add only tools that cannot change anything. |
-| `command` | `HZ_SYSTEM_RUNNER__COMMAND` | platform-specific | The `command` runner's command line, one argument per item, never through a shell. Placeholders: {prompt_file}, {contract_file}, {output_file}, {working_dir}, {tools}, {model}, {timeout_seconds}, {max_usd}; `{{` and `}}` are literal braces; e.g. ["mytool", "ai", "run", "--prompt", "{prompt_file}"]. |
+| `command` | `HZ_SYSTEM_RUNNER__COMMAND` | platform-specific | The `command` runner's command line, one argument per item, never through a shell. Placeholders: {prompt_file}, {contract_file}, {output_file}, {working_dir}, {tools}, {model}, {timeout_seconds}, {max_usd}, {mcp_config} (a JSON file of MCP servers in the `mcpServers` shape, for a chat's hz tools); `{{` and `}}` are literal braces; e.g. ["mytool", "ai", "run", "--prompt", "{prompt_file}"]. |
 | `command_output` | `HZ_SYSTEM_RUNNER__COMMAND_OUTPUT` | `'stdout'` | Where the `command` runner reads the result: stdout, or {output_file}. |
 | `command_format` | `HZ_SYSTEM_RUNNER__COMMAND_FORMAT` | `'text'` | `text`: the output is the draft. `json`: an object with the draft under `command_draft_key` and, optionally, `usage` (input_tokens, output_tokens) and `total_cost_usd`. |
 | `command_draft_key` | `HZ_SYSTEM_RUNNER__COMMAND_DRAFT_KEY` | `'result'` | Key of the draft in `json` output. |
 | `command_enforces_read_only` | `HZ_SYSTEM_RUNNER__COMMAND_ENFORCES_READ_ONLY` | `False` | The `command` runner refuses to run until this is true: set it once the configured command restricts its agent to read-only tools itself. |
 | `command_read_only_tools` | `HZ_SYSTEM_RUNNER__COMMAND_READ_ONLY_TOOLS` | platform-specific | Tools, in the command's naming, a tool profile may ask the `command` runner for; others are refused. |
 | `command_env` | `HZ_SYSTEM_RUNNER__COMMAND_ENV` | platform-specific | Environment variables passed to the command besides PATH, HOME, LANG, LC_* and TMPDIR, e.g. the variable that holds its own login; HZ_CREDENTIAL_* variables are never passed. |
-| `ask_max_usd` | `HZ_SYSTEM_RUNNER__ASK_MAX_USD` | `0.25` | Most one answer of `hz system runner ask` (the web app's chat) may cost in US dollars. |
+| `ask_max_usd` | `HZ_SYSTEM_RUNNER__ASK_MAX_USD` | `0.25` | Most one answer of `hz system runner ask` or one message of `hz chat` may cost in US dollars. |
+
+## `[system.runner.chat]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `session_max_usd` | `HZ_SYSTEM_RUNNER_CHAT__SESSION_MAX_USD` | `2.0` | Most one chat session may cost in US dollars, all its messages together; a message never costs more than system.runner.ask_max_usd. |
+| `keep_days` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS` | `30` | Days a chat session is kept after its last message, then removed. |
+| `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | Chat sessions kept at most; the oldest beyond are removed. |
 
 ## `[system.theme]`
 

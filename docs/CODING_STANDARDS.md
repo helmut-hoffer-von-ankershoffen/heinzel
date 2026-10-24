@@ -106,8 +106,8 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
   in the body. Both land in the changelog's **Security** section. Breaking changes (`!` or a `BREAKING CHANGE:`
   footer) land in **Breaking changes**, with the footer's explanation.
 - Scopes are optional; Heinzelmännchen's are `kernel`, `cli`, `heads`, `system`, `setup`, `workflow`, `team`, `org`,
-  `plugin`, `template`, `ci`, `docs`, `adr`, `agents`, `dx`, `security`, `release`, `deps`, `web`, and the first-party
-  plugins `clock`, `github`, `atlassian`, `google`, `zoom`. A plugin's scopes are its own module and area names.
+  `plugin`, `template`, `ci`, `docs`, `adr`, `agents`, `dx`, `security`, `release`, `deps`, `web`, `chat`, and the
+  first-party plugins `clock`, `github`, `atlassian`, `google`, `zoom`. A plugin's scopes are its own module and area names.
 - One logical change per commit; the body says *why*.
 - `main` changes only through pull requests ([ADR 0013](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0013-pull-request-based-development-and-releases.md)).
   They are squash-merged; the PR title must be a conventional commit and becomes the commit on `main`.
