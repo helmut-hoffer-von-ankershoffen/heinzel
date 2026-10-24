@@ -4,7 +4,7 @@ date: 2026-10-24
 decision-makers: maintainer (decisions and the open design), architect (shape)
 amends: 0021, 0023, 0038, 0049
 related: 0019, 0020, 0024, 0027, 0028, 0035, 0043, 0050, 0051
-amended-by: 0054
+amended-by: 0049, 0054
 ---
 
 # 0052: The graph emerges from recorded reads and writes
@@ -85,7 +85,7 @@ daemon publishes to the team repository.** Checkable statements:
    | --- | --- | --- |
    | `read` | `version` (as the source reports it: a revision, a hash, an `as_of`), `needed_by` (from the reader's contract: its next deadline) | hz, for every input a turn gathers; the Heinzelmännchen, for reads through tools or a handoff |
    | `drafted` | `where` (the place the draft was put), `contract_version`, `draft` (hash) | hz, from `draft.placed` |
-   | `approved` | `by` (handle), `at`, `share_changed`; `rejected` likewise | hz, from `approval.observed` |
+   | `approved` | `by` (handle), `at`, `share_changed`, `output_fp` (the approved text's material fingerprint, amended 2026-10-24, 7); `rejected` likewise | hz, from `approval.observed` |
    | `published` | `where` (the document, the address, the channel) | hz, from a publish operation; the Heinzelmännchen, when a handoff sent something through a vendor CLI |
    | `fell_back` | `input`, `used` (the stale version), `deadline` | hz, from the flow rule (7) |
    | `heartbeat` | none | the daemon, once per tick per Heinzelmännchen that is not `retired`, coalesced to one entry per day in the spine (the index keeps the last) |
@@ -139,6 +139,20 @@ daemon publishes to the team repository.** Checkable statements:
 7. **Downstream wakes.** When an upstream draft is approved (`approved` entry), every Heinzelmännchen whose log has a
    `read` of that target wakes with cause `source-changed` on its next tick (ADR 0049 §4): the approval is the input
    that moved. Declared readers and observed readers both count.
+   - Amended 2026-10-24 ([ADR 0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md)
+     statement 20, OpenProse Reactor's early cutoff,
+     [spec](https://github.com/openprose/reactor/blob/main/spec/02-ReactorHarness.md)): readers wake only when the
+     approved text's **material fingerprint** moved: `approval.observed` and the `approved` entry (1) record
+     `output_fp` (the canonical fingerprint of the approved text, per facet when the output has facets, ADR 0021 §8),
+     and an approval whose `output_fp` equals the previous approval's wakes nobody, so a re-approval of identical text
+     or a change in a facet nobody reads costs no turn downstream. The cutoff works from the logs a machine has; for
+     readers that learn of approvals only through [ADR 0054](0054-observability-is-whether-each-team-promise-is-kept.md)'s
+     telemetry it waits until that record's `approved` entry carries `output_fp`, and until then they wake as before.
+     For readers of published truth, only the approved text propagates, never a pending draft (the turn body is the
+     workspace, the approved text the truth); readers with `stage: draft` (ADR 0021 §7) still see drafts. A turn that
+     ends `skipped` or `failed` writes no `drafted` entry (its disposition is in the spine's `turn.finished`, or
+     `turn.skipped` for a slot where nothing moved, ADR 0049 statement 15), so a postcondition that wasn't met leaves
+     the previous truth standing and wakes nobody.
 
 **To confirm: unapproved drafts block the flow** (the maintainer's open design, 2026-10-24; proposed here, decided
 when the first team runs it):
