@@ -114,41 +114,37 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
   const groups = [...new Set(report.settings.map((setting) => group(setting.section)))];
   const nav = settingsNav(groups, plugins.data ?? []);
   const connector = nav.connectors.find((entry) => entry.id === section || entry.groups.includes(section ?? ""));
-  const plugin = nav.plugins.find((entry) => entry.id === section || entry.groups.includes(section ?? ""));
   const preference = nav.preferences.find((entry) => entry.id === section);
   // A connector's own page is part of Connectors; a section nobody knows (yet: the plugin list may still load) is
   // General's.
   const current = connector
     ? CONNECTORS
-    : plugin
-      ? plugin.id
-      : preference || [FILES, PLUGINS, CONNECTORS].includes(section ?? "")
-        ? (section as string)
-        : (nav.preferences[0]?.id ?? FILES);
+    : preference || [FILES, PLUGINS, CONNECTORS].includes(section ?? "")
+      ? (section as string)
+      : (nav.preferences[0]?.id ?? FILES);
   const needle = query.trim().toLowerCase();
   const titled = (entry: SettingsEntry) => entry.title || t("settings.general");
   const matching = needle
     ? report.settings.filter((s) => `${s.section}.${s.key} ${s.description}`.toLowerCase().includes(needle))
     : report.settings.filter((s) => group(s.section) === current);
-  const item = (active: boolean, nested = false) =>
+  const item = (active: boolean) =>
     cn(
       "flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-ui text-foreground/90 transition-colors hover:bg-accent/70 [&_svg]:size-(--icon) [&_svg]:shrink-0 [&_svg]:stroke-[1.75] [&_svg]:text-icon",
-      nested && "pl-9 text-ui-sm",
       active && !needle && "bg-accent text-accent-foreground [&_svg]:text-accent-foreground",
     );
   const go = (id: string) => {
     setQuery("");
     onSection(id);
   };
-  const entry = (id: string, label: string, Icon: LucideIcon | null, nested = false) => (
+  const entry = (id: string, label: string, Icon: LucideIcon) => (
     <button
       key={id}
       type="button"
       onClick={() => go(id)}
       aria-current={current === id && !needle ? "page" : undefined}
-      className={item(current === id, nested)}
+      className={item(current === id)}
     >
-      {Icon && <Icon aria-hidden />}
+      <Icon aria-hidden />
       {label}
     </button>
   );
@@ -175,7 +171,6 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
         <p className="mt-4 mb-1 px-2.5 text-ui-sm text-muted-foreground">{t("settings.customize")}</p>
         {entry(CONNECTORS, t("connectors.title"), Plug)}
         {entry(PLUGINS, t("plugins.title"), Puzzle)}
-        {nav.plugins.map((other) => entry(other.id, other.title, null, true))}
         <p className="mt-4 mb-1 px-2.5 text-ui-sm text-muted-foreground">{t("settings.thisComputer")}</p>
         {entry(FILES, t("settings.filesTitle"), FileCog)}
       </nav>
@@ -209,10 +204,22 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 </div>
               </>
             )}
+            {preference?.plugin && (
+              <p className="mb-2 text-ui-sm text-muted-foreground">
+                {t("settings.fromPlugin")}{" "}
+                <button
+                  type="button"
+                  onClick={() => go(PLUGINS)}
+                  className="rounded text-foreground/80 hover:text-foreground hover:underline"
+                >
+                  {displayName(preference.plugin.name, preference.plugin.summary)}
+                </button>
+              </p>
+            )}
             <Sections
               settings={matching}
-              heading={plugin ? plugin.title : preference ? titled(preference) : displayName(current)}
-              summary={plugin?.plugin?.summary}
+              heading={preference ? titled(preference) : displayName(current)}
+              summary={preference?.plugin?.summary}
             />
           </>
         )}

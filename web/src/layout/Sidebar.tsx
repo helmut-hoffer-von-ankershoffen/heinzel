@@ -349,7 +349,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
           <>
             <span className="truncate text-ui">{shown ?? t("nav.profile")}</span>
             {role && <span className="shrink-0 text-ui-sm text-muted-foreground">· {role}</span>}
-            <ChevronDown aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            <ChevronDown aria-hidden className="size-3.5 shrink-0 text-icon" />
           </>
         )}
       </button>

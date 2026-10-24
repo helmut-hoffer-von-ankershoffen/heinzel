@@ -1,6 +1,6 @@
-// Where each part of Settings lives, as in a desktop chat app: Preferences for hz and its built-in modules; Customize
-// for Connectors (plugins that connect your tools: they bring adapters) and Plugins, with every other plugin's
-// settings as an entry of its own under Plugins; This computer for the configuration files.
+// Where each part of Settings lives, as in a desktop chat app: Preferences for hz and every module with settings,
+// built-in or from a plugin; Customize for Connectors (plugins that connect your tools: they bring adapters, and their
+// settings live on their cards) and Plugins (installing and managing them); This computer for the configuration files.
 import type { SchemaPluginInfo } from "@/api/client";
 
 export const FILES = "files";
@@ -28,33 +28,36 @@ export function displayName(name: string, summary = ""): string {
 export type SettingsEntry = { id: string; title: string; plugin?: SchemaPluginInfo };
 
 export type SettingsNav = {
-  /** hz itself ("General") and the built-in modules. */
+  /** hz itself ("General") first, then every other module with settings, built-in or from a plugin, by name. */
   preferences: SettingsEntry[];
   /** Plugins that bring adapters, each with the setting groups of its modules. */
   connectors: (SettingsEntry & { plugin: SchemaPluginInfo; groups: string[] })[];
-  /** Every other plugin with settings, listed under Plugins. */
-  plugins: (SettingsEntry & { groups: string[] })[];
 };
 
-/** Sorts the setting groups into Preferences, Connectors and Plugins by the plugin that provides each module. */
+/** Sorts the setting groups into Preferences and Connectors by the plugin that provides each module. */
 export function settingsNav(groups: string[], plugins: SchemaPluginInfo[]): SettingsNav {
   const owner = new Map<string, SchemaPluginInfo>();
   for (const plugin of plugins) for (const module of plugin.modules) owner.set(group(module), plugin);
-  const builtIn = groups
-    .filter((name) => !owner.has(name) && name !== BINDINGS)
-    .sort((a, b) => (a === "hz" ? -1 : b === "hz" ? 1 : a.localeCompare(b)));
+  const connects = (plugin: SchemaPluginInfo | undefined) => (plugin?.capabilities ?? []).length > 0;
   const of = (plugin: SchemaPluginInfo) => groups.filter((name) => owner.get(name) === plugin);
-  const title = (plugin: SchemaPluginInfo) => displayName(plugin.name, plugin.summary);
   const byTitle = (a: SettingsEntry, b: SettingsEntry) => a.title.localeCompare(b.title);
+  const preferences = groups
+    .filter((name) => name !== BINDINGS && !connects(owner.get(name)))
+    .map((name) => {
+      const plugin = owner.get(name);
+      return { id: name, title: name === "hz" ? "" : displayName(name, plugin?.summary), plugin };
+    })
+    .sort((a, b) => (a.id === "hz" ? -1 : b.id === "hz" ? 1 : byTitle(a, b)));
   return {
-    preferences: builtIn.map((name) => ({ id: name, title: name === "hz" ? "" : displayName(name) })),
+    preferences,
     connectors: plugins
-      .filter((plugin) => (plugin.capabilities ?? []).length > 0)
-      .map((plugin) => ({ id: plugin.name, title: title(plugin), plugin, groups: of(plugin) }))
-      .sort(byTitle),
-    plugins: plugins
-      .filter((plugin) => (plugin.capabilities ?? []).length === 0 && of(plugin).length > 0)
-      .map((plugin) => ({ id: plugin.name, title: title(plugin), plugin, groups: of(plugin) }))
+      .filter(connects)
+      .map((plugin) => ({
+        id: plugin.name,
+        title: displayName(plugin.name, plugin.summary),
+        plugin,
+        groups: of(plugin),
+      }))
       .sort(byTitle),
   };
 }

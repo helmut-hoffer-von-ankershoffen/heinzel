@@ -84,7 +84,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           className="flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1 text-ui font-medium transition-colors hover:bg-accent/70"
         >
           <span className="truncate">{title}</span>
-          <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+          <ChevronDown aria-hidden className="size-4 shrink-0 text-icon" />
         </button>
         {menu && (
           <div
@@ -157,7 +157,7 @@ function MenuItem({
       type="button"
       role="menuitem"
       onClick={onSelect}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground"
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-icon"
     >
       {icon}
       {children}

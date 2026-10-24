@@ -61,3 +61,17 @@ def test_a_value_a_project_file_may_not_set_comes_from_the_layer_below(make_kern
     config = layered(tmp_path, "guarded", {"command": "mine"}, {"command": "theirs"})
     settings = {s.key: s for s in ConfigService(make_kernel(guarded=module, config=config)).report().settings}
     assert (settings["command"].value, settings["command"].source) == ("mine", "user")
+
+
+def test_the_report_reads_the_files_afresh_so_a_change_shows_at_once(make_kernel, tmp_path):
+    module = Module("example", "x")
+    module.settings(ExampleSettings)
+    project = tmp_path / "hz.toml"
+    project.write_text('[example]\ngreeting = "Hi"\n', encoding="utf-8")
+    service = ConfigService(make_kernel(example=module, config=Config.load(tmp_path)))
+    project.write_text('[example]\ngreeting = "Moin"\nretries = "many"\n', encoding="utf-8")
+    settings = {s.key: s for s in service.report().settings if s.section == "example"}
+    assert settings["greeting"].value == "Hi"  # a value the settings refuse keeps what was booted
+    project.write_text('[example]\ngreeting = "Moin"\n', encoding="utf-8")
+    settings = {s.key: s for s in service.report().settings if s.section == "example"}
+    assert (settings["greeting"].value, settings["greeting"].source) == ("Moin", "project")

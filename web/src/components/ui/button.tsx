@@ -5,7 +5,7 @@ import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -19,6 +19,8 @@ const buttonVariants = cva(
         icon: "size-9",
       },
     },
+    // An icon-only ghost button is an icon: it takes the theme's icon colour (ADR 0044) unless a state says otherwise.
+    compoundVariants: [{ variant: "ghost", size: "icon", className: "text-icon" }],
     defaultVariants: { variant: "default", size: "default" },
   },
 );

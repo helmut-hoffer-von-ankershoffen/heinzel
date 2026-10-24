@@ -316,7 +316,7 @@ function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch
           >
             {t("terminal.cursorStyle")}
             <span className="ml-auto text-muted-foreground capitalize">{options.cursorStyle}</span>
-            <ChevronRight aria-hidden className="text-muted-foreground" />
+            <ChevronRight aria-hidden className="text-icon" />
           </button>
           {sub === "cursor" &&
             CURSORS.map((style) => (
@@ -362,7 +362,7 @@ function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch
             <span className="ml-auto text-muted-foreground">
               {t("terminal.lines", { lines: options.scrollback.toLocaleString() })}
             </span>
-            <ChevronRight aria-hidden className="text-muted-foreground" />
+            <ChevronRight aria-hidden className="text-icon" />
           </button>
           {sub === "scrollback" &&
             SCROLLBACK.map((lines) => (

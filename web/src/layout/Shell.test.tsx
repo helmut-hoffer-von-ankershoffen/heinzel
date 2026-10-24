@@ -75,9 +75,9 @@ describe("Shell", () => {
     mockApi(answers);
     const user = userEvent.setup();
     renderAt("/doctor");
-    await user.click(screen.getAllByRole("button", { name: "Collapse the chat" })[0] as HTMLElement);
+    await user.click(screen.getAllByRole("button", { name: "Close the chat" })[0] as HTMLElement);
     expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Open the chat" }));
+    await user.click(screen.getByRole("button", { name: "Chat with your Heinzelmännchen" }));
     expect(screen.getByRole("complementary", { name: "Chat" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
     expect(screen.getByRole("button", { name: "Expand navigation" })).toHaveAttribute("aria-expanded", "false");

@@ -73,6 +73,9 @@ export function Home() {
   const today = useToday();
   const [params] = useSearchParams();
   const focused = params.get("card");
+  // Home is where you talk to your Heinzelmännchen: the composer has the focus when it opens.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, when Home opens
+  useEffect(() => focus(), []);
 
   const ask = async (card: TodayCard) => {
     await chat.openAbout(card.context, card.detail ? `${card.title}: ${card.detail}` : card.title);

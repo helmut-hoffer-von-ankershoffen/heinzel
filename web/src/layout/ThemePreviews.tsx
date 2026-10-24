@@ -74,7 +74,9 @@ type CardProps = {
 };
 
 function ThemeCard({ theme, dark, selected, disabled, onSelect }: CardProps) {
-  const plugin = theme.plugin?.replace(/^heinzel-/, "");
+  // The plugin's name only when it says more than the title: "SF · sf" says nothing twice.
+  const named = theme.plugin?.replace(/^heinzel-/, "");
+  const plugin = named && named.toLowerCase() !== theme.title.toLowerCase() ? named : undefined;
   return (
     // biome-ignore lint/a11y/useSemanticElements: a card of a radio group, with a picture a radio input can't hold
     <button

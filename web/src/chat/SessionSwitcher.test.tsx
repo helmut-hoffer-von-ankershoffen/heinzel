@@ -1,0 +1,75 @@
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it } from "vitest";
+import { answered, at, base, empty } from "@/test/chat";
+import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { ago, switcherGroups } from "./SessionSwitcher";
+
+afterEach(() => {
+  sessionStorage.clear();
+  localStorage.clear();
+});
+
+const sessions = [
+  { id: "aaaaaaaaaaaaaaaa", title: "Make me the lead", messages: 2, pending: 1, spent_usd: 0.0123, updated: at },
+  { id: "bbbbbbbbbbbbbbbb", title: "Why is doctor red?", messages: 4, pending: 0, spent_usd: 0.05, updated: at },
+];
+
+describe("The chat's session switcher", () => {
+  it("lists the Workshop and the recent chats, searchable, and continues the one chosen", async () => {
+    const { calls } = mockApi({
+      ...base,
+      "/api/system/runner/chat/list": sessions,
+      "/api/system/runner/chat/show": answered,
+    });
+    const user = userEvent.setup();
+    const { container } = renderAt("/doctor");
+    await user.click(await screen.findByRole("button", { name: "Workshop: switch chats" }));
+    const list = screen.getByRole("dialog", { name: "Your chats" });
+    const recent = await within(list).findByRole("region", { name: "Recent chats" });
+    expect(within(recent).getByRole("button", { name: /Why is doctor red\?/ })).toHaveTextContent("4 messages");
+    expect(within(list).getByRole("region", { name: "Start" })).toHaveTextContent("Workshop");
+    await expectAccessible(container);
+    await user.type(within(list).getByRole("searchbox", { name: "Search chats" }), "lead");
+    expect(within(list).queryByText("Why is doctor red?")).not.toBeInTheDocument();
+    await user.click(within(list).getByRole("button", { name: /Make me the lead/ }));
+    await waitFor(() =>
+      expect(calls.some((call) => new URL(call.url).searchParams.get("session") === "aaaaaaaaaaaaaaaa")).toBe(true),
+    );
+    expect(sessionStorage.getItem("hz.chat")).toBe("aaaaaaaaaaaaaaaa");
+  });
+
+  it("opens the Workshop as a chat about nothing in particular, and starts a new chat from the header", async () => {
+    const { calls } = mockApi({
+      ...base,
+      "/api/system/runner/chat/list": sessions,
+      "/api/system/runner/chat/open": { ...empty, context: null, title: "Workshop" },
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.click(await screen.findByRole("button", { name: "Workshop: switch chats" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Your chats" })).getByRole("button", { name: /^Workshop/ }),
+    );
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/chat/open"))).toBe(true));
+    const open = calls.find((call) => call.url.includes("/chat/open"));
+    expect(new URL(open?.url ?? "").searchParams.get("context")).toBeNull();
+    const fresh = screen.getByRole("button", { name: "New chat" });
+    await waitFor(() => expect(fresh).toBeEnabled());
+    await user.click(fresh);
+    expect(sessionStorage.getItem("hz.chat")).toBeNull();
+    expect(screen.getByLabelText("Your message")).toHaveFocus();
+  });
+
+  it("says what a message may cost in one line, the rest in its info", async () => {
+    mockApi(base);
+    renderAt("/doctor");
+    expect(await screen.findByText(/^Up to \$0\.25 per message · this chat \$0\.00$/)).toBeInTheDocument();
+    expect(screen.getByTitle(/Runs your agent runner and may cost money/)).toBeInTheDocument();
+  });
+
+  it("groups and words what it lists", () => {
+    expect(switcherGroups(sessions, "doctor").map((group) => group.label)).toEqual(["Recent chats"]);
+    expect(ago("2026-10-24T08:00:00Z", Date.parse("2026-10-24T10:00:00Z"))).toBe("2 hours ago");
+  });
+});

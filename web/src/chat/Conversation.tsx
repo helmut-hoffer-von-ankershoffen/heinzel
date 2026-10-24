@@ -223,7 +223,7 @@ export function Composer({
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) void submit(event);
         }}
         placeholder={t("chat.placeholder")}
-        className="min-h-9 flex-1 resize-none rounded-md border border-border bg-background px-2 py-1 text-sm"
+        className="min-h-9 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
       />
       <Button
         type="submit"
