@@ -12,6 +12,7 @@ pytestmark = pytest.mark.unit
 
 # The autouse fixture in tests/conftest.py replaces `discover`; the real one is kept here to test it.
 DISCOVER = discovery.discover
+RUN = discovery._run
 
 
 def person(email="mira@example.com", name="Mira Example", *, primary=True) -> str:
@@ -30,9 +31,11 @@ def cli(monkeypatch):
 
     def install(answers: dict[str, tuple[int, str] | Exception], *, missing: tuple[str, ...] = ()):
         calls: list[list[str]] = []
+        monkeypatch.setattr(discovery, "_run", RUN)
         monkeypatch.setattr(discovery.shutil, "which", lambda name: None if name in missing else f"/usr/bin/{name}")
 
         def run(args, **kwargs):
+            assert kwargs["stdin"] is subprocess.DEVNULL  # a CLI never reads the wizard's terminal
             calls.append(args)
             command = " ".join([args[0].rsplit("/", 1)[-1], *args[1:3]])
             answer = answers.get(command, (1, ""))
@@ -137,3 +140,10 @@ def test_discover_says_where_each_part_came_from(monkeypatch):
 def test_claude_code_is_found_on_path(monkeypatch):
     monkeypatch.setattr(discovery.shutil, "which", lambda name: "/usr/local/bin/claude" if name == "claude" else None)
     assert discovery.claude_installed()
+
+
+def test_display_names_are_stored_printable_and_short():
+    assert discovery.clean_name(" Mira\x1b[31m Example\n") == "Mira[31m Example"
+    assert discovery.clean_name("x" * 300) == "x" * 200
+    assert discovery.clean_name("\x00") is None
+    assert discovery.clean_name(None) is None

@@ -17,6 +17,7 @@ from heinzel.modules.org._discovery import Discovered
 from heinzel.modules.org._models import (
     CODING_AGENTS,
     DEFAULT_HOURS,
+    ROLE_MEANINGS,
     ROLES,
     CodingAgent,
     OrgSettings,
@@ -63,33 +64,38 @@ def default_hours(timezone: str | None) -> tuple[int, int]:
 
 
 def ask_profile(settings: OrgSettings, prompter: Prompter, editor: ConfigEditor) -> Path:
-    """Find what can be found, ask the rest, and write the profile to the user configuration."""
+    """Find what can be found, ask the rest, show what will be kept, and write it to the user configuration."""
+    prompter.say("Looking up your gh and gws logins...")
     found = _discovery.discover()
     change = Profile.of(settings).complete
     if not change:
         _say_found(prompter, found)
     values = _ask(settings, found, prompter, change=change)
+    kept = {key: value for key, value in values.items() if value is not None}
+    prompter.say("hz keeps this about you, on this machine only ([org] of your user configuration):")
+    for key, value in kept.items():
+        shown = format_hours((value[0], value[1])) if isinstance(value, list) else value
+        prompter.say(f"  {key:<13} {shown}")
     path = Path()
-    for key, value in values.items():
-        if value is not None:
-            path = editor.write(f"org.{key}", value)
+    for key, value in kept.items():
+        path = editor.write(f"org.{key}", value)
     if change and values["github"] is None and settings.github is not None:
         with suppress(HeinzelError):  # set where setup doesn't write: a site file or an HZ_* variable
             path = editor.unset("org.github")
     return path
 
 
-def _ask(settings: OrgSettings, found: Discovered, prompter: Prompter, *, change: bool) -> dict[str, object]:
+def _ask(
+    settings: OrgSettings, found: Discovered, prompter: Prompter, *, change: bool
+) -> dict[str, list[int] | str | None]:
     login = settings.github or (found.github.id if found.github else None)
     handle = settings.handle or _handle_from(login)
     if change or handle is None:
-        handle = prompter.text(
-            "Handle (lowercase letters, digits, dashes; your GitHub login is a good one)",
-            default=handle,
-            validate=handle_problem,
-        )
+        handle = prompter.text("Handle, e.g. mira", default=handle, validate=handle_problem)
     role = settings.role
     if change or role is None:
+        for name, meaning in ROLE_MEANINGS.items():
+            prompter.say(f"  {name}: {meaning}")
         role = prompter.choice("Your role", ROLES, default=role if role in ROLES else None)
     timezone = settings.timezone or found.timezone
     if change or timezone is None:
@@ -98,7 +104,7 @@ def _ask(settings: OrgSettings, found: Discovered, prompter: Prompter, *, change
     if change or "working_hours" not in settings.model_fields_set:
         hours = parse_hours(prompter.text("Working hours", default=format_hours(hours), validate=_hours_problem))
     github = login
-    if change or github is None:
+    if change:  # a first run doesn't ask: a GitHub login matters only once you join a team
         answer = prompter.text(f"GitHub login, {NONE} for none", default=github or NONE, validate=_github_problem)
         github = None if answer.lower() == NONE else answer
     agent = settings.coding_agent or found.coding_agent
@@ -117,17 +123,20 @@ def _ask(settings: OrgSettings, found: Discovered, prompter: Prompter, *, change
 
 
 def _say_found(prompter: Prompter, found: Discovered) -> None:
+    def source(key: str) -> str:
+        return found.sources.get(key, "found")
+
     lines: list[str] = []
     if found.github:
-        lines.append(f"  GitHub login  {found.github.id} ({found.sources['github']})")
+        lines.append(f"  GitHub login  {found.github.id} ({source('github')})")
     if found.google:
-        lines.append(f"  Google login  {found.google.id} ({found.sources['google']})")
+        lines.append(f"  Google login  {found.google.id} ({source('google')})")
     if found.timezone:
-        lines.append(f"  time zone     {found.timezone} ({found.sources['timezone']})")
+        lines.append(f"  time zone     {found.timezone} ({source('timezone')})")
     if found.coding_agent != NONE:
-        lines.append(f"  coding agent  {found.coding_agent} ({found.sources['coding_agent']})")
+        lines.append(f"  coding agent  {found.coding_agent} ({source('coding_agent')})")
     if not lines:
-        prompter.say("Nothing to find about you here (no gh or gws login); a few questions instead.")
+        prompter.say("No gh or gws login found; a few questions instead.")
         return
     prompter.say("Found about you:")
     for line in lines:
@@ -145,7 +154,7 @@ def _name(found: Discovered) -> str | None:
 def ask_timezone(prompter: Prompter, default: str | None) -> str:
     """An IANA time zone, found by part of its name (`berlin`, `new york`); an empty answer takes `default`."""
     while True:
-        query = prompter.text("Time zone (part of a city or region)", default=default)
+        query = prompter.text("Time zone, a city or region such as Berlin", default=default)
         if query in available_timezones():
             return query
         matches = search(query)

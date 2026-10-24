@@ -72,7 +72,7 @@ Your profile, and the team, org and company you work with.
 
 | Operation | CLI | MCP tool | REST | Changes state |
 | --- | --- | --- | --- | --- |
-| Show your profile: who you are, your role, time zone and working hours, and what is still missing. | `hz org show` | `org_show` | `GET /org/show` |  |
+| Show your profile: who you are, your role, time zone and working hours, and what is still missing. | `hz org show` | `org_show` | — |  |
 
 Settings: [`[org]`](CONFIGURATION.md#org).
 

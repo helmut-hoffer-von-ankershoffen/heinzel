@@ -30,6 +30,7 @@ def _isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pyt
 def _no_machine_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     """No test finds the developer's GitHub or Google login, time zone or Claude Code (or asks gh and gws)."""
     monkeypatch.setattr(discovery, "discover", discovery.Discovered)
+    monkeypatch.setattr(discovery, "_run", lambda args: None)  # and no later caller reaches the real CLIs
 
 
 @pytest.fixture

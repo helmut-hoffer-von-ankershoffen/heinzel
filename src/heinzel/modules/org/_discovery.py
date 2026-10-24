@@ -8,6 +8,7 @@ or slow; then the identity step asks instead. Each function is a seam tests repl
 import json
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from zoneinfo import available_timezones
@@ -16,8 +17,9 @@ from pydantic import BaseModel, Field, ValidationError
 
 from heinzel.modules.org._models import CodingAgent, email_problem, github_problem
 
-TIMEOUT = 10.0
+TIMEOUT = 5.0
 LOCALTIME = Path("/etc/localtime")
+MAX_NAME = 200
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +43,11 @@ class Discovered:
 
 def discover() -> Discovered:
     """Everything that can be found about you on this machine and through your signed-in CLIs."""
-    github, google, timezone = github_login(), google_login(), local_timezone()
+    # gh and gws may each take a few seconds; asking both at once halves the wait in the wizard.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        github_future, google_future = pool.submit(github_login), pool.submit(google_login)
+        timezone = local_timezone()
+        github, google = github_future.result(), google_future.result()
     agent: CodingAgent = "claude-code" if claude_installed() else "none"
     sources = {
         key: source
@@ -62,7 +68,7 @@ def github_login() -> Login | None:
         return None
     user = _parse(_GitHubUser, _run([gh, "api", "user"]))
     if user is not None and github_problem(user.login) is None:
-        return Login(id=user.login, name=(user.name or "").strip() or None)
+        return Login(id=user.login, name=clean_name(user.name))
     stored = (_run([gh, "config", "get", "--host", "github.com", "user"]) or "").strip()
     return Login(id=stored) if stored and github_problem(stored) is None else None
 
@@ -78,7 +84,15 @@ def google_login() -> Login | None:
     email = _primary([(e.metadata.primary, e.value) for e in person.email_addresses])
     if email is None or email_problem(email) is not None:
         return None
-    return Login(id=email, name=_primary([(n.metadata.primary, n.display_name) for n in person.names]))
+    return Login(id=email, name=clean_name(_primary([(n.metadata.primary, n.display_name) for n in person.names])))
+
+
+def clean_name(name: str | None) -> str | None:
+    """A display name as stored: printable characters only, at most `MAX_NAME` of them; None when nothing is left."""
+    if name is None:
+        return None
+    printable = "".join(c for c in name if c.isprintable()).strip()
+    return printable[:MAX_NAME] or None
 
 
 def local_timezone() -> str | None:
@@ -99,7 +113,10 @@ def claude_installed() -> bool:
 def _run(args: list[str]) -> str | None:
     """A CLI's standard output, or None when it fails, hangs or isn't signed in."""
     try:
-        done = subprocess.run(args, capture_output=True, text=True, timeout=TIMEOUT, check=False)  # noqa: S603 - resolved executable, fixed arguments
+        # stdin is closed: a signed-out CLI must not start a login flow or read the wizard's keystrokes.
+        done = subprocess.run(  # noqa: S603 - resolved executable, fixed arguments
+            args, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=TIMEOUT, check=False
+        )
     except (OSError, subprocess.SubprocessError):  # a broken or hanging CLI means nothing was found, not a failure
         return None
     return done.stdout if done.returncode == 0 else None

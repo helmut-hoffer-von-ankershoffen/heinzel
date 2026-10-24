@@ -16,7 +16,7 @@ def render_profile(profile: Profile) -> RenderableType:
         "handle": profile.handle,
         "role": profile.role,
         "time zone": profile.timezone,
-        "working hours": profile.working_hours,
+        "working hours": profile.working_hours if profile.working_hours_set else f"{profile.working_hours} (default)",
         "GitHub login": profile.github,
         "coding agent": profile.coding_agent,
         "name": profile.name,

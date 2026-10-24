@@ -61,7 +61,7 @@ Plugins add their own tables.
 | `handle` | `HZ_ORG__HANDLE` | `None` | Your handle in teams, pull requests and contracts: lowercase letters, digits and dashes, e.g. mira. Your GitHub login is a good one. |
 | `role` | `HZ_ORG__ROLE` | `None` | Your role, one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager. |
 | `timezone` | `HZ_ORG__TIMEZONE` | `None` | Your IANA time zone, e.g. Europe/Berlin. |
-| `working_hours` | `HZ_ORG__WORKING_HOURS` | `(9, 18)` | Start and end hour of your working day, e.g. [9, 18] or "09-18". |
+| `working_hours` | `HZ_ORG__WORKING_HOURS` | `(9, 18)` | Start and end hour of your working day, e.g. [9, 18] or "09-18" (HZ_ORG__WORKING_HOURS=09-18). |
 | `github` | `HZ_ORG__GITHUB` | `None` | Your GitHub login, needed to approve and own in a team. |
 | `coding_agent` | `HZ_ORG__CODING_AGENT` | `None` | The coding agent you draft with: claude-code, command (one of your own) or none. |
 | `name` | `HZ_ORG__NAME` | `None` | Your name, from your Google or GitHub login; stays on this machine, never in a repository. |

@@ -15,7 +15,8 @@ module.settings(OrgSettings)
 module.service(ProfileService)
 
 
-@module.operation(render=render_profile)
+# Your name and email are in it; a web page can reach a local REST server, so the CLI and MCP get it, like drafts.
+@module.operation(render=render_profile, heads={"cli", "mcp"})
 def show(service: ProfileService) -> Profile:
     """Show your profile: who you are, your role, time zone and working hours, and what is still missing."""
     return service.profile()
@@ -41,9 +42,11 @@ def profile(service: ProfileService) -> list[Check]:
 @module.setup(required=True)
 def setup(settings: OrgSettings, prompter: Prompter, editor: ConfigEditor) -> None:
     """Tell hz who you are; what your gh and gws logins and this machine say is found, the rest is asked once."""
-    prompter.say("Your profile stays on this machine, in your user configuration; teams see only what you share.")
+    prompter.say("Your profile is kept on this machine only; nothing goes into a repository.")
     path = ask_profile(settings, prompter, editor)
-    prompter.say(f"Saved to {path} ([org]). `hz org show` shows it; `hz system config set org.<key>` corrects it.")
+    prompter.say(
+        f"Saved to {path}. `hz org show` shows it; correct one part with e.g. `hz system config set org.role engineer`."
+    )
 
 
 __all__ = ["ROLES", "OrgSettings", "Profile", "ProfileService", "module"]

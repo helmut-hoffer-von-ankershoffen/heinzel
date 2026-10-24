@@ -1,10 +1,13 @@
 """Models of the org module: your profile in `[org]` and what `hz org show` reports (ADR 0024, 0033)."""
 
+import json
 import re
-from typing import Any, ClassVar, Literal, Self
+from collections.abc import Callable
+from typing import Annotated, Any, ClassVar, Literal, Self, get_args
 from zoneinfo import available_timezones
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic_settings import NoDecode
 
 from heinzel import ModuleSettings
 
@@ -18,9 +21,18 @@ ROLES = (
     "program-manager",
 )
 """The core role vocabulary (ADR 0033 §1); team, org and company manifests may add roles, never rename these."""
+ROLE_MEANINGS = {
+    "engineer": "builds and runs the product",
+    "principal": "senior engineer who shapes how it is built",
+    "engineering-manager": "leads a team of engineers",
+    "engineering-leadership": "leads engineering across teams",
+    "product-manager": "decides what a team builds",
+    "product-leadership": "leads product across teams",
+    "program-manager": "coordinates work across teams",
+}
 
 CodingAgent = Literal["claude-code", "command", "none"]
-CODING_AGENTS: tuple[CodingAgent, ...] = ("claude-code", "command", "none")
+CODING_AGENTS: tuple[CodingAgent, ...] = get_args(CodingAgent)
 
 HANDLE = re.compile(r"[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}")
 """Lowercase letters, digits and single dashes inside, at most 39 characters: what GitHub allows for a login."""
@@ -81,6 +93,11 @@ def parse_hours(value: object) -> tuple[int, int]:
 
 def _pair(value: object) -> tuple[int, int] | None:
     match value:
+        case str() if value.strip().startswith("["):  # a JSON list, as HZ_ORG__WORKING_HOURS='[9, 18]' gives it
+            try:
+                return _pair(json.loads(value))
+            except ValueError:
+                return None
         case str():
             found = HOURS.fullmatch(value.strip())
             return (int(found[1]), int(found[2])) if found else None
@@ -111,9 +128,9 @@ class OrgSettings(ModuleSettings):
         description=f"Your role, one of {', '.join(ROLES)}.",
     )
     timezone: str | None = Field(default=None, description="Your IANA time zone, e.g. Europe/Berlin.")
-    working_hours: tuple[int, int] = Field(
+    working_hours: Annotated[tuple[int, int], NoDecode] = Field(
         default=DEFAULT_HOURS,
-        description='Start and end hour of your working day, e.g. [9, 18] or "09-18".',
+        description='Start and end hour of your working day, e.g. [9, 18] or "09-18" (HZ_ORG__WORKING_HOURS=09-18).',
     )
     github: str | None = Field(default=None, description="Your GitHub login, needed to approve and own in a team.")
     coding_agent: CodingAgent | None = Field(
@@ -138,23 +155,23 @@ class OrgSettings(ModuleSettings):
     def _hours(cls, value: Any) -> Any:  # noqa: ANN401 - whatever the configuration holds
         return parse_hours(value)
 
-    @model_validator(mode="after")
-    def _check(self) -> Self:
-        problems = [
-            problem
-            for value, check in (
-                (self.handle, handle_problem),
-                (self.role, role_problem),
-                (self.timezone, timezone_problem),
-                (self.github, github_problem),
-                (self.email, email_problem),
-            )
-            if value is not None and (problem := check(value))
-        ]
-        if problems:
-            raise ValueError("; ".join(problems))
-        return self
+    @field_validator("handle", "role", "timezone", "github", "email")
+    @classmethod
+    def _valid(cls, value: str | None, info: ValidationInfo) -> str | None:
+        # One validator per field, not per model, so an error names the key that `hz system config unset` resets.
+        check = FIELD_CHECKS[info.field_name or ""]
+        if value is not None and (problem := check(value)):
+            raise ValueError(problem)
+        return value
 
+
+FIELD_CHECKS: dict[str, Callable[[str], str | None]] = {
+    "handle": handle_problem,
+    "role": role_problem,
+    "timezone": timezone_problem,
+    "github": github_problem,
+    "email": email_problem,
+}
 
 REQUIRED = ("handle", "role", "timezone")
 """What a profile needs before you can join a team."""
@@ -167,6 +184,7 @@ class Profile(BaseModel):
     role: str | None = Field(description="Your role, e.g. engineering-manager.")
     timezone: str | None = Field(description="Your IANA time zone, e.g. Europe/Berlin.")
     working_hours: str = Field(description="Your working hours there, e.g. 09-18.")
+    working_hours_set: bool = Field(description="Whether you chose the working hours; false while the default holds.")
     github: str | None = Field(description="Your GitHub login.")
     coding_agent: CodingAgent | None = Field(description="The coding agent you draft with.")
     name: str | None = Field(description="Your name; on this machine only.")
@@ -184,6 +202,7 @@ class Profile(BaseModel):
             role=settings.role,
             timezone=settings.timezone,
             working_hours=format_hours(settings.working_hours),
+            working_hours_set="working_hours" in settings.model_fields_set,
             github=settings.github,
             coding_agent=settings.coding_agent,
             name=settings.name,

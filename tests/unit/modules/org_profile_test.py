@@ -99,7 +99,7 @@ def test_the_github_name_is_used_when_there_is_no_google_login(found):
 
 
 def test_without_any_login_the_handle_and_more_are_asked():
-    prompter = ScriptedPrompter(["", "Mira", "mira", "engineer", "lisbon", "", "mira_x", ""])
+    prompter = ScriptedPrompter(["", "Mira", "mira", "engineer", "lisbon", ""])
     editor = RecordingEditor()
     ask_profile(OrgSettings(), prompter, editor)
     assert editor.written == {
@@ -110,10 +110,12 @@ def test_without_any_login_the_handle_and_more_are_asked():
         "org.coding_agent": "none",
     }
     transcript = "\n".join(prompter.transcript)
-    assert "Nothing to find about you here (no gh or gws login)" in transcript
+    assert "No gh or gws login found; a few questions instead." in transcript
     assert "Please answer; there is no default." in transcript
     assert "'Mira' is not a handle" in transcript
-    assert "'mira_x' is not a GitHub login" in transcript
+    assert "  engineering-manager: leads a team of engineers" in transcript
+    assert not any(line.startswith("GitHub login") for line in prompter.transcript)  # only once you join a team
+    assert "  working_hours 09-18" in transcript  # everything kept is shown before it is written
 
 
 def test_a_login_that_isnt_a_handle_is_not_suggested(found):
@@ -133,7 +135,7 @@ def test_changing_a_profile_asks_everything_with_what_is_configured(found):
         github="theo-x",
         coding_agent="command",
     )
-    prompter = ScriptedPrompter(["", "", "", "", "none", ""])
+    prompter = ScriptedPrompter(["", "", "", "", "theo_x", "none", ""])
     editor = RecordingEditor(present=("org.github",))
     ask_profile(current, prompter, editor)
     assert editor.written == {
@@ -147,6 +149,7 @@ def test_changing_a_profile_asks_everything_with_what_is_configured(found):
     }
     assert editor.unset_keys == ["org.github"]
     assert not any(line.startswith("Found about you") for line in prompter.transcript)
+    assert any("'theo_x' is not a GitHub login" in line for line in prompter.transcript)
 
 
 def test_dropping_a_github_login_set_elsewhere_still_succeeds():
