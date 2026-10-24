@@ -254,7 +254,9 @@ def test_a_profile_may_narrow_the_read_only_tools():
 
 def test_a_missing_cli_says_how_to_fix_it():
     target = ClaudeCodeRunner(RunnerSettings(), execute=FakeExecute(), which=lambda _: None)
-    with pytest.raises(HeinzelError, match=r'not on PATH. Install it .* agent_runner = "command"'):
+    with pytest.raises(
+        HeinzelError, match=r"not on PATH. Install it .*: hz system config set capabilities.agent_runner command$"
+    ):
         run(target)
 
 

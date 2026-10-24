@@ -122,7 +122,7 @@ def test_doctor_checks_the_claude_cli_only_when_someone_needs_a_runner(make_kern
     config = Config(files=(), data={"system": {"runner": {"claude_executable": str(tmp_path / "no-claude")}}})
     [check] = runner_checks(make_kernel(builtins=True, digest=digest(), config=config))
     assert check["status"] == "degraded"
-    assert check["fix"] == 'Install Claude Code, or bind another runner: [capabilities] agent_runner = "command"'
+    assert check["fix"].endswith("or bind the command runner: hz system config set capabilities.agent_runner command")
     fake = tmp_path / "claude"
     fake.write_text("#!/bin/sh\n", encoding="utf-8")
     fake.chmod(0o755)

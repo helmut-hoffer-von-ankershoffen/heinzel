@@ -27,6 +27,8 @@ from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import MAX_OUTPUT, Execute, amount, run_bounded, whole_number
 
 NAME = "command"
+SET_COMMAND = """hz system config set system.runner.command '["mytool", "run", "--prompt", "{prompt_file}"]'"""
+TRUST_COMMAND = "hz system config set system.runner.command_enforces_read_only true"
 PLACEHOLDERS = frozenset(
     {"prompt_file", "contract_file", "output_file", "working_dir", "tools", "model", "timeout_seconds", "max_usd"}
 )
@@ -122,13 +124,12 @@ class CommandRunner:
     def _check(self, tools: ToolProfile) -> str:
         settings = self._settings
         if not settings.command:
-            msg = 'No command is configured for the command runner; set [system.runner] command = ["mytool", ...].'
+            msg = f"The command runner has no command; set the agent CLI's command line, e.g.: {SET_COMMAND}"
             raise HeinzelError(msg)
         if not settings.command_enforces_read_only:
             msg = (
                 "The command runner refuses to run: nothing records that the configured command restricts its agent "
-                "to read-only tools. Configure that in the command, then set [system.runner] "
-                "command_enforces_read_only = true in your user configuration."
+                f"to read-only tools. Configure that in the command, then record that it does: {TRUST_COMMAND}"
             )
             raise HeinzelError(msg)
         if unsafe := [tool for tool in tools.tools if tool not in settings.command_read_only_tools]:

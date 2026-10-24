@@ -70,6 +70,14 @@ def test_get_set_and_unset(kernel, tmp_path, monkeypatch):
     assert "greeting" not in path.read_text(encoding="utf-8")
 
 
+def test_set_writes_booleans_and_numbers_as_toml(kernel, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    service = ConfigService(kernel)
+    service.set("example.loud", "true")
+    path = service.set("example.retries", "5")
+    assert tomllib.loads(path.read_text(encoding="utf-8"))["example"] == {"loud": True, "retries": 5}
+
+
 def test_set_validates_and_rejects_unknown_keys(kernel, tmp_path, monkeypatch):
     monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
     service = ConfigService(kernel)
