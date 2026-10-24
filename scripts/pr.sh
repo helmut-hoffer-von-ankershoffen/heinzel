@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Open (or update) the pull request for this branch: preflight, push, PR to main, squash auto-merge.
-# Usage: scripts/pr.sh "feat(scope): title"   BODY="..." sets the description; NO_PREFLIGHT=1 skips make preflight;
+# Usage: bash scripts/pr.sh "feat(scope): title"   BODY="..." sets the description; NO_PREFLIGHT=1 skips make preflight;
 # DRAFT=1 opens a draft pull request and leaves auto-merge off, for proposals a maintainer decides on.
 # Pull requests always target main: stacked pull requests merge into their base branch, not into main.
 set -euo pipefail
