@@ -70,7 +70,7 @@ def resolve(executable: str, which: Callable[[str], str | None], what: str) -> s
     if found is None:
         msg = f"{what} ({executable}) is not on PATH."
         raise HeinzelError(msg)
-    return str(Path(found).resolve())
+    return str(Path(found).absolute())  # absolute, not resolved: a symlinked install stays as PATH names it
 
 
 class ClaudeCodeRunner:

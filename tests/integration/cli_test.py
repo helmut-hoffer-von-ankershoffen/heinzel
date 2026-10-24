@@ -206,7 +206,7 @@ def test_system_info_json(app):
     assert result.exit_code == 0, result.output
     info = json.loads(result.output)
     assert info["version"] == __version__
-    assert info["sections"] == {"example": {"greeting": "hi"}, "system.capability": {}}
+    assert info["sections"] == {"example": {"greeting": "hi"}}  # an empty section (no capabilities in use) is left out
     assert {m["qualname"] for m in info["modules"]} >= {"system", "system.changelog", "system.plugin", "example.ping"}
 
 
