@@ -13,24 +13,43 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 <!-- badges:end -->
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.svg">
+    <img src="docs/assets/hero-light.svg" alt="Heinzelmännchen: a small crowd of gnome-like helpers, old and young, walking along together" width="860">
+  </picture>
+</p>
+
 **Heinzelmännchen are open-source helpers that keep product development teams running.** They draft the busywork of
 running a team — status, tracker updates, agendas, reports — in the background, and people approve it. Like the
 [Heinzelmännchen of Cologne](https://en.wikipedia.org/wiki/Heinzelm%C3%A4nnchen), who finished the town's work at
 night. Why it exists and where it is going: [INTENT.md](INTENT.md). It is built on open source, and we are
 grateful: [thank you](#standing-on-the-shoulders-of-giants) to everyone in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 
+## Meet the Heinzelmännchen
+
+<img src="docs/assets/meet.svg" alt="Seven Heinzelmännchen, each showing a state: at rest, working, thinking, waiting for you, asleep, blocked and done" width="100%">
+
+Every Heinzelmännchen shows what it is up to, in the web app and in `hz`: **working** on a draft,
+**thinking** it over, **waiting for you** to approve, **asleep** when there is nothing to do, **blocked** until you fix
+something, **done** with a little bow. They are garnish, never a replacement for words:
+`hz system config set hz.playful false` (or Settings → General) turns them all off, and they stay away from JSON, pipes,
+CI and `NO_COLOR` anyway.
+
 This release is the foundation — kernel, heads, plugins and release automation; the first team workflows arrive in
 0.x ([roadmap](INTENT.md#where-we-are)).
 
 ![hz from install to the first commands: version, system info, adding the clock plugin, clock, JSON into jq, doctor](docs/assets/demo.gif)
 
+<!-- recording: a short CLI + web UI walkthrough (hz, then the app) goes here once it is recorded -->
+
 **What you can do today:**
 
-- **Write an operation once, use it everywhere.** A typed Python function is a `hz` command, an MCP tool for coding
+- <img src="docs/assets/marker-working.svg" alt="" width="22" align="center"> **Write an operation once, use it everywhere.** A typed Python function is a `hz` command, an MCP tool for coding
   agents and a REST endpoint at once — with help text, validation and `--json`.
 - **Extend it with plugins.** `hz system plugin add github --confirm` adds a [first-party plugin](#first-party-plugins);
   `hz system plugin new` scaffolds your own `heinzel-*` repository with tests, CI/CD and agent setup.
-- **Run it with confidence.** `hz system doctor` checks every module's health, `hz system config` manages layered
+- <img src="docs/assets/marker-done.svg" alt="" width="22" align="center"> **Run it with confidence.** `hz system doctor` checks every module's health, `hz system config` manages layered
   settings, `hz system update` updates in place and keeps your plugins.
 
 You talk to them with **`hz`**, a small modulith: the kernel discovers *modules* and the *lets* they advertise — typed
@@ -76,6 +95,11 @@ uv tool uninstall heinzel      # remove Heinzelmännchen and its plugins
 Your configuration files stay; `hz system config show` lists them before you uninstall.
 
 ## Use
+
+<img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints a pixel-art Heinzelmännchen in a red hat beside the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
+
+On a colour terminal `hz` greets you with a small Heinzelmännchen and a walking one keeps you company during long
+work; `playful = false` in `hz.toml`, `NO_COLOR` or a pipe keeps the output plain.
 
 <!-- docs-test -->
 ```bash
