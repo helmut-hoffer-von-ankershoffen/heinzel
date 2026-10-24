@@ -1,46 +1,47 @@
-"""The Confluence adapter of the `documents` capability (ADR 0028), read mode only.
+"""The Confluence adapter of the `documents` capability (ADR 0028), read mode only, through acli.
 
-A page comes from Confluence Cloud's REST API v2, `GET /wiki/api/v2/pages/{id}?body-format=storage`
-(ADR 0034), and its storage format becomes Markdown-flavoured text.
-References are page ids or page URLs on the configured site; URLs anywhere else are refused before any request.
+A page comes from `acli confluence page view --id <id> --body-format storage --json`, and its storage format becomes
+Markdown-flavoured text. References are page ids or page URLs on the configured site; URLs anywhere else are refused
+before acli runs.
 """
 
 import re
 from typing import Any, cast
 from urllib.parse import parse_qs, urlsplit
 
-from heinzel import Credentials, Document, HeinzelError
-from heinzel_atlassian._client import clean, connect
+from heinzel import Document, HeinzelError, clean_text
+from heinzel_atlassian._acli import Acli
+from heinzel_atlassian._client import AcliClient, require_site, same_site
 from heinzel_atlassian._models import SITE_EXAMPLE, AtlassianSettings
 from heinzel_atlassian._storage import storage_to_text
-from heinzel_atlassian._transport import Transport
 
 _ID = re.compile(r"^[0-9]{1,20}$")
 _PAGE_PATH = re.compile(r"^/wiki/spaces/[^/]+/pages/(?:edit-v2/|edit/)?([0-9]{1,20})(?:/.*)?$")
 _VIEWPAGE = "/wiki/pages/viewpage.action"
+_SPACE = re.compile(r"~?[A-Za-z0-9_-]{1,255}")
+_TITLE_SLUG = re.compile(r"(?:/[A-Za-z0-9%+._~-]{0,255})?")
 
 
 class Confluence:
     """Reads Confluence pages of the configured site, by page id or page URL."""
 
-    def __init__(self, settings: AtlassianSettings, credentials: Credentials, transport: Transport) -> None:
-        """Build the adapter; the kernel injects the settings, the credentials and the transport."""
+    def __init__(self, settings: AtlassianSettings, acli: Acli) -> None:
+        """Build the adapter; the kernel injects the settings and acli."""
         self._settings = settings
-        self._credentials = credentials
-        self._transport = transport
+        self._acli = acli
 
     def read(self, ref: str) -> Document:
         """The text of the page `ref`: a page id such as `123456`, or its URL on the configured site.
 
         Raises:
-            HeinzelError: If `ref` is neither, or names another site, the site, email or token is missing, or
-                Confluence fails.
+            HeinzelError: If `ref` is neither, or names another site, the site is not set, acli is missing or logged
+                out, or Confluence fails.
         """
         page_id = page_id_of(ref, self._settings.site_url)
-        client = connect(self._settings, self._credentials, self._transport)
-        site = cast("str", self._settings.site_url)  # connect() checked it
-        page = client.get("Confluence", f"/wiki/api/v2/pages/{page_id}", {"body-format": "storage"}, f"page {page_id}")
-        return _document(ref, site, page_id, page)
+        site = require_site(self._settings)
+        args = ["confluence", "page", "view", "--id", page_id, "--body-format", "storage", "--json"]
+        answer = AcliClient(self._acli, self._settings.timeout).json("Confluence", args, f"page {page_id}")
+        return _document(ref, site, page_id, answer[0] if len(answer) == 1 else answer)
 
 
 def page_id_of(ref: str, site_url: str | None) -> str:
@@ -76,25 +77,50 @@ def page_id_of(ref: str, site_url: str | None) -> str:
     raise HeinzelError(msg)
 
 
-def _document(ref: str, site: str, page_id: str, page: dict[str, Any]) -> Document:
+def _document(ref: str, site: str, page_id: str, answer: object) -> Document:
+    """The page in acli's answer, which has the shape of Confluence's v2 page: title, body.storage, version, links.
+
+    `id`, `version` and `_links` are optional, because acli's exact shape isn't verified; when present, `id` must be
+    the page asked for and `_links.base` the configured site.
+
+    Raises:
+        HeinzelError: If the title or the storage body is missing or not text, the answer is another page, or it
+            came from another site.
+    """
+    unexpected = "acli's answer lacks the title or storage body of a Confluence page; is acli up to date?"
+    if not isinstance(answer, dict):
+        raise HeinzelError(unexpected)
+    page = cast("dict[str, Any]", answer)
     try:
-        title = str(page["title"])
-        body = cast("dict[str, Any]", cast("dict[str, Any]", page["body"])["storage"])
-        storage = str(body["value"])
+        title = page["title"]
+        storage = cast("dict[str, Any]", cast("dict[str, Any]", page["body"])["storage"])["value"]
         version = page.get("version")
         number = cast("dict[str, Any]", version).get("number") if isinstance(version, dict) else None
         links = page.get("_links")
         webui = cast("dict[str, Any]", links).get("webui") if isinstance(links, dict) else None
+        base = cast("dict[str, Any]", links).get("base") if isinstance(links, dict) else None
     except (KeyError, TypeError):
-        msg = "Confluence's answer lacks the title or body of a page; is atlassian.site_url an Atlassian Cloud site?"
-        raise HeinzelError(msg) from None
-    # Built on the configured site, never taken whole from the answer.
-    path = clean(webui) if isinstance(webui, str) and webui.startswith("/") and not webui.startswith("//") else None
+        raise HeinzelError(unexpected) from None
+    if not isinstance(title, str) or not isinstance(storage, str):
+        raise HeinzelError(unexpected)
+    returned = str(page.get("id", page_id))
+    if returned != page_id:
+        msg = f"acli answered page {page_id} with page {clean_text(returned)[:40]!r}; is acli up to date?"
+        raise HeinzelError(msg)
+    same_site("Confluence", site, base, "/wiki")
+    # Built on the configured site, never taken whole from the answer; only the page's own path is used.
+    prefix = "/spaces/"
+    path = None
+    if isinstance(webui, str) and webui.startswith(prefix):
+        space, _, rest = webui[len(prefix) :].partition("/pages/")
+        linked_id, _, slug = rest.partition("/")
+        if _SPACE.fullmatch(space) and linked_id == page_id and _TITLE_SLUG.fullmatch(f"/{slug}" if slug else ""):
+            path = webui
     url = f"{site}/wiki{path}" if path else f"{site}{_VIEWPAGE}?pageId={page_id}"
     return Document(
         ref=ref,
-        title=clean(title),
-        text=clean(storage_to_text(storage)),
+        title=clean_text(title),
+        text=clean_text(storage_to_text(storage)),
         url=url,
-        revision=str(number) if number is not None else None,
+        revision=str(number) if isinstance(number, int) and not isinstance(number, bool) else None,
     )

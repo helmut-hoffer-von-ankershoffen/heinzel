@@ -1,145 +1,189 @@
-import base64
+from collections.abc import Sequence
 
 import pytest
-from heinzel_atlassian import Response
-from heinzel_atlassian._client import AtlassianClient, clean
-from heinzel_atlassian._transport import MAX_BYTES
+from heinzel_atlassian import Acli, Completed
+from heinzel_atlassian._acli import MAX_BYTES, AcliTimeoutError
+from heinzel_atlassian._client import MESSAGE_CHARS, AcliClient, documents, redact, said
 
 from heinzel import HeinzelError
 
 pytestmark = pytest.mark.unit
 
-SITE = "https://acme.atlassian.net"
-EMAIL = "ada@acme.example"
-SECRET = "fake-token-client-secret"
-BASIC = base64.b64encode(f"{EMAIL}:{SECRET}".encode()).decode()
-PATH = "/rest/api/3/search/jql"
+ARGS = ["jira", "workitem", "search", "--jql", "x", "--json"]
+TOKEN = "ATATT3xFfGF0" + "x" * 180  # shaped like an Atlassian API token, made up
 
 
-def get(fake, product: str = "Jira") -> dict:
-    return AtlassianClient(SITE, EMAIL, SECRET, fake, 7.0).get(product, PATH, {"jql": "x"}, "project WID")
+class Stub(Acli):
+    def __init__(
+        self,
+        done: Completed | None = None,
+        error: Exception | None = None,
+        reported: tuple[int, int, int] | None = (1, 3, 39),
+    ) -> None:
+        self.done, self.error, self.reported = done, error, reported
+
+    def version(self) -> tuple[int, int, int] | None:
+        if self.error is not None:
+            raise self.error
+        return self.reported
+
+    def run(self, args: Sequence[str], timeout: float) -> Completed:
+        del args, timeout
+        if self.error is not None:
+            raise self.error
+        assert self.done is not None
+        return self.done
 
 
-def message(fake, product: str = "Jira") -> str:
+def failing(stderr: str, returncode: int = 1) -> Stub:
+    return Stub(Completed(returncode, b"", stderr.encode(), overflow=False))
+
+
+def message(stub: Stub, product: str = "Jira") -> str:
     with pytest.raises(HeinzelError) as caught:
-        get(fake, product)
-    text = str(caught.value)
-    assert SECRET not in text
-    assert BASIC not in text
-    return text
+        AcliClient(stub, 7.0).json(product, ARGS, "project WID")  # type: ignore[arg-type] # a Product
+    return str(caught.value)
 
 
-def test_requests_carry_basic_auth_json_and_the_plugin(fake_atlassian):
-    fake_atlassian.answer(PATH, {"issues": []})
-    assert get(fake_atlassian) == {"issues": []}
-    request = fake_atlassian.requests[0]
-    assert request.headers["Authorization"] == f"Basic {BASIC}"
-    assert request.headers["Accept"] == "application/json"
-    assert request.headers["User-Agent"].startswith("heinzel-atlassian/")
-    assert request.timeout == 7.0
-    assert request.url == f"{SITE}{PATH}?jql=x"
+def test_json_is_parsed_from_standard_output():
+    stub = Stub(Completed(0, b'[{"key": "WID-1"}]', b"", overflow=False))
+    assert AcliClient(stub, 7.0).json("Jira", ARGS, "project WID") == [[{"key": "WID-1"}]]
 
 
-def test_the_rate_limit_says_when_to_retry(fake_atlassian):
-    fake_atlassian.fail(PATH, 429, {"message": "Rate limit exceeded"}, {"retry-after": "30"})
-    assert message(fake_atlassian) == "Atlassian's rate limit is reached for project WID: retry after 30 seconds."
-    assert len(fake_atlassian.requests) == 1  # no retry, no sleep
+def test_an_acli_older_than_the_minimum_is_refused_before_the_read():
+    stub = Stub(Completed(0, b"[]", b"", overflow=False), reported=(1, 2, 9))
+    text = message(stub)
+    assert "acli 1.2.9 is older than 1.3.39" in text
+    assert "upgrade it" in text
 
 
-def test_the_rate_limit_without_retry_after(fake_atlassian):
-    fake_atlassian.fail(PATH, 429, {}, {"retry-after": "soon"})
-    assert "retry in a minute" in message(fake_atlassian)
+@pytest.mark.parametrize("reported", [(1, 3, 39), (2, 0, 0), None])
+def test_the_minimum_a_newer_or_an_unnamed_version_reads(reported):
+    stub = Stub(Completed(0, b"[]", b"", overflow=False), reported=reported)
+    assert AcliClient(stub, 7.0).json("Jira", ARGS, "project WID") == [[]]
 
 
-@pytest.mark.parametrize("echo", [SECRET, BASIC, f"{EMAIL}:{SECRET}", f"Basic {BASIC}"])
-def test_a_rejected_token_is_named_never_shown(fake_atlassian, echo):
-    fake_atlassian.fail(PATH, 401, {"errorMessages": [f"Bad credentials: {echo}"]})
-    text = message(fake_atlassian)
-    assert "rejected the email and token" in text
-    assert "hz system credential set atlassian-token" in text
-    assert "atlassian.email" in text
-    assert "without scopes" in text
-    assert "***" in text
+def test_a_missing_acli_names_the_install_and_the_login():
+    text = message(Stub(error=FileNotFoundError("acli")))
+    assert "not on PATH" in text
+    assert "install-acli" in text
+    assert text.endswith("acli jira auth login")
 
 
-def test_forbidden_names_the_permission_per_product(fake_atlassian):
-    fake_atlassian.fail(PATH, 403, {"errorMessages": ["You do not have permission"]})
-    assert "Browse projects" in message(fake_atlassian)
-    assert "You do not have permission" in message(fake_atlassian)
-    fake_atlassian.fail(PATH, 403, {"errors": [{"title": "Forbidden", "detail": "No access to space"}]})
-    text = message(fake_atlassian, "Confluence")
-    assert "View on its space" in text
-    assert "No access to space" in text
+def test_a_missing_acli_for_confluence_names_its_login():
+    assert message(Stub(error=FileNotFoundError("acli")), "Confluence").endswith("acli confluence auth login")
 
 
-def test_not_found_names_access(fake_atlassian):
-    fake_atlassian.fail(PATH, 404, {})
-    assert "or ask for access for the account in atlassian.email" in message(fake_atlassian)
+def test_a_timeout_says_what_to_change():
+    text = message(Stub(error=AcliTimeoutError("acli")))
+    assert "within 7 seconds" in text
+    assert "atlassian.timeout" in text
 
 
-def test_an_unknown_project_in_jql_is_a_bad_request_with_jiras_words(fake_atlassian):
-    fake_atlassian.fail(
-        PATH,
-        400,
-        {"errorMessages": ["The value 'WID' does not exist for the field 'project'."], "errors": {"jql": "bad"}},
-    )
-    text = message(fake_atlassian)
-    assert "400: The value 'WID' does not exist for the field 'project'.; bad" in text
-    assert "check that it exists and is visible" in text
+def test_acli_that_cannot_start_names_the_error_type_only():
+    text = message(Stub(error=PermissionError(13, "denied /secret/path")))
+    assert "PermissionError" in text
+    assert "/secret/path" not in text
+
+
+def test_too_much_output_asks_for_a_shorter_window():
+    text = message(Stub(Completed(-9, b"[", b"", overflow=True)))
+    assert f"more than {MAX_BYTES} bytes" in text
+    assert "shorter window" in text
+
+
+def test_output_that_is_not_json_is_a_clear_error():
+    assert "is not JSON" in message(Stub(Completed(0, b"<html>", b"", overflow=False)))
 
 
 @pytest.mark.parametrize(
-    ("body", "said"),
+    "stderr",
     [
-        (b"<html>oops</html>", "no details"),
-        (b"[1]", "no details"),
-        (b'{"message": "Internal"}', "Internal"),
-        (b'{"errors": [{"status": 500}]}', "no details"),
+        "✗ Error: unauthorized: use 'acli jira auth login' to authenticate\n",
+        "Error: not logged in\n",
+        "request failed with status 401\n",
     ],
 )
-def test_other_errors_show_the_status_and_no_raw_body(fake_atlassian, body, said):
-    fake_atlassian.routes[PATH, None] = Response(502, {}, body)
-    text = message(fake_atlassian)
-    assert "502" in text
-    assert said in text
-    assert "oops" not in text
+def test_unauthorized_names_the_login(stderr):
+    text = message(failing(stderr))
+    assert text.startswith("acli is not logged in to Jira")
+    assert text.endswith("Log in: acli jira auth login")
 
 
-def test_an_unreachable_site_is_a_clear_error(fake_atlassian):
-    fake_atlassian.error = TimeoutError("timed out")
-    assert f"Could not reach {SITE}: TimeoutError" in message(fake_atlassian)
+@pytest.mark.parametrize(
+    ("stderr", "expected"),
+    [
+        ("Error: 429 Too Many Requests\n", "rate limit is reached for project WID"),
+        ("Error: forbidden (403)\n", "needs the permission Browse projects on it"),
+        ("Error: project does not exist\n", "Jira has no project WID, or the account acli is logged in as can't see"),
+        ("Error: something odd\n", "acli failed for project WID with exit status 3: something odd"),
+        # Numbers inside ids are no statuses, and words elsewhere are no signs.
+        ("Error: page 4013377 not found\n", "Jira has no project WID"),
+        ("Error: work item WID-403 does not exist\n", "Jira has no project WID"),
+        ("Error: work item WID-4291 does not exist\n", "Jira has no project WID"),
+        ("Error: see the permissions page; run acli jira auth login later\n", "acli failed for project WID"),
+    ],
+)
+def test_other_failures_say_what_to_do(stderr, expected):
+    assert expected in message(failing(stderr, 3))
 
 
-def test_an_answer_that_is_not_a_json_object_is_refused(fake_atlassian):
-    fake_atlassian.routes[PATH, None] = Response(200, {}, b"[]")
-    assert "something other than an object" in message(fake_atlassian)
-    fake_atlassian.routes[PATH, None] = Response(200, {}, b"<html/>")
-    assert "not JSON" in message(fake_atlassian)
+def test_without_stderr_standard_output_is_shown_and_otherwise_no_details():
+    assert "boom" in message(Stub(Completed(2, b"Error: boom", b"", overflow=False)))
+    assert message(Stub(Completed(2, b"", b"", overflow=False))).endswith("no details")
 
 
-def test_an_oversized_answer_is_refused(fake_atlassian):
-    fake_atlassian.routes[PATH, None] = Response(200, {}, b" " * (MAX_BYTES + 1))
-    assert "larger than" in message(fake_atlassian)
+@pytest.mark.parametrize(
+    "secret",
+    [
+        TOKEN,
+        "Bearer abc.def-ghi_jkl",
+        "Basic YWRhOnNlY3JldA==",
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c2lnbmF0dXJl",
+        'token="hunter2-secret"',
+        "password: hunter2-secret",
+        "access_token=hunter2-secret",
+        '{"refresh_token":"hunter2-secret"}',
+        "apiToken: hunter2-secret",
+        "api_key=hunter2-secret",
+        "client_secret=hunter2-secret",
+        "X-Session: hunter2-secret",
+        "https://wilma:hunter2-secret@acme.atlassian.net/rest",
+    ],
+)
+def test_credentials_in_acli_errors_are_redacted(secret):
+    text = message(failing(f"Error: request with {secret} failed\n"))
+    for part in ("ATATT3xFfGF0x", "abc.def-ghi_jkl", "YWRhOnNlY3JldA", "eyJhbGci", "hunter2"):
+        assert part not in text
 
 
-DIRTY = "\x00a\x07\tb\nc\r\x1b[31md\x7f\x85e\x9f\u202ef\u2066g\u2069\u202ah"
+def test_documents_printed_back_to_back_are_all_read():
+    assert documents(' [1] \n{"a": 2}[3]\n') == [[1], {"a": 2}, [3]]
 
 
-def test_clean_removes_controls_and_bidi_overrides_but_keeps_newlines_and_tabs():
-    assert clean(DIRTY) == "a\tb\nc[31mdefgh"
-    assert clean("Grüße, 東京 \u2013 ok") == "Grüße, 東京 \u2013 ok"
+@pytest.mark.parametrize("text", ["", "  \n", "[1] trailing", "{"])
+def test_text_without_documents_or_with_anything_else_is_refused(text):
+    with pytest.raises(ValueError):  # noqa: PT011 - json's own errors, whatever their message
+        documents(text)
 
 
-def test_atlassians_words_in_an_error_are_cleaned(fake_atlassian):
-    fake_atlassian.fail(PATH, 403, {"errorMessages": [DIRTY]})
-    assert "(403: a\tb\nc[31mdefgh)" in message(fake_atlassian)
+def test_output_that_is_not_utf8_is_a_clear_error():
+    assert "is not JSON" in message(Stub(Completed(0, b"\xff\xfe[]", b"", overflow=False)))
 
 
-@pytest.mark.parametrize("secret", [SECRET, BASIC, f"{EMAIL}:{SECRET}"])
-@pytest.mark.parametrize("cut", [3, 10, len(SECRET) - 3])
-def test_a_secret_across_the_cut_is_redacted_before_it(fake_atlassian, secret, cut):
-    prefix = "x" * (300 - cut)  # the cut at 300 characters falls `cut` characters into the secret
-    fake_atlassian.fail(PATH, 403, {"errorMessages": [prefix + secret + " and more"]})
-    text = message(fake_atlassian)
-    assert prefix + "***" in text
-    assert all(secret[i : i + 3] not in text.split(prefix, 1)[1] for i in range(len(secret) - 2))
+def test_redaction_comes_before_the_cut():
+    # The token starts just before the cut: cutting first would leave its start behind.
+    text = said(f"Error: {'a' * (MESSAGE_CHARS - 10)} {TOKEN} {'b' * 50}".encode())
+    assert "ATAT" not in text
+    assert text.endswith("…")
+    assert len(text) == MESSAGE_CHARS + 1
+
+
+def test_escape_sequences_controls_and_bidi_are_removed_from_acli_errors():
+    text = said("\x1b[31m✗ Error:\x1b[0m bad\x07 \u202eword\x1b]8;;https://x.example\x07link\x1b]8;;\x07\r\n".encode())
+    assert text == "bad word" + "link"
+
+
+def test_redact_keeps_the_names_of_what_it_hides():
+    assert redact("Authorization: Bearer abc123") == "Authorization: *** ***"
+    assert redact("token=abc123 rest") == "token=*** rest"
