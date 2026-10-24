@@ -187,8 +187,19 @@ so you only get the integrations you use. `hz system plugin add <name>` shows th
 | [heinzel-google](plugins/heinzel-google) | Google Docs, Sheets, Drive, Calendar and Gmail through the Google Workspace CLI: the `documents`, `calendar` and `mail` capabilities | `hz system plugin add google --confirm` |
 | [heinzel-zoom](plugins/heinzel-zoom) | Meetings from Zoom's meeting-summary emails, read through the bound `mail` adapter: the `meetings` capability | `hz system plugin add zoom --confirm` |
 
-Slack adapters are planned as first-party plugins too. Community and company plugins live
-in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
+Slack adapters are planned as first-party plugins too.
+
+### Community plugins
+
+Plugins useful to many but not to everyone live in [heinzel-contrib](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib), one distribution per plugin in
+`plugins/heinzel-<name>/`, built to the core's standards and tested against it:
+
+| Plugin | What it does | Install |
+| --- | --- | --- |
+| [heinzel-weather](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-weather) | Weather from OpenWeather: now, the next hours and days, and a notice when it turns | `hz system plugin add "heinzel-weather @ git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib#subdirectory=plugins/heinzel-weather" --confirm` |
+| [heinzel-example](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-example) | How a plugin is built: the template's example | `hz system plugin add "heinzel-example @ git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib#subdirectory=plugins/heinzel-example" --confirm` |
+
+Company plugins live in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
 
 Workflows are Markdown files, not code: a `<name>.prose.md` contract in your workflows directory (or your team's
 state repository) names the capabilities it reads, the inputs to fetch and the agent's limits, and its body says what
