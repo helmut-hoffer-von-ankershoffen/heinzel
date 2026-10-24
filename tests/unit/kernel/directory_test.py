@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from heinzel import ConfirmedLines, HeinzelError, Participant, Person, Relation, draft_reporting_lines
+from heinzel import ConfirmedLines, HeinzelError, Participant, Person, Relation, ReportingDraft, draft_reporting_lines
 
 pytestmark = pytest.mark.unit
 
@@ -67,6 +67,40 @@ def test_a_directory_of_record_beats_what_the_user_confirmed():
     assert draft.manager == Relation(who=ADA)
     assert draft.reports == [Relation(who=JONAS)]
     assert not draft.needs_confirmation
+    assert draft.conflicts == [
+        "manager: the directory says Ada; you confirmed someone@example.com",
+        "reports: the directory says Jonas; you confirmed someone@example.com",
+    ]
+
+
+def test_a_confirmation_that_agrees_with_the_directory_is_no_conflict():
+    mira = Person(who=MIRA, manager=Relation(who=ADA, login="ada"), reports=[Relation(who=JONAS)])
+    confirmed = ConfirmedLines(manager="ADA", reports=["Jonas@Example.com"])
+    assert draft_reporting_lines(Fake(mira), "mira@example.com", confirmed).conflicts == []
+    confirmed = ConfirmedLines(reports=[])
+    assert draft_reporting_lines(Fake(mira), "mira@example.com", confirmed).conflicts == [
+        "reports: the directory says Jonas; you confirmed none"
+    ]
+
+
+def test_one_fact_among_the_reports_makes_the_directory_win():
+    mira = Person(who=MIRA, reports=[Relation(who=JONAS), Relation(who=ADA, guess=True, evidence=GUESS)])
+    draft = draft_reporting_lines(Fake(mira), "mira@example.com", ConfirmedLines(reports=["ada@example.com"]))
+    assert draft.reports == mira.reports
+    assert draft.conflicts
+
+
+def test_confirmed_lines_fill_what_the_directory_leaves_empty():
+    jonas = Person(who=JONAS, login="jonas")
+    draft = draft_reporting_lines(Fake(Person(who=MIRA), jonas), "mira@example.com", ConfirmedLines(reports=["jonas"]))
+    assert draft.reports == [Relation(who=Participant(), login="jonas")]  # looked up by email only in Fake
+    draft = draft_reporting_lines(Fake(jonas), "nobody", ConfirmedLines(manager="jonas@example.com"))
+    assert draft.found is None
+    assert draft.manager == Relation(who=JONAS, login="jonas")
+
+
+def test_needs_confirmation_is_derived_whatever_is_passed():
+    assert not ReportingDraft(person="x", needs_confirmation=True).needs_confirmation
 
 
 def test_confirmed_people_the_directory_does_not_know_keep_their_login_or_email():

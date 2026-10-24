@@ -435,14 +435,17 @@ class Relation(BaseModel):
     )
     evidence: list[str] = Field(
         default_factory=list,
-        description='What a guess rests on, in words, e.g. `weekly 1:1 "Ada / Bob", 6 times from 2026-09-01 to '
-        "2026-10-06, organized by Ada`; names, never addresses. Empty for what a directory says.",
+        description="What a guess rests on, in words, e.g. `a recurring 1:1 weekly in your calendar, organized by "
+        "Ada`; display names, never addresses (refused), titles or counts. Empty for what a directory says.",
     )
 
     @model_validator(mode="after")
     def _guesses_show_evidence(self) -> Self:
         if self.guess and not self.evidence:
             msg = "a guessed reporting line must say what it rests on (evidence)"
+            raise ValueError(msg)
+        if any("@" in line for line in self.evidence):
+            msg = "evidence names people by display name, never by address: it may reach a prompt"
             raise ValueError(msg)
         return self
 
@@ -472,7 +475,8 @@ class Directory(Protocol):
 
     Read only, and only the fields above: never compensation, ratings, absences or anything else HR-sensitive
     (ADR 0024). A `person` argument is a login or an email address, matched as the source matches them (emails ignore
-    case). Neither method takes a window, so contracts don't read the directory; module operations do.
+    case; `one-on-ones` knows emails only). Neither method takes a window, so contracts don't read the directory;
+    module operations do, and must not hand its addresses to an agent (ADR 0028).
     """
 
     def person(self, person: str) -> Person | None:

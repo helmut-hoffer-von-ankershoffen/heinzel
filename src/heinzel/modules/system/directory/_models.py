@@ -10,9 +10,10 @@ class DirectorySettings(ModuleSettings):
 
     lookback_days: int = Field(
         default=56,
-        ge=14,
+        ge=42,
         le=365,
-        description="How many days of the bound calendar, up to now, to look for recurring 1:1s in.",
+        description="How many days of the bound calendar, up to now, to look for recurring 1:1s in; at least 42, so "
+        "that a 1:1 every two weeks can occur three times.",
     )
     min_occurrences: int = Field(
         default=3,

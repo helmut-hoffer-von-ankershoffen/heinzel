@@ -73,6 +73,12 @@ class CapabilitySettings(ModuleSettings):
         """The adapter bound to `capability`, or None."""
         return cast("str | None", getattr(self, capability.replace("-", "_"), None))
 
+    def defaulted(self, capability: str) -> bool:
+        """Whether `capability` is bound by the core's default, because no configuration or variable sets it."""
+        field = capability.replace("-", "_")
+        default = type(self).model_fields[field].default if field in type(self).model_fields else None
+        return default is not None and field not in self.model_fields_set
+
 
 @dataclass(frozen=True, slots=True)
 class Requester:
@@ -141,6 +147,8 @@ class _Handle:
     """A requester's view of an adapter: wrappers around the capability's methods in the granted modes, nothing else.
 
     It holds no reference to the adapter as an attribute, and its methods are plain functions, not bound methods.
+    Their closures still reach the adapter, and for a reader's handle the kernel's `Capabilities`, which builds it on
+    the first call: introspection reaches both, which is why this is no isolation boundary (module docstring).
     """
 
     __slots__ = ("_allowed", "_denied", "_label")
@@ -357,9 +365,14 @@ class Capabilities:
         if adapter is None or problem is not None:
             msg = f"{requester.label} needs {wanted}: {problem}. {self.fix(capability.name)}"
             raise HeinzelError(msg)
-        # Built on the first call, not here: a requester that never calls it, such as a setup step that drafts only
-        # when asked, doesn't fail because what the adapter itself needs is unbound.
-        instance = partial(self._instance, adapter, capability)
+        # A reader's adapter is built on its first call, not here: a requester that never calls it, such as a setup
+        # step that drafts only when asked, doesn't fail because what the adapter itself needs is unbound. A publish
+        # operation's adapters are built here, so that one whose factory fails stops it before anything is written.
+        if requester.publishes:
+            built = self._instance(adapter, capability)
+            instance: Callable[[], object] = lambda: built  # noqa: E731 - one object, built once
+        else:
+            instance = partial(self._instance, adapter, capability)
         allowed: dict[str, Callable[..., Any]] = {}
         denied: dict[str, str] = {}
         for name, mode in capability.methods.items():
@@ -435,6 +448,10 @@ class CapabilityView:
     def bound(self, capability: str) -> str | None:
         """The adapter bound to `capability`, or None."""
         return self._capabilities.settings.bound(capability)
+
+    def defaulted(self, capability: str) -> bool:
+        """Whether `capability` is bound by the core's default, because no configuration or variable sets it."""
+        return self._capabilities.settings.defaulted(capability)
 
     def hosts(self, adapter: Adapter) -> tuple[tuple[str, ...], str | None]:
         """The host names `adapter` reaches, and why they are unknown when its settings decide them and that failed."""

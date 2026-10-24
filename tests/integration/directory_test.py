@@ -35,7 +35,7 @@ ADA = Participant(name="Ada", email="ada@example.com")
 class Agenda:
     """A calendar for tests: Mira's weekly 1:1 with Jonas (she organizes) and Ada's with Mira (Ada organizes)."""
 
-    windows: list[Window] = []  # noqa: RUF012 - shared on purpose: the adapter is built by the kernel
+    windows: list[Window] = []  # noqa: RUF012 - shared on purpose: the kernel builds the adapter; cleared per test
 
     def events(self, window: Window) -> list[Event]:
         self.windows.append(window)
@@ -101,6 +101,11 @@ def modules(*, records: bool = False) -> dict[str, Module]:
     return found
 
 
+@pytest.fixture(autouse=True)
+def _fresh_agenda():
+    Agenda.windows.clear()
+
+
 def hz(kernel: Kernel, *args: str) -> tuple[int, dict | list | str]:
     result = CliRunner().invoke(build(kernel), [*args, "--json"])
     try:
@@ -121,22 +126,13 @@ def test_by_default_reporting_lines_are_guessed_from_one_on_ones_and_marked(make
     assert draft["problem"] is None
     assert draft["manager"]["who"] == {"name": "Ada", "email": "ada@example.com"}
     assert draft["manager"]["guess"] is True
-    assert draft["manager"]["evidence"] == [
-        f'1:1 "Ada <> Mira" every two weeks, 3 times from {_day(0, 2)} to {_day(28, 2)}, organized by Ada'
-    ]
+    assert draft["manager"]["evidence"] == ["a recurring 1:1 every two weeks in your calendar, organized by Ada"]
     (report,) = draft["reports"]
     assert report["who"]["name"] == "Jonas"
     assert report["guess"] is True
-    assert "weekly, 4 times" in report["evidence"][0]
-    assert all("@" not in line for line in [*draft["manager"]["evidence"], *report["evidence"]])
-    window = Agenda.windows[-1]
+    assert report["evidence"] == ["a recurring 1:1 weekly in your calendar, organized by Mira"]
+    (window,) = Agenda.windows
     assert window.until - window.since == timedelta(days=56)
-
-
-def _day(offset: int, hours: int) -> str:
-    """The date of an `Agenda` event `offset` days after its first, as evidence shows it."""
-    until = Agenda.windows[-1].until
-    return f"{until - timedelta(days=28) + timedelta(days=offset, hours=hours):%Y-%m-%d}"
 
 
 def test_a_confirmed_manager_replaces_the_guess_and_is_named_from_the_directory(make_kernel):
@@ -150,6 +146,7 @@ def test_a_confirmed_manager_replaces_the_guess_and_is_named_from_the_directory(
         "evidence": [],
     }
     assert draft["needs_confirmation"] is True  # the report is still a guess
+    assert len(Agenda.windows) == 1  # Jonas was named from the draft, not by reading the calendar again
 
 
 def test_without_a_calendar_the_draft_says_why_instead_of_failing(make_kernel):
@@ -172,6 +169,28 @@ def test_a_directory_of_record_wins_and_nothing_is_a_guess(make_kernel):
     assert draft["found"]["title"] == "Engineering manager"
     assert draft["manager"]["login"] == "ada"
     assert draft["needs_confirmation"] is False
+    assert draft["conflicts"] == ["manager: the directory says Ada; you confirmed jonas@example.com"]
+    assert Agenda.windows == []
+    code, report = hz(kernel, "system", "capability", "list")
+    assert [u for u in report["uses"] if u["requester"] == "system.directory"] == []
+
+
+def test_doctor_names_the_binding_when_a_plugin_could_serve_the_directory(make_kernel):
+    kernel = make_kernel(builtins=True, config=bound(calendar="agenda"), **modules(records=True))
+    code, report = hz(kernel, "system", "doctor")
+    assert code == 0
+    checks = {c["name"]: c for c in report["checks"]["system.capability"]}
+    assert checks["binding directory"]["status"] == "degraded"
+    assert (
+        checks["binding directory"]["detail"]
+        == "directory is served by the default, one-on-ones; records could serve it"
+    )
+    assert checks["binding directory"]["fix"].endswith("hz system config set capabilities.directory records")
+    kernel = make_kernel(
+        builtins=True, config=bound(calendar="agenda", directory="one-on-ones"), **modules(records=True)
+    )
+    code, report = hz(kernel, "system", "doctor")
+    assert "binding directory" not in {c["name"] for c in report["checks"]["system.capability"]}
 
 
 def test_the_fallbacks_calendar_need_is_no_finding_while_nobody_uses_a_directory(make_kernel):

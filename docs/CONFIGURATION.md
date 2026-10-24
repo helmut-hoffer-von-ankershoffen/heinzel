@@ -91,7 +91,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `lookback_days` | `HZ_SYSTEM_DIRECTORY__LOOKBACK_DAYS` | `56` | How many days of the bound calendar, up to now, to look for recurring 1:1s in. |
+| `lookback_days` | `HZ_SYSTEM_DIRECTORY__LOOKBACK_DAYS` | `56` | How many days of the bound calendar, up to now, to look for recurring 1:1s in; at least 42, so that a 1:1 every two weeks can occur three times. |
 | `min_occurrences` | `HZ_SYSTEM_DIRECTORY__MIN_OCCURRENCES` | `3` | How often two people must have met alone, weekly or every two weeks, before hz guesses a reporting line between them. |
 
 ## `[system.plugin]`

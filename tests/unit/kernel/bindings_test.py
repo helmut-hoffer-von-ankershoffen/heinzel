@@ -9,6 +9,7 @@ from pydantic import Field, field_validator
 
 from heinzel import (
     Chat,
+    Check,
     Config,
     Document,
     Documents,
@@ -828,6 +829,82 @@ def test_an_adapter_only_modules_needs_count_only_while_its_adapter_serves_someo
 
 def test_a_module_that_also_has_operations_keeps_its_needs(make_kernel):
     assert needs(make_kernel(layer=layered(with_operation=True))) == {"layer documents:read"}
+
+
+class Service:
+    """A service that could use its module's requirements."""
+
+
+def peek(documents: Documents) -> list[Check]:
+    """Read through the module's requirement."""
+    return []
+
+
+def peek_info(documents: Documents) -> dict[str, str]:
+    """Read through the module's requirement."""
+    return {}
+
+
+def peek_setup(documents: Documents) -> None:
+    """Set nothing up."""
+
+
+@pytest.mark.parametrize(
+    "add",
+    [
+        lambda m: m.job(schedule="@daily")(peek),
+        lambda m: m.service(Service),
+        lambda m: m.info(peek_info),
+        lambda m: m.health(peek),
+        lambda m: m.setup(peek_setup),
+    ],
+    ids=["job", "service", "info", "health", "setup"],
+)
+def test_any_let_that_runs_code_keeps_a_modules_needs(make_kernel, add):
+    module = layered()
+    add(module)
+    assert needs(make_kernel(layer=module)) == {"layer documents:read"}
+
+
+def test_a_module_whose_one_adapter_of_two_serves_someone_keeps_its_needs(make_kernel):
+    module = layered()
+    module.provides("chat", modes={"read"}, hosts=[])(Top)
+    reader = Module("reader", "Reads chat.", requires=["chat:read"])
+    config = bind(chat="layer", documents="notes")
+    kernel = make_kernel(layer=module, reader=reader, notes=notes_module(), config=config)
+    assert needs(kernel) == {"reader chat:read", "layer documents:read"}
+
+
+def test_a_readers_adapter_that_cant_be_built_fails_on_the_first_call_and_is_retried(make_kernel):
+    attempts = []
+
+    def flaky() -> Reader:
+        attempts.append(1)
+        if len(attempts) == 1:
+            msg = "not yet"
+            raise HeinzelError(msg)
+        return Reader()
+
+    reads = Module("half", "Reads through a factory that fails once.")
+    reads.provides("documents", modes={"read"})(flaky)
+    kernel = make_kernel(half=reads, digest=digest_module(), config=bind(documents="half"))
+    documents = handle(kernel)
+    assert attempts == []
+    with pytest.raises(HeinzelError, match="not yet"):
+        documents.read("weekly")  # type: ignore[attr-defined]
+    assert documents.read("weekly").title == "reader:weekly"  # type: ignore[attr-defined]
+
+
+def test_a_publish_operations_adapter_is_built_before_it_runs(make_kernel):
+    def broken() -> Notes:
+        msg = "credentials missing"
+        raise HeinzelError(msg)
+
+    writes = Module("notes", "Writes through a factory that fails.")
+    writes.provides("documents", modes={"read", "write"})(broken)
+    kernel = make_kernel(notes=writes, digest=digest_module(), config=bind(documents="notes"))
+    with pytest.raises(HeinzelError, match="credentials missing"):
+        handle(kernel, "publish")
 
 
 def test_needs_of_a_chain_of_unused_adapter_modules_all_drop_out(make_kernel):

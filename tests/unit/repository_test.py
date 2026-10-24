@@ -167,3 +167,13 @@ def test_nothing_names_the_old_directory_of_first_party_plugins():
                 f"{path.relative_to(REPO)}:{n}" for n, line in enumerate(text.splitlines(), 1) if old.search(line)
             ]
     assert offenders == []
+
+
+def test_every_system_submodule_is_independent_of_the_others():
+    """ADR 0018: system's submodules could each be a plugin, so the import-linter contract must list every one."""
+    contracts = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["importlinter"]
+    name = "Every module could be a plugin: system's submodules don't import each other"
+    (independence,) = [c for c in contracts["contracts"] if c["name"] == name]
+    system = REPO / "src" / "heinzel" / "modules" / "system"
+    packages = {f"heinzel.modules.system.{p.parent.name}" for p in system.glob("*/__init__.py")}
+    assert set(independence["modules"]) == packages

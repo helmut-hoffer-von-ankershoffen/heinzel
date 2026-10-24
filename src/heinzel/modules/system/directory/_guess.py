@@ -3,9 +3,12 @@
 A recurring 1:1 is a series of events with exactly two attendees, the same two, at least `min_occurrences` times,
 weekly or every two weeks (the median gap between occurrences is 5 to 16 days). Its organizer is guessed to be the
 manager and the other attendee the report: a guess the user confirms or corrects in setup, never a fact. A series
-without an organizer, or organized by someone else, says nothing about who reports to whom and is left out.
+without an organizer, or organized by someone else, says nothing about who reports to whom and is left out. The
+organizer rule is weak (a report may organize the 1:1 with their manager), which is why it is a guess the user sees.
 
-Evidence names people by display name, never by address, so it may reach a prompt (ADR 0024, ADR 0028).
+Evidence is qualitative and names the organizer by display name only: no event title (it may carry an address or say
+what the 1:1 is about), no address, and no counts or dates of how often someone meets (ADR 0024 §7: no per-person
+counts), so it may reach a prompt.
 """
 
 import itertools
@@ -42,7 +45,9 @@ def _key(participant: Participant) -> str | None:
 
 
 def _name(participant: Participant | None) -> str:
-    return participant.name if participant and participant.name else "someone without a display name"
+    """A display name for evidence; never an address, which some vendors show as the name."""
+    name = participant.name.strip() if participant and participant.name else ""
+    return name if name and "@" not in name else "someone without a display name"
 
 
 def guess_lines(events: Iterable[Event], min_occurrences: int) -> tuple[list[Line], dict[str, Participant]]:
@@ -77,12 +82,8 @@ def _line(pair: frozenset[str], events: list[Event], people: dict[str, Participa
     if organizer not in pair:
         return None
     (report,) = pair - {organizer}
-    title = Counter(event.title for event in events).most_common(1)[0][0]
     cadence = "every two weeks" if gap >= BIWEEKLY_FROM else "weekly"
-    evidence = (
-        f'1:1 "{title}" {cadence}, {len(starts)} times from {starts[0]:%Y-%m-%d} to {starts[-1]:%Y-%m-%d}, '
-        f"organized by {_name(people.get(organizer))}"
-    )
+    evidence = f"a recurring 1:1 {cadence} in your calendar, organized by {_name(people.get(organizer))}"
     return Line(organizer, report, len(starts), gap, clean_text(evidence))
 
 
@@ -98,8 +99,7 @@ def person_from(key: str, lines: list[Line], people: dict[str, Participant]) -> 
         first, *others = managers
         evidence = [first.evidence]
         if others:
-            names = ", ".join(_name(people.get(line.manager)) for line in others)
-            evidence.append(f"others organize recurring 1:1s with them too: {names}")
+            evidence.append("other people organize recurring 1:1s with them too")
         manager = Relation(who=people[first.manager], guess=True, evidence=evidence)
     reports = [
         Relation(who=people[line.report], guess=True, evidence=[line.evidence]) for line in lines if line.manager == key
@@ -110,8 +110,9 @@ def person_from(key: str, lines: list[Line], people: dict[str, Participant]) -> 
 class OneOnOnes:
     """The core's `directory` adapter: reporting lines guessed from recurring 1:1s in the bound calendar.
 
-    Knows people only by email (a calendar has no logins) and only those in the user's own 1:1s, keeps nothing
-    between calls, and marks every line as a guess with its evidence.
+    Knows people only by email (a calendar has no logins) and only those in the two-person series the bound calendar
+    shows (a shared or delegated calendar shows other people's too), keeps nothing between calls, and marks every
+    line as a guess with its evidence.
     """
 
     def __init__(self, calendar: Calendar, settings: DirectorySettings) -> None:

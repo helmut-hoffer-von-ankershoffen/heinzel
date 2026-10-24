@@ -24,6 +24,7 @@ from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import Installation
 from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._lets import (
+    CredentialLet,
     HealthLet,
     InfoLet,
     JobLet,
@@ -43,6 +44,11 @@ from heinzel.kernel._settings import Settings
 from heinzel.kernel._spec import PROJECT_NAME, Spec
 
 logger = logging.getLogger(__name__)
+
+ADAPTER_ONLY_LETS = (ProviderLet, RequirementLet, SettingsLet, CredentialLet)
+"""Lets that leave a module adapter-only: none of them runs code that could use the module's requirements, so its
+needs count only while one of its adapters serves someone. Any other let, including kinds added later, makes them
+count always."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -395,9 +401,8 @@ class Kernel:
             lets = record.module.lets
             own = tuple(let.requirement for let in lets if isinstance(let, RequirementLet))
             # A module that only provides adapters needs its requirements only while one of them serves someone.
-            users = (OperationLet, JobLet, ServiceLet, InfoLet, HealthLet, SetupLet)
             provided = tuple((let.capability, let.adapter) for let in lets if isinstance(let, ProviderLet))
-            serves = () if any(isinstance(let, users) for let in lets) else provided
+            serves = provided if all(isinstance(let, ADAPTER_ONLY_LETS) for let in lets) else ()
             module = Requester(
                 module=record.qualname, kind="module", name=record.module.name, requires=own, serves=serves
             )
