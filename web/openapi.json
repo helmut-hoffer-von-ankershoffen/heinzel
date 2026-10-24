@@ -1,6 +1,286 @@
 {
   "components": {
     "schemas": {
+      "AccessList": {
+        "description": "Every installed AI access option, the one in use, and what each use of AI runs.",
+        "properties": {
+          "next": {
+            "description": "What to run next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why something isn't as configured, e.g. a runner mismatch.",
+            "title": "Note"
+          },
+          "options": {
+            "description": "Every installed option, by name.",
+            "items": {
+              "$ref": "#/components/schemas/AccessOption"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "selected": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The AI access in use, `[capabilities] ai_access`; none when unset.",
+            "title": "Selected"
+          },
+          "uses": {
+            "description": "Chat, turns and coding handoffs, and what runs each today.",
+            "items": {
+              "$ref": "#/components/schemas/AccessUse"
+            },
+            "title": "Uses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "selected",
+          "options",
+          "uses"
+        ],
+        "title": "AccessList",
+        "type": "object"
+      },
+      "AccessOption": {
+        "description": "One installed AI access option and what it says about itself.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "description": "What it found, e.g. the CLI's path.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "fix": {
+            "default": "",
+            "description": "A command that makes it usable; often empty.",
+            "title": "Fix",
+            "type": "string"
+          },
+          "hosts": {
+            "description": "Hosts it sends prompts to, when known.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Hosts",
+            "type": "array"
+          },
+          "in_use": {
+            "description": "Whether it is the AI access in use.",
+            "title": "In Use",
+            "type": "boolean"
+          },
+          "last_test": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LastTest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The last `hz ai access test` of it, if any."
+          },
+          "models": {
+            "description": "Models it offers or is configured with.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "module": {
+            "description": "The qualified name of the module providing it, e.g. `system.runner`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "name": {
+            "description": "What `hz ai access use` takes, e.g. `claude-code`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, e.g. `heinzel-acme`; none when built in.",
+            "title": "Plugin"
+          },
+          "runner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The agent runner that serves its chat and coding uses.",
+            "title": "Runner"
+          },
+          "status": {
+            "description": "`signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `not installed` when what it needs is missing.",
+            "enum": [
+              "signed in",
+              "not signed in",
+              "not tested",
+              "tested",
+              "test failed",
+              "not installed",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "description": "One sentence on how it reaches AI.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "title": {
+            "description": "What people pick it by, e.g. `Claude Code`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "summary",
+          "module",
+          "plugin",
+          "in_use",
+          "status"
+        ],
+        "title": "AccessOption",
+        "type": "object"
+      },
+      "AccessTestReport": {
+        "description": "The outcome of `hz ai access test`, also kept for the listing.",
+        "properties": {
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What it cost in US dollars, when reported.",
+            "title": "Cost Usd"
+          },
+          "detail": {
+            "default": "",
+            "description": "The answer, or why it failed.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "duration_seconds": {
+            "default": 0.0,
+            "description": "Wall-clock time of the check.",
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "fix": {
+            "default": "",
+            "description": "A command that fixes why it failed; often empty.",
+            "title": "Fix",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model that answered, when reported.",
+            "title": "Model"
+          },
+          "name": {
+            "description": "The option tested.",
+            "title": "Name",
+            "type": "string"
+          },
+          "ok": {
+            "description": "Whether it answered.",
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "ok"
+        ],
+        "title": "AccessTestReport",
+        "type": "object"
+      },
+      "AccessUse": {
+        "description": "What one use of AI runs today.",
+        "properties": {
+          "access": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The AI access it follows: the one in use.",
+            "title": "Access"
+          },
+          "runs": {
+            "description": "What actually runs it today, e.g. `the agent runner claude-code`.",
+            "title": "Runs",
+            "type": "string"
+          },
+          "use": {
+            "description": "`chat`, `turns` of Heinzelmännchen, or `coding` handoffs.",
+            "enum": [
+              "chat",
+              "turns",
+              "coding"
+            ],
+            "title": "Use",
+            "type": "string"
+          }
+        },
+        "required": [
+          "use",
+          "access",
+          "runs"
+        ],
+        "title": "AccessUse",
+        "type": "object"
+      },
       "AdapterInfo": {
         "description": "An installed adapter.",
         "properties": {
@@ -2690,6 +2970,64 @@
         "type": "object"
       },
       "JsonValue": {},
+      "LastTest": {
+        "description": "The last live check of an option, as `hz ai access test` kept it.",
+        "properties": {
+          "at": {
+            "description": "When it ran, in UTC.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What it cost in US dollars, when reported.",
+            "title": "Cost Usd"
+          },
+          "detail": {
+            "default": "",
+            "description": "The answer, or why it failed.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "duration_seconds": {
+            "default": 0.0,
+            "description": "Wall-clock time of the check.",
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model that answered, when reported.",
+            "title": "Model"
+          },
+          "ok": {
+            "description": "Whether the option answered.",
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "at",
+          "ok"
+        ],
+        "title": "LastTest",
+        "type": "object"
+      },
       "LayerList": {
         "description": "`hz system layer list`: every installed layer, and what is wrong with the tree.",
         "properties": {
@@ -5729,6 +6067,125 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/ai/access/list": {
+      "get": {
+        "description": "List the AI access options, the one in use, whether each is signed in, and what runs each use.\n\nAsks each option offline (e.g. `claude auth status`); calls no model and spends nothing.",
+        "operationId": "ai_access_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the AI access options, the one in use, whether each is signed in, and what runs each use.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/ai/access/test": {
+      "post": {
+        "description": "Run one cheap live check of an AI access option and keep the result; this may cost a little.\n\nClaude Code answers one line within $0.05; the gateway runs its configured test command.",
+        "operationId": "ai_access_test",
+        "parameters": [
+          {
+            "description": "The option to test, e.g. `gateway`; the one in use when not given.",
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The option to test, e.g. `gateway`; the one in use when not given.",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessTestReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Run one cheap live check of an AI access option and keep the result; this may cost a little.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/ai/access/use": {
+      "post": {
+        "description": "Use an AI access option: sets capabilities.ai_access, and agent_runner if the option names one.",
+        "operationId": "ai_access_use",
+        "parameters": [
+          {
+            "description": "The AI access to use, one `hz ai access list` shows, e.g. `claude-code`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The AI access to use, one `hz ai access list` shows, e.g. `claude-code`.",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Use an AI access option: sets capabilities.ai_access, and agent_runner if the option names one.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/graph": {
       "get": {
         "description": "Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.",

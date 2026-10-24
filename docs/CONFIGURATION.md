@@ -27,6 +27,7 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `agent_runner` | `HZ_CAPABILITIES__AGENT_RUNNER` | `'claude-code'` | Adapter that serves `agent-runner`: `claude-code` (the default, because `command` needs a command line first), `command`, or one from a plugin. |
+| `ai_access` | `HZ_CAPABILITIES__AI_ACCESS` | `'claude-code'` | How hz reaches AI, the AI access in use: `claude-code` (the default), `gateway` (a company CLI configured in `[ai.access]`), or one from a plugin; `hz ai access use` sets it (ADR 0057). |
 | `calendar` | `HZ_CAPABILITIES__CALENDAR` | `None` | Adapter that serves `calendar`, e.g. `google`. |
 | `chat` | `HZ_CAPABILITIES__CHAT` | `None` | Adapter that serves `chat`, e.g. `slack`. |
 | `code_host` | `HZ_CAPABILITIES__CODE_HOST` | `None` | Adapter that serves `code-host`, e.g. `github`. |
@@ -36,6 +37,21 @@ Plugins add their own tables.
 | `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | Adapter that serves `meetings`, e.g. `zoom`. |
 | `team_graph` | `HZ_CAPABILITIES__TEAM_GRAPH` | `'hz-graph'` | Adapter that serves `team-graph`: `hz-graph` (the default, the core's graph of your team's contracts and telemetry), or one from a plugin. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | Adapter that serves `tracker`, e.g. `github`. |
+
+## `[ai.access]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `gateway_title` | `HZ_AI_ACCESS__GATEWAY_TITLE` | `'Company AI gateway'` | What people pick the gateway by, e.g. `Acme AI`. |
+| `gateway_summary` | `HZ_AI_ACCESS__GATEWAY_SUMMARY` | `"Your company's AI gateway CLI, set up in [ai.access]."` | One sentence on how the gateway reaches AI. |
+| `gateway_status_command` | `HZ_AI_ACCESS__GATEWAY_STATUS_COMMAND` | platform-specific | Says whether you are signed in without calling a model: exit code 0 when signed in, and optionally a JSON object on stdout, `{"signed_in": true, "models": ["..."], "detail": "..."}`; e.g. `["acme", "ai", "status", "--json"]`. Unset: the gateway isn't set up. |
+| `gateway_test_command` | `HZ_AI_ACCESS__GATEWAY_TEST_COMMAND` | platform-specific | One cheap live call, run only by `hz ai access test --name gateway`: exit code 0 when it answered, and optionally a JSON object, `{"ok": true, "detail": "...", "model": "...", "cost_usd": 0.001}`; e.g. `["acme", "ai", "ping"]`. |
+| `gateway_sign_in` | `HZ_AI_ACCESS__GATEWAY_SIGN_IN` | `''` | The command that signs you in, shown as the fix, e.g. `acme login`. |
+| `gateway_runner` | `HZ_AI_ACCESS__GATEWAY_RUNNER` | `None` | The agent runner that serves the gateway's chat and coding uses, e.g. `command` with `[system.runner] command` set to the gateway's agent CLI; `hz ai access use gateway` binds it. |
+| `gateway_hosts` | `HZ_AI_ACCESS__GATEWAY_HOSTS` | platform-specific | Hosts the gateway sends prompts to, as host names or URLs, e.g. `ai.acme.example`; shown in the listing and the capability matrix. |
+| `gateway_models` | `HZ_AI_ACCESS__GATEWAY_MODELS` | platform-specific | Models the gateway offers, when its status command doesn't say. |
+| `gateway_env` | `HZ_AI_ACCESS__GATEWAY_ENV` | platform-specific | Environment variables passed to the gateway's commands besides PATH, HOME, LANG, LC_* and TMPDIR; HZ_CREDENTIAL_* variables are never passed. |
+| `model` | `HZ_AI_ACCESS__MODEL` | `None` | The model of the `pydantic-ai` option, as Pydantic AI names it, `<vendor>:<model>`, e.g. `anthropic:claude-sonnet-4-5`; its key is the credential `ai.access/api-key` or the vendor's variable. |
 
 ## `[atlassian]`
 

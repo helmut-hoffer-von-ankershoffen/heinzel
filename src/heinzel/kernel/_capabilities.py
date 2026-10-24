@@ -12,6 +12,7 @@ from types import MappingProxyType
 from typing import Any, Literal, cast
 
 from heinzel.kernel._agents import AgentRunner
+from heinzel.kernel._ai import AiAccess
 from heinzel.kernel._protocols import (
     Calendar,
     Chat,
@@ -58,6 +59,12 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 protocol=AgentRunner,
                 summary="Bounded agent sessions with read-only tools, reporting draft, tool calls and cost.",
                 methods=MappingProxyType({"run": "read"}),
+            ),
+            Capability(
+                name="ai-access",
+                protocol=AiAccess,
+                summary="How hz reaches AI: whether an option is there and signed in, and a cheap live check of it.",
+                methods=MappingProxyType({"status": "read", "test": "read"}),
             ),
             Capability(
                 name="calendar",

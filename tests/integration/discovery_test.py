@@ -14,6 +14,8 @@ pytestmark = pytest.mark.integration
 def test_discovers_builtin_modules_and_submodules():
     records, errors = discover(plugins=False)
     assert [r.qualname for r in records] == [
+        "ai",
+        "ai.access",
         "graph",
         "org",
         "system",

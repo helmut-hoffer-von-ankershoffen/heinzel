@@ -11,9 +11,13 @@ except PackageNotFoundError:  # pragma: no cover - only when importing from a so
     __version__ = "0.0.0"
 
 from heinzel.kernel import (
+    AccessStatus,
+    AccessTest,
     ActionGate,
+    Adapters,
     AgentResult,
     AgentRunner,
+    AiAccess,
     AssetType,
     Budget,
     Calendar,
@@ -101,9 +105,13 @@ from heinzel.kernel import (
 )
 
 __all__ = [
+    "AccessStatus",
+    "AccessTest",
     "ActionGate",
+    "Adapters",
     "AgentResult",
     "AgentRunner",
+    "AiAccess",
     "AssetType",
     "Budget",
     "Calendar",

@@ -8,6 +8,8 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 
 | Module | What it does |
 | --- | --- |
+| [`ai`](#ai) | How hz reaches AI: the AI access in use, its status and a live test. |
+| [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
 | [`atlassian`](#atlassian) | Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. |
 | [`clock`](#clock) | What time it is for everyone on the team. |
 | [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
@@ -34,6 +36,24 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
 | [`zoom`](#zoom) | Read meetings from Zoom's meeting-summary emails: the meetings capability. |
+
+## `ai`
+
+How hz reaches AI: the AI access in use, its status and a live test.
+
+## `ai.access`
+
+Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the AI access options, the one in use, whether each is signed in, and what runs each use. | `hz ai access list` | `ai_access_list` | — | `GET /api/ai/access/list` |  | expert |
+| Use an AI access option: sets capabilities.ai_access, and agent_runner if the option names one. | `hz ai access use` | — | — | `POST /api/ai/access/use` | yes | expert |
+| Run one cheap live check of an AI access option and keep the result; this may cost a little. | `hz ai access test` | — | — | `POST /api/ai/access/test` | yes | expert |
+
+Settings: [`[ai.access]`](CONFIGURATION.md#aiaccess).
+
+Health checks: reported by `hz system doctor`.
 
 ## `atlassian`
 

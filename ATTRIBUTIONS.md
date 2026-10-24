@@ -6,7 +6,7 @@ Heinzelmännchen stands on the shoulders of giants. Every package below is open 
 people who chose to share their work with all of us, and `hz` would not exist without them. **Thank you.**
 
 This is every package `hz` ships to its users, with its license and the license text it comes with:
-55 Python packages that install with `hz` and its first-party plugins on macOS and Linux, and 145
+60 Python packages that install with `hz` and its first-party plugins on macOS and Linux, and 145
 JavaScript packages bundled into its web app. Tools that only build or test `hz` are not distributed, so they are not
 listed, though we are just as grateful for them. Licenses are checked against
 [.license-allowlist](.license-allowlist) by `make audit`.
@@ -26,6 +26,8 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [croniter](#croniter-624) | 6.2.4 | MIT |
 | [cryptography](#cryptography-5002) | 50.0.2 | Apache-2.0 OR BSD-3-Clause |
 | [fastapi](#fastapi-01611) | 0.161.1 | MIT |
+| [genai-prices](#genai-prices-0113) | 0.1.13 | MIT |
+| [griffelib](#griffelib-241) | 2.4.1 | ISC |
 | [h11](#h11-0160) | 0.16.0 | MIT |
 | [httpcore2](#httpcore2-2160) | 2.16.0 | BSD-3-Clause |
 | [httpx2](#httpx2-2160) | 2.16.0 | BSD-3-Clause |
@@ -37,6 +39,7 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [jsonschema](#jsonschema-4260) | 4.26.0 | MIT |
 | [jsonschema-specifications](#jsonschema-specifications-202591) | 2025.9.1 | MIT |
 | [keyring](#keyring-2570) | 25.7.0 | MIT |
+| [logfire-api](#logfire-api-530) | 5.3.0 | MIT |
 | [markdown-it-py](#markdown-it-py-420) | 4.2.0 | MIT |
 | [mcp](#mcp-230) | 2.3.0 | MIT |
 | [mcp-types](#mcp-types-230) | 2.3.0 | MIT |
@@ -48,7 +51,9 @@ Installed with `hz`: the runtime dependencies of the core and of every first-par
 | [pluggy](#pluggy-170) | 1.7.0 | MIT |
 | [pycparser](#pycparser-312) | 3.12 | BSD-3-Clause |
 | [pydantic](#pydantic-2141) | 2.14.1 | MIT |
+| [pydantic-ai-slim](#pydantic-ai-slim-2610) | 2.61.0 | MIT |
 | [pydantic-core](#pydantic-core-2501) | 2.50.1 | MIT |
+| [pydantic-graph](#pydantic-graph-2610) | 2.61.0 | MIT |
 | [pydantic-settings](#pydantic-settings-2161) | 2.16.1 | MIT |
 | [pygments](#pygments-2210) | 2.21.0 | BSD-2-Clause |
 | [pyjwt](#pyjwt-2151) | 2.15.1 | MIT |
@@ -593,6 +598,68 @@ THE SOFTWARE.
 
 </details>
 
+### genai-prices 0.1.13
+
+- License: MIT
+- Homepage: <https://github.com/pydantic/genai-prices>
+
+<details>
+<summary>License text</summary>
+
+```text
+The MIT License (MIT)
+
+Copyright (c) Pydantic Services Inc. 2025 to present
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
+### griffelib 2.4.1
+
+- License: ISC
+- Homepage: <https://github.com/mkdocstrings/griffe>
+
+<details>
+<summary>License text</summary>
+
+```text
+ISC License
+
+Copyright (c) 2021, Timothée Mazzucotelli and contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+</details>
+
 ### h11 0.16.0
 
 - License: MIT
@@ -959,6 +1026,13 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
 </details>
+
+### logfire-api 5.3.0
+
+- License: MIT
+- Homepage: <https://pypi.org/project/logfire-api/>
+
+No license file ships with this package; its metadata declares the license above.
 
 ### markdown-it-py 4.2.0
 
@@ -1765,6 +1839,40 @@ SOFTWARE.
 
 </details>
 
+### pydantic-ai-slim 2.61.0
+
+- License: MIT
+- Homepage: <https://github.com/pydantic/pydantic-ai/tree/main/pydantic_ai_slim>
+
+<details>
+<summary>License text</summary>
+
+```text
+The MIT License (MIT)
+
+Copyright (c) Pydantic Services Inc. 2024 to present
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
 ### pydantic-core 2.50.1
 
 - License: MIT
@@ -1777,6 +1885,40 @@ SOFTWARE.
 The MIT License (MIT)
 
 Copyright (c) 2022 Samuel Colvin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+</details>
+
+### pydantic-graph 2.61.0
+
+- License: MIT
+- Homepage: <https://github.com/pydantic/pydantic-ai>
+
+<details>
+<summary>License text</summary>
+
+```text
+The MIT License (MIT)
+
+Copyright (c) Pydantic Services Inc. 2024 to present
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
