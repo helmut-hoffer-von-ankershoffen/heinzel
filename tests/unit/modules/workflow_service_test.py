@@ -1,6 +1,7 @@
 """WorkflowService with test-only adapters and a fake agent runner: never a real agent, never the network."""
 
 import json
+import os
 import re
 import shlex
 import stat
@@ -1011,19 +1012,38 @@ def test_reading_drafts_contracts_and_health_never_deletes_expired_drafts(make, 
     assert old.record.exists()
 
 
-def test_doctor_reports_what_would_be_pruned_and_degrades_once_nothing_pruned_it_for_a_day(make, dirs):
+def test_doctor_reports_what_would_be_pruned_and_degrades_once_nothing_pruned_it_for_two_days(make, dirs):
     put(dirs[0])
     make().run("weekly-digest")
     assert {c.name: c.detail for c in make().health()}["workflow retention"] == "nothing older than 90 days"
-    fresh = {c.name: c for c in make(now=NOW + timedelta(days=90, hours=12)).health()}["workflow retention"]
+    fresh = {c.name: c for c in make(now=NOW + timedelta(days=91, hours=23)).health()}["workflow retention"]
     assert fresh.status is Status.UP
     assert re.fullmatch(
         r"1 draft\(s\) and 1 record\(s\), \d+ KiB, older than 90 days; hz workflow prune deletes them", fresh.detail
     )
-    stale = {c.name: c for c in make(now=NOW + timedelta(days=92)).health()}["workflow retention"]
+    stale = {c.name: c for c in make(now=NOW + timedelta(days=92, hours=1)).health()}["workflow retention"]
     assert stale.status is Status.DEGRADED
-    assert stale.detail.endswith("nothing has pruned them for over a day")
+    assert stale.detail.endswith("nothing has pruned them for 2 days")
     assert stale.fix.startswith("hz workflow prune")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads any directory")
+def test_a_contract_directory_that_cant_be_read_is_a_problem_of_its_own(make, dirs):
+    put(dirs[0])
+    old = make().run("weekly-digest").rendered
+    locked = make().drafts_dir / "me-locked"
+    locked.mkdir()
+    locked.chmod(0o000)
+    try:
+        service = make(now=NOW + timedelta(days=91))
+        check = {c.name: c for c in service.health()}["workflow retention"]
+        report = service.prune()
+    finally:
+        locked.chmod(0o700)
+    assert check.status is Status.DEGRADED
+    assert check.detail.startswith(f"Can't read {locked}")
+    assert report.files == [old.draft, old.record]
+    assert report.problems == [check.detail]
 
 
 def test_doctor_reports_a_drafts_directory_that_cant_be_pruned(make, tmp_path):

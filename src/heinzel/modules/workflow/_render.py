@@ -237,4 +237,5 @@ def render_prune(report: PruneReport) -> RenderableType:
         "Receipts are kept.\n"
     )
     files = Text("".join(f"  {path}\n" for path in report.files))  # paths name contracts: text, never markup
-    return Group(summary, files, _next(report.next))
+    problems = Text("".join(f"{problem}\n" for problem in report.problems), style="red")
+    return Group(summary, files, problems, _next(report.next))

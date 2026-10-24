@@ -39,7 +39,13 @@ RUNNER = "agent-runner"
 """Every contract renders with an agent session, so it always requires `agent-runner:read`."""
 MAX_TIMEOUT = timedelta(hours=2)
 MAX_RETENTION_DAYS = 36_500
-"""A century: any longer and the cutoff falls before the year 1, which `datetime` can't express; 0 means forever."""
+"""A century: a bound against typos (0, not a huge number, means forever); `datetime` would fail near 739,000."""
+DRAFTS = ("workflow", "drafts")
+"""Where drafts are saved, below the data directory: one directory per contract, `<namespace>-<name>`."""
+DRAFT_STAMP = "%Y%m%dT%H%M%SZ"
+"""Draft file names start with the render's time, so a listing sorts by it and retention ages by it."""
+DRAFT_NAME = re.compile(r"(?P<stamp>\d{8}T\d{6}Z)(?:-[1-9]\d*)?(?P<suffix>\.record\.json|\.md|\.json)")
+"""The names a render gives drafts and records: `<stamp>[-<n>]` and the suffix; only these are ever pruned."""
 RUNNER_IS_CONFIGURATION = (
     "the runner and model are configuration: `[capabilities] agent_runner`, `[system.runner] model`"
 )
@@ -529,6 +535,9 @@ class PruneReport(BaseModel):
     drafts: int = Field(description="How many of them are drafts.")
     records: int = Field(description="How many of them are `.record.json` files.")
     bytes: int = Field(description="Their total size.")
+    problems: list[str] = Field(
+        default_factory=list, description="Directories and files that couldn't be read or deleted; the rest were."
+    )
     next: list[Step] = Field(description="What to do next, as commands.")
 
 

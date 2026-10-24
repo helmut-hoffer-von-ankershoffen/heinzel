@@ -152,13 +152,15 @@ readable prose. Each point says what 0.2 builds and what comes later.
       a dry run names them) and the daily job `workflow:prune` delete them; it is an ordinary `JobLet`, so the daemon's
       tick runs it with a receipt that counts what went and names no file (ADR 0020, decision 10). `drafts`, `show`,
       `list` and the health check never delete; `hz system doctor` says how much `prune` would delete, and degrades
-      once expired files are more than a day overdue (nothing is pruning them).
+      once expired files are more than two days overdue (nothing is pruning them; a daily slot a laptop slept through
+      still runs at the next tick).
     - **Only what hz wrote, only where it wrote it.** Files named as a render names them (`<stamp>[-n].md`, `.json`,
       `.record.json`), in a contract's directory below `<data dir>/workflow/drafts/`; their age comes from the stamp in
       the name, not the file's times. The walk opens each directory relative to the last with `O_NOFOLLOW` and unlinks
       relative to its descriptor, so a symbolic link, also one swapped in while it runs, can't make it delete elsewhere;
       `workflow` or `drafts` being a link is an error. Directories stay (a render may be writing into one); a file
-      already gone is not an error, so pruning twice deletes nothing more.
+      already gone is not an error, so pruning twice deletes nothing more. A contract directory or file that can't be
+      read or deleted is reported and the rest are still pruned; `prune` then exits with 1 and the job fails.
     - **Receipts are kept, and hold no draft text** (chosen over pruning receipt payloads or checkpointing the chain).
       A receipt's id hashes its content and chains it to the job's previous receipt, so deleting a receipt or its
       payload would break every later link, and a checkpoint (a signed or recorded summary of the chain so far) is

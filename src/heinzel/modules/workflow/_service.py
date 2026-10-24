@@ -40,6 +40,8 @@ from heinzel import (
 from heinzel.kernel import KERNEL_SECTION, Budget, CapabilityView, CompiledJobs, Requester, ToolProfile
 from heinzel.modules.workflow._contracts import Contract, collect, read_contract
 from heinzel.modules.workflow._models import (
+    DRAFT_STAMP,
+    DRAFTS,
     RUNNER,
     SUFFIX,
     CheckReport,
@@ -64,7 +66,7 @@ from heinzel.modules.workflow._models import (
     Step,
     WorkflowSettings,
 )
-from heinzel.modules.workflow._retention import Expired, expired
+from heinzel.modules.workflow._retention import Sweep, expired
 from heinzel.modules.workflow._starter import is_name, slug, starter
 
 logger = logging.getLogger(__name__)
@@ -72,8 +74,6 @@ MODULE = "workflow"
 FETCH_MARGIN = timedelta(minutes=2)
 """A job may take this much longer than its agent session: fetching inputs and saving the draft."""
 NOT_PUBLISHED = "the draft waits for `hz inbox` (not built yet); nothing is published automatically"
-STAMP = "%Y%m%dT%H%M%SZ"
-"""Draft file names start with the render's time, so a listing sorts by it without reading the records."""
 NOT_SCHEDULED = "not-scheduled"
 PIN_CHANGED = "pin-changed"
 """Kinds of reasons a contract isn't a daemon job; the doctor treats a changed pin specially."""
@@ -81,8 +81,8 @@ MAX_INPUT_BYTES = 256 * 1024
 """An input whose JSON is larger fails the run rather than being cut silently: the agent would draft from half."""
 MAX_PROMPT_BYTES = 1024 * 1024
 PRUNE = "hz workflow prune"
-PRUNE_GRACE = timedelta(days=1)
-"""The daemon prunes daily, so files expired for longer than this mean nothing is pruning them; doctor says so."""
+PRUNE_GRACE = timedelta(days=2)
+"""The daemon prunes daily, at a slot a sleeping laptop may miss; files expired for longer mean nothing prunes them."""
 RUNNER_TOOLS = {"claude-code": "read_only_tools", "command": "command_read_only_tools"}
 """The `[system.runner]` setting that lists the read-only tools each core runner accepts (ADR 0029)."""
 
@@ -114,7 +114,8 @@ class WorkflowService:
         self._kernel = kernel
         self._workflow = workflow
         self._clock = clock or (lambda: datetime.now(UTC))
-        self.drafts_dir = settings.data_dir / MODULE / "drafts"
+        self.data_dir = settings.data_dir
+        self.drafts_dir = settings.data_dir.joinpath(*DRAFTS)
 
     @classmethod
     def for_user(cls, kernel: Kernel, workflow: WorkflowSettings) -> "WorkflowService":
@@ -676,7 +677,7 @@ class WorkflowService:
                 continue
             stamp = path.stem.partition("-")[0]
             try:
-                created = datetime.strptime(stamp, STAMP).replace(tzinfo=UTC)
+                created = datetime.strptime(stamp, DRAFT_STAMP).replace(tzinfo=UTC)
             except ValueError:
                 created = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
             record = directory / f"{path.stem}.record.json"
@@ -728,17 +729,24 @@ class WorkflowService:
             return Check(name=name, status=Status.UP, detail="drafts and records are kept forever (retention_days = 0)")
         cutoff = self._clock() - timedelta(days=days)
         try:
-            found = expired(self.drafts_dir, cutoff, delete=False)
+            sweep = expired(self.data_dir, cutoff, delete=False)
         except HeinzelError as exc:
             return Check(name=name, status=Status.DEGRADED, detail=str(exc), fix=f"Fix it, then run {PRUNE}")
-        if not found:
-            return Check(name=name, status=Status.UP, detail=f"nothing older than {days} days")
-        detail = f"{_amount(found)} older than {days} days; {PRUNE} deletes them"
-        if found[0].created < cutoff - PRUNE_GRACE:
+        if sweep.problems:
             return Check(
                 name=name,
                 status=Status.DEGRADED,
-                detail=f"{detail}; nothing has pruned them for over a day",
+                detail="; ".join(sweep.problems),
+                fix=f"Fix the permissions or move the entry aside, then run {PRUNE}",
+            )
+        if not sweep.found:
+            return Check(name=name, status=Status.UP, detail=f"nothing older than {days} days")
+        detail = f"{_amount(sweep)} older than {days} days; {PRUNE} deletes them"
+        if sweep.found[0].created < cutoff - PRUNE_GRACE:
+            return Check(
+                name=name,
+                status=Status.DEGRADED,
+                detail=f"{detail}; nothing has pruned them for {PRUNE_GRACE.days} days",
                 fix=f"{PRUNE}, or install the daemon, which prunes daily: hz system daemon install",
             )
         return Check(name=name, status=Status.UP, detail=detail)
@@ -749,14 +757,15 @@ class WorkflowService:
         """Delete the drafts and records older than `[workflow] retention_days`; `dry_run` only lists them.
 
         Only files hz wrote under the drafts directory are considered, never through a symbolic link; receipts are
-        kept. Running it again deletes nothing more.
+        kept. Running it again deletes nothing more. A contract directory or file that can't be read or deleted is
+        listed under `problems`, and the rest are still deleted.
 
         Raises:
-            HeinzelError: If a directory below the data directory is a symbolic link, or a file can't be deleted.
+            HeinzelError: If `workflow` or `drafts` below the data directory is a symbolic link or can't be read.
         """
         days = self._workflow.retention_days
         cutoff = self._clock() - timedelta(days=days) if days else None
-        found = expired(self.drafts_dir, cutoff, delete=not dry_run) if cutoff is not None else []
+        sweep = expired(self.data_dir, cutoff, delete=not dry_run) if cutoff is not None else Sweep()
         if cutoff is None:
             steps = [
                 Step(
@@ -764,8 +773,8 @@ class WorkflowService:
                     why="drafts are kept forever; this deletes them 90 days after their render",
                 )
             ]
-        elif dry_run and found:
-            steps = [Step(command=PRUNE, why=f"delete these {len(found)} files")]
+        elif dry_run and sweep.found:
+            steps = [Step(command=PRUNE, why=f"delete these {len(sweep.found)} files")]
         else:
             steps = [Step(command="hz workflow drafts", why="the drafts that are kept")]
         return PruneReport(
@@ -773,10 +782,11 @@ class WorkflowService:
             retention_days=days,
             cutoff=cutoff,
             directory=self.drafts_dir,
-            files=[e.path for e in found],
-            drafts=sum(not e.record for e in found),
-            records=sum(e.record for e in found),
-            bytes=sum(e.bytes for e in found),
+            files=[e.path for e in sweep.found],
+            drafts=sweep.drafts,
+            records=sweep.records,
+            bytes=sweep.bytes,
+            problems=sweep.problems,
             next=steps,
         )
 
@@ -935,7 +945,7 @@ class WorkflowService:
                 raise HeinzelError(msg)
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         directory.chmod(0o700)
-        stamp = f"{packet.as_of.astimezone(UTC):%Y%m%dT%H%M%SZ}"
+        stamp = packet.as_of.astimezone(UTC).strftime(DRAFT_STAMP)
         extension = ".json" if packet.format == "json" else ".md"
         for attempt in range(1, 1000):
             stem = stamp if attempt == 1 else f"{stamp}-{attempt}"
@@ -949,11 +959,9 @@ class WorkflowService:
         raise HeinzelError(msg)  # pragma: no cover
 
 
-def _amount(found: list[Expired]) -> str:
-    """`found` counted for a person: drafts, records and their size."""
-    drafts = sum(not e.record for e in found)
-    size = math.ceil(sum(e.bytes for e in found) / 1024)
-    return f"{drafts} draft(s) and {len(found) - drafts} record(s), {size} KiB,"
+def _amount(sweep: Sweep) -> str:
+    """What a sweep found, counted for a person: drafts, records and their size."""
+    return f"{sweep.drafts} draft(s) and {sweep.records} record(s), {math.ceil(sweep.bytes / 1024)} KiB,"
 
 
 def _write(path: Path, text: str, *, exclusive: bool = False) -> None:

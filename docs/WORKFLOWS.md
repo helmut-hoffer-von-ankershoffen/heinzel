@@ -116,7 +116,7 @@ hz system config set workflow.retention_days 30      # keep them 30 days; 0 keep
 ```
 
 The daemon runs the job `workflow:prune` daily, so with the daemon installed you don't run it yourself; `hz system
-doctor` says how much would be deleted, and degrades when expired drafts are more than a day overdue. Reading drafts
+doctor` says how much would be deleted, and degrades when expired drafts are more than two days overdue. Reading drafts
 never deletes them. Only files a render wrote below `<data dir>/workflow/drafts/` are deleted, never through a symbolic
 link. Receipts the daemon wrote before this change, with 0.2.0, hold the draft's text too; they are never rewritten,
 since that would break their chain. To drop them, move that job's receipts out of `<data dir>/receipts/`, which starts

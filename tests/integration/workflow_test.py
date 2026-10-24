@@ -4,6 +4,7 @@ The adapters are test-only and the agent runner is a fake: no test runs a real a
 """
 
 import json
+import os
 import shutil
 from datetime import timedelta
 from pathlib import Path
@@ -278,6 +279,26 @@ def test_retention_zero_keeps_drafts_forever_and_says_so(make_kernel, contracts)
     assert "Drafts and records are kept forever" in str(text)
     assert "hz system config set workflow.retention_days 90" in str(text)
     assert draft.exists()
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads any directory")
+def test_what_cant_be_pruned_fails_the_command_and_the_daemon_job_after_pruning_the_rest(kernel):
+    draft, _ = old_draft(kernel)
+    locked = draft.parent.parent / "me-locked"
+    locked.mkdir()
+    locked.chmod(0o000)
+    try:
+        code, text = hz(kernel, "workflow", "prune", json_output=False)
+        assert code == 1
+        assert unwrapped(f"Can't read {locked}") in unwrapped(text)
+        old_draft(kernel)
+        code, report = hz(kernel, "system", "daemon", "tick", "--job", "workflow:prune")
+    finally:
+        locked.chmod(0o700)
+    assert code == 1
+    assert report["runs"][0]["disposition"] == "failed"
+    assert report["runs"][0]["error"].startswith("pruned 1 draft(s) and 1 record(s), but: Can't read")
+    assert not draft.exists()
 
 
 def test_the_daemon_prunes_on_its_tick_and_the_receipt_counts_without_naming_files(kernel):

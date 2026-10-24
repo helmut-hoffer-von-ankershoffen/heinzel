@@ -16,7 +16,7 @@ from typing import Annotated
 
 from pydantic import Field, JsonValue
 
-from heinzel import Check, Module
+from heinzel import Check, HeinzelError, Module
 from heinzel.kernel import CompiledJobs
 from heinzel.modules.workflow._models import (
     CheckReport,
@@ -64,6 +64,10 @@ Name = Annotated[
 
 def _check_exit_code(report: CheckReport) -> int:
     return 1 if report.errors else 0
+
+
+def _prune_exit_code(report: PruneReport) -> int:
+    return 1 if report.problems else 0
 
 
 @module.operation(render=render_list)
@@ -130,7 +134,7 @@ def run(
 
 # Pruning deletes local files, and a dry run lists drafts by name; a web page can reach a local REST server, so the
 # CLI and MCP get it, like `drafts`.
-@module.operation(read_only=False, render=render_prune, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_prune, exit_code=_prune_exit_code, heads={"cli", "mcp"})
 def prune(
     service: WorkflowService,
     dry_run: Annotated[bool, Field(description="Only list what would be deleted; delete nothing.")] = False,
@@ -142,8 +146,17 @@ def prune(
 # Housekeeping is an ordinary job, so the daemon's tick runs it with a receipt and `hz system daemon jobs` shows it.
 @module.job(schedule="@daily", name="prune", timeout="5m")
 def prune_expired(service: WorkflowService) -> JsonValue:
-    """Delete drafts and records older than `[workflow] retention_days`; the receipt counts them."""
-    return service.prune().model_dump(mode="json", include={"retention_days", "cutoff", "drafts", "records", "bytes"})
+    """Delete drafts and records older than `[workflow] retention_days`; the receipt counts them.
+
+    Raises:
+        HeinzelError: If something couldn't be pruned, after pruning the rest, so the daemon reports the job as failed.
+    """
+    report = service.prune()
+    counts = report.model_dump(mode="json", include={"retention_days", "cutoff", "drafts", "records", "bytes"})
+    if report.problems:
+        msg = f"pruned {report.drafts} draft(s) and {report.records} record(s), but: {'; '.join(report.problems)}"
+        raise HeinzelError(msg)
+    return counts
 
 
 @module.health
