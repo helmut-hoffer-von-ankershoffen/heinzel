@@ -114,7 +114,7 @@ secrets: ## Scan the whole git history for credentials with gitleaks (the pre-co
 licenses: ## Check that runtime dependencies' licenses are on .license-allowlist, so releases stay MIT-compatible
 	bash scripts/check_licenses.sh
 
-icons: ## Draw the web app's icons (web/public) with the notifier's icon drawing (macOS with the Command Line Tools)
+icons: ## Make every image of Heinzelmännchen from heinzel.svg: the web app's icons, the favicon, the theme's logo (macOS 14+)
 	@uv run --quiet --script scripts/notifier.py icons
 
 build: ## Build wheels and sdists into dist/ (the core and every first-party plugin)
