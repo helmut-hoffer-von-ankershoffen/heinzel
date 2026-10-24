@@ -13,7 +13,8 @@ say (`pin_terminal`), so output that depends on either fails locally too.
 
 Every test runs with its own configuration, data, cache, state, log and daemon unit directories, so nothing touches
 the developer's setup, and credentials come from the (empty) environment instead of the OS keychain. A test that
-stores credentials asks for `hz_credentials`, which keeps them in memory.
+stores credentials asks for `hz_credentials`, which keeps them in memory; one that runs a setup step asks for
+`hz_prompter`, which answers from a script.
 
 A project that declares the markers `unit`, `integration` and `e2e` (Heinzelmännchen and every plugin from its
 template) also gets the test-suite policy of docs/CODING_STANDARDS.md: every test carries exactly one of them, they
@@ -29,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 if TYPE_CHECKING:
-    from heinzel.kernel import Credentials, Kernel
+    from heinzel.kernel import Credentials, Kernel, ScriptedPrompter
 
 # Heinzelmännchen itself is imported inside the fixtures: pytest loads this plugin before coverage measurement starts,
 # and a top-level import would hide the import-time lines of every module from the coverage report.
@@ -225,6 +226,20 @@ def hz_credentials(hz_kernel: "Kernel") -> "Credentials":
     credentials = Credentials(MemoryBackend(), [(r.qualname, let) for r, let in hz_kernel.lets(CredentialLet)])
     hz_kernel.bind(Credentials, credentials)
     return credentials
+
+
+@pytest.fixture
+def hz_prompter(hz_kernel: "Kernel") -> "ScriptedPrompter":
+    """Scripted answers for setup steps run through `hz` (ADR 0032): `hz_prompter.answers += ["", "Tokyo"]`.
+
+    `hz("clock", "setup", json=False)` then asks this prompter instead of a terminal; `hz_prompter.transcript` holds
+    every question with its answer and every line the step said.
+    """
+    from heinzel.kernel import Prompter, ScriptedPrompter  # noqa: PLC0415 - see the module comment
+
+    prompter = ScriptedPrompter()
+    hz_kernel.bind(Prompter, prompter)
+    return prompter
 
 
 @pytest.fixture

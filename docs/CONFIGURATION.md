@@ -36,8 +36,8 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `zones` | `HZ_CLOCK__ZONES` | `['Europe/Berlin', 'America/New_York', 'America/Los_Angeles']` | The team's time zones, as IANA names. |
-| `working_hours` | `HZ_CLOCK__WORKING_HOURS` | `(9, 18)` | Start and end hour of a working day. |
+| `zones` | `HZ_CLOCK__ZONES` | `[{'name': 'Europe/Berlin', 'hours': [9, 18]}, {'name': 'America/New_York', 'hours': [9, 18]}, {'name': 'America/Los_Angeles', 'hours': [9, 18]}]` | The team's time zones: IANA names, or tables with hours, e.g. { name = "Asia/Tokyo", hours = [10, 19] }. |
+| `working_hours` | `HZ_CLOCK__WORKING_HOURS` | `None` | Deprecated: the hours of every zone given by name only. Give each zone its hours instead. |
 
 ## `[system.agent]`
 

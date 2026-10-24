@@ -33,9 +33,11 @@ from heinzel.kernel._lets import (
     RequirementLet,
     ServiceLet,
     SettingsLet,
+    SetupLet,
 )
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
+from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._spec import PROJECT_NAME, Spec
 
@@ -120,6 +122,7 @@ class Kernel:
             Settings: self.settings,
             Config: self.config,
             Progress: Progress(),
+            Prompter: Prompter(),
         }
         self._factories: dict[type[Any], Callable[..., Any]] = {Installation: Installation}
         self._providers: dict[type[Any], str] = {}
@@ -396,6 +399,8 @@ class Kernel:
                         owners.setdefault(let.factory, module)
                     case InfoLet() | HealthLet():
                         owners.setdefault(let.provider, module)
+                    case SetupLet():
+                        owners.setdefault(let.func, module)
                     case _:
                         pass
         return requesters, owners
