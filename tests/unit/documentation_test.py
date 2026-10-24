@@ -87,8 +87,8 @@ def test_every_page_shows_the_same_linked_badges_at_most_ten():
     badges = blocks["README.md"].splitlines()
     assert 1 <= len(badges) <= 10
     assert [badge for badge in badges if not BADGE.match(badge)] == []
-    pages_with_badges = {p.name for p in REPO.glob("*.md") if "img.shields.io" in p.read_text(encoding="utf-8")}
-    assert pages_with_badges <= set(BADGE_PAGES), "badges belong in the generated block"
+    outside = {p.name for p in REPO.glob("*.md") if "[![" in BADGES.sub("", p.read_text(encoding="utf-8"))}
+    assert outside == set(), "badges belong in the generated block"
     assert "badge" not in (REPO / "LICENSE").read_text(encoding="utf-8")
 
 
