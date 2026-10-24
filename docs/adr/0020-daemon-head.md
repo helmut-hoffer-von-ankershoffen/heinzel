@@ -146,12 +146,56 @@ our own.
 
 ### Confirmation
 
-Not yet: proposed, implementation starts after 0.1.0. The plan names golden-file tests for the plist and unit
-writers, a fake clock for `tick()`, and `doctor` checks for the state repository, tokens, the launchd Login Items
-state and a stale shim path.
+Partly, for the local part built in 0.2 (see the implementation status under More Information): golden-file tests for the plist and units
+(`tests/unit/modules/daemon_units_test.py`), `tick()` driven by a fake clock
+(`tests/unit/modules/daemon_service_test.py`) and the CLI and foreground loop (`tests/integration/daemon_test.py`).
+Still planned: `doctor` checks for the state repository, tokens, the launchd Login Items state and a stale shim path,
+and tests of two daemons plus Actions against one state repository.
 
 ## More Information
 
 - Amends the "always-on runner" row of [ADR 0010](0010-towards-a-reactive-workflow-engine.md); see Consequences.
 - Research, sources and the phased plan: [docs/research/daemon-head.md](../research/daemon-head.md).
 - Implementation starts after 0.1.0.
+
+**Implementation status.** The status stays **proposed** until the whole decision is built; 0.2 builds its local,
+personal part.
+
+**Built in 0.2 (the daemon runs locally):**
+
+- `JobLet` and `@module.job(schedule=..., timeout=..., retries=..., catch_up=..., idempotency=...)` in the public
+  API, with `scope="personal"` only. The `system.daemon` submodule consumes it: `install` (launchd LaunchAgent or
+  systemd user service and timer, pointing at the shim from `uv tool dir --bin`; `--interval`, `--dry-run`),
+  `uninstall`, `status` (also a `HealthLet`), `logs`, `tick` (`--dry-run`, `--job`), `pause`, `resume`, `jobs`.
+  `hz system serve daemon` is the foreground loop. Golden-file tests cover the plist and the units; a fake clock
+  drives `tick`.
+- Where the code lives: the reconciliation is in the `system.daemon` service, because `tick` must be an ordinary
+  operation in every head and modules can't import heads. `heinzel.heads.daemon` finds the `tick` operation through
+  the kernel and invokes it in a loop, so heads still import no module. When the `Ledger` protocol moves into the
+  kernel (0.3), the reconciliation can follow it.
+- A local ledger replaces the shared one: one JSON file per receipt in `<data_dir>/receipts/`, hash-chained per job
+  (`id` is the SHA-256 of the canonical JSON without `id`; `prev` names the job's previous receipt), with `job`,
+  `wake` (`schedule|manual`), `disposition` (`rendered|skipped|failed`), `as_of` (the slot), `idempotency_key` and
+  `error`. A changed receipt or a broken chain stops the tick with a message rather than being repaired silently.
+- Slots and catch-up. Missed slots are computed from the job's last `schedule` receipt. A job without one starts at
+  the previous tick, or one interval ago on the first tick, so a new job never replays its history. `latest` runs the
+  newest missed slot, `all` every missed slot (at most 100 per tick, oldest first), and `skip` only a slot that fell
+  within the last interval, recording a missed one as `skipped`. A failed slot is consumed; its retries happen within
+  the tick. A slot whose idempotency key (default `<job>@<slot>`) was rendered is `skipped`.
+- Intervals divide an hour (1 to 30 minutes, or 60), so launchd's `Minute` list and systemd's `OnCalendar=*:0/N`
+  fire on the same slots.
+- Operations hygiene: a local tick lock (`flock`) and pause flag under `<state_dir>/daemon/`, a JSON-lines log in
+  `<log_dir>/daemon.jsonl` rotated by size, and a timeout per job, in process: an overrunning job is abandoned in a
+  daemon thread so the tick still exits.
+- Schedule arithmetic: **croniter**, not APScheduler's `CronTrigger`. Checked on 2026-10-24: croniter 6.2.4 was
+  released on 2026-07-10 (6.1 to 6.2.4 since March 2026), maintained by the pallets-eco organisation, with its
+  repository pushed to on 2026-10-23 and 18 open issues; it depends only on python-dateutil and has typeshed stubs
+  (`types-croniter`). APScheduler's 3.x line gets maintenance releases (3.11.3 on 2026-06-28) while 4.0 has been
+  an alpha since 2025-04 (4.0.0a6), its repository has 74 open issues, and it brings tzlocal and a scheduler we don't
+  use. croniter's `get_next` and `get_prev` are exactly the "slots since the last receipt" question.
+
+**Remaining:** the `state` module with `Ledger`, `Leases` and `Inbox` protocols and the shared ledger in a GitHub
+state repository; lease refs; `WatchLet` and conditional polling; `scope="team"`, `publishes`, `concurrency`,
+owners and the Actions runner; approvals and `hz inbox`; memo keys and fingerprints; per-job subprocesses with
+their timeout; the resident mode; the team kill switch; `doctor` checks for a stale shim path and the Login Items
+state; and `hz system update` taking the tick lock and restarting resident mode.
