@@ -4,8 +4,9 @@ Everything here is pure: text in, a `Contract` with its diagnostics out. Nothing
 kernel; checks that need the kernel (publish operations, name collisions) live in the service.
 """
 
+import hashlib
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
@@ -15,7 +16,19 @@ from pydantic import ValidationError
 from pydantic_core import ErrorDetails
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
-from heinzel.modules.workflow._models import SCHEMA_VERSION, SUFFIX, Diagnostic, Frontmatter, Namespace, Severity
+from heinzel.modules.workflow._models import (
+    SCHEMA_VERSION,
+    SUFFIX,
+    Agent,
+    Diagnostic,
+    Frontmatter,
+    Hz,
+    Input,
+    Namespace,
+    Output,
+    Publish,
+    Severity,
+)
 
 KeyPath = tuple[str | int, ...]
 
@@ -64,9 +77,18 @@ RETIRED_SECTIONS = {
     "services": "inputs are declared in `hz.inputs` and described under ### Requires",
     "wiring": "inputs are declared in `hz.inputs`; there is no semantic wiring",
     "execution": "ProseScript is not supported; give guidance under ### Steps",
-    "tools": "the agent gets no hz tools in this version; read-only runner tools go in `hz.agent.tools`",
 }
-_HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$")
+DEFERRED_SECTIONS = {
+    "tools": "the agent gets no hz tools yet; read-only runner tools go in `hz.agent.tools` (ADR 0029, option a)",
+}
+MAX_BYTES = 256 * 1024
+"""Contract files larger than this aren't read: a contract is a page of prose, not a data dump."""
+MAX_DEPTH = 32
+MAX_NODES = 10_000
+_CORE_TAGS = frozenset({_STR, _BOOL, _INT, _FLOAT, _NULL})
+_SCHEDULE_LINE = re.compile(r"^\s*schedule\s*:")
+_QUOTE_SCHEDULE = 'quote the cron expression: schedule: "0 7 * * MON"'
+_HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$")
 _FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
 _ITEM = re.compile(r"^[-*+][ \t]+`([a-z][a-z0-9_]*)`")
 _LIST = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S")
@@ -105,6 +127,8 @@ class Contract:
     diagnostics: tuple[Diagnostic, ...] = field(default=())
     lines: Mapping[KeyPath, int] = field(default_factory=dict[KeyPath, int])
     """The 0-based frontmatter line of every key path, for diagnostics added later."""
+    sha256: str = ""
+    """SHA-256 of the file's bytes, as `sha256:<hex>`; what `[workflow] schedule_team` pins."""
 
     def line_of(self, *path: str | int) -> int:
         """The file line of the deepest known key along `path`; 1 when there is no frontmatter."""
@@ -139,10 +163,11 @@ class _Problems:
 
 
 class _YamlError(Exception):
-    def __init__(self, line: int, code: str, message: str) -> None:
+    def __init__(self, line: int, code: str, message: str, hint: str = "") -> None:
         super().__init__(message)
         self.line = line
         self.code = code
+        self.hint = hint
 
 
 def contract_name(path: Path) -> str:
@@ -151,15 +176,39 @@ def contract_name(path: Path) -> str:
 
 
 def read_contract(path: Path, namespace: Namespace, text: str | None = None) -> Contract:
-    """Read and check one contract file, without a kernel. `text` stands in for the file's content in tests."""
+    """Read and check one contract file, without a kernel. `text` stands in for the file's content in tests.
+
+    Never raises: whatever goes wrong with one file is that file's diagnostic, so one bad file never stops the daemon.
+    """
+    try:
+        return _read(path, namespace, text)
+    except Exception as exc:  # noqa: BLE001 - isolation boundary: one file's failure is its own diagnostic
+        problems = _Problems(path)
+        problems.add(1, "HZC001", "file", f"can't read the contract: {type(exc).__name__}: {exc}")
+        return Contract(path, namespace, contract_name(path), None, "", tuple(problems.found))
+
+
+def _read(path: Path, namespace: Namespace, text: str | None) -> Contract:
     problems = _Problems(path)
     name = contract_name(path)
     try:
-        content = path.read_text(encoding="utf-8") if text is None else text
+        if text is None:
+            size = path.stat().st_size  # before reading, so a huge file is never loaded
+            if size > MAX_BYTES:
+                problems.add(1, "HZC001", "file", f"the file is {size // 1024} KiB; contracts are at most 256 KiB")
+                return Contract(path, namespace, name, None, "", tuple(problems.found))
+            raw = path.read_bytes()
+        else:
+            raw = text.encode()
+        content = raw.decode("utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         problems.add(1, "HZC001", "file", f"can't read the file: {exc}")
         return Contract(path, namespace, name, None, "", tuple(problems.found))
-    content = content.replace("\r\n", "\n").removeprefix("﻿")
+    if len(raw) > MAX_BYTES:
+        problems.add(1, "HZC001", "file", f"the file is {len(raw) // 1024} KiB; contracts are at most 256 KiB")
+        return Contract(path, namespace, name, None, "", tuple(problems.found))
+    digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+    content = content.replace("\r\n", "\n").removeprefix("\ufeff")
     if not path.name.endswith(SUFFIX):
         problems.add(1, "HZC010", "file", f"a contract file is named `<name>{SUFFIX}`", f"rename it to {name}{SUFFIX}")
     split = _split(content)
@@ -171,13 +220,14 @@ def read_contract(path: Path, namespace: Namespace, text: str | None = None) -> 
             "no YAML frontmatter",
             "start the file with a line `---`, the frontmatter, and another line `---`",
         )
-        return Contract(path, namespace, name, None, content, tuple(problems.found))
+        return Contract(path, namespace, name, None, content, tuple(problems.found), sha256=digest)
     yaml_text, body, body_line = split
     try:
         data, lines = _load(yaml_text)
     except _YamlError as exc:
-        problems.add(exc.line + 2, exc.code, "frontmatter", str(exc))
-        return Contract(path, namespace, name, None, _COMMENT.sub("", body).strip(), tuple(problems.found))
+        problems.add(exc.line + 2, exc.code, "frontmatter", str(exc), exc.hint)
+        body_text = _COMMENT.sub("", body).strip()
+        return Contract(path, namespace, name, None, body_text, tuple(problems.found), sha256=digest)
     frontmatter = _validate(data, lines, problems)
     if frontmatter is not None and frontmatter.name != name:
         problems.add(
@@ -188,7 +238,8 @@ def read_contract(path: Path, namespace: Namespace, text: str | None = None) -> 
             f"rename the file to {frontmatter.name}{SUFFIX} or set `name: {name}`",
         )
     _check_body(body, body_line, frontmatter, problems)
-    return Contract(path, namespace, name, frontmatter, _COMMENT.sub("", body).strip(), tuple(problems.found), lines)
+    body_text = _COMMENT.sub("", body).strip()
+    return Contract(path, namespace, name, frontmatter, body_text, tuple(problems.found), lines, digest)
 
 
 def _split(content: str) -> tuple[str, str, int] | None:
@@ -203,27 +254,70 @@ def _split(content: str) -> tuple[str, str, int] | None:
 
 
 def _load(text: str) -> tuple[dict[str, Any], dict[KeyPath, int]]:
-    """Parse YAML, keeping the line of every key; duplicate and non-string keys are errors.
+    """Parse YAML, keeping the line of every key, within limits that keep a hostile file cheap.
+
+    Anchors and aliases (the "billion laughs"), explicit tags other than the core scalar ones, more than 32 levels of
+    nesting and more than 10,000 nodes are refused by scanning the event stream before anything is built.
 
     Raises:
-        _YamlError: If the YAML doesn't parse, has a duplicate or non-string key, or isn't a mapping.
+        _YamlError: If the YAML doesn't parse, breaks a limit, has a duplicate or non-string key, or isn't a mapping.
     """
+    source = text.split("\n")
+
+    def hint(line: int) -> str:
+        return _QUOTE_SCHEDULE if 0 <= line < len(source) and _SCHEDULE_LINE.match(source[line]) else ""
+
     lines: dict[KeyPath, int] = {}
     try:
+        _scan(text)
         loader = _Loader(text)
         try:
             node = loader.get_single_node()
             data = _build(loader, node, (), lines) if node is not None else None
         finally:
             loader.dispose()
+    except _YamlError as exc:
+        exc.hint = exc.hint or hint(exc.line)
+        raise
     except yaml.MarkedYAMLError as exc:
         mark = exc.problem_mark or exc.context_mark
-        raise _YamlError(mark.line if mark else 0, "HZC001", f"YAML doesn't parse: {exc.problem or exc}") from exc
+        line = mark.line if mark else 0
+        raise _YamlError(line, "HZC001", f"YAML doesn't parse: {exc.problem or exc}", hint(line)) from exc
     except yaml.YAMLError as exc:
         raise _YamlError(0, "HZC001", f"YAML doesn't parse: {exc}") from exc
     if not isinstance(data, dict):
         raise _YamlError(0, "HZC001", "the frontmatter must be a mapping of keys to values")
     return cast("dict[str, Any]", data), lines
+
+
+def _scan(text: str) -> None:
+    """Refuse what the frontmatter never needs, from the event stream, before any node is built.
+
+    Raises:
+        _YamlError: At the first anchor, alias, non-core tag, nesting deeper than 32 or node past 10,000.
+    """
+    depth = 0
+    nodes = 0
+    parse = cast("Callable[..., Iterator[yaml.Event]]", yaml.parse)  # pyright: ignore[reportUnknownMemberType] - PyYAML stubs leave its Loader untyped
+    for event in parse(text, Loader=_Loader):
+        line = event.start_mark.line if event.start_mark is not None else 0
+        if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None) is not None:
+            raise _YamlError(line, "HZC004", "anchors and aliases aren't allowed", "write each value out")
+        tag = getattr(event, "tag", None)
+        if isinstance(event, yaml.CollectionStartEvent) and tag is not None:
+            raise _YamlError(line, "HZC004", f"tags aren't allowed on lists and maps: {tag}")
+        if isinstance(event, yaml.ScalarEvent) and tag not in {None, "!"} and tag not in _CORE_TAGS:
+            raise _YamlError(line, "HZC004", f"the tag {tag} isn't allowed; only text, numbers, booleans and null")
+        if isinstance(event, yaml.NodeEvent):
+            nodes += 1
+            if nodes > MAX_NODES:
+                raise _YamlError(line, "HZC004", f"more than {MAX_NODES} values; a contract's frontmatter is small")
+        if isinstance(event, yaml.CollectionStartEvent):
+            depth += 1
+            if depth > MAX_DEPTH:
+                raise _YamlError(line, "HZC004", f"nested deeper than {MAX_DEPTH} levels")
+        elif isinstance(event, yaml.CollectionEndEvent):
+            depth -= 1
 
 
 def _build(loader: _Loader, node: Node, path: KeyPath, lines: dict[KeyPath, int]) -> Any:  # noqa: ANN401 - YAML
@@ -256,6 +350,11 @@ def _line(lines: Mapping[KeyPath, int], path: KeyPath) -> int:
 
 def _validate(data: dict[str, Any], lines: dict[KeyPath, int], problems: _Problems) -> Frontmatter | None:
     data = {k: v for k, v in data.items() if not k.startswith("x-")}  # extension keys, ignored by contract
+    deferred = _deferred(data)
+    for path, message in deferred:
+        problems.add(_line(lines, path), "HZC023", ".".join(map(str, path)), message)
+    if deferred:
+        return None
     hz = data.get("hz")
     if isinstance(hz, dict):
         version = cast("dict[str, Any]", hz).get("schema")
@@ -274,6 +373,38 @@ def _validate(data: dict[str, Any], lines: dict[KeyPath, int], problems: _Proble
         for error in exc.errors():
             _report(error, lines, problems)
         return None
+
+
+def _deferred(data: dict[str, Any]) -> list[tuple[KeyPath, str]]:
+    """Every key ADR 0021 names that this version doesn't build, in one pass, so all are reported at once."""
+    hz = data.get("hz")
+    if not isinstance(hz, dict):
+        return []
+    hz_map = cast("dict[str, Any]", hz)
+    places: list[tuple[object, type[Any], KeyPath]] = [
+        (hz_map, Hz, ("hz",)),
+        (hz_map.get("agent"), Agent, ("hz", "agent")),
+    ]
+    for key, model in (("inputs", Input), ("outputs", Output), ("publishes", Publish)):
+        places += [(value, model, ("hz", key, index)) for index, value in _items(hz_map.get(key))]
+    found = [
+        ((*path, key), f"`{key}` is not supported yet: {model.deferred_keys[key]}")
+        for value, model, path in places
+        if isinstance(value, dict)
+        for key in cast("dict[str, Any]", value)
+        if key in model.deferred_keys
+    ]
+    if hz_map.get("catch_up") == "all":
+        found.append((("hz", "catch_up"), "`catch_up: all` is not supported yet: it comes with schedule slots"))
+    return found
+
+
+def _items(value: object) -> list[tuple[str | int, object]]:
+    if isinstance(value, dict):
+        return list(cast("dict[str | int, object]", value).items())
+    if isinstance(value, list):
+        return list(enumerate(cast("list[object]", value)))
+    return []
 
 
 def _report(error: ErrorDetails, lines: dict[KeyPath, int], problems: _Problems) -> None:
@@ -327,7 +458,7 @@ def sections(body: str, first_line: int) -> list[Section]:
 
 def _check_body(body: str, first_line: int, frontmatter: Frontmatter | None, problems: _Problems) -> None:
     by_name = _sections_by_name(body, first_line, problems)
-    end = first_line + body.count("\n")
+    end = first_line + body.rstrip().count("\n")
     _check_required(by_name, end, problems)
     if frontmatter is not None:
         _check_items(by_name, end, frontmatter, problems)
@@ -339,6 +470,8 @@ def _sections_by_name(body: str, first_line: int, problems: _Problems) -> dict[s
         key = section.name.strip().lower()
         if key in RETIRED_SECTIONS:
             problems.add(section.line, "HZC106", f"### {section.name}", "unsupported section", RETIRED_SECTIONS[key])
+        elif key in DEFERRED_SECTIONS:
+            problems.add(section.line, "HZC023", f"### {section.name}", "not supported yet", DEFERRED_SECTIONS[key])
         elif key not in KNOWN_SECTIONS:
             problems.add(
                 section.line,
@@ -404,4 +537,5 @@ def collect(directory: Path) -> list[Path]:
     """The contract files in `directory`, sorted; none if it doesn't exist."""
     if not directory.is_dir():
         return []
-    return sorted(p for p in directory.iterdir() if p.name.endswith(SUFFIX) and p.is_file())
+    # Symbolic links are skipped: a link in a team repository could make your daemon read a file outside it.
+    return sorted(p for p in directory.iterdir() if p.name.endswith(SUFFIX) and not p.is_symlink() and p.is_file())

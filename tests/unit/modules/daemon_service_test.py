@@ -312,15 +312,30 @@ def test_compiled_jobs_run_beside_declared_ones_under_their_modules_name(make, c
 
     module.service(
         CompiledJobs,
-        lambda: CompiledJobs(
-            module="contracts", jobs=(JobLet(name="digest", func=compiled, summary="Digest.", schedule="0 * * * *"),)
-        ),
+        lambda: CompiledJobs(jobs=(JobLet(name="digest", func=compiled, summary="Digest.", schedule="0 * * * *"),)),
     )
     service = make(module)
     report = service.tick()
     assert [(run.job, run.disposition) for run in report.runs] == [("contracts:digest", Disposition.RENDERED)]
     assert calls == ["compiled"]
     assert [job.job for job in service.jobs()] == ["contracts:digest"]
+
+
+def test_a_failing_compiler_doesnt_stop_the_declared_jobs(make, jobs, calls):
+    module = Module("contracts", "Compiles jobs from data, badly.")
+
+    def broken() -> CompiledJobs:
+        msg = "a contract broke the compiler"
+        raise RuntimeError(msg)
+
+    module.service(CompiledJobs, broken)
+    service = make(jobs, module)
+    report = service.tick()
+    assert sorted(calls) == ["every-slot", "hourly with Kernel", "on-time"]
+    assert {run.disposition for run in report.runs} == {Disposition.RENDERED}
+    check = next(c for c in service.health() if c.name == "compiled jobs")
+    assert check.status is Status.DEGRADED
+    assert "a contract broke the compiler" in check.detail
 
 
 def test_logs_show_what_ticks_did(make, jobs):

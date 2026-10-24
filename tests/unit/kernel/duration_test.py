@@ -23,3 +23,9 @@ def test_passes_timedeltas_through():
 def test_rejects_anything_else(text):
     with pytest.raises(ValueError, match="positive whole number"):
         parse_duration(text)
+
+
+@pytest.mark.parametrize("value", [10, 1.5, None, True, ["5m"]])
+def test_rejects_values_that_are_not_text_with_a_hint(value):
+    with pytest.raises(ValueError, match="write `10m`"):
+        parse_duration(value)

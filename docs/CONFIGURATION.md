@@ -80,4 +80,5 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `user_dir` | `HZ_WORKFLOW__USER_DIR` | platform-specific | Your own contracts, `<name>.prose.md`; they run on your daemon when they have a schedule. |
 | `team_repository` | `HZ_WORKFLOW__TEAM_REPOSITORY` | `None` | A checkout of your team's state repository; its contracts are in `workflows/`. They run only with `hz workflow run`, or on your daemon when named in `schedule_team`. |
-| `schedule_team` | `HZ_WORKFLOW__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name; the others run only by hand, so a team's contracts don't run on every member's daemon. |
+| `schedule_team` | `HZ_WORKFLOW__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name, or `name@sha256:<hex>` to run only the content you approved (`hz workflow show` prints it); the others run only by hand, so a team's contracts don't run on every member's daemon. |
+| `max_usd` | `HZ_WORKFLOW__MAX_USD` | `1.0` | Most one render may cost in US dollars, whatever a contract asks for: scheduled and manual runs, in every head. A scheduled slot's retries share it. |

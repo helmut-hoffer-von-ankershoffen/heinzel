@@ -1,12 +1,15 @@
 """The workflow service: finds contracts, compiles them into daemon jobs and renders them (ADR 0021).
 
-A render pre-fetches the contract's inputs through capability handles, builds the packet, runs one bounded agent
-session and saves the draft locally. The agent gets no hz tools: everything it reads is in the packet or the empty
-working directory it starts in (ADR 0029, option a). Nothing is published: drafts wait for `hz inbox` (ADR 0020).
+A render checks the agent runner, pre-fetches the contract's inputs through capability handles, builds the packet,
+runs one bounded agent session and saves the draft locally. The agent gets no hz tools: everything it reads is in the
+packet or the empty working directory it starts in (ADR 0029, option a). Nothing is published: drafts wait for
+`hz inbox` (ADR 0020). Contracts are read afresh on every call, so an edited file counts at the next tick, also in the
+foreground daemon loop.
 """
 
 import hashlib
 import json
+import math
 import os
 import tempfile
 from collections.abc import Callable
@@ -41,6 +44,11 @@ MODULE = "workflow"
 FETCH_MARGIN = timedelta(minutes=2)
 """A job may take this much longer than its agent session: fetching inputs and saving the draft."""
 NOT_PUBLISHED = "the draft waits for `hz inbox` (not built yet); nothing is published automatically"
+MAX_INPUT_BYTES = 256 * 1024
+"""An input whose JSON is larger fails the run rather than being cut silently: the agent would draft from half."""
+MAX_PROMPT_BYTES = 1024 * 1024
+RUNNER_TOOLS = {"claude-code": "read_only_tools", "command": "command_read_only_tools"}
+"""The `[system.runner]` setting that lists the read-only tools each core runner accepts (ADR 0029)."""
 
 
 def fingerprint(value: object) -> str:
@@ -63,7 +71,7 @@ class WorkflowService:
 
         Args:
             kernel: Hands out capability handles for a contract and knows the publish operations.
-            workflow: Where contracts are found.
+            workflow: Where contracts are found, which team contracts run, and the cost cap.
             settings: Kernel settings: where drafts are saved.
             clock: The current time, timezone-aware; now in UTC by default.
         """
@@ -71,7 +79,6 @@ class WorkflowService:
         self._workflow = workflow
         self._clock = clock or (lambda: datetime.now(UTC))
         self.drafts_dir = settings.data_dir / MODULE / "drafts"
-        self._contracts: list[Contract] | None = None
 
     @classmethod
     def for_user(cls, kernel: Kernel, workflow: WorkflowSettings) -> "WorkflowService":
@@ -91,52 +98,56 @@ class WorkflowService:
         return found
 
     def contracts(self) -> list[Contract]:
-        """Every contract found, team ones first, each checked against the installed modules.
+        """Every contract found, team ones first, read afresh and checked against the installed modules.
 
-        A name taken by a team contract can't be reused by yours: nothing local overrides a team contract.
+        One file's failure, whatever it is, is that file's diagnostic: the others are still found.
         """
-        if self._contracts is None:
-            found: list[Contract] = []
-            taken: dict[str, Contract] = {}
-            for namespace, directory in self.directories.items():
-                for path in collect(directory):
-                    contract = self._checked(read_contract(path, namespace))
-                    if (earlier := taken.get(contract.name)) is not None:
-                        contract = contract.adding(
-                            _diagnostic(
-                                contract,
-                                "HZC301",
-                                ("name",),
-                                f"the name is taken by {earlier.qualified} ({earlier.path})",
-                                "rename yours; nothing local overrides a team contract",
-                            ),
-                        )
-                    taken.setdefault(contract.name, contract)
-                    found.append(contract)
-            self._contracts = found
-        return self._contracts
+        found: list[Contract] = []
+        for namespace, directory in self.directories.items():
+            try:
+                paths = collect(directory)
+            except OSError as exc:  # an unreadable directory is reported, not fatal
+                found.append(read_contract(directory / f"(unreadable: {exc.strerror})", namespace))
+                continue
+            for path in paths:
+                contract = read_contract(path, namespace)
+                try:
+                    contract = self._checked(contract)
+                except Exception as exc:  # noqa: BLE001 - isolation boundary: one contract's failure is its own
+                    contract = contract.adding(
+                        _diagnostic(contract, "HZC001", ("file",), f"can't check it: {type(exc).__name__}: {exc}", "")
+                    )
+                found.append(contract)
+        return found
 
     def check(self, path: Path | None = None) -> CheckReport:
         """Check every contract found, or the contract files at `path` (a file, or a directory searched recursively).
 
+        `path` must be inside your workflows directory, the team repository or the current directory: every head
+        exposes `check`, and a REST or MCP client must not probe the rest of the disk.
+
         Raises:
-            HeinzelError: If `path` doesn't exist.
+            HeinzelError: If `path` doesn't exist or is outside those directories.
         """
         if path is None:
             contracts = self.contracts()
         else:
+            resolved = path.resolve()
+            roots = [self._workflow.user_dir, Path.cwd()]
+            if self._workflow.team_repository is not None:
+                roots.append(self._workflow.team_repository)
+            if not any(resolved.is_relative_to(root.resolve()) for root in roots):
+                msg = f"{path} is outside your workflows directory, the team repository and the current directory"
+                raise HeinzelError(msg)
             if not path.exists():
                 msg = f"{path} doesn't exist"
                 raise HeinzelError(msg)
-            files = [path] if path.is_file() else sorted(p for p in path.rglob("*.prose.md") if p.is_file())
-            contracts = [self._checked(read_contract(file, "path")) for file in files]
-        return CheckReport(
-            files=[c.path for c in contracts],
-            diagnostics=[d for c in contracts for d in c.diagnostics],
-        )
+            files = [path] if path.is_file() else sorted(p for p in path.rglob("*.prose.md") if not p.is_symlink())
+            contracts = [self._checked(read_contract(file, "path")) for file in files if file.is_file()]
+        return CheckReport(files=[c.path for c in contracts], diagnostics=[d for c in contracts for d in c.diagnostics])
 
     def _checked(self, contract: Contract) -> Contract:
-        """Add what only the kernel knows: whether each publish operation exists and writes."""
+        """Add what only the kernel knows: publish operations, and tools the bound runner refuses."""
         if contract.frontmatter is None:
             return contract
         operations = self._operations()
@@ -165,26 +176,60 @@ class WorkflowService:
                         "name an operation with read_only=False that writes the draft",
                     )
                 )
+        runner, accepted = self._runner_tools()
+        if accepted is not None:
+            for index, tool in enumerate(contract.frontmatter.hz.agent.tools):
+                if tool not in accepted:
+                    problems.append(
+                        _diagnostic(
+                            contract,
+                            "HZC024",
+                            ("hz", "agent", "tools", index),
+                            f"the bound runner {runner} doesn't accept {tool!r} as read-only; runs will fail",
+                            f"use one of {', '.join(accepted) or 'none'}, or list it in [system.runner]",
+                            severity="warning",
+                        )
+                    )
         return contract.adding(*problems)
+
+    def _runner_tools(self) -> tuple[str | None, list[str] | None]:
+        """The bound core runner and the read-only tools it accepts; None for a plugin's runner, which says itself."""
+        runner = self._kernel.resolve(CapabilityView).bound(RUNNER)
+        field = RUNNER_TOOLS.get(runner or "")
+        if field is None:
+            return runner, None
+        for section, settings in self._kernel.settings_of():
+            if section == "system.runner":
+                return runner, list(getattr(settings, field, []))
+        return runner, None
 
     def _operations(self) -> dict[str, OperationLet]:
         return {f"{record.qualname}.{let.name}": let for record, let in self._kernel.lets(OperationLet)}
 
     def find(self, name: str) -> Contract:
-        """The contract named `name` (team first) or `<namespace>:<name>`.
+        """The contract `<namespace>:<name>`, or `name` when only one namespace has it.
 
         Raises:
-            HeinzelError: If no contract has that name.
+            HeinzelError: If no contract has that name, or a bare name is in both namespaces.
         """
         namespace, _, bare = name.rpartition(":")
-        for contract in self.contracts():
-            if contract.name == bare and namespace in {"", contract.namespace}:
-                return contract
-        where = ", ".join(str(d) for d in self.directories.values())
-        msg = f"No contract {name!r}; `hz workflow list` shows them (searched {where})."
-        raise HeinzelError(msg)
+        matches = [c for c in self.contracts() if c.name == bare and namespace in {"", c.namespace}]
+        if len(matches) > 1:
+            choices = " or ".join(c.qualified for c in matches)
+            msg = f"{name!r} is in more than one place: say {choices}."
+            raise HeinzelError(msg)
+        if not matches:
+            where = ", ".join(str(d) for d in self.directories.values())
+            msg = f"No contract {name!r}; `hz workflow list` shows them (searched {where})."
+            raise HeinzelError(msg)
+        return matches[0]
 
     # Compiling -------------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def job_name(contract: Contract) -> str:
+        """The daemon job's name, `<namespace>-<name>`, so `me:x` and `team:x` are two jobs."""
+        return f"{contract.namespace}-{contract.name}"
 
     def scheduled(self, contract: Contract) -> str | None:
         """Why the daemon doesn't run `contract` on a schedule, or None if it does."""
@@ -192,11 +237,18 @@ class WorkflowService:
             return "it has errors; `hz workflow check` lists them"
         if contract.frontmatter.hz.schedule is None:
             return "it has no schedule; run it with `hz workflow run`"
-        if contract.namespace == "team" and contract.name not in self._workflow.schedule_team:
-            return (
-                f"team contracts run on your daemon only when named in [workflow] schedule_team; add {contract.name!r} "
-                "to run it on its schedule"
-            )
+        if contract.namespace == "team":
+            named, digest = self._workflow.approval(contract.name)
+            if not named:
+                return (
+                    f"team contracts run on your daemon only when named in [workflow] schedule_team; add "
+                    f"{contract.name!r} (or `{contract.name}@{contract.sha256}` to pin this content)"
+                )
+            if digest is not None and digest != contract.sha256:
+                return (
+                    f"it changed since you approved {digest}; read it with `hz workflow show team:{contract.name}` "
+                    f"and approve `{contract.name}@{contract.sha256}` in [workflow] schedule_team"
+                )
         return None
 
     def requester(self, contract: Contract) -> Requester:
@@ -207,10 +259,10 @@ class WorkflowService:
         """
         frontmatter = _valid(contract)
         requirements = tuple(frontmatter.hz.requirements().values())
-        return Requester(module=MODULE, kind="job", name=contract.name, requires=requirements)
+        return Requester(module=MODULE, kind="job", name=self.job_name(contract), requires=requirements)
 
     def compiled(self) -> CompiledJobs:
-        """The daemon jobs: one per valid contract with a schedule that your daemon runs."""
+        """The daemon jobs: one per valid contract with a schedule that your daemon runs, read afresh."""
         jobs: list[JobLet] = []
         for contract in self.contracts():
             if self.scheduled(contract) is not None or contract.frontmatter is None:
@@ -218,7 +270,7 @@ class WorkflowService:
             hz = contract.frontmatter.hz
             jobs.append(
                 JobLet(
-                    name=contract.name,
+                    name=self.job_name(contract),
                     func=self._job(contract),
                     summary=hz.title,
                     schedule=cast("str", hz.schedule),
@@ -228,15 +280,28 @@ class WorkflowService:
                     requires=self.requester(contract).requires,
                 )
             )
-        return CompiledJobs(module=MODULE, jobs=tuple(jobs))
+        return CompiledJobs(jobs=tuple(jobs))
 
     def _job(self, contract: Contract) -> Callable[[], Rendered]:
         def render() -> Rendered:
-            return self.render(contract)
+            return self.render(contract, scheduled=True)
 
-        render.__qualname__ = f"workflow:{contract.name}"
+        render.__qualname__ = f"workflow:{self.job_name(contract)}"
         render.__doc__ = f"Render the workflow contract {contract.qualified}."
         return render
+
+    def budget(self, contract: Contract, *, scheduled: bool) -> float:
+        """What one attempt may cost: the lower of your cap and the contract's, split across a slot's retries.
+
+        A scheduled slot may run `1 + retries` attempts; each gets an equal share, so the slot as a whole never spends
+        more than the cap. A manual run is one attempt and gets all of it.
+
+        Raises:
+            HeinzelError: If the contract has errors.
+        """
+        hz = _valid(contract).hz
+        cap = min(self._workflow.max_usd, hz.agent.max_usd if hz.agent.max_usd is not None else math.inf)
+        return cap / (hz.retries + 1) if scheduled else cap
 
     # Inspecting ------------------------------------------------------------------------------------------------------
 
@@ -261,7 +326,7 @@ class WorkflowService:
         """A contract as the daemon runs it: schedule, requirements with their adapters, inputs, publishes, limits.
 
         Raises:
-            HeinzelError: If no contract has that name.
+            HeinzelError: If no contract has that name, or a bare name is in both namespaces.
         """
         contract = self.find(name)
         frontmatter = contract.frontmatter
@@ -275,7 +340,7 @@ class WorkflowService:
             file=contract.path,
             title=hz.title if hz else None,
             description=frontmatter.description if frontmatter else None,
-            job=f"{MODULE}:{contract.name}" if why is None else None,
+            job=f"{MODULE}:{self.job_name(contract)}" if why is None else None,
             schedule=hz.schedule if hz else None,
             scheduled=why is None,
             why_not_scheduled=why,
@@ -294,8 +359,10 @@ class WorkflowService:
             ],
             tools=hz.agent.tools if hz else [],
             timeout_seconds=hz.timeout.total_seconds() if hz else None,
-            max_usd=hz.agent.max_usd if hz else None,
+            max_usd=self.budget(contract, scheduled=False) if contract.valid else None,
             diagnostics=list(contract.diagnostics),
+            sha256=contract.sha256,
+            approve=f"{contract.name}@{contract.sha256}" if contract.namespace == "team" else None,
         )
 
     def _requirements(self, contract: Contract) -> list[RequirementStatus]:
@@ -308,38 +375,45 @@ class WorkflowService:
         return statuses
 
     def health(self) -> list[Check]:
-        """Contracts with errors, and scheduled contracts whose capabilities no bound adapter serves."""
+        """Contracts with errors, unservable or unapproved scheduled contracts, and stray `schedule_team` names."""
         contracts = self.contracts()
-        if not contracts:
+        checks = [self._check_of(contract) for contract in contracts]
+        team = {c.name for c in contracts if c.namespace == "team"}
+        if stray := [e for e in self._workflow.schedule_team if e.partition("@")[0] not in team]:
+            checks.append(
+                Check(
+                    name="workflow schedule_team",
+                    status=Status.DEGRADED,
+                    detail=f"names no team contract: {', '.join(stray)}",
+                    fix="Fix the names in [workflow] schedule_team; `hz workflow list` shows the team's contracts",
+                )
+            )
+        if not checks:
             where = ", ".join(str(d) for d in self.directories.values())
             return [Check(name="workflow", status=Status.UP, detail=f"no contracts in {where}")]
-        checks: list[Check] = []
-        for contract in contracts:
-            name = f"workflow {contract.qualified}"
-            errors = [d for d in contract.diagnostics if d.severity == "error"]
-            if errors:
-                checks.append(
-                    Check(
-                        name=name,
-                        status=Status.DEGRADED,
-                        detail=f"{len(errors)} error(s), first: {errors[0]}".replace("\n", " "),
-                        fix=f"hz workflow check {contract.path}",
-                    )
-                )
-                continue
-            unmet = [s for s in self._requirements(contract) if s.problem]
-            if unmet and self.scheduled(contract) is None:
-                checks.append(
-                    Check(
-                        name=name,
-                        status=Status.DEGRADED,
-                        detail="; ".join(f"{s.requirement}: {s.problem}" for s in unmet),
-                        fix=unmet[0].fix or "",
-                    )
-                )
-                continue
-            checks.append(Check(name=name, status=Status.UP, detail=self.scheduled(contract) or "scheduled"))
         return checks
+
+    def _check_of(self, contract: Contract) -> Check:
+        name = f"workflow {contract.qualified}"
+        if errors := [d for d in contract.diagnostics if d.severity == "error"]:
+            return Check(
+                name=name,
+                status=Status.DEGRADED,
+                detail=f"{len(errors)} error(s), first: {errors[0]}".replace("\n", " "),
+                fix=f"hz workflow check --path {contract.path}",
+            )
+        why = self.scheduled(contract)
+        if contract.namespace == "team" and why is not None and why.startswith("it changed"):
+            return Check(name=name, status=Status.DEGRADED, detail=why, fix=f"hz workflow show team:{contract.name}")
+        unmet = [s for s in self._requirements(contract) if s.problem]
+        if unmet and why is None:
+            return Check(
+                name=name,
+                status=Status.DEGRADED,
+                detail="; ".join(f"{s.requirement}: {s.problem}" for s in unmet),
+                fix=unmet[0].fix or "",
+            )
+        return Check(name=name, status=Status.UP, detail=why or "scheduled")
 
     # Rendering -------------------------------------------------------------------------------------------------------
 
@@ -347,22 +421,31 @@ class WorkflowService:
         """Build the packet of `name` and, unless `dry_run`, render it now and save the draft.
 
         Raises:
-            HeinzelError: If the contract is missing or has errors, an input fails, or the agent run doesn't complete.
+            HeinzelError: If the contract is missing or has errors, the runner or an input fails, or the agent run
+                doesn't complete.
         """
         contract = self.find(name)
         if dry_run:
-            return RunResult(dry_run=True, packet=self.packet(contract))
-        return RunResult(dry_run=False, rendered=self.render(contract))
+            return RunResult(dry_run=True, packet=self.packet(contract, scheduled=False)[0])
+        rendered = self.render(contract, scheduled=False)
+        note = (
+            f"unreceipted; the record is at {rendered.record}. Daemon runs write receipts: "
+            f"`hz system daemon tick --job {MODULE}:{self.job_name(contract)}` runs it now with one"
+        )
+        return RunResult(dry_run=False, rendered=rendered, note=note)
 
-    def packet(self, contract: Contract) -> Packet:
-        """Fetch the inputs through the contract's capability handles and build what the agent session gets.
+    def packet(self, contract: Contract, *, scheduled: bool) -> tuple[Packet, AgentRunner]:
+        """Check the runner, fetch the inputs through the contract's handles and build what the agent session gets.
+
+        The runner comes first, so an unbound one fails before any input is fetched, in a dry run too.
 
         Raises:
-            HeinzelError: If the contract has errors, a capability isn't served, or an input fails.
+            HeinzelError: If the contract has errors, a capability isn't served, an input fails or is too large.
         """
         frontmatter = _valid(contract)
         hz = frontmatter.hz
         requester = self.requester(contract)
+        runner = cast("AgentRunner", self._kernel.handle_for(requester, RUNNER))
         as_of = self._clock()
         inputs: dict[str, FetchedInput] = {}
         for name, spec in hz.inputs.items():
@@ -376,31 +459,43 @@ class WorkflowService:
                 msg = f"{contract.qualified}: input {name!r} ({spec.read}) failed: {type(exc).__name__}: {exc}"
                 raise HeinzelError(msg) from exc
             data = to_jsonable_python(result)
+            size = len(json.dumps(data, ensure_ascii=False).encode())
+            if size > MAX_INPUT_BYTES:
+                msg = (
+                    f"{contract.qualified}: input {name!r} is {size // 1024} KiB, over the "
+                    f"{MAX_INPUT_BYTES // 1024} KiB an input may have; narrow its window or arguments"
+                )
+                raise HeinzelError(msg)
             inputs[name] = FetchedInput(
                 read=spec.read, arguments=to_jsonable_python(arguments), data=data, sha256=fingerprint(data)
             )
         (output, spec_out), *_ = hz.outputs.items()
-        return Packet(
+        prompt = _prompt(contract, frontmatter, inputs, output, spec_out.format, as_of)
+        if len((prompt + contract.body).encode()) > MAX_PROMPT_BYTES:
+            msg = f"{contract.qualified}: the packet is over {MAX_PROMPT_BYTES // 1024} KiB; narrow its inputs"
+            raise HeinzelError(msg)
+        packet = Packet(
             contract=contract.qualified,
             as_of=as_of,
             instructions=contract.body,
-            prompt=_prompt(contract, frontmatter, inputs, output, spec_out.format, as_of),
+            prompt=prompt,
             inputs=inputs,
             output=output,
             format=spec_out.format,
             tools=list(hz.agent.tools),
             timeout_seconds=hz.timeout.total_seconds(),
-            max_usd=hz.agent.max_usd,
+            max_usd=self.budget(contract, scheduled=scheduled),
         )
+        return packet, runner
 
-    def render(self, contract: Contract) -> Rendered:
+    def render(self, contract: Contract, *, scheduled: bool) -> Rendered:
         """Pre-fetch, run the agent with read-only tools in an empty directory, and save the draft with its record.
 
         Raises:
-            HeinzelError: If the packet can't be built, the agent run doesn't complete, or a JSON draft doesn't parse.
+            HeinzelError: If the packet can't be built, the agent run doesn't complete, a JSON draft doesn't parse, or
+                the drafts directory is a symbolic link.
         """
-        packet = self.packet(contract)
-        runner = cast("AgentRunner", self._kernel.handle_for(self.requester(contract), RUNNER))
+        packet, runner = self.packet(contract, scheduled=scheduled)
         with tempfile.TemporaryDirectory(prefix="hz-workflow-") as empty:
             result = runner.run(
                 packet.prompt,
@@ -431,16 +526,17 @@ class WorkflowService:
             agent=result,
             awaiting=[p.action for p in hz.publishes],
         )
-        _write(
-            record,
-            json.dumps(
-                {"rendered": rendered.model_dump(mode="json"), "packet": packet.model_dump(mode="json")}, indent=2
-            ),
-        )
+        content = {"rendered": rendered.model_dump(mode="json"), "packet": packet.model_dump(mode="json")}
+        _write(record, json.dumps(content, indent=2))
         return rendered
 
     def _save(self, contract: Contract, packet: Packet, text: str) -> tuple[Path, Path]:
-        directory = self.drafts_dir / contract.name
+        directory = self.drafts_dir / f"{contract.namespace}-{contract.name}"
+        # A symbolic link anywhere below the data directory could send drafts somewhere else; refuse it.
+        for part in (self.drafts_dir.parent, self.drafts_dir, directory):
+            if part.is_symlink():
+                msg = f"{part} is a symbolic link; drafts are only written to real directories"
+                raise HeinzelError(msg)
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         directory.chmod(0o700)
         stamp = f"{packet.as_of.astimezone(UTC):%Y%m%dT%H%M%SZ}"
@@ -458,7 +554,7 @@ class WorkflowService:
 
 
 def _write(path: Path, text: str, *, exclusive: bool = False) -> None:
-    """Write a private file (0600); `exclusive` refuses an existing one."""
+    """Write a private file (0600) without following a symbolic link; `exclusive` refuses an existing one."""
     flags = os.O_WRONLY | os.O_CREAT | (os.O_EXCL if exclusive else os.O_TRUNC) | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(path, flags, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:

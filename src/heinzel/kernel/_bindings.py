@@ -168,6 +168,7 @@ class Capabilities:
         settings: CapabilitySettings,
         build: Callable[[Callable[..., Any]], Any],
         unknown_keys: Iterable[str] = (),
+        compiled: Callable[[], Iterable[Requester]] = list,
     ) -> None:
         """Hold what the kernel registered.
 
@@ -178,6 +179,7 @@ class Capabilities:
             settings: The bindings.
             build: Calls an adapter factory with injection, e.g. `Kernel.call`.
             unknown_keys: Keys of the `[capabilities]` table that name no capability, e.g. typos.
+            compiled: Requesters of jobs compiled from data (ADR 0021), asked afresh for every matrix.
         """
         self.adapters: dict[tuple[str, str], list[Adapter]] = {}
         for adapter in adapters:
@@ -186,6 +188,7 @@ class Capabilities:
         self._owners = dict(owners)
         self.settings = settings
         self.unknown_keys = tuple(unknown_keys)
+        self._compiled = compiled
         self._build = build
         self._instances: dict[tuple[str, str], object] = {}
 
@@ -209,7 +212,7 @@ class Capabilities:
     def matrix(self) -> list[CapabilityUse]:
         """Who needs what, in which modes, through which adapter and hosts, and what is unmet."""
         rows: list[CapabilityUse] = []
-        for requester in self.requesters:
+        for requester in (*self.requesters, *(r for r in self._compiled() if r.requires)):
             for requirement in requester.requires:
                 adapter, problem = self.adapter_for(requirement)
                 rows.append(

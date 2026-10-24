@@ -874,7 +874,7 @@ $ hz workflow run [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`).  [required]
+* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
 
 **Options**:
 
@@ -895,7 +895,7 @@ $ hz workflow show [OPTIONS] {name}
 
 **Arguments**:
 
-* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`).  [required]
+* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
 
 **Options**:
 

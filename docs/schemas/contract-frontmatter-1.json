@@ -25,7 +25,7 @@
             }
           ],
           "default": null,
-          "description": "Most one run may cost in US dollars; none: no cap.",
+          "description": "Most one run may cost in US dollars; your `[workflow] max_usd` caps it whatever it says.",
           "title": "Max Usd"
         }
       },
@@ -92,6 +92,8 @@
         },
         "outputs": {
           "description": "What the agent drafts, by name: exactly one in this version.",
+          "maxProperties": 1,
+          "minProperties": 1,
           "patternProperties": {
             "^[a-z][a-z0-9_]*$": {
               "$ref": "#/$defs/Output"
@@ -116,7 +118,7 @@
           "description": "Limits of the agent session."
         },
         "timeout": {
-          "default": "PT10M",
+          "default": "10m",
           "description": "How long the agent session may take.",
           "examples": [
             "7d",
@@ -128,7 +130,7 @@
         },
         "retries": {
           "default": 0,
-          "description": "Retries within a daemon tick after a failed run.",
+          "description": "Retries within a daemon tick after a failed run; the cost cap covers all attempts together.",
           "maximum": 3,
           "minimum": 0,
           "title": "Retries",
@@ -136,10 +138,9 @@
         },
         "catch_up": {
           "default": "latest",
-          "description": "Missed schedule slots: `latest` runs once, `all` once per slot, `skip` none.",
+          "description": "Missed schedule slots: `latest` runs once for the newest, `skip` none.",
           "enum": [
             "latest",
-            "all",
             "skip"
           ],
           "title": "Catch Up",

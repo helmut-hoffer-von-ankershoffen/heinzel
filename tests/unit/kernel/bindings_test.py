@@ -21,7 +21,7 @@ from heinzel import (
     Tracker,
     Window,
 )
-from heinzel.kernel import CAPABILITIES, CapabilityView, ModuleRecord, Origin, Requirement
+from heinzel.kernel import CAPABILITIES, CapabilityView, CompiledJobs, ModuleRecord, Origin, Requirement
 from heinzel.kernel._bindings import Capabilities, CapabilitySettings, Requester
 
 pytestmark = pytest.mark.unit
@@ -232,20 +232,77 @@ def test_handle_for_serves_requesters_built_by_compilers(kernel):
     assert kernel._capabilities.handle_for(reader, CAPABILITIES["documents"]).read("x").title == "notes:x"
 
 
-def test_the_kernel_hands_compilers_read_handles_by_capability_name(kernel):
-    reader = Requester("digest", "job", "contract", (Requirement("documents", frozenset({"read", "write"})),))
-    documents = kernel.handle_for(reader, "documents")
+READ_DOCUMENTS = (Requirement("documents", frozenset({"read"})),)
+
+
+def compiler_module(*, broken: bool = False) -> Module:
+    """A module compiling one job from data, like `workflow`."""
+    module = Module("contracts", "Compiles jobs from data.")
+
+    def compile_jobs() -> CompiledJobs:
+        if broken:
+            msg = "a contract file broke the compiler"
+            raise RuntimeError(msg)
+        job = JobLet(name="digest", func=lambda: None, summary="Digest.", schedule="@daily", requires=READ_DOCUMENTS)
+        return CompiledJobs(jobs=(job,))
+
+    module.service(CompiledJobs, compile_jobs)
+    return module
+
+
+@pytest.fixture
+def compiling(make_kernel) -> Kernel:
+    return make_kernel(
+        notes=notes_module(), digest=digest_module(), contracts=compiler_module(), config=bind(documents="notes")
+    )
+
+
+def test_the_kernel_hands_the_compilers_jobs_read_handles_by_capability_name(compiling):
+    reader = Requester("contracts", "job", "x", (Requirement("documents", frozenset({"read", "write"})),))
+    documents = compiling.handle_for(reader, "documents")
     assert documents.read("x").title == "notes:x"
     with pytest.raises(HeinzelError, match="only publish operations"):
         documents.replace_section("x", "m", "t")
 
 
-def test_the_kernel_refuses_publishing_requesters_and_unknown_capabilities(kernel):
-    publisher = Requester("digest", "operation", "p", (Requirement("documents", frozenset({"write"})),), publishes=True)
-    with pytest.raises(HeinzelError, match="read-only until approvals exist"):
-        kernel.handle_for(publisher, "documents")
+@pytest.mark.parametrize(
+    ("requester", "text"),
+    [
+        (Requester("digest", "job", "x", READ_DOCUMENTS), "only jobs of the module that compiles jobs"),
+        (Requester("contracts", "operation", "x", READ_DOCUMENTS), "only jobs of the module that compiles jobs"),
+        (Requester("contracts", "job", "x", READ_DOCUMENTS, publishes=True), "read-only until approvals exist"),
+        (
+            Requester("contracts", "job", "x", (Requirement("documents", frozenset({"read"}), "notes"),)),
+            "pins notes:documents:read",
+        ),
+    ],
+)
+def test_the_kernel_refuses_handles_to_anyone_but_the_compilers_read_only_jobs(compiling, requester, text):
+    with pytest.raises(HeinzelError, match=text):
+        compiling.handle_for(requester, "documents")
+
+
+def test_without_a_compiler_nobody_gets_handles_for_another_requester(kernel):
+    with pytest.raises(HeinzelError, match=r"\(none enabled\)"):
+        kernel.handle_for(Requester("contracts", "job", "x", READ_DOCUMENTS), "documents")
     with pytest.raises(HeinzelError, match="Unknown capability 'mail'"):
-        kernel.handle_for(publisher, "mail")
+        kernel.handle_for(Requester("contracts", "job", "x", READ_DOCUMENTS), "mail")
+    assert kernel.compiled_jobs() == []
+
+
+def test_compiled_jobs_are_compiled_afresh_and_appear_in_the_matrix(compiling):
+    first, second = compiling.compiled_jobs(), compiling.compiled_jobs()
+    assert [(module, let.name) for module, let in first] == [("contracts", "digest")]
+    assert first[0][1] is not second[0][1]  # nothing cached: data may change while a process runs
+    rows = [(row.requester, row.requirement, row.adapter) for row in compiling.resolve(CapabilityView).matrix()]
+    assert ("contracts digest", "documents:read", "notes") in rows
+
+
+def test_a_broken_compiler_leaves_its_jobs_out_of_the_matrix(make_kernel):
+    kernel = make_kernel(digest=digest_module(), contracts=compiler_module(broken=True), config=bind())
+    assert not any(row.requester.startswith("contracts") for row in kernel.resolve(CapabilityView).matrix())
+    with pytest.raises(RuntimeError, match="broke the compiler"):
+        kernel.compiled_jobs()
 
 
 def test_the_view_says_which_adapter_would_serve_a_requirement_without_building_it(make_kernel):

@@ -1,6 +1,10 @@
-"""How the CLI head presents workflow contracts."""
+"""How the CLI head presents workflow contracts.
+
+Contract files are written by others (a team repository), so their text goes into tables escaped, never as markup.
+"""
 
 from rich.console import Group, RenderableType
+from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
@@ -20,8 +24,8 @@ def render_list(contracts: list[ContractSummary]) -> RenderableType:
             problems = ", ".join(filter(None, [problems, f"{contract.warnings} warning(s)"]))
         table.add_row(
             f"{contract.namespace}:{contract.name}",
-            contract.title or "-",
-            contract.schedule or "by hand",
+            escape(contract.title or "-"),
+            escape(contract.schedule or "by hand"),
             "scheduled" if contract.scheduled else "-",
             f"[red]{problems}[/red]" if contract.errors else problems,
         )
@@ -33,40 +37,51 @@ def render_show(contract: CompiledContract) -> RenderableType:
     overview = Table.grid(padding=(0, 2))
     overview.add_column(style="bold")
     overview.add_column(overflow="fold")
-    overview.add_row("Contract", f"{contract.namespace}:{contract.name} ({contract.file})")
-    overview.add_row("Title", contract.title or "-")
-    overview.add_row("Schedule", contract.schedule or "by hand")
-    overview.add_row("Daemon job", contract.job or f"none: {contract.why_not_scheduled}")
-    overview.add_row("Agent", _agent(contract))
+    overview.add_row("Contract", escape(f"{contract.namespace}:{contract.name} ({contract.file})"))
+    overview.add_row("Title", escape(contract.title or "-"))
+    overview.add_row("Schedule", escape(contract.schedule or "by hand"))
+    overview.add_row("Daemon job", escape(contract.job or f"none: {contract.why_not_scheduled}"))
+    overview.add_row("Agent", escape(_agent(contract)))
+    overview.add_row("SHA-256", contract.sha256)
+    if contract.approve:
+        overview.add_row("Approve", escape(f'[workflow] schedule_team = ["{contract.approve}"]'))
     parts: list[RenderableType] = [overview]
     if contract.requirements:
-        requirements = Table(title="Requires")
-        for column in ("Requirement", "Adapter", "Problem"):
-            requirements.add_column(column, overflow="fold")
-        for status in contract.requirements:
-            problem = f"[yellow]{status.problem}[/yellow]. {status.fix}" if status.problem else ""
-            requirements.add_row(status.requirement, status.adapter or "-", problem)
-        parts.append(requirements)
+        parts.append(_requirements(contract))
     if contract.inputs or contract.outputs or contract.publishes:
-        flows = Table(title="Data")
-        for column in ("Kind", "Name", "What"):
-            flows.add_column(column, overflow="fold")
-        for name, read in contract.inputs.items():
-            flows.add_row("input", name, read)
-        for name, format_ in contract.outputs.items():
-            flows.add_row("output", name, f"{format_} draft, saved locally")
-        for publish in contract.publishes:
-            state = "" if publish.provided else " (not provided by an enabled module)"
-            flows.add_row("publishes", publish.output, f"{publish.action}{state}: {publish.note}")
-        parts.append(flows)
+        parts.append(_flows(contract))
     if contract.diagnostics:
         parts.append(_diagnostics(contract.diagnostics))
     return Group(*parts)
 
 
+def _requirements(contract: CompiledContract) -> Table:
+    requirements = Table(title="Requires")
+    for column in ("Requirement", "Adapter", "Problem"):
+        requirements.add_column(column, overflow="fold")
+    for status in contract.requirements:
+        problem = f"[yellow]{escape(status.problem)}[/yellow]. {escape(status.fix or '')}" if status.problem else ""
+        requirements.add_row(status.requirement, status.adapter or "-", problem)
+    return requirements
+
+
+def _flows(contract: CompiledContract) -> Table:
+    flows = Table(title="Data")
+    for column in ("Kind", "Name", "What"):
+        flows.add_column(column, overflow="fold")
+    for name, read in contract.inputs.items():
+        flows.add_row("input", escape(name), escape(read))
+    for name, format_ in contract.outputs.items():
+        flows.add_row("output", escape(name), f"{format_} draft, saved locally")
+    for publish in contract.publishes:
+        state = "" if publish.provided else " (not provided by an enabled module)"
+        flows.add_row("publishes", escape(publish.output), escape(f"{publish.action}{state}: {publish.note}"))
+    return flows
+
+
 def _agent(contract: CompiledContract) -> str:
     tools = ", ".join(contract.tools) or "the runner's read-only default"
-    limit = f", at most {contract.max_usd} USD" if contract.max_usd is not None else ""
+    limit = f", at most {contract.max_usd:g} USD a run" if contract.max_usd is not None else ""
     timeout = f"{contract.timeout_seconds:.0f}s" if contract.timeout_seconds is not None else "-"
     return f"tools: {tools}; timeout {timeout}{limit}"
 
@@ -82,7 +97,7 @@ def render_check(report: CheckReport) -> RenderableType:
 
 
 def _diagnostics(diagnostics: list[Diagnostic]) -> RenderableType:
-    lines = Text()
+    lines = Text()  # Text, not markup: diagnostics quote the contract
     for diagnostic in diagnostics:
         lines.append(str(diagnostic) + "\n", style="red" if diagnostic.severity == "error" else "yellow")
     return lines
@@ -107,7 +122,8 @@ def render_run(result: RunResult) -> RenderableType:
     awaiting = (
         f"\nAwaiting approval (hz inbox, not built yet): {', '.join(rendered.awaiting)}" if rendered.awaiting else ""
     )
+    note = f"\n{result.note}" if result.note else ""
     return Text(
         f"Drafted {rendered.contract}: {rendered.draft}\n"
-        f"Agent: {agent.runner} {agent.model or ''} in {agent.duration_seconds:.0f}s{cost}{awaiting}"
+        f"Agent: {agent.runner} {agent.model or ''} in {agent.duration_seconds:.0f}s{cost}{awaiting}{note}"
     )

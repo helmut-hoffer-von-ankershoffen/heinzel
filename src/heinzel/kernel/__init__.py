@@ -29,11 +29,11 @@ from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discov
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation, requirement_from_receipt
+from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._lets import (
     CatchUp,
     Check,
-    CompiledJobs,
     CredentialLet,
     HealthLet,
     InfoLet,

@@ -10,9 +10,11 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 from heinzel import AgentResult, Config, Issue, Kernel, Module, PullRequest, Settings, Window
+from heinzel.heads import api
 from heinzel.heads.cli import build
 
 pytestmark = pytest.mark.integration
@@ -124,7 +126,7 @@ def test_list_in_a_terminal_shows_contracts_and_their_problems(kernel, contracts
 def test_show_reports_the_compiled_view(kernel):
     code, shown = hz(kernel, "workflow", "show", "weekly-digest")
     assert code == 0
-    assert shown["job"] == "workflow:weekly-digest"
+    assert shown["job"] == "workflow:me-weekly-digest"
     assert shown["unmet"] == []
     assert {r["requirement"]: r["adapter"] for r in shown["requirements"]} == {
         "code-host:read": "host",
@@ -133,10 +135,11 @@ def test_show_reports_the_compiled_view(kernel):
     }
     code, text = hz(kernel, "workflow", "show", "weekly-digest", json_output=False)
     assert code == 0
-    assert "workflow:weekly-digest" in str(text)
+    assert "workflow:me-weekly-digest" in str(text)
 
 
-def test_check_exits_non_zero_on_errors_for_a_teams_ci(kernel, contracts, tmp_path):
+def test_check_exits_non_zero_on_errors_for_a_teams_ci(kernel, contracts, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     assert hz(kernel, "workflow", "check")[0] == 0
     broken = tmp_path / "repo" / "workflows" / "broken.prose.md"
     broken.parent.mkdir(parents=True)
@@ -172,6 +175,49 @@ def test_run_renders_and_saves_the_draft_nothing_is_published(kernel):
     assert "Awaiting approval" in str(text)
 
 
+def test_a_name_in_both_places_needs_its_prefix_in_every_head(make_kernel, contracts, tmp_path):
+    team = tmp_path / "team"
+    (team / "workflows").mkdir(parents=True)
+    shutil.copy(EXAMPLE, team / "workflows")
+    table = {"user_dir": str(contracts), "team_repository": str(team)}
+    kernel = make_kernel(
+        builtins=True,
+        fakes=fakes(),
+        notes=notes(),
+        config=Config(files=(), data={"capabilities": BINDINGS, "workflow": table}),
+    )
+    code, output = hz(kernel, "workflow", "show", "weekly-digest")
+    assert code != 0
+    assert "say team:weekly-digest or me:weekly-digest" in str(output)
+    response = TestClient(api.build(kernel)).get("/workflow/show", params={"name": "weekly-digest"})
+    assert response.status_code >= 400
+    assert "say team:weekly-digest" in response.text
+    assert hz(kernel, "workflow", "show", "team:weekly-digest")[0] == 0
+
+
+def test_contract_text_is_shown_literally_never_as_markup(make_kernel, tmp_path):
+    directory = tmp_path / "tricky"
+    directory.mkdir()
+    (directory / "weekly-digest.prose.md").write_text(
+        EXAMPLE.read_text().replace("title: Weekly app digest", 'title: "[link=https://evil.invalid]Click[/link]"')
+    )
+    config = Config(files=(), data={"capabilities": BINDINGS, "workflow": {"user_dir": str(directory)}})
+    kernel = make_kernel(builtins=True, fakes=fakes(), notes=notes(), config=config)
+    for command in ("list", "show"):
+        args = ("workflow", command) if command == "list" else ("workflow", command, "weekly-digest")
+        code, text = hz(kernel, *args, json_output=False)
+        assert code == 0
+        assert "[link=" in str(text).replace("\n", "").replace(" ", "").replace("│", "")
+
+
+def test_compiled_jobs_appear_in_the_capability_matrix(kernel):
+    code, report = hz(kernel, "system", "capability", "list")
+    assert code == 0
+    uses = {(use["requester"], use["requirement"]) for use in report["uses"]}
+    assert ("workflow me-weekly-digest", "tracker:read") in uses
+    assert ("workflow me-weekly-digest", "agent-runner:read") in uses
+
+
 def test_an_unknown_contract_is_an_error(kernel):
     code, output = hz(kernel, "workflow", "show", "nope")
     assert code != 0
@@ -181,14 +227,14 @@ def test_an_unknown_contract_is_an_error(kernel):
 def test_the_daemon_runs_a_contract_and_writes_a_receipt_with_the_draft(kernel):
     code, jobs = hz(kernel, "system", "daemon", "jobs")
     assert code == 0
-    assert [j["job"] for j in jobs] == ["workflow:weekly-digest"]
+    assert [j["job"] for j in jobs] == ["workflow:me-weekly-digest"]
     assert jobs[0]["timeout_seconds"] == timedelta(minutes=12).total_seconds()
-    code, report = hz(kernel, "system", "daemon", "tick", "--job", "workflow:weekly-digest")
+    code, report = hz(kernel, "system", "daemon", "tick", "--job", "workflow:me-weekly-digest")
     assert code == 0, report
     run = report["runs"][0]
     assert run["disposition"] == "rendered"
     receipts = list((Path(kernel.settings.data_dir) / "receipts").rglob("*.json"))
-    receipt = next(json.loads(p.read_text()) for p in receipts if "workflow:weekly-digest" in p.read_text())
+    receipt = next(json.loads(p.read_text()) for p in receipts if "workflow:me-weekly-digest" in p.read_text())
     assert receipt["id"] == run["receipt"]
     assert Path(receipt["result"]["draft"]).is_file()
     assert receipt["result"]["agent"]["runner"] == "fake"
@@ -197,7 +243,7 @@ def test_the_daemon_runs_a_contract_and_writes_a_receipt_with_the_draft(kernel):
 def test_a_contract_whose_capability_is_unbound_fails_its_daemon_run(make_kernel, contracts):
     config = Config(files=(), data={"capabilities": {"agent_runner": "fake"}, "workflow": {"user_dir": str(contracts)}})
     kernel = make_kernel(builtins=True, fakes=fakes(), notes=notes(), config=config)
-    code, report = hz(kernel, "system", "daemon", "tick", "--job", "workflow:weekly-digest")
+    code, report = hz(kernel, "system", "daemon", "tick", "--job", "workflow:me-weekly-digest")
     assert code == 1
     assert "code-host:read: no adapter bound" in report["runs"][0]["error"]
     code, doctor = hz(kernel, "system", "doctor")
@@ -228,7 +274,8 @@ def test_a_project_file_cant_point_discovery_at_its_own_contracts(make_kernel, t
     (repository / "contracts").mkdir(parents=True)
     shutil.copy(EXAMPLE, repository / "contracts")
     (repository / "hz.toml").write_text(
-        '[workflow]\nuser_dir = "contracts"\nteam_repository = "."\nschedule_team = ["weekly-digest"]\n',
+        '[workflow]\nuser_dir = "contracts"\nteam_repository = "."\nschedule_team = ["weekly-digest"]\n'
+        "max_usd = 500.0\n",
         encoding="utf-8",
     )
     kernel = make_kernel(builtins=True, fakes=fakes(), config=Config.load(repository))
@@ -237,6 +284,7 @@ def test_a_project_file_cant_point_discovery_at_its_own_contracts(make_kernel, t
     _, report = hz(kernel, "system", "doctor")
     ignored = sorted(c["name"] for c in report["checks"]["system.doctor"] if c["name"].startswith("project setting"))
     assert ignored == [
+        "project setting workflow.max_usd",
         "project setting workflow.schedule_team",
         "project setting workflow.team_repository",
         "project setting workflow.user_dir",

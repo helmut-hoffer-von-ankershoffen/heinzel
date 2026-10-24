@@ -6,6 +6,7 @@ message saying so, never silently ignored.
 """
 
 import inspect
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal, Self, cast, get_type_hints
@@ -17,10 +18,12 @@ from pydantic import (
     Field,
     JsonValue,
     PlainSerializer,
+    StrictInt,
     StringConstraints,
     TypeAdapter,
     ValidationError,
     WithJsonSchema,
+    field_validator,
     model_validator,
 )
 from pydantic_core import PydanticCustomError
@@ -40,6 +43,8 @@ RUNNER_IS_CONFIGURATION = (
 )
 
 NAME = r"^[a-z](?:-?[a-z0-9])*$"
+"""Contract names: lowercase words joined by single dashes; a subset of the kernel's job names."""
+APPROVAL = r"^[a-z](?:-?[a-z0-9])*(?:@sha256:[0-9a-f]{64})?$"
 IDENT = r"^[a-z][a-z0-9_]*$"
 Slug = Annotated[str, StringConstraints(pattern=NAME, max_length=64)]
 Ident = Annotated[str, StringConstraints(pattern=IDENT, max_length=64)]
@@ -209,7 +214,12 @@ class Agent(_Strict):
         description="Read-only tools the agent may use, in the runner's naming (e.g. `Read`, `Grep`); empty for the "
         "runner's read-only default. The agent gets no hz tools: inputs are fetched before it starts.",
     )
-    max_usd: float | None = Field(default=None, gt=0, description="Most one run may cost in US dollars; none: no cap.")
+    max_usd: float | None = Field(
+        default=None,
+        gt=0,
+        allow_inf_nan=False,
+        description="Most one run may cost in US dollars; your `[workflow] max_usd` caps it whatever it says.",
+    )
 
 
 class Hz(_Strict):
@@ -251,16 +261,28 @@ class Hz(_Strict):
     inputs: dict[Ident, Input] = Field(
         default_factory=dict, description="Data fetched before the agent starts, by name; each needs its capability."
     )
-    outputs: dict[Ident, Output] = Field(description="What the agent drafts, by name: exactly one in this version.")
+    outputs: dict[Ident, Output] = Field(
+        description="What the agent drafts, by name: exactly one in this version.",
+        json_schema_extra={"minProperties": 1, "maxProperties": 1},
+    )
     publishes: list[Publish] = Field(
         default_factory=list[Publish],
         description="Where the draft is meant to go, through publish operations; recorded, never run automatically.",
     )
     agent: Agent = Field(default_factory=Agent, description="Limits of the agent session.")
-    timeout: Duration = Field(default=timedelta(minutes=10), description="How long the agent session may take.")
-    retries: int = Field(default=0, ge=0, le=3, description="Retries within a daemon tick after a failed run.")
-    catch_up: Literal["latest", "all", "skip"] = Field(
-        default="latest", description="Missed schedule slots: `latest` runs once, `all` once per slot, `skip` none."
+    timeout: Duration = Field(
+        default=timedelta(minutes=10),
+        description="How long the agent session may take.",
+        json_schema_extra={"default": "10m"},
+    )
+    retries: StrictInt = Field(
+        default=0,
+        ge=0,
+        le=3,
+        description="Retries within a daemon tick after a failed run; the cost cap covers all attempts together.",
+    )
+    catch_up: Literal["latest", "skip"] = Field(
+        default="latest", description="Missed schedule slots: `latest` runs once for the newest, `skip` none."
     )
 
     @model_validator(mode="after")
@@ -331,13 +353,20 @@ class Frontmatter(_Strict):
     hz: Hz = Field(description="Heinzelmännchen's keys.")
 
 
+CRON_SHORTCUTS = ("@yearly", "@annually", "@monthly", "@weekly", "@daily", "@midnight", "@hourly")
+
+
 def cron_problem(schedule: str) -> str | None:
     """Why a cron expression can't schedule a job, or None if it can."""
     from croniter import croniter  # noqa: PLC0415 - only needed when a contract has a schedule
 
     fields = schedule.split()
-    if not (schedule.startswith("@") or len(fields) == 5) or not croniter.is_valid(schedule):  # noqa: PLR2004 - cron fields
-        return f"invalid schedule {schedule!r}: use five cron fields (minute hour day month weekday), e.g. 0 7 * * MON"
+    shortcut = schedule in CRON_SHORTCUTS
+    if not (shortcut or (len(fields) == 5 and croniter.is_valid(schedule))):  # noqa: PLR2004 - cron fields
+        return (
+            f"invalid schedule {schedule!r}: use five cron fields (minute hour day month weekday), e.g. 0 7 * * MON, "
+            f"or one of {', '.join(CRON_SHORTCUTS)}"
+        )
     return None
 
 
@@ -359,11 +388,39 @@ class WorkflowSettings(ModuleSettings):
     )
     schedule_team: list[str] = Field(
         default_factory=list,
-        description="Team contracts your daemon runs on their schedule, by name; the others run only by hand, so a "
-        "team's contracts don't run on every member's daemon.",
+        description="Team contracts your daemon runs on their schedule, by name, or `name@sha256:<hex>` to run only "
+        "the content you approved (`hz workflow show` prints it); the others run only by hand, so a team's contracts "
+        "don't run on every member's daemon.",
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"user_dir", "team_repository", "schedule_team"})
+    max_usd: float = Field(
+        default=1.0,
+        gt=0,
+        allow_inf_nan=False,
+        description="Most one render may cost in US dollars, whatever a contract asks for: scheduled and manual runs, "
+        "in every head. A scheduled slot's retries share it.",
+    )
+
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset(
+        {"user_dir", "team_repository", "schedule_team", "max_usd"}
+    )
+
+    @field_validator("schedule_team")
+    @classmethod
+    def _approvals(cls, entries: list[str]) -> list[str]:
+        for entry in entries:
+            if not re.fullmatch(APPROVAL, entry):
+                msg = f"{entry!r} must be a contract name, or `name@sha256:<64 hex digits>` to pin its content"
+                raise ValueError(msg)
+        return entries
+
+    def approval(self, name: str) -> tuple[bool, str | None]:
+        """Whether `schedule_team` names the team contract `name`, and the SHA-256 it pins, if any."""
+        for entry in self.schedule_team:
+            entry_name, _, digest = entry.partition("@")
+            if entry_name == name:
+                return True, digest or None
+        return False, None
 
 
 Severity = Literal["error", "warning"]
@@ -427,7 +484,7 @@ class CompiledContract(BaseModel):
     file: Path = Field(description="The contract file.")
     title: str | None = Field(description="Its display name.")
     description: str | None = Field(description="What it keeps true, and for whom.")
-    job: str | None = Field(description="Its daemon job, `workflow:<name>`; none when not scheduled.")
+    job: str | None = Field(description="Its daemon job, `workflow:<namespace>-<name>`; none when not scheduled.")
     schedule: str | None = Field(description="Its cron expression in local time.")
     scheduled: bool = Field(description="Whether your daemon runs it on its schedule.")
     why_not_scheduled: str | None = Field(description="Why your daemon doesn't run it, when it doesn't.")
@@ -438,8 +495,12 @@ class CompiledContract(BaseModel):
     publishes: list[PublishStatus] = Field(description="Where its draft is meant to go; never published by itself.")
     tools: list[str] = Field(description="Read-only tools the agent may use; empty: the runner's default.")
     timeout_seconds: float | None = Field(description="How long the agent session may take.")
-    max_usd: float | None = Field(description="Most one run may cost.")
+    max_usd: float | None = Field(description="Most a manual run may cost: the lower of your cap and the contract's.")
     diagnostics: list[Diagnostic] = Field(description="Its errors and warnings.")
+    sha256: str = Field(description="SHA-256 of the file; `[workflow] schedule_team` can pin it.")
+    approve: str | None = Field(
+        description="For team contracts: the `schedule_team` entry that runs exactly this content on your daemon."
+    )
 
 
 class CheckReport(BaseModel):
@@ -499,3 +560,4 @@ class RunResult(BaseModel):
     dry_run: bool = Field(description="Whether only the packet was built and no agent ran.")
     packet: Packet | None = Field(default=None, description="The packet, in a dry run.")
     rendered: Rendered | None = Field(default=None, description="The render, when the agent ran.")
+    note: str = Field(default="", description="What to know about the result, e.g. that a manual run has no receipt.")

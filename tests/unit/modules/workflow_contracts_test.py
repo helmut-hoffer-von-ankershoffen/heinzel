@@ -1,14 +1,17 @@
 """Reading contract files: strict YAML, the frontmatter schema, the body and diagnostics with lines (ADR 0021)."""
 
+import re
 import textwrap
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from heinzel import Window
+from heinzel import JobLet, Window
+from heinzel.modules.workflow import _contracts as contracts
 from heinzel.modules.workflow._contracts import _load, collect, contract_name, read_contract, sections
-from heinzel.modules.workflow._models import Frontmatter, _format_duration, cron_problem
+from heinzel.modules.workflow._models import NAME, Frontmatter, _format_duration, cron_problem
 
 pytestmark = pytest.mark.unit
 
@@ -100,7 +103,7 @@ def test_yaml_1_1_booleans_dates_and_octals_stay_strings():
         ("name: [unclosed\n", "HZC001", 2),
         ("- a list\n", "HZC001", 2),
         ("", "HZC001", 2),
-        ("bad: !!python/name:os.system\n", "HZC001", 2),
+        ("bad: !!python/name:os.system\n", "HZC004", 2),
     ],
 )
 def test_broken_yaml_is_reported_on_its_line(frontmatter, code, line):
@@ -250,7 +253,7 @@ def test_retired_and_unknown_sections_are_reported():
     found = read_contract(PATH, "me", contract(body=body)).diagnostics
     assert [(d.code, d.severity, d.field) for d in found] == [
         ("HZC106", "error", "### Criteria"),
-        ("HZC106", "error", "### Tools"),
+        ("HZC023", "error", "### Tools"),
         ("HZC105", "warning", "### Notes"),
     ]
 
@@ -306,5 +309,129 @@ def test_collect_finds_contract_files_only(tmp_path):
     (tmp_path / "a.prose.md").write_text("")
     (tmp_path / "notes.md").write_text("")
     (tmp_path / "dir.prose.md").mkdir()
+    outside = tmp_path.parent / f"{tmp_path.name}-outside.prose.md"
+    outside.write_text("")
+    (tmp_path / "linked.prose.md").symlink_to(outside)
     assert [p.name for p in collect(tmp_path)] == ["a.prose.md", "b.prose.md"]
     assert collect(tmp_path / "missing") == []
+
+
+# Robustness: one hostile or broken file must stay cheap and never stop anything.
+
+ALIAS_BOMB = "a: &a [x, x, x, x, x, x, x, x, x]\n" + "".join(
+    f"{chr(98 + i)}: &{chr(98 + i)} [*{chr(97 + i)}, *{chr(97 + i)}, *{chr(97 + i)}, *{chr(97 + i)}]\n"
+    for i in range(9)
+)
+
+
+def test_an_alias_bomb_is_refused_before_anything_expands():
+    assert len(ALIAS_BOMB) < 1024
+    started = time.monotonic()
+    found = read_contract(PATH, "me", f"---\n{ALIAS_BOMB}---\n{BODY}").diagnostics
+    assert time.monotonic() - started < 1
+    assert [(d.code, d.message) for d in found][:1] == [("HZC004", "anchors and aliases aren't allowed")]
+
+
+def test_deep_nesting_is_refused_fast():
+    started = time.monotonic()
+    found = read_contract(PATH, "me", "---\nx: " + "[" * 5000 + "]" * 5000 + "\n---\n" + BODY).diagnostics
+    assert time.monotonic() - started < 1
+    assert found[0].code == "HZC004"
+    assert "nested deeper than 32 levels" in found[0].message
+
+
+def test_too_many_values_are_refused():
+    found = read_contract(PATH, "me", "---\nx: [" + ", ".join(["1"] * 10_001) + "]\n---\n").diagnostics
+    assert "more than 10000 values" in found[0].message
+
+
+@pytest.mark.parametrize(
+    ("value", "text"),
+    [
+        ("!!set {a, b}", "tags aren't allowed on lists and maps"),
+        ("!!binary aGVsbG8=", "the tag tag:yaml.org,2002:binary isn't allowed"),
+        ("!custom x", "the tag !custom isn't allowed"),
+    ],
+)
+def test_tags_beyond_the_core_scalars_are_refused(value, text):
+    found = read_contract(PATH, "me", f"---\nx: {value}\n---\n").diagnostics
+    assert (found[0].code, found[0].line) == ("HZC004", 2)
+    assert text in found[0].message
+    assert read_contract(PATH, "me", contract(top="x-number: !!int 3\n")).valid
+
+
+def test_a_large_file_is_never_read(tmp_path):
+    big = tmp_path / "big.prose.md"
+    big.write_bytes(b"---\n" + b"#" * (300 * 1024))
+    assert [d.message for d in read_contract(big, "me").diagnostics] == [
+        "the file is 300 KiB; contracts are at most 256 KiB"
+    ]
+    assert "contracts are at most 256 KiB" in read_contract(PATH, "me", "x" * (257 * 1024)).diagnostics[0].message
+
+
+def test_reading_a_contract_never_raises(monkeypatch):
+    def explode(*_: object) -> None:
+        raise RecursionError
+
+    monkeypatch.setattr(contracts, "_read", explode)
+    found = read_contract(PATH, "me", contract())
+    assert (found.valid, [d.code for d in found.diagnostics]) == (False, ["HZC001"])
+    assert "RecursionError" in found.diagnostics[0].message
+
+
+def test_an_unquoted_cron_expression_gets_a_hint():
+    found = read_contract(PATH, "me", contract(hz="schema: 1\ntitle: T\nschedule: */5 * * * *\noutputs: {d: {}}\n"))
+    assert found.diagnostics[0].hint == 'quote the cron expression: schedule: "0 7 * * MON"'
+    assert "@hourly" in str(cron_problem("@reboot"))
+
+
+def test_every_unsupported_key_is_reported_at_once():
+    hz = (
+        "schema: 1\ntitle: T\nowner: '@mira'\ntags: [a]\ncatch_up: all\noutputs: {digest: {target: x}}\n"
+        "agent: {model: deep}\npublishes: [{action: a.b, output: digest, auto_approve: p}]\n"
+    )
+    found = read_contract(PATH, "me", contract(hz=hz, body=BODY.replace("### Requires", "### Steps"))).diagnostics
+    assert sorted((d.code, d.field) for d in found) == [
+        ("HZC023", "hz.agent.model"),
+        ("HZC023", "hz.catch_up"),
+        ("HZC023", "hz.outputs.digest.target"),
+        ("HZC023", "hz.owner"),
+        ("HZC023", "hz.publishes.0.auto_approve"),
+        ("HZC023", "hz.tags"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("hz", "field", "text"),
+    [
+        ("retries: true", "hz.retries", "valid integer"),
+        ("retries: '1'", "hz.retries", "valid integer"),
+        ("timeout: 10", "hz.timeout", "write `10m`"),
+        ("agent: {max_usd: .inf}", "hz.agent.max_usd", "finite number"),
+    ],
+)
+def test_numbers_and_durations_are_strict(hz, field, text):
+    found = read_contract(PATH, "me", contract(hz=f"schema: 1\ntitle: T\n{hz}\noutputs: {{d: {{}}}}\n")).diagnostics
+    assert any(d.field == field and text in d.message for d in found), [str(d) for d in found]
+
+
+def test_a_heading_may_end_in_a_hash_sign():
+    found = sections("### C#\ntext\n### Goal ##\nmore\n", 1)
+    assert [s.name for s in found] == ["C#", "Goal"]
+
+
+def test_a_missing_section_is_reported_on_the_bodys_last_line():
+    text = contract(body="\n### Goal\n\nok\n\n### Requires\n\n- `issues`: x\n\n### Maintains\n\n- `digest`: y\n\n\n")
+    done = next(d for d in read_contract(PATH, "me", text).diagnostics if d.code == "HZC107")
+    assert done.line == text.rstrip().count("\n") + 1
+
+
+@pytest.mark.parametrize("name", ["a", "digest", "weekly-app-digest", "a1-b2", "x" * 64])
+def test_every_contract_name_makes_a_valid_job_name(name):
+    assert re.fullmatch(NAME, name)
+    assert JobLet(name=f"team-{name}", func=lambda: None, summary="s", schedule="@daily").name.endswith(name)
+
+
+@pytest.mark.parametrize("name", ["A", "1a", "a-", "a--b", "a_b"])
+def test_names_the_job_pattern_allows_but_contracts_dont(name):
+    assert not re.fullmatch(NAME, name)

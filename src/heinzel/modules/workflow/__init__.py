@@ -4,6 +4,11 @@ A contract in your workflows directory, or in your team's state repository, name
 inputs to fetch through them, the agent's limits and where the draft is meant to go. The daemon runs it on its
 schedule: inputs are fetched before the agent starts, the agent gets no hz tools, and the draft is saved locally.
 Nothing is published automatically; drafts wait for `hz inbox`.
+
+`hz system serve daemon` doesn't re-read declared jobs while it runs, but contracts are read afresh on every tick: the
+kernel calls `CompiledJobs`' factory each time the daemon lists its jobs, so an edited contract counts at the next tick.
+`run` is a publish-style operation (`read_only=False`: it spends money and writes a local draft) that declares no
+`write` capability.
 """
 
 from pathlib import Path
@@ -35,7 +40,10 @@ def _compiled(service: WorkflowService) -> CompiledJobs:
 
 module.service(CompiledJobs, _compiled)
 
-Name = Annotated[str, Field(description="The contract's name, or `<namespace>:<name>` (`team:` or `me:`).")]
+Name = Annotated[
+    str,
+    Field(description="The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it."),
+]
 
 
 def _check_exit_code(report: CheckReport) -> int:

@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from heinzel import AgentResult, Config, HeinzelError, Issue, Module, PullRequest, Settings, Status, TokenUsage, Window
-from heinzel.kernel import CompiledJobs
 from heinzel.modules.workflow import WorkflowService, WorkflowSettings
+from heinzel.modules.workflow import _service as service_module
 
 pytestmark = pytest.mark.unit
 
@@ -155,15 +155,19 @@ def test_contracts_are_found_in_the_team_repository_and_your_directory(make, dir
     assert make(team_repository=None).directories == {"me": me}
 
 
-def test_a_team_name_cant_be_reused_locally(make, dirs):
+def test_one_name_in_both_places_is_two_valid_contracts_that_need_their_prefix(make, dirs):
     me, team = dirs
     put(me)
     put(team / "workflows")
-    contracts = make().contracts()
-    assert [c.valid for c in contracts] == [True, False]
-    clash = contracts[1].diagnostics[-1]
-    assert (clash.code, clash.line) == ("HZC301", 2)
-    assert "team:weekly-digest" in clash.message
+    service = make(schedule_team=["weekly-digest"])
+    assert [(c.qualified, c.valid) for c in service.contracts()] == [
+        ("team:weekly-digest", True),
+        ("me:weekly-digest", True),
+    ]
+    assert [job.name for job in service.compiled().jobs] == ["team-weekly-digest", "me-weekly-digest"]
+    with pytest.raises(HeinzelError, match="say team:weekly-digest or me:weekly-digest"):
+        service.find("weekly-digest")
+    assert service.find("me:weekly-digest").namespace == "me"
 
 
 def test_publish_operations_must_exist_and_write(make, dirs):
@@ -186,8 +190,7 @@ def test_your_scheduled_contracts_compile_to_daemon_jobs(make, dirs):
     put(me, "broken", "no frontmatter")
     service = make()
     compiled = service.compiled()
-    assert compiled.module == "workflow"
-    assert [job.name for job in compiled.jobs] == ["mine"]
+    assert [job.name for job in compiled.jobs] == ["me-mine"]
     job = compiled.jobs[0]
     assert (job.summary, job.schedule, job.timeout, job.retries) == (
         "Weekly app digest",
@@ -201,14 +204,13 @@ def test_your_scheduled_contracts_compile_to_daemon_jobs(make, dirs):
     assert "schedule_team" in str(why["ours"])
     assert "no schedule" in str(why["manual"])
     assert "errors" in str(why["broken"])
-    assert [j.name for j in make(schedule_team=["ours"]).compiled().jobs] == ["ours", "mine"]
+    assert [j.name for j in make(schedule_team=["ours"]).compiled().jobs] == ["team-ours", "me-mine"]
 
 
 def test_the_kernel_hands_the_daemon_the_compiled_jobs(make, dirs):
     put(dirs[0])
     kernel = make()._kernel
-    jobs = kernel.resolve(CompiledJobs)
-    assert [job.name for job in jobs.jobs] == ["weekly-digest"]
+    assert [(module, job.name) for module, job in kernel.compiled_jobs()] == [("workflow", "me-weekly-digest")]
 
 
 def test_a_compiled_job_renders_its_contract(make, dirs, runner):
@@ -234,7 +236,9 @@ def test_find_takes_bare_and_qualified_names(make, dirs):
 def test_show_reports_requirements_with_their_adapters_and_what_is_unmet(make, dirs):
     put(dirs[0])
     shown = make(bindings={"agent_runner": "fake", "code_host": "host"}).show("weekly-digest")
-    assert shown.job == "workflow:weekly-digest"
+    assert shown.job == "workflow:me-weekly-digest"
+    assert shown.sha256.startswith("sha256:")
+    assert shown.approve is None
     assert [(s.requirement, s.adapter, s.problem) for s in shown.requirements] == [
         ("code-host:read", "host", None),
         ("tracker:read", None, "no adapter bound"),
@@ -256,7 +260,8 @@ def test_show_of_a_broken_contract_lists_its_problems(make, dirs):
     assert [d.code for d in shown.diagnostics] == ["HZC001"]
 
 
-def test_check_covers_everything_found_a_file_or_a_directory(make, dirs, tmp_path):
+def test_check_covers_everything_found_a_file_or_a_directory(make, dirs, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     put(dirs[0])
     service = make()
     assert service.check().errors == 0
@@ -269,6 +274,16 @@ def test_check_covers_everything_found_a_file_or_a_directory(make, dirs, tmp_pat
     assert service.check(broken).files == [broken]
     with pytest.raises(HeinzelError, match="doesn't exist"):
         service.check(tmp_path / "missing")
+    with pytest.raises(HeinzelError, match="is outside your workflows directory"):
+        service.check(Path("/etc"))
+
+
+def test_check_sees_an_edited_file_at_once(make, dirs):
+    path = put(dirs[0])
+    service = make()
+    assert service.check().errors == 0
+    path.write_text(path.read_text().replace("### Goal", "### Aim"))
+    assert service.check().errors == 1
 
 
 def test_the_packet_holds_inputs_fetched_through_handles_as_data(make, dirs, host):
@@ -336,7 +351,7 @@ def test_a_render_saves_a_private_draft_and_its_record(make, dirs, runner, tmp_p
     assert run["budget"].max_usd == 0.5
     assert run["tools"].tools == ["Read", "Grep"]
     assert run["working_dir_empty"]  # the agent reads nothing of yours
-    drafts = make().drafts_dir / "weekly-digest"
+    drafts = make().drafts_dir / "me-weekly-digest"
     assert rendered.draft == drafts / "20261026T070000Z.md"
     assert rendered.draft.read_text() == runner.draft
     assert stat.S_IMODE(rendered.draft.stat().st_mode) == 0o600
@@ -378,10 +393,10 @@ def test_the_requester_reads_only_what_the_contract_declares(make, dirs):
     assert (requester.module, requester.kind, requester.name, requester.publishes) == (
         "workflow",
         "job",
-        "weekly-digest",
+        "me-weekly-digest",
         False,
     )
-    with pytest.raises(HeinzelError, match="workflow weekly-digest asks for Documents without declaring it"):
+    with pytest.raises(HeinzelError, match="workflow me-weekly-digest asks for Documents without declaring it"):
         service._kernel.handle_for(requester, "documents")
 
 
@@ -393,7 +408,7 @@ def test_health_reports_broken_and_unservable_contracts(make, dirs):
     put(me, "broken", "no frontmatter")
     checks = {c.name: c for c in make(bindings={"agent_runner": "fake"}).health()}
     assert checks["workflow me:broken"].status is Status.DEGRADED
-    assert checks["workflow me:broken"].fix.startswith("hz workflow check ")
+    assert checks["workflow me:broken"].fix.startswith("hz workflow check --path ")
     assert checks["workflow me:weekly-digest"].status is Status.DEGRADED
     assert "code-host:read: no adapter bound" in checks["workflow me:weekly-digest"].detail
     assert checks["workflow me:manual"].status is Status.UP  # unmet, but nothing runs it unattended
@@ -405,3 +420,119 @@ def test_for_user_reads_the_drafts_directory_from_user_scope(make_kernel, tmp_pa
     kernel = make_kernel(builtins=True)
     service = WorkflowService.for_user(kernel, kernel.resolve(WorkflowSettings))
     assert service.drafts_dir == tmp_path / "user-data" / "workflow" / "drafts"
+
+
+def test_the_cost_cap_is_the_lower_of_yours_and_the_contracts_and_a_slot_shares_it(make, dirs):
+    put(dirs[0])
+    contract = make().find("weekly-digest")
+    assert make().budget(contract, scheduled=False) == 0.5
+    assert make(max_usd=0.2).budget(contract, scheduled=False) == 0.2
+    put(dirs[0], text=EXAMPLE.read_text().replace("  retries: 0", "  retries: 3").replace("    max_usd: 0.5\n", ""))
+    contract = make().find("weekly-digest")
+    assert make().budget(contract, scheduled=False) == 1.0
+    assert make().budget(contract, scheduled=True) == 0.25
+
+
+def test_a_scheduled_run_gets_its_share_of_the_cap(make, dirs, runner):
+    put(dirs[0], text=EXAMPLE.read_text().replace("  retries: 0", "  retries: 1"))
+    make().compiled().jobs[0].func()
+    assert runner.runs[0]["budget"].max_usd == 0.25
+
+
+def test_a_pinned_team_contract_runs_only_while_its_content_is_the_approved_one(make, dirs):
+    path = put(dirs[1] / "workflows")
+    shown = make().show("weekly-digest")
+    assert shown.approve == f"weekly-digest@{shown.sha256}"
+    assert [j.name for j in make(schedule_team=[shown.approve]).compiled().jobs] == ["team-weekly-digest"]
+    path.write_text(path.read_text().replace("300 words", "250 words"))
+    service = make(schedule_team=[shown.approve])
+    assert service.compiled().jobs == ()
+    check = {c.name: c for c in service.health()}["workflow team:weekly-digest"]
+    assert check.status is Status.DEGRADED
+    assert "changed since you approved" in check.detail
+
+
+def test_schedule_team_names_matching_nothing_are_reported(make, dirs):
+    put(dirs[1] / "workflows")
+    checks = {c.name: c for c in make(schedule_team=["weekly-digest", "typo"]).health()}
+    assert checks["workflow schedule_team"].detail == "names no team contract: typo"
+    with pytest.raises(ValueError, match="must be a contract name"):
+        WorkflowSettings(schedule_team=["Bad Name"])
+
+
+def test_an_unbound_runner_fails_before_any_input_is_fetched(make, dirs, host):
+    put(dirs[0])
+    with pytest.raises(HeinzelError, match="needs agent-runner:read: no installed module provides agent-runner"):
+        make(bindings={"code_host": "host", "tracker": "host", "agent_runner": "nowhere"}).run(
+            "weekly-digest", dry_run=True
+        )
+    assert host.calls == []
+
+
+def test_tools_the_bound_runner_refuses_are_a_warning(make_kernel, dirs):
+    put(dirs[0])
+    config = Config(
+        files=(),
+        data={
+            "capabilities": {"agent_runner": "claude-code"},
+            "system": {"runner": {"read_only_tools": ["Read"]}},
+            "workflow": {"user_dir": str(dirs[0])},
+        },
+    )
+    kernel = make_kernel(builtins=True, notes=notes(), config=config)
+    settings = Config(files=(), data={}).settings(Settings, "hz")
+    found = WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings).contracts()[0].diagnostics
+    assert [(d.code, d.severity, d.field) for d in found] == [("HZC024", "warning", "hz.agent.tools.1")]
+    assert "'Grep'" in found[0].message
+
+
+def test_an_oversized_input_fails_the_run(make, dirs, host, monkeypatch):
+    put(dirs[0])
+    monkeypatch.setattr(service_module, "MAX_INPUT_BYTES", 100)
+    with pytest.raises(HeinzelError, match="input 'merged' is 0 KiB, over the 0 KiB an input may have"):
+        make().run("weekly-digest", dry_run=True)
+
+
+def test_an_oversized_packet_fails_the_run(make, dirs, monkeypatch):
+    put(dirs[0])
+    monkeypatch.setattr(service_module, "MAX_PROMPT_BYTES", 1000)
+    with pytest.raises(HeinzelError, match="the packet is over 0 KiB"):
+        make().run("weekly-digest", dry_run=True)
+
+
+def test_drafts_are_never_written_through_a_symbolic_link(make, dirs, tmp_path):
+    put(dirs[0])
+    service = make()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    service.drafts_dir.mkdir(parents=True)
+    (service.drafts_dir / "me-weekly-digest").symlink_to(elsewhere)
+    with pytest.raises(HeinzelError, match="is a symbolic link"):
+        service.run("weekly-digest")
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_one_contract_failing_its_checks_doesnt_hide_the_others(make, dirs, monkeypatch):
+    put(dirs[0], "first")
+    put(dirs[0], "second")
+    service = make()
+    original = service._checked
+
+    def flaky(contract):
+        if contract.name == "first":
+            msg = "boom"
+            raise RuntimeError(msg)
+        return original(contract)
+
+    monkeypatch.setattr(service, "_checked", flaky)
+    contracts = service.contracts()
+    assert [(c.name, c.valid) for c in contracts] == [("first", False), ("second", True)]
+    assert "RuntimeError: boom" in contracts[0].diagnostics[-1].message
+
+
+def test_a_manual_run_says_it_has_no_receipt(make, dirs):
+    put(dirs[0])
+    result = make().run("weekly-digest")
+    assert result.rendered is not None
+    assert result.note.startswith(f"unreceipted; the record is at {result.rendered.record}")
+    assert "hz system daemon tick --job workflow:me-weekly-digest" in result.note
