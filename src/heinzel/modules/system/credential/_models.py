@@ -1,6 +1,6 @@
 """Models of the credential module."""
 
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
@@ -12,11 +12,22 @@ Backend = Literal["auto", "keyring", "environment"]
 class CredentialSettings(ModuleSettings):
     """Settings of the credential module: the `[system.credential]` table or `HZ_SYSTEM_CREDENTIAL__*` variables."""
 
+    section_title: ClassVar[str | None] = "Secrets"  # the heading in Settings
+
     backend: Backend = Field(
         default="auto",
-        description="Where credentials live. `auto`: the OS keychain when there is one, else the environment. "
-        "`keyring`: whatever keyring backend is configured, even one that is not an OS keychain. "
-        "`environment`: read-only HZ_CREDENTIAL_<SERVICE>_<NAME> variables.",
+        title="Where secrets are kept",
+        description="Where Heinzelmännchen keeps passwords and tokens: the system keychain when "
+        "there is one, any configured keyring, or read-only environment variables "
+        "named HZ_CREDENTIAL_<SERVICE>_<NAME>.",
+        json_schema_extra={
+            "x-expert": True,
+            "x-labels": {
+                "auto": "Automatic: the system keychain if there is one",
+                "keyring": "The configured keyring",
+                "environment": "Environment variables (read-only)",
+            },
+        },
     )
 
 

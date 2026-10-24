@@ -3,7 +3,7 @@
 import urllib.error
 from importlib.resources import files
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 from markdown_it import MarkdownIt
 from packaging.version import InvalidVersion, Version
@@ -30,13 +30,16 @@ class ChangelogSettings(ModuleSettings):
 
     # The aliases are environment variable names; the field name still works in the TOML table and in code.
     model_config = SettingsConfigDict(populate_by_name=True)
+    section_title: ClassVar[str | None] = "Release notes"  # the heading in Settings
 
     github_token: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"),
-        description="GitHub token for `hz system changelog --newer`, which works without one at a lower rate limit; "
-        "also read from GH_TOKEN or GITHUB_TOKEN. Sent to api.github.com only; the hourly release check never sends "
-        "it.",
+        title="GitHub token",
+        description="A GitHub token for reading what newer releases bring, which works without "
+        "one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, sent to "
+        "GitHub only, and never by the hourly update check.",
+        json_schema_extra={"x-expert": True},
     )
 
 

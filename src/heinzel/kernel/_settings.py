@@ -14,68 +14,100 @@ class Settings(ModuleSettings):
     """Kernel settings. See `hz system config show` for the effective values and where they come from."""
 
     model_config = SettingsConfigDict(env_prefix="HZ_")
+    section_title: ClassVar[str | None] = "General"  # the heading in Settings
 
+    # Titles and descriptions are what Settings in the web app shows: plain words, no markup (docs/SETTINGS_UX.md).
+    # The `x-` keys of the JSON Schema pick the control: `x-expert` lists a setting only in expert mode, `x-hidden`
+    # never (another control edits it), `x-labels` names the choices, `x-unit` says what a number counts.
     data_dir: Path = Field(
         default_factory=lambda: platformdirs.user_data_path(APP_NAME),
-        description="Where Heinzelmännchen keeps its local state.",
+        title="Data folder",
+        description="Where Heinzelmännchen keeps its data on this computer.",
+        json_schema_extra={"x-expert": True},
     )
     cache_dir: Path = Field(
         default_factory=lambda: platformdirs.user_cache_path(APP_NAME),
-        description="Where Heinzelmännchen keeps caches that can be deleted at any time.",
+        title="Cache folder",
+        description="Where Heinzelmännchen keeps caches; anything in it can be deleted at any time.",
+        json_schema_extra={"x-expert": True},
     )
     state_dir: Path = Field(
         default_factory=lambda: platformdirs.user_state_path(APP_NAME),
-        description="Where Heinzelmännchen keeps runtime state such as locks and the daemon's pause flag.",
+        title="State folder",
+        description="Where Heinzelmännchen keeps runtime state, such as locks and whether the daemon is paused.",
+        json_schema_extra={"x-expert": True},
     )
     log_dir: Path = Field(
         default_factory=lambda: platformdirs.user_log_path(APP_NAME),
-        description="Where background work such as the daemon writes its logs.",
+        title="Log folder",
+        description="Where background work, such as the daemon, writes its logs.",
     )
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="WARNING",
-        description="Log level for Heinzelmännchen and its modules.",
+        title="Log detail",
+        description="How much Heinzelmännchen and its modules write to the log.",
+        json_schema_extra={
+            "x-expert": True,
+            "x-labels": {
+                "DEBUG": "Everything, for debugging",
+                "INFO": "Information",
+                "WARNING": "Warnings and errors",
+                "ERROR": "Errors only",
+                "CRITICAL": "Critical errors only",
+            },
+        },
     )
     output_format: Literal["text", "json"] = Field(
         default="text",
-        description="Default output of every operation; `json` suits scripts and agents. `--format` overrides it.",
+        title="Output format",
+        description="What every command prints unless it is asked for another format: text for people, or JSON for "
+        "scripts and agents.",
+        json_schema_extra={"x-expert": True, "x-labels": {"text": "Text", "json": "JSON"}},
     )
     expert: bool = Field(
         default=False,
-        description="Expert mode: list every command in help, shell completion and the web app, not just the "
-        "everyday ones. Hidden commands run all the same, and MCP and REST always list everything. Change it with "
-        "`hz system expert on` or `off`; not settable in a project's hz.toml (ADR 0041).",
+        title="Expert mode",
+        description="List every command in help, shell completion and the web app, not just the everyday ones. "
+        "Hidden commands still work, and MCP and REST always list everything. Turn it on or off with hz system "
+        "expert; a project's settings can't.",
+        json_schema_extra={"x-hidden": True},  # its own switch in General says what it does now
     )
     plugins_enabled: bool = Field(
         default=True,
-        description="Discover modules from installed plugins. Disable to debug a broken plugin.",
+        title="Load plugins",
+        description="Load the modules that installed plugins bring. Turn it off only to find a broken plugin.",
+        json_schema_extra={"x-expert": True},
     )
     update_check: bool = Field(
         default=True,
-        description="Check for a newer release at most once an hour, in the background with a 2-second timeout, "
-        "and say so on stderr after human output (ADR 0031): one unauthenticated request that carries nothing about "
-        "you. A failed check waits an hour too. Never in JSON, MCP or REST output, and off in CI. Set to false to "
-        "turn the check and the notice off; not settable in a project's hz.toml.",
+        title="Check for updates",
+        description="Look for a newer release at most once an hour and mention it after a command's output. The "
+        "check sends nothing about you, and never runs in CI or in JSON, MCP or REST output.",
     )
     disabled_modules: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset(),
-        description="Qualified names of modules to switch off, with their submodules. Comma-separated in the "
-        "environment, a list in TOML.",
+        title="Switched-off modules",
+        description="Modules Heinzelmännchen doesn't load, with their submodules. In the environment, separate them "
+        "with commas.",
+        json_schema_extra={"x-expert": True, "x-options": {"source": "modules"}},
     )
 
     ui_port: int = Field(
         default=8737,
         ge=1024,
         le=65535,
-        description="Port `hz ui` serves the web app on, on 127.0.0.1 only. It stays the same so an installed app (a "
-        "Dock icon) keeps its address; `hz ui --port 0` picks a free one for this session. Not settable in a "
-        "project's hz.toml (ADR 0046).",
+        title="Web app port",
+        description="The port the web app is served on, reachable from this computer only. It stays the same so an "
+        "installed app keeps its address.",
+        json_schema_extra={"x-expert": True},
     )
     api_allowed_hosts: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset(),
-        description="Host names `hz system serve api` answers besides localhost, 127.0.0.1 and [::1], for when it "
-        "listens on another interface (`--host`); requests naming any other host are refused, so a web page can't "
-        "reach the server through DNS rebinding. Comma-separated in the environment; not settable in a project's "
-        "hz.toml.",
+        title="Other host names for the API",
+        description="Host names the REST API answers besides this computer's own, for when it listens on another "
+        "network interface. Requests naming any other host are refused. In the environment, separate them with "
+        "commas.",
+        json_schema_extra={"x-expert": True},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"api_allowed_hosts", "expert", "ui_port", "update_check"})
