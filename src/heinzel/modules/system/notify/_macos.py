@@ -17,6 +17,7 @@ import os
 import plistlib
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -35,6 +36,9 @@ TIMEOUT = 10
 ASKING_TIMEOUT = 90
 """Seconds `install` waits while macOS asks the person; the app itself gives up after 60."""
 QUARANTINE = "com.apple.quarantine"
+BUILD_SCRIPT = SOURCES.parents[5] / "scripts" / "notifier.py"
+"""The build script of a source checkout (`make notifier`); a wheel has none, it ships the built app."""
+BUILD_TIMEOUT = 600
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 """Runs a command: `runner(command)` or `runner(command, timeout)`."""
@@ -103,17 +107,28 @@ class NotifierApp:
         bundled: Path = BUNDLED,
         runner: Runner = run,
         open_command: str = "/usr/bin/open",
+        build_script: Path | None = BUILD_SCRIPT,
     ) -> None:
         """Install into `home`/Applications (the user's home by default) from `bundled`."""
         self.bundled = bundled
         self.path = (home or Path.home()) / "Applications" / INSTALLED_NAME
         self._runner = runner
         self._open = open_command
+        self._build_script = build_script
 
     @property
     def available(self) -> bool:
         """Whether there is an app to use: bundled with this installation, or installed before."""
         return tree_digest(self.bundled) is not None or tree_digest(self.path) is not None
+
+    def rebuild(self) -> bool:
+        """In a source checkout, rebuild the bundled app when its sources changed; True if it was rebuilt."""
+        script = self._build_script
+        if script is None or not script.is_file():
+            return False  # a wheel ships the built app
+        if self._runner([sys.executable, str(script), "--check"]).returncode == 0:
+            return False
+        return self._runner([sys.executable, str(script)], BUILD_TIMEOUT).returncode == 0
 
     def inspect(self) -> Install:
         """Whether the installed app matches the bundled one, without changing anything."""

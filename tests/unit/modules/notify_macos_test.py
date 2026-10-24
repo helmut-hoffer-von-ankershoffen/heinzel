@@ -222,3 +222,21 @@ def test_the_web_icons_are_the_sizes_the_manifest_and_the_build_name():
     for index, size in enumerate(script.FAVICON_SIZES):
         _, _, _, _, _, _, length, offset = struct.unpack("<BBBBHHII", ico[6 + 16 * index : 22 + 16 * index])
         assert png_size(ico[offset : offset + length]) == (size, size)
+
+
+def test_a_source_checkout_rebuilds_the_bundled_app_only_when_its_sources_changed(tmp_path, bundled):
+    script = tmp_path / "notifier.py"
+    script.write_text("", encoding="utf-8")
+    commands: list[list[str]] = []
+    current = [False]
+
+    def runner(command, timeout=None):
+        commands.append(list(command))
+        return subprocess.CompletedProcess(command, 0 if current[0] or command[-1] != "--check" else 1, "", "")
+
+    app = NotifierApp(tmp_path / "home", bundled=bundled, runner=runner, build_script=script)
+    assert app.rebuild() is True
+    assert [c[-1] for c in commands] == ["--check", str(script)]
+    current[0] = True
+    assert app.rebuild() is False  # up to date: no second build
+    assert NotifierApp(tmp_path / "h", bundled=bundled, runner=runner, build_script=None).rebuild() is False
