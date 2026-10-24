@@ -7,6 +7,7 @@ Needs network (PyPI). Every test gets its own uv tool directory, configuration a
 import json
 import os
 import re
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -225,3 +226,84 @@ def test_install_from_git_like_users_do(sandbox):
         "hz-init",
         "hz-uninstall",
     }
+
+
+def installed_from_git(sandbox) -> None:
+    """Core installed from this checkout's HEAD, so first-party plugins come from the same repository and revision."""
+    if not (REPO / ".git").is_dir() or not HEAD:
+        pytest.skip("needs a git checkout with at least one commit")
+    sandbox.run("uv", "tool", "install", f"git+file://{REPO}@{HEAD}")
+
+
+def test_a_first_party_plugin_is_added_by_name_and_the_previews_hint_works_pasted(sandbox):
+    installed_from_git(sandbox)
+    preview = sandbox.hz("system", "plugin", "add", "clock")
+    assert "Not installed yet" in preview
+    assert "not reviewed" not in preview  # first-party: no community warning
+    [hint] = [line for line in preview.splitlines() if line.startswith("To install: ")]
+    command = shlex.split(hint.removeprefix("To install: "))
+    assert command[0] == "hz"
+    assert "Installed heinzel-clock" in sandbox.run(sandbox.hz_bin, *command[1:])
+    assert [p["distribution"] for p in json.loads(sandbox.hz("system", "plugin", "list", "--json"))] == [
+        "heinzel-clock"
+    ]
+    assert sandbox.hz("clock", "--help")  # the plugin loads
+
+
+def test_a_plugin_from_a_git_repository_is_added_with_confirm(sandbox, tmp_path):
+    """A git spec over https, served from a local bare repository through git's insteadOf (no network)."""
+    installed_from_git(sandbox)
+    work = tmp_path / "work"
+    subprocess.run(["cp", "-R", str(DUMMY_PLUGIN), str(work)], check=True, timeout=60)
+    git = ["git", "-C", str(work), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run(["git", "init", "-q", "-b", "main", str(work)], check=True, timeout=60)
+    subprocess.run([*git, "add", "."], check=True, timeout=60)
+    subprocess.run([*git, "commit", "-q", "-m", "plugin"], check=True, timeout=60)
+    bare = tmp_path / "heinzel-dummy.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(work), str(bare)], check=True, timeout=60)
+    rewrite = {
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": f"url.{bare}.insteadOf",
+        "GIT_CONFIG_VALUE_0": "https://git.example.test/acme/heinzel-dummy",
+    }
+    spec = "git+https://git.example.test/acme/heinzel-dummy@main"
+    preview = sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, **rewrite)
+    assert "Not installed yet" in preview
+    assert "✓ Installed" in sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, "--confirm", **rewrite)
+    assert sandbox.hz("dummy", "hello").strip() == "hello from dummy"
+
+
+def test_the_web_head_installs_a_first_party_catalog_entry_by_its_install_spec(sandbox):
+    import httpx
+
+    installed_from_git(sandbox)
+    entry = next(
+        p
+        for p in json.loads(sandbox.hz("system", "plugin", "search", "--text", "clock", "--json"))["plugins"]
+        if p["short_name"] == "clock"
+    )
+    ui = subprocess.Popen(
+        [str(sandbox.hz_bin), "ui", "--port", "0"],
+        env={**sandbox.env, "BROWSER": "true"},
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert ui.stderr is not None
+        line = next(line for line in ui.stderr if "runs at" in line)
+        url = line.strip().rsplit(" ", 1)[-1]
+        base, token = url.split("#token=")
+        auth = {"Authorization": f"Bearer {token}"}
+        add = f"{base.rstrip('/')}/api/system/plugin/add"
+        shown = httpx.post(add, params={"spec": entry["install_spec"]}, headers=auth, timeout=120).json()
+        assert shown["done"] is False
+        assert shown["candidate"]["first_party"] is True
+        done = httpx.post(add, params={"spec": shown["candidate"]["spec"], "confirm": True}, headers=auth, timeout=240)
+        assert done.status_code == 200, done.text
+        assert done.json()["done"] is True
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        if ui.stderr is not None:
+            ui.stderr.close()
+    assert sandbox.hz("clock", "--help")
