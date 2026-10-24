@@ -65,6 +65,12 @@ class AccessSettings(ModuleSettings):
         description="Environment variables passed to the gateway's commands besides PATH, HOME, LANG, LC_* and "
         "TMPDIR; HZ_CREDENTIAL_* variables are never passed.",
     )
+    chatgpt_model: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+        description="The model of the `chatgpt` option, one your ChatGPT plan offers through Sign in with ChatGPT; "
+        "sign in first with `hz ai access login`.",
+    )
 
     model: str | None = Field(
         default=None,
@@ -85,6 +91,7 @@ class AccessSettings(ModuleSettings):
             "gateway_hosts",
             "gateway_models",
             "gateway_env",
+            "chatgpt_model",
         }
     )
 

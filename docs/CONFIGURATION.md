@@ -52,6 +52,7 @@ Plugins add their own tables.
 | `gateway_hosts` | `HZ_AI_ACCESS__GATEWAY_HOSTS` | platform-specific | Hosts the gateway sends prompts to, as host names or URLs, e.g. `ai.acme.example`; shown in the listing and the capability matrix. |
 | `gateway_models` | `HZ_AI_ACCESS__GATEWAY_MODELS` | platform-specific | Models the gateway offers, when its status command doesn't say. |
 | `gateway_env` | `HZ_AI_ACCESS__GATEWAY_ENV` | platform-specific | Environment variables passed to the gateway's commands besides PATH, HOME, LANG, LC_* and TMPDIR; HZ_CREDENTIAL_* variables are never passed. |
+| `chatgpt_model` | `HZ_AI_ACCESS__CHATGPT_MODEL` | `None` | The model of the `chatgpt` option, one your ChatGPT plan offers through Sign in with ChatGPT; sign in first with `hz ai access login`. |
 | `model` | `HZ_AI_ACCESS__MODEL` | `None` | The model of the `pydantic-ai` option, as Pydantic AI names it, `<vendor>:<model>`, e.g. `anthropic:claude-sonnet-4-5`; its key is the credential `ai.access/api-key` or the vendor's variable. |
 
 ## `[atlassian]`

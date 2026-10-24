@@ -51,6 +51,7 @@ Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plug
 | List the AI access options, the one in use, whether each is signed in, and what runs each use. | `hz ai access list` | `ai_access_list` | — | `GET /api/ai/access/list` |  | expert |
 | Use an AI access option: sets capabilities.ai_access, and agent_runner if the option names one. | `hz ai access use` | — | — | `POST /api/ai/access/use` | yes | expert |
 | Run one cheap live check of an AI access option and keep the result; this may cost a little. | `hz ai access test` | — | — | `POST /api/ai/access/test` | yes | expert |
+| Sign in to ChatGPT in your browser, so the `chatgpt` option uses your plan instead of an API key. | `hz ai access login` | — | — | — | yes | expert |
 
 Settings: [`[ai.access]`](CONFIGURATION.md#aiaccess).
 

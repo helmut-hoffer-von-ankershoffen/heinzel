@@ -142,6 +142,17 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
 
 - Builds on [ADR 0028](0028-integrations-are-capability-adapters.md) (adapters, bindings, hosts) and
   [ADR 0044](0044-themes-are-data-a-plugin-ships.md) (the choice and its listing).
+- **The `chatgpt` option** (a ChatGPT Plus or Pro plan instead of an API key). OpenAI's "Sign in with ChatGPT" offers
+  plan usage to open-source apps ("ChatGPT plan usage is available to all open-source partners and selected private
+  clients", developers.openai.com/siwc/quickstart, read 2026-10-25); each person approves hz by name and can limit it
+  in ChatGPT's settings, and a paid or remotely hosted app would need OpenAI's approval first. hz is open source and
+  runs on the person's machine, so `hz ai access login` (CLI only: it opens the browser and waits for the callback on
+  127.0.0.1) signs in through Pydantic AI's `openai-chatgpt` flow under the app name "Heinzelmännchen" and a stable
+  installation id (`<state_dir>/ai/host-id`). The credentials, a refresh token among them, are one keychain
+  credential (`ai.access/chatgpt-login`) that Pydantic AI reads and refreshes through it; `[ai.access]
+  chatgpt_model` names the model. hz does not use Pydantic AI's `openai-codex` provider, which signs in as the Codex
+  CLI with that CLI's stored credentials; a ChatGPT plan's coding agent is the Codex CLI itself, its own access
+  option and agent runner (next slice).
 - First slice: the protocol, `Adapters[P]`, the `claude-code`, `gateway` and `pydantic-ai` options with the
   `pydantic-ai-slim` dependency, `list`, `use`, `test`, doctor. Deferred: the turn engine itself (ADR 0050),
   `[ai.roles]`, `[ai.models]`, `[ai.prices]`, gateway endpoints and tokens, and the web Settings section.
