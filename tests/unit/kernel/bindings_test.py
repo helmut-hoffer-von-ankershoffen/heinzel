@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import pytest
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from heinzel import (
     Chat,
@@ -22,12 +22,13 @@ from heinzel import (
     OperationLet,
     Participant,
     PostedMessage,
+    ProviderLet,
     SectionReplacement,
     Tracker,
     Window,
 )
 from heinzel.kernel import CAPABILITIES, CapabilityView, CompiledJobs, ModuleRecord, Origin, Requirement
-from heinzel.kernel._bindings import Capabilities, CapabilitySettings, Requester
+from heinzel.kernel._bindings import Adapter, Capabilities, CapabilitySettings, Requester
 
 pytestmark = pytest.mark.unit
 
@@ -606,3 +607,164 @@ def test_an_adapter_class_must_define_every_read_method_of_the_new_capabilities(
 
 def test_capabilities_is_kernel_internal():
     assert Capabilities.__module__ == "heinzel.kernel._bindings"
+
+
+class AcmeSettings(ModuleSettings):
+    api_url: str = "https://api.acme.invalid"
+
+
+class StrictSettings(ModuleSettings):
+    api_url: str = "https://api.acme.invalid"
+
+    @field_validator("api_url")
+    @classmethod
+    def _https(cls, value: str) -> str:
+        if not value.startswith("https://"):
+            msg = "api_url must be https"
+            raise ValueError(msg)
+        return value
+
+
+def acme_module(hosts: object, *, settings: type[ModuleSettings] | None = AcmeSettings) -> Module:
+    module = Module("acme", "Provides documents where its settings say.")
+    if settings is not None:
+        module.settings(settings)
+    module.provides("documents", modes={"read"}, hosts=hosts)(Reader)  # type: ignore[arg-type]
+    return module
+
+
+def acme_hosts(make_kernel, hosts: object, **acme: object) -> tuple[tuple[str, ...], str | None]:
+    kernel = make_kernel(acme=acme_module(hosts), config=Config(files=(), data={"acme": acme}))
+    view = kernel.resolve(CapabilityView)
+    return view.hosts(view.adapters[0])
+
+
+def url(settings: AcmeSettings) -> object:
+    return [settings.api_url]
+
+
+def one_string(settings: AcmeSettings) -> object:
+    return settings.api_url
+
+
+def duplicates(settings: AcmeSettings) -> object:
+    return [settings.api_url, "API.acme.invalid", "uploads.acme.invalid"]
+
+
+def failing(settings: AcmeSettings) -> object:
+    msg = f"leaks {settings.api_url}"
+    raise RuntimeError(msg)
+
+
+def not_iterable(settings: AcmeSettings) -> object:
+    return 42 if settings else None
+
+
+def not_hosts(settings: AcmeSettings) -> object:
+    return [settings.api_url.replace("acme.invalid", ""), 7, "ok.invalid"]
+
+
+def nothing(settings: AcmeSettings) -> object:
+    return [] if settings else None
+
+
+def test_static_hosts_are_shown_as_declared(kernel):
+    view = kernel.resolve(CapabilityView)
+    assert view.hosts(view.adapters[0]) == (("notes.invalid",), None)
+
+
+def test_hosts_from_settings_are_host_names_read_from_the_effective_settings(make_kernel):
+    found = acme_hosts(make_kernel, url, api_url="https://bot:t0ken@GHE.example.invalid:8443/api/v3")
+    assert found == (("ghe.example.invalid",), None)
+
+
+def test_a_lone_string_is_one_host_and_duplicates_are_shown_once(make_kernel):
+    assert acme_hosts(make_kernel, one_string) == (("api.acme.invalid",), None)
+    assert acme_hosts(make_kernel, duplicates) == (("api.acme.invalid", "uploads.acme.invalid"), None)
+
+
+def test_hosts_from_settings_appear_in_the_matrix_and_are_read_once(make_kernel):
+    calls: list[str] = []
+
+    def counted(settings: AcmeSettings) -> object:
+        calls.append(settings.api_url)
+        return [settings.api_url]
+
+    kernel = make_kernel(acme=acme_module(counted), digest=digest_module(), config=bind(documents="acme"))
+    kernel._capabilities.matrix()
+    assert {row.hosts for row in kernel._capabilities.matrix() if row.adapter == "acme"} == {("api.acme.invalid",)}
+    assert calls == ["https://api.acme.invalid"]
+
+
+@pytest.mark.parametrize(
+    ("hosts", "problem"),
+    [
+        (failing, "the hosts of acme:documents come from its settings, which couldn't be read (RuntimeError)"),
+        (not_iterable, "the hosts of acme:documents come from its settings, which couldn't be read (TypeError)"),
+        (
+            not_hosts,
+            "the hosts of acme:documents come from its settings, but value 1, 2 of 3 is not a host name or URL",
+        ),
+        (nothing, "the hosts of acme:documents come from its settings, which name no host"),
+    ],
+)
+def test_hosts_that_cant_be_read_are_unknown_and_the_problem_repeats_no_value(make_kernel, hosts, problem):
+    assert acme_hosts(make_kernel, hosts, api_url="https://s3cret@acme.invalid") == ((), problem)
+
+
+def test_reading_hosts_logs_no_value_and_no_message(make_kernel, caplog):
+    acme_hosts(make_kernel, failing, api_url="https://s3cret@acme.invalid")
+    assert [record.getMessage() for record in caplog.records] == [
+        "Reading the hosts of adapter acme:documents through failing failed: RuntimeError"
+    ]
+    assert not any(record.exc_info for record in caplog.records)
+
+
+def test_two_adapters_with_one_name_keep_their_own_hosts(make_kernel):
+    class OtherSettings(ModuleSettings):
+        api_url: str = "https://other.acme.invalid"
+
+    def other(settings: OtherSettings) -> object:
+        return [settings.api_url]
+
+    kernel = make_kernel(acme=acme_module(url), acme2=acme_module(other, settings=OtherSettings))
+    assert not kernel.errors
+    view = kernel.resolve(CapabilityView)
+    assert sorted(view.hosts(adapter)[0] for adapter in view.adapters) == [
+        ("api.acme.invalid",),
+        ("other.acme.invalid",),
+    ]
+
+
+def test_settings_that_fail_validation_make_the_hosts_unknown(make_kernel):
+    def strict(settings: StrictSettings) -> object:
+        return [settings.api_url]
+
+    kernel = make_kernel(
+        acme=acme_module(strict, settings=StrictSettings),
+        config=Config(files=(), data={"acme": {"api_url": "http://s3cret@acme.invalid"}}),
+    )
+    view = kernel.resolve(CapabilityView)
+    assert view.hosts(view.adapters[0]) == (
+        (),
+        "the hosts of acme:documents come from its settings, which couldn't be read (ValidationError)",
+    )
+
+
+def test_without_a_settings_resolver_hosts_from_settings_are_unknown():
+    let = next(let for let in acme_module(url).lets if isinstance(let, ProviderLet))
+    capabilities = Capabilities([Adapter("acme", "heinzel-test", let)], [], {}, CapabilitySettings(), build=print)
+    assert capabilities.hosts_of(capabilities.view.adapters[0]) == (
+        (),
+        "the hosts of acme:documents come from its settings, which nothing provides",
+    )
+
+
+def test_hosts_may_read_only_their_own_modules_settings(make_kernel, settings):
+    kernel = make_kernel(acme=acme_module(url, settings=None))
+    assert kernel.errors["acme"] == (
+        "Adapter skipped: the hosts of adapter acme:documents read settings acme doesn't declare: AcmeSettings"
+    )
+    assert not kernel._capabilities.adapters
+    with pytest.raises(HeinzelError, match="Built-in module 'acme': the hosts of adapter acme:documents read"):
+        Kernel(settings, [ModuleRecord("acme", acme_module(url, settings=None), BUILTIN)])

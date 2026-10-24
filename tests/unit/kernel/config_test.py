@@ -123,3 +123,15 @@ def test_the_config_editor_is_an_interface_system_config_implements():
         ConfigEditor().write("clock.zones", [])
     with pytest.raises(NotImplementedError):
         ConfigEditor().unset("clock.zones")
+
+
+def test_a_bare_carriage_return_is_invalid_toml_not_a_newline(tmp_path):
+    """TOML allows CRLF but not a lone CR; reading in text mode would translate it into a valid newline."""
+    (tmp_path / "hz.toml").write_bytes(b"a = 1\rb = 2\n")
+    with pytest.raises(HeinzelError, match="not valid TOML"):
+        Config.load(tmp_path)
+
+
+def test_crlf_line_endings_load(tmp_path):
+    (tmp_path / "hz.toml").write_bytes(b"a = 1\r\nb = 2\r\n")
+    assert Config.load(tmp_path).data == {"a": 1, "b": 2}
