@@ -9206,7 +9206,7 @@
     },
     "/system/update": {
       "post": {
-        "description": "Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.\n\nInstalled from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases\nonly if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`\nmakes. Pinned to a branch, a commit or a local source, it changes nothing and says which `--source` moves it.\nFollowing a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new\nversion, the error names it and the previous version stays installed.\n\nRaises:\n    HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.",
+        "description": "Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.\n\nInstalled from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases\nonly if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`\nmakes. With `--channel main` (or the setting\n`update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,\nit changes nothing and says which `--source` moves it. It never moves or suggests a release older than the\ninstalled version.\nFollowing a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new\nversion, the error names it and the previous version stays installed.\n\nRaises:\n    HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.",
         "operationId": "system_update",
         "parameters": [
           {
@@ -9225,6 +9225,28 @@
               ],
               "description": "Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.",
               "title": "Source"
+            }
+          },
+          {
+            "description": "Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.",
+            "in": "query",
+            "name": "channel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "release",
+                    "main"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.",
+              "title": "Channel"
             }
           }
         ],
