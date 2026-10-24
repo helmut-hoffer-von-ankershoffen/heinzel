@@ -24,6 +24,8 @@ SATURDAY = 5
 MAX_MATCHES = 15
 """More matches than this, and setup asks for more of the name instead of listing them."""
 EXAMPLE = "hz system config set clock.zones '[{ name = \"Europe/Berlin\", hours = [9, 18] }]'"
+Hour = Annotated[int, Field(ge=0, le=24)]
+"""An hour of the day; 24 ends a working day at midnight."""
 
 
 class Zone(BaseModel):
@@ -31,8 +33,10 @@ class Zone(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str = Field(description="IANA time zone name, e.g. Europe/Berlin.")
-    hours: tuple[int, int] = Field(default=DEFAULT_HOURS, description="Start and end hour of a working day there.")
+    name: str = Field(
+        description="IANA time zone name, e.g. Europe/Berlin.", json_schema_extra={"format": "iana-timezone"}
+    )
+    hours: tuple[Hour, Hour] = Field(default=DEFAULT_HOURS, description="Start and end hour of a working day there.")
 
     @model_validator(mode="before")
     @classmethod

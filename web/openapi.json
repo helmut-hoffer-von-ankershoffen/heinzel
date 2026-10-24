@@ -1309,6 +1309,18 @@
       "ConfigReport": {
         "description": "Where configuration comes from and what is in effect.",
         "properties": {
+          "can_reveal": {
+            "default": false,
+            "description": "Whether `hz system config reveal` can open this machine's file manager here: false on Linux without a desktop session, or when the opener isn't installed.",
+            "title": "Can Reveal",
+            "type": "boolean"
+          },
+          "file_manager": {
+            "default": "file manager",
+            "description": "What this machine's file manager is called, to label a reveal action: `Finder` on macOS, `Explorer` on Windows, `file manager` elsewhere.",
+            "title": "File Manager",
+            "type": "string"
+          },
           "files": {
             "description": "Lowest precedence first; environment variables override all.",
             "items": {
@@ -1331,6 +1343,58 @@
           "settings"
         ],
         "title": "ConfigReport",
+        "type": "object"
+      },
+      "ConfigRevealed": {
+        "description": "What `hz system config reveal` did.",
+        "properties": {
+          "message": {
+            "description": "What happened, or why nothing did, with the file's path.",
+            "title": "Message",
+            "type": "string"
+          },
+          "opened": {
+            "description": "Whether the file manager was opened.",
+            "title": "Opened",
+            "type": "boolean"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The file; none for project when there is no hz.toml here or above.",
+            "title": "Path"
+          },
+          "scope": {
+            "description": "Which configuration file: site, user or project.",
+            "enum": [
+              "site",
+              "user",
+              "project"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "supported": {
+            "description": "Whether this machine has a file manager hz can open.",
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "scope",
+          "path",
+          "supported",
+          "opened",
+          "message"
+        ],
+        "title": "ConfigRevealed",
         "type": "object"
       },
       "ConflictView": {
@@ -4083,6 +4147,19 @@
             "title": "Env",
             "type": "string"
           },
+          "json_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The setting's JSON Schema, self-contained (no `$ref`): its type, nested models, enums, bounds such as minimum and maximum, formats such as `iana-timezone`, descriptions and default; none when its type has no JSON Schema.",
+            "title": "Json Schema"
+          },
           "key": {
             "description": "Setting name within its section.",
             "title": "Key",
@@ -5373,6 +5450,56 @@
           }
         },
         "summary": "Write a configuration file with every setting commented out, ready to edit.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/config/reveal": {
+      "post": {
+        "description": "Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.\n\nA file that doesn't exist yet is shown by its nearest existing folder. On Linux without a desktop session nothing\nopens and the message names the file.",
+        "operationId": "system_config_reveal",
+        "parameters": [
+          {
+            "description": "Which configuration file: site, user or project.",
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "description": "Which configuration file: site, user or project.",
+              "enum": [
+                "site",
+                "user",
+                "project"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigRevealed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.",
         "tags": [
           "system"
         ]

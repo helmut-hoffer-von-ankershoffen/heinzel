@@ -231,7 +231,8 @@ for one module, `--restart` to go through every step again, `--answers answers.t
 `hz setup --print-answers > answers.toml` to write that file from a finished setup.
 
 `hz system config set example.greeting Moin` edits your user file (`--scope project` the project's `hz.toml`),
-`hz system config init` writes a commented starter file. Environment variables: `HZ_<SETTING>` for the kernel
+`hz system config init` writes a commented starter file, `hz system config reveal user` shows that file in Finder,
+Explorer or your desktop's file manager (`site`, `project` for the others). Environment variables: `HZ_<SETTING>` for the kernel
 (`HZ_LOG_LEVEL=DEBUG`), `HZ_<MODULE>__<SETTING>` for modules (`HZ_EXAMPLE__GREETING=Hi`). Every setting:
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 

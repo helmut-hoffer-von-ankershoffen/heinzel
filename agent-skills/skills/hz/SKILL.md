@@ -35,7 +35,8 @@ shows you everything without changing their setting, and every command runs eith
 ## Configure
 
 `hz system config show --json` lists configuration files in precedence order and each setting with its environment
-variable (`HZ_<FIELD>` for the kernel, `HZ_<MODULE>__<FIELD>` for modules). Prefer environment variables for
+variable (`HZ_<FIELD>` for the kernel, `HZ_<MODULE>__<FIELD>` for modules) and its `json_schema`, the shape a value
+must have (nested tables, enums, bounds). Prefer environment variables for
 one-off overrides and the user's config file for lasting changes.
 
 ## Plugins

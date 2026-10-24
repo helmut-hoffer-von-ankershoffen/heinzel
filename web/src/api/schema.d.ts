@@ -211,6 +211,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/config/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.
+         * @description Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.
+         *
+         *     A file that doesn't exist yet is shown by its nearest existing folder. On Linux without a desktop session nothing
+         *     opens and the message names the file.
+         */
+        post: operations["system_config_reveal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/config/set": {
         parameters: {
             query?: never;
@@ -2006,6 +2029,18 @@ export interface components {
          */
         ConfigReport: {
             /**
+             * Can Reveal
+             * @description Whether `hz system config reveal` can open this machine's file manager here: false on Linux without a desktop session, or when the opener isn't installed.
+             * @default false
+             */
+            can_reveal: boolean;
+            /**
+             * File Manager
+             * @description What this machine's file manager is called, to label a reveal action: `Finder` on macOS, `Explorer` on Windows, `file manager` elsewhere.
+             * @default file manager
+             */
+            file_manager: string;
+            /**
              * Files
              * @description Lowest precedence first; environment variables override all.
              */
@@ -2015,6 +2050,38 @@ export interface components {
              * @description Every setting in effect.
              */
             settings: components["schemas"]["SettingInfo"][];
+        };
+        /**
+         * ConfigRevealed
+         * @description What `hz system config reveal` did.
+         */
+        ConfigRevealed: {
+            /**
+             * Message
+             * @description What happened, or why nothing did, with the file's path.
+             */
+            message: string;
+            /**
+             * Opened
+             * @description Whether the file manager was opened.
+             */
+            opened: boolean;
+            /**
+             * Path
+             * @description The file; none for project when there is no hz.toml here or above.
+             */
+            path: string | null;
+            /**
+             * Scope
+             * @description Which configuration file: site, user or project.
+             * @enum {string}
+             */
+            scope: "site" | "user" | "project";
+            /**
+             * Supported
+             * @description Whether this machine has a file manager hz can open.
+             */
+            supported: boolean;
         };
         /**
          * ConflictView
@@ -3663,6 +3730,13 @@ export interface components {
              */
             env: string;
             /**
+             * Json Schema
+             * @description The setting's JSON Schema, self-contained (no `$ref`): its type, nested models, enums, bounds such as minimum and maximum, formats such as `iana-timezone`, descriptions and default; none when its type has no JSON Schema.
+             */
+            json_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /**
              * Key
              * @description Setting name within its section.
              */
@@ -4293,6 +4367,7 @@ export type SchemaCheckReport = components['schemas']['CheckReport'];
 export type SchemaCompiledContract = components['schemas']['CompiledContract'];
 export type SchemaConfigFileInfo = components['schemas']['ConfigFileInfo'];
 export type SchemaConfigReport = components['schemas']['ConfigReport'];
+export type SchemaConfigRevealed = components['schemas']['ConfigRevealed'];
 export type SchemaConflictView = components['schemas']['ConflictView'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
 export type SchemaContractList = components['schemas']['ContractList'];
@@ -4589,6 +4664,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_config_reveal: {
+        parameters: {
+            query: {
+                /** @description Which configuration file: site, user or project. */
+                scope: "site" | "user" | "project";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigRevealed"];
                 };
             };
             /** @description Validation Error */

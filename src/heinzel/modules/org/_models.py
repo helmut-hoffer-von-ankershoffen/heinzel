@@ -40,6 +40,10 @@ GITHUB_LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}")
 EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 HOURS = re.compile(r"(\d{1,2})\s*[-,]\s*(\d{1,2})")  # 09-18, or 9,18 as a list in an answers file gives it
 DEFAULT_HOURS = (9, 18)
+Hour = Annotated[int, Field(ge=0, le=24)]
+"""An hour of the day; 24 ends a working day at midnight."""
+TimeZoneName = Annotated[str, Field(json_schema_extra={"format": "iana-timezone"})]
+"""An IANA time zone name; the format tells a form to offer the known zones."""
 
 
 def handle_problem(handle: str) -> str | None:
@@ -127,8 +131,8 @@ class OrgSettings(ModuleSettings):
         default=None,
         description=f"Your role, one of {', '.join(ROLES)}.",
     )
-    timezone: str | None = Field(default=None, description="Your IANA time zone, e.g. Europe/Berlin.")
-    working_hours: Annotated[tuple[int, int], NoDecode] = Field(
+    timezone: TimeZoneName | None = Field(default=None, description="Your IANA time zone, e.g. Europe/Berlin.")
+    working_hours: Annotated[tuple[Hour, Hour], NoDecode] = Field(
         default=DEFAULT_HOURS,
         description='Start and end hour of your working day, e.g. [9, 18] or "09-18" (HZ_ORG__WORKING_HOURS=09-18).',
     )

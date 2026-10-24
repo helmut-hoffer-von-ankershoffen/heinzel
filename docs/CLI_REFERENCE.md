@@ -622,6 +622,7 @@ $ hz system config [OPTIONS] COMMAND [ARGS]...
 
 * `get`: (expert) Show one setting in effect, with...
 * `init`: (expert) Write a configuration file with...
+* `reveal`: (expert) Show a configuration file in...
 * `set`: (expert) Change a setting in the user or...
 * `show`: (expert) Show the configuration files...
 * `unset`: (expert) Remove a setting from the user or...
@@ -660,6 +661,26 @@ $ hz system config init [OPTIONS]
 
 * `--path <path>`: Where to write; defaults to the user configuration file.
 * `--force / --no-force`: Overwrite an existing file.  [default: no-force]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system config reveal`
+
+(expert) Show a configuration file in Finder, Explorer or your desktop&#x27;s file manager; nothing is created.
+
+**Usage**:
+
+```console
+$ hz system config reveal [OPTIONS] {scope}:<site|user|project>
+```
+
+**Arguments**:
+
+* `scope:<site|user|project>`: Which configuration file: site, user or project.  [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

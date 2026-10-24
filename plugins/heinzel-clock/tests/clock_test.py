@@ -162,3 +162,17 @@ def test_setup_without_zones_asks_only_to_add_some(hz, hz_prompter, monkeypatch)
     assert result.exit_code == 0, result.output
     assert not [line for line in hz_prompter.transcript if line.startswith("Time zones to keep")]
     assert "The team needs at least one time zone." in hz_prompter.transcript
+
+
+def test_the_zones_schema_tells_a_form_each_name_is_a_time_zone_and_each_hour_an_hour_of_the_day(hz):
+    schema = hz("system", "config", "get", "clock.zones").json["json_schema"]
+    zone = schema["items"]
+    assert zone["properties"]["name"]["format"] == "iana-timezone"
+    assert zone["properties"]["hours"]["prefixItems"] == [{"type": "integer", "minimum": 0, "maximum": 24}] * 2
+    assert zone["properties"]["hours"]["default"] == [9, 18]
+    assert "$ref" not in str(schema)
+
+
+def test_an_hour_past_midnight_is_refused():
+    with pytest.raises(ValidationError, match="less than or equal to 24"):
+        Zone(name="Asia/Tokyo", hours=(9, 25))

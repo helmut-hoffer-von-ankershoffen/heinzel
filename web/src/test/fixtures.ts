@@ -22,6 +22,8 @@ export const doctor: SchemaHealthReport = {
 
 export const config: SchemaConfigReport = {
   files: [{ scope: "user", path: "/home/mira/.config/hz/hz.toml", exists: true }],
+  can_reveal: true,
+  file_manager: "Finder",
   settings: [
     {
       section: "hz",

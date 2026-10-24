@@ -3,6 +3,7 @@
 import os
 import shlex
 import shutil
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -15,7 +16,9 @@ from tomlkit.exceptions import ParseError
 
 from heinzel import Config, ConfigEditor, HeinzelError, Kernel, ModuleSettings
 from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, toml_value, user_config_dir
-from heinzel.modules.system.config._models import ConfigFileInfo, ConfigReport, SettingInfo
+from heinzel.modules.system.config._models import ConfigFileInfo, ConfigReport, ConfigRevealed, RevealScope, SettingInfo
+from heinzel.modules.system.config._reveal import Revealer
+from heinzel.modules.system.config._schema import setting_schemas
 
 HEADER = """\
 # Heinzelmännchen configuration.
@@ -42,11 +45,16 @@ class ConfigService(ConfigEditor):
     def __init__(self, kernel: Kernel) -> None:
         """Create the service; the kernel is injected."""
         self._kernel = kernel
+        self.revealer = Revealer(sys.platform, shutil.which, os.environ)
+        """This machine's file manager; tests replace it so nothing opens."""
 
     def report(self) -> ConfigReport:
-        """The files Heinzelmännchen reads and every setting in effect."""
+        """The files Heinzelmännchen reads, every setting in effect, and whether a file can be revealed here."""
+        schemas = {type(settings): setting_schemas(type(settings)) for _, settings in self._kernel.settings_of()}
         return ConfigReport(
             files=[self._file(file) for file in self._kernel.config.files],
+            can_reveal=self.revealer.unsupported() is None,
+            file_manager=self.revealer.file_manager,
             settings=[
                 SettingInfo(
                     section=section,
@@ -56,6 +64,7 @@ class ConfigService(ConfigEditor):
                     description=field.description or "",
                     default=_default(field),
                     source=self._source(section, key, type(settings).ignored_in_project),
+                    json_schema=schemas[type(settings)].get(key),
                 )
                 for section, settings in self._kernel.settings_of()
                 for key, field in type(settings).model_fields.items()
@@ -74,6 +83,25 @@ class ConfigService(ConfigEditor):
             if key in table or key.replace("_", "-") in table:
                 return str(file.scope)
         return "default"
+
+    def reveal(self, scope: RevealScope) -> ConfigRevealed:
+        """Show the site, user or project configuration file in this machine's file manager; nothing is created."""
+        path = next((f.path for f in self._kernel.config.files if f.scope == scope), None)
+        if path is None and scope == "user":
+            path = user_config_dir() / FILENAME
+        if path is None:
+            supported = self.revealer.unsupported() is None
+            message = (
+                f"There is no project {PROJECT_FILENAME} in {Path.cwd()} or above; "
+                "`hz system config set KEY VALUE --scope project` creates one here."
+                if scope == "project"
+                else f"Heinzelmännchen reads no {scope} configuration file here."
+            )
+            return ConfigRevealed(scope=scope, path=None, supported=supported, opened=False, message=message)
+        done = self.revealer.reveal(path)
+        return ConfigRevealed(
+            scope=scope, path=path, supported=done.supported, opened=done.opened, message=done.message
+        )
 
     def init(self, path: Path | None = None, *, force: bool = False) -> Path:
         """Write a configuration file listing every setting, commented out, with its description and default.
