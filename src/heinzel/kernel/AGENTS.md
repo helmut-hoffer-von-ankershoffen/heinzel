@@ -9,8 +9,11 @@ change like a library release: an ADR for a new concept, unit tests for every br
 - `_protocols.py` — integration capability protocols (`CodeHost`, `Tracker`, `Documents`, `Chat`, `Meetings`,
   `Calendar`, `Mail`, `Directory`; `MailQuery`, the mail query syntax) and their models; `_directory.py` —
   `draft_reporting_lines`, the seam setup steps and roster drafting call (fallback adapter:
-  `system.directory`); `_text.py` — `clean_text`, which adapters apply to every string they return;
-  `_agents.py` — the `AgentRunner` protocol and `AgentResult` (ADR 0029; adapters live in `system.runner`);
+  `system.directory`); `_text.py` — `clean_text`, which adapters apply to every string they return, and
+  `redact_emails`, which keeps addresses out of prompts;
+  `_agents.py` — the `AgentRunner` protocol, `AgentResult` and `McpServer` (ADR 0029; adapters live in
+  `system.runner`); `_chat.py` — `ActionGate` and `ProposedCall`, where a chat's agent proposes what only the person's
+  confirmation runs (ADR 0045; provided by `system.runner.chat`, asked for by the MCP head);
   `_capabilities.py` — the capability registry with each method's mode and requirement strings;
   `_bindings.py` — `[capabilities]` bindings; `Capabilities` (kernel-internal) hands requesters mode-gated
   handles, modules get the read-only `CapabilityView` (ADR 0028); `Kernel.handle_for` gives the compiling module's

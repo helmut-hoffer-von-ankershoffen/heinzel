@@ -87,3 +87,29 @@ def test_output_beyond_the_limit_is_drained_and_dropped(tmp_path):
 def test_an_agent_that_ignores_its_input_does_not_hang_the_run(tmp_path):
     outcome = run_bounded(python("pass"), input="x" * 1_000_000, cwd=tmp_path, env=ENV, timeout=10)
     assert outcome.returncode == 0
+
+
+def test_each_line_reaches_the_listener_as_it_is_written():
+    lines: list[str] = []
+    code = "import sys, time\nfor n in range(3):\n    print(n, flush=True); time.sleep(0.01)"
+    outcome = run_bounded(python(code), input=None, cwd=None, env=ENV, timeout=10, on_line=lines.append)
+    assert lines == ["0\n", "1\n", "2\n"]
+    assert outcome.stdout == "0\n1\n2\n"
+
+
+def test_a_listener_that_fails_is_dropped_and_the_output_is_still_kept():
+    def broken(line: str) -> None:
+        raise ValueError(line)
+
+    code = "for n in range(3): print(n)"
+    outcome = run_bounded(python(code), input=None, cwd=None, env=ENV, timeout=10, on_line=broken)
+    assert outcome.stdout == "0\n1\n2\n"
+
+
+def test_lines_past_the_limit_never_reach_the_listener():
+    lines: list[str] = []
+    code = "for n in range(100): print('x' * 9)"
+    outcome = run_bounded(python(code), input=None, cwd=None, env=ENV, timeout=10, limit=25, on_line=lines.append)
+    assert "".join(lines) == outcome.stdout
+    assert len(outcome.stdout) == 25
+    assert outcome.truncated

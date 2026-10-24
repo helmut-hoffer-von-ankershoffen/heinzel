@@ -44,19 +44,30 @@ Execute = Callable[..., Outcome]
 class _Capture:
     """Drains a pipe in a thread, keeping at most `limit` bytes."""
 
-    def __init__(self, stream: IO[bytes], limit: int) -> None:
+    def __init__(self, stream: IO[bytes], limit: int, on_line: Callable[[str], None] | None = None) -> None:
         self.chunks: list[bytes] = []
         self.size = 0
         self._limit = limit
+        self._on_line = on_line
         self._thread = threading.Thread(target=self._drain, args=(stream,), daemon=True)
         self._thread.start()
 
     def _drain(self, stream: IO[bytes]) -> None:
         with stream:
-            while chunk := stream.read(65536):
+            # Line by line when someone listens, so they see each line as it is written; never more than 64 KiB a read.
+            while chunk := (stream.readline(65536) if self._on_line else stream.read(65536)):
                 if self.size < self._limit:
-                    self.chunks.append(chunk[: self._limit - self.size])
+                    kept = chunk[: self._limit - self.size]
+                    self.chunks.append(kept)
+                    if self._on_line is not None:
+                        self._listen(kept)
                 self.size += len(chunk)
+
+    def _listen(self, line: bytes) -> None:
+        try:
+            self._on_line(line.decode(errors="replace"))  # type: ignore[misc]  # set when called
+        except Exception:  # noqa: BLE001 - a listener's failure must not stop draining the agent's output
+            self._on_line = None
 
     def text(self, wait: float) -> str:
         self._thread.join(wait)
@@ -89,11 +100,13 @@ def run_bounded(  # noqa: PLR0913 - the process's whole contract
     env: Mapping[str, str],
     timeout: float,
     limit: int = MAX_OUTPUT,
+    on_line: Callable[[str], None] | None = None,
 ) -> Outcome:
     """Run `command` in a new session; past `timeout` its whole process group gets SIGTERM, then SIGKILL.
 
     The command line is a list, never a shell string. Whatever the agent left running in its group after it exits is
-    killed too, so no tool process outlives the run.
+    killed too, so no tool process outlives the run. `on_line` is called with each line of stdout as it arrives, from
+    another thread; a listener that raises is dropped.
     """
     process = subprocess.Popen(  # noqa: S603 - an argument list built by the runner, executable resolved to a path
         command,
@@ -104,7 +117,7 @@ def run_bounded(  # noqa: PLR0913 - the process's whole contract
         env=dict(env),
         start_new_session=True,
     )
-    stdout = _Capture(cast("IO[bytes]", process.stdout), limit)  # both are pipes, see above
+    stdout = _Capture(cast("IO[bytes]", process.stdout), limit, on_line)  # both are pipes, see above
     stderr = _Capture(cast("IO[bytes]", process.stderr), limit)
     if input is not None and process.stdin is not None:
         threading.Thread(target=_write, args=(process.stdin, input.encode()), daemon=True).start()
@@ -119,6 +132,10 @@ def run_bounded(  # noqa: PLR0913 - the process's whole contract
         except subprocess.TimeoutExpired:
             _signal_group(process.pid, signal.SIGKILL)
             process.wait()
+    except BaseException:  # Ctrl-C reaches only us (the agent has its own session): stop it, then go on stopping
+        _signal_group(process.pid, signal.SIGKILL)
+        process.wait()
+        raise
     _signal_group(process.pid, signal.SIGKILL)  # leftovers of the agent's group
     return Outcome(
         returncode=returncode,

@@ -40,10 +40,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from heinzel.heads import api
+from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._stream import add_stream
-from heinzel.kernel import FONT_ROUTE, KERNEL_SECTION, Config, HeinzelError, Kernel, Settings, ThemeFonts
+from heinzel.kernel import FONT_ROUTE, KERNEL_SECTION, Config, HeinzelError, Kernel, Progress, Settings, ThemeFonts
 
 HEAD = "web"
 STATIC = Path(__file__).parent / "static"
@@ -168,6 +169,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     if static is not None and not (static / "index.html").is_file():
         raise HeinzelError(NOT_BUILT)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    kernel.bind(Progress, StreamProgress())  # operations' events reach the stream of the request that runs them
 
     @app.middleware("http")
     async def guarded(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:

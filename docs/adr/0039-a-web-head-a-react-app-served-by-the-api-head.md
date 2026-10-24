@@ -3,7 +3,7 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0018, 0019
-amended-by: 0041, 0043, 0046, 0047
+amended-by: 0041, 0043, 0045, 0046, 0047
 related: 0003, 0020, 0021, 0023, 0024, 0027, 0029, 0036, 0037
 ---
 
@@ -202,6 +202,8 @@ addition, the token, that the browser can prove and another page cannot forge. D
   the stack above ("ok, go for it"); the three-column layout with the AI chat on the right; the first screens
   (settings, contract graph, org chart and roster, inventory, doctor); localhost only with a session token for now,
   team hosting in its own ADR.
-- Open: the chat operation's name and whether it keeps a session across turns (a session id in `AgentResult`, or the
+- Settled by [ADR 0045](0045-a-chat-that-acts-through-hz-with-confirmation-in-code.md): the chat keeps sessions in
+  hz (`hz chat`, `system.runner.chat`), Home is the chat, and answers stream from `/api/stream/<path>`.
+- Open (before ADR 0045): the chat operation's name and whether it keeps a session across turns (a session id in `AgentResult`, or the
   UI resends the transcript); whether `hz system serve api` should take `--token` too, giving scripts the web head's
   set of operations; what `hz ui` shows when a `heads=` operation needs a terminal (a copyable command).

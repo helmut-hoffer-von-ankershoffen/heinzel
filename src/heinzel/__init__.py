@@ -11,6 +11,7 @@ except PackageNotFoundError:  # pragma: no cover - only when importing from a so
     __version__ = "0.0.0"
 
 from heinzel.kernel import (
+    ActionGate,
     AgentResult,
     AgentRunner,
     AssetType,
@@ -32,6 +33,7 @@ from heinzel.kernel import (
     DiscoveryHint,
     Document,
     Documents,
+    Emit,
     Event,
     HealthLet,
     HeinzelError,
@@ -46,6 +48,7 @@ from heinzel.kernel import (
     MailContent,
     MailMessage,
     MailQuery,
+    McpServer,
     Meeting,
     Meetings,
     Message,
@@ -62,6 +65,7 @@ from heinzel.kernel import (
     PostedMessage,
     Progress,
     Prompter,
+    ProposedCall,
     ProviderLet,
     PullRequest,
     Relation,
@@ -86,9 +90,11 @@ from heinzel.kernel import (
     Window,
     clean_text,
     draft_reporting_lines,
+    redact_emails,
 )
 
 __all__ = [
+    "ActionGate",
     "AgentResult",
     "AgentRunner",
     "AssetType",
@@ -110,6 +116,7 @@ __all__ = [
     "DiscoveryHint",
     "Document",
     "Documents",
+    "Emit",
     "Event",
     "HealthLet",
     "HeinzelError",
@@ -124,6 +131,7 @@ __all__ = [
     "MailContent",
     "MailMessage",
     "MailQuery",
+    "McpServer",
     "Meeting",
     "Meetings",
     "Message",
@@ -140,6 +148,7 @@ __all__ = [
     "PostedMessage",
     "Progress",
     "Prompter",
+    "ProposedCall",
     "ProviderLet",
     "PullRequest",
     "Relation",
@@ -165,4 +174,5 @@ __all__ = [
     "__version__",
     "clean_text",
     "draft_reporting_lines",
+    "redact_emails",
 ]

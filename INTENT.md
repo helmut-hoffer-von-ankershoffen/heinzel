@@ -58,7 +58,9 @@ When in doubt, these decide.
 
 ## Non-goals
 
-- Heinzelmännchen is not a chat bot, a ticket system or a document store; it drafts into the tools teams already use.
+- Heinzelmännchen is not a general-purpose chat bot, a ticket system or a document store; it drafts into the tools
+  teams already use. Its chat is a view on its own operations: it reads with them, and changes something only once
+  you confirm (ADR 0045).
 - Heinzelmännchen does not depend on a single model provider or agent SDK.
 - Heinzelmännchen does not publish anything on someone's behalf without that person's approval (or their explicit
   auto-approval).

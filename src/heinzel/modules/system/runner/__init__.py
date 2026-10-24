@@ -13,7 +13,7 @@ from pydantic import Field
 
 from heinzel import AgentResult, AgentRunner, Budget, Check, HeinzelError, Module, Status, ToolProfile
 from heinzel.kernel import CapabilityView
-from heinzel.modules.system.runner._claude import BIND_COMMAND_RUNNER, HOSTS, ClaudeCodeRunner
+from heinzel.modules.system.runner._claude import BIND_COMMAND_RUNNER, HOSTS, ClaudeCodeRunner, login_check
 from heinzel.modules.system.runner._claude import DOCS as CLAUDE_CODE_DOCS
 from heinzel.modules.system.runner._command import SET_COMMAND, TRUST_COMMAND, CommandRunner
 from heinzel.modules.system.runner._models import RunnerSettings
@@ -76,6 +76,24 @@ def ask(
         )
 
 
+def claude_code_checks(settings: RunnerSettings) -> list[Check]:
+    """Claude Code is on PATH, and logged in as far as it says without calling a model."""
+    found = shutil.which(settings.claude_executable)
+    if not found:
+        return [
+            Check(
+                name="claude-code",
+                status=Status.DEGRADED,
+                detail=f"{settings.claude_executable} is not on PATH",
+                fix=f"Install Claude Code ({CLAUDE_CODE_DOCS}), or bind the command runner: {BIND_COMMAND_RUNNER}",
+            )
+        ]
+    installed = Check(
+        name="claude-code", status=Status.UP, detail=f"{found}; read-only tools: {settings.read_only_tools}"
+    )
+    return [installed, login_check(found)]
+
+
 @module.health
 def runner(capabilities: CapabilityView, settings: RunnerSettings) -> list[Check]:
     """The bound core runner: its CLI is there, and whether it enforces the read-only tool profile."""
@@ -83,17 +101,7 @@ def runner(capabilities: CapabilityView, settings: RunnerSettings) -> list[Check
     if not any(use.capability == "agent-runner" for use in capabilities.matrix()):
         return [Check(name="runner", status=Status.UP, detail=f"no module requires agent-runner (bound: {bound})")]
     if bound == "claude-code":
-        found = shutil.which(settings.claude_executable)
-        return [
-            Check(name="claude-code", status=Status.UP, detail=f"{found}; read-only tools: {settings.read_only_tools}")
-            if found
-            else Check(
-                name="claude-code",
-                status=Status.DEGRADED,
-                detail=f"{settings.claude_executable} is not on PATH",
-                fix=f"Install Claude Code ({CLAUDE_CODE_DOCS}), or bind the command runner: {BIND_COMMAND_RUNNER}",
-            )
-        ]
+        return claude_code_checks(settings)
     if bound == "command":
         if not settings.command or shutil.which(settings.command[0]) is None:
             return [

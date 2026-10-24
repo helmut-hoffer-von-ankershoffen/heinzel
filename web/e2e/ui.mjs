@@ -44,7 +44,7 @@ try {
   }
 
   await page.goto(url);
-  await page.getByRole("heading", { name: "Home" }).waitFor();
+  await page.getByRole("heading", { name: "Today" }).waitFor(); // Home is the chat, with Today on top (ADR 0045)
   await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Doctor" }).click();
   await page.getByRole("heading", { name: "Doctor" }).waitFor();
   await page.getByText("Heinzelmännchen is").waitFor();
@@ -53,7 +53,7 @@ try {
   await audit("doctor");
 
   for (const [name, path, heading] of [
-    ["home", "/", "Home"],
+    ["home", "/", "Today"],
     ["settings", "/settings", "Settings"],
     ["contracts", "/contracts", "Contract graph"],
     ["team", "/team", "Team roster"],

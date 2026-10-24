@@ -151,7 +151,8 @@ def test_version_lists_repositories_and_shows_the_notice_on_stderr(app):
 
 def test_the_start_screen_shows_plugins_with_versions_and_links_and_the_notice(app):
     screen = runner.invoke(app, []).output
-    plugins = screen[screen.index("Plugins") : screen.index("Core")]
+    start = screen.index("Plugins")
+    plugins = screen[start : screen.index("╰", start)]  # the panel, wherever it sits among the others
     assert "heinzel-clockwork 1.2.3" in plugins
     assert "https://github.com/someone/heinzel-clockwork" in plugins
     assert " ".join(NOTICE.split()) in " ".join(screen.split())

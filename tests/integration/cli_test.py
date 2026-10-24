@@ -249,6 +249,7 @@ def test_system_info_json(app):
         "system.capability": {
             "org agenda → calendar:read": "optional: not connected: no adapter bound",
             "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
+            "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
         },
     }
     assert {m["qualname"] for m in info["modules"]} >= {"system", "system.changelog", "system.plugin", "example.ping"}
@@ -631,7 +632,8 @@ def test_invalid_arguments_are_rejected_before_running(make_kernel):
 
 # Agent-ready: every operation's command takes --json. The servers are commands but no operations: they run until
 # stopped and print no result to format.
-SERVERS = {"hz system serve api", "hz system serve daemon", "hz system serve mcp", "hz ui"}
+# `hz chat` without a subcommand is the interactive chat, which prints no result either (ADR 0045).
+SERVERS = {"hz system serve api", "hz system serve daemon", "hz system serve mcp", "hz ui", "hz chat"}
 SETUP: set[str] = set()  # `hz setup` and `hz join` take --json too (ADR 0032, amended)
 
 
