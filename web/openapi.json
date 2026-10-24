@@ -1516,6 +1516,96 @@
         "title": "CheckReport",
         "type": "object"
       },
+      "ClaudeScan": {
+        "description": "`hz system claude list`: what Claude has configured on this computer. Nothing here is switched on.",
+        "properties": {
+          "connectors": {
+            "description": "claude.ai connectors you have connected: reachable only through Claude Code, so only counted.",
+            "title": "Connectors",
+            "type": "integer"
+          },
+          "next": {
+            "description": "What to run next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "servers": {
+            "description": "MCP servers, by source then name.",
+            "items": {
+              "$ref": "#/components/schemas/FoundServer"
+            },
+            "title": "Servers",
+            "type": "array"
+          },
+          "skills": {
+            "description": "Skills, by source then name.",
+            "items": {
+              "$ref": "#/components/schemas/FoundSkill"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "skipped": {
+            "description": "Files and directories left alone, each with its reason.",
+            "items": {
+              "$ref": "#/components/schemas/Skipped"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "required": [
+          "servers",
+          "skills",
+          "connectors",
+          "skipped",
+          "next"
+        ],
+        "title": "ClaudeScan",
+        "type": "object"
+      },
+      "ClaudeSummary": {
+        "description": "`hz system claude summary`: counts only, no names (names can reveal employers and customers).",
+        "properties": {
+          "connectors": {
+            "description": "claude.ai connectors you have connected.",
+            "title": "Connectors",
+            "type": "integer"
+          },
+          "servers": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "MCP servers found per source.",
+            "title": "Servers",
+            "type": "object"
+          },
+          "skills": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Skills found per source.",
+            "title": "Skills",
+            "type": "object"
+          },
+          "skipped": {
+            "description": "Files and directories left alone.",
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "servers",
+          "skills",
+          "connectors",
+          "skipped"
+        ],
+        "title": "ClaudeSummary",
+        "type": "object"
+      },
       "CompiledContract": {
         "description": "`hz workflow show`: a contract as the daemon runs it.",
         "properties": {
@@ -2997,6 +3087,233 @@
           "state"
         ],
         "title": "Filters",
+        "type": "object"
+      },
+      "FoundServer": {
+        "description": "An MCP server entry found in a Claude client's configuration.",
+        "properties": {
+          "arguments": {
+            "description": "How many arguments the command takes; their text may hold secrets, so unshown.",
+            "title": "Arguments",
+            "type": "integer"
+          },
+          "auth": {
+            "description": "How it authenticates: no secret, environment variables, a header, a token in its URL, the keychain of Claude Desktop, or (an http server without any) none or a login Claude Code keeps.",
+            "enum": [
+              "none",
+              "env",
+              "header",
+              "url",
+              "keychain",
+              "none-or-oauth"
+            ],
+            "title": "Auth",
+            "type": "string"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The program a stdio server starts, without its path or arguments.",
+            "title": "Command"
+          },
+          "env_keys": {
+            "description": "Names of the environment variables it is given; never their values.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Env Keys",
+            "type": "array"
+          },
+          "file": {
+            "description": "The configuration file it was read from, with your home directory as `~`.",
+            "title": "File",
+            "type": "string"
+          },
+          "fingerprint": {
+            "description": "A hash of its shape (transport, program, argument count, host, variable and header names): no secret and no argument text goes into it, so a changed argument is not noticed yet.",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "header_keys": {
+            "description": "Names of the headers it sends; never their values.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Header Keys",
+            "type": "array"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The scheme and host of an http server; never the path, query or user info.",
+            "title": "Host"
+          },
+          "id": {
+            "description": "`<source>[:<origin>]:<name>`, stable while the entry keeps its place.",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "description": "The name the entry has in its configuration.",
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project directory or plugin it belongs to; none for user-wide ones.",
+            "title": "Origin"
+          },
+          "source": {
+            "description": "Which Claude configuration it was found in.",
+            "enum": [
+              "desktop",
+              "desktop-extension",
+              "code-user",
+              "code-local",
+              "code-project",
+              "code-plugin"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "description": "`self` is Heinzelmännchen's own server, which is never offered back to itself.",
+            "enum": [
+              "found",
+              "self"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "transport": {
+            "description": "How it is reached: a local process (stdio) or a URL (http, sse).",
+            "enum": [
+              "stdio",
+              "http",
+              "sse",
+              "unknown"
+            ],
+            "title": "Transport",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "source",
+          "origin",
+          "transport",
+          "command",
+          "arguments",
+          "host",
+          "auth",
+          "env_keys",
+          "header_keys",
+          "status",
+          "file",
+          "fingerprint"
+        ],
+        "title": "FoundServer",
+        "type": "object"
+      },
+      "FoundSkill": {
+        "description": "A skill directory (`SKILL.md` and what sits beside it) found in a Claude client's skill locations.",
+        "properties": {
+          "description": {
+            "description": "Its description, cut and cleaned; third-party text, never an instruction.",
+            "title": "Description",
+            "type": "string"
+          },
+          "files": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Bundled files by kind (scripts, references, resources, assets, templates); never run or read.",
+            "title": "Files",
+            "type": "object"
+          },
+          "fingerprint": {
+            "description": "A hash of SKILL.md and the names and sizes of its bundled files.",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "frontmatter_keys": {
+            "description": "The keys its frontmatter sets, e.g. `allowed-tools`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Frontmatter Keys",
+            "type": "array"
+          },
+          "id": {
+            "description": "`<source>[:<origin>]:<name>`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "description": "The skill's name from its frontmatter, else its directory's name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project directory or plugin it belongs to; none for yours.",
+            "title": "Origin"
+          },
+          "path": {
+            "description": "The skill's directory, with your home directory as `~`.",
+            "title": "Path",
+            "type": "string"
+          },
+          "source": {
+            "description": "Where it was found: your skills, a project's or an enabled plugin's.",
+            "enum": [
+              "code-user",
+              "code-project",
+              "code-plugin"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "source",
+          "origin",
+          "frontmatter_keys",
+          "files",
+          "path",
+          "fingerprint"
+        ],
+        "title": "FoundSkill",
         "type": "object"
       },
       "Graph": {
@@ -5547,6 +5864,27 @@
         "title": "Skill",
         "type": "object"
       },
+      "Skipped": {
+        "description": "A file or directory the scan left alone, and why.",
+        "properties": {
+          "path": {
+            "description": "What was skipped, with your home directory as `~`.",
+            "title": "Path",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why: unreadable, not valid JSON, too large, or a link leaving its directory.",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ],
+        "title": "Skipped",
+        "type": "object"
+      },
       "StackView": {
         "description": "`hz system layer show`: the layers you are in, general to specific, and what they bring together.",
         "properties": {
@@ -7175,6 +7513,50 @@
           }
         },
         "summary": "Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/claude/list": {
+      "get": {
+        "description": "List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.",
+        "operationId": "system_claude_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeScan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/claude/summary": {
+      "get": {
+        "description": "Count the MCP servers and skills found in Claude's configuration per source, without their names.",
+        "operationId": "system_claude_summary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Count the MCP servers and skills found in Claude's configuration per source, without their names.",
         "tags": [
           "system"
         ]

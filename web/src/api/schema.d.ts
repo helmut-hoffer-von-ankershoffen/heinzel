@@ -255,6 +255,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/claude/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.
+         * @description List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.
+         */
+        get: operations["system_claude_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/claude/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Count the MCP servers and skills found in Claude's configuration per source, without their names.
+         * @description Count the MCP servers and skills found in Claude's configuration per source, without their names.
+         */
+        get: operations["system_claude_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/config/get": {
         parameters: {
             query?: never;
@@ -2301,6 +2341,67 @@ export interface components {
             searched?: components["schemas"]["Directory"][];
         };
         /**
+         * ClaudeScan
+         * @description `hz system claude list`: what Claude has configured on this computer. Nothing here is switched on.
+         */
+        ClaudeScan: {
+            /**
+             * Connectors
+             * @description claude.ai connectors you have connected: reachable only through Claude Code, so only counted.
+             */
+            connectors: number;
+            /**
+             * Next
+             * @description What to run next.
+             */
+            next: string[];
+            /**
+             * Servers
+             * @description MCP servers, by source then name.
+             */
+            servers: components["schemas"]["FoundServer"][];
+            /**
+             * Skills
+             * @description Skills, by source then name.
+             */
+            skills: components["schemas"]["FoundSkill"][];
+            /**
+             * Skipped
+             * @description Files and directories left alone, each with its reason.
+             */
+            skipped: components["schemas"]["Skipped"][];
+        };
+        /**
+         * ClaudeSummary
+         * @description `hz system claude summary`: counts only, no names (names can reveal employers and customers).
+         */
+        ClaudeSummary: {
+            /**
+             * Connectors
+             * @description claude.ai connectors you have connected.
+             */
+            connectors: number;
+            /**
+             * Servers
+             * @description MCP servers found per source.
+             */
+            servers: {
+                [key: string]: number;
+            };
+            /**
+             * Skills
+             * @description Skills found per source.
+             */
+            skills: {
+                [key: string]: number;
+            };
+            /**
+             * Skipped
+             * @description Files and directories left alone.
+             */
+            skipped: number;
+        };
+        /**
          * CompiledContract
          * @description `hz workflow show`: a contract as the daemon runs it.
          */
@@ -3189,6 +3290,140 @@ export interface components {
              * @description Only nodes in this state.
              */
             state: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;
+        };
+        /**
+         * FoundServer
+         * @description An MCP server entry found in a Claude client's configuration.
+         */
+        FoundServer: {
+            /**
+             * Arguments
+             * @description How many arguments the command takes; their text may hold secrets, so unshown.
+             */
+            arguments: number;
+            /**
+             * Auth
+             * @description How it authenticates: no secret, environment variables, a header, a token in its URL, the keychain of Claude Desktop, or (an http server without any) none or a login Claude Code keeps.
+             * @enum {string}
+             */
+            auth: "none" | "env" | "header" | "url" | "keychain" | "none-or-oauth";
+            /**
+             * Command
+             * @description The program a stdio server starts, without its path or arguments.
+             */
+            command: string | null;
+            /**
+             * Env Keys
+             * @description Names of the environment variables it is given; never their values.
+             */
+            env_keys: string[];
+            /**
+             * File
+             * @description The configuration file it was read from, with your home directory as `~`.
+             */
+            file: string;
+            /**
+             * Fingerprint
+             * @description A hash of its shape (transport, program, argument count, host, variable and header names): no secret and no argument text goes into it, so a changed argument is not noticed yet.
+             */
+            fingerprint: string;
+            /**
+             * Header Keys
+             * @description Names of the headers it sends; never their values.
+             */
+            header_keys: string[];
+            /**
+             * Host
+             * @description The scheme and host of an http server; never the path, query or user info.
+             */
+            host: string | null;
+            /**
+             * Id
+             * @description `<source>[:<origin>]:<name>`, stable while the entry keeps its place.
+             */
+            id: string;
+            /**
+             * Name
+             * @description The name the entry has in its configuration.
+             */
+            name: string;
+            /**
+             * Origin
+             * @description The project directory or plugin it belongs to; none for user-wide ones.
+             */
+            origin: string | null;
+            /**
+             * Source
+             * @description Which Claude configuration it was found in.
+             * @enum {string}
+             */
+            source: "desktop" | "desktop-extension" | "code-user" | "code-local" | "code-project" | "code-plugin";
+            /**
+             * Status
+             * @description `self` is Heinzelmännchen's own server, which is never offered back to itself.
+             * @enum {string}
+             */
+            status: "found" | "self";
+            /**
+             * Transport
+             * @description How it is reached: a local process (stdio) or a URL (http, sse).
+             * @enum {string}
+             */
+            transport: "stdio" | "http" | "sse" | "unknown";
+        };
+        /**
+         * FoundSkill
+         * @description A skill directory (`SKILL.md` and what sits beside it) found in a Claude client's skill locations.
+         */
+        FoundSkill: {
+            /**
+             * Description
+             * @description Its description, cut and cleaned; third-party text, never an instruction.
+             */
+            description: string;
+            /**
+             * Files
+             * @description Bundled files by kind (scripts, references, resources, assets, templates); never run or read.
+             */
+            files: {
+                [key: string]: number;
+            };
+            /**
+             * Fingerprint
+             * @description A hash of SKILL.md and the names and sizes of its bundled files.
+             */
+            fingerprint: string;
+            /**
+             * Frontmatter Keys
+             * @description The keys its frontmatter sets, e.g. `allowed-tools`.
+             */
+            frontmatter_keys: string[];
+            /**
+             * Id
+             * @description `<source>[:<origin>]:<name>`.
+             */
+            id: string;
+            /**
+             * Name
+             * @description The skill's name from its frontmatter, else its directory's name.
+             */
+            name: string;
+            /**
+             * Origin
+             * @description The project directory or plugin it belongs to; none for yours.
+             */
+            origin: string | null;
+            /**
+             * Path
+             * @description The skill's directory, with your home directory as `~`.
+             */
+            path: string;
+            /**
+             * Source
+             * @description Where it was found: your skills, a project's or an enabled plugin's.
+             * @enum {string}
+             */
+            source: "code-user" | "code-project" | "code-plugin";
         };
         /**
          * Graph
@@ -4693,6 +4928,22 @@ export interface components {
             path: string;
         };
         /**
+         * Skipped
+         * @description A file or directory the scan left alone, and why.
+         */
+        Skipped: {
+            /**
+             * Path
+             * @description What was skipped, with your home directory as `~`.
+             */
+            path: string;
+            /**
+             * Reason
+             * @description Why: unreadable, not valid JSON, too large, or a link leaving its directory.
+             */
+            reason: string;
+        };
+        /**
          * StackView
          * @description `hz system layer show`: the layers you are in, general to specific, and what they bring together.
          */
@@ -5460,6 +5711,8 @@ export type SchemaChatSession = components['schemas']['ChatSession'];
 export type SchemaChatSummary = components['schemas']['ChatSummary'];
 export type SchemaCheck = components['schemas']['Check'];
 export type SchemaCheckReport = components['schemas']['CheckReport'];
+export type SchemaClaudeScan = components['schemas']['ClaudeScan'];
+export type SchemaClaudeSummary = components['schemas']['ClaudeSummary'];
 export type SchemaCompiledContract = components['schemas']['CompiledContract'];
 export type SchemaConfigFileInfo = components['schemas']['ConfigFileInfo'];
 export type SchemaConfigReport = components['schemas']['ConfigReport'];
@@ -5486,6 +5739,8 @@ export type SchemaEdgeMetadata = components['schemas']['EdgeMetadata'];
 export type SchemaEvent = components['schemas']['Event'];
 export type SchemaExpertMode = components['schemas']['ExpertMode'];
 export type SchemaFilters = components['schemas']['Filters'];
+export type SchemaFoundServer = components['schemas']['FoundServer'];
+export type SchemaFoundSkill = components['schemas']['FoundSkill'];
 export type SchemaGraph = components['schemas']['Graph'];
 export type SchemaGraphEdge = components['schemas']['GraphEdge'];
 export type SchemaGraphMetadata = components['schemas']['GraphMetadata'];
@@ -5532,6 +5787,7 @@ export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSkill = components['schemas']['Skill'];
+export type SchemaSkipped = components['schemas']['Skipped'];
 export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStatus = components['schemas']['Status'];
 export type SchemaStep = components['schemas']['Step'];
@@ -5845,6 +6101,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_claude_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudeScan"];
+                };
+            };
+        };
+    };
+    system_claude_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudeSummary"];
                 };
             };
         };
