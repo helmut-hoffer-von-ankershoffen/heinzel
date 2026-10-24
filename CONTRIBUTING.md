@@ -116,7 +116,8 @@ maintainer's own included:
 
 - CI must pass: the `CI OK` check gates `main`. It runs lint and types, the tests on macOS and Linux for every
   Python, end-to-end tests, the plugin template, a secret scan, a dependency audit, CodeQL and `make setup` on every
-  supported platform. Pull requests get a coverage comment.
+  supported platform. To spare macOS runners, a pull request runs macOS on the newest Python only, without Intel
+  and end-to-end; `main`, the daily run and dispatch (the release pull request) run everything. Pull requests get a coverage comment.
 - A maintainer reviews. Answer review comments in the thread and push fixes to the same branch; `main` requires
   resolved review threads and an up-to-date branch (a workflow merges `main` into auto-merging pull requests).
 - Pull requests are squash-merged. Maintainers' own pull requests merge automatically once green (`make pr` turns
