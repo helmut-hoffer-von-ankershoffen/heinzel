@@ -11,7 +11,8 @@ import pytest
 from heinzel import Check, Delivery, Module, NoticeKind, Notifications, Status
 from heinzel.modules.system.notify import NotifyService, NotifySettings
 from heinzel.modules.system.notify._macos import NotifierApp
-from heinzel.modules.system.notify._native import HEINZEL, Native
+from heinzel.modules.system.notify._native import ALLOW, DENIED, HEINZEL, Native
+from heinzel.modules.system.notify._render import render_installed
 from heinzel.modules.system.notify._store import MAX_NOTICES
 
 pytestmark = pytest.mark.unit
@@ -278,19 +279,24 @@ def test_doctor_reports_a_refused_pop_up_until_one_works(make, runner):
     assert len(service.health()) == 1
 
 
-def heinzel_service(settings, clock, tmp_path, said: str, *, quarantined: bool = False) -> NotifyService:
+def heinzel_service(  # noqa: PLR0913 - a test double with switches
+    settings, clock, tmp_path, said: str, *, quarantined: bool = False, posted: str = "posted", stale: bool = False
+) -> NotifyService:
     bundle = tmp_path / "HeinzelNotifier.app"
     (bundle / "Contents" / "MacOS").mkdir(parents=True)
     (bundle / "Contents" / "MacOS" / "notifier").write_bytes(b"app")
 
     def run(command, timeout=None):
         if "--stdout" in command:
-            answer = said if "--status" in command else "posted"
+            answer = said if "--status" in command else posted
             Path(command[command.index("--stdout") + 1]).write_text(answer, encoding="utf-8")
         code = 0 if command[0] != "/usr/bin/xattr" or quarantined else 1
         return subprocess.CompletedProcess(command, code, "", "")
 
-    app = NotifierApp(tmp_path / "home", bundled=bundle, runner=run)
+    app = NotifierApp(tmp_path / "home", bundled=bundle, runner=run, build_script=None)
+    if stale:  # an older app is installed already
+        (app.path / "Contents" / "MacOS").mkdir(parents=True)
+        (app.path / "Contents" / "MacOS" / "notifier").write_bytes(b"old app")
     notifier = Native(HEINZEL, str(app.path), clicks=True, app=app)
     return NotifyService(settings, NotifySettings(), ORG, clock=clock, notifier=notifier)
 
@@ -332,8 +338,43 @@ def test_install_puts_heinzel_notifier_in_place_and_pops_up_a_test(settings, clo
     installed = service.install()
     assert (installed.notifier, installed.state, installed.shown) == (HEINZEL, "installed", True)
     assert installed.path == str(tmp_path / "home" / "Applications" / "Heinzel Notifier.app")
-    assert any("choose Allow" in step for step in installed.next)
+    assert installed.next == []  # sent and nothing to fix
     assert service.recent() == []  # a test of the notifier, not a notice
+
+
+def shown(service: NotifyService) -> list[str]:
+    return [line.plain for line in render_installed(service.install()).renderables]
+
+
+def test_install_replaces_an_outdated_notifier_and_says_so(settings, clock, tmp_path):
+    service = heinzel_service(settings, clock, tmp_path, "authorized", stale=True)
+    assert shown(service) == [
+        "Updated Heinzel Notifier (new icon).",
+        "Sent a test notification \u2014 you should see it now.",
+        "macOS may show the old icon until you remove Heinzel Notifier there once and run this again.",
+    ]
+    assert service.notifier.app.inspect().state == "current"
+
+
+def test_install_reads_the_notifiers_success_output_as_success(settings, clock, tmp_path):
+    service = heinzel_service(settings, clock, tmp_path, "authorized", posted="posted error=nil")
+    installed = service.install()
+    assert (installed.shown, installed.problem) == (True, None)
+
+
+def test_install_golden_output_when_up_to_date_and_when_refused(settings, clock, tmp_path):
+    service = heinzel_service(settings, clock, tmp_path, "authorized")
+    service.install()
+    assert shown(service) == [
+        "Heinzel Notifier is installed and up to date.",
+        "Sent a test notification \u2014 you should see it now.",
+    ]
+    refused = heinzel_service(settings, clock, tmp_path / "other", "denied", posted="denied")
+    assert shown(refused) == [
+        "Installed Heinzel Notifier.",
+        "The test notification failed: " + DENIED,
+        ALLOW,
+    ]
 
 
 def test_install_without_a_notifier_says_why(make, settings, clock):
