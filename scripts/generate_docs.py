@@ -22,9 +22,10 @@ import tomllib
 from pathlib import Path
 from urllib.parse import quote
 
-from pydantic_core import PydanticUndefined
+from pydantic import BaseModel
+from pydantic_core import PydanticUndefined, to_jsonable_python
 
-from heinzel import Config, HealthLet, Kernel, Settings, SettingsLet, __version__
+from heinzel import Config, HealthLet, Kernel, Settings, SettingsLet, SetupLet, __version__
 from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
 from heinzel.kernel import Origin, discover, env_prefix, walk
@@ -96,10 +97,17 @@ def configuration_reference() -> str:
             "| --- | --- | --- | --- |",
         ]
         for key, field in type(settings).model_fields.items():
-            default = "platform-specific" if field.default is PydanticUndefined else f"`{field.default!r}`"
+            default = "platform-specific" if field.default is PydanticUndefined else f"`{_default(field.default)}`"
             lines.append(f"| `{key}` | `{env_prefix(section)}{key.upper()}` | {default} | {field.description or ''} |")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _default(value: object) -> str:
+    """A default as written in Python, with models as the tables a configuration file holds."""
+    if isinstance(value, BaseModel) or (isinstance(value, list) and any(isinstance(v, BaseModel) for v in value)):
+        return repr(to_jsonable_python(value))
+    return repr(value)
 
 
 def _anchor(qualname: str) -> str:
@@ -139,6 +147,10 @@ def module_catalog() -> str:
             lines += [f"Settings: [`[{record.qualname}]`](CONFIGURATION.md#{_anchor(record.qualname)}).", ""]
         if any(owner.qualname == record.qualname for owner, _ in k.lets(HealthLet)):
             lines += ["Health checks: reported by `hz system doctor`.", ""]
+        step = next((let for owner, let in k.lets(SetupLet) if owner.qualname == record.qualname), None)
+        if step is not None:
+            kind = "required" if step.required else "optional"
+            lines += [f"Setup: `hz {' '.join(record.path)} setup` ({kind}), also part of `hz setup`.", ""]
     return "\n".join(lines).rstrip() + "\n"
 
 

@@ -5,6 +5,7 @@ panels. A module with exactly one operation of its own name and no submodules co
 `changelog` submodule of `system` reads as `hz system changelog`.
 """
 
+import inspect
 import logging
 import platform
 import sys
@@ -12,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, get_origin
 
 import typer
 from pydantic import ValidationError
@@ -29,8 +30,9 @@ from heinzel.heads.cli._command import command
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._serve import serve_group
+from heinzel.heads.cli._setup import SetupCommands, steps
 from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
-from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Origin, Progress, boot
+from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Origin, Progress, SetupLet, boot
 
 console = Console()
 err_console = Console(stderr=True)
@@ -40,7 +42,7 @@ TAGLINE = "open-source helpers that keep product teams running"
 FOOTER = f"{LOGO} [bold magenta]Heinzelmännchen[/bold magenta] [dim]hz {__version__} · {TAGLINE}[/dim]"
 HELP = (
     f"{LOGO} [bold magenta]Heinzelmännchen[/bold magenta]: {TAGLINE}, working in the background like the "
-    "helpers of Cologne.\n\nEvery operation accepts [bold]--json[/bold]. Start with [bold]hz system info[/bold] or "
+    "helpers of Cologne.\n\nEvery operation accepts [bold]--json[/bold]. Start with [bold]hz setup[/bold], then "
     "[bold]hz system doctor[/bold]."
 )
 PLAIN_HELP = f"{LOGO} Heinzelmännchen: {TAGLINE}. Every operation accepts --json."
@@ -51,6 +53,7 @@ QUIET = {("system", "release"), ("system", "update"), ("system.changelog", "chan
 """Operations that say themselves whether a newer release is available, so no update notice follows them."""
 CHANGELOG = ("system.changelog", "changelog")
 """Its text output starts with a header when a newer release is available (ADR 0031)."""
+SETUP_HELP = "Set up every module that has a setup step, wizard style; optional steps can be skipped."
 
 
 class SortedGroup(TyperGroup):
@@ -105,8 +108,11 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
 
     progress = ConsoleProgress(err_console)
     kernel.bind(Progress, progress)
-    mount = _Mount(kernel, progress, footer, plain=plain)
+    steps_by_module = {record.qualname: let for record, let in steps(kernel)}
+    mount = _Mount(kernel, progress, footer, plain=plain, steps=steps_by_module)
     mount(app, None)
+    # Top level by the maintainer's decision, the one exception to ADR 0018 (ADR 0032).
+    app.command(name="setup", help=SETUP_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(mount.setup.everything)
     if system := mount.groups.get("system"):
         system.add_typer(serve_group(SortedGroup, footer, kernel, console, err_console), cls=SortedGroup)
     return app
@@ -137,6 +143,13 @@ class _Mount:
     footer: str | None
     plain: bool = False
     groups: dict[str, typer.Typer] = field(default_factory=dict[str, typer.Typer])
+    steps: dict[str, SetupLet] = field(default_factory=dict[str, SetupLet])
+    """Each module's setup step, by qualified name; filled when mounting starts."""
+
+    @property
+    def setup(self) -> SetupCommands:
+        """The `setup` commands (ADR 0032)."""
+        return SetupCommands(self.kernel, console, err_console)
 
     def __call__(self, parent: typer.Typer, qualname: str | None) -> None:
         kernel, footer = self.kernel, self.footer
@@ -157,7 +170,12 @@ class _Mount:
         operations = _operations(self.kernel, record)
         panel = (CORE_PANEL if record.origin.builtin else PLUGINS_PANEL) if qualname is None else None
         plugin = None if self.plain or qualname is not None else plugin_line(record.origin)
-        if collapses(self.kernel, record) and operations:
+        step = self.steps.get(record.qualname)
+        # A collapsed command with arguments can't also have a subcommand: Click would read `setup` as its argument.
+        collapsed = (
+            collapses(self.kernel, record) and operations and not (step and _arguments(self.kernel, operations[0]))
+        )
+        if collapsed and step is None:
             summary = operations[0].summary
             parent.command(
                 name=record.module.name,
@@ -166,17 +184,26 @@ class _Mount:
                 epilog=self.footer,
                 rich_help_panel=panel,
             )(self._command(operations[0], (record.qualname, operations[0].name)))
-        elif operations or self.kernel.children(record.qualname):
+        elif operations or step is not None or self.kernel.children(record.qualname):
             group = typer.Typer(
                 name=record.module.name,
-                help=record.module.summary,
+                help=operations[0].summary if collapsed else record.module.summary,
                 epilog=self.footer,
                 cls=SortedGroup,
-                no_args_is_help=True,
+                no_args_is_help=not collapsed,
+                invoke_without_command=bool(collapsed),
             )
-            self.groups[record.qualname] = group
-            self(group, record.qualname)
-            short_help = f"{record.module.summary}\n{plugin}" if plugin else None
+            if collapsed:
+                # `hz clock` stays the command it collapsed into, and `hz clock setup` joins it as a subcommand.
+                run = self._command(operations[0], (record.qualname, operations[0].name))
+                group.callback(invoke_without_command=True)(_unless_subcommand(run))
+            else:
+                self.groups[record.qualname] = group
+                self(group, record.qualname)
+            if step is not None:
+                group.command(name="setup", help=step.summary, epilog=self.footer)(self._setup(record, step))
+            summary = operations[0].summary if collapsed else record.module.summary
+            short_help = f"{summary}\n{plugin}" if plugin else None
             parent.add_typer(group, cls=SortedGroup, rich_help_panel=panel, short_help=short_help)
 
     def _command(self, operation: OperationLet, key: tuple[str | None, str]) -> Callable[..., None]:
@@ -186,6 +213,36 @@ class _Mount:
         return command(
             self.kernel, operation, console, err_console, self.progress, prologue=prologue, epilogue=epilogue
         )
+
+    def _setup(self, record: ModuleRecord, step: SetupLet) -> Callable[[], None]:
+        def setup() -> None:
+            self.setup.module(record, step)
+
+        setup.__doc__ = step.summary
+        return setup
+
+
+def _arguments(kernel: Kernel, operation: OperationLet) -> bool:
+    """Whether the operation's command takes arguments: parameters without a default the caller supplies."""
+    return any(
+        parameter.default is inspect.Parameter.empty
+        and not kernel.provides(get_origin(parameter.annotation) or parameter.annotation)
+        for parameter in operation.signature().parameters.values()
+    )
+
+
+def _unless_subcommand(run: Callable[..., None]) -> Callable[..., None]:
+    """`run` as a group callback: it runs only when no subcommand (`setup`) was given."""
+
+    def callback(ctx: typer.Context, **kwargs: Any) -> None:  # noqa: ANN401 - forwarded to the command
+        if ctx.invoked_subcommand is None:
+            run(**kwargs)
+
+    parameters = list(inspect.signature(run).parameters.values())
+    context = inspect.Parameter("ctx", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=typer.Context)
+    callback.__signature__ = inspect.Signature([context, *parameters])  # type: ignore[attr-defined]  # Typer reads it
+    callback.__doc__ = run.__doc__
+    return callback
 
 
 def _operations(kernel: Kernel, record: ModuleRecord) -> list[OperationLet]:

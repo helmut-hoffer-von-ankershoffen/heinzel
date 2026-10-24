@@ -18,6 +18,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `clock`: Show the time in each of the team&#x27;s time...
+* `setup`: Set up every module that has a setup step,...
 * `system`: Inspect, configure, diagnose and update...
 * `workflow`: Workflow contracts: Markdown files an...
 
@@ -28,7 +29,7 @@ Show the time in each of the team&#x27;s time zones.
 **Usage**:
 
 ```console
-$ hz clock [OPTIONS]
+$ hz clock [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Options**:
@@ -36,6 +37,38 @@ $ hz clock [OPTIONS]
 * `--at ISO-8601`: Moment to show instead of now (ISO 8601).
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `setup`: Pick the team&#x27;s time zones and the working...
+
+### `hz clock setup`
+
+Pick the team&#x27;s time zones and the working hours in each.
+
+**Usage**:
+
+```console
+$ hz clock setup [OPTIONS]
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+## `hz setup`
+
+Set up every module that has a setup step, wizard style; optional steps can be skipped.
+
+**Usage**:
+
+```console
+$ hz setup [OPTIONS]
+```
+
+**Options**:
+
 * `--help`: Show this message and exit.
 
 ## `hz system`

@@ -2,7 +2,17 @@ from datetime import timedelta
 
 import pytest
 
-from heinzel import CatchUp, InfoLet, JobLet, Module, OperationLet, ProviderLet, RequirementLet, ServiceLet
+from heinzel import (
+    CatchUp,
+    InfoLet,
+    JobLet,
+    Module,
+    OperationLet,
+    ProviderLet,
+    RequirementLet,
+    ServiceLet,
+    SetupLet,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -195,6 +205,58 @@ def test_only_chat_and_documents_have_a_write_mode_to_declare():
 def test_names_of_kernel_configuration_tables_are_reserved(name):
     with pytest.raises(ValueError, match=f"Module name '{name}' is reserved"):
         Module(name, "x")
+
+
+def test_setup_is_reserved_for_hz_setup():
+    with pytest.raises(ValueError, match="Module name 'setup' is reserved: it is the command `hz setup`"):
+        Module("setup", "x")
+
+
+def test_setup_decorator_forms():
+    bare, optional, required = Module("a", "x"), Module("b", "x"), Module("c", "x")
+
+    def step() -> None:
+        """Pick the zones.
+
+        More detail.
+        """
+
+    assert bare.setup(step) is step
+    assert optional.setup()(step) is step
+    required.setup(required=True)(step)
+    assert bare.lets == (SetupLet(name="a", func=step, summary="Pick the zones.", required=False),)
+    assert optional.lets[0] == SetupLet(name="b", func=step, summary="Pick the zones.")
+    assert required.lets[0] == SetupLet(name="c", func=step, summary="Pick the zones.", required=True)
+
+
+def test_setup_needs_a_docstring_and_is_one_per_module():
+    module = Module("clock", "x")
+    with pytest.raises(ValueError, match="needs a docstring"):
+        module.setup(lambda: None)
+
+    def step() -> None:
+        """Set up."""
+
+    module.setup(step)
+    with pytest.raises(ValueError, match="already has a SetupLet named 'clock'"):
+        module.setup(step)
+
+
+def test_a_setup_step_and_an_operation_named_setup_exclude_each_other():
+    def setup() -> None:
+        """Set up."""
+
+    def other() -> None:
+        """Another operation."""
+
+    with_step, with_operation = Module("a", "x"), Module("b", "x")
+    with_step.setup(setup)
+    with_step.operation(other)
+    with pytest.raises(ValueError, match="both a setup step and an operation named 'setup'"):
+        with_step.operation(setup)
+    with_operation.operation(setup)
+    with pytest.raises(ValueError, match="both a setup step and an operation named 'setup'"):
+        with_operation.setup(other)
 
 
 def test_a_function_cannot_pin_another_adapter_than_its_module():

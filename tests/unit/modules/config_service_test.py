@@ -1,9 +1,9 @@
 import tomllib
 
 import pytest
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from heinzel import Config, HeinzelError, Module, ModuleSettings
+from heinzel import Config, ConfigEditor, HeinzelError, Module, ModuleSettings
 from heinzel.modules.system.config import ConfigService
 
 pytestmark = pytest.mark.unit
@@ -115,3 +115,70 @@ def test_an_empty_list_setting_still_gets_an_example(make_kernel):
     module.settings(Lists)
     with pytest.raises(HeinzelError, match=r"""set lists\.names '\["first", "second"\]'"""):
         ConfigService(make_kernel(lists=module)).set("lists.names", "a,b")
+
+
+class Hours(BaseModel):
+    """Hours of one zone."""
+
+    name: str
+    hours: tuple[int, int] = (9, 18)
+
+
+def test_write_validates_values_and_models_and_writes_tables(make_kernel, tmp_path, monkeypatch):
+    class Tables(ModuleSettings):
+        """Settings holding tables."""
+
+        zones: list[Hours] = Field(default_factory=list)
+        limits: dict[str, int] = Field(default_factory=lambda: {"a": 1})
+
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    module = Module("tables", "x")
+    module.settings(Tables)
+    service = ConfigService(make_kernel(tables=module))
+    assert isinstance(service, ConfigEditor)
+    path = service.write("tables.zones", [Hours(name="Asia/Tokyo", hours=(10, 19)), {"name": "Europe/Berlin"}])
+    assert tomllib.loads(path.read_text(encoding="utf-8")) == {
+        "tables": {"zones": [{"name": "Asia/Tokyo", "hours": [10, 19]}, {"name": "Europe/Berlin"}]}
+    }
+    with pytest.raises(HeinzelError, match=r"set tables\.limits '\{ a = 1 \}'"):
+        service.write("tables.limits", "many")
+
+
+def test_write_drops_none_and_refuses_it_alone(kernel, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    service = ConfigService(kernel)
+    with pytest.raises(HeinzelError, match=r"TOML has no null; .* `hz system config unset example\.nickname`"):
+        service.write("example.nickname", None)
+    path = service.write("example.zones", ["Europe/Berlin", None])
+    assert tomllib.loads(path.read_text(encoding="utf-8")) == {"example": {"zones": ["Europe/Berlin"]}}
+    assert [p.name for p in tmp_path.iterdir()] == ["config.toml"]  # replaced whole, no temporary file left
+
+
+def test_writes_through_a_symlinked_file_keeping_link_and_mode(kernel, tmp_path, monkeypatch):
+    dotfiles, home = tmp_path / "dotfiles", tmp_path / "home"
+    dotfiles.mkdir()
+    home.mkdir()
+    real = dotfiles / "config.toml"
+    real.write_text("# mine\n", encoding="utf-8")
+    real.chmod(0o600)
+    (home / "config.toml").symlink_to(real)
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(home))
+    ConfigService(kernel).set("example.greeting", "Moin")
+    assert (home / "config.toml").is_symlink()
+    assert tomllib.loads(real.read_text(encoding="utf-8")) == {"example": {"greeting": "Moin"}}
+    assert real.stat().st_mode & 0o777 == 0o600
+
+
+def test_a_failed_write_leaves_the_file_and_no_temporary(kernel, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    service = ConfigService(kernel)
+    service.set("example.greeting", "Moin")
+
+    def refuse(self, target):
+        raise OSError(28, "disk full")
+
+    monkeypatch.setattr("pathlib.Path.replace", refuse)
+    with pytest.raises(OSError, match="disk full"):
+        service.set("example.greeting", "Servus")
+    assert [p.name for p in tmp_path.iterdir()] == ["config.toml"]
+    assert "Moin" in (tmp_path / "config.toml").read_text(encoding="utf-8")
