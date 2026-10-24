@@ -151,7 +151,8 @@ type Pending =
 function request(pending: Pending): PluginChangeRequest {
   switch (pending.action) {
     case "add":
-      return { add: pending.candidate.requirement };
+      // A first-party plugin is added by the name asked for; its git requirement is refused as a spec.
+      return { add: pending.candidate.first_party ? pending.candidate.spec : pending.candidate.requirement };
     case "remove":
       return { remove: pending.name };
     case "enable":
