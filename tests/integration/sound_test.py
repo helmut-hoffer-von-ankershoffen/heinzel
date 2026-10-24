@@ -7,6 +7,7 @@ Acme theme); the Acme company layer in `tests/fixtures/layers` brings that theme
 
 import importlib
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -14,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from heinzel import Config, Kernel, Module, ModuleRecord, Settings, Soundscape
+from heinzel import Config, HeinzelError, Kernel, Module, ModuleRecord, Settings, Soundscape, ThemeChoice
 from heinzel.heads import web
 from heinzel.heads.cli import build
 from heinzel.kernel import SOUND_CSP, Origin, discover, user_config_dir, walk
@@ -24,6 +25,7 @@ pytestmark = pytest.mark.integration
 
 FIXTURES = Path(__file__).parents[1] / "fixtures"
 PLUGINS = ("heinzel_acme", "heinzel_sound_demo")
+ACME = ("heinzel_acme", "heinzel_acme_payments", "heinzel_acme_lisbon", "heinzel_acme_payments_checkout")
 TOKEN = "s3ssion-token-for-tests"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 FRAMED = f"{web.CSP}; frame-src https://www.youtube-nocookie.com"
@@ -46,7 +48,7 @@ def kernel(monkeypatch, settings: Settings):
         return Kernel(settings, records, config=Config(files=(), data={}))
 
     yield make
-    for name in PLUGINS:
+    for name in {*PLUGINS, *ACME}:  # imported afresh by the next test, so no test sees another's modules
         sys.modules.pop(name, None)
 
 
@@ -63,9 +65,9 @@ def configure(text: str) -> None:
     (user_config_dir() / "config.toml").write_text(text, encoding="utf-8")
 
 
-def paired(name: str) -> Module:
+def paired(name: str, module_name: str | None = None) -> Module:
     """A plugin outside every layer that offers a stream soundscape paired with the Acme theme."""
-    module = Module(name, "Pairs with Acme.")
+    module = Module(module_name or name, "Pairs with Acme.")
     module.soundscape(Soundscape.model_validate({"name": name, "title": name.title(), "pairs_with": ["acme"]} | STREAM))
     return module
 
@@ -82,7 +84,7 @@ def client(kernel: Kernel, static: Path | None = None) -> TestClient:
 
 
 def test_sound_is_off_by_default_and_the_list_shows_off_claude_fm_and_each_plugins_soundscape(kernel):
-    code, listed = hz(kernel(), "system", "sound", "list")
+    code, listed = hz(kernel("heinzel_sound_demo"), "system", "sound", "list")
     assert code == 0, listed
     assert (listed["selected"], listed["effective"]) == ("off", "off")
     off, fm, demo = listed["soundscapes"]
@@ -118,7 +120,7 @@ def test_sound_is_off_by_default_and_the_list_shows_off_claude_fm_and_each_plugi
 
 
 def test_sound_use_writes_the_user_setting_refuses_an_unknown_name_and_off_switches_it_off(kernel):
-    hzk = kernel()
+    hzk = kernel("heinzel_sound_demo")
     code, used = hz(hzk, "system", "sound", "use", "claude-fm")
     assert code == 0, used
     assert (used["selected"], used["effective"]) == ("claude-fm", "claude-fm")
@@ -169,18 +171,78 @@ def test_follow_my_theme_plays_the_soundscape_that_pairs_with_the_theme_in_effec
     assert [s["name"] for s in listed["soundscapes"] if s["effective"]] == ["demo"]
 
 
-def test_of_several_soundscapes_paired_with_one_theme_the_first_module_by_name_wins_outside_the_layers(kernel):
-    hzk = kernel("heinzel_acme", extra=(paired("zulu"), paired("alpha")))
+def test_of_several_soundscapes_paired_with_one_theme_in_one_layer_the_first_by_name_wins(kernel):
+    # The modules' names sort the other way round: the soundscape's name decides, not the module's.
+    hzk = kernel("heinzel_acme", extra=(paired("zulu", "aaa"), paired("alpha", "zzz")))
     configure('[system.theme]\nname = "acme"\n[system.sound]\nfollow_theme = true\n')
     assert hz(hzk, "system", "sound", "list")[1]["effective"] == "alpha"
 
 
+def test_the_more_specific_layer_wins_a_soundscape_name_and_an_org_and_site_tie_is_left_out(kernel):
+    code, listed = hz(kernel(*ACME), "system", "sound", "list")
+    assert code == 0, listed
+    (radio,) = [s for s in listed["soundscapes"] if s["name"] == "acme-radio"]
+    assert (radio["title"], radio["module"], radio["shadows"]) == ("Checkout radio", "acme-payments-checkout", ["acme"])
+    assert "acme-warm-radio" not in [s["name"] for s in listed["soundscapes"]]
+    (conflict,) = listed["conflicts"]
+    assert conflict.startswith("acme-warm-radio: offered by acme-lisbon and acme-payments, an org and the site")
+    assert hz(kernel(*ACME), "system", "sound", "use", "acme-warm-radio")[0] != 0
+    output = hz(kernel(*ACME), "system", "sound", "list", json_output=False)[1]
+    assert "Left out: acme-warm-radio" in " ".join(str(output).split())
+
+
+def test_a_layer_whose_file_is_gone_after_import_drops_out_of_the_list_and_is_not_served(kernel, tmp_path, monkeypatch):
+    copy = tmp_path / "sound"
+    shutil.copytree(FIXTURES / "sound", copy)
+    monkeypatch.syspath_prepend(str(copy))
+    sys.modules.pop("heinzel_sound_demo", None)
+    hzk = kernel("heinzel_sound_demo")
+    (copy / "heinzel_sound_demo" / "soundscapes" / "sounds" / "hum.opus").unlink()
+    web_client = client(hzk)
+    listed = web_client.get("/api/system/sound/list", headers=AUTH)
+    assert listed.status_code == 200, listed.text
+    (demo,) = [s for s in listed.json()["soundscapes"] if s["name"] == "demo"]
+    assert demo["layers"] == []
+    assert [e["kind"] for e in demo["earcons"]] == ["draft"]
+    assert web_client.get("/sound-assets/demo/layer-0.opus").status_code == 404
+
+
+@pytest.mark.parametrize("how", ["module off", "service fails"])
+def test_follow_my_theme_without_the_theme_module_plays_the_pick(kernel, monkeypatch, how):
+    hzk = kernel()
+    configure('[system.theme]\nname = "acme"\n[system.sound]\nname = "claude-fm"\nfollow_theme = true\n')
+    provides, resolve = hzk.provides, hzk.resolve
+    if how == "module off":
+        monkeypatch.setattr(hzk, "provides", lambda kind: kind is not ThemeChoice and provides(kind))
+    else:
+
+        def unbuildable(kind: type) -> object:
+            if kind is ThemeChoice:
+                msg = "No module provides ThemeChoice"
+                raise HeinzelError(msg)
+            return resolve(kind)
+
+        monkeypatch.setattr(hzk, "resolve", unbuildable)
+    listed = hz(hzk, "system", "sound", "list")[1]
+    assert (listed["selected"], listed["effective"], listed["note"]) == ("claude-fm", "claude-fm", None)
+
+
+def test_audio_answers_404_when_reading_it_fails(kernel, monkeypatch):
+    def broken(*_: object) -> None:
+        msg = "system.sound can't be built"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(SoundService, "asset", broken)
+    refused = client(kernel()).get("/sound-assets/demo/layer-0.opus")
+    assert (refused.status_code, refused.headers["content-security-policy"]) == (404, web.CSP)
+
+
 def test_the_cli_renders_the_soundscapes_with_the_one_in_effect_marked(kernel):
-    code, output = hz(kernel(), "system", "sound", "list", json_output=False)
+    code, output = hz(kernel("heinzel_sound_demo"), "system", "sound", "list", json_output=False)
     assert code == 0, output
     assert "*  off" in str(output)
     assert "claude-fm   Claude FM  stream (youtube)" in str(output)
-    assert "demo        Demo hum   1 layers" in str(output)
+    assert "demo        Demo hum   1 layer " in str(output)
 
 
 def test_the_web_head_lists_soundscapes_and_the_pick_round_trips_behind_the_token(kernel):
@@ -194,7 +256,8 @@ def test_the_web_head_lists_soundscapes_and_the_pick_round_trips_behind_the_toke
 
 def test_the_web_head_serves_a_soundscapes_audio_typed_by_its_signature_without_the_token(kernel):
     web_client = client(kernel())
-    demo = web_client.get("/api/system/sound/list", headers=AUTH).json()["soundscapes"][2]
+    listed = web_client.get("/api/system/sound/list", headers=AUTH).json()["soundscapes"]
+    (demo,) = [s for s in listed if s["name"] == "demo"]
     for url in (demo["layers"][0]["url"], demo["earcons"][0]["url"]):
         served = web_client.get(url, headers={"Sec-Fetch-Site": "same-origin"})
         assert served.status_code == 200, served.text

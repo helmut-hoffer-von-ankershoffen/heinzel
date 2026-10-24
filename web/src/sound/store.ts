@@ -68,8 +68,10 @@ export function toggle(): boolean {
   return play();
 }
 
+/** Stop with a reason; the next Play starts afresh. */
 export function fail(problem: string): void {
-  set({ playing: false, problem });
+  ducker.stop();
+  set({ playing: false, started: false, problem });
 }
 
 const ducker = new Ducker((typing) => set({ typing }));

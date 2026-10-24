@@ -1954,7 +1954,7 @@ $ hz system sound [OPTIONS] COMMAND [ARGS]...
 
 #### `hz system sound list`
 
-(expert) List the soundscapes of the web app, which one is picked and which plays, with each file&#x27;s licence.
+(expert) List the soundscapes of the web app, where each comes from, which one is picked and which plays.
 
 **Usage**:
 
@@ -1970,7 +1970,7 @@ $ hz system sound list [OPTIONS]
 
 #### `hz system sound use`
 
-(expert) Pick the web app&#x27;s soundscape, `off` for none: writes ` name` to your configuration.
+(expert) Pick the web app&#x27;s soundscape, `off` for none: sets `system.sound.name` in your user file.
 
 **Usage**:
 

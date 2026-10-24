@@ -36,7 +36,9 @@ module.soundscape(Path(__file__).parent / "soundscapes")
 def _kind(view: SoundscapeView) -> str:
     if view.stream is not None:
         return f"stream ({view.stream.provider})"
-    return f"{len(view.layers)} layers" if view.kind == "layers" else ""
+    if view.kind != "layers":
+        return ""
+    return "1 layer" if len(view.layers) == 1 else f"{len(view.layers)} layers"
 
 
 def render(result: SoundList) -> RenderableType:
@@ -69,7 +71,7 @@ def render(result: SoundList) -> RenderableType:
 
 @module.operation(name="list", render=render)
 def list_(service: SoundService) -> SoundList:
-    """List the soundscapes of the web app, which one is picked and which plays, with each file's licence."""
+    """List the soundscapes of the web app, where each comes from, which one is picked and which plays."""
     return service.listing()
 
 
@@ -81,7 +83,7 @@ def use(
         str, Field(description="The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.")
     ],
 ) -> SoundList:
-    """Pick the web app's soundscape, `off` for none: writes `[system.sound] name` to your configuration."""
+    """Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file."""
     return service.use(name)
 
 

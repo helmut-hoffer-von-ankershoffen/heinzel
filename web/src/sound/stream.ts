@@ -18,7 +18,7 @@ export const FRAME_ATTRIBUTES = {
   allow: "autoplay; encrypted-media",
 } as const;
 
-/** The player's URL for `stream` on this page, or null if the stream isn't the embed of its own frame origin. */
+/** The player's URL for `stream` on this page (no autoplay: it plays once it is silent, faded in by commands), or null if the stream isn't the embed of its own frame origin. */
 export function embedSrc(stream: StreamView, origin: string = window.location.origin): string | null {
   let url: URL;
   try {
@@ -30,7 +30,7 @@ export function embedSrc(stream: StreamView, origin: string = window.location.or
     return null;
   }
   url.search = "";
-  for (const [key, value] of Object.entries({ autoplay: "1", enablejsapi: "1", playsinline: "1", rel: "0", origin })) {
+  for (const [key, value] of Object.entries({ enablejsapi: "1", playsinline: "1", rel: "0", origin })) {
     url.searchParams.set(key, value);
   }
   return url.toString();

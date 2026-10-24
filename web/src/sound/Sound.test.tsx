@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
+import { type FakeContext, fakeAudio } from "@/test/fakeAudio";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { needsReload, page, rememberPageFrame, resetPageFrame } from "./queries";
@@ -210,5 +211,115 @@ describe("the page's frame origin", () => {
       await user.click(within(dialog).getByRole("radio", { name: /^Claude FM/ }));
     });
     await waitFor(() => expect(reload).toHaveBeenCalled());
+  });
+});
+
+describe("a layered soundscape", () => {
+  /** The API, plus the audio files hz serves; `fetch` answers each with its path, which the fake decoder reads. */
+  function layeredApi() {
+    const api = soundApi("rain");
+    const answer = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL) => {
+        const url = input instanceof URL ? input : new URL(input.url);
+        if (url.pathname.startsWith("/sound-assets/")) {
+          api.calls.push(new Request(url));
+          return new Response(url.pathname);
+        }
+        return answer(input as Request);
+      }),
+    );
+    return api;
+  }
+
+  it("fetches nothing before Play, then mixes its layers and fades them in", async () => {
+    const { Context, contexts } = fakeAudio();
+    vi.stubGlobal("AudioContext", Context);
+    const { calls } = layeredApi();
+    const user = userEvent.setup();
+    renderAt("/");
+    const button = await speaker(/^Play Rain$/);
+    expect(calls.some((call) => call.url.includes("/sound-assets/"))).toBe(false);
+    expect(contexts).toHaveLength(0);
+    await user.click(button);
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/sound-assets/rain/layer-0.ogg"))).toBe(true));
+    const context = contexts.at(-1) as FakeContext;
+    await waitFor(() => expect(context.gains[0]?.gain.target).toBeCloseTo(0.5)); // the master, to the volume
+    expect(context.sources[0]?.loop).toBe(true);
+    await user.click(await speaker(/^Pause Rain$/));
+    await waitFor(() => expect(context.gains[0]?.gain.target).toBe(0));
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("hz:notice", { detail: { kind: "draft" } }));
+    });
+    expect(context.sources).toHaveLength(1); // paused: no earcon (and this soundscape has none)
+  });
+
+  it("says so when the browser can't play layered sound, and Play can be pressed again", async () => {
+    vi.stubGlobal("AudioContext", undefined);
+    layeredApi();
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.click(await speaker(/^Play Rain$/));
+    await waitFor(() => expect(soundState().problem).toBe("This browser can't play layered sound."));
+    expect(soundState()).toMatchObject({ playing: false, started: false });
+  });
+
+  it("says so when a layer can't be loaded, and stopping while it loads is no failure", async () => {
+    const { Context, contexts } = fakeAudio(() => 1000);
+    vi.stubGlobal("AudioContext", Context);
+    layeredApi();
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.click(await speaker(/^Play Rain$/));
+    await waitFor(() => expect(soundState().problem).toBe("Rain couldn't be loaded."));
+    await waitFor(() => expect(contexts.at(-1)?.close).toHaveBeenCalled());
+  });
+});
+
+describe("a stream's fades", () => {
+  it("is silent when the player is ready, plays, then steps its volume up, and pauses after fading out", async () => {
+    soundApi("claude-fm");
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.click(await speaker(/^Play Claude FM$/));
+    const frame = (await screen.findByTitle("Claude FM player")) as HTMLIFrameElement;
+    const post = vi.spyOn(frame.contentWindow as Window, "postMessage");
+    const sent = () => post.mock.calls.map(([data, target]) => [JSON.parse(String(data)).func, target]);
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", { data: '{"event":"onReady"}', origin: "https://evil.example" }),
+      );
+    });
+    expect(post).not.toHaveBeenCalled(); // another origin is not our player
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", { data: '{"event":"onReady"}', origin: ORIGIN, source: frame.contentWindow }),
+      );
+    });
+    expect(sent()[0]).toEqual(["setVolume", ORIGIN]);
+    expect(JSON.parse(String(post.mock.calls[0]?.[0])).args).toEqual([0]);
+    expect(sent()[1]).toEqual(["playVideo", ORIGIN]);
+    await waitFor(() => expect(JSON.parse(String(post.mock.calls.at(-1)?.[0])).args).toEqual([50]), { timeout: 6000 });
+    await user.click(await speaker(/^Pause Claude FM$/));
+    await waitFor(() => expect(sent().at(-1)).toEqual(["pauseVideo", ORIGIN]), { timeout: 6000 });
+    expect(post.mock.calls.every((call) => (call as unknown[])[1] === ORIGIN)).toBe(true);
+  }, 20_000);
+
+  it("offers a reload when the page's CSP blocks the player", async () => {
+    soundApi("claude-fm");
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.click(await speaker(/^Play Claude FM$/));
+    await screen.findByTitle("Claude FM player");
+    const reload = vi.spyOn(page, "reload").mockImplementation(() => undefined);
+    await act(async () => {
+      const event = new Event("securitypolicyviolation") as SecurityPolicyViolationEvent;
+      Object.assign(event, { effectiveDirective: "frame-src", blockedURI: `${ORIGIN}/embed/tRsQsTMvPNg` });
+      document.dispatchEvent(event);
+    });
+    expect(screen.queryByTitle("Claude FM player")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Reload" }));
+    expect(reload).toHaveBeenCalled();
   });
 });

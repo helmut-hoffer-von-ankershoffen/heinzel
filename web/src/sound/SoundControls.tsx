@@ -1,6 +1,6 @@
 // The sound's controls (ADR 0058): the speaker button beside the light/dark toggle (a click plays or pauses; its
 // chevron, a right-click or a long press opens the popover), and the same choices in Settings → General.
-import { Check, ChevronUp, Volume2, VolumeX } from "lucide-react";
+import { Check, ChevronUp, Volume, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
 import { t } from "@/i18n";
@@ -123,6 +123,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
   const press = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const pressed = useRef(false);
   const current = effective(list.data);
   useEffect(() => {
     if (!open) return;
@@ -160,6 +161,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
         >
           <p className="px-2.5 pt-1 pb-1.5 text-ui-sm text-muted-foreground">{t("sound.title")}</p>
           <SoundChoices list={list.data} />
+          <Notes list={list.data} />
           <hr className="mx-2 my-1 border-border" />
           <VolumeSlider list={list.data} />
           <Toggle list={list.data} field="follow_theme" label={t("sound.followTheme")} />
@@ -170,6 +172,10 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
       <button
         type="button"
         onClick={() => {
+          if (pressed.current) {
+            pressed.current = false; // the long press opened the options: this click doesn't also play
+            return;
+          }
           if (!current) setOpen((value) => !value);
           else toggle();
         }}
@@ -179,7 +185,11 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
         }}
         onPointerDown={() => {
           clearTimeout(press.current);
-          press.current = setTimeout(() => setOpen(true), LONG_PRESS_MS);
+          pressed.current = false;
+          press.current = setTimeout(() => {
+            pressed.current = true;
+            setOpen(true);
+          }, LONG_PRESS_MS);
         }}
         onPointerUp={() => clearTimeout(press.current)}
         onPointerLeave={() => clearTimeout(press.current)}
@@ -191,23 +201,38 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
           size,
         )}
       >
-        {sound.playing ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}
+        {!current ? <Volume aria-hidden /> : sound.playing ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}
       </button>
-      {!compact && (
-        <button
-          ref={opener}
-          type="button"
-          onClick={() => setOpen((value) => !value)}
-          aria-haspopup="dialog"
-          aria-expanded={open}
-          aria-label={t("sound.options")}
-          title={t("sound.options")}
-          className="-ml-1 flex h-9 w-4 items-center justify-center rounded-md text-icon hover:bg-accent/70"
-        >
-          <ChevronUp aria-hidden className="size-3" />
-        </button>
-      )}
+      <button
+        ref={opener}
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={t("sound.options")}
+        title={t("sound.options")}
+        className={cn(
+          "flex items-center justify-center rounded-md text-icon hover:bg-accent/70",
+          compact ? "h-3 w-7" : "-ml-1 h-9 w-4",
+        )}
+      >
+        <ChevronUp aria-hidden className="size-3" />
+      </button>
     </div>
+  );
+}
+
+/** Why what plays isn't what is picked: the list's note, or the theme's own soundscape. */
+function Notes({ list }: { list: SchemaSoundList }) {
+  const current = effective(list);
+  const following = current && current.name !== list.selected;
+  return (
+    <>
+      {list.note && !following && <p className="mt-1 px-2.5 text-ui-sm text-warn">{list.note}</p>}
+      {following && (
+        <p className="mt-1 px-2.5 text-ui-sm text-muted-foreground">{t("sound.following", { title: current.title })}</p>
+      )}
+    </>
   );
 }
 
@@ -215,7 +240,6 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
 export function SoundSettings() {
   const list = useSoundscapes();
   if (!list.data) return null;
-  const current = effective(list.data);
   return (
     <section aria-labelledby="sound-settings">
       <h3 id="sound-settings" className="mb-1 text-ui font-medium">
@@ -223,10 +247,7 @@ export function SoundSettings() {
       </h3>
       <p className="mb-2 text-sm text-muted-foreground">{t("sound.help")}</p>
       <SoundChoices list={list.data} />
-      {list.data.note && <p className="mt-1 px-2.5 text-ui-sm text-warn">{list.data.note}</p>}
-      {current && current.name !== list.data.selected && (
-        <p className="mt-1 px-2.5 text-ui-sm text-muted-foreground">{t("sound.following", { title: current.title })}</p>
-      )}
+      <Notes list={list.data} />
       <div className="mt-2 border-t border-border/70 pt-2">
         <VolumeSlider list={list.data} />
         <Toggle list={list.data} field="follow_theme" label={t("sound.followTheme")} />

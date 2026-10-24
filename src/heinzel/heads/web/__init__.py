@@ -247,6 +247,10 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     return app
 
 
+PAGE_CSPS = frozenset(f"{CSP}; frame-src {provider.frame_origin}" for provider in STREAM_PROVIDERS.values())
+"""Every CSP the page may carry besides `CSP`: one per stream provider, its frame origin admitted."""
+
+
 def page_csp(kernel: Kernel) -> str:
     """The CSP of the app's page: `CSP`, with `frame-src` for the one host the stream soundscape in effect plays from.
 
@@ -353,7 +357,7 @@ def sound_response(kernel: Kernel, soundscape: str, file: str) -> Response:
     if FONT_THEME.fullmatch(soundscape) and match and kernel.provides(SoundAssets):
         try:
             found = kernel.resolve(SoundAssets).asset(soundscape, match.group(1), match.group(2))
-        except HeinzelError:  # system.sound can't be built: no soundscape ships files
+        except Exception:  # noqa: BLE001 - system.sound can't be built or read: no soundscape ships files
             found = None
     if found is None:
         return JSONResponse(status_code=NOT_FOUND, content={"error": "No soundscape ships that file."})

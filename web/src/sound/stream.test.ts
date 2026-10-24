@@ -16,7 +16,6 @@ describe("the stream's player URL", () => {
     expect(url.origin).toBe(ORIGIN);
     expect(url.pathname).toBe("/embed/tRsQsTMvPNg");
     expect(Object.fromEntries(url.searchParams)).toEqual({
-      autoplay: "1",
       enablejsapi: "1",
       playsinline: "1",
       rel: "0",

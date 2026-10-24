@@ -81,7 +81,7 @@ class SoundscapeView(BaseModel):
     title: str = Field(description="What people pick it by, e.g. `Claude FM`.")
     kind: Literal["off", "layers", "stream"] = Field(description="`off`, `layers` (files mixed live) or `stream`.")
     module: str | None = Field(description="The qualified name of the module offering it; none for `off`.")
-    plugin: str | None = Field(description="The plugin it comes with; none for `off` and the core's own.")
+    plugin: str | None = Field(description="The plugin it comes with, `heinzel` for the core's own; none for `off`.")
     selected: bool = Field(description="Whether it is the one configured.")
     effective: bool = Field(description="Whether it is the one in effect (follow my theme may pick another).")
     pairs_with: list[str] = Field(default_factory=list[str], description="Themes it goes with.")

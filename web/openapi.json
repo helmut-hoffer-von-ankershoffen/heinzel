@@ -5889,7 +5889,7 @@
                 "type": "null"
               }
             ],
-            "description": "The plugin it comes with; none for `off` and the core's own.",
+            "description": "The plugin it comes with, `heinzel` for the core's own; none for `off`.",
             "title": "Plugin"
           },
           "selected": {
@@ -9283,7 +9283,7 @@
     },
     "/system/sound/list": {
       "get": {
-        "description": "List the soundscapes of the web app, which one is picked and which plays, with each file's licence.",
+        "description": "List the soundscapes of the web app, where each comes from, which one is picked and which plays.",
         "operationId": "system_sound_list",
         "responses": {
           "200": {
@@ -9297,7 +9297,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List the soundscapes of the web app, which one is picked and which plays, with each file's licence.",
+        "summary": "List the soundscapes of the web app, where each comes from, which one is picked and which plays.",
         "tags": [
           "system"
         ]
@@ -9305,7 +9305,7 @@
     },
     "/system/sound/use": {
       "post": {
-        "description": "Pick the web app's soundscape, `off` for none: writes `[system.sound] name` to your configuration.",
+        "description": "Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.",
         "operationId": "system_sound_use",
         "parameters": [
           {
@@ -9342,7 +9342,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Pick the web app's soundscape, `off` for none: writes `[system.sound] name` to your configuration.",
+        "summary": "Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.",
         "tags": [
           "system"
         ]

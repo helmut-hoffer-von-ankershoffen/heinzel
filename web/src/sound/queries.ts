@@ -7,10 +7,11 @@ import type { Signals } from "./machine";
 import { stop } from "./store";
 
 export const SOUND_KEY = ["system", "sound", "list"] as const;
-const readList = () => unwrap(api.GET("/system/sound/list"));
+/** `hz system sound list`, read now. */
+export const readSoundList = () => unwrap(api.GET("/system/sound/list"));
 
 /** `hz system sound list`, read again every few minutes: the part of the day changes under a playing soundscape. */
-export const useSoundscapes = () => useQuery({ queryKey: SOUND_KEY, queryFn: readList, refetchInterval: 300_000 });
+export const useSoundscapes = () => useQuery({ queryKey: SOUND_KEY, queryFn: readSoundList, refetchInterval: 300_000 });
 
 /** The soundscape in effect, once the list arrived; null for none. */
 export function effective(list: SchemaSoundList | undefined): SchemaSoundscapeView | null {
@@ -66,8 +67,12 @@ export const useSoundSetting = () => {
         { key: `system.sound.${field}`, value: String(value) },
         {
           onSettled: async () => {
-            const list = await client.fetchQuery({ queryKey: SOUND_KEY, queryFn: readList, staleTime: 0 });
-            if (needsReload(list)) page.reload();
+            try {
+              const list = await client.fetchQuery({ queryKey: SOUND_KEY, queryFn: readSoundList, staleTime: 0 });
+              if (needsReload(list)) page.reload();
+            } catch {
+              // the list can't be read now; the next poll brings it
+            }
           },
         },
       );

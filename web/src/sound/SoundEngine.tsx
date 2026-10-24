@@ -1,13 +1,26 @@
 // Plays the soundscape in effect once the person pressed Play (ADR 0058): a stream in its host's own player, shown in a
 // small card, or layered files mixed live. Before the first Play it renders nothing, so nothing of a stream's host is
 // in the page: no frame, no request, no cookie. Mounted once, beside the theme's tokens.
+
+import { useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
+import { useThemes } from "@/api/queries";
 import { t } from "@/i18n";
 import { type Inputs, rampSeconds, type Signals, targetGain, type Why, why } from "./machine";
 import { type EarconView, type LayerView, Mixer } from "./mixer";
-import { effective, listSignals, page, rememberPageFrame, useMeeting, useSoundscapes } from "./queries";
+import {
+  effective,
+  listSignals,
+  needsReload,
+  page,
+  readSoundList,
+  rememberPageFrame,
+  SOUND_KEY,
+  useMeeting,
+  useSoundscapes,
+} from "./queries";
 import { fail, stop, useSound } from "./store";
 import { command, embedSrc, FRAME_ATTRIBUTES, listen, playerEvent, type StreamView } from "./stream";
 
@@ -15,13 +28,12 @@ import { command, embedSrc, FRAME_ATTRIBUTES, listen, playerEvent, type StreamVi
 type Level = { gain: number; seconds: number; playing: boolean };
 
 function useLevel(inputs: Inputs, fadeSeconds: number): Level {
-  const before = useRef<Why>("paused");
+  // The fade's length changes only with why the sound is as loud as it is, so a render that changes nothing else
+  // doesn't restart a fade.
+  const last = useRef<{ why: Why; seconds: number }>({ why: "paused", seconds: fadeSeconds });
   const now = why(inputs);
-  const seconds = rampSeconds(before.current, now, fadeSeconds);
-  useEffect(() => {
-    before.current = now;
-  }, [now]);
-  return { gain: targetGain(inputs), seconds, playing: inputs.playing };
+  if (last.current.why !== now) last.current = { why: now, seconds: rampSeconds(last.current.why, now, fadeSeconds) };
+  return { gain: targetGain(inputs), seconds: last.current.seconds, playing: inputs.playing };
 }
 
 export function SoundEngine() {
@@ -32,6 +44,21 @@ export function SoundEngine() {
   useEffect(() => {
     if (list.data) rememberPageFrame(list.data);
   }, [list.data]);
+  // A theme picked in this tab may bring its own soundscape (follow my theme): read the sound again, and load the page
+  // again when its CSP must admit another frame origin.
+  const client = useQueryClient();
+  const theme = useThemes().data?.selected;
+  const shownTheme = useRef(theme);
+  useEffect(() => {
+    if (shownTheme.current === theme) return;
+    const first = shownTheme.current === undefined;
+    shownTheme.current = theme;
+    if (first) return;
+    void client
+      .fetchQuery({ queryKey: SOUND_KEY, queryFn: readSoundList, staleTime: 0 })
+      .then((fresh) => needsReload(fresh) && page.reload())
+      .catch(() => undefined);
+  }, [theme, client]);
   // Another soundscape in effect (picked elsewhere, or the theme changed): what played stops.
   const name = current?.name ?? null;
   const previous = useRef(name);
@@ -79,7 +106,10 @@ function StreamPlayer({
   useEffect(() => {
     const onMessage = (message: MessageEvent) => {
       const event = playerEvent(message, frame.current, origin);
-      if (event === "onReady" || event === "initialDelivery") setReady(true);
+      if (event !== "onReady" && event !== "initialDelivery") return;
+      // Silent first, so the fade-in starts from nothing, never at the player's own volume.
+      command(frame.current, origin, "setVolume", [volume.current]);
+      setReady(true);
     };
     // The page's CSP admits no frame of this host (the soundscape changed elsewhere): it must load again.
     const onViolation = (event: SecurityPolicyViolationEvent) => {
@@ -192,12 +222,14 @@ function LayeredPlayer({
     const context = new Context();
     const created = new Mixer(context);
     mixer.current = created;
+    let cancelled = false; // stopped or switched while loading: what the closed context does next is no failure
     void context.resume();
     created
       .load((soundscape.layers ?? []) as LayerView[], (soundscape.earcons ?? []) as EarconView[], signals)
-      .then(() => setLoaded(true))
-      .catch(() => fail(t("sound.cantLoad", { title: soundscape.title })));
+      .then(() => !cancelled && setLoaded(true))
+      .catch(() => !cancelled && fail(t("sound.cantLoad", { title: soundscape.title })));
     return () => {
+      cancelled = true;
       mixer.current = null;
       void created.close();
     };

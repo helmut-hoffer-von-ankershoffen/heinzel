@@ -1148,8 +1148,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the soundscapes of the web app, which one is picked and which plays, with each file's licence.
-         * @description List the soundscapes of the web app, which one is picked and which plays, with each file's licence.
+         * List the soundscapes of the web app, where each comes from, which one is picked and which plays.
+         * @description List the soundscapes of the web app, where each comes from, which one is picked and which plays.
          */
         get: operations["system_sound_list"];
         put?: never;
@@ -1170,8 +1170,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Pick the web app's soundscape, `off` for none: writes `[system.sound] name` to your configuration.
-         * @description Pick the web app's soundscape, `off` for none: writes `[system.sound] name` to your configuration.
+         * Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.
+         * @description Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.
          */
         post: operations["system_sound_use"];
         delete?: never;
@@ -4940,7 +4940,7 @@ export interface components {
             pairs_with?: string[];
             /**
              * Plugin
-             * @description The plugin it comes with; none for `off` and the core's own.
+             * @description The plugin it comes with, `heinzel` for the core's own; none for `off`.
              */
             plugin: string | null;
             /**

@@ -363,8 +363,8 @@ Pick the web app's soundscape: off, Claude FM or one a plugin offers.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| List the soundscapes of the web app, which one is picked and which plays, with each file's licence. | `hz system sound list` | `system_sound_list` | `GET /system/sound/list` | `GET /api/system/sound/list` |  | expert |
-| Pick the web app's soundscape, `off` for none: writes `[system.sound] name` to your configuration. | `hz system sound use` | `system_sound_use` | — | `POST /api/system/sound/use` | yes | expert |
+| List the soundscapes of the web app, where each comes from, which one is picked and which plays. | `hz system sound list` | `system_sound_list` | `GET /system/sound/list` | `GET /api/system/sound/list` |  | expert |
+| Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file. | `hz system sound use` | `system_sound_use` | — | `POST /api/system/sound/use` | yes | expert |
 
 Settings: [`[system.sound]`](CONFIGURATION.md#systemsound).
 

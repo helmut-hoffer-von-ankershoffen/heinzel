@@ -185,10 +185,16 @@ class SoundService(SoundAssets):
         note, next_steps = None, list[str]()
         try:
             settings = config.settings(SoundSettings, SECTION)
-        except ValidationError:
+        except ValidationError as exc:
             settings = SoundSettings()
-            note = "`[system.sound]` has a value that isn't valid; no sound plays until it is fixed."
-            next_steps = ["hz system config show system.sound"]
+            problems = "; ".join(
+                f"{'.'.join(map(str, error['loc'])) or 'the table'}: {error['msg']}" for error in exc.errors()
+            )
+            note = (
+                f"`[system.sound]` (or an HZ_SYSTEM_SOUND__ variable) isn't valid ({problems}); no sound plays and "
+                "the defaults apply until it is fixed."
+            )
+            next_steps = ["hz system config show"]
         selected = settings.name
         if selected != OFF and selected not in available.soundscapes:
             note = (
@@ -201,7 +207,7 @@ class SoundService(SoundAssets):
         theme = self._theme() if settings.follow_theme else None
         if theme is not None:
             paired = sorted(
-                (offered.rank, name)
+                (offered.rank[0], name)  # the most specific layer, then the soundscape's name (ADR 0058)
                 for name, offered in available.soundscapes.items()
                 if theme in offered.let.soundscape.pairs_with
             )
