@@ -1,5 +1,6 @@
 """Service of the config submodule."""
 
+import os
 import shlex
 import shutil
 import tomllib
@@ -8,6 +9,7 @@ from typing import Any, Literal, cast
 
 import tomlkit
 from pydantic import ValidationError
+from pydantic.fields import FieldInfo
 from pydantic_core import to_jsonable_python
 from tomlkit.exceptions import ParseError
 
@@ -23,6 +25,15 @@ HEADER = """\
 
 Scope = Literal["user", "project"]
 PLACEHOLDER_LIST: list[str] = ["first", "second"]  # the example for a list setting that is empty
+
+
+def _default(field: FieldInfo) -> Any:  # noqa: ANN401 - a setting's default is any JSON value
+    """A field's default as JSON (a factory's, computed now), or None when it has none."""
+    if field.is_required() or field.default_factory is not None:
+        return (
+            None if field.default_factory is None else to_jsonable_python(field.get_default(call_default_factory=True))
+        )
+    return to_jsonable_python(field.default)
 
 
 class ConfigService(ConfigEditor):
@@ -43,11 +54,26 @@ class ConfigService(ConfigEditor):
                     value=to_jsonable_python(getattr(settings, key)),
                     env=f"{env_prefix(section)}{key.upper()}",
                     description=field.description or "",
+                    default=_default(field),
+                    source=self._source(section, key, type(settings).ignored_in_project),
                 )
                 for section, settings in self._kernel.settings_of()
                 for key, field in type(settings).model_fields.items()
             ],
         )
+
+    def _source(self, section: str, key: str, ignored_in_project: frozenset[str]) -> str:
+        """Which layer the value in effect comes from: the environment, the last file that sets it, or the default."""
+        # pydantic-settings matches variable names regardless of case.
+        if f"{env_prefix(section)}{key}".upper() in {name.upper() for name in os.environ}:
+            return "env"
+        for file, content in reversed(self._kernel.config.layers):
+            if file.scope == "project" and key in ignored_in_project:
+                continue  # ignored there (ADR 0028), so another layer decides
+            table = Config(files=(), data=content).section(section)
+            if key in table or key.replace("_", "-") in table:
+                return str(file.scope)
+        return "default"
 
     def init(self, path: Path | None = None, *, force: bool = False) -> Path:
         """Write a configuration file listing every setting, commented out, with its description and default.

@@ -20,3 +20,6 @@ reports/
 .claude/worktrees/
 .claude/audit/inbox/
 .tools/
+node_modules/
+src/heinzel/heads/web/static/
+web/test-results/

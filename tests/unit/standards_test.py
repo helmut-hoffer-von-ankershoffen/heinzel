@@ -103,6 +103,8 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/sync_template.py": "generates the template from Heinzelmännchen's files",
     "scripts/template-test.sh": "renders and checks the template",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
+    "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
+    "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
 }
 
 
