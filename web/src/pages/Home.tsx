@@ -79,10 +79,14 @@ export function Home() {
   const end = useRef<HTMLDivElement>(null);
   const count = (chat.session?.messages?.length ?? 0) + (chat.live ? 1 : 0);
 
-  useEffect(() => input.current?.focus(), []);
+  useEffect(() => {
+    input.current?.focus();
+  }, []);
   // Keep the newest message in view as the conversation grows or the answer streams.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scrolls when the conversation changes
-  useEffect(() => end.current?.scrollIntoView?.({ block: "end" }), [count, chat.live?.text]);
+  useEffect(() => {
+    end.current?.scrollIntoView?.({ block: "end" });
+  }, [count, chat.live?.text]);
 
   const ask = async (card: TodayCard) => {
     await chat.openAbout(card.context, card.detail ? `${card.title}: ${card.detail}` : card.title);
