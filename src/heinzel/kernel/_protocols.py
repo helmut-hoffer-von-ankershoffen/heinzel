@@ -15,13 +15,15 @@ prompts. Adapters pass each one through `clean_text` (`heinzel.clean_text`), so 
 character or bidirectional override reaches either; what the text says is still never an instruction.
 
 People appear only as `Participant`: a display name and an email address, how the vendor shows them. The email is
-the join key the directory of record will use (ADR 0024); nothing here counts, rates or ranks anyone.
+the join key the directory of record will use (ADR 0024); nothing here counts, rates or ranks anyone. Mail senders and
+recipients are participants too, so the workflow packet builder drops their addresses like every other.
 """
 
+import re
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, Self
 
-from pydantic import AwareDatetime, BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 
 class Window(BaseModel):
@@ -255,4 +257,165 @@ class Calendar(Protocol):
 
         Mode: read.
         """
+        ...
+
+
+MAIL_HEADERS = frozenset(
+    {
+        "auto-submitted",
+        "content-language",
+        "content-type",
+        "date",
+        "importance",
+        "in-reply-to",
+        "list-id",
+        "message-id",
+        "mime-version",
+        "precedence",
+        "references",
+        "subject",
+        "thread-topic",
+        "x-auto-response-suppress",
+    }
+)
+"""The only headers `MailContent.headers` keeps: none of them carries a person's address. Every other header is
+dropped, `From`, `To`, `Cc`, `Reply-To`, `Received`, `Authentication-Results`, `List-Post` and the like included."""
+
+
+class MailMessage(BaseModel):
+    """A message in a mailbox, as a list shows it: who sent it to whom, when, and its subject; no body."""
+
+    id: str = Field(description="Identifier in the adapter's notation; what `Mail.read` takes.")
+    thread: str | None = Field(default=None, description="Identifier of its conversation; none if the vendor has none.")
+    sender: Participant = Field(description="Who sent it (the From header).")
+    recipients: list[Participant] = Field(
+        default_factory=list[Participant], description="Who it was sent to (To and Cc), as the message names them."
+    )
+    subject: str = Field(description="Subject line, decoded; empty if it has none.")
+    received_at: AwareDatetime = Field(description="When the mailbox received it.")
+    labels: list[str] = Field(
+        default_factory=list, description="Labels or folders it is filed under, in the vendor's words, e.g. `INBOX`."
+    )
+    url: str | None = Field(default=None, description="Where people open it; none if it has no web address.")
+
+
+class MailContent(BaseModel):
+    """One message with its text and headers, for reading."""
+
+    message: MailMessage = Field(description="The message, as `Mail.messages` lists it.")
+    text: str = Field(
+        description="The body as plain text: the text part, or the HTML part converted to text; attachments left out."
+    )
+    headers: dict[str, str] = Field(
+        default_factory=dict[str, str],
+        description="Headers that carry no addresses (`MAIL_HEADERS`: `date`, `message-id`, `list-id`, ...) by "
+        "lower-case name, repeated ones joined with `, `; the model drops every other header, so people's addresses "
+        "stay in `message.sender` and `recipients`.",
+    )
+
+    @field_validator("headers")
+    @classmethod
+    def _only_headers_without_addresses(cls, headers: dict[str, str]) -> dict[str, str]:
+        kept: dict[str, list[str]] = {}
+        for name, value in headers.items():
+            if name.lower() in MAIL_HEADERS:
+                kept.setdefault(name.lower(), []).append(value)
+        return {name: ", ".join(values) for name, values in sorted(kept.items())}
+
+
+_QUERY_TERM = re.compile(r'\s*(?P<key>[a-z]+):(?:"(?P<quoted>[^"]*)"|(?P<bare>[^\s"]+))(?=\s|$)')
+_QUERY_KEYS = ("from", "subject", "label")
+
+
+class MailQuery(BaseModel):
+    """Which messages `Mail.messages` lists, parsed from its `query` string; every term set must match.
+
+    The syntax is the same for every adapter: `from:<address or domain> subject:<text> label:<name>`, each at most
+    once, a value with spaces in double quotes (`subject:"Meeting summary"`); an empty query lists every message.
+    `from:ada@example.com` matches that sender, `from:example.com` (or `from:@example.com`) any sender at that domain
+    or below it, and a sender without an address never matches `from:`; `subject:`
+    matches a subject containing the text, ignoring case; `label:` a label or folder of that name, ignoring case.
+    Adapters translate it into the vendor's own search where they can, and check `matches` on what comes back.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    sender: str | None = Field(
+        default=None, description="`from:`: an address, or a domain (`example.com` or `@example.com`), lower case."
+    )
+    subject: str | None = Field(default=None, description="`subject:`: text the subject contains.")
+    label: str | None = Field(default=None, description="`label:`: a label or folder name.")
+
+    @field_validator("sender")
+    @classmethod
+    def _lower_case_without_a_leading_at(cls, sender: str | None) -> str | None:
+        if sender is None:
+            return None
+        lowered = sender.strip().lower()
+        return lowered.removeprefix("@") if lowered.count("@") == 1 and lowered.startswith("@") else lowered
+
+    @classmethod
+    def parse(cls, query: str) -> Self:
+        """Read a query string.
+
+        Raises:
+            ValueError: If a term is not `from:`, `subject:` or `label:` with a value, or a key appears twice; the
+                message shows a query that works.
+        """
+        found: dict[str, str] = {}
+        position = 0
+        text = query.strip()
+        while position < len(text):
+            term = _QUERY_TERM.match(text, position)
+            if term is None or term.group("key") not in _QUERY_KEYS:
+                msg = (
+                    f'Mail query {query!r} must be terms like `from:noreply@example.com subject:"Meeting summary" '
+                    f"label:INBOX` (from, subject, label; quote values with spaces)"
+                )
+                raise ValueError(msg)
+            key = term.group("key")
+            value = term.group("quoted") if term.group("quoted") is not None else term.group("bare")
+            if key in found:
+                msg = f"Mail query {query!r} sets `{key}:` twice; every term must match, so give it once"
+                raise ValueError(msg)
+            if not value.strip():
+                msg = f"Mail query {query!r} gives `{key}:` no value"
+                raise ValueError(msg)
+            found[key] = value.strip()
+            position = term.end()
+        return cls(sender=found.get("from"), subject=found.get("subject"), label=found.get("label"))
+
+    def matches(self, message: MailMessage) -> bool:
+        """Whether `message` is one to list: its sender's address, subject and labels match every term set."""
+        if self.sender is not None:
+            address = (message.sender.email or "").strip().lower()
+            local, at, domain = address.rpartition("@")
+            if not (local and at and domain):
+                return False  # no address to match: never taken for the sender asked for
+            if "@" in self.sender:
+                if address != self.sender:
+                    return False
+            elif domain != self.sender and not domain.endswith(f".{self.sender}"):
+                return False
+        if self.subject is not None and self.subject.casefold() not in message.subject.casefold():
+            return False
+        return self.label is None or self.label.casefold() in {label.casefold() for label in message.labels}
+
+
+class Mail(Protocol):
+    """A mailbox the user reads, such as Gmail or an IMAP account (capability `mail`).
+
+    Read only: nothing sends, files or deletes mail. Adapters bound the result like every window read, and bound
+    `MailContent.text` by a byte budget of their own, raising a `HeinzelError` past it rather than cutting it.
+    """
+
+    def messages(self, query: str, window: Window) -> list[MailMessage]:
+        """Messages that match `query` (see `MailQuery`) and were received within `window`, oldest first. Mode: read.
+
+        The window bounds the result (see the module docstring); this is what a contract reads.
+        """
+        ...
+
+    def read(self, message: str) -> MailContent:
+        """The message `message` (a `MailMessage.id`) with its text and headers, for operations. Mode: read."""
         ...
