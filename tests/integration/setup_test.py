@@ -1,4 +1,4 @@
-"""`hz setup` and `hz <module> setup` through the CLI head, answered on stdin as a person would (ADR 0032). Offline."""
+"""`hz setup` and `hz setup <module>` through the CLI head, answered on stdin as a person would (ADR 0032). Offline."""
 
 import tomllib
 
@@ -10,7 +10,7 @@ from mcp import Client
 from pydantic import Field
 from typer.testing import CliRunner
 
-from heinzel import Config, ConfigEditor, CredentialLet, Credentials, Module, ModuleSettings, Prompter
+from heinzel import Check, Config, ConfigEditor, CredentialLet, Credentials, Module, ModuleSettings, Prompter, Status
 from heinzel.heads import api, mcp
 from heinzel.heads.cli import _setup, build
 from heinzel.kernel import ScriptedPrompter, user_config_dir
@@ -65,7 +65,8 @@ def settings(settings):
 
 @pytest.fixture
 def terminal(monkeypatch, tmp_path):
-    monkeypatch.setattr(_setup, "stdin_is_terminal", lambda: True)
+    monkeypatch.setattr(_setup, "has_terminal", lambda: True)
+    monkeypatch.setattr(_setup.getpass, "getpass", input)  # CliRunner's stdin is no terminal device to hide input on
     monkeypatch.chdir(tmp_path)  # doctor after setup reads the files again; no hz.toml from above the repository
 
 
@@ -136,30 +137,46 @@ def test_ctrl_c_keeps_finished_steps(kernel, terminal):
     assert "Heinzelmännchen is" not in result.output
 
 
-def test_one_module_has_its_own_setup_command(kernel, terminal):
-    result = runner.invoke(build(kernel), ["greet", "setup"], input="Hej\n")
+def test_setup_with_a_module_runs_only_its_step(kernel, terminal):
+    result = runner.invoke(build(kernel), ["setup", "greet"], input="Hej\n")
     assert result.exit_code == 0, result.output
     assert "Set up greet now?" not in result.output
     assert result.output.rstrip().endswith("greet: done")
     assert user_config() == {"greet": {"greeting": "Hej"}}
 
 
-def test_a_collapsed_module_keeps_its_command_and_gains_setup(kernel, terminal):
+def test_a_collapsed_module_keeps_its_command_and_runs_its_step_under_setup(kernel, terminal):
     app = build(kernel)
     times = runner.invoke(app, ["clock", "--at", AT, "--json"])
     assert times.exit_code == 0, times.output
     assert times.stdout.startswith("[")
     help_text = runner.invoke(app, ["clock", "--help"]).output
     assert "--at" in help_text
-    assert "setup" in help_text
-    result = runner.invoke(app, ["clock", "setup"], input="\n\n" + "\n" * 6 + "n\n")
+    assert "setup" not in help_text  # the step is `hz setup clock`, never part of the module's commands
+    assert "Commands" not in help_text
+    result = runner.invoke(app, ["setup", "clock"], input="\n\n" + "\n" * 6 + "n\n")
     assert result.exit_code == 0, result.output
     assert "Nothing was saved." in result.output
 
 
+def test_setup_names_the_modules_that_have_a_step_when_given_another(kernel, terminal):
+    for name in ("nope", "system"):
+        result = runner.invoke(build(kernel), ["setup", name])
+        assert result.exit_code == 2
+        text = " ".join(result.stderr.replace("│", " ").split())  # the error is boxed
+        assert f"No module named '{name}' has a setup step. Modules with one: clock, greet, vault." in text
+        assert "Usage: hz setup [OPTIONS] [MODULE]" in text
+
+
+def test_setup_help_names_the_module_argument(kernel):
+    text = " ".join(runner.invoke(build(kernel), ["setup", "--help"]).output.split())
+    assert "[MODULE]" in text
+    assert "With MODULE, set up only that module." in text
+
+
 def test_a_failing_step_exits_with_1(kernel, terminal):
     kernel.bind(Credentials, Credentials(MemoryBackend(), []))  # the token is no longer declared: storing fails
-    result = runner.invoke(build(kernel), ["vault", "setup"], input="s3cret\n")
+    result = runner.invoke(build(kernel), ["setup", "vault"], input="s3cret\n")
     assert result.exit_code == 1
     assert "vault: failed" in result.output
 
@@ -175,13 +192,13 @@ def test_without_a_terminal_setup_refuses_with_the_equivalent_commands(kernel):
     ) in text
     assert "hz system config set greet.greeting '\"Hello\"'" in text
     assert "hz system credential set api-token --service vault" in text
-    assert runner.invoke(build(kernel), ["greet", "setup"]).exit_code == 1
+    assert runner.invoke(build(kernel), ["setup", "greet"]).exit_code == 1
 
 
 def test_a_bound_prompter_answers_instead_of_the_terminal(kernel):
     prompter = ScriptedPrompter(["Hallo"])
     kernel.bind(Prompter, prompter)
-    result = runner.invoke(build(kernel), ["greet", "setup"])
+    result = runner.invoke(build(kernel), ["setup", "greet"])
     assert result.exit_code == 0, result.output
     assert "Greeting [Hello]: Hallo" in prompter.transcript
 
@@ -210,7 +227,7 @@ INVALID_CLOCK = Config(files=(), data={"clock": {"zones": [{"name": "Asia/Tokyo"
 
 def test_invalid_settings_fail_the_step_with_a_message_not_a_traceback(make_kernel, terminal):
     kernel = make_kernel(builtins=True, config=INVALID_CLOCK, clock=heinzel_clock.module)
-    result = runner.invoke(build(kernel), ["clock", "setup"])
+    result = runner.invoke(build(kernel), ["setup", "clock"])
     assert result.exit_code == 1
     assert "clock failed: its configuration is invalid: ClockSettings zones.0" in " ".join(result.output.split())
     assert "hz system config show" in result.output
@@ -242,7 +259,8 @@ def test_without_doctor_setup_ends_with_the_summary(make_kernel, settings, termi
     assert " done " in result.output
 
 
-def test_a_module_whose_only_command_takes_arguments_keeps_both_reachable(make_kernel, terminal):
+def test_a_setup_step_never_changes_a_modules_command_path(make_kernel, terminal):
+    """A collapsed module whose operation takes an argument stays `hz echo hi`, as without a step and in MCP/REST."""
     module = Module("echo", "Echoes.")
 
     @module.operation
@@ -256,7 +274,17 @@ def test_a_module_whose_only_command_takes_arguments_keeps_both_reachable(make_k
         prompter.say("hi")
 
     app = build(make_kernel(builtins=True, echo=module))
-    assert runner.invoke(app, ["echo", "echo", "setup", "--json"]).stdout.strip() == '"setup"'
-    result = runner.invoke(app, ["echo", "setup"])
+    assert runner.invoke(app, ["echo", "hi", "--json"]).stdout.strip() == '"hi"'
+    assert runner.invoke(app, ["echo", "setup", "--json"]).stdout.strip() == '"setup"'  # just an argument
+    result = runner.invoke(app, ["setup", "echo"])
     assert result.exit_code == 0, result.output
     assert "echo: done" in result.output
+
+
+def test_setup_fails_when_doctor_reports_a_check_down(make_kernel, terminal):
+    broken = greet()
+    broken.health(lambda: [Check(name="db", status=Status.DOWN, detail="unreachable", fix="start it")])
+    result = runner.invoke(build(make_kernel(builtins=True, greet=broken)), ["setup"], input="\n\n")
+    assert result.exit_code == 1
+    assert " done " in result.output
+    assert "hz system doctor reports a problem with the configuration" in " ".join(result.stderr.split())

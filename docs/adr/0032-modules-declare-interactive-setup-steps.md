@@ -58,18 +58,26 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 - **Writing.** A step writes settings through `heinzel.ConfigEditor` (provided by `system.config`, the same validation
   as `hz system config set`, user scope by default) and secrets through `Credentials.set`. A step that is
   interrupted keeps what it already wrote.
-- **Commands (CLI only).** `hz <module> setup` runs one module's step; `hz setup` runs every step: built-in modules
-  first, then the others alphabetically by qualified name. An optional step asks "Set up clock now? [Y/n]" first; a
+- **Commands (CLI only).** `hz setup [MODULE]` is the one command that runs setup steps: `hz setup` runs every step,
+  built-in modules first, then the others alphabetically by qualified name; `hz setup clock` runs one module's step,
+  without the skip question. A name without a step that can run is a usage error that lists the modules with one. An optional step asks "Set up clock now? [Y/n]" first; a
   required one doesn't. A step whose module is already configured says so and asks whether to change it. Ctrl-C stops
   the run and keeps finished steps; configuration files are replaced whole, never half written. A step that fails is
   reported and the others still run. `hz setup` ends with a summary and `hz system doctor` on the configuration just
-  written. A module that collapses into one command (`hz clock`) keeps that command and gains `hz clock setup`.
+  written, and exits 1 when doctor reports a check down, saying so on stderr. A setup step never changes a module's
+  command path: the module keeps exactly the commands it has without one (`hz clock`, `hz echo hi`), as in MCP and
+  REST.
+- **Update notice** ([ADR 0031](0031-update-check.md)). `hz setup clock` is followed by the notice like every other
+  command. `hz setup` leaves it to the doctor it ends with, whose `release` check names a newer release; when doctor
+  doesn't run (disabled, or the run was stopped with Ctrl-C) the notice follows instead.
 - **Already configured.** A module counts as configured when one of its settings is set in a file or the environment,
   or one of its declared credentials is stored. A module with neither always runs its step.
-- **No terminal.** Without a TTY on standard input the commands refuse and print the equivalent `hz system config
-  set` and `hz system credential set` commands for each step's module.
-- **Names.** `setup` is reserved: no module may be named `setup`, and a module with a setup step can have neither an
-  operation nor a submodule named `setup`.
+- **No terminal.** Setup asks its questions on standard output and reads the answers from standard input, so both
+  must be a terminal: `hz setup > out.txt` would otherwise wait for answers to questions nobody sees. Otherwise it
+  refuses and prints, on stderr, the equivalent `hz system config set` and `hz system credential set` commands for
+  each step's module.
+- **Names.** `setup` is reserved as a module name, because `hz setup` is a top-level command. A module's operations
+  and submodules may take any name, `setup` included: the step is never one of the module's commands.
 - **Top level.** `hz setup` is an exception to ADR 0018, decided by the maintainer: everything else about
   Heinzelmännchen itself stays under `hz system`.
 
@@ -92,13 +100,25 @@ head**, because modules stay head-agnostic, steps write through the existing ser
   `tests/unit/kernel/prompter_test.py`: every question, its validation and re-asking, with `ScriptedPrompter`.
 - `tests/unit/heads/cli_setup_test.py`: the order, the configured heuristic, the equivalent commands, skipping,
   required steps, already configured, failing steps, Ctrl-C and the console prompter.
-- `tests/integration/setup_test.py`: `hz setup` and `hz <module> setup` answered on stdin, the summary and doctor
-  on the configuration just written, the refusal without a TTY, and that MCP and REST expose no setup.
-- `plugins/heinzel-clock/tests/clock_test.py`: `hz clock setup` and the migration of the old settings shape.
+- `tests/integration/setup_test.py`: `hz setup` and `hz setup <module>` answered on stdin, the summary and doctor
+  on the configuration just written, the exit code when doctor reports a check down, the refusal without a terminal,
+  that MCP and REST expose no setup, and that a collapsed module whose operation takes an argument and declares a
+  step still runs as `hz echo hi`; `tests/unit/heads/cli_setup_test.py`: a terminal is needed on stdin and stdout.
+- `tests/integration/cli_test.py`: every operation's command, and every group that runs one, accepts `--json`; a
+  collapsed module with a setup step keeps its exit codes. `tests/integration/update_notice_test.py`: exactly one
+  notice after its text output and none with `--json`, the notice after `hz setup <module>`, and doctor's instead
+  after `hz setup`.
+- `plugins/heinzel-clock/tests/clock_test.py`: `hz setup clock` and the migration of the old settings shape.
 - `tests/unit/public_api_test.py` snapshots the new names.
 
 ## More Information
 
-- Decided by the maintainer: setup steps declared by modules, required or optional, `hz <module> setup` and a
-  top-level `hz setup`, 2026-10-24. The technical shape (let, prompter, configured heuristic, order) was delegated.
-- Possible extensions: `after=` to order steps by dependency; a `--module` filter for `hz setup`.
+- Decided by the maintainer: setup steps declared by modules, required or optional, one module's step on its own
+  and a top-level `hz setup`, 2026-10-24. The technical shape (let, prompter, configured heuristic, order) was delegated.
+- Amended on 2026-10-24, decided by the maintainer: adding a setup step must never change a module's command path.
+  The first version mounted the step as `hz <module> setup`, which turned a module that collapses into one command
+  into a group; when that command took an argument it no longer collapsed (`hz echo hi` became "No such command"),
+  so the CLI path differed from the MCP and REST ones, and a plugin release adding a step broke scripts that called
+  the module. `hz setup [MODULE]` is now the single entry for setup, and modules keep exactly their commands.
+  Command paths stay stable across heads, and scripts don't break when a plugin adds a step.
+- Possible extensions: `after=` to order steps by dependency.

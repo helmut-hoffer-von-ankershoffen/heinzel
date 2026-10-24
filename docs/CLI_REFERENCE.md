@@ -68,7 +68,7 @@ Show the time in each of the team&#x27;s time zones.
 **Usage**:
 
 ```console
-$ hz clock [OPTIONS] COMMAND [ARGS]...
+$ hz clock [OPTIONS]
 ```
 
 **Options**:
@@ -76,24 +76,6 @@ $ hz clock [OPTIONS] COMMAND [ARGS]...
 * `--at ISO-8601`: Moment to show instead of now (ISO 8601).
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `setup`: Pick the team&#x27;s time zones and the working...
-
-### `hz clock setup`
-
-Pick the team&#x27;s time zones and the working hours in each.
-
-**Usage**:
-
-```console
-$ hz clock setup [OPTIONS]
-```
-
-**Options**:
-
 * `--help`: Show this message and exit.
 
 ## `hz github`
@@ -181,13 +163,17 @@ $ hz org show [OPTIONS]
 
 ## `hz setup`
 
-Set up every module that has a setup step, wizard style; optional steps can be skipped.
+Set up every module that has a setup step, wizard style; optional steps can be skipped. With MODULE, set up only that module.
 
 **Usage**:
 
 ```console
-$ hz setup [OPTIONS]
+$ hz setup [OPTIONS] [MODULE]
 ```
+
+**Arguments**:
+
+* `MODULE`: Set up only this module, by qualified name (`hz setup clock`); every module when left out.
 
 **Options**:
 
