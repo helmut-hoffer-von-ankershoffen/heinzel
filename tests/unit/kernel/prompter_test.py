@@ -216,10 +216,15 @@ def test_without_a_person_a_keyed_question_with_a_default_takes_it():
     assert prompter.answered == {"org.working_hours": "09-18", "org.go": False, "org.role": "principal"}
 
 
-@pytest.mark.parametrize("key", ["api_token", "password", "client_secret"])
+@pytest.mark.parametrize("key", ["api_token", "password", "client_secret", "TOKEN"])
 def test_a_key_naming_a_secret_is_refused(key):
     with pytest.raises(ValueError, match="secrets are never keyed"):
         answering({}).text("Token", key=key)
+
+
+def test_a_key_merely_containing_a_secret_word_is_fine():
+    assert answering({"org.max_tokens": "3"}).text("Most", key="max_tokens") == "3"
+    assert answering({"org.tokenizer": "x"}).text("Tokenizer", key="tokenizer") == "x"
 
 
 def test_a_hint_names_the_flag_that_answers_a_key():

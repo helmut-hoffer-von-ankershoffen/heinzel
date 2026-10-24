@@ -19,7 +19,7 @@ YES = frozenset({"y", "yes"})
 NONE = "none"
 """The answer that picks none of several options."""
 NO = frozenset({"n", "no"})
-SECRET_KEY = re.compile(r"(token|password|passphrase|secret|api_key)", re.IGNORECASE)
+SECRET_KEY = re.compile(r"(^|_)(token|password|passphrase|secret|api_key)$", re.IGNORECASE)
 """Keys that name a secret: refused, so a module can't route one through an answers file or setup.json."""
 
 
@@ -243,7 +243,7 @@ class Prompter:
         Raises:
             HeinzelError: If the refused answer was preset.
         """
-        if key is not None and self.__dict__.get("_from_preset"):
+        if key is not None and (self.__dict__.get("_from_preset") or not self.interactive):
             msg = f"The answer for {self.full_key(key)} is invalid: {problem}"
             raise HeinzelError(msg)
         self.say(problem)

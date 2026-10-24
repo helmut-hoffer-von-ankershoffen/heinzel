@@ -43,9 +43,9 @@ from heinzel.kernel._spec import hookimpl
 RESERVED_NAMES = frozenset({"hz", "capabilities", "setup", "join"})
 """Names a module can't take: the kernel's and the capability bindings' tables, `hz setup` and `hz join`."""
 SETUP = "setup"
+"""The top-level command that runs modules' setup steps (ADR 0032), so no module may take its name."""
 COMMANDS = frozenset({SETUP, "join"})
 """Reserved names that are top-level commands of the CLI head."""
-"""The top-level command that runs modules' setup steps (ADR 0032), so no module may take its name."""
 SERVICE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$")
 
 
