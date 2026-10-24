@@ -117,7 +117,7 @@ class CapabilityService:
     def _default_checks(self) -> list[Check]:
         """A check per capability served by the core's default while another module's adapter could serve it.
 
-        Declared beats discovered (ADR 0028), so installing a plugin binds nothing: this says which binding to write,
+        Installing a second provider binds nothing (ADR 0028, ADR 0055): this says which binding to write,
         e.g. a directory of record instead of the guesses from 1:1s. Binding the default explicitly silences it.
         """
         checks: list[Check] = []

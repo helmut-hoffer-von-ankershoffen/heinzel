@@ -66,10 +66,10 @@ controls must not choose the program that reads your data), and `timeout`, the s
 
 ### Is it connected?
 
-Bound automatically while it is the only installed adapter of a capability, [ADR
-0055](../../docs/adr/0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md); `hz
-setup google` still asks, and declining mail there writes `mail = "none"`, so Gmail stays opt-in. `hz system connector
-list` (or Settings → Connectors in `hz ui`) shows whether gws has a sign-in, from its files alone; `hz system connector
+Bound automatically to documents and calendar while it is the only installed adapter of them, [ADR
+0055](../../docs/adr/0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md); mail
+never is, so Gmail stays opt-in: `hz setup google` asks. `hz system connector
+list` shows whether gws has a sign-in, from its files alone; `hz system connector
 test google` asks Drive who is signed in (`gws drive about get`, 15 s at most), and only when you run it.
 
 ## Use

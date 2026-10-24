@@ -156,8 +156,8 @@ class SyncService:
             )
             return _item(recommendation, current=current, state="by-hand", action=action)
         # A binding only the core's default or the automatic choice made is no choice of yours: it is pending, like
-        # an unbound one (ADR 0055).
-        state: SyncState = "pending" if current is None or how in {"default", "automatic"} else "differs"
+        # an unbound one; `none` is a choice, so it differs and only an explicit accept overrides it (ADR 0055).
+        state: SyncState = "pending" if how in {"unbound", "default", "automatic"} else "differs"
         action = f"sets capabilities.{_key(recommendation.name)} = {recommendation.value!r} in your user file"
         return _item(recommendation, current=current, state=state, action=action)
 
