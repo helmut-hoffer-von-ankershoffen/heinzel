@@ -39,7 +39,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&contracts=uv run lint-imports" \
 		"&template=uv run python scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
-		"unit=uv run pytest -m unit -x -q --ff --session-timeout=60"
+		"unit=uv run pytest -m unit -n auto -x -q --session-timeout=60"
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	$(STEPS) $(GATE) $(LINT) $(TYPES) \

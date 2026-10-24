@@ -33,7 +33,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, unit tests
 	$(STEPS) \
 		"format=uv run ruff format --check ." \
 		"&ruff=uv run ruff check --no-fix ." \
-		"unit=uv run pytest -m unit -x -q --ff --session-timeout=60"
+		"unit=uv run pytest -m unit -n auto -x -q --session-timeout=60"
 
 preflight: ## What CI checks, before you push: check with coverage, build, commits (PREFLIGHT=full adds e2e, audit)
 	$(STEPS) $(GATE) $(LINT) $(TYPES) \
