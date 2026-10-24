@@ -3603,6 +3603,33 @@
         "title": "TemplateView",
         "type": "object"
       },
+      "Tested": {
+        "description": "What `test` recorded, and how the native pop-up went when it was asked for.",
+        "properties": {
+          "native": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`shown` when the native notifier popped it up now, else why not; none when not asked to.",
+            "title": "Native"
+          },
+          "notice": {
+            "$ref": "#/components/schemas/Notice",
+            "description": "The test notice."
+          }
+        },
+        "required": [
+          "notice",
+          "native"
+        ],
+        "title": "Tested",
+        "type": "object"
+      },
       "ThemeColours": {
         "additionalProperties": false,
         "description": "The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes).",
@@ -4956,6 +4983,24 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "description": "Only notices older than this id, for the next page.",
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only notices older than this id, for the next page.",
+              "title": "Before"
+            }
           }
         ],
         "responses": {
@@ -4990,16 +5035,40 @@
       "post": {
         "description": "Record an urgent test notice, which the open web app or the next daemon tick pops up.\n\n`hz system notify install` pops one up at once, through the native notifier only.\n\nRaises:\n    HeinzelError: If notifications are off, or quiet mode keeps it from popping up.",
         "operationId": "system_notify_test",
+        "parameters": [
+          {
+            "description": "Pop it up through the native notifier now too, as the web app's test button does.",
+            "in": "query",
+            "name": "native",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Pop it up through the native notifier now too, as the web app's test button does.",
+              "title": "Native",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/NoticeList"
+                  "$ref": "#/components/schemas/Tested"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Record an urgent test notice, which the open web app or the next daemon tick pops up.",

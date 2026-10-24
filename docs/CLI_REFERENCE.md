@@ -1015,6 +1015,7 @@ $ hz system notify list [OPTIONS]
 **Options**:
 
 * `--limit <int>`: How many of the latest notices to show.  [default: 50]
+* `--before <str>`: Only notices older than this id, for the next page.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -1031,6 +1032,7 @@ $ hz system notify test [OPTIONS]
 
 **Options**:
 
+* `--native / --no-native`: Pop it up through the native notifier now too, as the web app&#x27;s test button does.  [default: no-native]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -1484,7 +1486,7 @@ $ hz team show [OPTIONS]
 
 ## `hz ui`
 
-Open the web app in your browser, served on localhost for this session only; Ctrl-C stops it.
+Open the web app in your browser, served on localhost; Ctrl-C stops it.
 
 **Usage**:
 
@@ -1494,8 +1496,10 @@ $ hz ui [OPTIONS]
 
 **Options**:
 
-* `--port <int>`: Port on 127.0.0.1; 0 picks a free one.  [default: 0]
+* `--port <int>`: Port on 127.0.0.1;  ui_port by default, 0 picks a free one.
 * `--browser / --no-browser`: Open the default browser at the app; --no-browser prints only its URL.  [default: browser]
+* `--devices`: List the browsers and installed apps paired with hz, then stop.
+* `--revoke <str>`: Unpair a device by its id from --devices, or `all`, then stop.
 * `--help`: Show this message and exit.
 
 ## `hz workflow`

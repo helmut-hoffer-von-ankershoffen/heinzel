@@ -1,5 +1,6 @@
 // The typed client: paths and models come from web/openapi.json, which `make fix` regenerates from the operations.
 import createClient, { type Middleware } from "openapi-fetch";
+import { dropRefusedDevice } from "./device";
 import type { paths } from "./schema";
 import { token } from "./token";
 
@@ -20,6 +21,10 @@ const bearer: Middleware = {
     const value = token();
     if (value) request.headers.set("Authorization", `Bearer ${value}`);
     return request;
+  },
+  onResponse({ request, response }) {
+    dropRefusedDevice(response.status, request.headers.get("Authorization")?.replace(/^Bearer /, "") ?? null);
+    return response;
   },
 };
 

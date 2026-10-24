@@ -7,6 +7,7 @@ import { CopyCommand, Loaded, Page } from "@/components/common";
 import { Badge, Card } from "@/components/ui/card";
 import { t } from "@/i18n";
 import { cn, configValue } from "@/lib/utils";
+import { NotificationSettings } from "@/notifications/NotificationSettings";
 
 function shown(value: unknown): string {
   if (value === null || value === undefined) return t("settings.notSet");
@@ -100,6 +101,9 @@ export function Settings() {
   const filterId = useId();
   return (
     <Page title={t("settings.title")} intro={t("settings.intro")}>
+      <Card>
+        <NotificationSettings />
+      </Card>
       <ExpertSwitch />
       <Loaded query={config}>
         {(report) => {

@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from pydantic import BaseModel
@@ -11,6 +11,9 @@ from typer.core import TyperGroup
 
 from heinzel.heads.cli._render import message
 from heinzel.kernel import HeinzelError, Kernel, parse_duration
+
+if TYPE_CHECKING:
+    from heinzel.heads.web._devices import Devices
 
 
 class Transport(StrEnum):
@@ -77,27 +80,42 @@ def serve_group(
     return serve
 
 
-UI_HELP = "Open the web app in your browser, served on localhost for this session only; Ctrl-C stops it."
+UI_HELP = "Open the web app in your browser, served on localhost; Ctrl-C stops it."
 
 
 def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
-    """`hz ui`: the web head on a free localhost port, with a token for this session only."""
+    """`hz ui`: the web head on its fixed localhost port, with a token for this session and paired devices."""
 
     def ui(
-        port: Annotated[int, typer.Option(help="Port on 127.0.0.1; 0 picks a free one.")] = 0,
+        port: Annotated[
+            int | None, typer.Option(help="Port on 127.0.0.1; [hz] ui_port by default, 0 picks a free one.")
+        ] = None,
         browser: Annotated[
             bool,
             typer.Option(
                 "--browser/--no-browser", help="Open the default browser at the app; --no-browser prints only its URL."
             ),
         ] = True,
+        devices: Annotated[
+            bool, typer.Option("--devices", help="List the browsers and installed apps paired with hz, then stop.")
+        ] = False,
+        revoke: Annotated[
+            str | None, typer.Option(help="Unpair a device by its id from --devices, or `all`, then stop.")
+        ] = None,
     ) -> None:
-        """Open the web app in your browser, served on localhost for this session only; Ctrl-C stops it.
+        """Open the web app in your browser, served on localhost; Ctrl-C stops it.
+
+        It listens on one port (`[hz] ui_port`), so an installed app keeps its address and, once paired, reopens
+        without a new link; `--devices` lists the paired ones and `--revoke` unpairs them.
 
         Raises:
-            typer.Exit: With 1 when the app isn't built or the port is taken.
+            typer.Exit: With 1 when the app isn't built, the port is taken or there is no such device.
         """
         from heinzel.heads import web  # noqa: PLC0415 - heavy import, only when serving
+
+        if devices or revoke is not None:
+            _devices(web.devices_for_user(), revoke, err_console)
+            return
 
         def announce(url: str) -> None:
             # The URL carries the session's token: it is this terminal's to share, like the session itself.
@@ -108,15 +126,43 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
             err_console.print("Press Ctrl-C to stop it.", highlight=False, markup=False)
 
         try:
-            web.serve(kernel, port=port, browser=browser, announce=announce)
+            web.serve(
+                kernel, port=kernel.settings.ui_port if port is None else port, browser=browser, announce=announce
+            )
         except HeinzelError as exc:
             err_console.print(message("Can't start the web app:", str(exc)))
             raise typer.Exit(1) from exc
         except OSError as exc:
-            err_console.print(message("Can't listen:", f"{exc}; try another --port, or 0 for a free one"))
+            err_console.print(
+                message("Can't listen:", f"{exc}; is `hz ui` running already? Or try another --port, 0 for a free one")
+            )
             raise typer.Exit(1) from exc
 
     return ui
+
+
+def _devices(paired: "Devices", revoke: str | None, err_console: Console) -> None:
+    """List the paired devices, or unpair one (or `all`).
+
+    Raises:
+        typer.Exit: With 1 when no device has that id.
+    """
+    if revoke is not None:
+        gone = paired.revoke(revoke)
+        if not gone:
+            err_console.print(message("No such device:", f"{revoke}; `hz ui --devices` lists them"))
+            raise typer.Exit(1)
+        for device in gone:
+            typer.echo(f"Unpaired {device.id} ({device.name}); it needs a new link from `hz ui` to open the app.")
+        return
+    listed = paired.paired()
+    if not listed:
+        typer.echo("No devices are paired; opening the link `hz ui` prints pairs the browser it opens in.")
+        return
+    for device in listed:
+        typer.echo(
+            f"{device.id}  {device.name}  paired {device.created:%Y-%m-%d}, last used {device.last_used:%Y-%m-%d}"
+        )
 
 
 def _duration(value: str) -> str:

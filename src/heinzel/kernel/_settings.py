@@ -62,6 +62,14 @@ class Settings(ModuleSettings):
         "environment, a list in TOML.",
     )
 
+    ui_port: int = Field(
+        default=8737,
+        ge=1024,
+        le=65535,
+        description="Port `hz ui` serves the web app on, on 127.0.0.1 only. It stays the same so an installed app (a "
+        "Dock icon) keeps its address; `hz ui --port 0` picks a free one for this session. Not settable in a "
+        "project's hz.toml (ADR 0046).",
+    )
     api_allowed_hosts: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset(),
         description="Host names `hz system serve api` answers besides localhost, 127.0.0.1 and [::1], for when it "
@@ -70,7 +78,7 @@ class Settings(ModuleSettings):
         "hz.toml.",
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"api_allowed_hosts", "expert", "update_check"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"api_allowed_hosts", "expert", "ui_port", "update_check"})
 
     @field_validator("disabled_modules", "api_allowed_hosts", mode="before")
     @classmethod
