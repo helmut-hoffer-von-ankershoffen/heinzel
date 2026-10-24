@@ -129,7 +129,7 @@ template-test: ## Render the plugin template and run its checks against this che
 docs: ## Regenerate docs/CLI_REFERENCE.md from the code
 	uv run python scripts/generate_docs.py
 
-fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; Linux, Python 3.12 to 3.14)
+fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; x86_64 Linux, Python 3.12 to 3.14)
 	uv run --group fuzz python fuzz/contract_fuzz.py -max_total_time=$(or $(FUZZ_SECONDS),60) -timeout=10
 
 demo: ## Assemble docs/assets/demo.tape from the intro and the modules' demo.tape snippets and render the GIF with VHS
