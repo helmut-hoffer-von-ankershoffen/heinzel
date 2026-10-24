@@ -7,9 +7,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from typer.testing import CliRunner
 
-from heinzel import Module, Settings, __version__
+from heinzel import Module, Prompter, Settings, __version__
 from heinzel.heads import cli
-from heinzel.heads.cli import _update, build
+from heinzel.heads.cli import _setup, _update, build
 from heinzel.kernel import Kernel, ModuleRecord, Origin, ReleaseCache, ReleaseSource, discover
 
 pytestmark = pytest.mark.integration
@@ -44,9 +44,30 @@ def plugin_module() -> Module:
     return module
 
 
-def make_kernel(*, update_check: bool = True) -> Kernel:
-    records = [*discover(plugins=False)[0], ModuleRecord("clockwork", plugin_module(), CLOCK)]
-    return Kernel(Settings(update_check=update_check), records)
+def echo_module() -> Module:
+    """A module that collapses into one command taking an argument, with a setup step (ADR 0032)."""
+    module = Module("echo", "Echoes.")
+
+    @module.operation
+    def echo(text: str) -> str:
+        """Echo the text."""
+        return text
+
+    @module.setup
+    def setup(prompter: Prompter) -> None:
+        """Say hi."""
+        prompter.say("hi")
+
+    return module
+
+
+def make_kernel(*, update_check: bool = True, disabled: frozenset[str] = frozenset()) -> Kernel:
+    records = [
+        *discover(plugins=False)[0],
+        ModuleRecord("clockwork", plugin_module(), CLOCK),
+        ModuleRecord("echo", echo_module(), CLOCK),
+    ]
+    return Kernel(Settings(update_check=update_check, disabled_modules=disabled), records)
 
 
 @pytest.fixture
@@ -76,11 +97,38 @@ def test_text_output_is_followed_by_the_notice_on_stderr(app):
     assert result.stderr.strip() == NOTICE
 
 
+def test_a_collapsed_module_with_a_setup_step_gets_exactly_one_notice(app):
+    result = runner.invoke(app, ["echo", "hi"])
+    assert result.stdout.strip() == "hi"
+    assert result.stderr.strip() == NOTICE
+
+
 @pytest.mark.parametrize("options", [["--json"], ["--format", "json"]])
-def test_json_never_gets_the_notice(app, options):
-    result = runner.invoke(app, ["clockwork", "wind", *options])
-    assert json.loads(result.stdout) == "wound"
+@pytest.mark.parametrize(("command", "answer"), [(["clockwork", "wind"], "wound"), (["echo", "hi"], "hi")])
+def test_json_never_gets_the_notice(app, options, command, answer):
+    result = runner.invoke(app, [*command, *options])
+    assert json.loads(result.stdout) == answer
     assert NOTICE not in result.output
+
+
+def test_setup_of_one_module_is_followed_by_the_notice(app, monkeypatch):
+    monkeypatch.setattr(_setup, "has_terminal", lambda: True)
+    result = runner.invoke(app, ["setup", "echo"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout.strip().endswith("echo: done")
+    assert result.stderr.strip() == NOTICE
+
+
+@pytest.mark.usefixtures("human")
+def test_setup_of_every_module_leaves_the_news_to_doctor(monkeypatch, tmp_path):
+    monkeypatch.setattr(_setup, "has_terminal", lambda: True)
+    monkeypatch.chdir(tmp_path)
+    kernel = make_kernel(disabled=frozenset({"org"}))  # only echo's optional step, not org's questions
+    result = runner.invoke(build(kernel), ["setup"], input="\n", env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    doctor = " ".join(result.stdout[result.stdout.index("Heinzelmännchen is") :].replace("│", " ").split())
+    assert "release ✔ up hz 9.0.0 is" in doctor  # its release check names the newer release
+    assert NOTICE not in result.stderr
 
 
 @pytest.mark.usefixtures("human")

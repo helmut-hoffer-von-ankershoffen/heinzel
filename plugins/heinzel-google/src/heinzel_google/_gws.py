@@ -78,7 +78,7 @@ def environment(source: Mapping[str, str] | None = None) -> dict[str, str]:
     return {key: value for key, value in variables.items() if key in PASSED or key.startswith("LC_")}
 
 
-SETUP = "hz google setup"
+SETUP = "hz setup google"
 CLIENT = "gws auth setup (needs gcloud), or create a Desktop OAuth client as gws's README describes"
 NEUTRAL = "/"
 """The working directory of every `gws` run: nowhere a project can put a `.env`."""

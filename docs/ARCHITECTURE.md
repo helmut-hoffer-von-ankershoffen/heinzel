@@ -48,7 +48,7 @@ the kinds it understands.
 | `InfoLet` | `@module.info` | `hz system info` |
 | `HealthLet` | `@module.health` returning `Check`s | `hz system doctor` |
 | `CredentialLet` | `module.credential(name, purpose=...)` | `Credentials` (injected) and `hz system credential` with its doctor check ([ADR 0030](adr/0030-credentials-live-in-the-os-keychain.md)) |
-| `SetupLet` | `@module.setup(required=False)`, asking through an injected `Prompter` and writing through `ConfigEditor` and `Credentials` | the CLI head: `hz <module> setup` and `hz setup` ([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)) |
+| `SetupLet` | `@module.setup(required=False)`, asking through an injected `Prompter` and writing through `ConfigEditor` and `Credentials` | the CLI head: `hz setup [MODULE]` ([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)) |
 | `PlaybookLet` | `module.playbook(summary, assets=..., templates=..., defaults=...)`: asset types with discovery hints, template contracts, recommended settings | `workflow`: `hz workflow playbooks`, `discover`, `new --template`; the setup step it declares ([ADR 0037](adr/0037-plugins-bring-playbooks.md)) |
 | `JobLet` | `@module.job(schedule="0 9 * * MON")` | `hz system daemon tick`, run by launchd or systemd ([ADR 0020](adr/0020-daemon-head.md)) |
 | `ProviderLet` | `@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter class; `hosts=` takes a function of the module's settings when they decide the hosts | the kernel's capability bindings and `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
@@ -101,7 +101,7 @@ there. Everything about Heinzelmännchen itself lives under one administrative n
 
 ```
 hz --version
-hz setup                                   every module's setup step, wizard style (CLI only)
+hz setup [MODULE]                          every module's setup step, or one module's, wizard style (CLI only)
 hz system info | modules | doctor | changelog | release | update
 hz system config  show | get | set | unset | init
 hz system plugin  list | add | remove | new
@@ -109,7 +109,6 @@ hz system agent   skills | install | uninstall
 hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
 hz system serve   mcp | api | daemon
 hz <module> …     work: plugin modules and built-in workflow modules
-hz <module> setup  a module's setup step, when it declares one
 ```
 
 The **kernel** is the core: a library without commands. **system** is the one module that ships with the core

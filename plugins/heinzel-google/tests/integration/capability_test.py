@@ -112,7 +112,7 @@ def test_doctor_reads_only_the_local_sign_in_state(google_kernel, fake_gws):
     assert code == 0
     checks = {c["name"]: c for c in report["checks"]["google"]}
     assert checks["gws"]["status"] == "degraded"
-    assert checks["gws"]["fix"] == "hz google setup"
+    assert checks["gws"]["fix"] == "hz setup google"
     assert checks["calendar"]["detail"] == "served by google"
     assert checks["documents"]["detail"].startswith("not bound")
     assert [r.arguments for r in fake_gws.runs] == [["--version"]]

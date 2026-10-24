@@ -39,7 +39,7 @@ OAuth client as its README describes), then let setup do the rest:
 
 ```bash
 npm install -g @googleworkspace/cli
-hz google setup         # finds gws, signs it in read-only, binds documents, calendar and (if you say so) mail
+hz setup google         # finds gws, signs it in read-only, binds documents, calendar and (if you say so) mail
 hz system doctor        # finds gws, checks its version and its stored sign-in, from files; Google isn't contacted
 ```
 
@@ -132,5 +132,5 @@ hz system capability list       # who reads what, through which adapter and host
 ```
 
 Errors say what to do: no `gws` names the install; not signed in or an expired sign-in names the exact
-`gws auth login` command above (doctor names `hz google setup`); a missing scope or a disabled API says which; a file the account can't see says so.
+`gws auth login` command above (doctor names `hz setup google`); a missing scope or a disabled API says which; a file the account can't see says so.
 Token-shaped strings in anything `gws` says are redacted before it is shortened.

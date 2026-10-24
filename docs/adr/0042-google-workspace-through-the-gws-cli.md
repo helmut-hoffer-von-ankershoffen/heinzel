@@ -62,7 +62,7 @@ so the plugin holds no OAuth client, refresh token or access token, and needs no
   (`GOOGLE_WORKSPACE_CLI_CONFIG_DIR`, else `~/.config/gws`) for `client_secret.json` and `credentials.enc` or
   `credentials.json`; it never runs `gws auth status`, which may refresh the token and ask Google who is signed in.
   It reports whether `gws` is found and new enough, has an OAuth client and a stored sign-in (whether Google still
-  accepts it shows on the first read), and names `hz google setup` ([ADR 0032](0032-modules-declare-interactive-setup-steps.md)),
+  accepts it shows on the first read), and names `hz setup google` ([ADR 0032](0032-modules-declare-interactive-setup-steps.md)),
   which finds `gws`, runs its login with the terminal and binds the capabilities.
 - Credentials stay with `gws` (encrypted, with the key in the OS keychain, by default). The plugin reads no secret,
   so [ADR 0030](0030-credentials-live-in-the-os-keychain.md)'s "only way in" holds for it; `hz system credential list`

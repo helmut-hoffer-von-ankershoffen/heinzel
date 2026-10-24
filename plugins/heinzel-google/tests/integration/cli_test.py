@@ -55,7 +55,7 @@ def test_setup_through_the_cli(google_kernel, fake_gws, tmp_path, monkeypatch):
     kernel = google_kernel()
     prompter = ScriptedPrompter(["y", "", "", ""])  # change it (gws_path is set); documents and calendar; no mail
     kernel.bind(Prompter, prompter)
-    result = runner.invoke(build(kernel), ["google", "setup"])
+    result = runner.invoke(build(kernel), ["setup", "google"])
     assert result.exit_code == 0, result.output
     written = "".join(p.read_text(encoding="utf-8") for p in home.rglob("*.toml"))
     assert 'documents = "google"' in written, prompter.transcript

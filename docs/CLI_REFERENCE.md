@@ -69,7 +69,7 @@ Show the time in each of the team&#x27;s time zones.
 **Usage**:
 
 ```console
-$ hz clock [OPTIONS] COMMAND [ARGS]...
+$ hz clock [OPTIONS]
 ```
 
 **Options**:
@@ -77,24 +77,6 @@ $ hz clock [OPTIONS] COMMAND [ARGS]...
 * `--at ISO-8601`: Moment to show instead of now (ISO 8601).
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `setup`: Pick the team&#x27;s time zones and the working...
-
-### `hz clock setup`
-
-Pick the team&#x27;s time zones and the working hours in each.
-
-**Usage**:
-
-```console
-$ hz clock setup [OPTIONS]
-```
-
-**Options**:
-
 * `--help`: Show this message and exit.
 
 ## `hz github`
@@ -149,7 +131,6 @@ $ hz google [OPTIONS] COMMAND [ARGS]...
 
 * `files`: List the Google Docs and Sheets you can...
 * `info`: Show this plugin&#x27;s version, the...
-* `setup`: Find the Google Workspace CLI, sign it in...
 
 ### `hz google files`
 
@@ -185,20 +166,6 @@ $ hz google info [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz google setup`
-
-Find the Google Workspace CLI, sign it in read-only and read documents, calendar and, if you like, mail from it.
-
-**Usage**:
-
-```console
-$ hz google setup [OPTIONS]
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
 ## `hz org`
 
 Your profile, and the team, org and company you work with.
@@ -215,22 +182,7 @@ $ hz org [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `setup`: Tell hz who you are; what your gh and gws...
 * `show`: Show your profile: who you are, your role,...
-
-### `hz org setup`
-
-Tell hz who you are; what your gh and gws logins and this machine say is found, the rest is asked once.
-
-**Usage**:
-
-```console
-$ hz org setup [OPTIONS]
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
 
 ### `hz org show`
 
@@ -250,13 +202,17 @@ $ hz org show [OPTIONS]
 
 ## `hz setup`
 
-Set up every module that has a setup step, wizard style; optional steps can be skipped.
+Set up every module that has a setup step, wizard style; optional steps can be skipped. With MODULE, set up only that module.
 
 **Usage**:
 
 ```console
-$ hz setup [OPTIONS]
+$ hz setup [OPTIONS] [MODULE]
 ```
+
+**Arguments**:
+
+* `MODULE`: Set up only this module, by qualified name (`hz setup clock`); every module when left out.
 
 **Options**:
 

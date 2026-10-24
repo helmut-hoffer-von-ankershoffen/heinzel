@@ -1,4 +1,4 @@
-"""`hz google setup`, also part of `hz setup`: find `gws`, sign it in read-only, bind the capabilities (ADR 0032)."""
+"""`hz setup google`, also part of `hz setup`: find `gws`, sign it in read-only, bind the capabilities (ADR 0032)."""
 
 import os
 from pathlib import Path
@@ -39,7 +39,7 @@ def run_setup(  # noqa: PLR0913, PLR0917 - what the step is injected with
         prompter.say(str(exc))
         path = prompter.text("Absolute path of gws, empty to install it first", default="", validate=_executable)
         if not path:
-            prompter.say(f"Install gws, then run hz google setup again: {INSTALL}")
+            prompter.say(f"Install gws, then run hz setup google again: {INSTALL}")
             return
         prompter.say(f"Saved to {editor.write('google.gws_path', path)}.")
         session = GoogleSession(settings.model_copy(update={"gws_path": path}), gws)
@@ -47,7 +47,7 @@ def run_setup(  # noqa: PLR0913, PLR0917 - what the step is injected with
     signed_in, detail = session.signed_in()
     prompter.say(detail)
     if not signed_in and "OAuth client" in detail:
-        prompter.say(f"Give gws an OAuth client first, then run hz google setup again: {CLIENT}")
+        prompter.say(f"Give gws an OAuth client first, then run hz setup google again: {CLIENT}")
         return
     newly = _bind(view, prompter, editor)
     mail = "mail" in newly or view.bound("mail") == "google"

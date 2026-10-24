@@ -242,7 +242,7 @@ def test_discover_names_an_unknown_playbook(make):
 
 
 def test_setup_applies_settings_only_on_yes_proposes_assets_and_writes_the_template(kernel, monkeypatch, tmp_path):
-    monkeypatch.setattr(_setup, "stdin_is_terminal", lambda: True)
+    monkeypatch.setattr(_setup, "has_terminal", lambda: True)
     monkeypatch.chdir(tmp_path)
     answers = [
         "",  # Set capabilities.code_host = "host"? [y/N]: no
@@ -253,7 +253,7 @@ def test_setup_applies_settings_only_on_yes_proposes_assets_and_writes_the_templ
         "",  # write the contract? yes
         "",  # its name: weekly-report
     ]
-    code, text = hz(kernel, "teamwork", "setup", json_output=False, stdin="\n".join(answers) + "\n")
+    code, text = hz(kernel, "setup", "teamwork", json_output=False, stdin="\n".join(answers) + "\n")
     assert code == 0, text
     config = user_config_dir() / "config.toml"
     assert "capabilities" not in (tomllib.loads(config.read_text()) if config.exists() else {})
@@ -263,7 +263,7 @@ def test_setup_applies_settings_only_on_yes_proposes_assets_and_writes_the_templ
     assert "{{asset:team-repository}}" in contract  # no hint: the person fills it in
     left = [(d["code"], d["field"]) for d in hz(kernel, "workflow", "check")[1]["diagnostics"]]
     assert left == [("HZC025", "hz.inputs.merged.args.repository"), ("HZC025", "hz.inputs.issues.args.project")]
-    code, text = hz(kernel, "teamwork", "setup", json_output=False, stdin="y\ny\ny\n2\n2\n\n\n")
+    code, text = hz(kernel, "setup", "teamwork", json_output=False, stdin="y\ny\ny\n2\n2\n\n\n")
     assert code == 0, text
     assert tomllib.loads(config.read_text())["capabilities"] == {
         "code_host": "host",

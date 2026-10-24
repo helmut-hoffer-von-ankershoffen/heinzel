@@ -64,7 +64,7 @@ def test_setup_asks_for_the_greeting_and_saves_it(boot):
     kernel = boot()
     prompter = ScriptedPrompter(["Moin"])
     kernel.bind(Prompter, prompter)
-    invoke(kernel, "[[ plugin_name ]]", "setup")
+    invoke(kernel, "setup", "[[ plugin_name ]]")
     assert "How should `hello` greet? [Hello]: Moin" in prompter.transcript
     saved = tomllib.loads((user_config_dir() / "config.toml").read_text(encoding="utf-8"))
     assert saved == {"[[ plugin_name ]]": {"greeting": "Moin"}}

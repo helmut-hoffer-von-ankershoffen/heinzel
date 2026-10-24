@@ -49,7 +49,7 @@ def test_without_credentials_doctor_names_the_login(session, fake_gws):
     fake_gws.sign_out()
     checks = {c.name: c for c in service(session).checks(Bound())}
     assert checks["gws"].status == Status.DEGRADED
-    assert checks["gws"].fix == "hz google setup"
+    assert checks["gws"].fix == "hz setup google"
     assert checks["gws"].detail == "gws 0.22.5 is not signed in; checked locally, Google not contacted"
     assert LOGIN.startswith("gws auth login --scopes https://www.googleapis.com/auth/documents.readonly,")
     assert checks["documents"].detail.startswith("not bound")
@@ -61,7 +61,7 @@ def test_without_gws_doctor_names_the_install(fake_gws, tmp_path):
     checks = {c.name: c for c in service(missing).checks(Bound(documents="google"))}
     assert checks["gws"].status == Status.DEGRADED
     assert "npm install -g @googleworkspace/cli" in checks["gws"].detail
-    assert checks["gws"].fix == "hz google setup"
+    assert checks["gws"].fix == "hz setup google"
     assert fake_gws.runs == []
 
 

@@ -26,7 +26,7 @@ def system_info(service: [[ class_prefix ]]Service) -> [[ class_prefix ]]About:
     return service.about()
 
 
-@module.setup(required=False)  # optional: `hz setup` offers to skip it; `hz [[ plugin_name ]] setup` runs it alone
+@module.setup(required=False)  # optional: `hz setup` offers to skip it; `hz setup [[ plugin_name ]]` runs it alone
 def setup(settings: [[ class_prefix ]]Settings, prompter: Prompter, editor: ConfigEditor) -> None:
     """Choose how `hello` greets."""
     greeting = prompter.text("How should `hello` greet?", default=settings.greeting)

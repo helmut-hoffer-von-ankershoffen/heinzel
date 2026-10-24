@@ -1,4 +1,4 @@
-"""`hz google setup`: finding gws, signing it in, binding the capabilities; with a scripted person and a fake gws."""
+"""`hz setup google`: finding gws, signing it in, binding the capabilities; with a scripted person and a fake gws."""
 
 from pathlib import Path
 
