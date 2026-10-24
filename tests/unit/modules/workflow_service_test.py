@@ -15,6 +15,7 @@ from heinzel import (
     Event,
     HeinzelError,
     Issue,
+    MailContent,
     MailMessage,
     Meeting,
     Module,
@@ -380,6 +381,15 @@ def test_the_packet_drops_mail_senders_and_recipients_addresses():
     (minimised,) = service_module._without_emails([message])
     assert minimised.sender == Participant(name="Meeting tool")
     assert minimised.recipients == [Participant()]
+
+
+def test_the_packet_validates_models_again_so_no_address_header_slips_through():
+    message = MailMessage(id="m", sender=Participant(name="Tool"), subject="s", received_at=NOW)
+    built = MailContent.model_construct(message=message, text="t", headers={"to": "ada@example.com", "date": "d"})
+    mutated = MailContent(message=message, text="t")
+    mutated.headers["reply-to"] = "ada@example.com"
+    assert service_module._without_emails(built).headers == {"date": "d"}
+    assert service_module._without_emails(mutated).headers == {}
 
 
 def test_a_failing_input_or_an_unbound_capability_fails_the_run(make, dirs, host):

@@ -119,6 +119,15 @@ def test_new_datetimes_and_windows_must_be_timezone_aware():
         Event(id="e", title="t", start=naive, end=naive)
 
 
+def test_argument_checks_name_a_str_argument_of_a_read_method():
+    for name, spec in CAPABILITIES.items():
+        for (method, argument), check in spec.checks.items():
+            assert spec.methods.get(method) == "read", f"{name}.{method}"
+            assert get_type_hints(getattr(spec.protocol, method))[argument] is str, f"{name}.{method}({argument})"
+            assert callable(check)
+    assert CAPABILITIES["mail"].checks["messages", "query"] == MailQuery.parse
+
+
 def test_mail_only_reads():
     assert CAPABILITIES["mail"].methods == {"messages": "read", "read": "read"}
     assert CAPABILITIES["mail"].protocol is Mail

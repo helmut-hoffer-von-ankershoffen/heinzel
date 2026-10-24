@@ -569,7 +569,7 @@ class Inbox:
                     labels=["INBOX"],
                 ),
                 text=text,
-                headers={"From": sender.email or "", "Date": "x"},
+                headers={"From": sender.email or "", "Date": "x", "Received": "for <mira@example.com>"},
             )
             for i, (sender, subject, text) in enumerate(
                 [
@@ -586,8 +586,7 @@ class Inbox:
         return [
             c.message
             for c in self.messages_by_id.values()
-            if window.since <= c.message.received_at < window.until
-            and wanted.matches(c.message.sender.email, c.message.subject, c.message.labels)
+            if window.since <= c.message.received_at < window.until and wanted.matches(c.message)
         ]
 
     def read(self, message: str) -> MailContent:

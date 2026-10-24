@@ -338,6 +338,8 @@ def test_inputs_can_name_mail_messages_with_a_query():
     ("spec", "text"),
     [
         ("{read: mail.messages, window: 7d}", "query"),
+        ("{read: mail.messages, args: {query: 'to:ada@example.com'}, window: 7d}", "query: Mail query"),
+        ("{read: mail.messages, args: {query: 'subject:\"unclosed'}, window: 7d}", "must be terms like"),
         ("{read: mail.read, args: {message: m-1}, window: 7d}", "takes no time window"),
     ],
 )

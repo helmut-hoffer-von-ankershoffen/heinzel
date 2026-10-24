@@ -905,7 +905,9 @@ def _without_emails(value: object) -> object:
         return Participant(name=value.name)
     if isinstance(value, BaseModel):
         fields = {name: _without_emails(getattr(value, name)) for name in type(value).model_fields}
-        return value.model_copy(update=fields)
+        # Validated again, not copied: a model's own guards (MailContent keeps only headers without addresses) then
+        # hold for whatever the adapter built, `model_construct` or later mutation included.
+        return type(value).model_validate(fields)
     if isinstance(value, list):
         return [_without_emails(item) for item in cast("list[object]", value)]
     if isinstance(value, dict):

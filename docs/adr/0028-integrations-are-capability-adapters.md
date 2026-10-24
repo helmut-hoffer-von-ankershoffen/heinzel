@@ -195,9 +195,13 @@ request (director's decisions, 2026-10-24):
       subject:<text> label:<name>`, each at most once, quoted when it holds spaces, all terms matching; the core
       parses it (`MailQuery.parse`) and defines what matches (`MailQuery.matches`), and adapters translate it into the
       vendor's search and check `matches` on what comes back. A free-form vendor query would tie contracts to a vendor.
+      A contract's query is checked when the contract is read, not at its first run: the registry holds checks of
+      `str` arguments (`Capability.checks`), and contract validation runs them.
     - **People stay participants.** `MailMessage.sender` and `recipients` are `Participant`s, so the packet builder
-      drops their addresses like every other; `MailContent.headers` never holds a header that carries addresses
-      (`from`, `to`, `cc`, `reply-to`, `resent-*`, ...): the model drops them, whatever the adapter passes.
+      drops their addresses like every other. `MailContent.headers` keeps only an allowlist of headers that carry no
+      addresses (`MAIL_HEADERS`: `date`, `message-id`, `list-id`, ...), because a denylist misses `Received`,
+      `Authentication-Results`, `List-Post` and vendor variants; the model drops the rest whatever the adapter passes,
+      and the packet builder validates every model again, so `model_construct` or a later mutation can't bypass it.
     - **Bounded.** Lists follow the window rule above; `MailContent.text` is the text part or the HTML converted to
       text, attachments left out, and an adapter raises a `HeinzelError` past a byte budget of its own instead of
       cutting it. Every string passes `clean_text`, like all adapter output.

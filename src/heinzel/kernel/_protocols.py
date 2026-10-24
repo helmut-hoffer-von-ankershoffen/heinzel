@@ -20,7 +20,6 @@ recipients are participants too, so the workflow packet builder drops their addr
 """
 
 import re
-from collections.abc import Iterable
 from datetime import datetime
 from typing import Protocol, Self
 
@@ -261,27 +260,26 @@ class Calendar(Protocol):
         ...
 
 
-ADDRESS_HEADERS = frozenset(
+MAIL_HEADERS = frozenset(
     {
-        "bcc",
-        "cc",
-        "delivered-to",
-        "disposition-notification-to",
-        "envelope-to",
-        "errors-to",
-        "from",
-        "reply-to",
-        "return-path",
-        "return-receipt-to",
-        "sender",
-        "to",
-        "x-envelope-from",
-        "x-envelope-to",
-        "x-original-from",
-        "x-original-to",
+        "auto-submitted",
+        "content-language",
+        "content-type",
+        "date",
+        "importance",
+        "in-reply-to",
+        "list-id",
+        "message-id",
+        "mime-version",
+        "precedence",
+        "references",
+        "subject",
+        "thread-topic",
+        "x-auto-response-suppress",
     }
 )
-"""Headers that carry people's addresses; `MailContent.headers` never holds them (nor any `Resent-*` header)."""
+"""The only headers `MailContent.headers` keeps: none of them carries a person's address. Every other header is
+dropped, `From`, `To`, `Cc`, `Reply-To`, `Received`, `Authentication-Results`, `List-Post` and the like included."""
 
 
 class MailMessage(BaseModel):
@@ -310,19 +308,19 @@ class MailContent(BaseModel):
     )
     headers: dict[str, str] = Field(
         default_factory=dict[str, str],
-        description="Other headers by lower-case name, e.g. `date`, `message-id`, `list-id`; never one that carries "
-        "people's addresses (`from`, `to`, `cc`, `reply-to`, ...): those are `message.sender` and `recipients`.",
+        description="Headers that carry no addresses (`MAIL_HEADERS`: `date`, `message-id`, `list-id`, ...) by "
+        "lower-case name, repeated ones joined with `, `; the model drops every other header, so people's addresses "
+        "stay in `message.sender` and `recipients`.",
     )
 
     @field_validator("headers")
     @classmethod
-    def _without_addresses(cls, headers: dict[str, str]) -> dict[str, str]:
-        lowered = {name.lower(): value for name, value in headers.items()}
-        return {
-            name: value
-            for name, value in lowered.items()
-            if name not in ADDRESS_HEADERS and not name.startswith("resent-")
-        }
+    def _only_headers_without_addresses(cls, headers: dict[str, str]) -> dict[str, str]:
+        kept: dict[str, list[str]] = {}
+        for name, value in headers.items():
+            if name.lower() in MAIL_HEADERS:
+                kept.setdefault(name.lower(), []).append(value)
+        return {name: ", ".join(values) for name, values in sorted(kept.items())}
 
 
 _QUERY_TERM = re.compile(r'\s*(?P<key>[a-z]+):(?:"(?P<quoted>[^"]*)"|(?P<bare>[^\s"]+))(?=\s|$)')
@@ -334,16 +332,27 @@ class MailQuery(BaseModel):
 
     The syntax is the same for every adapter: `from:<address or domain> subject:<text> label:<name>`, each at most
     once, a value with spaces in double quotes (`subject:"Meeting summary"`); an empty query lists every message.
-    `from:ada@example.com` matches that sender, `from:example.com` any sender at that domain or below it; `subject:`
+    `from:ada@example.com` matches that sender, `from:example.com` (or `from:@example.com`) any sender at that domain
+    or below it, and a sender without an address never matches `from:`; `subject:`
     matches a subject containing the text, ignoring case; `label:` a label or folder of that name, ignoring case.
     Adapters translate it into the vendor's own search where they can, and check `matches` on what comes back.
     """
 
     model_config = ConfigDict(frozen=True)
 
-    sender: str | None = Field(default=None, description="`from:`: an address or a domain, lower case.")
+    sender: str | None = Field(
+        default=None, description="`from:`: an address, or a domain (`example.com` or `@example.com`), lower case."
+    )
     subject: str | None = Field(default=None, description="`subject:`: text the subject contains.")
     label: str | None = Field(default=None, description="`label:`: a label or folder name.")
+
+    @field_validator("sender")
+    @classmethod
+    def _lower_case_without_a_leading_at(cls, sender: str | None) -> str | None:
+        if sender is None:
+            return None
+        lowered = sender.strip().lower()
+        return lowered.removeprefix("@") if lowered.count("@") == 1 and lowered.startswith("@") else lowered
 
     @classmethod
     def parse(cls, query: str) -> Self:
@@ -374,23 +383,23 @@ class MailQuery(BaseModel):
                 raise ValueError(msg)
             found[key] = value.strip()
             position = term.end()
-        sender = found.get("from")
-        return cls(sender=sender.lower() if sender else None, subject=found.get("subject"), label=found.get("label"))
+        return cls(sender=found.get("from"), subject=found.get("subject"), label=found.get("label"))
 
-    def matches(self, sender: str | None, subject: str, labels: Iterable[str]) -> bool:
-        """Whether a message from `sender` (an address) with `subject`, filed under `labels`, is one to list."""
+    def matches(self, message: MailMessage) -> bool:
+        """Whether `message` is one to list: its sender's address, subject and labels match every term set."""
         if self.sender is not None:
-            address = (sender or "").strip().lower()
+            address = (message.sender.email or "").strip().lower()
+            local, at, domain = address.rpartition("@")
+            if not (local and at and domain):
+                return False  # no address to match: never taken for the sender asked for
             if "@" in self.sender:
                 if address != self.sender:
                     return False
-            else:
-                domain = address.rpartition("@")[2]
-                if not address or (domain != self.sender and not domain.endswith(f".{self.sender}")):
-                    return False
-        if self.subject is not None and self.subject.casefold() not in subject.casefold():
+            elif domain != self.sender and not domain.endswith(f".{self.sender}"):
+                return False
+        if self.subject is not None and self.subject.casefold() not in message.subject.casefold():
             return False
-        return self.label is None or self.label.casefold() in {label.casefold() for label in labels}
+        return self.label is None or self.label.casefold() in {label.casefold() for label in message.labels}
 
 
 class Mail(Protocol):

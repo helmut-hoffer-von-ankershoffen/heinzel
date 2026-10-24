@@ -7,7 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from heinzel import MailContent, MailMessage, MailQuery, Participant
-from heinzel.kernel._protocols import ADDRESS_HEADERS
+from heinzel.kernel._protocols import MAIL_HEADERS
 
 pytestmark = pytest.mark.unit
 
@@ -19,11 +19,38 @@ MESSAGE = MailMessage(
 )
 
 
-def test_content_headers_never_carry_addresses_and_are_lower_case():
-    headers = {name.title(): "ada@example.com" for name in ADDRESS_HEADERS}
-    headers |= {"Resent-From": "x@example.com", "Date": "Tue, 20 Oct 2026", "List-Id": "<team.example>"}
+ADDRESS_CARRIERS = [
+    "From",
+    "To",
+    "Cc",
+    "Bcc",
+    "Reply-To",
+    "Sender",
+    "Return-Path",
+    "Delivered-To",
+    "Resent-From",
+    "X-Original-To",
+    "X-Forwarded-To",
+    "Apparently-To",
+    "Mail-Followup-To",
+    "Received",
+    "Authentication-Results",
+    "List-Post",
+    "X-Original-Sender",
+]
+
+
+def test_content_keeps_only_headers_without_addresses_by_lower_case_name():
+    headers = dict.fromkeys(ADDRESS_CARRIERS, "Ada <ada@example.com>")
+    headers |= {"Date": "Tue, 20 Oct 2026", "List-Id": "<team.example>", "X-Custom": "ada@example.com"}
     content = MailContent(message=MESSAGE, text="Hello", headers=headers)
     assert content.headers == {"date": "Tue, 20 Oct 2026", "list-id": "<team.example>"}
+    assert all(name == name.lower() for name in MAIL_HEADERS)
+
+
+def test_headers_differing_only_in_case_are_joined_in_order():
+    content = MailContent(message=MESSAGE, text="", headers={"References": "<a>", "references": "<b>"})
+    assert content.headers == {"references": "<a>, <b>"}
 
 
 @pytest.mark.parametrize(
@@ -32,6 +59,7 @@ def test_content_headers_never_carry_addresses_and_are_lower_case():
         ("", MailQuery()),
         ("   ", MailQuery()),
         ("from:NoReply@Meet.Example", MailQuery(sender="noreply@meet.example")),
+        ("from:@Meet.Example", MailQuery(sender="meet.example")),
         (
             'from:meet.example subject:"Meeting summary" label:INBOX',
             MailQuery(sender="meet.example", subject="Meeting summary", label="INBOX"),
@@ -61,24 +89,38 @@ def test_malformed_queries_say_what_works(query, problem):
         MailQuery.parse(query)
 
 
+def message(sender: str | None, subject: str = "x", labels: tuple[str, ...] = ()) -> MailMessage:
+    return MESSAGE.model_copy(
+        update={"sender": Participant(name="Someone", email=sender), "subject": subject, "labels": list(labels)}
+    )
+
+
 @pytest.mark.parametrize(
     ("query", "sender", "subject", "labels", "expected"),
     [
-        ("", None, "", [], True),
-        ("from:noreply@meet.example", "NoReply@meet.example", "x", [], True),
-        ("from:noreply@meet.example", "other@meet.example", "x", [], False),
-        ("from:meet.example", "noreply@meet.example", "x", [], True),
-        ("from:meet.example", "noreply@eu.meet.example", "x", [], True),
-        ("from:meet.example", "noreply@evilmeet.example", "x", [], False),
-        ("from:meet.example", None, "x", [], False),
-        ('subject:"meeting SUMMARY"', None, "Meeting summary for Retro", [], True),
-        ("subject:digest", None, "Meeting summary", [], False),
-        ("label:inbox", None, "", ["INBOX", "Work"], True),
-        ("label:archive", None, "", ["INBOX"], False),
+        ("", None, "", (), True),
+        ("from:noreply@meet.example", "NoReply@meet.example", "x", (), True),
+        ("from:noreply@meet.example", "other@meet.example", "x", (), False),
+        ("from:meet.example", "noreply@meet.example", "x", (), True),
+        ("from:@meet.example", "noreply@meet.example", "x", (), True),
+        ("from:meet.example", "noreply@eu.meet.example", "x", (), True),
+        ("from:meet.example", "noreply@evilmeet.example", "x", (), False),
+        ("from:meet.example", None, "x", (), False),
+        ("from:meet.example", "meet.example", "x", (), False),
+        ("from:meet.example", "@meet.example", "x", (), False),
+        ('subject:"meeting SUMMARY"', None, "Meeting summary for Retro", (), True),
+        ("subject:digest", None, "Meeting summary", (), False),
+        ("label:inbox", None, "", ("INBOX", "Work"), True),
+        ("label:archive", None, "", ("INBOX",), False),
     ],
 )
 def test_matches(query, sender, subject, labels, expected):
-    assert MailQuery.parse(query).matches(sender, subject, labels) is expected
+    assert MailQuery.parse(query).matches(message(sender, subject, labels)) is expected
+
+
+def test_a_query_built_directly_is_normalised_like_a_parsed_one():
+    assert MailQuery(sender=" NoReply@Meet.Example ") == MailQuery.parse("from:noreply@meet.example")
+    assert MailQuery(sender="@Meet.Example").matches(message("ada@meet.example"))
 
 
 VALUE = st.text(alphabet=st.characters(exclude_characters='"', exclude_categories=["Cs"]), min_size=1).filter(str.strip)
@@ -96,5 +138,5 @@ def test_any_text_parses_or_raises_value_error_and_a_query_matches_its_own_terms
         query = MailQuery.parse(text)
     except ValueError:
         return
-    labels = [query.label] if query.label else []
-    assert query.matches(query.sender, query.subject or "", labels)
+    sender = query.sender if query.sender and "@" in query.sender else f"someone@{query.sender or 'x.example'}"
+    assert query.matches(message(sender, query.subject or "", (query.label,) if query.label else ()))
