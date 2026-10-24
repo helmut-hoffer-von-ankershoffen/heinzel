@@ -51,7 +51,8 @@ the standard library.
   trimmed); `email` is the account's address; both are in `ignored_in_project`. The token is the credential
   `atlassian-token`; every request carries `Authorization: Basic base64(email:token)`. There is no anonymous mode:
   without the site, the email or the token the adapter refuses before sending anything, and doctor is degraded with
-  the commands that fix it. The adapters declare `hosts=["*.atlassian.net"]`, which the settings guarantee.
+  the commands that fix it. The adapters' hosts are the configured site, a function of the settings (ADR 0028) that
+  the settings only accept under `atlassian.net`; `unknown (configured)` until it is set.
 - **Jira.** `GET /rest/api/3/search/jql?jql=...&fields=summary,status,updated,assignee,labels&maxResults=100`, then
   the same with `nextPageToken` until the answer has no token or says `isLast`. A short page is not the end; a token
   seen before stops with an error (tokens that cycle have been reported); 100 pages at most.

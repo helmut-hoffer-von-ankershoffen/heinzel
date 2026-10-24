@@ -199,7 +199,7 @@ def test_capability_list_shows_the_adapter_and_its_hosts(atlassian_kernel):
     assert code == 0
     assert {c["name"]: c["bound"] for c in report["capabilities"]}["documents"] == "atlassian"
     ours = sorted((a["capability"], a["modes"], a["hosts"]) for a in report["adapters"] if a["adapter"] == "atlassian")
-    assert ours == [("documents", ["read"], ["*.atlassian.net"]), ("tracker", ["read"], ["*.atlassian.net"])]
+    assert ours == [("documents", ["read"], ["acme.atlassian.net"]), ("tracker", ["read"], ["acme.atlassian.net"])]
 
 
 def test_a_project_file_can_neither_bind_nor_redirect_the_token(atlassian_kernel, site, tmp_path, monkeypatch):

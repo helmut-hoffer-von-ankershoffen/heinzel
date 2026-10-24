@@ -201,12 +201,6 @@ def test_window_bounds_in_other_timezones_are_the_same_instants(fake_atlassian):
     assert "updated >= 1790812800000 AND updated < 1790816400000" in fake_atlassian.requests[0].query["jql"]
 
 
-def test_a_naive_window_is_refused(fake_atlassian):
-    window = Window(since=datetime(2026, 10, 1), until=datetime(2026, 11, 1))  # noqa: DTZ001 - the point
-    with pytest.raises(HeinzelError, match="timezone-aware"):
-        adapter(fake_atlassian).issues_updated("WID", window)
-
-
 def test_a_reversed_window_is_refused(fake_atlassian):
     with pytest.raises(HeinzelError, match="starts"):
         adapter(fake_atlassian).issues_updated("WID", Window(since=OCTOBER.until, until=OCTOBER.since))

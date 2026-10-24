@@ -152,12 +152,6 @@ def test_repository_names_with_dots_are_fine(fake_github):
     assert adapter(fake_github).issues_updated("acme/...x", OCTOBER) == []
 
 
-def test_a_naive_window_is_refused(fake_github):
-    window = Window(since=datetime(2026, 10, 1), until=datetime(2026, 11, 1))  # noqa: DTZ001 - the point
-    with pytest.raises(HeinzelError, match="timezone-aware"):
-        adapter(fake_github).merged_pull_requests("acme/widgets", window)
-
-
 def test_a_reversed_window_is_refused(fake_github):
     window = Window(since=OCTOBER.until, until=OCTOBER.since)
     with pytest.raises(HeinzelError, match="starts"):

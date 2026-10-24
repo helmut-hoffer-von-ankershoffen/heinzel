@@ -3,7 +3,7 @@
 import inspect
 
 import pytest
-from heinzel_atlassian import module
+from heinzel_atlassian import AtlassianSettings, hosts, module
 
 from heinzel import ProviderLet
 from heinzel.kernel import CAPABILITIES
@@ -13,11 +13,16 @@ pytestmark = pytest.mark.unit
 PROVIDERS = [let for let in module.lets if isinstance(let, ProviderLet)]
 
 
-def test_the_adapter_serves_tracker_and_documents_read_only_on_atlassian_net():
-    assert sorted((p.name, sorted(p.modes), p.hosts) for p in PROVIDERS) == [
-        ("atlassian:documents", ["read"], ("*.atlassian.net",)),
-        ("atlassian:tracker", ["read"], ("*.atlassian.net",)),
+def test_the_adapter_serves_tracker_and_documents_read_only_on_the_configured_site():
+    assert sorted((p.name, sorted(p.modes), p.hosts, p.configured_hosts) for p in PROVIDERS) == [
+        ("atlassian:documents", ["read"], (), hosts),
+        ("atlassian:tracker", ["read"], (), hosts),
     ]
+
+
+def test_the_hosts_are_the_site_once_it_is_set():
+    assert hosts(AtlassianSettings()) == []
+    assert hosts(AtlassianSettings(site_url="https://acme.atlassian.net/wiki")) == ["https://acme.atlassian.net"]
 
 
 @pytest.mark.parametrize("provider", PROVIDERS, ids=lambda p: p.name)

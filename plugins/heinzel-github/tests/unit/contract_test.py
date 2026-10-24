@@ -3,7 +3,7 @@
 import inspect
 
 import pytest
-from heinzel_github import module
+from heinzel_github import GithubSettings, hosts, module
 
 from heinzel import ProviderLet
 from heinzel.kernel import CAPABILITIES
@@ -13,11 +13,16 @@ pytestmark = pytest.mark.unit
 PROVIDERS = [let for let in module.lets if isinstance(let, ProviderLet)]
 
 
-def test_the_adapter_serves_code_host_and_tracker_read_only_on_hosts_configuration_decides():
-    assert sorted((p.name, sorted(p.modes), p.hosts) for p in PROVIDERS) == [
-        ("github:code-host", ["read"], ()),
-        ("github:tracker", ["read"], ()),
+def test_the_adapter_serves_code_host_and_tracker_read_only_on_hosts_its_settings_decide():
+    assert sorted((p.name, sorted(p.modes), p.hosts, p.configured_hosts) for p in PROVIDERS) == [
+        ("github:code-host", ["read"], (), hosts),
+        ("github:tracker", ["read"], (), hosts),
     ]
+
+
+def test_the_hosts_are_the_configured_api():
+    assert hosts(GithubSettings()) == ["https://api.github.com"]
+    assert hosts(GithubSettings(api_url="https://ghe.example.com/api/v3")) == ["https://ghe.example.com/api/v3"]
 
 
 @pytest.mark.parametrize("provider", PROVIDERS, ids=lambda p: p.name)

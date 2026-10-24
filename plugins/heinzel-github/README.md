@@ -46,8 +46,8 @@ api_url = "https://ghe.example.com/api/v3"
 timeout = 30   # seconds per request
 ```
 
-`api_url` is ignored in a project `hz.toml`: the token goes wherever it points. Because configuration decides the host,
-the adapter declares none, and `hz system capability list` shows its hosts as `unknown (configured)`.
+`api_url` is ignored in a project `hz.toml`: the token goes wherever it points. The adapter's hosts come from it, so
+`hz system capability list` shows `api.github.com`, or the host of your GitHub Enterprise Server.
 
 ## Use
 

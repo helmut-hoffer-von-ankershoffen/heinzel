@@ -161,13 +161,12 @@ def test_doctor_reports_the_bindings_and_a_missing_token_without_contacting_gith
     assert fake_github.requests == []
 
 
-def test_capability_list_shows_the_adapter_with_hosts_its_configuration_decides(github_kernel):
+def test_capability_list_shows_the_adapter_with_the_host_of_its_api(github_kernel):
     code, report = hz(github_kernel(BOUND), "system", "capability", "list")
     assert code == 0
     assert {c["name"]: c["bound"] for c in report["capabilities"]}["tracker"] == "github"
     ours = sorted((a["capability"], a["modes"], a["hosts"]) for a in report["adapters"] if a["adapter"] == "github")
-    configured = ["unknown (configured)"]
-    assert ours == [("code-host", ["read"], configured), ("tracker", ["read"], configured)]
+    assert ours == [("code-host", ["read"], ["api.github.com"]), ("tracker", ["read"], ["api.github.com"])]
 
 
 def test_a_project_file_can_neither_bind_nor_redirect_the_token(github_kernel, github, tmp_path, monkeypatch):

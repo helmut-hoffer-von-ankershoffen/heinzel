@@ -62,8 +62,8 @@ integration becomes a configuration change.
   - Calling a capability or mode that wasn't declared fails, at runtime and in a test.
 - **First adapters, planned for 0.2**: GitHub (code host, tracker), Atlassian (tracker, documents), Google Workspace
   (documents, calendar; spreadsheets and mail later), Zoom (meetings and transcripts) and Slack (chat). All five are
-  first-party plugins in `plugins/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md); the move from
-  `packages/` is in flight): maintainer's decision, 2026-10-24.
+  first-party plugins in `plugins/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md)): maintainer's
+  decision, 2026-10-24.
 
 ### Consequences
 

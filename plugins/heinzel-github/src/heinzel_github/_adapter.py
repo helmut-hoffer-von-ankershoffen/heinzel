@@ -97,9 +97,7 @@ def _repository(text: str) -> str:
 
 
 def _bounds(window: Window) -> tuple[datetime, datetime]:
-    if window.since.tzinfo is None or window.until.tzinfo is None:
-        msg = "The window needs timezone-aware times, e.g. 2026-10-01T00:00:00Z."
-        raise HeinzelError(msg)
+    # Window's times are timezone-aware by type (AwareDatetime), so only their order needs checking.
     if window.since > window.until:
         msg = f"The window starts ({window.since.isoformat()}) after it ends ({window.until.isoformat()})."
         raise HeinzelError(msg)

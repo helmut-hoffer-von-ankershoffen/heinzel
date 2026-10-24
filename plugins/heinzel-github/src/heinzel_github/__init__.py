@@ -16,10 +16,16 @@ from heinzel_github._transport import Response, Transport
 module.settings(GithubSettings)
 module.service(GithubService)
 module.service(Transport)
-# One class serves both capabilities: issues are `tracker` even when they live on the code host (ADR 0028). No hosts:
-# `[github] api_url` decides where requests go, so `hz system capability list` shows `unknown (configured)`.
-module.provides("code-host", modes={"read"}, hosts=())(GitHub)
-module.provides("tracker", modes={"read"}, hosts=())(GitHub)
+
+
+def hosts(settings: GithubSettings) -> list[str]:
+    """Where requests go: the host of `[github] api_url`, `api.github.com` unless a GitHub Enterprise Server is set."""
+    return [settings.api_url]
+
+
+# One class serves both capabilities: issues are `tracker` even when they live on the code host (ADR 0028).
+module.provides("code-host", modes={"read"}, hosts=hosts)(GitHub)
+module.provides("tracker", modes={"read"}, hosts=hosts)(GitHub)
 
 
 @module.operation
@@ -49,5 +55,6 @@ __all__ = [
     "GithubSettings",
     "Response",
     "Transport",
+    "hosts",
     "module",
 ]

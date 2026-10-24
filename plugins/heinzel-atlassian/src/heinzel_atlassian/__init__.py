@@ -15,14 +15,17 @@ from heinzel_atlassian._module import TOKEN, module
 from heinzel_atlassian._service import AtlassianService
 from heinzel_atlassian._transport import Response, Transport
 
-HOSTS = ["*.atlassian.net"]
-"""Where data goes: the configured site, which the settings only accept under atlassian.net."""
+
+def hosts(settings: AtlassianSettings) -> list[str]:
+    """Where data goes: the configured site, which the settings accept only under atlassian.net; none until set."""
+    return [settings.site_url] if settings.site_url else []
+
 
 module.settings(AtlassianSettings)
 module.service(AtlassianService)
 module.service(Transport)
-module.provides("tracker", modes={"read"}, hosts=HOSTS)(Jira)
-module.provides("documents", modes={"read"}, hosts=HOSTS)(Confluence)
+module.provides("tracker", modes={"read"}, hosts=hosts)(Jira)
+module.provides("documents", modes={"read"}, hosts=hosts)(Confluence)
 
 
 @module.operation
@@ -44,7 +47,6 @@ def health(service: AtlassianService, view: CapabilityView) -> list[Check]:
 
 
 __all__ = [
-    "HOSTS",
     "TOKEN",
     "AtlassianAbout",
     "AtlassianService",
@@ -53,5 +55,6 @@ __all__ = [
     "Jira",
     "Response",
     "Transport",
+    "hosts",
     "module",
 ]
