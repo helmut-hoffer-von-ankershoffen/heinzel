@@ -101,6 +101,7 @@ class Installed(BaseModel):
     files: dict[Path, str] = Field(description="Unit files and their content.")
     commands: list[list[str]] = Field(description="Commands run to load the unit; none in a dry run.")
     dry_run: bool = Field(description="Whether nothing was written or loaded.")
+    hint: str | None = Field(default=None, description="What to do next, if anything.")
 
 
 class Uninstalled(BaseModel):
