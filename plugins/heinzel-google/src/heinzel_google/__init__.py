@@ -23,12 +23,13 @@ from heinzel_google._module import module
 from heinzel_google._service import GoogleService
 from heinzel_google._setup import run_setup
 
-DOCUMENT_HOSTS = ["www.googleapis.com", "docs.googleapis.com", "sheets.googleapis.com"]
+DOCUMENT_HOSTS = ["www.googleapis.com", "docs.googleapis.com", "sheets.googleapis.com", "oauth2.googleapis.com"]
 """Where `documents` reads go, through `gws`: Drive v3 (on www.googleapis.com), Docs v1 and Sheets v4."""
-MAIL_HOSTS = ["gmail.googleapis.com"]
+MAIL_HOSTS = ["gmail.googleapis.com", "oauth2.googleapis.com"]
 """Where `mail` reads go, through `gws`: Gmail v1."""
-CALENDAR_HOSTS = ["www.googleapis.com"]
-"""Where `calendar` reads go, through `gws`: Calendar v3. gws also signs in at oauth2.googleapis.com."""
+CALENDAR_HOSTS = ["www.googleapis.com", "oauth2.googleapis.com"]
+"""Where `calendar` reads go, through `gws`: Calendar v3; every provider's `gws` refreshes its sign-in at
+oauth2.googleapis.com."""
 
 module.settings(GoogleSettings)
 module.service(GoogleService)

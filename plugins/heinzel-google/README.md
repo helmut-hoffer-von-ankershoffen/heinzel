@@ -20,7 +20,9 @@ signs in with Google, keeps its own credentials (encrypted, with the key in the 
 Google's APIs. This plugin never sees a token. It runs `gws <service> <resource> <method> --params <JSON> --format
 json` as an argument list (never through a shell), with the executable resolved to an absolute path, from the root
 directory (so no project's `.env` reaches `gws`), with an allowlisted environment (never Heinzelmännchen's own
-credentials or other secrets), a
+credentials or other secrets; of gws's own variables only `GOOGLE_WORKSPACE_CLI_CONFIG_DIR`, `_KEYRING_BACKEND`,
+`_CLIENT_ID`, `_CLIENT_SECRET` and `GOOGLE_WORKSPACE_PROJECT_ID`, not its token, credentials-file, sanitizing or log
+variables), a
 timeout that stops `gws` and anything it started, and at most 10 MB of output read. Why `gws`:
 [ADR 0038](../../docs/adr/0038-google-workspace-through-the-gws-cli.md).
 
@@ -38,7 +40,7 @@ OAuth client as its README describes), then let setup do the rest:
 ```bash
 npm install -g @googleworkspace/cli
 hz google setup         # finds gws, signs it in read-only, binds documents, calendar and (if you say so) mail
-hz system doctor        # finds gws, checks its version and local sign-in state; never contacts Google
+hz system doctor        # finds gws, checks its version and its stored sign-in, from files; Google isn't contacted
 ```
 
 By hand, setup is:
@@ -114,7 +116,8 @@ def notes(documents: Documents) -> Document:
   charset, without attachments, and only the headers that carry no addresses. Senders and recipients are names and
   emails, parsed before any encoded name is decoded, so a display name can't pose as an address; the workflow packet
   builder drops the addresses before anything reaches an agent's prompt. A message longer than 2 million characters,
-  or with more than 500 MIME parts, is refused, not cut.
+  or with more than 500 MIME parts or 2 million characters of HTML, is refused, not cut; Spam and Trash are not
+  read; reading one window's messages may take at most five minutes.
 - **Text is data.** Every string returned passes `heinzel.clean_text` (no control, invisible or bidirectional
   characters).
 - **Bounds.** One `gws` run prints at most 10 MB, one call reads at most 100 pages or 25 MB, a Doc's text at most four

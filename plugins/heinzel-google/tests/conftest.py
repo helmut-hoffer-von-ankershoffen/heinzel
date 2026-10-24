@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 from heinzel_google import GoogleSession, GoogleSettings, Gws, Process
+from heinzel_google._gws import config_dir
 
 from heinzel import Config, Kernel, Module, Settings
 from heinzel.kernel import ModuleRecord, Origin, discover
@@ -77,13 +78,20 @@ class FakeGws(Gws):
         assert queue, f"unexpected gws run: {arguments}"
         return queue.pop(0) if len(queue) > 1 else queue[0]  # the last answer repeats
 
+    def sign_out(self, *, client: bool = True) -> None:
+        """Remove gws's stored sign-in, and its OAuth client too unless `client`."""
+        directory = config_dir()
+        (directory / "credentials.enc").unlink(missing_ok=True)
+        if not client:
+            (directory / "client_secret.json").unlink(missing_ok=True)
+
     def sleep(self, seconds: float) -> None:
         self.slept.append(seconds)
 
     def login(self, executable: str, arguments: Sequence[str], timeout: float) -> int | None:
         self.logins.append(list(arguments))
         if self.login_code == 0:
-            self.status = output(SIGNED_IN)
+            (config_dir() / "credentials.enc").write_bytes(b"encrypted")
         return self.login_code
 
     def on(self, command: tuple[str, ...], *answers: Process, page: str | None = None) -> None:
@@ -118,6 +126,17 @@ class FakeGws(Gws):
     @property
     def api_runs(self) -> list[Run]:
         return [r for r in self.runs if r.command not in {("auth", "status"), ("--version",)}]
+
+
+@pytest.fixture(autouse=True)
+def gws_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """gws's configuration directory with an OAuth client and a sign-in, as `gws auth login` leaves it."""
+    directory = tmp_path / "gws-config"
+    directory.mkdir()
+    (directory / "client_secret.json").write_text("{}", encoding="utf-8")
+    (directory / "credentials.enc").write_bytes(b"encrypted")
+    monkeypatch.setenv("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", str(directory))
+    return directory
 
 
 @pytest.fixture

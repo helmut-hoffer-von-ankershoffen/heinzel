@@ -68,13 +68,15 @@ class GoogleService:
             checks = [Check(name="gws", status=Status.DEGRADED, detail=str(exc), fix=SETUP)]
         else:
             if signed_in:
-                checks = [Check(name="gws", status=Status.UP, detail=f"{detail}; Google not contacted")]
+                checks = [
+                    Check(name="gws", status=Status.UP, detail=f"{detail}; checked locally, Google not contacted")
+                ]
             else:
                 checks = [
                     Check(
                         name="gws",
                         status=Status.DEGRADED,
-                        detail=f"{detail}; Google not contacted",
+                        detail=f"{detail}; checked locally, Google not contacted",
                         fix=SETUP,
                     )
                 ]

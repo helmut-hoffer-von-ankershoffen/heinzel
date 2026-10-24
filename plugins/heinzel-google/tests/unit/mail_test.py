@@ -166,6 +166,7 @@ def test_a_too_long_message_is_refused_not_cut(gmail, fake_gws, monkeypatch):
     fake_gws.json(GET, message("m1", SINCE, mimeType="text/plain", body={"data": b64("too long")}))
     with pytest.raises(HeinzelError, match="passes 5 characters"):
         gmail.read("m1")
+    monkeypatch.setattr(_mail, "MAX_HTML", 20)
     fake_gws.json(GET, message("m1", SINCE, mimeType="text/html", body={"data": b64("<p>" + "x" * 30 + "</p>")}))
     with pytest.raises(HeinzelError, match="HTML passes 20 characters"):
         gmail.read("m1")
@@ -232,11 +233,53 @@ def test_a_body_is_read_in_its_own_charset(gmail, fake_gws):
     assert gmail.read("m1").text == "plain"
 
 
-def test_html_with_an_open_head_or_title_still_shows_its_body():
+def test_html_with_an_open_head_still_shows_its_body_and_scripts_never_show():
     assert html_to_text("<head><meta charset=utf-8><body>visible text") == "visible text"
-    assert html_to_text("<title>unclosed<p>still here") == "unclosed still here" or "still here" in html_to_text(
-        "<title>unclosed<p>still here"
-    )
+    assert html_to_text("<script>steal()</script><style>p{}</style>shown") == "shown"
+    # No regex fallback over the raw HTML: an unclosed title hides the rest, and nothing is re-scanned.
+    assert "still here" not in html_to_text("<title>unclosed<p>still here")
+
+
+def test_html_to_text_is_one_linear_pass(monkeypatch):
+    """The work grows with the input, not its square: count the parser's calls, not the clock."""
+    calls: list[int] = []
+    feed = _mail._Text.feed
+
+    def counting(self, data: str) -> None:
+        calls.append(len(data))
+        feed(self, data)
+
+    monkeypatch.setattr(_mail._Text, "feed", counting)
+    for size in (1_000, 100_000):
+        html_to_text("<a" * size)
+    assert calls == [2_000, 200_000]  # one feed of the whole input, whatever its shape
+
+
+@pytest.mark.parametrize("charset", ["zlib", "base64", "hex", "rot13", "idna", "unicode_escape", "bogus"])
+def test_charsets_that_are_no_text_encoding_fall_back_to_utf8(gmail, fake_gws, charset):
+    part = {"mimeType": "text/plain", "headers": [{"name": "Content-Type", "value": f"text/plain; charset={charset}"}]}
+    fake_gws.json(GET, message("m1", SINCE, **part, body={"data": b64("Gr\u00fc\u00dfe \\u0041")}))
+    assert gmail.read("m1").text == "Gr\u00fc\u00dfe \\u0041"
+
+
+def test_long_header_values_are_cut_before_decoding(gmail, fake_gws):
+    long = message("m1", SINCE)
+    long["payload"]["headers"].append({"name": "References", "value": "<x@y> " * 10_000})
+    fake_gws.json(GET, long)
+    assert len(gmail.read("m1").headers["references"]) <= _mail.MAX_HEADER
+
+
+def test_spam_and_trash_are_never_read(gmail):
+    for label in ("spam", "TRASH"):
+        with pytest.raises(HeinzelError, match="Spam or Trash is not read"):
+            gmail.messages(f"label:{label}", WEEK)
+
+
+def test_reading_a_window_has_a_deadline(gmail, fake_gws, monkeypatch):
+    monkeypatch.setattr(_mail, "DEADLINE", -1.0)
+    fake_gws.json(LIST, {"messages": [{"id": "m1"}]})
+    with pytest.raises(HeinzelError, match="takes more than -1 seconds"):
+        gmail.messages("", WEEK)
 
 
 def test_subject_parts_and_labels_are_matched_here(gmail, fake_gws):

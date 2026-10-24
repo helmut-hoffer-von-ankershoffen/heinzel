@@ -11,7 +11,8 @@ pytestmark = pytest.mark.integration
 
 SCRIPT = """\
 import json, os, sys, time
-mode = os.environ.get("GOOGLE_WORKSPACE_CLI_FAKE_MODE", "echo")
+mode_file = os.path.join(os.path.dirname(sys.argv[0]), "mode")
+mode = open(mode_file).read().strip() if os.path.exists(mode_file) else "echo"
 if sys.argv[1:] == ["--version"]:
     print("gws 0.22.5")
 elif mode == "echo":
@@ -50,23 +51,23 @@ def test_arguments_arrive_as_a_list_and_credentials_stay_home(stand_in, monkeypa
     assert not process.truncated
 
 
-def test_a_run_past_its_timeout_is_stopped(stand_in, monkeypatch):
-    monkeypatch.setenv("GOOGLE_WORKSPACE_CLI_FAKE_MODE", "sleep")
+def test_a_run_past_its_timeout_is_stopped(stand_in, tmp_path, monkeypatch):
+    (tmp_path / "mode").write_text("sleep")
     started = time.monotonic()
     process = Gws().run(stand_in, [], 0.5)
     assert process.exit_code is None
     assert time.monotonic() - started < 5
 
 
-def test_output_past_the_limit_is_cut(stand_in, monkeypatch):
-    monkeypatch.setenv("GOOGLE_WORKSPACE_CLI_FAKE_MODE", "flood")
+def test_output_past_the_limit_is_cut(stand_in, tmp_path, monkeypatch):
+    (tmp_path / "mode").write_text("flood")
     monkeypatch.setattr(_gws, "MAX_BYTES", 1000)
     process = Gws().run(stand_in, [], 10)
     assert (len(process.stdout), process.truncated) == (1000, True)
 
 
-def test_the_session_maps_a_real_auth_failure(stand_in, monkeypatch):
-    monkeypatch.setenv("GOOGLE_WORKSPACE_CLI_FAKE_MODE", "auth")
+def test_the_session_maps_a_real_auth_failure(stand_in, tmp_path, monkeypatch):
+    (tmp_path / "mode").write_text("auth")
     session = GoogleSession(GoogleSettings(gws_path=stand_in), Gws())
     with pytest.raises(Exception, match="not signed in"):
         session.get("Google Drive", ("drive", "files", "get"), {"fileId": "x"}, "file x")
@@ -116,3 +117,8 @@ def test_output_held_open_by_an_escaped_child_counts_as_cut(shell_stand_in, monk
 def test_login_runs_with_the_terminal_and_returns_its_exit_code(shell_stand_in):
     assert Gws().login(shell_stand_in("exit 3"), ["auth", "login"], 10) == 3
     assert Gws().login(shell_stand_in("sleep 5"), [], 0.2) is None
+
+
+def test_a_login_that_ignores_sigterm_is_killed(shell_stand_in, monkeypatch):
+    monkeypatch.setattr(_gws, "GRACE", 0.3)
+    assert Gws().login(shell_stand_in("trap '' TERM\nwhile :; do sleep 1; done"), [], 2.0) is None

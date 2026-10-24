@@ -1,10 +1,10 @@
 """The Docs JSON to text converter: what it keeps, what it drops, and that it stays bounded."""
 
 import json
-import time
 from typing import Any
 
 import pytest
+from heinzel_google import _docs
 from heinzel_google._docs import MAX_DEPTH, MAX_INDENT, MIN_OUTPUT, document_to_text, max_output
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -173,11 +173,20 @@ def test_tables_nested_to_the_limit_are_read():
     assert "core" in text(nested_tables(MAX_DEPTH))
 
 
-def test_tables_nested_deeper_are_refused_quickly():
-    started = time.monotonic()
+def test_tables_nested_deeper_are_refused_before_descending_further(monkeypatch):
+    """Refused at depth `MAX_DEPTH`, however deep the JSON goes: the converter never walks the rest of it."""
+    bodies: list[int] = []
+    render = _docs._Body.render
+
+    def counting(self, content):
+        bodies.append(1)
+        return render(self, content)
+
+    monkeypatch.setattr(_docs._Body, "render", counting)
+    document = {"body": {"content": [nested_tables(5_000)]}}  # no json.dumps: it recurses past Python's limit
     with pytest.raises(HeinzelError, match="nests tables more than"):
-        text(nested_tables(5_000))
-    assert time.monotonic() - started < 1
+        document_to_text(document, 100_000)
+    assert len(bodies) == MAX_DEPTH + 1
 
 
 def test_tabs_nested_deeper_are_refused():

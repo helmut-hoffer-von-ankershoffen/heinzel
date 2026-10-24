@@ -23,7 +23,7 @@ tokens and talks to the APIs?
 - The least security-critical code of our own: no OAuth flow, loopback server or token refresh to get wrong.
 - The narrowest read-only scopes, and no token in Heinzelmännchen's output, logs or prompts.
 - No heavy Python dependency for four read endpoints; one way per vendor, easy to replace by another provider.
-- Doctor stays offline; a project `hz.toml` decides nothing about where data comes from.
+- Doctor doesn't contact Google; a project `hz.toml` decides nothing about where data comes from.
 
 ## Considered Options
 
@@ -46,8 +46,10 @@ so the plugin holds no OAuth client, refresh token or access token, and needs no
 - `gws` runs with the root directory as its working directory, because it reads a `.env` from where it starts, which
   a project could ship (a token, credentials file, OAuth client or log directory of its choosing); its environment
   is an allowlist (`PATH`, `HOME`, user, locale, `TMPDIR`, the XDG and D-Bus variables its keyring needs, proxies and
-  certificates, and `gws`'s own `GOOGLE_WORKSPACE_*`), so neither `HZ_CREDENTIAL_*` nor an unrelated secret reaches
-  it; it runs in its own process group, stopped with SIGTERM and SIGKILL past `google.timeout`;
+  certificates, and of `gws`'s own variables only `GOOGLE_WORKSPACE_CLI_CONFIG_DIR`, `_KEYRING_BACKEND`,
+  `_CLIENT_ID`, `_CLIENT_SECRET` and `GOOGLE_WORKSPACE_PROJECT_ID`), so neither `HZ_CREDENTIAL_*` nor an unrelated
+  secret reaches it, nor `GOOGLE_WORKSPACE_CLI_TOKEN` or `_CREDENTIALS_FILE` (another identity), `_SANITIZE_*` (every
+  answer sent to a Model Armor template in some Cloud project) or `_LOG` and `_LOG_FILE` (logs of the traffic); it runs in its own process group, stopped with SIGTERM and SIGKILL past `google.timeout`;
   at most 10 MB of its output is read, and output still held open by something it started counts as cut.
 - `gws`'s exit codes map to errors that say what to do: 2 (auth) names the exact
   `gws auth login --scopes ...` with the four read-only scopes `documents.readonly`, `spreadsheets.readonly`,
@@ -56,8 +58,11 @@ so the plugin holds no OAuth client, refresh token or access token, and needs no
   before any text is cut. Rate limits are retried after 1, 2 and 4 seconds; `gws` doesn't pass `Retry-After` on.
 - `gws` 0.22.0 is the minimum: the first read of a session runs `gws --version` and refuses an older one with the
   upgrade command.
-- `hz system doctor` runs only `gws --version` and `gws auth status`, which read local state; it reports whether `gws`
-  is found and new enough, has an OAuth client and is signed in, and names `hz google setup` ([ADR 0032](0032-modules-declare-interactive-setup-steps.md)),
+- `hz system doctor` runs only `gws --version` and reads `gws`'s configuration directory
+  (`GOOGLE_WORKSPACE_CLI_CONFIG_DIR`, else `~/.config/gws`) for `client_secret.json` and `credentials.enc` or
+  `credentials.json`; it never runs `gws auth status`, which may refresh the token and ask Google who is signed in.
+  It reports whether `gws` is found and new enough, has an OAuth client and a stored sign-in (whether Google still
+  accepts it shows on the first read), and names `hz google setup` ([ADR 0032](0032-modules-declare-interactive-setup-steps.md)),
   which finds `gws`, runs its login with the terminal and binds the capabilities.
 - Credentials stay with `gws` (encrypted, with the key in the OS keychain, by default). The plugin reads no secret,
   so [ADR 0030](0030-credentials-live-in-the-os-keychain.md)'s "only way in" holds for it; `hz system credential list`
@@ -69,6 +74,9 @@ so the plugin holds no OAuth client, refresh token or access token, and needs no
 ### Consequences
 
 - Good: no OAuth or token code of ours; `gws` updates follow Google's APIs; another provider can be bound instead.
+- Bad: npm's `gws` is a Node launcher that downloads its platform binary when it is missing, even on
+  `gws --version`; a broken install can therefore reach the network from doctor. Setting `google.gws_path` to the
+  binary itself avoids the launcher.
 - Bad: a second runtime outside uv, Node and npm, which `hz system plugin add google` does not install; setup and
   doctor say how.
 - Bad: `gws` is 0.x and "not an officially supported Google product": its exit codes and JSON are not a stable
@@ -77,8 +85,8 @@ so the plugin holds no OAuth client, refresh token or access token, and needs no
 - Bad: `drive.metadata.readonly` is a scope Google classes as restricted; a person's own OAuth client in testing or
   internal mode needs no verification, a published one would.
 - Neutral (ADR 0027): data goes from Google to this machine only: file ids, the Drive query (the modified-time window
-  and the name filter) and the calendar window go to Google's API hosts, and `gws` also fetches API discovery
-  documents and refreshes tokens at Google's OAuth host.
+  and the name filter), the calendar window and the mail search go to Google's API hosts, and `gws` also fetches API
+  discovery documents and refreshes tokens at `oauth2.googleapis.com`, which every provider declares among its hosts.
 
 ### Confirmation
 
@@ -86,7 +94,7 @@ so the plugin holds no OAuth client, refresh token or access token, and needs no
 `HZ_CREDENTIAL_*`, the environment allowlist, timeout and kill, output bounds, a real auth failure, with a stand-in `gws`);
 `tests/unit/gws_test.py` (arguments, PATH and `gws_path`, exit codes, retries, redaction before cutting, paging
 bounds); `tests/integration/capability_test.py` (a project `hz.toml` can neither bind nor choose the program; doctor
-runs only `gws --version` and `gws auth status`); `tests/unit/docs_test.py` (a property test and deep nesting); `tests/unit/setup_test.py`.
+runs only `gws --version` and reads `gws`'s files); `tests/unit/docs_test.py` (a property test and deep nesting); `tests/unit/setup_test.py`.
 
 ## More Information
 

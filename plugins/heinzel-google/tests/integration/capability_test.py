@@ -106,7 +106,7 @@ def test_a_link_elsewhere_fails_without_running_gws(google_kernel, fake_gws):
 
 
 def test_doctor_reads_only_the_local_sign_in_state(google_kernel, fake_gws):
-    fake_gws.status = Process(0, json.dumps({"auth_method": "none", "credential_source": "none"}).encode())
+    fake_gws.sign_out()
     kernel = google_kernel(Config(files=(), data={"capabilities": {"calendar": "google"}}))
     code, report = hz(kernel, "system", "doctor")
     assert code == 0
@@ -115,7 +115,7 @@ def test_doctor_reads_only_the_local_sign_in_state(google_kernel, fake_gws):
     assert checks["gws"]["fix"] == "hz google setup"
     assert checks["calendar"]["detail"] == "served by google"
     assert checks["documents"]["detail"].startswith("not bound")
-    assert [r.arguments for r in fake_gws.runs] == [["--version"], ["auth", "status"]]
+    assert [r.arguments for r in fake_gws.runs] == [["--version"]]
 
 
 def test_capability_list_shows_the_adapter_and_its_hosts(google_kernel):
@@ -124,9 +124,13 @@ def test_capability_list_shows_the_adapter_and_its_hosts(google_kernel):
     assert {c["name"]: c["bound"] for c in report["capabilities"]}["calendar"] == "google"
     ours = sorted((a["capability"], a["modes"], a["hosts"]) for a in report["adapters"] if a["adapter"] == "google")
     assert ours == [
-        ("calendar", ["read"], ["www.googleapis.com"]),
-        ("documents", ["read"], ["www.googleapis.com", "docs.googleapis.com", "sheets.googleapis.com"]),
-        ("mail", ["read"], ["gmail.googleapis.com"]),
+        ("calendar", ["read"], ["www.googleapis.com", "oauth2.googleapis.com"]),
+        (
+            "documents",
+            ["read"],
+            ["www.googleapis.com", "docs.googleapis.com", "sheets.googleapis.com", "oauth2.googleapis.com"],
+        ),
+        ("mail", ["read"], ["gmail.googleapis.com", "oauth2.googleapis.com"]),
     ]
 
 

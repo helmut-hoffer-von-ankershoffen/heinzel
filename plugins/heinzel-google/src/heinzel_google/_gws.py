@@ -61,21 +61,21 @@ PASSED = frozenset(
         "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",  # gws's keyring on Linux
         "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy",
         "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "SYSTEMROOT",
-        "GOOGLE_WORKSPACE_PROJECT_ID",
+        # gws's own: where its configuration and keyring live, and the OAuth client `gws auth login` uses.
+        "GOOGLE_WORKSPACE_CLI_CONFIG_DIR", "GOOGLE_WORKSPACE_CLI_KEYRING_BACKEND",
+        "GOOGLE_WORKSPACE_CLI_CLIENT_ID", "GOOGLE_WORKSPACE_CLI_CLIENT_SECRET", "GOOGLE_WORKSPACE_PROJECT_ID",
     }
 )  # fmt: skip
-"""Variables `gws` gets (ADR 0035): an allowlist, plus `LC_*` and gws's own `GOOGLE_WORKSPACE_CLI_*`; never anything
-else, so neither `HZ_CREDENTIAL_*` nor an unrelated secret in the environment reaches it."""
+"""Variables `gws` gets (ADR 0035): this allowlist and `LC_*`, nothing else. Not `HZ_CREDENTIAL_*` or any unrelated
+secret; and not gws's `GOOGLE_WORKSPACE_CLI_TOKEN` or `_CREDENTIALS_FILE` (another identity), `_SANITIZE_*` (sends
+every answer to a Model Armor template in some Cloud project), `_LOG` or `_LOG_FILE` (debug output and logs of the
+traffic, anywhere)."""
 
 
 def environment(source: Mapping[str, str] | None = None) -> dict[str, str]:
     """The environment `gws` runs with: the allowed variables of `source` (the current environment by default)."""
     variables = os.environ if source is None else source
-    return {
-        key: value
-        for key, value in variables.items()
-        if key in PASSED or key.startswith(("LC_", "GOOGLE_WORKSPACE_CLI_"))
-    }
+    return {key: value for key, value in variables.items() if key in PASSED or key.startswith("LC_")}
 
 
 SETUP = "hz google setup"
@@ -175,12 +175,21 @@ class Gws:
         Raises:
             OSError: If the executable can't be started.
         """
+        process = subprocess.Popen(  # noqa: S603 - an argument list, the executable resolved to an absolute path
+            [executable, *arguments], env=environment(), cwd=NEUTRAL, start_new_session=True
+        )
         try:
-            return subprocess.run(  # noqa: S603 - an argument list, the executable resolved to an absolute path
-                [executable, *arguments], env=environment(), cwd=NEUTRAL, check=False, timeout=timeout
-            ).returncode
+            return process.wait(timeout)
         except subprocess.TimeoutExpired:
+            _signal_group(process.pid, signal.SIGTERM)
+            try:
+                process.wait(GRACE)
+            except subprocess.TimeoutExpired:
+                _signal_group(process.pid, signal.SIGKILL)
+                process.wait()
             return None
+        finally:
+            _signal_group(process.pid, signal.SIGKILL)  # whatever it left running
 
     def sleep(self, seconds: float) -> None:
         """Wait `seconds` before retrying after a rate limit."""
@@ -206,6 +215,13 @@ def _parse(data: bytes) -> object:
         return TOO_DEEP
     except ValueError:
         return None
+
+
+def config_dir(source: Mapping[str, str] | None = None) -> Path:
+    """Where `gws` keeps its configuration and credentials: `GOOGLE_WORKSPACE_CLI_CONFIG_DIR`, else `~/.config/gws`."""
+    variables = os.environ if source is None else source
+    configured = variables.get("GOOGLE_WORKSPACE_CLI_CONFIG_DIR")
+    return Path(configured) if configured else Path(variables.get("HOME") or Path.home()) / ".config" / "gws"
 
 
 def _on_path(name: str) -> str | None:
@@ -365,35 +381,24 @@ class GoogleSession:
         return shown
 
     def signed_in(self) -> tuple[bool, str]:
-        """Whether `gws` has credentials, from `gws auth status`, which reads local files only; and a detail.
+        """Whether `gws` has stored credentials, and a detail; from its files alone, so nothing reaches Google.
 
-        Not signed in, the detail says whether the OAuth client is missing too (`CLIENT` sets it up) or only the
-        sign-in (`LOGIN`).
+        `gws auth status` isn't used: it may refresh the token and ask Google who is signed in. The files are those
+        `gws` keeps in its configuration directory (`GOOGLE_WORKSPACE_CLI_CONFIG_DIR`, else `~/.config/gws`):
+        `credentials.enc` (encrypted, its key in the keyring) or `credentials.json`, and the OAuth client in
+        `client_secret.json`. Whether Google still accepts the sign-in shows on the first read.
 
         Raises:
-            HeinzelError: If `gws` is missing or its status can't be read.
+            HeinzelError: If `gws` is missing or too old (`version`).
         """
-        executable = self.executable()
         shown = self.version()
-        try:
-            process = self._gws.run(executable, ["auth", "status"], min(self._settings.timeout, 10.0))
-        except OSError as exc:
-            msg = f"Could not start gws: {type(exc).__name__}; {INSTALL}."
-            raise HeinzelError(msg) from None
-        data = _parse(process.stdout)
-        if process.exit_code != 0 or not isinstance(data, dict):
-            msg = "gws auth status gave no answer this plugin understands; is gws the Google Workspace CLI?"
-            raise HeinzelError(msg)
-        status = cast("dict[str, Any]", data)
-        method = str(status.get("auth_method") or "none")
-        source = str(status.get("credential_source") or "none")
-        if method == "none" and source == "none":
-            client = status.get("client_config_exists") is not False
-            return (
-                False,
-                f"gws {shown} is not signed in" if client else f"gws {shown} has no OAuth client and is not signed in",
-            )
-        return True, redact(f"gws {shown} signed in ({method}, from {source})")
+        directory = config_dir()
+        stored = next((n for n in ("credentials.enc", "credentials.json") if (directory / n).is_file()), None)
+        if stored is not None:
+            return True, f"gws {shown} has a sign-in ({stored})"
+        if (directory / "client_secret.json").is_file():
+            return False, f"gws {shown} is not signed in"
+        return False, f"gws {shown} has no OAuth client and is not signed in"
 
     def _problem(  # noqa: PLR0911 - one message per kind of failure
         self, api: str, subject: str, process: Process, error: Mapping[str, Any], waits: int

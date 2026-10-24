@@ -14,6 +14,7 @@ import base64
 import binascii
 import codecs
 import re
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from email.header import decode_header, make_header
@@ -34,10 +35,17 @@ MAX_TEXT = 2_000_000
 """Characters of one message's text; a longer message is refused, not cut (the `Mail` protocol)."""
 MAX_PARTS = 500
 """MIME parts looked at in one message; a message with more is refused."""
+MAX_HTML = 2_000_000
+"""Characters of an HTML part turned into text; a larger one is refused."""
+MAX_HEADER = 10_000
+"""Characters of one header value decoded; the rest is dropped before decoding."""
+DEADLINE = 300.0
+"""Seconds `messages` may spend reading one window's messages; past it, it asks for a narrower window."""
+_NOT_TEXT = frozenset({"unicode_escape", "raw_unicode_escape"})
+"""Text codecs that interpret their input as escape sequences, not characters: never a mail charset."""
 _ID = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 _BLOCK = frozenset({"p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "table", "hr"})
 _HIDDEN = frozenset({"script", "style", "title", "template"})
-_TAGS = re.compile(r"<[^>]*>")
 _ADDRESSED = frozenset({"from", "to", "cc"})
 
 type Json = dict[str, Any]
@@ -58,7 +66,8 @@ def _line(value: object) -> str:
 
 
 def _decoded(value: str) -> str:
-    """A header value with its RFC 2047 encoded words decoded; as it is if they are malformed."""
+    """A header value, its first `MAX_HEADER` characters, with RFC 2047 encoded words decoded; as it is if malformed."""
+    value = value[:MAX_HEADER]
     try:
         return str(make_header(decode_header(value)))
     except (ValueError, LookupError, UnicodeDecodeError):
@@ -127,12 +136,11 @@ def _tidy(text: str) -> str:
 
 
 def html_to_text(html: str) -> str:
-    """The text of an HTML mail body, whitespace tidied; the tags merely stripped if parsing leaves nothing."""
+    """The text of an HTML mail body, whitespace tidied; one pass of the standard library's parser, no fallback."""
     parser = _Text()
     parser.feed(html)
     parser.close()
-    text = _tidy("".join(parser.parts))
-    return text or _tidy(_TAGS.sub(" ", html))
+    return _tidy("".join(parser.parts))
 
 
 def _walk(payload: Json) -> Iterator[Json]:
@@ -169,9 +177,13 @@ def _charset(part: Json) -> str:
     header["Content-Type"] = content_type or "text/plain"
     charset = header.get_content_charset() or "utf-8"
     try:
-        return codecs.lookup(charset).name
-    except LookupError:
+        found = codecs.lookup(charset)
+    except (LookupError, UnicodeError):
         return "utf-8"
+    # Only text encodings: `zlib`, `base64`, `hex` or `rot13` are byte or str transforms, the escape codecs no charset.
+    if not getattr(found, "_is_text_encoding", False) or found.name.replace("-", "_") in _NOT_TEXT:
+        return "utf-8"
+    return found.name
 
 
 def _body(part: Json) -> str:
@@ -182,7 +194,10 @@ def _body(part: Json) -> str:
         raw = base64.b64decode(data + "=" * (-len(data) % 4), altchars=b"-_", validate=True)
     except (binascii.Error, ValueError):
         return ""
-    return raw.decode(_charset(part), errors="replace")
+    try:
+        return raw.decode(_charset(part), errors="replace")
+    except (LookupError, UnicodeError, ValueError):
+        return raw.decode("utf-8", errors="replace")
 
 
 def _text(payload: Json) -> str:
@@ -201,8 +216,8 @@ def _text(payload: Json) -> str:
         elif mime == "text/html" and html is None:
             html = _body(part)
     if plain is None and html is not None:
-        if len(html) > 4 * MAX_TEXT:
-            msg = f"The message's HTML passes {4 * MAX_TEXT:,} characters; it is too large to read."
+        if len(html) > MAX_HTML:
+            msg = f"The message's HTML passes {MAX_HTML:,} characters; it is too large to read."
             raise HeinzelError(msg)
         plain = html_to_text(html)
     text = clean_text((plain or "").replace("\r\n", "\n"))
@@ -225,6 +240,18 @@ def _raw_headers(payload: Json) -> dict[str, list[str]]:
 def _headers(raw: dict[str, list[str]]) -> dict[str, str]:
     """Decoded header values, repeated ones joined with `, `; `MailContent` keeps only those without addresses."""
     return {name: ", ".join(_line(_decoded(value)) for value in values) for name, values in raw.items()}
+
+
+def _label_id(label: str, names: dict[str, str]) -> str | None:
+    """The id of the label named `label`, ignoring case; None if there is none.
+
+    Raises:
+        HeinzelError: For Spam and Trash, which Gmail lists only when asked to and nothing here reads.
+    """
+    if label.casefold() in {"spam", "trash"}:
+        msg = "Mail in Spam or Trash is not read; ask for another label."
+        raise HeinzelError(msg)
+    return next((i for i, name in names.items() if name.casefold() == label.casefold()), None)
 
 
 class Gmail:
@@ -254,17 +281,18 @@ class Gmail:
         names = self._labels()
         params: dict[str, object] = {"userId": "me", "q": gmail_search(parsed, window), "maxResults": MAX_MESSAGES}
         if parsed.label is not None:
-            ids = [i for i, name in names.items() if name.casefold() == parsed.label.casefold()]
-            if not ids:
+            label = _label_id(parsed.label, names)
+            if label is None:
                 return []  # no label of that name: nothing is filed under it
-            params["labelIds"] = ids[:1]
-        found_ids = self._ids(params)
+            params["labelIds"] = [label]
         found: dict[str, MailMessage] = {}
-        for message_id in found_ids:
+        deadline = time.monotonic() + DEADLINE
+        for message_id in self._ids(params):
+            if time.monotonic() > deadline:
+                msg = f"Reading the window's messages takes more than {DEADLINE:g} seconds; narrow the window or query."
+                raise HeinzelError(msg)
             message = self._message(self._get(message_id, "metadata"), names)
-            if message is None or not window.since <= message.received_at < window.until:
-                continue
-            if parsed.matches(message):
+            if message is not None and window.since <= message.received_at < window.until and parsed.matches(message):
                 found[message.id] = message
         return sorted(found.values(), key=lambda m: (m.received_at, m.id))
 

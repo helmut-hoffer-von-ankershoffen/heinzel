@@ -1,17 +1,14 @@
 """`hz google setup`: finding gws, signing it in, binding the capabilities; with a scripted person and a fake gws."""
 
-import json
 from pathlib import Path
 
 import pytest
-from heinzel_google import LOGIN, LOGIN_WITH_MAIL, GoogleSession, GoogleSettings, Process
+from heinzel_google import LOGIN, LOGIN_WITH_MAIL, GoogleSession, GoogleSettings
 from heinzel_google._setup import run_setup
 
 from heinzel.kernel import ScriptedPrompter
 
 pytestmark = pytest.mark.unit
-
-NOT_SIGNED_IN = Process(0, json.dumps({"auth_method": "none", "credential_source": "none"}).encode())
 
 
 class Editor:
@@ -38,7 +35,7 @@ def setup(session, fake_gws, answers, view=None, settings=None) -> tuple[Scripte
 
 
 def test_signs_in_and_binds_documents_and_calendar_but_not_mail_by_default(session, fake_gws, gws_path):
-    fake_gws.status = NOT_SIGNED_IN
+    fake_gws.sign_out()
     prompter, editor = setup(session, fake_gws, ["", "", "", ""])
     assert fake_gws.logins == [LOGIN.split()[1:]]
     assert {r.executable for r in fake_gws.runs} == {gws_path}
@@ -59,7 +56,7 @@ def test_already_signed_in_and_bound_asks_nothing(session, fake_gws):
 
 
 def test_keeps_another_binding_when_declined_and_reports_a_failed_login(session, fake_gws):
-    fake_gws.status = NOT_SIGNED_IN
+    fake_gws.sign_out()
     fake_gws.login_code = 1
     prompter, editor = setup(session, fake_gws, ["n", "", "n", "y"], Bound(documents="other"))
     assert editor.written == {"capabilities.calendar": "google"}
@@ -67,8 +64,7 @@ def test_keeps_another_binding_when_declined_and_reports_a_failed_login(session,
 
 
 def test_without_an_oauth_client_it_stops_with_the_way_to_make_one(session, fake_gws):
-    status = {"auth_method": "none", "credential_source": "none", "client_config_exists": False}
-    fake_gws.status = Process(0, json.dumps(status).encode())
+    fake_gws.sign_out(client=False)
     prompter, editor = setup(session, fake_gws, [])
     assert any("gws auth setup" in line for line in prompter.transcript)
     assert (fake_gws.logins, editor.written) == ([], {})
@@ -97,7 +93,7 @@ def test_without_gws_and_no_path_it_names_the_install(fake_gws, tmp_path, monkey
 
 
 def test_a_declined_sign_in_runs_nothing(session, fake_gws):
-    fake_gws.status = NOT_SIGNED_IN
+    fake_gws.sign_out()
     _, editor = setup(session, fake_gws, ["n", "n"], Bound(documents="google", calendar="google"))
     assert (fake_gws.logins, editor.written) == ([], {})
 
