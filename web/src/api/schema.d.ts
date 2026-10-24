@@ -4,6 +4,70 @@
  */
 
 export interface paths {
+    "/ai/access/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the AI access options, the one in use, whether each is signed in, and what runs each use.
+         * @description List the AI access options, the one in use, whether each is signed in, and what runs each use.
+         *
+         *     Asks each option offline (e.g. `claude auth status`); calls no model and spends nothing.
+         */
+        get: operations["ai_access_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/access/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run one cheap live check of an AI access option and keep the result; this may cost a little.
+         * @description Run one cheap live check of an AI access option and keep the result; this may cost a little.
+         *
+         *     Claude Code answers one line within $0.05; the gateway runs its configured test command.
+         */
+        post: operations["ai_access_test"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/access/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Use an AI access option: sets capabilities.ai_access, and agent_runner if the option names one.
+         * @description Use an AI access option: sets capabilities.ai_access, and agent_runner if the option names one.
+         */
+        post: operations["ai_access_use"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph": {
         parameters: {
             query?: never;
@@ -1285,6 +1349,174 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AccessList
+         * @description Every installed AI access option, the one in use, and what each use of AI runs.
+         */
+        AccessList: {
+            /**
+             * Next
+             * @description What to run next.
+             */
+            next?: string[];
+            /**
+             * Note
+             * @description Why something isn't as configured, e.g. a runner mismatch.
+             */
+            note?: string | null;
+            /**
+             * Options
+             * @description Every installed option, by name.
+             */
+            options: components["schemas"]["AccessOption"][];
+            /**
+             * Selected
+             * @description The AI access in use, `[capabilities] ai_access`; none when unset.
+             */
+            selected: string | null;
+            /**
+             * Uses
+             * @description Chat, turns and coding handoffs, and what runs each today.
+             */
+            uses: components["schemas"]["AccessUse"][];
+        };
+        /**
+         * AccessOption
+         * @description One installed AI access option and what it says about itself.
+         */
+        AccessOption: {
+            /**
+             * Detail
+             * @description What it found, e.g. the CLI's path.
+             * @default
+             */
+            detail: string;
+            /**
+             * Fix
+             * @description A command that makes it usable; often empty.
+             * @default
+             */
+            fix: string;
+            /**
+             * Hosts
+             * @description Hosts it sends prompts to, when known.
+             */
+            hosts?: string[];
+            /**
+             * In Use
+             * @description Whether it is the AI access in use.
+             */
+            in_use: boolean;
+            /** @description The last `hz ai access test` of it, if any. */
+            last_test?: components["schemas"]["LastTest"] | null;
+            /**
+             * Models
+             * @description Models it offers or is configured with.
+             */
+            models?: string[];
+            /**
+             * Module
+             * @description The qualified name of the module providing it, e.g. `system.runner`.
+             */
+            module: string;
+            /**
+             * Name
+             * @description What `hz ai access use` takes, e.g. `claude-code`.
+             */
+            name: string;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. `heinzel-acme`; none when built in.
+             */
+            plugin: string | null;
+            /**
+             * Runner
+             * @description The agent runner that serves its chat and coding uses.
+             */
+            runner?: string | null;
+            /**
+             * Status
+             * @description `signed in` or `not signed in` as far as it tells offline; otherwise `tested` or `test failed` from the last `hz ai access test`, or `not tested`; `not installed` when what it needs is missing.
+             * @enum {string}
+             */
+            status: "signed in" | "not signed in" | "not tested" | "tested" | "test failed" | "not installed" | "error";
+            /**
+             * Summary
+             * @description One sentence on how it reaches AI.
+             */
+            summary: string;
+            /**
+             * Title
+             * @description What people pick it by, e.g. `Claude Code`.
+             */
+            title: string;
+        };
+        /**
+         * AccessTestReport
+         * @description The outcome of `hz ai access test`, also kept for the listing.
+         */
+        AccessTestReport: {
+            /**
+             * Cost Usd
+             * @description What it cost in US dollars, when reported.
+             */
+            cost_usd?: number | null;
+            /**
+             * Detail
+             * @description The answer, or why it failed.
+             * @default
+             */
+            detail: string;
+            /**
+             * Duration Seconds
+             * @description Wall-clock time of the check.
+             * @default 0
+             */
+            duration_seconds: number;
+            /**
+             * Fix
+             * @description A command that fixes why it failed; often empty.
+             * @default
+             */
+            fix: string;
+            /**
+             * Model
+             * @description The model that answered, when reported.
+             */
+            model?: string | null;
+            /**
+             * Name
+             * @description The option tested.
+             */
+            name: string;
+            /**
+             * Ok
+             * @description Whether it answered.
+             */
+            ok: boolean;
+        };
+        /**
+         * AccessUse
+         * @description What one use of AI runs today.
+         */
+        AccessUse: {
+            /**
+             * Access
+             * @description The AI access it follows: the one in use.
+             */
+            access: string | null;
+            /**
+             * Runs
+             * @description What actually runs it today, e.g. `the agent runner claude-code`.
+             */
+            runs: string;
+            /**
+             * Use
+             * @description `chat`, `turns` of Heinzelmännchen, or `coding` handoffs.
+             * @enum {string}
+             */
+            use: "chat" | "turns" | "coding";
+        };
         /**
          * AdapterCandidate
          * @description An adapter that can serve a capability, and the state of its connector.
@@ -3233,6 +3465,45 @@ export interface components {
         };
         JsonValue: unknown;
         /**
+         * LastTest
+         * @description The last live check of an option, as `hz ai access test` kept it.
+         */
+        LastTest: {
+            /**
+             * At
+             * Format: date-time
+             * @description When it ran, in UTC.
+             */
+            at: string;
+            /**
+             * Cost Usd
+             * @description What it cost in US dollars, when reported.
+             */
+            cost_usd?: number | null;
+            /**
+             * Detail
+             * @description The answer, or why it failed.
+             * @default
+             */
+            detail: string;
+            /**
+             * Duration Seconds
+             * @description Wall-clock time of the check.
+             * @default 0
+             */
+            duration_seconds: number;
+            /**
+             * Model
+             * @description The model that answered, when reported.
+             */
+            model?: string | null;
+            /**
+             * Ok
+             * @description Whether the option answered.
+             */
+            ok: boolean;
+        };
+        /**
          * LayerList
          * @description `hz system layer list`: every installed layer, and what is wrong with the tree.
          */
@@ -5110,6 +5381,10 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAccessList = components['schemas']['AccessList'];
+export type SchemaAccessOption = components['schemas']['AccessOption'];
+export type SchemaAccessTestReport = components['schemas']['AccessTestReport'];
+export type SchemaAccessUse = components['schemas']['AccessUse'];
 export type SchemaAdapterCandidate = components['schemas']['AdapterCandidate'];
 export type SchemaAdapterInfo = components['schemas']['AdapterInfo'];
 export type SchemaAgenda = components['schemas']['Agenda'];
@@ -5168,6 +5443,7 @@ export type SchemaHintView = components['schemas']['HintView'];
 export type SchemaInstalledSkill = components['schemas']['InstalledSkill'];
 export type SchemaJobInfo = components['schemas']['JobInfo'];
 export type SchemaJsonValue = components['schemas']['JsonValue'];
+export type SchemaLastTest = components['schemas']['LastTest'];
 export type SchemaLayerList = components['schemas']['LayerList'];
 export type SchemaLayerProblemView = components['schemas']['LayerProblemView'];
 export type SchemaLayerView = components['schemas']['LayerView'];
@@ -5224,6 +5500,90 @@ export type SchemaWaiting = components['schemas']['Waiting'];
 export type SchemaWeek = components['schemas']['Week'];
 export type $defs = Record<string, never>;
 export interface operations {
+    ai_access_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessList"];
+                };
+            };
+        };
+    };
+    ai_access_test: {
+        parameters: {
+            query?: {
+                /** @description The option to test, e.g. `gateway`; the one in use when not given. */
+                name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessTestReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_access_use: {
+        parameters: {
+            query: {
+                /** @description The AI access to use, one `hz ai access list` shows, e.g. `claude-code`. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     graph: {
         parameters: {
             query?: {

@@ -31,6 +31,7 @@ dependencies = [
     "platformdirs>=4.5",
     "pluggy>=1.6.0,<2",
     "pydantic>=2.12.0,<3",
+    "pydantic-ai-slim>=2.61,<3",
     "pydantic-settings>=2.11.0,<3",
     "pyyaml>=6.0.2,<7",
     "rich>=14.2.0",
@@ -39,6 +40,11 @@ dependencies = [
     "uvicorn>=0.54",
     "wsproto>=1.3",
 ]
+
+[project.optional-dependencies]
+# A vendor's client for the `pydantic-ai` AI access option (ADR 0050, 0057); the core imports only pydantic_ai.
+anthropic = ["pydantic-ai-slim[anthropic]>=2.61,<3"]
+openai = ["pydantic-ai-slim[openai]>=2.61,<3"]
 
 [project.scripts]
 hz = "heinzel.heads.cli:main"
@@ -256,7 +262,7 @@ allowed_prefixes = ["Merge", "Revert", "Pull request", "fixup!", "squash!", "ame
 
 [tool.commitizen.customize]
 schema = "<type>(<scope>)!: <summary of at most 72 characters>\n\n<body: why>\n\n<footers>"
-schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|setup|workflow|team|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|web|chat|graph|report|clock|github|atlassian|google|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
+schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|ai|system|setup|workflow|team|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|web|chat|graph|report|clock|github|atlassian|google|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
 example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
@@ -488,7 +494,7 @@ modules = [
 [[tool.importlinter.contracts]]
 name = "Every module could be a plugin: top-level modules don't import each other, they inject services by type"
 type = "independence"
-modules = ["heinzel.modules.graph", "heinzel.modules.org", "heinzel.modules.system", "heinzel.modules.telemetry", "heinzel.modules.workflow"]
+modules = ["heinzel.modules.ai", "heinzel.modules.graph", "heinzel.modules.org", "heinzel.modules.system", "heinzel.modules.telemetry", "heinzel.modules.workflow"]
 
 [[tool.importlinter.contracts]]
 name = "Modules use only the kernel's public API, like plugins"

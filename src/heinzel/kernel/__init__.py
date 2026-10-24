@@ -4,7 +4,8 @@ The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets
 """
 
 from heinzel.kernel._agents import AgentResult, AgentRunner, Budget, McpServer, RunStatus, TokenUsage, ToolProfile
-from heinzel.kernel._bindings import HOWS, CapabilityView, How, Requester
+from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess
+from heinzel.kernel._bindings import HOWS, Adapters, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._chat import ActionGate, ProposedCall
@@ -150,9 +151,13 @@ __all__ = [
     "SETUP_PHASES",
     "VERBS",
     "WINDOW_PATTERN",
+    "AccessStatus",
+    "AccessTest",
     "ActionGate",
+    "Adapters",
     "AgentResult",
     "AgentRunner",
+    "AiAccess",
     "AssetType",
     "Budget",
     "Calendar",
