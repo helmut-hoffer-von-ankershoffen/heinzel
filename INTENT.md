@@ -70,10 +70,17 @@ When in doubt, these decide.
 | Version | Theme | Scope |
 | --- | --- | --- |
 | 0.1 | Foundation | Kernel, module discovery, lets, dependency injection; CLI, MCP and REST heads; health checks and configuration; plugin lifecycle and template; first-party plugins; agent skills; fully automated releases |
-| 0.2 | Works for me while I'm away | The daemon on my machine ([ADR 0020](docs/adr/0020-daemon-head.md)); personal workflow contracts ([ADR 0021](docs/adr/0021-workflow-contracts.md)); the `AgentRunner` with Claude Code and a generic command adapter ([ADR 0029](docs/adr/0029-agent-runners-are-capability-adapters.md)); capability protocols with first-party GitHub, Atlassian, Google Workspace, Zoom and Slack adapters ([ADR 0028](docs/adr/0028-integrations-are-capability-adapters.md)); credentials in the keychain; releases on PyPI, an update notifier and team pinning; nothing is sent home ([ADR 0027](docs/adr/0027-nothing-is-sent-home.md)) |
+| 0.2 | Works for me while I'm away | The daemon on my machine ([ADR 0020](docs/adr/0020-daemon-head.md)); personal workflow contracts ([ADR 0021](docs/adr/0021-workflow-contracts.md)); the `AgentRunner` with Claude Code and a generic command adapter ([ADR 0029](docs/adr/0029-agent-runners-are-capability-adapters.md)); capability protocols ([ADR 0028](docs/adr/0028-integrations-are-capability-adapters.md)) with first-party GitHub, Atlassian and Google Workspace adapters that go through the vendors' CLIs as an ordinary employee ([ADR 0035](docs/adr/0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md)) and a Slack adapter, meetings arriving as summary e-mails; credentials in the keychain for services without a CLI; releases on PyPI, an update notifier and team pinning; nothing is sent home ([ADR 0027](docs/adr/0027-nothing-is-sent-home.md)) |
 | 0.3 | Works for my team | Shared state and approvals in GitHub, the GitHub Actions team runner ([ADR 0020](docs/adr/0020-daemon-head.md)); people and teams ([ADR 0024](docs/adr/0024-people-and-org.md)); publishing after approval; the first management rituals |
 | 0.4 | Lives in our documents | Embedded workflows ([ADR 0022](docs/adr/0022-embedded-workflows.md)); the inventory and its graphs ([ADR 0023](docs/adr/0023-inventory.md)); knowledge extracted from meeting transcripts; workflows that improve themselves |
 | 0.5 | Anywhere | A remote MCP connector for mobile and voice; sandboxing; a GitHub App; Microsoft 365 and Notion adapters |
 | 1.0 | Stable | A stable plugin API ([ADR 0026](docs/adr/0026-plugin-api-versioned-with-semver.md)) |
+
+**Thin slice first.** 0.2 is validated with one slice before anything else is built on it: the weekly report
+draft. One contract (the draft is ready Friday 17:00), real inputs through the vendor CLIs (`gh`, `acli`, `gws`), and
+a local draft the manager edits and sends themselves. No approvals, no publishing and no people model are needed for
+it. A contract is an invariant about one asset; the overall workflow emerges from the graph of contracts
+([ADR 0021](docs/adr/0021-workflow-contracts.md)). The core knows nothing about weekly reports: the slice is a
+playbook a plugin brings. Success test after three Fridays: time saved, and how much of the draft was changed.
 
 Decisions that shape the code are recorded as [ADRs](docs/adr/).
