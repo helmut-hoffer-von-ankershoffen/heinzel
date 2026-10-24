@@ -15,11 +15,11 @@
 | src/heinzel/kernel/\_discovery.py                             |       66 |        2 |       16 |        0 |     98% |     60-61 |
 | src/heinzel/kernel/\_duration.py                              |       52 |        1 |       18 |        1 |     97% |        76 |
 | src/heinzel/kernel/\_installation.py                          |       84 |        0 |       20 |        1 |     99% |123-\>exit |
-| src/heinzel/modules/system/\_\_init\_\_.py                    |       30 |        7 |        2 |        0 |     72% |     56-66 |
+| src/heinzel/modules/system/\_\_init\_\_.py                    |       30 |        7 |        2 |        0 |     72% |     58-68 |
 | src/heinzel/modules/system/\_render.py                        |       50 |        0 |       20 |        1 |     99% |   35-\>37 |
 | src/heinzel/modules/system/agent/\_\_init\_\_.py              |       16 |        2 |        0 |        0 |     88% |    15, 27 |
 | src/heinzel/modules/system/agent/\_service.py                 |       62 |        1 |       26 |        1 |     98% |        36 |
-| src/heinzel/modules/system/changelog/\_\_init\_\_.py          |       21 |        3 |        4 |        2 |     80% | 35, 40-41 |
+| src/heinzel/modules/system/changelog/\_\_init\_\_.py          |       63 |        3 |       16 |        2 |     94% | 83, 88-89 |
 | src/heinzel/modules/system/config/\_\_init\_\_.py             |       28 |        2 |        0 |        0 |     93% |    41, 58 |
 | src/heinzel/modules/system/config/\_render.py                 |       18 |        1 |        8 |        1 |     92% |        18 |
 | src/heinzel/modules/system/daemon/\_schedule.py               |       65 |        3 |       20 |        1 |     95% |43-44, 102 |
@@ -38,7 +38,7 @@
 | src/heinzel/modules/workflow/\_render.py                      |      213 |       15 |      104 |       10 |     90% |98, 116, 159-\>161, 164, 165-\>167, 197-203, 229, 263, 284-294, 352 |
 | src/heinzel/modules/workflow/\_retention.py                   |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
 | src/heinzel/modules/workflow/\_service.py                     |      676 |       14 |      222 |        4 |     98% |335, 423-424, 529-530, 889-890, 906-908, 1135-1136, 1168-1169 |
-| **TOTAL**                                                     | **10636** |   **91** | **2674** |   **56** | **99%** |           |
+| **TOTAL**                                                     | **10756** |   **91** | **2710** |   **56** | **99%** |           |
 
 96 files skipped due to complete coverage.
 
