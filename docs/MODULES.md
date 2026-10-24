@@ -33,6 +33,8 @@ Settings: [`[clock]`](CONFIGURATION.md#clock).
 
 Health checks: reported by `hz system doctor`.
 
+Setup: `hz clock setup` (optional), also part of `hz setup`.
+
 ## `system`
 
 Inspect, configure, diagnose and update Heinzelmännchen itself.

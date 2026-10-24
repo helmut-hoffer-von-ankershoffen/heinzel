@@ -1,0 +1,276 @@
+"""`hz setup` and `hz <module> setup`: modules' interactive setup steps, wizard style (ADR 0032).
+
+Only the CLI runs setup steps: MCP and REST clients are not people at a keyboard. Steps run in a fixed order, built-in
+modules first, then the others alphabetically. Optional steps can be skipped, required ones can't; a module that is
+already configured is offered a change instead. Ctrl-C stops and keeps what finished steps wrote.
+"""
+
+import getpass
+import shlex
+import sys
+from dataclasses import dataclass
+from enum import StrEnum
+
+import typer
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
+
+from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
+from heinzel.kernel import (
+    Config,
+    CredentialLet,
+    Credentials,
+    HeinzelError,
+    Kernel,
+    ModuleRecord,
+    OperationLet,
+    Prompter,
+    SettingsLet,
+    SetupLet,
+    toml_value,
+)
+
+DOCTOR = ("system.doctor", "doctor")
+EX_INTERRUPTED = 130  # what shells report for a process stopped by Ctrl-C (128 + SIGINT)
+
+
+def stdin_is_terminal() -> bool:
+    """Whether a person can answer on standard input; the seam tests fake."""
+    return sys.stdin.isatty()
+
+
+class ConsolePrompter(Prompter):
+    """Asks on the terminal: questions and output on stdout, answers from stdin; secrets aren't echoed."""
+
+    interactive = True
+
+    def __init__(self, console: Console) -> None:
+        """Ask on `console`."""
+        self.console = console
+
+    def read(self, prompt: str, *, secret: bool = False) -> str:
+        """One line from the person; end of input stops the run like Ctrl-C.
+
+        Raises:
+            KeyboardInterrupt: At the end of input.
+        """
+        try:
+            # getpass reads the terminal device, not stdin, so piped answers are read as plain lines.
+            if secret and sys.stdin.isatty():
+                return getpass.getpass(terminal_safe(prompt))
+            return self.console.input(Text(terminal_safe(prompt)))
+        except EOFError:
+            raise KeyboardInterrupt from None
+
+    def say(self, text: str) -> None:
+        """Print a line as written, never as markup."""
+        self.console.print(Text(terminal_safe(text)), highlight=False)
+
+
+class Outcome(StrEnum):
+    """What became of a setup step."""
+
+    DONE = "done"
+    KEPT = "kept"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+    INTERRUPTED = "interrupted"
+    NOT_REACHED = "not reached"
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class StepResult:
+    """One step of a run and what became of it."""
+
+    module: str
+    required: bool
+    outcome: Outcome
+    detail: str = ""
+
+
+def steps(kernel: Kernel) -> list[tuple[ModuleRecord, SetupLet]]:
+    """Every setup step that can run, in order: built-in modules first, then the others by qualified name."""
+    found = [(record, let) for record, let in kernel.lets(SetupLet) if kernel.available(let.func)]
+    return sorted(found, key=lambda pair: (not pair[0].origin.builtin, pair[0].path))
+
+
+def step_of(kernel: Kernel, record: ModuleRecord) -> SetupLet | None:
+    """The setup step of a module, if it has one that can run."""
+    return next((let for owner, let in steps(kernel) if owner.qualname == record.qualname), None)
+
+
+def is_configured(kernel: Kernel, record: ModuleRecord) -> bool:
+    """Whether one of the module's settings is set in a file or the environment, or one of its credentials stored."""
+    for owner, let in kernel.lets(SettingsLet):
+        if owner.qualname == record.qualname and kernel.resolve(let.model).model_fields_set:
+            return True
+    owned = [let for owner, let in kernel.lets(CredentialLet) if owner.qualname == record.qualname]
+    if not owned:
+        return False
+    try:
+        credentials = kernel.resolve(Credentials)
+        return any(credentials.has(let) for let in owned)
+    except HeinzelError:  # no credential service or an unreadable keychain: nothing counts as stored
+        return False
+
+
+def equivalent_commands(kernel: Kernel, record: ModuleRecord) -> list[str]:
+    """The commands that configure what the module's step would, for running without a terminal."""
+    commands = [
+        f"hz system config set {record.qualname}.{key} {shlex.quote(toml_value(value))}"
+        for owner, let in kernel.lets(SettingsLet)
+        if owner.qualname == record.qualname
+        for key, value in kernel.resolve(let.model).model_dump(mode="json").items()
+        if value is not None
+    ]
+    try:
+        declared = kernel.resolve(Credentials).declared
+    except HeinzelError:
+        declared = []
+    commands += [d.fix for d in declared if d.module == record.qualname]
+    return commands
+
+
+class Runner:
+    """Runs setup steps with a prompter and collects what became of each."""
+
+    def __init__(self, kernel: Kernel, prompter: Prompter) -> None:
+        """Run steps of `kernel`, asking through `prompter`."""
+        self.kernel = kernel
+        self.prompter = prompter
+        kernel.bind(Prompter, prompter)
+
+    def run(self, plan: list[tuple[ModuleRecord, SetupLet]], *, offer_skip: bool) -> list[StepResult]:
+        """Run each step in turn; after Ctrl-C the rest are not reached and earlier steps keep what they wrote."""
+        results: list[StepResult] = []
+        for index, (record, let) in enumerate(plan):
+            try:
+                results.append(self._step(record, let, offer_skip=offer_skip))
+            except KeyboardInterrupt:
+                self.prompter.say("")
+                results.append(StepResult(module=record.qualname, required=let.required, outcome=Outcome.INTERRUPTED))
+                results += [
+                    StepResult(module=r.qualname, required=s.required, outcome=Outcome.NOT_REACHED)
+                    for r, s in plan[index + 1 :]
+                ]
+                break
+        return results
+
+    def _step(self, record: ModuleRecord, let: SetupLet, *, offer_skip: bool) -> StepResult:
+        say, ask = self.prompter.say, self.prompter.confirm
+        kind = "required" if let.required else "optional"
+        say("")
+        say(f"{record.qualname} ({kind}): {let.summary}")
+        if is_configured(self.kernel, record):
+            if not ask(f"{record.qualname} is already set up. Change it?", default=False):
+                return StepResult(module=record.qualname, required=let.required, outcome=Outcome.KEPT)
+        elif offer_skip and not let.required and not ask(f"Set up {record.qualname} now?"):
+            return StepResult(module=record.qualname, required=let.required, outcome=Outcome.SKIPPED)
+        try:
+            self.kernel.call(let.func)
+        except HeinzelError as exc:
+            say(f"{record.qualname} failed: {exc}")
+            return StepResult(module=record.qualname, required=let.required, outcome=Outcome.FAILED, detail=str(exc))
+        except (KeyboardInterrupt, LookupError):
+            raise
+        except Exception as exc:  # noqa: BLE001 - a broken plugin's step is reported, the other steps still run
+            detail = f"{type(exc).__name__}: {exc} (a bug in the step; report it to the module's authors)"
+            say(f"{record.qualname} failed: {detail}")
+            return StepResult(module=record.qualname, required=let.required, outcome=Outcome.FAILED, detail=detail)
+        return StepResult(module=record.qualname, required=let.required, outcome=Outcome.DONE)
+
+
+def summary(results: list[StepResult]) -> Table:
+    """A table of every step and what became of it."""
+    table = Table(title="Setup")
+    for column in ("Module", "Step", "Outcome", "Detail"):
+        table.add_column(column, overflow="fold")
+    for result in results:
+        kind = "required" if result.required else "optional"
+        table.add_row(Text(result.module), kind, result.outcome.value, Text(result.detail))
+    return table
+
+
+def exit_code(results: list[StepResult]) -> int:
+    """130 after Ctrl-C, 1 when a step failed, else 0."""
+    if any(r.outcome is Outcome.INTERRUPTED for r in results):
+        return EX_INTERRUPTED
+    return 1 if any(r.outcome is Outcome.FAILED for r in results) else 0
+
+
+@dataclass(frozen=True, slots=True)
+class SetupCommands:
+    """Builds the `setup` commands of the CLI head."""
+
+    kernel: Kernel
+    console: Console
+    err_console: Console
+
+    def everything(self) -> None:
+        """Set up every module that has a setup step, one after the other; optional steps can be skipped.
+
+        Raises:
+            typer.Exit: With 1 when a step failed or there is no terminal, 130 after Ctrl-C.
+        """
+        plan = steps(self.kernel)
+        if not plan:
+            self.console.print("No module has a setup step.")
+            return
+        prompter = self._prompter(plan)
+        names = ", ".join(f"{r.qualname} ({'required' if s.required else 'optional'})" for r, s in plan)
+        prompter.say(f"Setting up {len(plan)} module{'s' if len(plan) > 1 else ''}: {names}.")
+        prompter.say("Ctrl-C stops; steps already finished keep what they wrote.")
+        results = Runner(self.kernel, prompter).run(plan, offer_skip=True)
+        self.console.print()
+        self.console.print(TerminalSafe(summary(results)))
+        if not any(r.outcome is Outcome.INTERRUPTED for r in results):
+            self._doctor()
+        if code := exit_code(results):
+            raise typer.Exit(code=code)
+
+    def module(self, record: ModuleRecord, let: SetupLet) -> None:
+        """Run one module's setup step.
+
+        Raises:
+            typer.Exit: With 1 when the step failed or there is no terminal, 130 after Ctrl-C.
+        """
+        plan = [(record, let)]
+        results = Runner(self.kernel, self._prompter(plan)).run(plan, offer_skip=False)
+        result = results[0]
+        self.console.print(Text(f"{record.qualname}: {result.outcome.value}"), highlight=False)
+        if code := exit_code(results):
+            raise typer.Exit(code=code)
+
+    def _prompter(self, plan: list[tuple[ModuleRecord, SetupLet]]) -> Prompter:
+        """The prompter a test bound, the terminal, or a refusal listing the equivalent commands.
+
+        Raises:
+            typer.Exit: With 1 when nobody can answer.
+        """
+        bound = self.kernel.resolve(Prompter)
+        if bound.interactive:
+            return bound
+        if stdin_is_terminal():
+            return ConsolePrompter(self.console)
+        lines = [f"  {command}" for record, _ in plan for command in equivalent_commands(self.kernel, record)]
+        self.err_console.print(
+            message("Error:", "setup asks questions and needs a terminal. Without one, configure with:"),
+            highlight=False,
+            soft_wrap=True,
+        )
+        self.err_console.print(Text("\n".join(lines) or "  (nothing to configure)"), highlight=False, soft_wrap=True)
+        raise typer.Exit(code=1)
+
+    def _doctor(self) -> None:
+        """`hz system doctor` on the configuration as it is now on disk, not as it was when `hz` started."""
+        fresh = Kernel(records=self.kernel.modules, errors=self.kernel.errors, config=Config.load())
+        doctor = next(
+            (let for owner, let in fresh.lets(OperationLet) if (owner.qualname, let.name) == DOCTOR),
+            None,
+        )
+        if doctor is None:
+            return
+        report = fresh.invoke(doctor)
+        self.console.print()
+        self.console.print(TerminalSafe(doctor.render(report)) if doctor.render else report)
