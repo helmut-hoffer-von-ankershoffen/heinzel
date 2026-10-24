@@ -17,6 +17,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `ai`: (expert) How hz reaches AI: the AI access...
 * `atlassian`: (expert) Read Jira issues and Confluence...
 * `chat`: Chat with the agent runner in this...
 * `clock`: Show the time in each of the team&#x27;s time...
@@ -32,6 +33,97 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `ui`: Open the web app in your browser, served...
 * `workflow`: Workflow contracts: Markdown files an...
 * `zoom`: (expert) Read meetings from Zoom&#x27;s...
+
+## `hz ai`
+
+(expert) How hz reaches AI: the AI access in use, its status and a live test.
+
+**Usage**:
+
+```console
+$ hz ai [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `access`: (expert) Pick how hz reaches AI: Claude...
+
+### `hz ai access`
+
+(expert) Pick how hz reaches AI: Claude Code, your company&#x27;s gateway, or an option a plugin adds.
+
+**Usage**:
+
+```console
+$ hz ai access [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `list`: (expert) List the AI access options, the...
+* `test`: (expert) Run one cheap live check of an AI...
+* `use`: (expert) Use an AI access option: sets...
+
+#### `hz ai access list`
+
+(expert) List the AI access options, the one in use, whether each is signed in, and what runs each use.
+
+**Usage**:
+
+```console
+$ hz ai access list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz ai access test`
+
+(expert) Run one cheap live check of an AI access option and keep the result; this may cost a little.
+
+**Usage**:
+
+```console
+$ hz ai access test [OPTIONS]
+```
+
+**Options**:
+
+* `--name <str>`: The option to test, e.g. `gateway`; the one in use when not given.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz ai access use`
+
+(expert) Use an AI access option: sets capabilities.ai_access, and agent_runner if the option names one.
+
+**Usage**:
+
+```console
+$ hz ai access use [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The AI access to use, one `hz ai access list` shows, e.g. `claude-code`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
 
 ## `hz atlassian`
 

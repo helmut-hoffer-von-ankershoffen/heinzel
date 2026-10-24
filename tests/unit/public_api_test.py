@@ -15,9 +15,13 @@ import heinzel.kernel
 pytestmark = pytest.mark.unit
 
 HEINZEL = [
+    "AccessStatus",
+    "AccessTest",
     "ActionGate",
+    "Adapters",
     "AgentResult",
     "AgentRunner",
+    "AiAccess",
     "AssetType",
     "Budget",
     "Calendar",
@@ -106,9 +110,13 @@ HEINZEL = [
     "redact_emails",
 ]
 KERNEL = [
+    "AccessStatus",
+    "AccessTest",
     "ActionGate",
+    "Adapters",
     "AgentResult",
     "AgentRunner",
+    "AiAccess",
     "AssetType",
     "BUILTIN_PACKAGE",
     "Budget",
