@@ -45,7 +45,7 @@ def system_info(service: AtlassianService) -> AtlassianAbout:
 
 @module.health
 def health(service: AtlassianService, view: CapabilityView) -> list[Check]:
-    """acli, the site and bindings; never runs acli, so never a request to Atlassian."""
+    """Acli and its version, the site and bindings; runs only `acli --version`, never a read or a login check."""
     return service.checks(view)
 
 

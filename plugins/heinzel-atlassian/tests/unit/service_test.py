@@ -44,7 +44,10 @@ def test_checks_when_acli_is_there_and_the_site_set_and_bound(fake_acli):
     assert all(c.status is Status.UP for c in checks.values())
     assert checks["acli"].detail.startswith(f"{ACLI}, acli 1.3.39; login is acli's (acli jira auth login;")
     assert "checked on first use: doctor stays offline" in checks["acli"].detail
-    assert checks["site"].detail == "https://acme.atlassian.net; not contacted"
+    assert (
+        checks["site"].detail
+        == "https://acme.atlassian.net; not contacted; with a browser login, acli's answers name no site to match"
+    )
     assert fake_acli.calls == []  # `--version` only, which the fake answers without a run
 
 

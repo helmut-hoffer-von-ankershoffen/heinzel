@@ -45,9 +45,12 @@ documents = "atlassian"
 
 Or per shell: `HZ_ATLASSIAN__SITE_URL`, `HZ_CAPABILITIES__TRACKER=atlassian`, `HZ_CAPABILITIES__DOCUMENTS=atlassian`.
 `site_url` must be `https://<site>.atlassian.net` (a pasted `.../wiki` is trimmed). The plugin builds issue and page
-links on it and accepts page URLs only on it. acli decides which site it reads: an answer that names another site
-(an issue's `self`, a page's `_links.base`) is refused with `acli jira auth switch` and the setting to change; one
-through Atlassian's gateway after a browser login names no site and is taken as it is. Optionally,
+links on it and accepts page URLs only on it. acli decides which site it reads. After a login with an API token,
+an answer that names another site (an issue's `self`, a page's `_links.base`) is refused with `acli jira auth switch`
+and the setting to change. **After a browser login the check can't work**: answers come through Atlassian's gateway
+(`api.atlassian.com/ex/<product>/<cloud id>`), name no site, and are taken as they are, so keep acli on the site you
+configured (`acli jira auth switch`, `acli confluence auth switch`), or links point at the wrong site. Matching the
+cloud id would need a request of the plugin's own; doctor says so. Optionally,
 `atlassian.timeout` sets the seconds each acli command may take (default 60), and `atlassian.acli` the program (a name
 looked up on absolute `PATH` entries, or an absolute path; default `acli`). A project `hz.toml` can set none of the
 three.
@@ -112,10 +115,12 @@ permission (Browse projects in Jira, View on the space in Confluence); a missing
 lack access; a rate limit says to retry later.
 
 acli runs with an argument list (never a shell), no standard input, the home directory as working directory, an
-allowlisted environment (`PATH`, `HOME`, locale, proxy and `ACLI_*` variables; never `HZ_CREDENTIAL_*`), in its own
-process group under a deadline (SIGTERM, then SIGKILL for it and anything it started), with standard output capped at
-10 MiB and the last 64 KiB of standard error kept. Its error text is cleaned of escape sequences and controls,
-redacted of anything shaped like a token and only then shortened.
+allowlisted environment (`PATH` without relative entries, `HOME`, locale, proxy, `XDG_*` and D-Bus, and `ACLI_*`
+variables; never `HZ_CREDENTIAL_*`), in its own process group under a deadline (SIGTERM, then SIGKILL for it and
+anything it started; a descendant that left the group and keeps the output open counts as a timeout), with standard
+output capped at 10 MiB and the last 64 KiB of standard error kept. Error messages are the plugin's own words: acli's
+error text only picks the message and goes to the debug log (`HZ_LOG_LEVEL=DEBUG`), cleaned of escape sequences and
+controls, redacted of anything shaped like a token and only then shortened.
 
 The hosts `hz system capability list` shows are your site and `api.atlassian.com`, the gateway acli uses after a
 browser login. acli is Atlassian's program with its own settings; what it sends besides the reads is Atlassian's

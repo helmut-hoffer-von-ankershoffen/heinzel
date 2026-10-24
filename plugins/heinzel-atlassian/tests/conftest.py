@@ -48,9 +48,10 @@ with open({spec!r}, encoding="utf-8") as spec:
 if answer is None:
     sys.stderr.write("✗ Error: unknown command " + " ".join(args[:3]) + "\\n")
     sys.exit(2)
-if answer["linger"]:  # a child that inherits the pipes and outlives acli
+if answer["linger"]:  # a child that inherits the pipes and outlives acli; "escape": in a session of its own
     import subprocess
-    subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    escape = answer["linger"] == "escape"
+    subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=escape)
 time.sleep(answer["sleep"])
 for _ in range(answer["repeat"]):
     sys.stdout.write(answer["stdout"])
@@ -134,7 +135,7 @@ class FakeAcli(Acli):
         exit_status: int = 0,
         sleep: float = 0.0,
         repeat: int = 1,
-        linger: bool = False,
+        linger: bool | str = False,
     ) -> None:
         """Answer `acli <command> ...` with `stdout` (JSON unless a string), `stderr` and an exit status."""
         text = stdout if isinstance(stdout, str) else json.dumps(stdout)

@@ -30,8 +30,22 @@ GRACE = 1.0
 VERSION_TIMEOUT = 10.0
 MINIMUM_VERSION = (1, 3, 39)
 """The acli release whose commands and flags the adapter was written against."""
-ENVIRONMENT = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "TMPDIR", "TZ", "SSL_CERT_FILE", "SSL_CERT_DIR")
-"""Variables acli gets from the caller's environment; also `LC_*`, `ACLI_*` and the proxy variables."""
+ENVIRONMENT = (
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "LANG",
+    "TMPDIR",
+    "TZ",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "XDG_CONFIG_HOME",  # where acli keeps its configuration on Linux, when set
+    "XDG_RUNTIME_DIR",  # with the D-Bus address: the Secret Service, if acli keeps its login there
+    "DBUS_SESSION_BUS_ADDRESS",
+)
+"""Variables acli gets from the caller's environment; also `LC_*`, `ACLI_*` and the proxy variables. `PATH` keeps
+its absolute entries only."""
 _PREFIXES = ("LC_", "ACLI_")
 _PROXIES = frozenset({"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY"})
 _VERSION = re.compile(r"\bacli version v?(\d{1,4})\.(\d{1,4})\.(\d{1,6})")
@@ -62,15 +76,22 @@ def environment(source: Mapping[str, str] | None = None) -> dict[str, str]:
         for name, value in variables.items()
         if name in ENVIRONMENT or name.upper() in _PROXIES or name.startswith(_PREFIXES)
     }
+    if "PATH" in kept:
+        kept["PATH"] = absolute_path(kept["PATH"])
     return kept | {"NO_COLOR": "1"}
+
+
+def absolute_path(search: str) -> str:
+    """`search`, a `PATH` value, with its relative entries (`.`, empty, `bin`) left out."""
+    return os.pathsep.join(entry for entry in search.split(os.pathsep) if entry and Path(entry).is_absolute())
 
 
 def executable(settings: AtlassianSettings) -> str | None:
     """The absolute path of `atlassian.acli`, looked up on `PATH` when it is a name; None if there is none.
 
-    A relative `PATH` entry (`.`) doesn't count, so a repository can't put its own `acli` first.
+    Relative `PATH` entries (`.`) are skipped, so a repository can't put its own `acli` first.
     """
-    found = shutil.which(settings.acli)
+    found = shutil.which(settings.acli, path=absolute_path(os.environ.get("PATH", os.defpath)))
     return found if found is not None and Path(found).is_absolute() else None
 
 
@@ -92,20 +113,21 @@ def _signal(process: subprocess.Popen[bytes], number: int) -> None:
 
 
 def _drain(stream: io.BufferedIOBase, sink: bytearray, limit: int, on_overflow: threading.Event | None) -> None:
-    """Read `stream` until EOF.
+    """Read `stream` until EOF, then close it; the reader owns it, so nothing closes it under a blocked read.
 
     With `on_overflow`, keep the first `limit` + 1 bytes, then set it and stop reading; without, keep the last `limit`
     bytes and read on, so the writer never blocks on a full pipe.
     """
-    while chunk := stream.read1(_CHUNK):
-        if on_overflow is None:
-            sink.extend(chunk)
-            del sink[:-limit]
-            continue
-        sink.extend(chunk[: max(0, limit + 1 - len(sink))])
-        if len(sink) > limit:
-            on_overflow.set()
-            return
+    with stream:
+        while chunk := stream.read1(_CHUNK):
+            if on_overflow is None:
+                sink.extend(chunk)
+                del sink[:-limit]
+                continue
+            sink.extend(chunk[: max(0, limit + 1 - len(sink))])
+            if len(sink) > limit:
+                on_overflow.set()
+                return
 
 
 class Acli:
@@ -114,24 +136,31 @@ class Acli:
     def __init__(self, settings: AtlassianSettings) -> None:
         """Run the acli the settings name; the kernel injects them."""
         self._settings = settings
-        self._version: tuple[int, int, int] | None = None
+        self._versions: dict[str, tuple[int, int, int] | None] = {}
 
     def path(self) -> str | None:
         """The absolute path of the acli that runs, or None."""
         return executable(self._settings)
 
     def version(self) -> tuple[int, int, int] | None:
-        """Acli's version, from `acli --version`, which needs no network; asked once. None if it says none.
+        """Acli's version, from `acli --version`; None if it names none.
+
+        Asked once per executable path; a version below `MINIMUM_VERSION` is asked again next time, so an upgrade
+        counts without restarting.
 
         Raises:
             FileNotFoundError: If acli is not on `PATH` as an absolute path.
             AcliTimeoutError: If it doesn't answer in time.
             OSError: If it can't be started.
         """
-        if self._version is None:
-            done = self.run(["--version"], VERSION_TIMEOUT)
-            self._version = parse_version((done.stdout + done.stderr).decode("utf-8", errors="replace"))
-        return self._version
+        path = self.path() or ""
+        if path not in self._versions:
+            done = self.run(["--version"], min(VERSION_TIMEOUT, self._settings.timeout))
+            found = parse_version((done.stdout + done.stderr).decode("utf-8", errors="replace"))
+            if found is not None and found < MINIMUM_VERSION:
+                return found
+            self._versions[path] = found
+        return self._versions[path]
 
     def run(self, args: Sequence[str], timeout: float) -> Completed:
         """Run `acli <args>` without a shell or standard input, stopping it and its children after `timeout` seconds.
@@ -147,7 +176,9 @@ class Acli:
         deadline = time.monotonic() + timeout
         out, err = bytearray(), bytearray()
         overflow = threading.Event()
-        with subprocess.Popen(  # noqa: S603 - an argument list, the executable resolved with shutil.which
+        # Not `with Popen`: its exit closes the pipes, which blocks while a reader waits on one that a descendant of
+        # acli still holds. The readers close their own pipes.
+        process = subprocess.Popen(  # noqa: S603 - an argument list, the executable resolved with shutil.which
             [path, *args],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -155,26 +186,26 @@ class Acli:
             cwd=Path.home(),
             env=environment(),
             start_new_session=_POSIX,
-        ) as process:
-            readers = [
-                threading.Thread(
-                    target=_drain, args=(cast("io.BufferedIOBase", stream), sink, limit, flag), daemon=True
-                )
-                for stream, sink, limit, flag in (
-                    (process.stdout, out, MAX_BYTES, overflow),
-                    (process.stderr, err, MAX_ERROR_BYTES, None),
-                )
-            ]
-            for reader in readers:
-                reader.start()
-            finished = _wait(process, readers, overflow, deadline)
-            if not finished:
-                _signal(process, signal.SIGTERM)
-                _join(readers, GRACE)
-            _signal(process, signal.SIGKILL)  # also when acli exited: a child it left must not hold the pipes open
-            process.wait()
-            _join(readers, GRACE)
+        )
+        readers = [
+            threading.Thread(target=_drain, args=(cast("io.BufferedIOBase", stream), sink, limit, flag), daemon=True)
+            for stream, sink, limit, flag in (
+                (process.stdout, out, MAX_BYTES, overflow),
+                (process.stderr, err, MAX_ERROR_BYTES, None),
+            )
+        ]
+        for reader in readers:
+            reader.start()
+        finished = _wait(process, readers, overflow, deadline)
         if not finished:
+            _signal(process, signal.SIGTERM)
+            _join(readers, GRACE)
+        # Only while acli runs, or something of its group holds the pipes: then its group id is still taken.
+        if process.poll() is None or any(reader.is_alive() for reader in readers):
+            _signal(process, signal.SIGKILL)
+        process.wait()
+        _join(readers, GRACE)
+        if not finished or any(reader.is_alive() for reader in readers):  # a descendant that left the group
             raise AcliTimeoutError(path)
         return Completed(process.returncode, bytes(out), bytes(err), overflow.is_set())
 

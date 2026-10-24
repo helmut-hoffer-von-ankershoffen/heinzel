@@ -16,6 +16,7 @@ COMMANDS = [
     "acli confluence page view --id <id> --body-format storage --json",
 ]
 LOGINS = f"{LOGIN['Jira']}; {LOGIN['Confluence']}"
+GATEWAY_NOTE = "with a browser login, acli's answers name no site to match"
 
 
 class Bindings(Protocol):
@@ -27,7 +28,7 @@ class Bindings(Protocol):
 
 
 class AtlassianService:
-    """Describes the plugin and checks its setup; doctor runs only `acli --version`, which needs no network."""
+    """Describes the plugin and checks its setup; doctor runs only `acli --version`, a local command."""
 
     def __init__(self, kernel: Kernel, settings: AtlassianSettings, acli: Acli) -> None:
         """Create the service; the kernel, the plugin's settings and the acli runner are injected."""
@@ -52,7 +53,7 @@ class AtlassianService:
         )
 
     def _acli_check(self) -> Check:
-        """Where acli is and which version it says it is; `acli --version` needs no network."""
+        """Where acli is and which version it says it is, from `acli --version`."""
         path = self._acli.path()
         if path is None:
             return Check(
@@ -63,7 +64,7 @@ class AtlassianService:
             )
         try:
             found = self._acli.version()
-        except (AcliTimeoutError, OSError) as exc:  # FileNotFoundError too, if it went away meanwhile
+        except (AcliTimeoutError, OSError, RuntimeError) as exc:  # RuntimeError: no home directory
             return Check(
                 name="acli",
                 status=Status.DEGRADED,
@@ -102,7 +103,11 @@ class AtlassianService:
                 fix=SITE_FIX,
             )
         else:
-            site = Check(name="site", status=Status.UP, detail=f"{self._settings.site_url}; not contacted")
+            site = Check(
+                name="site",
+                status=Status.UP,
+                detail=f"{self._settings.site_url}; not contacted; {GATEWAY_NOTE}",
+            )
         checks = [acli, site]
         bound = {capability: bindings.bound(capability) for capability in CAPABILITIES}
         for capability, adapter in bound.items():

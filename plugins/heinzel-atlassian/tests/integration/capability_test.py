@@ -147,7 +147,11 @@ def test_doctor_when_set_up_is_up_and_never_runs_acli(atlassian_kernel, site):
     checks = {c["name"]: c for c in report["checks"]["atlassian"]}
     assert checks["acli"]["status"] == "up"
     assert "acli jira auth login" in checks["acli"]["detail"]
-    assert checks["site"] == {**checks["site"], "status": "up", "detail": f"{SITE}; not contacted"}
+    assert checks["site"] == {
+        **checks["site"],
+        "status": "up",
+        "detail": f"{SITE}; not contacted; with a browser login, acli's answers name no site to match",
+    }
     assert site.calls == []
 
 

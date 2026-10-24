@@ -1,12 +1,14 @@
 """Runs acli for the adapters and turns what it prints into JSON, or into errors people can act on.
 
 Every failure becomes a `HeinzelError` that says what happened and what to do: acli missing or logged out names
-`acli jira auth login` (or `acli confluence auth login`). acli's own error text is cleaned of controls and escape
-sequences, redacted of anything that looks like a credential, and only then cut, so a cut can't leave the start of a
-secret behind.
+`acli jira auth login` (or `acli confluence auth login`). The message is built from the adapter's own words only;
+acli's error text decides which message, and goes to the debug log alone (ADR 0035, statement 5), cleaned of
+controls and escape sequences, redacted of anything that looks like a credential, and only then cut, so a cut can't
+leave the start of a secret behind.
 """
 
 import json
+import logging
 import re
 from collections.abc import Sequence
 from typing import Any, Literal
@@ -22,23 +24,27 @@ INSTALL = "https://developer.atlassian.com/cloud/acli/guides/install-acli/"
 LOGIN: dict[Product, str] = {"Jira": "acli jira auth login", "Confluence": "acli confluence auth login"}
 SWITCH: dict[Product, str] = {"Jira": "acli jira auth switch", "Confluence": "acli confluence auth switch"}
 GATEWAY = "https://api.atlassian.com/ex/"
-_HOST = re.compile(r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?")
+_SITE_HOST = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.atlassian\.net")
 MESSAGE_CHARS = 300
-"""Characters of acli's own error text shown, cut after redaction."""
+"""Characters of acli's own error text logged, cut after redaction."""
+DEBUG_HINT = "acli's own message is in the debug log: rerun with HZ_LOG_LEVEL=DEBUG"
+_LOG = logging.getLogger(__name__)
 SITE_FIX = f"hz system config set atlassian.site_url {SITE_EXAMPLE}"
 _ESCAPES = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|[@-Z\\-_])")
+_KEY = (
+    r"[A-Za-z0-9_.-]*(?:token|password|passwd|secret|authorization|api[_-]?key|session|cookie)[A-Za-z0-9_]*"
+    r"\\?[\"']?"
+)
 _SECRETS = (
     (re.compile(r"(?i)(https?://)[^/\s@]+@"), r"\1***@"),  # user information in a URL
     (re.compile(r"\bAT[A-Z]{2}T[A-Za-z0-9_\-=+/]{8,}"), "***"),  # Atlassian tokens: ATATT…, ATCTT…, ATOAT…
     (re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*"), "***"),  # a JWT
-    (re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+"), r"\1 ***"),
-    (  # key = value, also access_token, refreshToken, api-key, client_secret, X-Session
-        re.compile(
-            r"(?i)([A-Za-z0-9_.-]*(?:token|password|passwd|secret|authorization|api[_-]?key|session|cookie)"
-            r"[\"']?\s*[:=]\s*[\"']?)[^\s\"',;}]+"
-        ),
-        r"\1***",
+    (re.compile(r"(?i)\b(bearer|basic|token)\s+[A-Za-z0-9._~+/=-]+"), r"\1 ***"),
+    (  # key = "value", also access_token, refreshToken, x-api-key, client_secret, JSESSIONID, and JSON escaped in JSON
+        re.compile(rf"(?i)({_KEY}\s*[:=]\s*)(\\?[\"'])(.*?)\2"),
+        r"\1\2***\2",
     ),
+    (re.compile(rf"(?i)({_KEY}\s*[:=]\s*)[^\s\"',;}}\\]+"), r"\1***"),  # key = value
 )
 # HTTP statuses count only as whole numbers: `WID-403` or page 4013377 are no status.
 _STATUS = r"(?<![\w-]){}(?![\w-])"
@@ -81,7 +87,7 @@ def same_site(product: Product, site: str, reported: object, path: str) -> None:
     if reported == f"{site}{path}" or reported.startswith((f"{site}{path}/", f"{GATEWAY}{product.lower()}/")):
         return
     host = urlsplit(reported).hostname or ""
-    if _HOST.fullmatch(host):
+    if _SITE_HOST.fullmatch(host):  # only a host the setting would accept is suggested
         msg = (
             f"acli answered from {host}, not {site}: it is logged in to another site. Switch it with "
             f"`{SWITCH[product]}`, or name that site: hz system config set atlassian.site_url https://{host}"
@@ -141,7 +147,7 @@ class AcliClient:
                 "network, ask for a shorter window, or raise atlassian.timeout."
             )
             raise HeinzelError(msg) from None
-        except OSError as exc:
+        except (OSError, RuntimeError) as exc:  # RuntimeError: no home directory to run acli in
             msg = f"acli could not be started ({type(exc).__name__}); check its installation ({INSTALL})."
             raise HeinzelError(msg) from None
         if done.overflow:
@@ -186,18 +192,19 @@ def documents(text: str) -> list[Any]:
 
 
 def _problem(product: Product, subject: str, done: Completed) -> str:
-    """What went wrong, for a person: acli's words, cleaned and redacted, and the command that fixes it."""
+    """What went wrong, for a person, in the adapter's own words; acli's words only choose them and go to the log."""
     words = said(done.stderr or done.stdout)
+    _LOG.debug("acli failed for %s with exit status %s: %s", subject, done.returncode, words)
     if _UNAUTHORIZED.search(words):
-        return f"acli is not logged in to {product} ({words}). Log in: {LOGIN[product]}"
+        return f"acli is not logged in to {product}, or its login expired. Log in: {LOGIN[product]}"
     if _RATE_LIMITED.search(words):
-        return f"Atlassian's rate limit is reached for {subject} ({words}); retry in a minute."
+        return f"Atlassian's rate limit is reached for {subject}; retry in a minute."
     if _FORBIDDEN.search(words):
         need = "Browse projects on it" if product == "Jira" else "View on its space"
-        return f"{product} refused {subject} ({words}); the account acli is logged in as needs the permission {need}."
+        return f"{product} refused {subject}; the account acli is logged in as needs the permission {need}."
     if _NOT_FOUND.search(words):
         return (
-            f"{product} has no {subject}, or the account acli is logged in as can't see it ({words}): check the "
-            "spelling, or ask for access."
+            f"{product} has no {subject}, or the account acli is logged in as can't see it: check the spelling, or "
+            "ask for access."
         )
-    return f"acli failed for {subject} with exit status {done.returncode}: {words}"
+    return f"acli failed for {subject} with exit status {done.returncode}; {DEBUG_HINT}."

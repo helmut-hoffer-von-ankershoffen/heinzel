@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from heinzel_atlassian._acli import environment, parse_version
 
@@ -15,6 +17,12 @@ pytestmark = pytest.mark.unit
 )
 def test_the_version_is_read_from_acli_version(text, version):
     assert parse_version(text) == version
+
+
+def test_relative_path_entries_are_left_out_of_the_child_path():
+    assert environment({"PATH": f"bin{os.pathsep}/usr/bin{os.pathsep}{os.pathsep}.{os.pathsep}/opt/bin"})["PATH"] == (
+        f"/usr/bin{os.pathsep}/opt/bin"
+    )
 
 
 def test_only_allowlisted_variables_and_no_colour_reach_acli():

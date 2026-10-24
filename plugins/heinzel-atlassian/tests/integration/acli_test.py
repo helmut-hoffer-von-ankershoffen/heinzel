@@ -79,6 +79,24 @@ def test_a_child_left_holding_the_pipes_does_not_hold_up_the_answer(acli_on_path
     assert (done.returncode, json.loads(done.stdout)) == (0, [])
 
 
+def test_a_descendant_that_left_the_process_group_cannot_hold_up_the_deadline(acli_on_path):
+    acli_on_path.answer("jira workitem search", [], linger="escape")  # out of reach of the group kill, for 60 s
+    started = time.monotonic()
+    with pytest.raises(AcliTimeoutError):
+        Acli(SETTINGS).run([*SEARCH, "--json"], 10)
+    assert time.monotonic() - started < 8
+
+
+def test_an_old_version_is_asked_again_and_a_good_one_once(acli_on_path):
+    acli = Acli(SETTINGS)
+    acli_on_path.answer("--version", "acli version 1.2.0-stable\n")
+    assert acli.version() == (1, 2, 0)
+    acli_on_path.answer("--version", "acli version 1.4.0-stable\n")  # upgraded meanwhile
+    assert acli.version() == (1, 4, 0)
+    acli_on_path.answer("--version", "acli version 1.0.0-stable\n")
+    assert acli.version() == (1, 4, 0)  # cached for this path
+
+
 def test_output_past_the_bound_stops_acli_and_is_flagged(acli_on_path):
     acli_on_path.answer("jira workitem search", "x" * 1_000_000, repeat=MAX_BYTES // 1_000_000 + 2)
     done = Acli(SETTINGS).run([*SEARCH, "--json"], 10)
