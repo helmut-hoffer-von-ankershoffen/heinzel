@@ -152,7 +152,8 @@ class OrgSettings(ModuleSettings):
     working_hours: Annotated[tuple[Hour, Hour], NoDecode] = Field(
         default=DEFAULT_HOURS,
         title="Working hours",
-        description="When your working day starts and ends. In the environment, write them as 09-18.",
+        description="When your working day starts and ends.",
+        examples=[[9, 18]],
         json_schema_extra={"x-unit": "hour-of-day"},
     )
     github: str | None = Field(

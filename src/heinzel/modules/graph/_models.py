@@ -34,8 +34,8 @@ class GraphSettings(ModuleSettings):
     offline_after: str = Field(
         default="2d",
         title="Offline after",
-        description="How long a Heinzelmännchen may stay silent, without even a heartbeat, before "
-        "it shows as offline: a number with m, h or d, such as 36h.",
+        description="How long a Heinzelmännchen may stay silent, without even a heartbeat, before it shows as offline.",
+        examples=["36h"],
         json_schema_extra={"format": "duration"},
     )
     weeks: int = Field(

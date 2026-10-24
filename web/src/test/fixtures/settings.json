@@ -1,0 +1,1838 @@
+[
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "data_dir",
+  "description": "Where Heinzelmännchen keeps its data on this computer.",
+  "env": "HZ_DATA_DIR",
+  "json_schema": {
+   "description": "Where Heinzelmännchen keeps its data on this computer.",
+   "format": "path",
+   "title": "Data folder",
+   "type": "string",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "cache_dir",
+  "description": "Where Heinzelmännchen keeps caches; anything in it can be deleted at any time.",
+  "env": "HZ_CACHE_DIR",
+  "json_schema": {
+   "description": "Where Heinzelmännchen keeps caches; anything in it can be deleted at any time.",
+   "format": "path",
+   "title": "Cache folder",
+   "type": "string",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "state_dir",
+  "description": "Where Heinzelmännchen keeps runtime state, such as locks and whether the daemon is paused.",
+  "env": "HZ_STATE_DIR",
+  "json_schema": {
+   "description": "Where Heinzelmännchen keeps runtime state, such as locks and whether the daemon is paused.",
+   "format": "path",
+   "title": "State folder",
+   "type": "string",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "log_dir",
+  "description": "Where background work, such as the daemon, writes its logs.",
+  "env": "HZ_LOG_DIR",
+  "json_schema": {
+   "description": "Where background work, such as the daemon, writes its logs.",
+   "format": "path",
+   "title": "Log folder",
+   "type": "string"
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "log_level",
+  "description": "How much Heinzelmännchen and its modules write to the log.",
+  "env": "HZ_LOG_LEVEL",
+  "json_schema": {
+   "description": "How much Heinzelmännchen and its modules write to the log.",
+   "enum": [
+    "DEBUG",
+    "INFO",
+    "WARNING",
+    "ERROR",
+    "CRITICAL"
+   ],
+   "title": "Log detail",
+   "type": "string",
+   "x-expert": true,
+   "x-labels": {
+    "CRITICAL": "Critical errors only",
+    "DEBUG": "Everything, for debugging",
+    "ERROR": "Errors only",
+    "INFO": "Information",
+    "WARNING": "Warnings and errors"
+   }
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "output_format",
+  "description": "What every command prints unless it is asked for another format: text for people, or JSON for scripts and agents.",
+  "env": "HZ_OUTPUT_FORMAT",
+  "json_schema": {
+   "description": "What every command prints unless it is asked for another format: text for people, or JSON for scripts and agents.",
+   "enum": [
+    "text",
+    "json"
+   ],
+   "title": "Output format",
+   "type": "string",
+   "x-expert": true,
+   "x-labels": {
+    "json": "JSON",
+    "text": "Text"
+   }
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "expert",
+  "description": "List every command in help, shell completion and the web app, not just the everyday ones. Hidden commands still work, and MCP and REST always list everything. Turn it on or off with hz system expert; a project's settings can't.",
+  "env": "HZ_EXPERT",
+  "json_schema": {
+   "description": "List every command in help, shell completion and the web app, not just the everyday ones. Hidden commands still work, and MCP and REST always list everything. Turn it on or off with hz system expert; a project's settings can't.",
+   "title": "Expert mode",
+   "type": "boolean",
+   "x-hidden": true
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "plugins_enabled",
+  "description": "Load the modules that installed plugins bring. Turn it off only to find a broken plugin.",
+  "env": "HZ_PLUGINS_ENABLED",
+  "json_schema": {
+   "description": "Load the modules that installed plugins bring. Turn it off only to find a broken plugin.",
+   "title": "Load plugins",
+   "type": "boolean",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "update_check",
+  "description": "Look for a newer release at most once an hour and mention it after a command's output. The check sends nothing about you, and never runs in CI or in JSON, MCP or REST output.",
+  "env": "HZ_UPDATE_CHECK",
+  "json_schema": {
+   "description": "Look for a newer release at most once an hour and mention it after a command's output. The check sends nothing about you, and never runs in CI or in JSON, MCP or REST output.",
+   "title": "Check for updates",
+   "type": "boolean"
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "update_channel",
+  "description": "What updating moves to: the newest release, or the newest commit of the main branch. An installation on main moves back to releases once one is as new as it.",
+  "env": "HZ_UPDATE_CHANNEL",
+  "json_schema": {
+   "description": "What updating moves to: the newest release, or the newest commit of the main branch. An installation on main moves back to releases once one is as new as it.",
+   "enum": [
+    "release",
+    "main"
+   ],
+   "title": "Update channel",
+   "type": "string",
+   "x-expert": true,
+   "x-labels": {
+    "main": "The main branch (newest commit)",
+    "release": "Releases"
+   }
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "disabled_modules",
+  "description": "Modules Heinzelmännchen doesn't load, with their submodules. In the environment, separate them with commas.",
+  "env": "HZ_DISABLED_MODULES",
+  "json_schema": {
+   "description": "Modules Heinzelmännchen doesn't load, with their submodules. In the environment, separate them with commas.",
+   "items": {
+    "type": "string"
+   },
+   "title": "Switched-off modules",
+   "type": "array",
+   "uniqueItems": true,
+   "x-expert": true,
+   "x-options": {
+    "source": "modules"
+   }
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "ui_port",
+  "description": "The port the web app is served on, reachable from this computer only. It stays the same so an installed app keeps its address.",
+  "env": "HZ_UI_PORT",
+  "json_schema": {
+   "description": "The port the web app is served on, reachable from this computer only. It stays the same so an installed app keeps its address.",
+   "maximum": 65535,
+   "minimum": 1024,
+   "title": "Web app port",
+   "type": "integer",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "hz",
+  "section_title": "General",
+  "key": "api_allowed_hosts",
+  "description": "Host names the REST API answers besides this computer's own, for when it listens on another network interface. Requests naming any other host are refused. In the environment, separate them with commas.",
+  "env": "HZ_API_ALLOWED_HOSTS",
+  "json_schema": {
+   "description": "Host names the REST API answers besides this computer's own, for when it listens on another network interface. Requests naming any other host are refused. In the environment, separate them with commas.",
+   "items": {
+    "type": "string"
+   },
+   "title": "Other host names for the API",
+   "type": "array",
+   "uniqueItems": true,
+   "x-expert": true
+  }
+ },
+ {
+  "section": "capabilities",
+  "section_title": "Which connector serves what",
+  "key": "agent_runner",
+  "description": "What runs drafts and chats: Claude Code (the default), your own command, or a runner a plugin brings.",
+  "env": "HZ_CAPABILITIES__AGENT_RUNNER",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "What runs drafts and chats: Claude Code (the default), your own command, or a runner a plugin brings.",
+   "title": "Agent runner",
+   "x-options": {
+    "capability": "agent-runner",
+    "none": "none",
+    "source": "adapters"
+   }
+  }
+ },
+ {
+  "section": "capabilities",
+  "section_title": "Which connector serves what",
+  "key": "ai_access",
+  "description": "How Heinzelmännchen reaches AI: Claude Code (the default), your company's AI gateway, Pydantic AI, or a way a plugin brings.",
+  "env": "HZ_CAPABILITIES__AI_ACCESS",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "How Heinzelmännchen reaches AI: Claude Code (the default), your company's AI gateway, Pydantic AI, or a way a plugin brings.",
+   "title": "AI access",
+   "x-options": {
+    "capability": "ai-access",
+    "none": "none",
+    "source": "adapters"
+   }
+  }
+ },
+ {
+  "section": "capabilities",
+  "section_title": "Which connector serves what",
+  "key": "calendar",
+  "description": "The connector that reads your calendar, such as Google.",
+  "env": "HZ_CAPABILITIES__CALENDAR",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The connector that reads your calendar, such as Google.",
+   "title": "Calendar",
+   "x-options": {
+    "capability": "calendar",
+    "none": "none",
+    "source": "adapters"
+   }
+  }
+ },
+ {
+  "section": "capabilities",
+  "section_title": "Which connector serves what",
+  "key": "chat",
+  "description": "The connector for team chat, such as Slack.",
+  "env": "HZ_CAPABILITIES__CHAT",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The connector for team chat, such as Slack.",
+   "title": "Chat",
+   "x-options": {
+    "capability": "chat",
+    "none": "none",
+    "source": "adapters"
+   }
+  }
+ },
+ {
+  "section": "capabilities",
+  "section_title": "Which connector serves what",
+  "key": "code_host",
+  "description": "The connector for pull requests and code, such as GitHub.",
+  "env": "HZ_CAPABILITIES__CODE_HOST",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The connector for pull requests and code, such as GitHub.",
+   "title": "Code host",
+   "x-options": {
+    "capability": "code-host",
+    "none": "none",
+    "source": "adapters"
+   }
+  }
+ },
+ {
+  "section": "capabilities",
+  "section_title": "Which connector serves what",
+  "key": "directory",
+  "description": "Who reports to whom: guessed from recurring one-on-ones in your calendar (the default, each guess for you to confirm), or read from a directory a plugin connects.",
+  "env": "HZ_CAPABILITIES__DIRECTORY",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "Who reports to whom: guessed from recurring one-on-ones in your calendar (the default, each guess for you to confirm), or read from a directory a plugin connects.",
+   "title": "Directory",
+   "x-options": {
+    "capability": "directory",
+    "none": "none",
+    "source": "adapters"
+   }
+  }
+ },
+ {
+  "section": "capabilities",
+  "section_title": "Which connector serves what",
+  "key": "documents",
+  "description": "The connector for documents and pages, such as Confluence.",
+  "env": "HZ_CAPABILITIES__DOCUMENTS",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The connector for documents and pages, such as Confluence.",
+   "title": "Documents",
+   "x-options": {
+    "capability": "documents",
+    "none": "none",
+    "source": "adapters"
+   }
+  }
+ },
+ {
+  "section": "capabilities",
+  "section_title": "Which connector serves what",
+  "key": "mail",
+  "description": "The connector that reads your mail, such as Google.",
+  "env": "HZ_CAPABILITIES__MAIL",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The connector that reads your mail, such as Google.",
+   "title": "Mail",
+   "x-options": {
+    "capability": "mail",
+    "none": "none",
+    "source": "adapters"
+   }
+  }
+ },
+ {
+  "section": "capabilities",
+  "section_title": "Which connector serves what",
+  "key": "meetings",
+  "description": "The connector for meeting summaries, such as Zoom.",
+  "env": "HZ_CAPABILITIES__MEETINGS",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The connector for meeting summaries, such as Zoom.",
+   "title": "Meetings",
+   "x-options": {
+    "capability": "meetings",
+    "none": "none",
+    "source": "adapters"
+   }
+  }
+ },
+ {
+  "section": "capabilities",
+  "section_title": "Which connector serves what",
+  "key": "tracker",
+  "description": "The connector for issues, such as GitHub or Jira.",
+  "env": "HZ_CAPABILITIES__TRACKER",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The connector for issues, such as GitHub or Jira.",
+   "title": "Tracker",
+   "x-options": {
+    "capability": "tracker",
+    "none": "none",
+    "source": "adapters"
+   }
+  }
+ },
+ {
+  "section": "capabilities",
+  "section_title": "Which connector serves what",
+  "key": "team_graph",
+  "description": "What draws your team's graph: the built-in graph of your team's contracts and telemetry (the default), or one a plugin brings.",
+  "env": "HZ_CAPABILITIES__TEAM_GRAPH",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "What draws your team's graph: the built-in graph of your team's contracts and telemetry (the default), or one a plugin brings.",
+   "title": "Team graph",
+   "x-options": {
+    "capability": "team-graph",
+    "none": "none",
+    "source": "adapters"
+   }
+  }
+ },
+ {
+  "section": "ai.access",
+  "section_title": "AI access",
+  "key": "gateway_title",
+  "description": "What people pick your company's AI gateway by.",
+  "env": "HZ_AI_ACCESS__GATEWAY_TITLE",
+  "json_schema": {
+   "description": "What people pick your company's AI gateway by.",
+   "examples": [
+    "Example AI"
+   ],
+   "maxLength": 64,
+   "title": "Gateway name",
+   "type": "string",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "ai.access",
+  "section_title": "AI access",
+  "key": "gateway_summary",
+  "description": "One sentence on how the gateway reaches AI.",
+  "env": "HZ_AI_ACCESS__GATEWAY_SUMMARY",
+  "json_schema": {
+   "description": "One sentence on how the gateway reaches AI.",
+   "maxLength": 200,
+   "title": "Gateway summary",
+   "type": "string",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "ai.access",
+  "section_title": "AI access",
+  "key": "gateway_status_command",
+  "description": "The command, one argument per item, that says whether you are signed in without calling a model: exit code 0 when signed in, optionally with a JSON object on its output naming signed_in, models and detail. The gateway isn't set up until this is.",
+  "env": "HZ_AI_ACCESS__GATEWAY_STATUS_COMMAND",
+  "json_schema": {
+   "description": "The command, one argument per item, that says whether you are signed in without calling a model: exit code 0 when signed in, optionally with a JSON object on its output naming signed_in, models and detail. The gateway isn't set up until this is.",
+   "examples": [
+    [
+     "example",
+     "ai",
+     "status",
+     "--json"
+    ]
+   ],
+   "items": {
+    "type": "string"
+   },
+   "title": "Status command",
+   "type": "array",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "ai.access",
+  "section_title": "AI access",
+  "key": "gateway_test_command",
+  "description": "One cheap live call, one argument per item, run only when you test the gateway: exit code 0 when it answered, optionally with a JSON object naming ok, detail, model and cost_usd.",
+  "env": "HZ_AI_ACCESS__GATEWAY_TEST_COMMAND",
+  "json_schema": {
+   "description": "One cheap live call, one argument per item, run only when you test the gateway: exit code 0 when it answered, optionally with a JSON object naming ok, detail, model and cost_usd.",
+   "examples": [
+    [
+     "example",
+     "ai",
+     "ping"
+    ]
+   ],
+   "items": {
+    "type": "string"
+   },
+   "title": "Test command",
+   "type": "array",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "ai.access",
+  "section_title": "AI access",
+  "key": "gateway_sign_in",
+  "description": "The command that signs you in, shown as the fix when you aren't.",
+  "env": "HZ_AI_ACCESS__GATEWAY_SIGN_IN",
+  "json_schema": {
+   "description": "The command that signs you in, shown as the fix when you aren't.",
+   "examples": [
+    "example login"
+   ],
+   "maxLength": 200,
+   "title": "Sign-in command",
+   "type": "string",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "ai.access",
+  "section_title": "AI access",
+  "key": "gateway_runner",
+  "description": "The agent runner that serves the gateway's chat and coding, such as your own command runner set to the gateway's agent CLI. Choosing the gateway as your AI access binds it.",
+  "env": "HZ_AI_ACCESS__GATEWAY_RUNNER",
+  "json_schema": {
+   "anyOf": [
+    {
+     "pattern": "^[a-z][a-z0-9-]*$",
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The agent runner that serves the gateway's chat and coding, such as your own command runner set to the gateway's agent CLI. Choosing the gateway as your AI access binds it.",
+   "title": "Gateway's agent runner",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "ai.access",
+  "section_title": "AI access",
+  "key": "gateway_hosts",
+  "description": "The hosts the gateway sends prompts to, as host names or addresses; shown wherever AI access is listed.",
+  "env": "HZ_AI_ACCESS__GATEWAY_HOSTS",
+  "json_schema": {
+   "description": "The hosts the gateway sends prompts to, as host names or addresses; shown wherever AI access is listed.",
+   "examples": [
+    "ai.example.com"
+   ],
+   "items": {
+    "type": "string"
+   },
+   "title": "Gateway hosts",
+   "type": "array",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "ai.access",
+  "section_title": "AI access",
+  "key": "gateway_models",
+  "description": "The models the gateway offers, when its status command doesn't say.",
+  "env": "HZ_AI_ACCESS__GATEWAY_MODELS",
+  "json_schema": {
+   "description": "The models the gateway offers, when its status command doesn't say.",
+   "items": {
+    "type": "string"
+   },
+   "title": "Gateway models",
+   "type": "array",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "ai.access",
+  "section_title": "AI access",
+  "key": "gateway_env",
+  "description": "Environment variables the gateway's commands get besides PATH, HOME, LANG, LC_* and TMPDIR. Heinzelmännchen's credential variables are never passed.",
+  "env": "HZ_AI_ACCESS__GATEWAY_ENV",
+  "json_schema": {
+   "description": "Environment variables the gateway's commands get besides PATH, HOME, LANG, LC_* and TMPDIR. Heinzelmännchen's credential variables are never passed.",
+   "items": {
+    "type": "string"
+   },
+   "title": "Variables passed to the gateway",
+   "type": "array",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "ai.access",
+  "section_title": "AI access",
+  "key": "model",
+  "description": "The model Pydantic AI uses, as vendor:model; its key is the credential ai.access/api-key or the vendor's own variable.",
+  "env": "HZ_AI_ACCESS__MODEL",
+  "json_schema": {
+   "anyOf": [
+    {
+     "pattern": "^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._:/@-]*$",
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The model Pydantic AI uses, as vendor:model; its key is the credential ai.access/api-key or the vendor's own variable.",
+   "examples": [
+    "anthropic:claude-sonnet-4-5"
+   ],
+   "title": "Pydantic AI model",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "atlassian",
+  "section_title": null,
+  "key": "site_url",
+  "description": "The Atlassian Cloud site you are signed in to with the Atlassian CLI; links to issues and pages are built on it. Only your own settings can set it, never a project's.",
+  "env": "HZ_ATLASSIAN__SITE_URL",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The Atlassian Cloud site you are signed in to with the Atlassian CLI; links to issues and pages are built on it. Only your own settings can set it, never a project's.",
+   "examples": [
+    "https://example.atlassian.net"
+   ],
+   "format": "uri",
+   "title": "Atlassian site"
+  }
+ },
+ {
+  "section": "atlassian",
+  "section_title": null,
+  "key": "acli",
+  "description": "The Atlassian CLI to run: a name found on your PATH, or the full path to it. Never read from a project's settings.",
+  "env": "HZ_ATLASSIAN__ACLI",
+  "json_schema": {
+   "description": "The Atlassian CLI to run: a name found on your PATH, or the full path to it. Never read from a project's settings.",
+   "title": "Atlassian CLI",
+   "type": "string",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "atlassian",
+  "section_title": null,
+  "key": "timeout",
+  "description": "How long to wait for each Atlassian CLI command before stopping it.",
+  "env": "HZ_ATLASSIAN__TIMEOUT",
+  "json_schema": {
+   "description": "How long to wait for each Atlassian CLI command before stopping it.",
+   "exclusiveMinimum": 0,
+   "maximum": 600,
+   "title": "Time limit",
+   "type": "number",
+   "x-expert": true,
+   "x-unit": "seconds"
+  }
+ },
+ {
+  "section": "clock",
+  "section_title": null,
+  "key": "zones",
+  "description": "The time zones your team works in, with the working hours in each. The first one is yours.",
+  "env": "HZ_CLOCK__ZONES",
+  "json_schema": {
+   "description": "The time zones your team works in, with the working hours in each. The first one is yours.",
+   "examples": [
+    [
+     {
+      "hours": [
+       10,
+       19
+      ],
+      "name": "Asia/Tokyo"
+     }
+    ]
+   ],
+   "items": {
+    "description": "A time zone the team works in and the working hours there; a plain name gets the default hours.",
+    "properties": {
+     "name": {
+      "description": "The time zone, such as Europe/Berlin.",
+      "format": "iana-timezone",
+      "title": "Time zone",
+      "type": "string"
+     },
+     "hours": {
+      "default": [
+       9,
+       18
+      ],
+      "description": "When a working day starts and ends there.",
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+       {
+        "maximum": 24,
+        "minimum": 0,
+        "type": "integer"
+       },
+       {
+        "maximum": 24,
+        "minimum": 0,
+        "type": "integer"
+       }
+      ],
+      "title": "Working hours",
+      "type": "array",
+      "x-unit": "hour-of-day"
+     }
+    },
+    "required": [
+     "name"
+    ],
+    "title": "Zone",
+    "type": "object"
+   },
+   "title": "Time zones",
+   "type": "array"
+  }
+ },
+ {
+  "section": "clock",
+  "section_title": null,
+  "key": "working_hours",
+  "description": "Deprecated: the hours of every zone given by name only. Give each zone its hours instead.",
+  "env": "HZ_CLOCK__WORKING_HOURS",
+  "json_schema": {
+   "anyOf": [
+    {
+     "maxItems": 2,
+     "minItems": 2,
+     "prefixItems": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "integer"
+      }
+     ],
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "deprecated": true,
+   "description": "Deprecated: the hours of every zone given by name only. Give each zone its hours instead.",
+   "title": "Working Hours"
+  }
+ },
+ {
+  "section": "github",
+  "section_title": null,
+  "key": "host",
+  "description": "The GitHub host to use: github.com, or your GitHub Enterprise Server's host name. The GitHub CLI's sign-in for that host is used. Only your own settings can set it, never a project's.",
+  "env": "HZ_GITHUB__HOST",
+  "json_schema": {
+   "description": "The GitHub host to use: github.com, or your GitHub Enterprise Server's host name. The GitHub CLI's sign-in for that host is used. Only your own settings can set it, never a project's.",
+   "examples": [
+    "github.com"
+   ],
+   "title": "GitHub host",
+   "type": "string"
+  }
+ },
+ {
+  "section": "github",
+  "section_title": null,
+  "key": "gh",
+  "description": "The GitHub CLI to run: a name found on your PATH, or the full path to it.",
+  "env": "HZ_GITHUB__GH",
+  "json_schema": {
+   "description": "The GitHub CLI to run: a name found on your PATH, or the full path to it.",
+   "minLength": 1,
+   "title": "GitHub CLI",
+   "type": "string",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "github",
+  "section_title": null,
+  "key": "timeout",
+  "description": "How long to wait for each GitHub CLI call before stopping it.",
+  "env": "HZ_GITHUB__TIMEOUT",
+  "json_schema": {
+   "description": "How long to wait for each GitHub CLI call before stopping it.",
+   "exclusiveMinimum": 0,
+   "maximum": 600,
+   "title": "Time limit",
+   "type": "number",
+   "x-expert": true,
+   "x-unit": "seconds"
+  }
+ },
+ {
+  "section": "google",
+  "section_title": null,
+  "key": "gws_path",
+  "description": "The full path to the Google Workspace CLI; the one on your PATH when not set. Only your own settings can set it, never a project's.",
+  "env": "HZ_GOOGLE__GWS_PATH",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The full path to the Google Workspace CLI; the one on your PATH when not set. Only your own settings can set it, never a project's.",
+   "format": "path",
+   "title": "Google Workspace CLI",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "google",
+  "section_title": null,
+  "key": "timeout",
+  "description": "How long to wait for each Google Workspace CLI run before stopping it.",
+  "env": "HZ_GOOGLE__TIMEOUT",
+  "json_schema": {
+   "description": "How long to wait for each Google Workspace CLI run before stopping it.",
+   "exclusiveMinimum": 0,
+   "maximum": 600,
+   "title": "Time limit",
+   "type": "number",
+   "x-expert": true,
+   "x-unit": "seconds"
+  }
+ },
+ {
+  "section": "graph",
+  "section_title": "Team graph",
+  "key": "time_zone",
+  "description": "The time zone your team's contract schedules are read in; your computer's when not set.",
+  "env": "HZ_GRAPH__TIME_ZONE",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The time zone your team's contract schedules are read in; your computer's when not set.",
+   "format": "iana-timezone",
+   "title": "Schedule time zone"
+  }
+ },
+ {
+  "section": "graph",
+  "section_title": "Team graph",
+  "key": "offline_after",
+  "description": "How long a Heinzelmännchen may stay silent, without even a heartbeat, before it shows as offline.",
+  "env": "HZ_GRAPH__OFFLINE_AFTER",
+  "json_schema": {
+   "description": "How long a Heinzelmännchen may stay silent, without even a heartbeat, before it shows as offline.",
+   "examples": [
+    "36h"
+   ],
+   "format": "duration",
+   "title": "Offline after",
+   "type": "string"
+  }
+ },
+ {
+  "section": "graph",
+  "section_title": "Team graph",
+  "key": "weeks",
+  "description": "How many weeks of kept promises the team graph counts.",
+  "env": "HZ_GRAPH__WEEKS",
+  "json_schema": {
+   "description": "How many weeks of kept promises the team graph counts.",
+   "maximum": 26,
+   "minimum": 1,
+   "title": "Weeks counted",
+   "type": "integer",
+   "x-unit": "weeks"
+  }
+ },
+ {
+  "section": "org",
+  "section_title": "Your profile",
+  "key": "handle",
+  "description": "Your short name in teams, pull requests and contracts: lowercase letters, digits and dashes. Your GitHub login is a good choice.",
+  "env": "HZ_ORG__HANDLE",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "Your short name in teams, pull requests and contracts: lowercase letters, digits and dashes. Your GitHub login is a good choice.",
+   "examples": [
+    "mira"
+   ],
+   "title": "Handle"
+  }
+ },
+ {
+  "section": "org",
+  "section_title": "Your profile",
+  "key": "role",
+  "description": "What you do on your team.",
+  "env": "HZ_ORG__ROLE",
+  "json_schema": {
+   "anyOf": [
+    {
+     "enum": [
+      "engineer",
+      "principal",
+      "engineering-manager",
+      "engineering-leadership",
+      "product-manager",
+      "product-leadership",
+      "program-manager"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "What you do on your team.",
+   "title": "Role",
+   "x-labels": {
+    "engineer": "Engineer",
+    "engineering-leadership": "Engineering leadership",
+    "engineering-manager": "Engineering manager",
+    "principal": "Principal engineer",
+    "product-leadership": "Product leadership",
+    "product-manager": "Product manager",
+    "program-manager": "Program manager"
+   }
+  }
+ },
+ {
+  "section": "org",
+  "section_title": "Your profile",
+  "key": "timezone",
+  "description": "Your time zone.",
+  "env": "HZ_ORG__TIMEZONE",
+  "json_schema": {
+   "anyOf": [
+    {
+     "format": "iana-timezone",
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "Your time zone.",
+   "title": "Time zone"
+  }
+ },
+ {
+  "section": "org",
+  "section_title": "Your profile",
+  "key": "working_hours",
+  "description": "When your working day starts and ends.",
+  "env": "HZ_ORG__WORKING_HOURS",
+  "json_schema": {
+   "description": "When your working day starts and ends.",
+   "examples": [
+    [
+     9,
+     18
+    ]
+   ],
+   "maxItems": 2,
+   "minItems": 2,
+   "prefixItems": [
+    {
+     "maximum": 24,
+     "minimum": 0,
+     "type": "integer"
+    },
+    {
+     "maximum": 24,
+     "minimum": 0,
+     "type": "integer"
+    }
+   ],
+   "title": "Working hours",
+   "type": "array",
+   "x-unit": "hour-of-day"
+  }
+ },
+ {
+  "section": "org",
+  "section_title": "Your profile",
+  "key": "github",
+  "description": "Your GitHub login, needed to approve and own contracts in a team.",
+  "env": "HZ_ORG__GITHUB",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "Your GitHub login, needed to approve and own contracts in a team.",
+   "examples": [
+    "mira"
+   ],
+   "title": "GitHub login"
+  }
+ },
+ {
+  "section": "org",
+  "section_title": "Your profile",
+  "key": "coding_agent",
+  "description": "The coding agent you write drafts with.",
+  "env": "HZ_ORG__CODING_AGENT",
+  "json_schema": {
+   "anyOf": [
+    {
+     "enum": [
+      "claude-code",
+      "command",
+      "none"
+     ],
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The coding agent you write drafts with.",
+   "title": "Coding agent",
+   "x-labels": {
+    "claude-code": "Claude Code",
+    "command": "Your own command",
+    "none": "None"
+   }
+  }
+ },
+ {
+  "section": "org",
+  "section_title": "Your profile",
+  "key": "name",
+  "description": "Your name, from your Google or GitHub sign-in. It stays on this computer, never in a repository.",
+  "env": "HZ_ORG__NAME",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "Your name, from your Google or GitHub sign-in. It stays on this computer, never in a repository.",
+   "title": "Name"
+  }
+ },
+ {
+  "section": "org",
+  "section_title": "Your profile",
+  "key": "email",
+  "description": "Your work email, from your Google sign-in. It stays on this computer, never in a repository.",
+  "env": "HZ_ORG__EMAIL",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "Your work email, from your Google sign-in. It stays on this computer, never in a repository.",
+   "examples": [
+    "mira@example.com"
+   ],
+   "format": "email",
+   "title": "Work email"
+  }
+ },
+ {
+  "section": "report",
+  "section_title": "Reporting",
+  "key": "user",
+  "description": "Your handle in your team's roster; every entry you report carries it.",
+  "env": "HZ_REPORT__USER",
+  "json_schema": {
+   "anyOf": [
+    {
+     "maxLength": 39,
+     "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "Your handle in your team's roster; every entry you report carries it.",
+   "examples": [
+    "mira"
+   ],
+   "title": "Roster handle"
+  }
+ },
+ {
+  "section": "system.agent",
+  "section_title": "Agent skills",
+  "key": "skill_dirs",
+  "description": "Folders Heinzelmännchen's skills are copied into when you install them for your coding agents, one per agent.",
+  "env": "HZ_SYSTEM_AGENT__SKILL_DIRS",
+  "json_schema": {
+   "description": "Folders Heinzelmännchen's skills are copied into when you install them for your coding agents, one per agent.",
+   "items": {
+    "format": "path",
+    "type": "string"
+   },
+   "title": "Skill folders",
+   "type": "array",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.changelog",
+  "section_title": "Release notes",
+  "key": "github_token",
+  "description": "A GitHub token for reading what newer releases bring, which works without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, sent to GitHub only, and never by the hourly update check.",
+  "env": "HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN",
+  "json_schema": {
+   "anyOf": [
+    {
+     "format": "password",
+     "type": "string",
+     "writeOnly": true
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "A GitHub token for reading what newer releases bring, which works without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, sent to GitHub only, and never by the hourly update check.",
+   "title": "GitHub token",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.credential",
+  "section_title": "Secrets",
+  "key": "backend",
+  "description": "Where Heinzelmännchen keeps passwords and tokens: the system keychain when there is one, any configured keyring, or read-only environment variables named HZ_CREDENTIAL_<SERVICE>_<NAME>.",
+  "env": "HZ_SYSTEM_CREDENTIAL__BACKEND",
+  "json_schema": {
+   "description": "Where Heinzelmännchen keeps passwords and tokens: the system keychain when there is one, any configured keyring, or read-only environment variables named HZ_CREDENTIAL_<SERVICE>_<NAME>.",
+   "enum": [
+    "auto",
+    "keyring",
+    "environment"
+   ],
+   "title": "Where secrets are kept",
+   "type": "string",
+   "x-expert": true,
+   "x-labels": {
+    "auto": "Automatic: the system keychain if there is one",
+    "environment": "Environment variables (read-only)",
+    "keyring": "The configured keyring"
+   }
+  }
+ },
+ {
+  "section": "system.daemon",
+  "section_title": "Daemon",
+  "key": "unit_dir",
+  "description": "Where installing the daemon writes its LaunchAgent on macOS, or its systemd user units on Linux.",
+  "env": "HZ_SYSTEM_DAEMON__UNIT_DIR",
+  "json_schema": {
+   "description": "Where installing the daemon writes its LaunchAgent on macOS, or its systemd user units on Linux.",
+   "format": "path",
+   "title": "Service folder",
+   "type": "string",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.directory",
+  "section_title": "Reporting lines",
+  "key": "lookback_days",
+  "description": "How many days of your calendar, up to today, to search for recurring one-on-ones; at least 42, so a meeting every two weeks shows up three times.",
+  "env": "HZ_SYSTEM_DIRECTORY__LOOKBACK_DAYS",
+  "json_schema": {
+   "description": "How many days of your calendar, up to today, to search for recurring one-on-ones; at least 42, so a meeting every two weeks shows up three times.",
+   "maximum": 365,
+   "minimum": 42,
+   "title": "Days to look back",
+   "type": "integer",
+   "x-expert": true,
+   "x-unit": "days"
+  }
+ },
+ {
+  "section": "system.directory",
+  "section_title": "Reporting lines",
+  "key": "min_occurrences",
+  "description": "How often two people must have met alone, weekly or every two weeks, before a reporting line between them is guessed.",
+  "env": "HZ_SYSTEM_DIRECTORY__MIN_OCCURRENCES",
+  "json_schema": {
+   "description": "How often two people must have met alone, weekly or every two weeks, before a reporting line between them is guessed.",
+   "maximum": 52,
+   "minimum": 2,
+   "title": "Meetings before a guess",
+   "type": "integer",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.notify",
+  "section_title": "Notifications",
+  "key": "enabled",
+  "description": "Keep a list of notices at all; off turns every kind off.",
+  "env": "HZ_SYSTEM_NOTIFY__ENABLED",
+  "json_schema": {
+   "description": "Keep a list of notices at all; off turns every kind off.",
+   "title": "Notifications",
+   "type": "boolean"
+  }
+ },
+ {
+  "section": "system.notify",
+  "section_title": "Notifications",
+  "key": "draft",
+  "description": "Notify when a draft is ready to read and approve.",
+  "env": "HZ_SYSTEM_NOTIFY__DRAFT",
+  "json_schema": {
+   "description": "Notify when a draft is ready to read and approve.",
+   "title": "Drafts to approve",
+   "type": "boolean"
+  }
+ },
+ {
+  "section": "system.notify",
+  "section_title": "Notifications",
+  "key": "failed",
+  "description": "Notify when a contract run on your daemon failed.",
+  "env": "HZ_SYSTEM_NOTIFY__FAILED",
+  "json_schema": {
+   "description": "Notify when a contract run on your daemon failed.",
+   "title": "Failed runs",
+   "type": "boolean"
+  }
+ },
+ {
+  "section": "system.notify",
+  "section_title": "Notifications",
+  "key": "doctor",
+  "description": "Notify when a health check finds something degraded or down.",
+  "env": "HZ_SYSTEM_NOTIFY__DOCTOR",
+  "json_schema": {
+   "description": "Notify when a health check finds something degraded or down.",
+   "title": "Health problems",
+   "type": "boolean"
+  }
+ },
+ {
+  "section": "system.notify",
+  "section_title": "Notifications",
+  "key": "release",
+  "description": "Notify when a newer release of Heinzelmännchen is out.",
+  "env": "HZ_SYSTEM_NOTIFY__RELEASE",
+  "json_schema": {
+   "description": "Notify when a newer release of Heinzelmännchen is out.",
+   "title": "New releases",
+   "type": "boolean"
+  }
+ },
+ {
+  "section": "system.notify",
+  "section_title": "Notifications",
+  "key": "quiet",
+  "description": "Keep notices in the list but never pop one up, not even an urgent one.",
+  "env": "HZ_SYSTEM_NOTIFY__QUIET",
+  "json_schema": {
+   "description": "Keep notices in the list but never pop one up, not even an urgent one.",
+   "title": "Quiet mode",
+   "type": "boolean"
+  }
+ },
+ {
+  "section": "system.notify",
+  "section_title": "Notifications",
+  "key": "working_hours",
+  "description": "Hold notices that aren't urgent until your working hours start, Monday to Friday, in your time zone (both under Your profile).",
+  "env": "HZ_SYSTEM_NOTIFY__WORKING_HOURS",
+  "json_schema": {
+   "description": "Hold notices that aren't urgent until your working hours start, Monday to Friday, in your time zone (both under Your profile).",
+   "title": "Only in working hours",
+   "type": "boolean"
+  }
+ },
+ {
+  "section": "system.notify",
+  "section_title": "Notifications",
+  "key": "per_hour",
+  "description": "At most this many pop-ups an hour; the rest go to the list only.",
+  "env": "HZ_SYSTEM_NOTIFY__PER_HOUR",
+  "json_schema": {
+   "description": "At most this many pop-ups an hour; the rest go to the list only.",
+   "maximum": 60,
+   "minimum": 0,
+   "title": "Pop-ups per hour",
+   "type": "integer",
+   "x-unit": "per hour"
+  }
+ },
+ {
+  "section": "system.notify",
+  "section_title": "Notifications",
+  "key": "repeat_hours",
+  "description": "The same notice again within this many hours is dropped.",
+  "env": "HZ_SYSTEM_NOTIFY__REPEAT_HOURS",
+  "json_schema": {
+   "description": "The same notice again within this many hours is dropped.",
+   "maximum": 720,
+   "minimum": 0,
+   "title": "Drop repeats within",
+   "type": "integer",
+   "x-unit": "hours"
+  }
+ },
+ {
+  "section": "system.notify",
+  "section_title": "Notifications",
+  "key": "native",
+  "description": "Let the daemon show system notifications (Heinzel Notifier on macOS, notify-send on Linux) when no web app is open.",
+  "env": "HZ_SYSTEM_NOTIFY__NATIVE",
+  "json_schema": {
+   "description": "Let the daemon show system notifications (Heinzel Notifier on macOS, notify-send on Linux) when no web app is open.",
+   "title": "System notifications",
+   "type": "boolean"
+  }
+ },
+ {
+  "section": "system.plugin",
+  "section_title": "Plugins",
+  "key": "github_token",
+  "description": "A GitHub token for searching plugins and reading a repository before adding a plugin from it, when the GitHub CLI isn't installed; both work without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and sent to GitHub only.",
+  "env": "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN",
+  "json_schema": {
+   "anyOf": [
+    {
+     "format": "password",
+     "type": "string",
+     "writeOnly": true
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "A GitHub token for searching plugins and reading a repository before adding a plugin from it, when the GitHub CLI isn't installed; both work without one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and sent to GitHub only.",
+   "title": "GitHub token",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.runner",
+  "section_title": "Agent runner",
+  "key": "model",
+  "description": "The model every run uses; the agent's own default when not set.",
+  "env": "HZ_SYSTEM_RUNNER__MODEL",
+  "json_schema": {
+   "anyOf": [
+    {
+     "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@\\[\\]-]*$",
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The model every run uses; the agent's own default when not set.",
+   "examples": [
+    "sonnet"
+   ],
+   "title": "Model"
+  }
+ },
+ {
+  "section": "system.runner",
+  "section_title": "Agent runner",
+  "key": "claude_executable",
+  "description": "The Claude Code CLI to run: a name found on your PATH, or the full path to it.",
+  "env": "HZ_SYSTEM_RUNNER__CLAUDE_EXECUTABLE",
+  "json_schema": {
+   "description": "The Claude Code CLI to run: a name found on your PATH, or the full path to it.",
+   "title": "Claude Code CLI",
+   "type": "string",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.runner",
+  "section_title": "Agent runner",
+  "key": "read_only_tools",
+  "description": "Claude Code tools a run may use; a profile asking for any other is refused. Add only tools that can't change anything.",
+  "env": "HZ_SYSTEM_RUNNER__READ_ONLY_TOOLS",
+  "json_schema": {
+   "description": "Claude Code tools a run may use; a profile asking for any other is refused. Add only tools that can't change anything.",
+   "items": {
+    "type": "string"
+   },
+   "title": "Read-only tools",
+   "type": "array",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.runner",
+  "section_title": "Agent runner",
+  "key": "command",
+  "description": "Your own runner's command line, one argument per item, never run through a shell. Placeholders: {prompt_file}, {contract_file}, {output_file}, {working_dir}, {tools}, {model}, {timeout_seconds}, {max_usd} and {mcp_config}, a JSON file of MCP servers for a chat's tools. Double braces are literal braces.",
+  "env": "HZ_SYSTEM_RUNNER__COMMAND",
+  "json_schema": {
+   "description": "Your own runner's command line, one argument per item, never run through a shell. Placeholders: {prompt_file}, {contract_file}, {output_file}, {working_dir}, {tools}, {model}, {timeout_seconds}, {max_usd} and {mcp_config}, a JSON file of MCP servers for a chat's tools. Double braces are literal braces.",
+   "examples": [
+    [
+     "mytool",
+     "ai",
+     "run",
+     "--prompt",
+     "{prompt_file}"
+    ]
+   ],
+   "items": {
+    "type": "string"
+   },
+   "title": "Command line",
+   "type": "array",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.runner",
+  "section_title": "Agent runner",
+  "key": "command_output",
+  "description": "Where your own runner's result is read from: what the command prints, or the output file.",
+  "env": "HZ_SYSTEM_RUNNER__COMMAND_OUTPUT",
+  "json_schema": {
+   "description": "Where your own runner's result is read from: what the command prints, or the output file.",
+   "enum": [
+    "stdout",
+    "file"
+   ],
+   "title": "Where the result is",
+   "type": "string",
+   "x-expert": true,
+   "x-labels": {
+    "file": "The output file",
+    "stdout": "What the command prints"
+   }
+  }
+ },
+ {
+  "section": "system.runner",
+  "section_title": "Agent runner",
+  "key": "command_format",
+  "description": "How your own runner's result is read: as the draft itself, or as JSON with the draft under the draft key and, optionally, usage and total_cost_usd.",
+  "env": "HZ_SYSTEM_RUNNER__COMMAND_FORMAT",
+  "json_schema": {
+   "description": "How your own runner's result is read: as the draft itself, or as JSON with the draft under the draft key and, optionally, usage and total_cost_usd.",
+   "enum": [
+    "text",
+    "json"
+   ],
+   "title": "Result format",
+   "type": "string",
+   "x-expert": true,
+   "x-labels": {
+    "json": "JSON: the draft under the draft key",
+    "text": "Text: the draft itself"
+   }
+  }
+ },
+ {
+  "section": "system.runner",
+  "section_title": "Agent runner",
+  "key": "command_draft_key",
+  "description": "The key of the draft in your own runner's JSON result.",
+  "env": "HZ_SYSTEM_RUNNER__COMMAND_DRAFT_KEY",
+  "json_schema": {
+   "description": "The key of the draft in your own runner's JSON result.",
+   "title": "Draft key",
+   "type": "string",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.runner",
+  "section_title": "Agent runner",
+  "key": "command_enforces_read_only",
+  "description": "Your own runner refuses to run until this is on. Turn it on once your command limits its agent to tools that can't change anything.",
+  "env": "HZ_SYSTEM_RUNNER__COMMAND_ENFORCES_READ_ONLY",
+  "json_schema": {
+   "description": "Your own runner refuses to run until this is on. Turn it on once your command limits its agent to tools that can't change anything.",
+   "title": "Command is read-only",
+   "type": "boolean",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.runner",
+  "section_title": "Agent runner",
+  "key": "command_read_only_tools",
+  "description": "Tools, as your command names them, that a profile may ask your own runner for; any other is refused.",
+  "env": "HZ_SYSTEM_RUNNER__COMMAND_READ_ONLY_TOOLS",
+  "json_schema": {
+   "description": "Tools, as your command names them, that a profile may ask your own runner for; any other is refused.",
+   "items": {
+    "type": "string"
+   },
+   "title": "Read-only tools of the command",
+   "type": "array",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.runner",
+  "section_title": "Agent runner",
+  "key": "command_env",
+  "description": "Environment variables your command gets besides PATH, HOME, LANG, LC_* and TMPDIR, such as the one holding its own sign-in. Heinzelmännchen's credential variables are never passed.",
+  "env": "HZ_SYSTEM_RUNNER__COMMAND_ENV",
+  "json_schema": {
+   "description": "Environment variables your command gets besides PATH, HOME, LANG, LC_* and TMPDIR, such as the one holding its own sign-in. Heinzelmännchen's credential variables are never passed.",
+   "items": {
+    "type": "string"
+   },
+   "title": "Variables passed to the command",
+   "type": "array",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "system.runner",
+  "section_title": "Agent runner",
+  "key": "ask_max_usd",
+  "description": "The most one answer, or one chat message, may cost in US dollars.",
+  "env": "HZ_SYSTEM_RUNNER__ASK_MAX_USD",
+  "json_schema": {
+   "description": "The most one answer, or one chat message, may cost in US dollars.",
+   "exclusiveMinimum": 0,
+   "title": "Most per answer",
+   "type": "number",
+   "x-unit": "usd"
+  }
+ },
+ {
+  "section": "system.runner.chat",
+  "section_title": "Chat",
+  "key": "session_max_usd",
+  "description": "The most one chat may cost in US dollars, all its messages together. One message never costs more than the most per answer.",
+  "env": "HZ_SYSTEM_RUNNER_CHAT__SESSION_MAX_USD",
+  "json_schema": {
+   "description": "The most one chat may cost in US dollars, all its messages together. One message never costs more than the most per answer.",
+   "exclusiveMinimum": 0,
+   "title": "Most per chat",
+   "type": "number",
+   "x-unit": "usd"
+  }
+ },
+ {
+  "section": "system.runner.chat",
+  "section_title": "Chat",
+  "key": "keep_days",
+  "description": "How long a chat is kept after its last message, then removed.",
+  "env": "HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS",
+  "json_schema": {
+   "description": "How long a chat is kept after its last message, then removed.",
+   "maximum": 3650,
+   "minimum": 1,
+   "title": "Keep chats for",
+   "type": "integer",
+   "x-unit": "days"
+  }
+ },
+ {
+  "section": "system.runner.chat",
+  "section_title": "Chat",
+  "key": "keep_sessions",
+  "description": "How many chats are kept at most; the oldest beyond that are removed.",
+  "env": "HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS",
+  "json_schema": {
+   "description": "How many chats are kept at most; the oldest beyond that are removed.",
+   "maximum": 1000,
+   "minimum": 1,
+   "title": "Chats kept",
+   "type": "integer"
+  }
+ },
+ {
+  "section": "system.theme",
+  "section_title": "Theme",
+  "key": "name",
+  "description": "The theme of the web app; default is the built-in one, and plugins can bring others.",
+  "env": "HZ_SYSTEM_THEME__NAME",
+  "json_schema": {
+   "description": "The theme of the web app; default is the built-in one, and plugins can bring others.",
+   "maxLength": 64,
+   "pattern": "^[a-z](?:-?[a-z0-9])*$",
+   "title": "Theme",
+   "type": "string",
+   "x-hidden": true
+  }
+ },
+ {
+  "section": "team",
+  "section_title": "Team",
+  "key": "repository",
+  "description": "Your team repository's address, the invite others join with; empty for a team repository that exists only on this computer.",
+  "env": "HZ_TEAM__REPOSITORY",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "Your team repository's address, the invite others join with; empty for a team repository that exists only on this computer.",
+   "examples": [
+    "https://github.com/example/team.git"
+   ],
+   "title": "Team repository"
+  }
+ },
+ {
+  "section": "team",
+  "section_title": "Team",
+  "key": "checkout",
+  "description": "The folder your team repository is checked out in; its workflows folder holds the team's contracts.",
+  "env": "HZ_TEAM__CHECKOUT",
+  "json_schema": {
+   "anyOf": [
+    {
+     "format": "path",
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The folder your team repository is checked out in; its workflows folder holds the team's contracts.",
+   "title": "Team checkout"
+  }
+ },
+ {
+  "section": "team",
+  "section_title": "Team",
+  "key": "layer",
+  "description": "The layer plugin your team uses, by module name, when your team repository names none or you want another.",
+  "env": "HZ_TEAM__LAYER",
+  "json_schema": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "description": "The layer plugin your team uses, by module name, when your team repository names none or you want another.",
+   "title": "Team layer",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "workflow",
+  "section_title": "Contracts",
+  "key": "user_dir",
+  "description": "The folder of your own contracts; those with a schedule run on your daemon.",
+  "env": "HZ_WORKFLOW__USER_DIR",
+  "json_schema": {
+   "description": "The folder of your own contracts; those with a schedule run on your daemon.",
+   "format": "path",
+   "title": "Your contracts",
+   "type": "string"
+  }
+ },
+ {
+  "section": "workflow",
+  "section_title": "Contracts",
+  "key": "team_repository",
+  "description": "Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`.",
+  "env": "HZ_WORKFLOW__TEAM_REPOSITORY",
+  "json_schema": {
+   "anyOf": [
+    {
+     "format": "path",
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "deprecated": true,
+   "description": "Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`.",
+   "title": "Team Repository"
+  }
+ },
+ {
+  "section": "workflow",
+  "section_title": "Contracts",
+  "key": "schedule_team",
+  "description": "Team contracts your daemon runs on their schedule, by name; add @sha256: and a hash to run only the version you approved. The others run only when started by hand, so a team's contracts don't run on everyone's daemon.",
+  "env": "HZ_WORKFLOW__SCHEDULE_TEAM",
+  "json_schema": {
+   "description": "Team contracts your daemon runs on their schedule, by name; add @sha256: and a hash to run only the version you approved. The others run only when started by hand, so a team's contracts don't run on everyone's daemon.",
+   "items": {
+    "type": "string"
+   },
+   "title": "Team contracts you run",
+   "type": "array",
+   "x-expert": true
+  }
+ },
+ {
+  "section": "workflow",
+  "section_title": "Contracts",
+  "key": "max_usd",
+  "description": "The most one run of a contract may cost in US dollars, scheduled or by hand, whatever the contract asks for. A scheduled run's retries share it.",
+  "env": "HZ_WORKFLOW__MAX_USD",
+  "json_schema": {
+   "description": "The most one run of a contract may cost in US dollars, scheduled or by hand, whatever the contract asks for. A scheduled run's retries share it.",
+   "exclusiveMinimum": 0,
+   "title": "Most per run",
+   "type": "number",
+   "x-unit": "usd"
+  }
+ },
+ {
+  "section": "workflow",
+  "section_title": "Contracts",
+  "key": "retention_days",
+  "description": "How long drafts and the inputs they were made from are kept, counted from when they were made; 0 keeps them forever. Receipts are always kept, with a hash of the draft instead of its text.",
+  "env": "HZ_WORKFLOW__RETENTION_DAYS",
+  "json_schema": {
+   "description": "How long drafts and the inputs they were made from are kept, counted from when they were made; 0 keeps them forever. Receipts are always kept, with a hash of the draft instead of its text.",
+   "maximum": 36500,
+   "minimum": 0,
+   "title": "Keep drafts for",
+   "type": "integer",
+   "x-unit": "days"
+  }
+ },
+ {
+  "section": "zoom",
+  "section_title": null,
+  "key": "query",
+  "description": "The mail search that finds Zoom's meeting-summary emails, in your mail's search syntax; mails that aren't summaries are skipped. Never read from a project's settings.",
+  "env": "HZ_ZOOM__QUERY",
+  "json_schema": {
+   "description": "The mail search that finds Zoom's meeting-summary emails, in your mail's search syntax; mails that aren't summaries are skipped. Never read from a project's settings.",
+   "examples": [
+    "from:zoom.us label:Meetings"
+   ],
+   "title": "Summary mail search",
+   "type": "string"
+  }
+ }
+]

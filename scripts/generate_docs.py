@@ -285,12 +285,34 @@ def model_schema(model: type[BaseModel], urn: str, title: str) -> str:
     return json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
 
 
+def settings_fixture() -> str:
+    """Every setting's section, key, help and schema, for the web app's tests that every setting gets a fitting control.
+
+    Values and defaults are left out: they hold this machine's paths.
+    """
+    from heinzel.modules.system.config import ConfigService  # noqa: PLC0415 - only this output needs it
+
+    settings = [
+        {
+            "section": setting.section,
+            "section_title": setting.section_title,
+            "key": setting.key,
+            "description": setting.description,
+            "env": setting.env,
+            "json_schema": {k: v for k, v in (setting.json_schema or {}).items() if k != "default"} or None,
+        }
+        for setting in ConfigService(kernel()).report().settings
+    ]
+    return json.dumps(settings, indent=1, ensure_ascii=False) + "\n"
+
+
 def main() -> int:
     """Write the references, or with --check only compare them."""
     outputs = {
         DOCS / "MODULES.md": module_catalog(),
         DOCS / "CLI_REFERENCE.md": cli_reference(),
         DOCS / "CONFIGURATION.md": configuration_reference(),
+        ROOT / "web" / "src" / "test" / "fixtures" / "settings.json": settings_fixture(),
         DOCS / "schemas" / f"contract-frontmatter-{SCHEMA_VERSION}.json": contract_schema(),
         DOCS / "schemas" / "team-graph-1.json": model_schema(
             TeamGraphDocument, "urn:heinzel:team-graph:1", "hz-team: a team graph in JSON Graph Format v2"

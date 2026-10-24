@@ -62,7 +62,11 @@ export type SettingsNav = {
 };
 
 /** Sorts the setting groups into Preferences and Connectors by the plugin that provides each module. */
-export function settingsNav(groups: string[], plugins: SchemaPluginInfo[]): SettingsNav {
+export function settingsNav(
+  groups: string[],
+  plugins: SchemaPluginInfo[],
+  titles: Record<string, string | null | undefined> = {},
+): SettingsNav {
   const owner = new Map<string, SchemaPluginInfo>();
   for (const plugin of plugins) for (const module of plugin.modules) owner.set(group(module), plugin);
   const connects = (plugin: SchemaPluginInfo | undefined) => (plugin?.capabilities ?? []).length > 0;
@@ -72,7 +76,8 @@ export function settingsNav(groups: string[], plugins: SchemaPluginInfo[]): Sett
     .filter((name) => name !== BINDINGS && !connects(owner.get(name)))
     .map((name) => {
       const plugin = owner.get(name);
-      return { id: name, title: name === "hz" ? "" : displayName(name, plugin?.summary), plugin };
+      const title = name === "hz" ? "" : (titles[name] ?? displayName(name, plugin?.summary));
+      return { id: name, title, plugin };
     })
     .sort((a, b) => (a.id === "hz" ? -1 : b.id === "hz" ? 1 : byTitle(a, b)));
   return {

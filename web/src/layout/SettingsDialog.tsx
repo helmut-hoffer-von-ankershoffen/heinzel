@@ -29,12 +29,13 @@ import { NotificationSettings } from "@/notifications/NotificationSettings";
 import { ConnectorsSection } from "./ConnectorsSection";
 import { PluginsSection, Provenance } from "./PluginsSection";
 import { Row, Switch } from "./SettingControls";
-import type { JsonSchema } from "./settingSchema";
+import { type JsonSchema, labelOf, listed } from "./settingSchema";
 import {
   CONNECTORS,
   displayName,
   FILES,
   group,
+  inWords,
   PLUGINS,
   plainSummary,
   type SettingsEntry,
@@ -122,12 +123,16 @@ type BodyProps = {
 function Body({ report, query, setQuery, searchRef, section, onSection }: BodyProps) {
   const plugins = usePlugins();
   const info = useInfo();
-  // Deprecated settings are never shown: hz migrates them, and doctor names the fix when one is still set.
-  const settings = report.settings.filter(
-    (setting) => !(setting.json_schema as JsonSchema | null | undefined)?.deprecated,
+  const expert = useExpert().data?.expert ?? false;
+  // Deprecated settings are never shown (hz migrates them, doctor names the fix), nor one another control edits;
+  // expert ones only in expert mode.
+  const settings = report.settings.filter((setting) =>
+    listed(setting.json_schema as JsonSchema | null | undefined, expert),
   );
   const groups = [...new Set(settings.map((setting) => group(setting.section)))];
-  const nav = settingsNav(groups, plugins.data ?? []);
+  // A module's own title ("Your profile"), when its settings name one, else its name in words.
+  const titles = Object.fromEntries(report.settings.map((setting) => [setting.section, setting.section_title]));
+  const nav = settingsNav(groups, plugins.data ?? [], titles);
   const connector = nav.connectors.find((entry) => entry.id === section || entry.groups.includes(section ?? ""));
   const preference = nav.preferences.find((entry) => entry.id === section);
   // A connector's own page is part of Connectors; a section nobody knows (yet: the plugin list may still load) is
@@ -140,7 +145,12 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
   const needle = query.trim().toLowerCase();
   const titled = (entry: SettingsEntry) => entry.title || t("settings.general");
   const matching = needle
-    ? settings.filter((s) => `${s.section}.${s.key} ${s.description}`.toLowerCase().includes(needle))
+    ? settings.filter((s) =>
+        [s.section, s.key, labelOf(s.key, s.json_schema as JsonSchema | null), s.description, s.section_title]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle),
+      )
     : settings.filter((s) => group(s.section) === current);
   const item = (active: boolean) =>
     cn(
@@ -246,6 +256,9 @@ function Sections({
   provenance?: ReactNode;
 }) {
   const sections = [...new Set(settings.map((setting) => setting.section))];
+  // A section by its settings' title ("Notifications"), else its last name in words; never its TOML table.
+  const titleOf = (section: string) =>
+    settings.find((setting) => setting.section === section)?.section_title ?? inWords(section.split(".").at(-1) ?? "");
   return (
     <>
       <h3 className="mb-2 text-ui font-medium">{heading}</h3>
@@ -253,9 +266,9 @@ function Sections({
       {summary && <p className="-mt-1 mb-2 text-sm text-muted-foreground">{summary}</p>}
       {settings.length === 0 && <p className="text-sm text-muted-foreground">{t("settings.none")}</p>}
       {sections.map((section) => (
-        <section key={section} aria-label={section} className="mt-4">
+        <section key={section} aria-label={titleOf(section)} className="mt-4">
           {sections.length > 1 || section.includes(".") ? (
-            <h4 className="mb-1 font-mono text-ui-sm text-muted-foreground">[{section}]</h4>
+            <h4 className="mb-1 text-ui-sm font-medium text-muted-foreground">{titleOf(section)}</h4>
           ) : null}
           <ul>
             {settings

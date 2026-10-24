@@ -83,6 +83,12 @@ export const useRevealConfig = () =>
       unwrap(api.POST("/system/config/reveal", { params: { query: { scope } } })),
   });
 
+/** `hz system config reveal-setting <key>`: the file manager opens the folder a path setting names. */
+export const useRevealSetting = () =>
+  useMutation({
+    mutationFn: (key: string) => unwrap(api.POST("/system/config/reveal-setting", { params: { query: { key } } })),
+  });
+
 /** `hz system changelog`: this version's changelog as Markdown, or with `newer` what newer releases bring. */
 export const useChangelog = (newer: boolean) =>
   useQuery({

@@ -89,7 +89,7 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `time_zone` | `HZ_GRAPH__TIME_ZONE` | `None` | The time zone your team's contract schedules are read in; your computer's when not set. |
-| `offline_after` | `HZ_GRAPH__OFFLINE_AFTER` | `'2d'` | How long a Heinzelmännchen may stay silent, without even a heartbeat, before it shows as offline: a number with m, h or d, such as 36h. |
+| `offline_after` | `HZ_GRAPH__OFFLINE_AFTER` | `'2d'` | How long a Heinzelmännchen may stay silent, without even a heartbeat, before it shows as offline. Example: "36h". |
 | `weeks` | `HZ_GRAPH__WEEKS` | `4` | How many weeks of kept promises the team graph counts. |
 
 ## `[org]`
@@ -99,7 +99,7 @@ Plugins add their own tables.
 | `handle` | `HZ_ORG__HANDLE` | `None` | Your short name in teams, pull requests and contracts: lowercase letters, digits and dashes. Your GitHub login is a good choice. Example: "mira". Never read from a project's hz.toml. |
 | `role` | `HZ_ORG__ROLE` | `None` | What you do on your team. Choices: engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager. Never read from a project's hz.toml. |
 | `timezone` | `HZ_ORG__TIMEZONE` | `None` | Your time zone. Never read from a project's hz.toml. |
-| `working_hours` | `HZ_ORG__WORKING_HOURS` | `(9, 18)` | When your working day starts and ends. In the environment, write them as 09-18. Never read from a project's hz.toml. |
+| `working_hours` | `HZ_ORG__WORKING_HOURS` | `(9, 18)` | When your working day starts and ends. Example: [9, 18]. Never read from a project's hz.toml. |
 | `github` | `HZ_ORG__GITHUB` | `None` | Your GitHub login, needed to approve and own contracts in a team. Example: "mira". Never read from a project's hz.toml. |
 | `coding_agent` | `HZ_ORG__CODING_AGENT` | `None` | The coding agent you write drafts with. Choices: claude-code, command, none. Never read from a project's hz.toml. |
 | `name` | `HZ_ORG__NAME` | `None` | Your name, from your Google or GitHub sign-in. It stays on this computer, never in a repository. Never read from a project's hz.toml. |

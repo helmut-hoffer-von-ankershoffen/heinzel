@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { SchemaConfigReport, SchemaPluginInfo } from "@/api/client";
-import { config, shell } from "@/test/fixtures";
+import { config, expert as expertMode, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { toToml } from "./settingSchema";
 import { displayName, inWords, settingsNav } from "./settingsSections";
@@ -325,6 +325,61 @@ describe("The time zones editor (a list of tables by its schema)", () => {
   });
 });
 
+describe("What Settings lists", () => {
+  const extra = (overrides: Record<string, unknown>) => ({
+    section: "hz",
+    value: null,
+    default: null,
+    source: "default",
+    env: "HZ_X",
+    description: "What it does.",
+    ...overrides,
+  });
+  const listing = {
+    ...report,
+    settings: [
+      ...report.settings,
+      extra({ key: "ui_port", json_schema: { type: "integer", title: "Web app port", "x-expert": true } }),
+      extra({ key: "theme_name", json_schema: { type: "string", title: "Theme name", "x-hidden": true } }),
+      extra({
+        section: "system.runner",
+        section_title: "Agent runner",
+        key: "ask_max_usd",
+        json_schema: { type: "number", title: "Most per answer", "x-unit": "usd" },
+      }),
+    ],
+  };
+
+  it("shows expert settings only in expert mode, and never one another control edits", async () => {
+    mockApi({ ...answers, "/api/system/config/show": listing });
+    const { unmount } = renderAt("/doctor?settings=hz");
+    await screen.findByRole("dialog", { name: "Settings" });
+    // The page has loaded (its heading is there) and still lists no expert setting.
+    await screen.findByRole("heading", { name: "General" });
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Expert mode" })).not.toBeChecked());
+    expect(screen.queryByLabelText("Web app port")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Theme name")).not.toBeInTheDocument();
+    unmount();
+    mockApi({ ...answers, "/api/system/config/show": listing, "/api/system/expert": expertMode });
+    renderAt("/doctor?settings=hz");
+    expect(await screen.findByLabelText("Web app port")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Theme name")).not.toBeInTheDocument();
+  });
+
+  it("finds a setting by its label and its section's title", async () => {
+    mockApi({ ...answers, "/api/system/config/show": listing });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=hz");
+    const search = await screen.findByRole("searchbox");
+    await user.type(search, "most per answer");
+    expect(await screen.findByLabelText("Most per answer")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Agent runner" })).toBeInTheDocument();
+    await user.clear(search);
+    await user.type(search, "agent runner");
+    expect(await screen.findByLabelText("Most per answer")).toBeInTheDocument();
+  });
+});
+
 describe("Installed plugins by kind", () => {
   const acme = plugin({
     name: "acme",
@@ -377,6 +432,11 @@ describe("Where settings live", () => {
     expect(nav.preferences.map((entry) => entry.id)).toEqual(["hz", "clock", "org"]);
     expect(nav.preferences.find((entry) => entry.id === "clock")?.plugin).toBe(clock);
     expect(nav.connectors.map((entry) => entry.title)).toEqual(["GitHub"]);
+  });
+
+  it("names a module by the title its settings give, else by its name", () => {
+    const nav = settingsNav(["hz", "org", "clock"], [clock], { org: "Your profile", hz: "General" });
+    expect(nav.preferences.map((entry) => entry.title)).toEqual(["", "Clock", "Your profile"]);
   });
 
   it("writes values as TOML `hz system config set` reads", () => {
