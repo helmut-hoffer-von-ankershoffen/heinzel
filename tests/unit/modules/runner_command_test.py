@@ -1,10 +1,12 @@
 """The generic command agent runner with a recorded fake instead of a real CLI."""
 
 import json
+import os
 from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from heinzel import Budget, HeinzelError, ToolProfile
 from heinzel.modules.system.runner._command import CommandRunner, environment, placeholders, read_output, render
@@ -181,6 +183,21 @@ def test_the_output_file_is_never_read_through_a_symlink(tmp_path):
     link.symlink_to(secret)
     with pytest.raises(HeinzelError, match="not a regular file"):
         read_output(link)
+
+
+@pytest.mark.parametrize("kind", ["fifo", "directory"])
+def test_an_output_path_that_is_no_regular_file_is_refused_without_blocking(tmp_path, kind):
+    output = tmp_path / "output"
+    os.mkfifo(output) if kind == "fifo" else output.mkdir()
+    with pytest.raises(HeinzelError, match="not a regular file"):
+        read_output(output)
+
+
+@pytest.mark.parametrize("model", ["--exec=touch /tmp/x", "-x", "a b", ""])
+def test_a_model_is_a_name_never_an_option(model):
+    with pytest.raises(ValidationError):
+        RunnerSettings(model=model)
+    assert RunnerSettings(model="claude-sonnet-5-5").model == "claude-sonnet-5-5"
 
 
 def test_an_oversized_output_file_is_refused(tmp_path):

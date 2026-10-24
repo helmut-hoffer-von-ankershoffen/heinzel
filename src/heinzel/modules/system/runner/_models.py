@@ -16,7 +16,9 @@ class RunnerSettings(ModuleSettings):
     """
 
     model: str | None = Field(
-        default=None, description="Model for every run, e.g. `sonnet`; the agent's own default when not set."
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/@\[\]-]*$",  # a name, never an option: a project file may set it
+        description="Model for every run, e.g. `sonnet`; the agent's own default when not set.",
     )
     claude_executable: str = Field(default="claude", description="The Claude Code CLI, a name on PATH or a path.")
     read_only_tools: list[str] = Field(

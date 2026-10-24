@@ -11,6 +11,7 @@ text or JSON. The environment is an allowlist. The runner enforces the timeout; 
 import json
 import os
 import shutil
+import stat
 import string
 import tempfile
 import time
@@ -85,12 +86,17 @@ def read_output(path: Path, limit: int = MAX_OUTPUT) -> str | None:
         HeinzelError: If the file is a symlink or larger than `limit`.
     """
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        # O_NONBLOCK: a FIFO left at the path must not hang the read
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
         return None
     except OSError as exc:  # ELOOP: a symlink, which could point anywhere the user can read
         msg = f"The command's output file is not a regular file ({exc.strerror}); it was not read."
         raise HeinzelError(msg) from None
+    if not stat.S_ISREG(os.fstat(descriptor).st_mode):  # a FIFO, a directory or a device
+        os.close(descriptor)
+        msg = "The command's output file is not a regular file; it was not read."
+        raise HeinzelError(msg)
     with os.fdopen(descriptor, "rb") as file:
         data = file.read(limit + 1)
     if len(data) > limit:
