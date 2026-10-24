@@ -82,15 +82,15 @@ def build(kernel: Kernel, *, port: int | None, token: str, static: Path | None =
         return app
     if (static / "assets").is_dir():
         app.mount("/assets", StaticFiles(directory=static / "assets"), name="assets")
-    root = static.resolve()
-    index = root / "index.html"
+    index = static / "index.html"
+    # The top-level files (favicon.svg), listed once: a request picks one by name and never builds a path.
+    files = {file.name: file for file in static.iterdir() if file.is_file() and file != index}
 
     @app.get("/{path:path}", include_in_schema=False)
     async def page(path: str) -> Response:
-        # Top-level files (favicon.svg) as themselves; every other path is a route of the app.
-        candidate = (root / path).resolve()
-        if path and candidate.parent == root and candidate.is_file() and candidate != index:
-            return FileResponse(candidate)
+        # Top-level files as themselves; every other path is a route of the app.
+        if path in files:
+            return FileResponse(files[path])
         return FileResponse(index, headers={"Cache-Control": "no-store"})
 
     return app
