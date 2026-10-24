@@ -4,7 +4,7 @@
 
 | Name                                                          |    Stmts |     Miss |   Branch |   BrPart |   Cover |   Missing |
 |-------------------------------------------------------------- | -------: | -------: | -------: | -------: | ------: | --------: |
-| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        0 |       30 |        1 |     99% |   79-\>81 |
+| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        1 |       30 |        2 |     98% |79-\>81, 226 |
 | plugins/heinzel-atlassian/src/heinzel\_atlassian/\_storage.py |      291 |        1 |      150 |        5 |     99% |245, 252-\>exit, 258-\>exit, 262-\>exit, 312-\>exit |
 | src/heinzel/\_\_main\_\_.py                                   |        1 |        1 |        0 |        0 |      0% |         3 |
 | src/heinzel/heads/api/\_\_init\_\_.py                         |       71 |        0 |       18 |        1 |     99% | 130-\>133 |
@@ -22,17 +22,18 @@
 | src/heinzel/modules/system/config/\_\_init\_\_.py             |       28 |        2 |        0 |        0 |     93% |    41, 58 |
 | src/heinzel/modules/system/config/\_render.py                 |       18 |        1 |        8 |        1 |     92% |        18 |
 | src/heinzel/modules/system/daemon/\_schedule.py               |       65 |        3 |       20 |        1 |     95% |43-44, 102 |
+| src/heinzel/modules/system/directory/\_guess.py               |       82 |        0 |       24 |        1 |     99% |  98-\>104 |
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py             |       26 |        2 |        0 |        0 |     92% |    36, 64 |
-| src/heinzel/modules/system/plugin/\_service.py                |      125 |        5 |       28 |        2 |     95% |44-\>46, 123-124, 130, 137, 230 |
+| src/heinzel/modules/system/plugin/\_service.py                |      125 |        5 |       28 |        2 |     95% |45-\>47, 124-125, 131, 138, 231 |
 | src/heinzel/modules/workflow/\_\_init\_\_.py                  |       81 |        2 |        8 |        1 |     97% |   128-129 |
 | src/heinzel/modules/workflow/\_contracts.py                   |      340 |        2 |      132 |        1 |     99% |   462-463 |
 | src/heinzel/modules/workflow/\_models.py                      |      351 |        2 |       66 |        2 |     99% |83, 103, 457-\>455 |
 | src/heinzel/modules/workflow/\_render.py                      |      194 |       14 |       92 |        9 |     90% |97, 115, 158-\>160, 163, 164-\>166, 196-202, 228, 262, 283-293 |
 | src/heinzel/modules/workflow/\_retention.py                   |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
 | src/heinzel/modules/workflow/\_service.py                     |      623 |       10 |      202 |        3 |     98% |316, 406-407, 512-513, 872-873, 889-891 |
-| **TOTAL**                                                     | **8595** |   **74** | **2118** |   **42** | **99%** |           |
+| **TOTAL**                                                     | **9200** |   **75** | **2288** |   **44** | **99%** |           |
 
-82 files skipped due to complete coverage.
+92 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
