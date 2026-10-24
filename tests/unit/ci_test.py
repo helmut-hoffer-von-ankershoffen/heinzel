@@ -99,7 +99,7 @@ def test_every_not_make_exemption_is_used():
 # A script named by path needs its executable bit, which copier drops when it follows the template's symlinks into a
 # plugin's scripts/. Through an interpreter, a script runs without it.
 SCRIPT = re.compile(r"(?<![\w/.-])(?:\./)?scripts/[\w.-]+\.(?:sh|py)\b")
-INTERPRETER = re.compile(r"(?:\bbash|\bpython3?|\buv run(?: --?[\w-]+)*(?: --script| python3?))\s+$")
+INTERPRETER = re.compile(r"(?:\bbash|\bpython3?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
 
 
 def scripts_run_by_path(run: str) -> list[str]:
