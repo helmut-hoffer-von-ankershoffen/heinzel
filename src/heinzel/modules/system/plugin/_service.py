@@ -72,8 +72,10 @@ class PluginService:
         """The spec of a first-party plugin, from the same source and version as the installed core; None otherwise.
 
         A core installed from git gets the plugin from the same repository and revision; a development checkout gets
-        it from its `plugins/` directory; anything else gets it from the release tag of the running version.
+        it from its `plugins/` directory; anything else gets it from the release tag of the running version. The
+        distribution name works too (`heinzel-github`), since `hz system plugin remove` takes that one.
         """
+        name = name.removeprefix("heinzel-")
         if name not in FIRST_PARTY:
             return None
         subdirectory = f"plugins/heinzel-{name}"

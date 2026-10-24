@@ -142,6 +142,15 @@ def test_first_party_names_resolve_to_the_checkout_in_development(make_kernel, t
     assert service.first_party("unknown") is None
 
 
+def test_first_party_plugins_resolve_by_distribution_name_too(make_kernel, tmp_path):
+    service = service_for(make_kernel, tmp_path)
+    spec = service.first_party("heinzel-github")
+    assert spec == service.first_party("github")
+    assert spec is not None
+    assert spec.endswith("/plugins/heinzel-github")
+    assert service.add_command("heinzel-atlassian")[-1] == service.first_party("atlassian")
+
+
 def test_first_party_names_follow_a_git_installed_core(make_kernel, tool_env, monkeypatch):
     from heinzel.modules.system.plugin import _service
 
