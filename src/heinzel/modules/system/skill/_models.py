@@ -14,7 +14,7 @@ class SkillSettings(ModuleSettings):
     """Which skills the chat may use, your own skills and where exports go: the `[system.skill]` table.
 
     User scope: a project `hz.toml` can set none of these, because a repository someone else controls must not add
-    prompt text or pick a directory hz writes into (ADR 0060).
+    prompt text or pick a directory hz writes into (ADR 0061).
     """
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"chat", "personal_dir", "export_dirs"})

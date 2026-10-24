@@ -1,4 +1,4 @@
-"""Skills for MCP clients (ADR 0060): each skill a prompt, each of its files a resource, read when asked for.
+"""Skills for MCP clients (ADR 0061): each skill a prompt, each of its files a resource, read when asked for.
 
 Only on the stdio server a client started as you, never over streamable HTTP (no authentication) and never in a
 chat's server: a company plugin's skill can be internal. Everything is read through the kernel's `Skills` service, so

@@ -1,4 +1,4 @@
-"""Skills as data: the format, the caps and the checks at import and on every read (ADR 0060)."""
+"""Skills as data: the format, the caps and the checks at import and on every read (ADR 0061)."""
 
 import os
 from pathlib import Path

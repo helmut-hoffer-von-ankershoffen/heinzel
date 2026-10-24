@@ -19,7 +19,7 @@ from heinzel_github._service import GithubService
 module.settings(GithubSettings)
 module.service(GithubService)
 module.service(Gh)
-module.skill(Path(__file__).parent / "skills")  # advice for AI, read-only (ADR 0060)
+module.skill(Path(__file__).parent / "skills")  # advice for AI, read-only (ADR 0061)
 
 
 def hosts(settings: GithubSettings) -> list[str]:

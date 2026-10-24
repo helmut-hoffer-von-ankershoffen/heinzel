@@ -1,4 +1,4 @@
-"""The skill module of system: the skills the core, plugins, layers and you offer, for every AI path (ADR 0060).
+"""The skill module of system: the skills the core, plugins, layers and you offer, for every AI path (ADR 0061).
 
 A skill is a `SKILL.md` directory a module declares with `module.skill(...)`. This module decides which one wins each
 name along the layer stack, serves them read-only through `Skills` (Pydantic AI turns, MCP prompts and resources),
@@ -28,13 +28,13 @@ from heinzel.modules.system.skill._service import SkillService
 module = Module("skill", "List the skills plugins ship for AI, and hand chosen ones to Claude Code.")
 module.settings(SkillSettings)
 module.service(SkillService)
-module.service(Skills, SkillService)  # turns and the MCP head read skills through it (ADR 0060)
+module.service(Skills, SkillService)  # turns and the MCP head read skills through it (ADR 0061)
 module.skill(Path(__file__).parent / "skills")
 
 LOCAL = {"cli", "web"}
 """Heads that may list skills: a company plugin's skill can be internal, and neither the REST head nor MCP over HTTP
 asks who is calling. MCP clients get skills as prompts and resources instead, on stdio and outside a chat only, so a
-chat's agent reads no skill beyond `[system.skill] chat` (ADR 0060)."""
+chat's agent reads no skill beyond `[system.skill] chat` (ADR 0061)."""
 
 
 def render_list(result: SkillList) -> RenderableType:

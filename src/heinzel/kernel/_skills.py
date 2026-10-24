@@ -1,4 +1,4 @@
-"""Skills: advice for how to do a piece of work, as data a module ships (ADR 0060).
+"""Skills: advice for how to do a piece of work, as data a module ships (ADR 0061).
 
 A skill is a directory with a `SKILL.md` in the Agent Skills format (agentskills.io): YAML frontmatter with `name` and
 `description`, a Markdown body, and optional text files beside it (references, templates, scripts). A module declares
@@ -144,7 +144,7 @@ class Skill(BaseModel):
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class SkillLet(Let):
-    """A skill a module offers (`module.skill`), named after it; consumed by `system.skill` (ADR 0060)."""
+    """A skill a module offers (`module.skill`), named after it; consumed by `system.skill` (ADR 0061)."""
 
     skill: Skill
     directory: Path
@@ -196,7 +196,7 @@ class LoadedSkill(BaseModel):
 
 
 class Skills:
-    """The skills in effect, read-only, for every AI path (ADR 0060); `system.skill` implements it.
+    """The skills in effect, read-only, for every AI path (ADR 0061); `system.skill` implements it.
 
     `allowed` names the skills the asker may use, a contract's `hz.uses` or the chat's set; None is the person, who
     may read every skill. A skill outside `allowed` is refused here, in code, whatever an index said.
@@ -300,7 +300,7 @@ def skills_in(source: Path) -> tuple[tuple[Skill, Path], ...]:
     """The skills of `source`: a skill's directory, or a directory of skill directories, each read and checked now.
 
     Raises:
-        ValueError: If a skill breaks a rule of ADR 0060, or `source` holds none.
+        ValueError: If a skill breaks a rule of ADR 0061, or `source` holds none.
     """
     if _is_link(source):
         msg = f"{source} is a symbolic link; a skill ships as a real directory"
@@ -326,7 +326,7 @@ def skills_in(source: Path) -> tuple[tuple[Skill, Path], ...]:
 
 
 def read_skill(directory: Path) -> Skill:
-    """The skill in `directory`, after every check of ADR 0060.
+    """The skill in `directory`, after every check of ADR 0061.
 
     Raises:
         ValueError: If the skill breaks a rule: frontmatter, sizes, text only, links, a secret, its name.

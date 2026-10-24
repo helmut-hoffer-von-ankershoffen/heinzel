@@ -4,7 +4,7 @@ date: 2026-10-24
 decision-makers: maintainer (direction), architect (evaluation and shape)
 amends: 0029, 0045
 related: 0014, 0021, 0027, 0028, 0030, 0037, 0040, 0049, 0051, 0052
-amended-by: 0057, 0060
+amended-by: 0057, 0061
 ---
 
 # 0050: Pydantic AI runs a turn; a coding agent is a handoff

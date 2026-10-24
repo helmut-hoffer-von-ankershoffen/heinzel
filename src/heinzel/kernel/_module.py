@@ -561,7 +561,7 @@ class Module:
         return tuple(lets)
 
     def skill(self, source: Path) -> tuple[SkillLet, ...]:
-        """Offer skills (ADR 0060): a skill's directory with a `SKILL.md`, or a directory of them.
+        """Offer skills (ADR 0061): a skill's directory with a `SKILL.md`, or a directory of them.
 
         Data only, read and checked now, at import: `hz system skill list` lists them, Pydantic AI turns and MCP
         clients read them through `Skills`, and `hz system skill export` hands chosen ones to Claude Code. Of two
@@ -574,7 +574,7 @@ class Module:
             ```
 
         Raises:
-            ValueError: If a skill breaks a rule of ADR 0060 (frontmatter, sizes, text only, links, a secret, its
+            ValueError: If a skill breaks a rule of ADR 0061 (frontmatter, sizes, text only, links, a secret, its
                 name), or the module already offers a skill of that name.
         """
         lets: list[SkillLet] = []

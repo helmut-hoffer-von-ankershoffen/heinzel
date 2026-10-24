@@ -61,7 +61,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0054](0054-observability-is-whether-each-team-promise-is-kept.md) | Observability is whether each team promise is kept: telemetry in, a graph out | proposed | 2026-10-24 |
 | [0055](0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md) | Connectors show their sign-in, test live on demand, and bind themselves when they are alone | accepted | 2026-10-24 |
 | [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) | AI access is a module: one choice like the theme, options are adapters of `ai-access` | proposed | 2026-10-24 |
-| [0060](0060-plugins-ship-skills-every-ai-path-can-use.md) | Plugins ship skills every AI path can use: `module.skill(...)`, read-only tools, an explicit export | proposed | 2026-10-24 |
+| [0061](0061-plugins-ship-skills-every-ai-path-can-use.md) | Plugins ship skills every AI path can use: `module.skill(...)`, read-only tools, an explicit export | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -119,7 +119,7 @@ automatically);
 [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) amends
 [0029](0029-agent-runners-are-capability-adapters.md) (an AI access option names the agent runner that serves it) and
 [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (`[heinzel] model` gives way to `[ai]` routing);
-[0060](0060-plugins-ship-skills-every-ai-path-can-use.md) amends
+[0061](0061-plugins-ship-skills-every-ai-path-can-use.md) amends
 [0014](0014-agent-skills-and-the-claude-code-plugin.md) (plugin skills reach Claude Code through `hz system skill
 export`) and [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (skills are `SkillLet`s; a turn gets
 an index and loads bodies on demand).

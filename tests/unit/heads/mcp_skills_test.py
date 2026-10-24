@@ -1,4 +1,4 @@
-"""Skills for MCP clients (ADR 0060): prompts and resources on stdio only, never over HTTP or in a chat."""
+"""Skills for MCP clients (ADR 0061): prompts and resources on stdio only, never over HTTP or in a chat."""
 
 import anyio
 import pytest

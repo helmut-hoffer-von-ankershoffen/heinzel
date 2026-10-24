@@ -1,4 +1,4 @@
-"""Skills through the CLI (ADR 0060): list, show, export for Claude Code, sync and unexport."""
+"""Skills through the CLI (ADR 0061): list, show, export for Claude Code, sync and unexport."""
 
 import json
 from pathlib import Path

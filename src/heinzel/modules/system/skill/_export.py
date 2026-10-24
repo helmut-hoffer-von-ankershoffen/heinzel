@@ -1,6 +1,6 @@
 """The Claude Code export: chosen skills as `heinzel-<name>/` directories hz marks, lists and alone replaces.
 
-A skill in Claude Code can run its scripts, so nothing is exported without the person naming it (ADR 0060). An export
+A skill in Claude Code can run its scripts, so nothing is exported without the person naming it (ADR 0061). An export
 directory holds only what hz read and checked: `SKILL.md` with `name` and `description` alone (Claude Code would
 honour `allowed-tools` and `model`, so no hint goes along) and the skill's listed files, copied from their checked
 bytes. hz replaces or removes a directory only when it carries hz's marker *and* hz's manifest in the state directory

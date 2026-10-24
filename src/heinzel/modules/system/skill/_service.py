@@ -61,7 +61,7 @@ def _branch(stack: LayerStack, layer: str) -> str | None:
 
 
 class SkillService(Skills):
-    """The skills every AI path reads (ADR 0060): the core's, every plugin's and layer's, and the person's own."""
+    """The skills every AI path reads (ADR 0061): the core's, every plugin's and layer's, and the person's own."""
 
     def __init__(self, kernel: Kernel, settings: SkillSettings) -> None:
         """Create the service; the kernel and the settings are injected."""

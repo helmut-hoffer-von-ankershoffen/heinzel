@@ -6,7 +6,7 @@ amends: 0014, 0050
 related: 0019, 0037, 0040, 0044, 0045, 0047, 0049, 0057
 ---
 
-# 0060: Plugins ship skills every AI path can use: `module.skill(...)`, read-only tools, an explicit export
+# 0061: Plugins ship skills every AI path can use: `module.skill(...)`, read-only tools, an explicit export
 
 ## Context and Problem Statement
 

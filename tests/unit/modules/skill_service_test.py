@@ -1,4 +1,4 @@
-"""The skills in effect along the layer stack, the allowlists, and the Claude Code export (ADR 0060)."""
+"""The skills in effect along the layer stack, the allowlists, and the Claude Code export (ADR 0061)."""
 
 import json
 import stat
