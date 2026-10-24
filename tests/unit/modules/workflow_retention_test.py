@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from heinzel import HeinzelError
+from heinzel.modules.workflow import _retention as retention
 from heinzel.modules.workflow._models import DRAFT_NAME
 from heinzel.modules.workflow._retention import expired
 
@@ -196,3 +197,34 @@ def test_a_contract_directory_that_opens_but_cant_be_listed_is_a_problem(data):
         contract.chmod(0o700)
     assert sweep.found == []
     assert len(sweep.problems) == 1
+
+
+def test_a_file_a_concurrent_prune_deleted_first_is_not_a_problem(data, monkeypatch):
+    draft = write(drafts_of(data) / "me-x", "20260701T070000Z.md")
+
+    real_unlink = os.unlink
+
+    def gone(name, *, dir_fd):
+        real_unlink(name, dir_fd=dir_fd)  # another prune got there first
+        raise FileNotFoundError(name)
+
+    monkeypatch.setattr(retention.os, "unlink", gone)
+    assert paths(data, delete=True) == []
+    assert not draft.exists()
+
+
+def test_a_contract_directory_that_cant_be_listed_is_a_problem_of_its_own(data, monkeypatch):
+    write(drafts_of(data) / "me-a", "20260701T070000Z.md")
+    other = write(drafts_of(data) / "me-b", "20260701T070000Z.md")
+    listing = os.scandir
+    calls = iter(range(100))
+
+    def flaky(directory):
+        if next(calls) == 1:  # the first contract directory; the drafts directory itself is call 0
+            raise PermissionError(13, "Permission denied")
+        return listing(directory)
+
+    monkeypatch.setattr(retention.os, "scandir", flaky)
+    sweep = expired(data, CUTOFF, delete=True)
+    assert [e.path for e in sweep.found] == [other]
+    assert sweep.problems == ["Can't list a drafts directory: Permission denied"]
