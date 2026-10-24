@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-24
 decision-makers: maintainer (names and direction), architect (plan)
 amends: 0021, 0038, 0041, 0045
@@ -54,7 +54,7 @@ and run records?
 
 ## Decision Outcome
 
-Chosen option (proposed): **`heinzel.modules.workflow` becomes `heinzel.modules.heinzel`, the module `heinzel`; two
+Chosen option: **`heinzel.modules.workflow` becomes `heinzel.modules.heinzel`, the module `heinzel`; two
 single-operation built-in modules give `hz drafts` and `hz approve`; the old commands, settings and job names work as
 deprecated aliases for one minor release; the kernel gains only `SessionStore`; `hz heinzel migrate` turns today's
 contracts, drafts and records into Heinzelmännchen and turns, once.** Checkable statements:
@@ -150,7 +150,9 @@ contracts, drafts and records into Heinzelmännchen and turns, once.** Checkable
 
 ### Confirmation
 
-Not yet: proposed. When implemented:
+The first slice (the rename, the aliases, `hz heinzel list` and the web app's Heinzelmännchen page) is checked by
+`tests/integration/renamed_module_test.py`, `tests/integration/heinzel_test.py`, `tests/unit/kernel/config_test.py`
+and `web/src/pages/Heinzelmaennchen.test.tsx`. When the rest is implemented:
 
 - `tests/integration/heinzel_cli_test.py`: every new command through the CLI and MCP; `hz workflow <op>` runs the same
   operation and prints the deprecation line once; `hz drafts` and `hz approve` collapse in every head; `approve` and

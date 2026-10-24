@@ -252,7 +252,7 @@ def test_mcp_over_stdio_manages_plugins_and_unauthenticated_http_mcp_cannot(kern
     http = {tool.name for tool in asyncio.run(mcp.build(kernel, "streamable-http").list_tools())}
     assert stdio >= CHANGES
     assert not CHANGES & http
-    assert {"system_plugin_list", "system_plugin_search", "workflow_run"} <= http  # the rest stays as it was
+    assert {"system_plugin_list", "system_plugin_search", "heinzel_wake"} <= http  # the rest stays as it was
 
 
 def test_a_handed_over_socket_that_isnt_a_loopback_listener_starts_a_fresh_session(monkeypatch):

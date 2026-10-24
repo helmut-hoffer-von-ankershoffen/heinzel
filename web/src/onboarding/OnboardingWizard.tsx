@@ -503,7 +503,7 @@ function FirstHeinzel() {
   const group = useId();
   const name = contractName(sentence);
   const chosen = templates.find((entry) => entry.template === template);
-  const command = chosen?.command ?? (name ? `hz workflow new ${name}` : "");
+  const command = chosen?.command ?? (name ? `hz heinzel new ${name}` : "");
   return (
     <div className="flex max-w-lg flex-col gap-5">
       {templates.length > 0 && (

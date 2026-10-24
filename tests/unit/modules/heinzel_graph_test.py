@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from heinzel.modules.workflow._contracts import Contract, read_contract
-from heinzel.modules.workflow._graph import build, mermaid, problems
-from heinzel.modules.workflow._models import Namespace
+from heinzel.modules.heinzel._contracts import Contract, read_contract
+from heinzel.modules.heinzel._graph import build, mermaid, problems
+from heinzel.modules.heinzel._models import Namespace
 
 pytestmark = pytest.mark.unit
 
@@ -71,7 +71,7 @@ def test_a_contract_reading_another_contracts_output_links_them_through_that_ass
     }
     assert (graph.cycles, graph.unmaintained) == ([], [])
     assert problems([digest, newsletter]) == {}
-    assert graph.next[0].command == "hz workflow graph --mermaid"
+    assert graph.next[0].command == "hz heinzel graph --mermaid"
 
 
 def test_two_contracts_reading_one_source_share_its_node():
@@ -93,7 +93,7 @@ def test_an_input_nobody_maintains_is_flagged_with_why():
             ("HZC031", "warning", "hz.inputs.in1.read"),
         ]
     }
-    assert graph.next[0].command == "hz workflow check"
+    assert graph.next[0].command == "hz heinzel check"
 
 
 def test_contracts_that_depend_on_each_other_are_a_cycle_and_errors():
@@ -133,7 +133,7 @@ def test_contracts_whose_frontmatter_failed_and_checked_paths_are_left_out():
     assert path_contract.valid
     graph = build([broken, path_contract])
     assert graph.nodes == []
-    assert graph.next[0].command == "hz workflow new my-first-workflow"
+    assert graph.next[0].command == "hz heinzel new my-first-heinzel"
 
 
 def test_mermaid_draws_every_node_and_edge_and_marks_problems():
@@ -177,7 +177,7 @@ def test_an_upstream_with_errors_is_named_as_such_not_as_missing():
     assert diagnostic.code == "HZC031"
     assert "has errors" in diagnostic.message
     assert "there is no contract" not in diagnostic.message
-    assert diagnostic.hint == "fix its errors: hz workflow check"
+    assert diagnostic.hint == "fix its errors: hz heinzel check"
     assert build([broken, reader]).unmaintained[0].why.startswith("me:weekly-digest has errors")
 
 

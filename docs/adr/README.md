@@ -55,7 +55,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0047](0047-plugins-are-managed-from-the-web-app-after-a-confirmation.md) | Plugins are managed from the web app, and adding one shows what it installs before it is confirmed | proposed | 2026-10-24 |
 | [0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md) | Heinzelmännchen are durable agents: one session each, owned by hz | proposed | 2026-10-24 |
 | [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) | Pydantic AI runs a turn; a coding agent is a handoff | proposed | 2026-10-24 |
-| [0051](0051-the-workflow-module-becomes-the-heinzel-module.md) | The workflow module becomes the heinzel module | proposed | 2026-10-24 |
+| [0051](0051-the-workflow-module-becomes-the-heinzel-module.md) | The workflow module becomes the heinzel module | accepted | 2026-10-24 |
 | [0052](0052-the-graph-emerges-from-recorded-reads-and-writes.md) | The graph emerges from recorded reads and writes | proposed | 2026-10-24 |
 | [0053](0053-the-team-graph-is-drawn-with-react-flow-and-elk.md) | The team graph is drawn with React Flow and laid out by elk; Mermaid is only an export | proposed | 2026-10-24 |
 | [0054](0054-observability-is-whether-each-team-promise-is-kept.md) | Observability is whether each team promise is kept: telemetry in, a graph out | proposed | 2026-10-24 |
