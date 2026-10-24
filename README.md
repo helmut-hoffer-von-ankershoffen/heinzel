@@ -21,7 +21,7 @@ night. Why it exists and where it is going: [INTENT.md](INTENT.md).
 This release is the foundation — kernel, heads, plugins and release automation; the first team workflows arrive in
 0.x ([roadmap](INTENT.md#where-we-are)).
 
-![hz from install to the first commands: version, system info, adding the clock plugin, clock, doctor, JSON into jq](docs/assets/demo.gif)
+![hz from install to the first commands: version, system info, adding the clock plugin, clock, JSON into jq, doctor](docs/assets/demo.gif)
 
 **What you can do today:**
 

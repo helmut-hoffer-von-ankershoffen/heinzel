@@ -21,12 +21,12 @@ PYPROJECT_HEAD = ROOT / "scripts" / "template_pyproject_head.toml.tmpl"
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
-    text = text.replace(" template-test template-sync docs fuzz", "")
+    text = text.replace(" template-test template-sync docs fuzz demo", "")
     text = text.replace(" release clean\n", " release clean update-template\n", 1)
     text = text.replace(" (KEEP=dir keeps it)", "")
-    text = re.sub(r"\n(template-test|template-sync|docs|fuzz):.*?\n(?:\t.*\n)+", "\n", text)
-    # Steps only Heinzelmännchen has: import contracts, the template and generated docs (never a target's last step).
-    text = re.sub(r'\n\t\t"&?(contracts|template|docs)=[^\n]*', "", text)
+    text = re.sub(r"\n(template-test|template-sync|docs|fuzz|demo):.*?\n(?:\t.*\n)+", "\n", text)
+    # Steps only Heinzelmännchen has: import contracts, the template, generated docs, demo tape (never a last step).
+    text = re.sub(r'\n\t\t"&?(contracts|template|docs|demo)=[^\n]*', "", text)
     text = text.replace("uv build --all-packages", "uv build")
     text = text.replace("lint, import contracts, types, tests", "lint, types, tests")
     text = text.replace("format, lint, contracts, generated files, unit tests", "format, lint, unit tests")
