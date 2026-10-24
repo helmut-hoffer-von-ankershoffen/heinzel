@@ -1,8 +1,9 @@
 ---
-status: accepted
+status: superseded
 date: 2026-10-24
 decision-makers: maintainer (delegated)
 related: 0017, 0028, 0030
+superseded-by: 0035
 ---
 
 # 0033: Read GitHub through its REST API with urllib; merged pull requests from the pulls list

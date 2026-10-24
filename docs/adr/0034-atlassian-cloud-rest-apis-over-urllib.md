@@ -1,8 +1,9 @@
 ---
-status: accepted
+status: superseded
 date: 2026-10-24
 decision-makers: maintainer (delegated)
 related: 0017, 0028, 0030
+superseded-by: 0035
 ---
 
 # 0034: Read Jira and Confluence Cloud through their REST APIs with urllib, Basic auth and epoch-millisecond JQL
