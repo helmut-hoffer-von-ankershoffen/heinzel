@@ -1235,7 +1235,10 @@ export interface paths {
          *
          *     Installed from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases
          *     only if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`
-         *     makes. Pinned to a branch, a commit or a local source, it changes nothing and says which `--source` moves it.
+         *     makes. With `--channel main` (or the setting
+         *     `update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,
+         *     it changes nothing and says which `--source` moves it. It never moves or suggests a release older than the
+         *     installed version.
          *     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
          *     version, the error names it and the previous version stays installed.
          *
@@ -7390,6 +7393,8 @@ export interface operations {
             query?: {
                 /** @description Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel. */
                 source?: string | null;
+                /** @description Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit. */
+                channel?: ("release" | "main") | null;
             };
             header?: never;
             path?: never;
