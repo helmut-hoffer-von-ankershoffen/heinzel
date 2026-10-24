@@ -78,6 +78,8 @@ our own. Points are marked where 0.2 builds part of them and the rest comes late
    - Commands live under `hz system daemon` (ADR 0018) as ordinary operations: `install`, `uninstall`, `status`,
      `logs`, `tick`, `pause`, `resume`, `jobs`. `status` is also a `HealthLet`. `install` and `uninstall` are
      CLI-only: installing something that runs at every login is a deliberate human act, not an MCP or REST call.
+     `tick` is CLI and MCP only (2026-10-24): it runs jobs that may spend money, and a web page can reach a local REST
+     server ([ADR 0019](0019-mcp-and-rest-heads.md)); launchd and systemd run the CLI.
    - Jobs run unattended with the user's rights. `pause`, `uninstall` and `disabled_modules` stop them.
    - `hz system update` takes the local tick lock and restarts resident mode (later).
 2. **Two new let kinds, and jobs compiled from data.**

@@ -3,13 +3,18 @@
 Read-only operations are `GET`, the others `POST`; parameters are query parameters described by their `Field`. A
 `HeinzelError` becomes `400 {"error": ...}`; an operation whose exit code would be non-zero answers `503`, so
 `GET /system/doctor` doubles as a health probe.
+
+The server has no authentication, so it answers only requests that name a loopback host (or one listed in
+`[hz] api_allowed_hosts`) on its own port, and refuses requests from another origin with `403`: a web page in your
+browser can reach `127.0.0.1` too, directly or through DNS rebinding, and must not be able to call operations.
+Operations that spend money or act unattended (`hz workflow run`, `hz system daemon tick`) aren't exposed here.
 """
 
 import inspect
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Iterable
 from typing import Annotated, Any, get_args, get_origin
 
-from fastapi import FastAPI, Query, Response
+from fastapi import FastAPI, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic.fields import FieldInfo
 
@@ -19,15 +24,31 @@ from heinzel.kernel import HeinzelError, Kernel, boot
 
 HEAD = "api"
 UNAVAILABLE = 503
+FORBIDDEN = 403
+LOOPBACK = frozenset({"localhost", "127.0.0.1", "[::1]"})
+"""Hosts the REST head always answers; `[hz] api_allowed_hosts` adds others."""
 
 
-def build(kernel: Kernel) -> FastAPI:
-    """A FastAPI app with one endpoint per exposed operation."""
+def build(kernel: Kernel, *, port: int | None = None, allowed_hosts: Iterable[str] = ()) -> FastAPI:
+    """A FastAPI app with one endpoint per exposed operation, answering only local, same-origin requests.
+
+    Args:
+        kernel: The kernel whose operations become endpoints.
+        port: The port it listens on; a request naming another port is refused. Any port when None.
+        allowed_hosts: Host names to answer besides localhost, 127.0.0.1 and [::1].
+    """
     app = FastAPI(
         title="🧝 Heinzelmännchen",
         version=__version__,
         description="Open-source helpers that keep product teams running. Every endpoint is also a `hz` command.",
     )
+    hosts = LOOPBACK | {host.strip().lower() for host in allowed_hosts}
+
+    @app.middleware("http")
+    async def local_only(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+        if problem := refusal(request.headers.get("host", ""), request.headers.get("origin"), hosts, port):
+            return JSONResponse(status_code=FORBIDDEN, content={"error": problem})
+        return await call_next(request)
 
     @app.exception_handler(HeinzelError)
     async def heinzel_error(request: object, exc: HeinzelError) -> JSONResponse:  # noqa: ARG001 - FastAPI signature
@@ -45,6 +66,33 @@ def build(kernel: Kernel) -> FastAPI:
             operation_id=item.name,
         )
     return app
+
+
+def refusal(host: str, origin: str | None, hosts: frozenset[str], port: int | None) -> str | None:
+    """Why a request is refused, or None: its Host must be an allowed name on our port, its Origin our own."""
+    name, given = _split(host)
+    if name not in hosts or (port is not None and given != str(port)):
+        where = f" on port {port}" if port is not None else ""
+        return (
+            f"Refused: this server answers requests to {', '.join(sorted(hosts))}{where}, not {host!r}. If you serve "
+            "on another interface, add its name to [hz] api_allowed_hosts in your user configuration."
+        )
+    if origin is not None and origin.strip().lower() not in {f"http://{host.lower()}", f"https://{host.lower()}"}:
+        return f"Refused: a request from another origin ({origin}) can't call operations; use the CLI or MCP."
+    return None
+
+
+def _split(host: str) -> tuple[str, str]:
+    """A Host header's name and port; `[::1]:8000` keeps its brackets."""
+    host = host.strip().lower()
+    if host.startswith("["):
+        end = host.find("]")
+        if end == -1:
+            return host, ""
+        rest = host[end + 1 :]
+        return host[: end + 1], rest[1:] if rest.startswith(":") else ""
+    name, _, port = host.partition(":")
+    return name, port
 
 
 def endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
@@ -78,4 +126,5 @@ def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
     """Boot the kernel and serve its operations over HTTP until interrupted."""
     import uvicorn  # noqa: PLC0415 - only needed when serving
 
-    uvicorn.run(build(boot()), host=host, port=port)
+    kernel = boot()
+    uvicorn.run(build(kernel, port=port, allowed_hosts=kernel.settings.api_allowed_hosts), host=host, port=port)

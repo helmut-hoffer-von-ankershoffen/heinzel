@@ -18,6 +18,7 @@ Plugins add their own tables.
 | `plugins_enabled` | `HZ_PLUGINS_ENABLED` | `True` | Discover modules from installed plugins. Disable to debug a broken plugin. |
 | `update_check` | `HZ_UPDATE_CHECK` | `True` | Say in `hz --version` and `hz system info` when a newer release is available, from what `hz system release` last found (ADR 0031); only in text output on a terminal, never in CI. Ordinary commands never ask the network. Set to false to turn the hint off. |
 | `disabled_modules` | `HZ_DISABLED_MODULES` | `frozenset()` | Qualified names of modules to switch off, with their submodules. Comma-separated in the environment, a list in TOML. |
+| `api_allowed_hosts` | `HZ_API_ALLOWED_HOSTS` | `frozenset()` | Host names `hz system serve api` answers besides localhost, 127.0.0.1 and [::1], for when it listens on another interface (`--host`); requests naming any other host are refused, so a web page can't reach the server through DNS rebinding. Comma-separated in the environment; not settable in a project's hz.toml. |
 
 ## `[capabilities]`
 

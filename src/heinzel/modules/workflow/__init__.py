@@ -74,7 +74,8 @@ def check(
     return service.check(path)
 
 
-@module.operation(read_only=False, render=render_run)
+# A render spends money; REST is reachable from a browser, so only the CLI and MCP get it.
+@module.operation(read_only=False, render=render_run, heads={"cli", "mcp"})
 def run(
     service: WorkflowService,
     name: Name,

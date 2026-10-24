@@ -189,7 +189,9 @@ def test_a_name_in_both_places_needs_its_prefix_in_every_head(make_kernel, contr
     code, output = hz(kernel, "workflow", "show", "weekly-digest")
     assert code != 0
     assert "say team:weekly-digest or me:weekly-digest" in str(output)
-    response = TestClient(api.build(kernel)).get("/workflow/show", params={"name": "weekly-digest"})
+    response = TestClient(api.build(kernel), base_url="http://localhost").get(
+        "/workflow/show", params={"name": "weekly-digest"}
+    )
     assert response.status_code >= 400
     assert "say team:weekly-digest" in response.text
     assert hz(kernel, "workflow", "show", "team:weekly-digest")[0] == 0
@@ -289,3 +291,16 @@ def test_a_project_file_cant_point_discovery_at_its_own_contracts(make_kernel, t
         "project setting workflow.team_repository",
         "project setting workflow.user_dir",
     ]
+
+
+def test_one_bad_schedule_leaves_the_other_jobs_and_matrix_rows_and_fails_check(kernel, contracts):
+    fullwidth_zero = chr(0xFF10)
+    bad = EXAMPLE.read_text().replace("weekly-digest", "bad-schedule").replace('"0 7', f'"{fullwidth_zero} 7')
+    (contracts / "bad-schedule.prose.md").write_text(bad)
+    code, report = hz(kernel, "workflow", "check")
+    assert code == 1
+    assert [(d["code"], d["field"]) for d in report["diagnostics"]] == [("HZC011", "hz.schedule")]
+    assert [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]] == ["workflow:me-weekly-digest"]
+    uses = {use["requester"] for use in hz(kernel, "system", "capability", "list")[1]["uses"]}
+    assert "workflow me-weekly-digest" in uses
+    assert "workflow me-bad-schedule" not in uses

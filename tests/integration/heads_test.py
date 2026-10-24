@@ -72,7 +72,7 @@ def test_mcp_tools(kernel):
 
 
 def test_rest_endpoints(kernel):
-    client = TestClient(api.build(kernel))
+    client = TestClient(api.build(kernel), base_url="http://localhost")
     assert client.get("/example/greet", params={"name": "Ada"}).json() == {"text": "Hello, Ada!"}
     invalid = client.get("/example/greet", params={"name": ""})
     assert invalid.status_code == 400  # validated by the kernel, like every head

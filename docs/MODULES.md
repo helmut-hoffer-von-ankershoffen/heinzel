@@ -110,7 +110,7 @@ Run modules' jobs in the background, supervised by launchd or systemd.
 | Unload and remove the daemon's unit; receipts and logs stay. | `hz system daemon uninstall` | — | — | yes |
 | Show whether the daemon is installed, loaded and paused, its last tick and failing jobs. | `hz system daemon status` | `system_daemon_status` | `GET /system/daemon/status` |  |
 | Show the latest lines of the daemon's log. | `hz system daemon logs` | `system_daemon_logs` | `GET /system/daemon/logs` |  |
-| Run the jobs that are due and write a receipt for each; exits with 1 if any job failed. | `hz system daemon tick` | `system_daemon_tick` | `POST /system/daemon/tick` | yes |
+| Run the jobs that are due and write a receipt for each; exits with 1 if any job failed. | `hz system daemon tick` | `system_daemon_tick` | — | yes |
 | Pause the daemon: ticks run no job until resumed. | `hz system daemon pause` | `system_daemon_pause` | `POST /system/daemon/pause` | yes |
 | Resume a paused daemon. | `hz system daemon resume` | `system_daemon_resume` | `POST /system/daemon/resume` | yes |
 | List every job with its schedule, next slot and last run. | `hz system daemon jobs` | `system_daemon_jobs` | `GET /system/daemon/jobs` |  |
@@ -160,7 +160,7 @@ Workflow contracts: Markdown files that compile to daemon jobs drafting with an 
 | List the contracts in your and your team's workflows directories, with their schedule and problems. | `hz workflow list` | `workflow_list` | `GET /workflow/list` |  |
 | Show a contract as the daemon runs it: schedule, requirements, adapters, inputs and publishes. | `hz workflow show` | `workflow_show` | `GET /workflow/show` |  |
 | Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate. | `hz workflow check` | `workflow_check` | `GET /workflow/check` |  |
-| Render a contract now: fetch its inputs, run the agent and save the draft; nothing is published. | `hz workflow run` | `workflow_run` | `POST /workflow/run` | yes |
+| Render a contract now: fetch its inputs, run the agent and save the draft; nothing is published. | `hz workflow run` | `workflow_run` | — | yes |
 
 Settings: [`[workflow]`](CONFIGURATION.md#workflow).
 

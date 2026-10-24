@@ -150,7 +150,7 @@ def mcp_outputs(kernel: Kernel) -> list[str]:
 
 
 def rest_outputs(kernel: Kernel) -> list[str]:
-    client = TestClient(api.build(kernel))
+    client = TestClient(api.build(kernel), base_url="http://localhost")
     return [client.get(path).text for path in ("/system/credential/list", "/system/doctor", "/system/info")]
 
 
