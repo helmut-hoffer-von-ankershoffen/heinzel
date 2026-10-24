@@ -40,12 +40,10 @@ def test_sync_shows_recommendations_and_writes_only_what_you_accept(team):
     assert code == 0
     assert [(i["id"], i["state"]) for i in report["items"]] == [
         ("plugin:heinzel-google", "by-hand"),
-        ("binding:agent-runner", "differs"),
+        ("binding:agent-runner", "pending"),  # bound only by the core's default, so no choice of yours
     ]
+    assert "capabilities" not in user_file()
     code, report = hz("org", "sync", "--accept", "all")
-    assert code == 0
-    assert "capabilities" not in user_file()  # a choice you made (here the default) switches only by its id
-    code, report = hz("org", "sync", "--accept", "binding:agent-runner")
     assert code == 0
     assert user_file()["capabilities"] == {"agent_runner": "command"}
     code, report = hz("org", "sync")

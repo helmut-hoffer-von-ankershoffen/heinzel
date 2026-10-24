@@ -147,7 +147,8 @@ class SyncService:
                 f"team recommends), then: hz org sync --accept {recommendation.id}"
             )
             return _item(recommendation, current=current, state="by-hand", action=action)
-        state: SyncState = "pending" if current is None else "differs"
+        # A binding only the core's default made is no choice of yours: it is pending, like an unbound one.
+        state: SyncState = "pending" if current is None or self._view.defaulted(recommendation.name) else "differs"
         action = f"sets capabilities.{_key(recommendation.name)} = {recommendation.value!r} in your user file"
         return _item(recommendation, current=current, state=state, action=action)
 

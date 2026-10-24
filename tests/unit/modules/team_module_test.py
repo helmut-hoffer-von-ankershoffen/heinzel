@@ -220,7 +220,10 @@ def test_adopt_says_what_it_did_and_what_is_left():
         ({"credentials": ["token"]}, "isn't a credential name"),
         ({"credentials": ["github/token=ghp_x"]}, "isn't a credential name"),
         ({"contracts": ["../x"]}, "isn't a contract name"),
-        ({"schedule": ["x"]}, None),
+        ({"schedule": ["x"]}, "unknown key 'schedule'"),
+        (None, None),
+        (["heinzel-google"], "must map plugins"),
+        ("hello", "must map plugins"),
     ],
 )
 def test_a_manifest_keeps_the_recommendations_it_can_check_and_reports_the_rest(recommend, problem):

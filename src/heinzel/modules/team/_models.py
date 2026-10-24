@@ -35,6 +35,7 @@ NAME = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 DISTRIBUTION = re.compile(r"^heinzel-[a-z0-9]+(?:-[a-z0-9]+)*$")
 """A plugin distribution's name (ADR 0025)."""
 EMAIL = re.compile(r"^[^@\s]{1,64}@[A-Za-z0-9.-]{1,253}$")
+RECOMMEND_KEYS = frozenset({"plugins", "bindings", "credentials", "contracts"})
 CREDENTIAL = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 """A credential as `service/name`, the way doctor names it; only names, never values."""
 MAX_NAME = 64
@@ -145,6 +146,9 @@ class Recommend(BaseModel):
 
     model_config = ConfigDict(extra="ignore", frozen=True)
 
+    unreadable: list[str] = Field(
+        default_factory=list[str], exclude=True, description="Problems with the block's shape, for `hz team show`."
+    )
     plugins: object = Field(default_factory=list[object], description="Plugin distributions, `heinzel-<name>`.")
     bindings: object = Field(
         default_factory=dict[str, object], description="Capability to adapter, e.g. `documents: google`."
@@ -157,10 +161,25 @@ class Recommend(BaseModel):
         default_factory=list[object], description="Team contracts in workflows/ members may let their daemon run."
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _shape(cls, value: object) -> object:
+        """Anything but a mapping is no recommendation; unknown keys are reported, not fatal."""
+        if value is None:
+            return {}
+        mapping = _mapping(value)
+        if mapping is None:
+            return {"unreadable": ["recommend: must map plugins, bindings, credentials and contracts to their entries"]}
+        unknown = sorted(str(key) for key in mapping if key not in RECOMMEND_KEYS)
+        return {
+            **{str(k): v for k, v in mapping.items()},
+            "unreadable": [f"recommend: unknown key {k!r}" for k in unknown],
+        }
+
     def entries(self) -> tuple[list[tuple[RecommendationKind, str, str | None]], list[str]]:
         """The entries hz can check, as (kind, name, value), and a problem for each it can't."""
         found: list[tuple[RecommendationKind, str, str | None]] = []
-        problems: list[str] = []
+        problems: list[str] = list(self.unreadable)
         named: tuple[tuple[RecommendationKind, object, Callable[[str], str | None]], ...] = (
             ("plugin", self.plugins, _distribution_problem),
             ("credential", self.credentials, _credential_problem),
