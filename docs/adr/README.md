@@ -44,6 +44,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0037](0037-plugins-bring-playbooks.md) | Plugins bring playbooks: asset types with discovery hints, template contracts and recommended settings | proposed | 2026-10-24 |
 | [0038](0038-drafts-are-approved-in-place.md) | Drafts are approved in place | proposed | 2026-10-24 |
 | [0040](0040-layers-and-playbooks-are-plugins.md) | Layers and playbooks are plugins: a plugin may be a layer with a parent and a site, and layers stack general to specific | proposed | 2026-10-24 |
+| [0041](0041-perfect-onboarding-one-invite-line-joins-a-team.md) | Perfect onboarding: one invite line joins a team, identity is discovered, and joining ends with a first win | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -52,7 +53,10 @@ Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0032](0032-modules-declare-interactive-setup-steps.md) amends [0018](0018-one-administrative-namespace.md) (`hz setup`);
 [0028](0028-integrations-are-capability-adapters.md) amends [0024](0024-people-and-org.md) (the directory is a
 capability); [0038](0038-drafts-are-approved-in-place.md) amends [0010](0010-towards-a-reactive-workflow-engine.md) and
-[0020](0020-daemon-head.md) (approval in place instead of an approval queue; `hz inbox` is a view). ADRs 0021–0024 are
+[0020](0020-daemon-head.md) (approval in place instead of an approval queue; `hz inbox` is a view);
+[0041](0041-perfect-onboarding-one-invite-line-joins-a-team.md) amends [0018](0018-one-administrative-namespace.md)
+(`hz join`) and [0024](0024-people-and-org.md) (the roster hz drafts and the manager approves, matching by login, YAML
+data files). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 
