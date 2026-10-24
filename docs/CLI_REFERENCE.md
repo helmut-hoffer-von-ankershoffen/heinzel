@@ -19,6 +19,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 * `clock`: Show the time in each of the team&#x27;s time...
 * `system`: Inspect, configure, diagnose and update...
+* `workflow`: Workflow contracts: Markdown files that...
 
 ## `hz clock`
 
@@ -803,6 +804,101 @@ $ hz system update [OPTIONS]
 **Options**:
 
 * `--source <str>`: Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz workflow`
+
+Workflow contracts: Markdown files that compile to daemon jobs drafting with an agent.
+
+**Usage**:
+
+```console
+$ hz workflow [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `check`: Check contracts and list every problem...
+* `list`: List the contracts in your and your team&#x27;s...
+* `run`: Render a contract now: fetch its inputs,...
+* `show`: Show a contract as the daemon runs it:...
+
+### `hz workflow check`
+
+Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
+
+**Usage**:
+
+```console
+$ hz workflow check [OPTIONS]
+```
+
+**Options**:
+
+* `--path <path>`: A contract file, or a directory searched for *.prose.md; every contract found if none.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz workflow list`
+
+List the contracts in your and your team&#x27;s workflows directories, with their schedule and problems.
+
+**Usage**:
+
+```console
+$ hz workflow list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz workflow run`
+
+Render a contract now: fetch its inputs, run the agent and save the draft; nothing is published.
+
+**Usage**:
+
+```console
+$ hz workflow run [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
+
+**Options**:
+
+* `--dry-run / --no-dry-run`: Only fetch the inputs and show the packet; run no agent.  [default: no-dry-run]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz workflow show`
+
+Show a contract as the daemon runs it: schedule, requirements, adapters, inputs and publishes.
+
+**Usage**:
+
+```console
+$ hz workflow show [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

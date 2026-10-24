@@ -31,6 +31,7 @@ dependencies = [
     "pluggy>=1.6.0,<2",
     "pydantic>=2.12.0,<3",
     "pydantic-settings>=2.11.0,<3",
+    "pyyaml>=6.0.2,<7",
     "rich>=14.2.0",
     "tomlkit>=0.13",
     "typer>=0.23.0",
@@ -55,11 +56,11 @@ test = [
     "heinzel-clock>=0.1.0", # the workspace member; the release process bumps the bound
     "coverage>=7.12",
     "httpx>=0.28",
+    "jsonschema>=4.26",
     "prek>=0.2",
     "pytest>=9.0.3,<10",
     "pytest-timeout>=2.4.0,<3",
     "pytest-xdist>=3.8",
-    "pyyaml>=6.0.2",
 ]
 dev = [
     { include-group = "test" },
@@ -75,6 +76,7 @@ dev = [
     "ruff>=0.14.8,<1",
     "shellcheck-py>=0.10",
     "types-croniter>=6.2.4",
+    "types-pyyaml>=6.0.12",
     "typos>=1.51",
     "zizmor>=1.31",
 ]
@@ -214,7 +216,7 @@ allowed_prefixes = ["Merge", "Revert", "Pull request", "fixup!", "squash!", "ame
 
 [tool.commitizen.customize]
 schema = "<type>(<scope>)!: <summary of at most 72 characters>\n\n<body: why>\n\n<footers>"
-schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|plugin|template|ci|docs|adr|agents|dx|security|release|deps)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
+schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|workflow|plugin|template|ci|docs|adr|agents|dx|security|release|deps)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
 example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
@@ -374,7 +376,7 @@ name = "Modules use only the kernel's public API, like plugins"
 type = "forbidden"
 source_modules = ["heinzel.modules"]
 forbidden_modules = [
-    "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation",
+    "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation", "heinzel.kernel._jobs",
     "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings",
     "heinzel.kernel._protocols", "heinzel.kernel._spec",
 ]

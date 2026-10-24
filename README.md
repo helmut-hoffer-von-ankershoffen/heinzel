@@ -126,9 +126,17 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.doctor`](docs/MODULES.md#systemdoctor) — Check that Heinzelmännchen and its modules are healthy.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, list and scaffold plugins.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
+- [`workflow`](docs/MODULES.md#workflow) — Workflow contracts: Markdown files that compile to daemon jobs drafting with an agent.
 <!-- modules:end -->
 
 Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add their own modules.
+
+Workflows are Markdown files, not code: a `<name>.prose.md` contract in your workflows directory (or your team's
+state repository) names the capabilities it reads, the inputs to fetch and the agent's limits, and its body says what
+the draft must achieve. `hz workflow check` lists every problem by file and line, `hz workflow run <name> --dry-run`
+shows what the agent would get, and the daemon runs contracts with a schedule. Drafts are saved locally; nothing is
+published by itself. Format and decisions: [ADR 0021](docs/adr/0021-workflow-contracts.md), schema:
+[docs/schemas/contract-frontmatter-1.json](docs/schemas/contract-frontmatter-1.json).
 
 ## Configure
 

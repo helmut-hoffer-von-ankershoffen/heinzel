@@ -54,74 +54,97 @@ typed to read. What is the file format of a workflow?
 
 Chosen option (proposed): **a workflow is a `<name>.prose.md` file with YAML frontmatter, hz keys under `hz:`, and
 an OpenProse-compatible Markdown body**, because the kernel gets typed data without a model while the intent stays
-readable prose.
+readable prose. Each point says what 0.2 builds and what comes later.
 
-1. **File.** A workflow is `<name>.prose.md`: YAML 1.2 frontmatter between `---` lines, then a Markdown body.
-   `name` equals the file stem. Parsing uses a YAML 1.2 core-schema loader; duplicate and non-string keys are
-   errors.
-2. **Frontmatter.**
-   - The top level is OpenProse-compatible: `name` (slug, `NAME_PATTERN`, ≤64), `kind: responsibility`, optional
-     `id` (minted, Crockford base32), optional `version` (semver) and `description` (≤1024). `x-*` keys are
-     ignored.
-   - Every hz key is nested under `hz:`: `schema` (integer), `title`, `owner`, `maintainers`,
-     `scope: personal|team`, `tags`, `schedule`, `freshness`, `on`, `inputs`, `outputs`, `publishes`, `agent`,
-     `tools`, `timeout`, `retries`, `concurrency`, `catch_up`, `cost`, `idempotency`, `overrides`.
-   - Keys that exist on `JobLet` (ADR 0020) carry the same names and meaning.
-3. **Body.**
-   - Required: `### Goal` (one sentence describing a state), `### Maintains` (one item per output; `####` facets
-     with Material and Immaterial notes) and `### Done when` (postconditions).
-   - Optional: `### Requires` (one item per input), `### Continuity`, `### Steps`, `### Invariants`, `### Tools`,
-     `### Description`.
-   - Retired OpenProse sections (`### Criteria`, …) and `### Execution` are rejected.
-4. **One source of truth per fact.**
-   - The frontmatter is authoritative for the kernel.
-   - Validation fails when frontmatter inputs, outputs or facets disagree with the backticked items and `####`
-     headings in the body.
-5. **Models and schema.**
-   - Pydantic models (`ContractFrontmatter`, `Hz`, `Input`, `Output`, `Publish`) are the source of truth.
-   - The JSON Schema is generated and committed as `docs/schemas/contract-frontmatter-<n>.json`, and a test fails
-     on drift.
-   - Validation errors carry file, line, column, field path, a stable `HZC` code and a hint, and come as JSON with
-     `--json`.
-   - `hz.schema` versions the format. Pure migration functions upgrade older files before validation, and
-     `hz workflow migrate` rewrites them (by pull request for team files).
-6. **Compilation.**
-   - A new `ContractLet(name, origin, path, text, contract, source_fingerprint, contract_fingerprint)` is compiled
-     at boot, without a model, into one `JobLet` whose `func` runs one bounded agent session with read-only tools.
-   - Its inputs are compiled into shared `WatchLet` instances keyed by canonical source.
-   - `JobLet` gains `fingerprint` (the contract fingerprint for contracts, `code_version` for Python jobs),
-     `freshness` and `cost`.
-7. **The graph.**
-   - Edges come only from explicit `contract:<namespace>/<name>#<facet>` inputs. There is no semantic matching.
-   - Downstream contracts see published truth unless they declare `stage: draft`.
-   - The graph must be acyclic: cycles are reported and the affected contracts disabled.
-   - Team contracts cannot depend on personal ones.
-8. **Fingerprints.** All are SHA-256 over RFC 8785 canonical JSON of normalized text.
-   - `contract_fingerprint` covers intent only: kind, inputs, outputs, the publish actions and targets, tools, and
-     one hash per behavior-bearing section. It is computed from the migrated model with defaults filled in.
-   - It excludes identity, display, scheduling, agent hints, limits, policy references, `### Continuity` and
-     comments.
-   - `source_fingerprint` covers the exact canonical text and pins embedded workflows.
-   - The memo key is `(contract_fingerprint, input facet fingerprints, freshness_epoch)`. `schedule` only wakes a
-     job; `freshness` advances the epoch.
-9. **Approvals.**
-   - Every `publishes` entry names a write `OperationLet` and needs approval.
-   - `auto_approve` names a policy but grants nothing. It takes effect only if the owned policy in the state
-     repository matches.
-   - It is ignored for the first proposal after an intent change, and for corrections to something already
-     published.
-10. **Locations.**
-    - Contracts live in modules and plugins (namespace = module name), in the team state repository's
-      `workflows/` (`team`), in project `.heinzel/workflows/` (`project`), in the user config directory (`me`),
-      or embedded and registered (`doc`).
-    - Qualified names are `<namespace>:<name>`. A bare name resolves `team` > `project` > `me` > module.
-    - Replacing a contract requires an explicit `hz.overrides`. Nothing local overrides a `team` contract, and
-      local layers allow only `scope: personal`.
-11. **Embedding.** The canonical text is the file text. A leading fenced `yaml` block is accepted in place of
-    `---`, and headings are matched relative to the shallowest level. Both forms are converted to the canonical
-    form before fingerprinting.
-12. **Operations.** A `workflow` module provides `hz workflow list | show | validate | new | graph | fingerprint |
-    run --dry-run | migrate | export --prose`.
+1. **File and parser.** A workflow is `<name>.prose.md`: YAML frontmatter between `---` lines, then a Markdown body;
+   `name` equals the file stem (`HZC010`).
+   - 0.2: PyYAML reads it, with a loader that keeps only YAML 1.2 core scalars, so `on`, `yes`, dates and `1:20` stay
+     strings, and numbers with a leading zero stay strings too. Duplicate and non-string keys, anchors and aliases,
+     explicit tags other than the core scalar ones, nesting deeper than 32, more than 10,000 values and files over
+     256 KiB are refused before anything is built, and so is a file holding control characters other than tab and line
+     feed (`HZC005`): escape sequences in a title or a diagnostic would reach whoever reads it on a terminal. Any
+     failure is that file's diagnostic and never stops the others or the daemon.
+   - Later: a rewriting operation (`migrate`, `validate --fix`) needs a writer that keeps comments and layout, such as
+     ruamel.yaml's round trip; reading doesn't.
+2. **Frontmatter.** The top level is OpenProse-compatible: `name` (lowercase words joined by single dashes, ≤64; a
+   subset of the kernel's job names), `kind: responsibility`, `description` (≤1024), optional `id` and `version`;
+   `x-*` keys are ignored. Every hz key is under `hz:`; keys that exist on `JobLet` keep its names.
+   - 0.2: `schema: 1`, `title`, `scope` (`personal`), `schedule` (five cron fields or a shortcut such as `@daily`;
+     none means by hand only), `requires`, `inputs`, `outputs` (exactly one), `publishes`, `agent` (`tools`,
+     `max_usd`), `timeout` (the agent session, ≤2h, default 10m), `retries` (0 to 3) and `catch_up` (`latest` or
+     `skip`).
+   - Later, refused until then with `HZC023` (all such keys reported at once): `owner`, `maintainers`, `tags`,
+     `freshness`, `on`, `tools`, `concurrency`, `cost`, `idempotency`, `overrides`, `scope: team`, `catch_up: all`,
+     output `target` and facets, input `source`/`query`/`facets`/`stage`/`required`, publish `auto_approve` and
+     `target`. Agent `runner`, `model`, `effort` and `max_turns` are refused for good: the runner and model are
+     configuration ([ADR 0029](0029-agent-runners-are-capability-adapters.md)).
+3. **Requirements and inputs name capabilities, never vendors** ([ADR 0028](0028-integrations-are-capability-adapters.md)).
+   - 0.2: `requires` lists `<capability>:read`; `agent-runner:read` is implied; a contract never pins an adapter and
+     never writes. An input is `{read: <capability>.<method>, args, window}`, checked against the protocol method's
+     signature; its window ends when the run starts.
+   - Later: windows end at the schedule slot, with memo keys (8).
+4. **Body.** Required: `### Goal`, `### Maintains` and `### Done when` (with items); `### Requires` when there are
+   inputs. Optional: `### Continuity`, `### Steps`, `### Invariants`, `### Description`. Retired OpenProse sections and
+   `### Execution` are rejected (`HZC106`); unknown sections are warnings (`HZC105`). HTML comments are authors' notes,
+   never shown to the agent.
+   - 0.2: backticked items must match the keys of `hz.inputs` and `hz.outputs` (`HZC103`); `### Tools` is "not
+     yet" (`HZC023`) while `hz.tools` is deferred.
+   - Later: `####` facets with Material and Immaterial notes checked against output facets.
+5. **Models and schema.** Pydantic models with described fields are the source of truth; the JSON Schema is
+   generated as `docs/schemas/contract-frontmatter-<n>.json`, `make check` fails on drift, and a test validates the
+   example against it. Diagnostics carry file, line, key, a stable `HZC` code and a hint, also as JSON.
+   - Later: migration functions for `hz.schema` 2 and `hz workflow migrate`.
+6. **Compilation.** Contracts are data, so there is no `ContractLet`. The `workflow` module is the single compiler
+   of every contract source (files now; plugin-shipped and embedded contracts later are discovered by it too). It
+   provides the kernel's `CompiledJobs` service; the kernel calls its factory afresh whenever jobs are listed, and the
+   daemon runs them beside the declared `JobLet`s as `workflow:<namespace>-<name>`, so `me:x` and `team:x` are two
+   jobs. Each job acts as a `Requester` of kind `job` of that module, built from the contract, and gets handles
+   through `Kernel.handle_for`, which serves only the compiling module's jobs, read only and without adapter pins;
+   compiled jobs appear in the capability matrix. A failing compiler is reported and the declared jobs still run.
+   - 0.2: one bounded agent session per run, inputs pre-fetched, no hz tools.
+   - Later: inputs compiled into shared `WatchLet` instances; `JobLet` gains `fingerprint`, `freshness` and `cost`.
+7. **The graph** (later). Edges come only from explicit `contract:<namespace>/<name>#<facet>` inputs, never semantic
+   matching; downstream contracts see published truth unless they declare `stage: draft`; cycles are reported and
+   disable the contracts on them; team contracts can't depend on personal ones.
+8. **Fingerprints** (later). All are SHA-256 over RFC 8785 canonical JSON of normalized text. `contract_fingerprint`
+   covers intent only (kind, inputs, outputs, publish actions and targets, tools, one hash per behavior-bearing
+   section), computed from the migrated model with defaults filled in; it excludes identity, display, scheduling,
+   agent hints, limits, policy references, `### Continuity` and comments. `source_fingerprint` covers the exact
+   canonical text and pins embedded workflows. The memo key is `(contract_fingerprint, input facet fingerprints,
+   freshness_epoch)`.
+   - 0.2: each input's data is hashed in the render's record; the whole file's SHA-256 pins team contracts (10).
+9. **Approvals and cost.** Every `publishes` entry names a publish operation (`read_only=False`, `HZC013` otherwise),
+   which declares `write` itself; the contract never does.
+   - 0.2: nothing is published; drafts are saved locally and wait for `hz inbox`. Every run is capped by
+     `[workflow] max_usd` (user scope, default 1.0 USD) and the contract's own `agent.max_usd`, whichever is lower; a
+     scheduled slot splits that cap evenly across its attempts (`1 + retries`), so the slot never spends more.
+   - Later: approvals in the state repository; `auto_approve` names a policy but grants nothing, and is ignored after an
+     intent change and for corrections.
+10. **Locations and trust.** Qualified names are `<namespace>:<name>`; a bare name that exists in two namespaces is an
+    error that asks for the prefix, in every head.
+    - 0.2: `me` is `[workflow] user_dir` (default `<config dir>/workflows`), `team` is `workflows/` in a checkout of
+      the team's state repository (`[workflow] team_repository`). A project `hz.toml` can't set `user_dir`,
+      `team_repository`, `schedule_team` or `max_usd`, and doctor names the keys it tried: a repository someone else
+      controls must not decide which prompts your daemon runs or what they cost. A contract is data: it gets read
+      handles for what it declared through the adapters configuration binds. Symbolic links are skipped. Team contracts
+      run by hand, and on your daemon only when `[workflow] schedule_team` names them, optionally pinned as
+      `name@sha256:<hex>`; a pinned contract whose file changed doesn't run, and doctor says so.
+    - Later: project contracts in `.hz/workflows/` (`project`, personal scope only), module and plugin contracts
+      (namespace = module), embedded registered contracts (`doc`), `hz.overrides`, and team scope with leases.
+11. **Embedding** (later). The canonical text is the file text. A leading fenced `yaml` block is accepted in place of
+    `---`, and headings are matched relative to the shallowest level. Both forms are converted to the canonical form
+    before fingerprinting; this must be one function with ADR 0022's `canonical-v1`.
+12. **Operations.**
+    - 0.2: `hz workflow list`, `show <name>` (schedule, daemon job or why there is none, requirements with their
+      adapters, inputs, outputs, publishes, limits, the SHA-256 to approve, diagnostics), `check [--path]` (exits with 1
+      on errors, for a team's CI; a path must be inside your workflows directory, the team repository or the current
+      directory, because every head exposes `check`) and `run <name> [--dry-run]` (CLI and MCP only: a render spends
+      money, and a web page can reach a local REST server, [ADR 0019](0019-mcp-and-rest-heads.md)). What `check` accepts
+      compiles: the schedule is checked with the kernel's own cron shape check, and a contract the kernel would refuse
+      as a job is invalid in `check` too; compiling one contract never stops the others. A manual run saves the draft and a
+      `.record.json` but no ledger receipt and says so; receipted runs go through the daemon
+      (`hz system daemon tick --job workflow:<namespace>-<name>`).
+    - Later: `new`, `graph`, `fingerprint`, `migrate`, `export --prose`.
 
 ### Consequences
 
@@ -134,39 +157,59 @@ readable prose.
 - Neutral: the body stays readable as an OpenProse responsibility. The frontmatter is an extension under one key,
   so ADR 0010's "subset of OpenProse" now holds for the body only. An exporter folds `### Done when` back into
   Maintains postconditions for OpenProse tooling.
-- Bad: body and frontmatter can disagree, so validation must check both. `hz workflow validate --fix` and
-  agent-drafted pull requests keep the cost low.
-- Bad: new work:
-  - `ContractLet`, the parser (ruamel.yaml, markdown-it-py), the models and the generated schema;
-  - the compiler to `JobLet` and `WatchLet`;
-  - graph checks and the fingerprint functions, with golden tests;
-  - the `workflow` module, the `HZC` diagnostics and a `HealthLet` for invalid contracts.
+- Bad: body and frontmatter can disagree, so validation must check both. `hz workflow check`, and later a fixer
+  and agent-drafted pull requests, keep the cost low.
+- Bad: new work: the parser, the models and the generated schema, the compiler to `CompiledJobs`, the `HZC`
+  diagnostics and a health check (0.2); the compiler to `WatchLet`, graph checks and the fingerprint functions with
+  golden tests (later).
 - Neutral: Material and Immaterial notes are honored by the render in v1. A deterministic canonicalizer from those
   notes is follow-up work.
 
 ### Confirmation
 
-Not yet: proposed. When implemented: the drift test for the committed JSON Schema, golden tests for fingerprints,
-and `hz workflow validate` in CI.
+Partly, for the points marked 0.2 (see Status under More Information): the strict YAML loader and its limits (an
+alias bomb and 5,000-deep nesting finish fast), the frontmatter schema, the body checks and the `HZC` diagnostics with
+their lines (`tests/unit/modules/workflow_contracts_test.py`); discovery, one name in two namespaces, publish and tool
+checks, compilation into daemon jobs, the cost cap and its split, pinned team contracts, the packet with inputs
+fetched through capability handles and its size caps, drafts and their records, and the health check, with test-only
+adapters and a fake agent runner (`tests/unit/modules/workflow_service_test.py`); the committed JSON Schema against
+the example and the filled model (`tests/unit/modules/workflow_schema_test.py`, and `make check` for drift);
+`hz workflow` through the CLI and REST heads, a receipted daemon run, one bad schedule leaving the other jobs and
+matrix rows intact while `check` fails, compiled jobs in the capability matrix, and a hostile project `hz.toml` that
+can't point discovery at its own contracts or raise the cap (`tests/integration/workflow_test.py`); contract names,
+titles, error messages and doctor text shown as written, never as Rich markup and never with control characters
+(`tests/integration/cli_plain_text_test.py`, `tests/unit/heads/cli_render_test.py`); `run` not reachable over REST
+(`tests/integration/rest_security_test.py`); the daemon running compiled jobs and surviving a failing compiler
+(`tests/unit/modules/daemon_service_test.py`); the kernel's `handle_for` serving only the compiler's read-only jobs
+(`tests/unit/kernel/bindings_test.py`). No test runs a real agent. Still planned: golden tests for fingerprints,
+the contract graph, and `hz workflow check` in a team repository's CI template.
 
 ## More Information
 
-- Amends [ADR 0010](0010-towards-a-reactive-workflow-engine.md) (contract format) and refines the `ContractLet` of
-  [ADR 0020](0020-daemon-head.md).
-- Research, schema and examples: [docs/research/workflow-contracts.md](../research/workflow-contracts.md).
-- Disagreements with the other proposals, to settle before any of them is accepted:
-  - **Data file format.** This ADR chooses YAML for frontmatter; [ADR 0023](0023-inventory.md) declares inventory
-    files in YAML but leaves that open until this ADR settles; [ADR 0024](0024-people-and-org.md) declares people
-    files in TOML, citing [ADR 0012](0012-layered-configuration.md), which covers configuration, not data files.
-  - **Two canonicalization rules.** §11 here and `canonical-v1` in [ADR 0022](0022-embedded-workflows.md) both define
-    the canonical text that `source_fingerprint` and the embedded pin hash; they must be one function.
-  - **People selectors.** `owner` and `maintainers` here have no selector grammar yet; ADR 0024 defers its selector
-    grammar to this ADR.
-  - **Naming.** The project directory `.heinzel/workflows/` departs from [ADR 0016](0016-name-heinzelmaennchen.md),
-    under which what users type or see uses `hz` (`hz.toml`, config directory `hz`).
-  - **Runner enum.** `hz.agent.runner` as a fixed enum conflicts with [ADR 0029](0029-agent-runners-are-capability-adapters.md),
-    under which the runner is configuration; and `inputs`, `outputs` and `publishes` should name capabilities, not
-    vendors ([ADR 0028](0028-integrations-are-capability-adapters.md)).
-  - **Tools.** `hz.tools` lets a render call hz operations and MCP servers; [ADR 0029](0029-agent-runners-are-capability-adapters.md)
-    gives runners a tool profile in the runner's own naming. Decided for 0.2 (option a): render packets pre-fetch
-    inputs through capability handles and the agent gets no hz tools; `hz.tools` is deferred.
+- Amends [ADR 0010](0010-towards-a-reactive-workflow-engine.md) (contract format) and replaces the `ContractLet` of
+  [ADR 0020](0020-daemon-head.md) with `CompiledJobs`.
+- Research, schema and examples: [docs/research/workflow-contracts.md](../research/workflow-contracts.md); the example
+  contract the tests use: `tests/fixtures/workflows/weekly-digest.prose.md`.
+- **Status.** Proposed. 0.2 builds the points marked 0.2 above in the `workflow` module (director's decisions,
+  2026-10-24, and on review of the pull request, 2026-10-24); fingerprints, memo keys, the graph, watches, team scope,
+  approvals, migration and embedding are not built.
+- **Interim lineage.** A manual run's `.record.json` (the packet, each input's hash and the agent's report) is interim
+  lineage, not a receipt: it isn't hash-chained, and nothing lists or verifies it. Daemon runs get the chained receipt
+  with the same content. When the `Ledger` protocol moves into the kernel (0.3), manual runs write receipts too and the
+  record folds into them. Until then a manual run has no receipt, and `hz workflow run` says so.
+- **Why PyYAML.** It was already locked and audited (MIT) and has typed stubs; with a core-schema resolver and the
+  limits above it reads frontmatter safely. ruamel.yaml stays the candidate for a comment-preserving writer.
+- **Open questions.**
+  - **Two canonicalization rules.** §11 here and `canonical-v1` in [ADR 0022](0022-embedded-workflows.md) must be one
+    function; nothing depends on either yet.
+  - **People selectors.** `owner` and `maintainers` wait for [ADR 0024](0024-people-and-org.md)'s selector grammar.
+  - **Data file format for other proposals.** Settled here for contracts (YAML). Recommendation for
+    [ADR 0023](0023-inventory.md) and ADR 0024: data files people write are YAML, configuration stays TOML
+    ([ADR 0012](0012-layered-configuration.md)).
+  - **Manual contracts in the matrix.** Only scheduled contracts are compiled jobs, so only they appear in
+    `hz system capability`; `hz workflow show` reports the requirements of the others.
+- **Settled disagreements** with the other proposals: the project directory is `.hz/workflows/`
+  ([ADR 0016](0016-name-heinzelmaennchen.md)); the runner is configuration, not an enum
+  ([ADR 0029](0029-agent-runners-are-capability-adapters.md)); inputs and publishes name capabilities and operations,
+  not vendors ([ADR 0028](0028-integrations-are-capability-adapters.md)); tools: render packets pre-fetch inputs and
+  the agent gets no hz tools (option a), `hz.tools` later.

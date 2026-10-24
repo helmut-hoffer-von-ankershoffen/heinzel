@@ -25,6 +25,7 @@ from heinzel import __version__
 from heinzel.heads._exposure import collapses
 from heinzel.heads.cli._command import command
 from heinzel.heads.cli._progress import ConsoleProgress
+from heinzel.heads.cli._render import message
 from heinzel.heads.cli._serve import serve_group
 from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Progress, ReleaseCache, boot
 
@@ -111,7 +112,7 @@ def main() -> None:
     try:
         kernel = boot()
     except (HeinzelError, ValidationError) as exc:
-        err_console.print(f"[red]Configuration error:[/red] {exc}")
+        err_console.print(message("Configuration error:", str(exc)))
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
     build(kernel)()

@@ -4,7 +4,7 @@ The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets
 """
 
 from heinzel.kernel._agents import AgentResult, AgentRunner, Budget, RunStatus, TokenUsage, ToolProfile
-from heinzel.kernel._bindings import CapabilityView
+from heinzel.kernel._bindings import CapabilityView, Requester
 from heinzel.kernel._boot import boot
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, Capability, Mode, Requirement
 from heinzel.kernel._config import (
@@ -29,6 +29,7 @@ from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discov
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation, requirement_from_receipt
+from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._lets import (
     CatchUp,
@@ -44,6 +45,7 @@ from heinzel.kernel._lets import (
     ServiceLet,
     SettingsLet,
     Status,
+    schedule_problem,
 )
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
@@ -77,6 +79,7 @@ __all__ = [
     "CatchUp",
     "Check",
     "CodeHost",
+    "CompiledJobs",
     "Config",
     "ConfigFile",
     "CredentialBackend",
@@ -104,6 +107,7 @@ __all__ = [
     "ProviderLet",
     "PullRequest",
     "ReleaseCache",
+    "Requester",
     "Requirement",
     "RequirementLet",
     "RunStatus",
@@ -122,6 +126,7 @@ __all__ = [
     "environment_variable",
     "parse_duration",
     "requirement_from_receipt",
+    "schedule_problem",
     "subprocess_environment",
     "user_config_dir",
     "walk",

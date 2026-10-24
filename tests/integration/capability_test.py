@@ -82,7 +82,7 @@ def test_capability_parameters_are_injected_not_exposed(kernel):
 
 def test_a_read_declaration_reads_through_the_bound_adapter_in_every_head(kernel):
     assert hz(kernel, "digest", "title") == (0, "Weekly")
-    assert TestClient(api.build(kernel)).get("/digest/title").json() == "Weekly"
+    assert TestClient(api.build(kernel), base_url="http://localhost").get("/digest/title").json() == "Weekly"
 
     async def scenario() -> object:
         async with Client(mcp.build(kernel)) as client:
@@ -95,7 +95,7 @@ def test_a_write_with_a_read_declaration_fails_in_every_head(kernel):
     code, output = hz(kernel, "digest", "overwrite")
     assert code != 0
     assert "digest overwrite can't call documents.replace_section, which needs write" in str(output)
-    response = TestClient(api.build(kernel)).get("/digest/overwrite")
+    response = TestClient(api.build(kernel), base_url="http://localhost").get("/digest/overwrite")
     assert response.status_code >= 400
     assert "needs write" in response.text
 

@@ -33,11 +33,11 @@ test = [
     "heinzel @ git+https://github.com/[[ heinzel_owner ]]/heinzel@v[[ heinzel_version ]]",
     "coverage>=7.12",
     "httpx>=0.28",
+    "jsonschema>=4.26",
     "prek>=0.2",
     "pytest>=9.0.3,<10",
     "pytest-timeout>=2.4.0,<3",
     "pytest-xdist>=3.8",
-    "pyyaml>=6.0.2",
 ]
 dev = [
     { include-group = "test" },
@@ -50,6 +50,7 @@ dev = [
     "pyright>=1.1.408",
     "ruff>=0.14.8,<1",
     "shellcheck-py>=0.10",
+    "types-pyyaml>=6.0.12",
     "typos>=1.51",
     "zizmor>=1.31",
 ]

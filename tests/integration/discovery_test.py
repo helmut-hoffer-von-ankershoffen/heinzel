@@ -24,6 +24,7 @@ def test_discovers_builtin_modules_and_submodules():
         "system.doctor",
         "system.plugin",
         "system.runner",
+        "workflow",
     ]
     assert all(r.origin.builtin for r in records)
     assert errors == {}

@@ -4,6 +4,7 @@ import json
 from typing import Any, cast
 
 from rich.console import Group, RenderableType
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -19,7 +20,7 @@ def render_modules(modules: list[ModuleInfo]) -> RenderableType:
     for info in modules:
         lets = "\n".join(f"{kind}: {', '.join(names)}" for kind, names in info.lets.items())
         distribution = "built-in" if info.builtin else f"{info.distribution} {info.version}"
-        table.add_row(info.qualname, info.summary, distribution, lets)
+        table.add_row(Text(info.qualname), Text(info.summary), Text(distribution), Text(lets))
     return table
 
 
@@ -32,10 +33,10 @@ def render_info(info: SystemInfo) -> RenderableType:
     overview.add_row("Python", f"{info.python_version} ({info.python_executable})")
     overview.add_row("Platform", info.platform)
     for key, value in info.settings.items():
-        overview.add_row(f"HZ_{key.upper()}", json.dumps(value) if not isinstance(value, str) else value)
+        overview.add_row(f"HZ_{key.upper()}", Text(json.dumps(value) if not isinstance(value, str) else value))
     parts: list[RenderableType] = [Panel(overview, title="Heinzelmännchen", expand=False), render_modules(info.modules)]
     parts.extend(
-        Panel(f"[red]{error}[/red]", title=f"Plugin failed to load: {name}", expand=False)
+        Panel(Text(error, style="red"), title=escape(f"Plugin failed to load: {name}"), expand=False)
         for name, error in info.plugin_errors.items()
     )
     for qualname, section in info.sections.items():
@@ -44,7 +45,7 @@ def render_info(info: SystemInfo) -> RenderableType:
         table.add_column(overflow="fold")
         rows = cast("dict[str, Any]", section) if isinstance(section, dict) else {"value": section}
         for key, value in rows.items():
-            table.add_row(str(key), value if isinstance(value, str) else json.dumps(value))
+            table.add_row(Text(str(key)), Text(value if isinstance(value, str) else json.dumps(value)))
         parts.append(Panel(table, title=qualname, expand=False))
     return Group(*parts)
 

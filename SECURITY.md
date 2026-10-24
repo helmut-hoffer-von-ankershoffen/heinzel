@@ -25,7 +25,10 @@ Only the latest release receives security fixes while the project is on 0.x.
   GitHub token if you configured one), and when a plugin you installed calls a service. `hz --version` and
   `hz system info` only read what `hz system release` cached.
 - `hz system serve mcp|api` listens on `127.0.0.1` unless you pass another `--host`; the servers have no
-  authentication, so don't expose them to a network you don't trust.
+  authentication, so don't expose them to a network you don't trust. The REST server answers only requests to
+  `localhost`, `127.0.0.1` or `[::1]` on its port (or names you list in `[hz] api_allowed_hosts`) and refuses
+  requests another site made, so a web page can't call it; `hz workflow run` and `hz system daemon tick` aren't
+  REST endpoints at all.
 - External commands (uv, git, copier) run without a shell, from argument lists, with timeouts.
 - **The daemon runs jobs unattended.** Once you run `hz system daemon install`, launchd or systemd start
   `hz system daemon tick` every few minutes, at login too, and it runs the jobs your modules and plugins declare,
@@ -55,6 +58,9 @@ Only the latest release receives security fixes while the project is on 0.x.
 | | Credentials modules need live in the OS keychain behind one injected service, never in plaintext files; values never appear in output, logs or results, and the environment fallback is a doctor warning (ADR 0030) | `heinzel.Credentials`, `hz system credential`, `tests/integration/credential_test.py` |
 | | Confidential names (employers, customers, internal projects) are blocked in files, commit messages, branch names and pull request titles, against a private list kept outside the repository | `scripts/check_confidentiality.py`, hooks, CI, Publish |
 | Background jobs | Installed only from the CLI; jobs run with your rights, each with a timeout, and are listed, paused and removed with `hz system daemon jobs`, `pause` and `uninstall`; receipts, state and logs are private files written atomically; the configuration a project's `hz.toml` sets can't move them (ADR 0020) | `hz system daemon`, `tests/unit/modules/daemon_service_test.py` |
+| Local servers | The REST head refuses requests whose Host isn't a loopback name on its port (DNS rebinding) and requests from another origin, with `403`; operations that spend money or act unattended aren't REST endpoints (ADR 0019) | `heinzel.heads.api`, `tests/integration/rest_security_test.py` |
+| Terminal output | The CLI prints values from configuration, plugins and contracts as plain text without control characters, so escape sequences (colours, OSC 8 links, OSC 52 clipboard writes, C1 controls) never reach your terminal; JSON escapes them | `heinzel.heads.cli._render`, `tests/integration/cli_plain_text_test.py` |
+| Workflow contracts | Contract files are data: the parser refuses aliases, tags, deep nesting, control characters and large files; one bad file is only that file's diagnostic; contracts read only what they declare, through adapters configuration binds, with a user-scope cost cap; drafts are published by nobody (ADR 0021) | `hz workflow check`, `tests/unit/modules/workflow_contracts_test.py`, `tests/unit/modules/workflow_service_test.py` |
 | Workflows | Actions pinned to full commit SHAs, read-only token by default, least privilege per job, no persisted credentials, no untrusted input in `run:` | zizmor, actionlint (`make lint`) |
 | | Supply-chain posture tracked | OpenSSF Scorecard |
 | Changes | `main` only changes through squash-merged pull requests with green CI (`CI OK`), linear history, no force pushes or deletions | repository ruleset |

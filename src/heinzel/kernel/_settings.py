@@ -1,7 +1,7 @@
 """Kernel settings: the `[hz]` table of the configuration files and `HZ_*` environment variables."""
 
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 import platformdirs
 from pydantic import Field, field_validator
@@ -55,7 +55,17 @@ class Settings(ModuleSettings):
         "environment, a list in TOML.",
     )
 
-    @field_validator("disabled_modules", mode="before")
+    api_allowed_hosts: Annotated[frozenset[str], NoDecode] = Field(
+        default=frozenset(),
+        description="Host names `hz system serve api` answers besides localhost, 127.0.0.1 and [::1], for when it "
+        "listens on another interface (`--host`); requests naming any other host are refused, so a web page can't "
+        "reach the server through DNS rebinding. Comma-separated in the environment; not settable in a project's "
+        "hz.toml.",
+    )
+
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"api_allowed_hosts"})
+
+    @field_validator("disabled_modules", "api_allowed_hosts", mode="before")
     @classmethod
     def _split_names(cls, value: object) -> object:
         if isinstance(value, str):

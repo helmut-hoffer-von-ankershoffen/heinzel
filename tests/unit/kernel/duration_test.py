@@ -23,3 +23,14 @@ def test_passes_timedeltas_through():
 def test_rejects_anything_else(text):
     with pytest.raises(ValueError, match="positive whole number"):
         parse_duration(text)
+
+
+@pytest.mark.parametrize("value", [10, 1.5, None, True, ["5m"]])
+def test_rejects_values_that_are_not_text_with_a_hint(value):
+    with pytest.raises(ValueError, match="write `10m`"):
+        parse_duration(value)
+
+
+def test_rejects_durations_too_long_for_a_timedelta():
+    with pytest.raises(ValueError, match="too long; write something like `10m`"):
+        parse_duration("99999999999999d")

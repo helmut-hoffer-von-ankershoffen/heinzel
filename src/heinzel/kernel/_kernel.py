@@ -22,6 +22,7 @@ from heinzel.kernel._capabilities import CAPABILITIES, capability_of
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import Installation
+from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._lets import (
     HealthLet,
     InfoLet,
@@ -119,6 +120,8 @@ class Kernel:
             Progress: Progress(),
         }
         self._factories: dict[type[Any], Callable[..., Any]] = {Installation: Installation}
+        self._providers: dict[type[Any], str] = {}
+        """The module providing each service type, by qualified name."""
         # Built-ins first, so a plugin providing a type a built-in provides is the one skipped and reported, whatever
         # its name sorts as.
         for record, service in sorted(self.lets(ServiceLet), key=_builtins_first):
@@ -132,7 +135,13 @@ class Kernel:
             k for k in self.config.section(CAPABILITIES_SECTION) if _field(k) not in CapabilitySettings.model_fields
         ]
         self._capabilities = Capabilities(
-            self._adapters(), requesters, owners, self.capability_settings, self.call, unknown_keys=sorted(unknown)
+            self._adapters(),
+            requesters,
+            owners,
+            self.capability_settings,
+            self.call,
+            unknown_keys=sorted(unknown),
+            compiled=self._compiled_requesters,
         )
         # Modules get a view that reports; handles come only through declarations and injection (ADR 0028).
         self._instances[CapabilityView] = self._capabilities.view
@@ -189,6 +198,63 @@ class Kernel:
                 raise HeinzelError(msg)
             self._instances[kind] = self.call(self._factories[kind])
         return cast("T", self._instances[kind])
+
+    def handle_for(self, requester: Requester, capability: str) -> object:
+        """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.
+
+        The seam for jobs compiled from data, such as workflow contracts (ADR 0021): the compiler builds a
+        `Requester` from what the contract declares and asks here, getting only the read modes it declared and the
+        bound adapter serves. Writes come with approvals (`hz inbox`, ADR 0020), so a publishing requester is refused.
+
+        Raises:
+            HeinzelError: If the capability is unknown; the requester isn't a job of the enabled module providing
+                `CompiledJobs`, publishes or pins an adapter; it didn't declare the capability; or no adapter serves it.
+        """
+        spec = CAPABILITIES.get(capability)
+        if spec is None:
+            msg = f"Unknown capability {capability!r}; known: {', '.join(sorted(CAPABILITIES))}"
+            raise HeinzelError(msg)
+        compiler = self._providers.get(CompiledJobs)
+        if requester.kind != "job" or compiler is None or requester.module != compiler:
+            msg = (
+                f"{requester.label} can't get handles on another's behalf: only jobs of the module that compiles "
+                f"jobs ({compiler or 'none enabled'}) can."
+            )
+            raise HeinzelError(msg)
+        if requester.publishes:
+            msg = (
+                f"{requester.label} publishes; handles for code acting on a requester's behalf are read-only until "
+                f"approvals exist (`hz inbox`, ADR 0020)."
+            )
+            raise HeinzelError(msg)
+        if pins := [str(r) for r in (*requester.requires, *requester.inherited) if r.adapter]:
+            msg = f"{requester.label} pins {', '.join(pins)}: compiled jobs use the adapters configuration binds."
+            raise HeinzelError(msg)
+        return self._capabilities.handle_for(requester, spec)
+
+    def compiled_jobs(self) -> list[tuple[str, JobLet]]:
+        """The jobs compiled from data, each with the module that compiled it; compiled afresh on every call.
+
+        Data such as workflow contracts changes while a process runs (the foreground daemon loop), so nothing is
+        cached; none when no enabled module provides `CompiledJobs`.
+
+        Raises:
+            Exception: Whatever the compiling module's factory raises; callers isolate it.
+        """
+        compiler = self._providers.get(CompiledJobs)
+        if compiler is None:
+            return []
+        compiled = cast("CompiledJobs", self.call(self._factories[CompiledJobs]))
+        return [(compiler, let) for let in compiled.jobs]
+
+    def _compiled_requesters(self) -> list[Requester]:
+        """Requesters of the compiled jobs, for the capability matrix; none while compiling fails."""
+        try:
+            jobs = self.compiled_jobs()
+        except Exception:
+            logger.warning("Compiling jobs failed; the capability matrix leaves them out", exc_info=True)
+            return []
+        return [Requester(module, "job", let.name, let.requires) for module, let in jobs]
 
     def call[R](self, func: Callable[..., R], /, **kwargs: Any) -> R:  # noqa: ANN401 - forwards arbitrary arguments
         """Call `func`, injecting every parameter the kernel provides that the caller didn't pass."""
@@ -273,6 +339,7 @@ class Kernel:
             self.errors[record.qualname] = f"Service skipped: {problem}"
             return
         self._factories[kind] = factory
+        self._providers[kind] = record.qualname
 
     def _adapters(self) -> list[Adapter]:
         """Every adapter whose class serves its declared modes; two built-ins under one name are a bug.

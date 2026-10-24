@@ -76,7 +76,8 @@ def _write(stream: IO[bytes], data: bytes) -> None:
 
 
 def _signal_group(pid: int, signum: signal.Signals) -> None:
-    with contextlib.suppress(ProcessLookupError):  # the whole group is gone already
+    # The group may be gone already; macOS reports EPERM instead of ESRCH when only zombies are left in it.
+    with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(pid, signum)
 
 

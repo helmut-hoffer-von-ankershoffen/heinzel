@@ -4,9 +4,11 @@
 - docs/CLI_REFERENCE.md: Typer's own `utils docs` output for the CLI built from the built-in modules.
 - docs/CONFIGURATION.md: every setting of the kernel and the built-in modules, with environment variable and default.
 - README.md: the module list between `<!-- modules:start -->` and `<!-- modules:end -->`.
+- docs/schemas/contract-frontmatter-1.json: the JSON Schema of workflow contract frontmatter (ADR 0021).
 """
 
 import importlib
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +20,7 @@ from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
 from heinzel.kernel import Origin, discover, env_prefix, walk
 from heinzel.modules.system.plugin._service import FIRST_PARTY
+from heinzel.modules.workflow._models import SCHEMA_VERSION, Frontmatter
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -136,6 +139,17 @@ def readme_with_module_list(readme: str) -> str:
     return readme[:start] + "\n" + "\n".join(items) + "\n" + readme[end:]
 
 
+def contract_schema() -> str:
+    """The JSON Schema of contract frontmatter, generated from the pydantic models that validate it."""
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": f"urn:heinzel:contract-frontmatter:{SCHEMA_VERSION}",
+        **Frontmatter.model_json_schema(by_alias=True),
+    }
+    schema["patternProperties"] = {"^x-": {"description": "Extension keys, ignored."}}
+    return json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
+
+
 def main() -> int:
     """Write the references, or with --check only compare them."""
     outputs = {
@@ -143,6 +157,7 @@ def main() -> int:
         DOCS / "CLI_REFERENCE.md": cli_reference(),
         DOCS / "CONFIGURATION.md": configuration_reference(),
         README: readme_with_module_list(README.read_text(encoding="utf-8")),
+        DOCS / "schemas" / f"contract-frontmatter-{SCHEMA_VERSION}.json": contract_schema(),
     }
     stale = [path for path, content in outputs.items() if not path.exists() or path.read_text("utf-8") != content]
     if "--check" in sys.argv:
@@ -151,6 +166,7 @@ def main() -> int:
             return 1
         return 0
     for path in stale:
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(outputs[path], encoding="utf-8")
     return 0
 

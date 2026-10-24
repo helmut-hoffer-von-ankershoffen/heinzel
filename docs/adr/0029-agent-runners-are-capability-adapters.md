@@ -80,7 +80,10 @@ Claude Code run.
   `any | claude-code | codex | cursor`. Under this ADR the runner is not an enum in the contract format: which
   runner executes a job is configuration, and `hz.agent` keeps hints only (model class, effort, turn limit), with
   `runner` at most an optional hint naming a configured runner. ADR 0021 is proposed and should be aligned before
-  either is accepted.
+  either is accepted. Aligned for 0.2 (director's decision, 2026-10-24): the workflow module maps `hz.agent.tools`,
+  `hz.agent.max_usd` and `hz.timeout` to the `ToolProfile`, `Budget` and timeout of `AgentRunner.run`, and refuses
+  `runner`, `model`, `effort` and `max_turns` until a runner can honour them, since the protocol has no parameter for
+  them and a hint nobody reads would mislead.
 - [ADR 0020](0020-daemon-head.md) receipts gain the runner, model, tool calls and token cost reported by the adapter.
 - Integrations follow the same pattern: [ADR 0028](0028-integrations-are-capability-adapters.md).
 

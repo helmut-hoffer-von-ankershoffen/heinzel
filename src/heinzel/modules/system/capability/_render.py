@@ -2,6 +2,7 @@
 
 from rich.console import Group, RenderableType
 from rich.table import Table
+from rich.text import Text
 
 from heinzel.modules.system.capability._models import CapabilityReport
 
@@ -12,17 +13,23 @@ def render_report(report: CapabilityReport) -> RenderableType:
     for column in ("Capability", "Modes", "Bound to", "Summary"):
         capabilities.add_column(column, overflow="fold")
     for capability in report.capabilities:
-        capabilities.add_row(capability.name, ",".join(capability.modes), capability.bound or "-", capability.summary)
+        capabilities.add_row(
+            capability.name, ",".join(capability.modes), Text(capability.bound or "-"), Text(capability.summary)
+        )
     adapters = Table(title="Adapters")
     for column in ("Adapter", "Capability", "Modes", "Hosts", "Module"):
         adapters.add_column(column, overflow="fold")
     for adapter in report.adapters:
         hosts = ", ".join(adapter.hosts)
-        adapters.add_row(adapter.adapter, adapter.capability, ",".join(adapter.modes), hosts, adapter.module)
+        adapters.add_row(
+            Text(adapter.adapter), adapter.capability, ",".join(adapter.modes), Text(hosts), Text(adapter.module)
+        )
     uses = Table(title="Who reads and writes what")
     for column in ("Requester", "Needs", "Adapter", "Hosts", "Problem"):
         uses.add_column(column, overflow="fold")
     for use in report.uses:
-        problem = f"[yellow]{use.problem}[/yellow]" if use.problem else ""
-        uses.add_row(use.requester, use.requirement, use.adapter or "-", ", ".join(use.hosts), problem)
+        problem = Text(use.problem or "", style="yellow")
+        uses.add_row(
+            Text(use.requester), Text(use.requirement), Text(use.adapter or "-"), Text(", ".join(use.hosts)), problem
+        )
     return Group(capabilities, adapters, uses)

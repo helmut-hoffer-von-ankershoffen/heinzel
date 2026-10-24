@@ -69,7 +69,9 @@ def logs(
     return service.logs(lines)
 
 
-@module.operation(read_only=False, render=render_tick, exit_code=_tick_exit_code)
+# Ticks spend money and act with your rights; REST is reachable from a browser, so the CLI (which launchd and systemd
+# run) and MCP (an agent you started) get it, REST does not.
+@module.operation(read_only=False, render=render_tick, exit_code=_tick_exit_code, heads={"cli", "mcp"})
 def tick(
     service: DaemonService,
     dry_run: Annotated[bool, Field(description="Only show which jobs are due; run nothing.")] = False,

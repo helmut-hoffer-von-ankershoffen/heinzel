@@ -46,3 +46,14 @@ then serves both without extra code.
 (`test_paths_names_and_public_parameters`, `test_heads_restrict_exposure`),
 `tests/unit/kernel/kernel_test.py::test_invoke_validates_arguments_against_their_annotations`; import-linter's
 "Heads only know what the kernel discovered".
+
+## More Information
+
+- **The REST head answers only local, same-origin requests** (2026-10-24, on review of the workflow contracts). It has
+  no authentication, and a web page in the user's browser can reach `127.0.0.1` too, directly or through DNS
+  rebinding. So it refuses with `403` and a message saying why any request whose Host isn't `localhost`,
+  `127.0.0.1` or `[::1]` on the port it listens on, unless the user lists the name in `[hz] api_allowed_hosts` (user
+  scope only, for serving on another interface; on port 80 or 443 a Host without a port counts), and any request
+  carrying an Origin that isn't its own, or, without an Origin, `Sec-Fetch-Site: cross-site` or `same-site`. Operations
+  that spend money or act unattended are not REST endpoints at all: `hz workflow run` and `hz system daemon tick`
+  declare `heads={"cli", "mcp"}` (launchd and systemd run the CLI). Tests: `tests/integration/rest_security_test.py`.

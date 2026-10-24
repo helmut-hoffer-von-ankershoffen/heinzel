@@ -65,6 +65,7 @@ from heinzel.modules.system.daemon._units import (
 if TYPE_CHECKING:
     import threading
 
+logger = logging.getLogger(__name__)
 DEFAULT_INTERVAL = 5
 """Minutes between ticks unless `install --interval` says otherwise."""
 STALE_TICKS = 3
@@ -130,6 +131,8 @@ class DaemonService:
         self._which = which
         self._time_limit = time_limit
         self._abandoned: dict[str, threading.Thread] = {}
+        self.compile_error: str | None = None
+        """Why compiling jobs failed the last time they were listed; None when it worked."""
         self.unit_dir = daemon.unit_dir
         self.receipts_dir = settings.data_dir / "receipts"
         self.state_dir = settings.state_dir / "daemon"
@@ -255,6 +258,16 @@ class DaemonService:
         if status.paused:
             checks.append(
                 Check(name="paused", status=Status.DEGRADED, detail="ticks are paused", fix="hz system daemon resume")
+            )
+        self._jobs()
+        if self.compile_error is not None:
+            checks.append(
+                Check(
+                    name="compiled jobs",
+                    status=Status.DEGRADED,
+                    detail=f"compiling jobs failed, so only declared jobs run: {self.compile_error}",
+                    fix="See `hz system daemon logs`; `hz workflow check` lists problems in contracts",
+                )
             )
         if status.failing:
             checks.append(
@@ -489,9 +502,18 @@ class DaemonService:
     # Helpers ---------------------------------------------------------------------------------------------------------
 
     def _jobs(self) -> list[Job]:
+        declared = [(record.qualname, let) for record, let in self._kernel.lets(JobLet)]
+        # Jobs compiled from data, such as workflow contracts (ADR 0021), compiled afresh on every call.
+        self.compile_error = None
+        try:
+            compiled = self._kernel.compiled_jobs()
+        except Exception as exc:
+            self.compile_error = describe(exc)
+            logger.exception("compiling jobs failed; running the declared jobs only")
+            compiled = []
         return [
-            Job(id=f"{record.qualname}:{let.name}", let=let)
-            for record, let in self._kernel.lets(JobLet)
+            Job(id=f"{module}:{let.name}", let=let)
+            for module, let in (*declared, *compiled)
             if self._kernel.available(let.func)
         ]
 
