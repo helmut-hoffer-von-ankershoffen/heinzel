@@ -213,7 +213,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
         title={t("sound.options")}
         className={cn(
           "flex items-center justify-center rounded-md text-icon hover:bg-accent/70",
-          compact ? "h-3 w-7" : "-ml-1 h-9 w-4",
+          compact ? "h-6 w-7" : "-ml-1 h-9 w-6",
         )}
       >
         <ChevronUp aria-hidden className="size-3" />
