@@ -8,8 +8,9 @@ import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { SchemaValue } from "./SchemaValue";
 import { controlFor, type JsonSchema, toToml } from "./settingSchema";
+import { inWords } from "./settingsSections";
 
-const label = (key: string) => (key.charAt(0).toUpperCase() + key.slice(1)).replaceAll("_", " ");
+const label = inWords;
 
 type SwitchProps = { id?: string; labelledBy?: string; on: boolean; disabled: boolean; onToggle: () => void };
 
