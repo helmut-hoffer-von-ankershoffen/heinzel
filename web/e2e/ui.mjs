@@ -55,6 +55,19 @@ try {
 
   await page.goto(url);
   await page.getByRole("heading", { name: "Today" }).waitFor(); // Home is the chat, with Today on top (ADR 0045)
+  // The setup wizard, as Set up hz in the account menu opens it (it opens by itself only while hz lacks your role).
+  const wizard = page.getByRole("dialog", { name: "Set up hz" });
+  await page.goto(`${base}/?onboarding=`);
+  await wizard.waitFor();
+  for (let step = 1; step <= 7; step++) {
+    await wizard.getByText(`Step ${step} of 7`).waitFor();
+    await page.waitForFunction(() => !document.body.textContent?.includes("Loading…"));
+    await audit(`onboarding-${step}`);
+    if (step < 7) await wizard.getByRole("button", { name: "Next" }).click();
+    await page.mouse.move(0, 0); // audit the resting state, not the button under the pointer
+  }
+  await page.keyboard.press("Escape");
+  await wizard.waitFor({ state: "detached" });
   // Doctor is hz itself, not work: it is in the account menu, not the navigation.
   await page.getByRole("button", { name: /Mira/ }).click();
   await page.getByRole("menuitem", { name: "Check this machine" }).click();
