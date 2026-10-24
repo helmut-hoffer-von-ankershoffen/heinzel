@@ -4,7 +4,7 @@ A playbook names the **asset types** a team keeps (a weekly report, a team track
 (**discovery hints**: capability reads the person can already make, narrowed by a title pattern), **template
 contracts** that keep those assets true, and **recommended configuration**. It is data: the kernel checks its shape
 and collects it; the module that owns contracts (the built-in `workflow`) evaluates the hints, offers the templates
-(`hz workflow new --template`) and applies a recommended setting only when the person accepts it (`hz <module> setup`,
+(`hz workflow new --template`) and applies a recommended setting only when the person accepts it (`hz setup <module>`,
 `hz setup`). Nothing in a playbook runs by itself: hints only read, a template can't carry an active schedule, and
 defaults are proposals limited to capability bindings and the module's own settings.
 """
@@ -280,7 +280,7 @@ class PlaybookSetup:
     """Runs a playbook's setup step: a service of the module that owns contracts (the built-in `workflow`).
 
     `Module.playbook` declares a setup step (ADR 0032) for its module that asks for this service by type, so
-    `hz <module> setup` and `hz setup` walk through the playbook only when such a module is enabled.
+    `hz setup <module>` and `hz setup` walk through the playbook only when such a module is enabled.
     """
 
     def run(self, playbook: PlaybookLet, prompter: Prompter, editor: ConfigEditor) -> None:

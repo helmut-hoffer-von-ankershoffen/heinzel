@@ -243,21 +243,16 @@ def test_setup_needs_a_docstring_and_is_one_per_module():
         module.setup(step)
 
 
-def test_a_setup_step_and_an_operation_named_setup_exclude_each_other():
+def test_a_setup_step_leaves_the_operation_names_free():
+    """The step runs as `hz setup <module>`, never as a command of the module, so `setup` is an ordinary name."""
+
     def setup() -> None:
         """Set up."""
 
-    def other() -> None:
-        """Another operation."""
-
-    with_step, with_operation = Module("a", "x"), Module("b", "x")
-    with_step.setup(setup)
-    with_step.operation(other)
-    with pytest.raises(ValueError, match="both a setup step and an operation named 'setup'"):
-        with_step.operation(setup)
-    with_operation.operation(setup)
-    with pytest.raises(ValueError, match="both a setup step and an operation named 'setup'"):
-        with_operation.setup(other)
+    module = Module("a", "x")
+    module.setup(setup)
+    module.operation(setup)
+    assert [type(let).__name__ for let in module.lets] == ["SetupLet", "OperationLet"]
 
 
 def test_a_function_cannot_pin_another_adapter_than_its_module():
