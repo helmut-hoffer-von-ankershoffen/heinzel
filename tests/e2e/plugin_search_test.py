@@ -20,7 +20,7 @@ def test_plugin_search_queries_github():
     assert result.returncode == 0, result.stderr
     found = json.loads(result.stdout)
     first_party = [p["name"] for p in found["plugins"] if p["source"] == "first-party"]
-    assert first_party == ["heinzel-atlassian", "heinzel-clock", "heinzel-github"]
+    assert first_party == ["heinzel-atlassian", "heinzel-clock", "heinzel-github", "heinzel-google"]
     assert [p["name"] for p in found["plugins"][: len(first_party)]] == first_party  # listed first
     # GitHub may rate-limit unauthenticated callers; then the search degrades to a warning instead of failing.
     assert all(warning.startswith("GitHub could not be searched") for warning in found["warnings"])
