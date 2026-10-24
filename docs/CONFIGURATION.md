@@ -146,6 +146,12 @@ Plugins add their own tables.
 | `command_env` | `HZ_SYSTEM_RUNNER__COMMAND_ENV` | platform-specific | Environment variables passed to the command besides PATH, HOME, LANG, LC_* and TMPDIR, e.g. the variable that holds its own login; HZ_CREDENTIAL_* variables are never passed. |
 | `ask_max_usd` | `HZ_SYSTEM_RUNNER__ASK_MAX_USD` | `0.25` | Most one answer of `hz system runner ask` (the web app's chat) may cost in US dollars. |
 
+## `[system.theme]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `name` | `HZ_SYSTEM_THEME__NAME` | `'default'` | The theme of the web app, one `hz system theme list` shows, e.g. `acme`; `default` is built in. |
+
 ## `[team]`
 
 | Key | Environment variable | Default | Description |

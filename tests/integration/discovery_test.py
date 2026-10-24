@@ -29,6 +29,7 @@ def test_discovers_builtin_modules_and_submodules():
         "system.notify",
         "system.plugin",
         "system.runner",
+        "system.theme",
         "team",
         "workflow",
     ]
@@ -75,4 +76,5 @@ def test_kernel_boots_from_discovery(settings):
         "system.notify",
         "system.plugin",
         "system.runner",
+        "system.theme",
     ]

@@ -571,6 +571,7 @@ def test_commands_are_sorted(app):
         "release",
         "runner",
         "serve",
+        "theme",
         "update",
     ]
     assert system.list_commands(None) == expected

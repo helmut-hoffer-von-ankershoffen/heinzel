@@ -298,6 +298,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `release`: (expert) Ask where Heinzelmännchen was...
 * `runner`: (expert) Run bounded agent sessions with...
 * `serve`: (expert) Serve every operation to coding...
+* `theme`: (expert) Pick how the web app looks: the...
 * `update`: Update Heinzelmännchen, keeping plugins;...
 
 ### `hz system agent`
@@ -1256,6 +1257,61 @@ $ hz system serve mcp [OPTIONS]
 * `--transport <stdio|streamable-http>`: stdio for agents that start hz; streamable-http to share.  [default: stdio]
 * `--host <str>`: Interface for streamable-http.  [default: 127.0.0.1]
 * `--port <int>`: Port for streamable-http.  [default: 8765]
+* `--help`: Show this message and exit.
+
+### `hz system theme`
+
+(expert) Pick how the web app looks: the built-in theme or one a plugin offers.
+
+**Usage**:
+
+```console
+$ hz system theme [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `list`: (expert) List the themes of the web app,...
+* `use`: (expert) Use a theme in the web app:...
+
+#### `hz system theme list`
+
+(expert) List the themes of the web app, with every colour, font and size, and which one is in effect.
+
+**Usage**:
+
+```console
+$ hz system theme list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system theme use`
+
+(expert) Use a theme in the web app: writes ` name` to your configuration file.
+
+**Usage**:
+
+```console
+$ hz system theme use [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The theme to use, one `hz system theme list` shows, e.g. `default`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
 ### `hz system update`
