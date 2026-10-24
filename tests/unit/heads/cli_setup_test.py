@@ -84,7 +84,9 @@ def builtin_module() -> Module:
 
 def kernel_of(config: Config | None = None, **modules: tuple[Module, Origin]) -> Kernel:
     records = [ModuleRecord(qualname=name, module=module, origin=origin) for name, (module, origin) in modules.items()]
-    kernel = Kernel(records=[*discover(plugins=False)[0], *records], config=config or Config.empty())
+    # The built-in org step asks who you are first in every run; these tests are about the runner, so it is left out.
+    builtins = [record for record in discover(plugins=False)[0] if record.qualname != "org"]
+    kernel = Kernel(records=[*builtins, *records], config=config or Config.empty())
     kernel.bind(Credentials, Credentials(MemoryBackend(), [(r.qualname, let) for r, let in _credential_lets(kernel)]))
     return kernel
 

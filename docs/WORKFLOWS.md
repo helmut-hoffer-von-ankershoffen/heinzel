@@ -51,6 +51,10 @@ checks and dry-runs on a fresh installation, where only the agent runner is boun
 the schedule are commented examples to uncomment as you go. A name must be lowercase words joined by dashes; the
 error for anything else shows the name that works.
 
+To start from a complete contract instead, use a plugin's **playbook**: `hz workflow playbooks` lists the template
+contracts installed plugins offer, and `hz workflow new <name> --template <plugin>:<template>` writes one. The
+walkthrough, with a weekly report as the example: [Playbooks: your first contract from a plugin](PLAYBOOKS.md).
+
 Edit it in any editor, then:
 
 ```bash
@@ -122,6 +126,18 @@ link. Receipts the daemon wrote before this change, with 0.2.0, hold the draft's
 since that would break their chain. To drop them, move that job's receipts out of `<data dir>/receipts/`, which starts
 its chain again ([ADR 0020](adr/0020-daemon-head.md)).
 
+### Measure whether it pays off
+
+```bash
+hz workflow sent weekly-digest --file ~/sent/digest.md --edit-minutes 5   # how much of the newest draft you changed
+hz workflow sent weekly-digest --ref <document>        # or the approved version where it lives, through `documents`
+hz workflow show weekly-digest                         # the success test: drafting time, share changed
+```
+
+`sent` compares what you finally sent with the draft and saves the share of words changed, both word counts and the
+sent text's hash next to the draft; the sent text isn't copied. `show` lists each draft's drafting time, cost and
+change. It stays local and is about the draft, never about people.
+
 ### Contribute a contract to your team's repository
 
 ```bash
@@ -159,6 +175,7 @@ A pinned contract whose file changed doesn't run, and `hz system doctor` says so
 | `HZC013` | A `publishes` operation is read-only, so it can't publish |
 | `HZC023` | A key or section ADR 0021 names that this version doesn't build yet |
 | `HZC024` | A tool the bound runner doesn't accept as read-only (warning) |
+| `HZC025` | A playbook's `{{asset:<type>}}` placeholder is left in an input's arguments; name your asset there |
 | `HZC101`, `HZC107` | `### Goal` or `### Done when` missing or empty |
 | `HZC103` | The items under `### Requires` or `### Maintains` don't match `hz.inputs` or `hz.outputs` |
 | `HZC105` | An unknown section (warning: the agent sees it as part of the contract) |

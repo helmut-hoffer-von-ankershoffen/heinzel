@@ -20,6 +20,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `atlassian`: Read Jira issues and Confluence pages: the...
 * `clock`: Show the time in each of the team&#x27;s time...
 * `github`: Read pull requests and issues from GitHub:...
+* `org`: Your profile, and the team, org and...
 * `setup`: Set up every module that has a setup step,...
 * `system`: Inspect, configure, diagnose and update...
 * `workflow`: Workflow contracts: Markdown files an...
@@ -119,6 +120,55 @@ Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the GitHub 
 
 ```console
 $ hz github info [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz org`
+
+Your profile, and the team, org and company you work with.
+
+**Usage**:
+
+```console
+$ hz org [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `setup`: Tell hz who you are; what your gh and gws...
+* `show`: Show your profile: who you are, your role,...
+
+### `hz org setup`
+
+Tell hz who you are; what your gh and gws logins and this machine say is found, the rest is asked once.
+
+**Usage**:
+
+```console
+$ hz org setup [OPTIONS]
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+### `hz org show`
+
+Show your profile: who you are, your role, time zone and working hours, and what is still missing.
+
+**Usage**:
+
+```console
+$ hz org show [OPTIONS]
 ```
 
 **Options**:
@@ -928,11 +978,14 @@ $ hz workflow [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `check`: Check contracts and list every problem...
+* `discover`: Find candidates for each playbook&#x27;s asset...
 * `drafts`: List the drafts runs saved locally, newest...
 * `list`: List the contracts in your and your team&#x27;s...
-* `new`: Write a starter contract, valid as written...
+* `new`: Write a starter contract, or a playbook&#x27;s...
+* `playbooks`: List the playbooks plugins contribute:...
 * `prune`: Delete drafts and records older than...
 * `run`: Render a contract now: fetch its inputs,...
+* `sent`: Record how much of a draft you changed...
 * `show`: Show a contract as the daemon runs it:...
 
 ### `hz workflow check`
@@ -948,6 +1001,23 @@ $ hz workflow check [OPTIONS]
 **Options**:
 
 * `--path <path>`: A contract file, or a directory searched for *.prose.md; every contract found if none.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz workflow discover`
+
+Find candidates for each playbook&#x27;s asset types through the capabilities you have bound; reads only.
+
+**Usage**:
+
+```console
+$ hz workflow discover [OPTIONS]
+```
+
+**Options**:
+
+* `--playbook <str>`: Only this module&#x27;s playbook; every playbook&#x27;s if omitted.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -988,7 +1058,7 @@ $ hz workflow list [OPTIONS]
 
 ### `hz workflow new`
 
-Write a starter contract, valid as written and commented, into your workflows directory; creates it.
+Write a starter contract, or a playbook&#x27;s template (--template), into your workflows directory.
 
 **Usage**:
 
@@ -1003,6 +1073,24 @@ $ hz workflow new [OPTIONS] {name}
 **Options**:
 
 * `--team / --no-team`: Write it into the team repository&#x27;s workflows/ instead of your own directory.  [default: no-team]
+* `--template <str>`: Start from a playbook&#x27;s template contract, `&lt;module&gt;:&lt;name&gt;` (`hz workflow playbooks` lists them), instead of the blank starter.
+* `--asset <str>`: Fill a template&#x27;s asset placeholder as type=reference, e.g. weekly-report=doc-123 (`hz workflow discover` finds candidates); repeat for each.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz workflow playbooks`
+
+List the playbooks plugins contribute: asset types, template contracts and recommended settings.
+
+**Usage**:
+
+```console
+$ hz workflow playbooks [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -1041,6 +1129,30 @@ $ hz workflow run [OPTIONS] {name}
 **Options**:
 
 * `--dry-run / --no-dry-run`: Only fetch the inputs and show the packet; run no agent.  [default: no-dry-run]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz workflow sent`
+
+Record how much of a draft you changed before sending it; `hz workflow show` reports it.
+
+**Usage**:
+
+```console
+$ hz workflow sent [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
+
+**Options**:
+
+* `--file <path>`: What you finally sent, saved as a text or Markdown file; or give --ref.
+* `--ref <str>`: The document the approved version lives in, read through the documents capability.
+* `--draft <path>`: The draft it was edited from; the contract&#x27;s newest draft if omitted.
+* `--edit-minutes <float>`: Your own estimate of the minutes you spent editing; optional.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
