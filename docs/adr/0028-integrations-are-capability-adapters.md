@@ -61,7 +61,9 @@ integration becomes a configuration change.
     for a privacy notice ([ADR 0024](0024-people-and-org.md)).
   - Calling a capability or mode that wasn't declared fails, at runtime and in a test.
 - **First adapters, planned for 0.2**: GitHub (code host, tracker), Atlassian (tracker, documents), Google Workspace
-  (documents, spreadsheets, calendar, mail) and Zoom (meetings and transcripts).
+  (documents, calendar; spreadsheets and mail later), Zoom (meetings and transcripts) and Slack (chat). All five are
+  first-party plugins in `packages/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md)): maintainer's
+  decision, 2026-10-24.
 
 ### Consequences
 
@@ -75,9 +77,13 @@ integration becomes a configuration change.
 ### Confirmation
 
 Partly, for the part built in 0.2 (see the implementation status under More Information): a requester can't use a
-capability or mode it didn't declare, through every head (`tests/unit/kernel/bindings_test.py`,
-`tests/integration/capability_test.py`); requirement strings and the registry stay in step with the protocols
-(`tests/unit/kernel/capabilities_test.py`); declarations are checked when a module is imported
+capability or mode it didn't declare, through every head, for documents and for chat
+(`tests/unit/kernel/bindings_test.py`, `tests/integration/capability_test.py`, with test-only chat, meetings and
+calendar adapters that correlate an event with its meeting); requirement strings and the registry stay in step with
+the protocols, read methods stay nameable by contracts, and people stay names and emails
+(`tests/unit/kernel/capabilities_test.py`); contract inputs name the new methods
+(`tests/unit/modules/workflow_contracts_test.py`); `clean_text` (`tests/unit/kernel/text_test.py`) and
+`assert_adapter` (`tests/unit/testing_test.py`); declarations are checked when a module is imported
 (`tests/unit/kernel/module_test.py`); a hostile project `hz.toml` can neither bind nor configure execution, and
 doctor names the keys it tried (`tests/integration/capability_test.py`); doctor reports every unmet requirement and
 unknown binding; the import-linter contract "The core imports no vendor client or agent SDK" (`pyproject.toml`).
@@ -97,17 +103,55 @@ request (director's decisions, 2026-10-24):
 
 - **Protocols** (`heinzel.kernel._protocols`, public in `heinzel`): only what the first workflows need. `CodeHost`
   (`merged_pull_requests` in a `Window`), `Tracker` (`issues_updated`), `Documents` (`read`; `replace_section` as the
-  only write). Issues belong to `tracker` alone, also when they live on the code host: a GitHub adapter provides both
+  only write), and, for the Slack, Zoom and Google Workspace adapters (below), `Chat`, `Meetings` and `Calendar`.
+  Issues belong to `tracker` alone, also when they live on the code host: a GitHub adapter provides both
   capabilities. Results are pydantic models with described fields. No separate protocol version number: the protocols
   are public API and follow the core's SemVer ([ADR 0026](0026-plugin-api-versioned-with-semver.md)), which rejected
   a second API level number for the same reason.
 - **Growing a protocol.** Adding a method in a mode a capability already has breaks every adapter serving that mode,
   so it goes through ADR 0026's deprecation cycle; adding a method in a new mode is additive, because adapters declare
-  the modes they serve and are only required to implement those modes' methods.
+  the modes they serve and are only required to implement those modes' methods. Adding a capability is additive too:
+  no adapter serves it yet and no requester names it, so the core adds one whenever a first-party adapter needs it,
+  in a minor release.
 - **Each method has a mode** in the capability registry (`CAPABILITIES`); a unit test keeps the registry and the
-  protocols in step. Capability names in requirements and bindings are `agent-runner`, `code-host`, `tracker` and
-  `documents`; the set is closed in 0.2 (plugins cannot add capabilities yet). An adapter must implement the methods
-  of the modes it declares, checked when the kernel registers an adapter class and when it builds one from a factory.
+  protocols in step. Capability names in requirements and bindings are `agent-runner`, `calendar`, `chat`,
+  `code-host`, `documents`, `meetings` and `tracker`; the core defines the set (plugins cannot add capabilities yet)
+  and grows it under the growth rule above. An adapter must implement the methods of the modes it declares, checked
+  when the kernel registers an adapter class and when it builds one from a factory; `heinzel.testing.assert_adapter`
+  runs the same check, plus the parameter names, in a plugin's own tests (a first piece of the shared adapter suite).
+- **Chat, meetings and calendar** (director's decisions on the maintainer's instruction to start the Google Workspace,
+  Zoom and Slack adapters, 2026-10-24). They serve the first management workflows: a weekly digest and 1:1
+  preparation from channels and threads, meeting transcripts, and the calendar that says which meetings happened and
+  are coming. Every method is designed for a contract input (`{read: <capability>.<method>, args, window}`,
+  [ADR 0021](0021-workflow-contracts.md)): read methods take only required `str` arguments and at most one `Window`,
+  so a contract can name them with fixed `args`; a unit test keeps it so.
+  - `chat` (Slack first; Teams later): `channel(name)`, `messages(channel, window)` (thread replies included, because
+    a contract can't fetch each thread afterwards), `thread(channel, message)` (the message and its replies), all
+    `read`; `post(channel, text, thread=None)` is the only `write`, reachable from publish operations alone. Channel
+    arguments take an id or a `#name`; the adapter resolves names. Message ids are the vendor's (a Slack `ts`).
+  - `meetings` (Zoom first; Meet and Teams later): `ended(window)` lists the user's meetings that ended in the window
+    with their participants; `transcript(meeting)` returns speaker-attributed segments and the same words as plain
+    text. Both `read`; nothing schedules or records.
+  - `calendar` (Google Calendar first; Outlook later): `events(window)`, the user's events overlapping the window
+    with organizer, attendees and status, `read` only. `Event.conference_id` and `Meeting.conference_id` carry the
+    vendor's conference identifier (a Zoom meeting number), so a workflow correlates the event with the meeting that
+    took place. Contract windows end at the run in 0.2, so "meetings coming up" waits for ADR 0021's later window
+    semantics; the method is not limited to the past.
+  - **People** appear as `Participant`: display name and email only, how the vendor shows them; no field counts,
+    rates or ranks anyone ([ADR 0024](0024-people-and-org.md)). The email is the join key ADR 0024's directory and
+    selectors will resolve to; a transcript segment names its speaker as the transcript labels them.
+  - **Text is data.** Every string an adapter returns passes `heinzel.clean_text` (the one helper, moved into the
+    kernel from the Atlassian adapter): C0 controls but tab and newline, DEL, C1, and bidirectional overrides and
+    isolates are removed, so a channel post or a transcript can't hide or reorder what a terminal or an agent's
+    prompt shows. The kernel doesn't clean results itself: an adapter knows which strings it builds; the planned
+    contract-test suite will check it, and review does until then.
+  - **Documents and Google Docs.** `Documents.read(ref)` and `replace_section(ref, marker, text)` fit Google Docs as
+    they fit Confluence: the adapter exports the document as text and locates the marker in the document's body for
+    the write. A `search(query, window)` read is not added: no 0.2 workflow needs it, and adding a read method later
+    goes through the deprecation cycle above, so it waits for a workflow that does.
+  - **Mail is deferred.** No 0.2 workflow reads mail: newsletters are outputs, not inputs, and a Gmail read scope is
+    the most sensitive one a Google adapter could ask for (Google restricts it and requires its own review). A `mail`
+    capability comes with the first workflow that needs it, likely `send` as its first method.
 - **Two new let kinds.** `ProviderLet` (`@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter
   class, named `<adapter>:<capability>`) can't be a `ServiceLet`: several adapters provide the same protocol and
   configuration picks one, while a service type has exactly one provider. `RequirementLet`
