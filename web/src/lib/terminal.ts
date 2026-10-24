@@ -26,6 +26,13 @@ export function runInTerminal(command: string): void {
   window.dispatchEvent(new Event(OPEN_TERMINAL));
 }
 
+/** Type `command` into the terminal, opening it, and never press Enter: the person reads it and decides. */
+export function typeInTerminal(command: string): void {
+  if (sender) sender(command);
+  else pending.push(command);
+  window.dispatchEvent(new Event(OPEN_TERMINAL));
+}
+
 /** The connected terminal's sender, or null when it closes; waiting commands go out on connect. */
 export function connectTerminal(send: Sender | null): void {
   sender = send;

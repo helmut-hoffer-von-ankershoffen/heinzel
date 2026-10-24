@@ -69,13 +69,22 @@ data.
   either `https://` with a valid host, no user information and no whitespace, or an in-app path:
   `/` and dash-separated lowercase segments, with at most one `?name=value` of the same characters; `//`, `\`, `..`
   and control characters never pass. A badge is an integer (0 shows none) or at most 4 characters.
-- **Shapes.** `StatusItem {text, detail: [{text, tone}] (at most 8), tone, icon?, live?, effect?}`, where `live` is
+- **Shapes.** `StatusItem {text, detail: [{text, tone}] (at most 8), tone, icon?, live?, effect?, actions (at most
+  4)}`, the actions shown with the detail, where `live` is
   rendered by the app in the person's locale and ticks: `{kind: "clock", zone}` (the time now in an IANA zone),
   `{kind: "time", at}` (an aware moment as a local time) or `{kind: "until", at}` (relative: "in 12 min"). `Widget`
   is one of `card {title, body, tone, actions (at most 3)}`, `list {title, items: [{text, detail?, tone, effect?}]
   (at most 8)}`, `metric {label, value, delta?, tone}` and `progress {label, done, total, tone}` (`0 <= done <=
   total`, `total >= 1`). The app adds "Ask about it" (it hands the widget's text to the chat, framed as what module
   `<qualname>` shows, never as the person's words) and dismiss to every widget.
+- **Slots.** Each contribution names where it may show and whether it does by default: a status item in `footer`
+  (the status bar) and `sidebar` (the bottom of the navigation, above the account line), `{"footer": true}` unless
+  it says otherwise; an action in `header`; a widget in `today`. The person turns each slot on or off: `hz system ui
+  show|hide <id> [--slot <slot>]` writes `[system.ui.contributions."<id>"] <slot> = true|false` to the user file
+  (`HZ_SYSTEM_UI__CONTRIBUTIONS`), user scope like the theme (`ignored_in_project`); a slot not named keeps its default.
+  Every entry carries `slots`, the effective choice, and `hz system ui list` lists them without running anything, so
+  the app's Settings shows "Show in footer", "Show in sidebar", … on the page of every module that contributes, with
+  no code per plugin.
 - **Effects**, exactly one per action, at most one per status item or list entry: `navigate {path}` (an in-app path),
   `open {url}` (an https link, opened with `noopener noreferrer`), `operation {operation, arguments}` (an operation
   of the same module with scalar arguments) and `command {command}` (`hz` followed by plain words or single-quoted
@@ -99,12 +108,18 @@ data.
   agent's proposals, while here the person clicked a fixed, checked button.
 - **The web app** fetches each list once for the first paint, then each entry by `--item` at its own `refresh`, so a
   slow or failing one neither delays nor breaks the others. Built-in parts (version, refresh, terminal, chat,
-  notice cards) stay in the app.
+  notice cards) stay in the app. The status bar keeps drawing the clock's zones panel and the agenda itself for now,
+  richer than the shapes (a pinned panel, translated text); it follows those two items' footer choice, renders the
+  generic item everywhere else (the sidebar), and leaves both ids out of its generic row.
 - **First users.** The clock plugin's status item shows the live time in the first of `clock.zones` (the person's
   primary zone) with the other zones and whether they are at work as detail lines; its header action opens `hz clock`
   in the terminal with the number of zones at work as the badge; its widget is the metric "At work now 2/3". `org`
-  shows the meeting now or next as a status item, with the join link as its effect. `hz clock` and `hz org agenda`
-  stay as they are.
+  shows the meeting now or next as a status item, with the join link as its effect. `system.daemon` shows whether the
+  daemon runs (ok, with its next tick), is paused (warn), is not installed, or fails, isn't loaded or stopped ticking
+  (bad), with its jobs, last tick and failing jobs as detail, and buttons: Install and Uninstall open the terminal
+  with the command for the person to run (installing stays a CLI act, ADR 0020), Pause and Resume are confirmed
+  calls, Logs runs `hz system daemon logs`; other platforms say unsupported. The clock shows in the footer by default
+  and in the sidebar once the person turns it on. `hz clock` and `hz org agenda` stay as they are.
 - **Public API**, additive ([ADR 0026](0026-plugin-api-versioned-with-semver.md)): the shapes, effects, `Tone`,
   `Icon`, the three lets and decorators in `heinzel`; `operation_path`, the path every head gives an operation, in
   `heinzel.kernel`.
@@ -137,4 +152,6 @@ data.
 
 - Requested by the maintainer, 2026-10-24: status-bar items, then header buttons, then Today widgets, each "by
   implementing some new let".
-- Extension, not decided: a `[system.ui] hidden` user setting to hide contributions; translations of contributed text.
+- Extension, not decided: a `page` slot (a navigation entry with a screen composed of the same widget shapes),
+  translations of contributed text, and the status bar drawing the clock and the agenda generically once the shapes
+  carry what their panels show.
