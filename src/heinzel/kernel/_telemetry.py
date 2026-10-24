@@ -40,11 +40,11 @@ _SECRETS = re.compile(
 _RUN = re.compile(r"[A-Za-z0-9+/_-]{32,}")
 """In free text, a long run of key alphabet mixing cases and digits is a key, not a word (a hex hash is fine)."""
 _SECRET_PARAMETERS = re.compile(r"(?i)token|key|secret|sig|signature|password|passwd|auth|code|credential|session")
-WEBHOOK_HOSTS = re.compile(
-    r"(?i)^(?:hooks\.slack\.com|discord(?:app)?\.com|[a-z0-9-]+\.webhook\.office\.com|outlook\.office\.com"
-    r"|chat\.googleapis\.com|hooks\.zapier\.com)$"
+WEBHOOKS = re.compile(
+    r"(?i)^(?:hooks\.slack\.com/|hooks\.zapier\.com/|[a-z0-9-]+\.webhook\.office\.com/"
+    r"|discord(?:app)?\.com/api/webhooks/|outlook\.office\.com/webhook/|chat\.googleapis\.com/v1/spaces/[^/]+/messages)"
 )
-"""Hosts whose URLs are credentials themselves: whoever has one can post as you."""
+"""Webhook URLs, by host and path: the URL is the credential, whoever has one can post as you."""
 MAX_DESCRIPTION = 280
 MAX_TARGET = 2048
 TARGET_FORMS = (
@@ -79,7 +79,7 @@ def check_target(target: str) -> str:
         return target
     parts = urlsplit(target)
     if parts.scheme == "https" and parts.hostname and "@" not in parts.netloc:
-        if WEBHOOK_HOSTS.fullmatch(parts.hostname):
+        if WEBHOOKS.match(f"{parts.hostname}{parts.path}"):
             msg = f"target {parts.hostname} is a webhook: its URL is a credential; name the channel as chat:<channel>"
             raise ValueError(msg)
         parameters = [*parse_qsl(parts.query, keep_blank_values=True), *parse_qsl(parts.fragment)]

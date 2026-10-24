@@ -35,6 +35,7 @@ def test_an_entry_is_stored_in_utc_with_its_verb_fields():
         "team-payments@acme.example",
         "contract:team/weekly-report#report",
         "chat:#team-payments",
+        "https://discord.com/channels/1/2",  # a channel, not a webhook
     ],
 )
 def test_targets_are_urls_addresses_contract_outputs_or_channels(target):
@@ -51,6 +52,7 @@ def test_targets_are_urls_addresses_contract_outputs_or_channels(target):
         ("https://tracker.acme.example/?access_token=abc", "credential-like parameter"),
         ("https://docs.acme.example/d#access_token=abc", "credential-like parameter"),
         ("https://hooks.slack.com/services/T000/B000/abc", "is a webhook"),
+        ("https://discord.com/api/webhooks/1/abc", "is a webhook"),
         ("http://tracker.acme.example/7", "must be an https URL"),
         ("https://hooks.acme.example/xoxb-1234567890-abcdefghij", "credential"),
         ("https://tracker.acme.example/a b", "one line without spaces"),
