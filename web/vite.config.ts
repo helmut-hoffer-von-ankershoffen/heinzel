@@ -22,12 +22,28 @@ export default defineConfig({
   server: api
     ? {
         proxy: {
+          // Fonts a theme ships (ADR 0044) are served by the web head outside /api, without a token.
+          "/theme-fonts": {
+            target: `http://127.0.0.1:${api}`,
+            changeOrigin: true,
+            headers: { origin: `http://127.0.0.1:${api}` },
+          },
           "/api": {
             target: `http://127.0.0.1:${api}`,
             changeOrigin: true,
+            // The terminal is a WebSocket under /api; Vite rewrites its Origin only with this, like the requests'.
+            ws: true,
+            rewriteWsOrigin: true,
             // The web head refuses another Origin; to the browser, Vite's page and the API are one origin. The proxy
             // rewrites Origin for Vite's own page only, and refuses what another site sends, as the web head would.
             headers: { origin: `http://127.0.0.1:${api}` },
+            // `bypass` doesn't see WebSocket upgrades: refuse another site's before its Origin is rewritten.
+            configure: (proxy) => {
+              proxy.on("proxyReqWs", (_request, incoming, socket) => {
+                const origin = incoming.headers.origin;
+                if (origin !== vite) socket.destroy();
+              });
+            },
             bypass: (request) => {
               const origin = request.headers.origin;
               const site = request.headers["sec-fetch-site"];

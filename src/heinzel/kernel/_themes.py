@@ -426,7 +426,7 @@ def sourced_themes(source: Path | Theme) -> tuple[tuple[Theme, Path | None], ...
 DEFAULT_THEME = Theme(
     name=DEFAULT,
     title="Default",
-    # The web app's own palette (web/src/index.css); accent_foreground and icon follow foreground and muted_foreground.
+    # The web app's own palette (web/src/index.css): neutral greys after a desktop chat app, a clay primary.
     light=ThemeColours(
         background="#ffffff",
         foreground="#1a1a1a",
@@ -434,18 +434,18 @@ DEFAULT_THEME = Theme(
         muted_foreground="#6b6b6b",
         card="#ffffff",
         border="#e4e4e4",
-        primary="#c96442",
+        primary="#b4532f",
         primary_foreground="#ffffff",
         accent="#ebebeb",
-        ok="#2f8a57",
-        warn="#a87412",
-        bad="#c0453a",
-        ring="#c96442",
+        ok="#1f7444",
+        warn="#8a5c00",
+        bad="#b4372d",
+        ring="#b4532f",
         sidebar="#f3f3f3",
         input="#ffffff",
         popover="#ffffff",
         accent_foreground="#1a1a1a",
-        icon="#6b6b6b",
+        icon="#5c5c5c",
     ),
     dark=ThemeColours(
         background="#181818",
@@ -465,7 +465,7 @@ DEFAULT_THEME = Theme(
         input="#303030",
         popover="#2c2c2c",
         accent_foreground="#ececec",
-        icon="#9b9b9b",
+        icon="#b3b3b3",
     ),
     font_sans='ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
     font_mono='ui-monospace, "SF Mono", Menlo, monospace',

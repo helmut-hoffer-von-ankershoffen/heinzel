@@ -264,7 +264,7 @@ def test_the_default_theme_matches_the_app():
     assert (DEFAULT_THEME.icon_size, DEFAULT_THEME.row_height, DEFAULT_THEME.spacing) == ("18px", "36px", "0.25rem")
     assert (DEFAULT_THEME.heading_weight, DEFAULT_THEME.heading_tracking, DEFAULT_THEME.fonts) == (600, "0", ())
     assert (DEFAULT_THEME.dark.background, DEFAULT_THEME.dark.primary) == ("#181818", "#d97757")
-    assert (DEFAULT_THEME.light.background, DEFAULT_THEME.light.primary) == ("#ffffff", "#c96442")
+    assert (DEFAULT_THEME.light.background, DEFAULT_THEME.light.primary) == ("#ffffff", "#b4532f")
 
 
 def test_a_theme_without_the_new_fields_gets_their_defaults(tmp_path):

@@ -1,8 +1,9 @@
 // Building blocks every screen uses: a page header, loading and error states, empty states, copyable commands.
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, Play } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { ApiError } from "@/api/client";
 import { t } from "@/i18n";
+import { runInTerminal, runsAsIs } from "@/lib/terminal";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/card";
 
@@ -18,11 +19,11 @@ export function Page({
   children: ReactNode;
 }) {
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 p-6">
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-8 pt-4 pb-16">
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-semibold">{title}</h1>
-          {intro && <p className="mt-1 text-sm text-muted-foreground">{intro}</p>}
+          <h1 className="sr-only">{title}</h1>
+          {intro && <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{intro}</p>}
         </div>
         {actions}
       </header>
@@ -88,6 +89,16 @@ export function CopyCommand({ command }: { command: string }) {
         <span className="sr-only" aria-live="polite">
           {copied ? t("copy.done") : ""}
         </span>
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5"
+        onClick={() => runInTerminal(command)}
+        aria-label={t("run.aria", { command })}
+        title={runsAsIs(command) ? t("run.label") : t("run.review")}
+      >
+        <Play aria-hidden />
       </Button>
     </span>
   );

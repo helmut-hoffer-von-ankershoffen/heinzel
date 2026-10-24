@@ -1,7 +1,7 @@
 // The routes, and the providers every screen needs.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { createBrowserRouter, type RouteObject, RouterProvider } from "react-router";
+import { createBrowserRouter, Navigate, type RouteObject, RouterProvider, useSearchParams } from "react-router";
 import { ApiError } from "@/api/client";
 import { CopyCommand } from "@/components/common";
 import { t } from "@/i18n";
@@ -13,14 +13,21 @@ import { Home } from "@/pages/Home";
 import { Assets, AssetTypes } from "@/pages/Inventory";
 import { OrgChart, Team } from "@/pages/Organisation";
 import { NotFound, Profile } from "@/pages/Profile";
-import { Settings } from "@/pages/Settings";
+
+/** `/settings?q=…` from older links: Home with the settings dialog open, searching. */
+function SettingsLink() {
+  const [params] = useSearchParams();
+  const q = params.get("q");
+  return <Navigate replace to={`/?settings=${q ? `&q=${encodeURIComponent(q)}` : ""}`} />;
+}
 
 export const routes: RouteObject[] = [
   {
     element: <Shell />,
     children: [
       { index: true, element: <Home /> },
-      { path: "settings", element: <Settings /> },
+      { path: "settings", element: <SettingsLink /> },
+      { path: "notifications", element: <Navigate replace to="/?panel=notifications" /> },
       { path: "contracts", element: <Contracts /> },
       { path: "contracts/:name", element: <Contract /> },
       { path: "org", element: <OrgChart /> },

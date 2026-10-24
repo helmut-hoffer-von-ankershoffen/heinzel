@@ -4,51 +4,46 @@ import { describe, expect, it } from "vitest";
 import { expert, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
-describe("Settings", () => {
-  it("groups every setting by section with its value, default, source and the command that sets it", async () => {
+describe("Settings dialog", () => {
+  it("opens over the screen with a module's settings, each with its control", async () => {
     mockApi(shell);
-    const { container } = renderAt("/settings");
-    const section = (await screen.findByRole("heading", { name: "[hz]" })).closest("section") as HTMLElement;
-    const row = within(section).getByRole("row", { name: /log_level/ });
-    expect(within(row).getByText("INFO")).toBeInTheDocument();
-    expect(within(row).getByText("WARNING")).toBeInTheDocument();
-    expect(within(row).getByText("user")).toBeInTheDocument();
-    expect(within(row).getByText("hz system config set hz.log_level INFO")).toBeInTheDocument();
-    expect(within(row).getByText("hz system config unset hz.log_level")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "[system.runner]" })).toBeInTheDocument();
+    const { container } = renderAt("/?settings=hz");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    expect(await within(dialog).findByLabelText("Log level")).toHaveValue("INFO");
     await expectAccessible(container);
   });
 
   it("switches expert mode with the same operations as the CLI, and the navigation follows", async () => {
     const { calls } = mockApi({ ...shell, "/api/system/expert/on": expert });
     const user = userEvent.setup();
-    const { container } = renderAt("/settings");
+    const { container } = renderAt("/?settings=hz");
     const toggle = await screen.findByRole("switch", { name: "Expert mode" });
     await waitFor(() => expect(toggle).toBeEnabled());
     expect(toggle).toHaveAttribute("aria-checked", "false");
     const navigation = screen.getByRole("navigation", { name: "Main" });
-    expect(within(navigation).queryByRole("link", { name: "Graph" })).not.toBeInTheDocument();
+    expect(within(navigation).queryByRole("link", { name: "Workflow" })).not.toBeInTheDocument();
     await user.click(toggle);
     await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
     expect(calls.some((call) => call.method === "POST" && call.url.endsWith("/api/system/expert/on"))).toBe(true);
-    expect(within(navigation).getByRole("link", { name: "Graph" })).toBeInTheDocument();
-    expect(screen.getByText("hz system expert off")).toBeInTheDocument();
+    expect(within(navigation).getByRole("link", { name: "Workflow" })).toBeInTheDocument();
+    expect(screen.getByText(/^On: the navigation/)).toBeInTheDocument();
     await expectAccessible(container);
   });
 
-  it("filters settings by key or description", async () => {
+  it("searches across every module", async () => {
     mockApi(shell);
     const user = userEvent.setup();
-    renderAt("/settings");
-    await user.type(await screen.findByLabelText("Filter settings"), "role");
-    expect(screen.getByRole("heading", { name: "[org]" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "[hz]" })).not.toBeInTheDocument();
+    renderAt("/?settings=hz");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    await user.type(await within(dialog).findByRole("searchbox"), "ask_max");
+    expect(await within(dialog).findByRole("heading", { name: "[system.runner]" })).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("Log level")).not.toBeInTheDocument();
   });
 
-  it("opens filtered from a search result's link", async () => {
+  it("opens searching from an older /settings?q= link", async () => {
     mockApi(shell);
     renderAt("/settings?q=ask_max_usd");
-    expect(await screen.findByRole("heading", { name: "[system.runner]" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "[org]" })).not.toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    expect(await within(dialog).findByRole("heading", { name: "[system.runner]" })).toBeInTheDocument();
   });
 });

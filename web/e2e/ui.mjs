@@ -30,6 +30,10 @@ try {
     if (message.type() === "error") result.errors.push(message.text());
   });
   page.on("pageerror", (error) => result.errors.push(String(error)));
+  // The console names no URL for a failed request; this does.
+  page.on("response", (response) => {
+    if (response.status() >= 400) result.errors.push(`${response.status()} ${new URL(response.url()).pathname}`);
+  });
 
   async function audit(name) {
     // Through the DevTools protocol, which the page's CSP doesn't govern; the page itself loads nothing extra.
@@ -38,7 +42,13 @@ try {
       type: "tag",
       values: tags,
     });
-    result.violations[name] = found.violations.map((violation) => `${violation.id}: ${violation.help}`);
+    result.violations[name] = found.violations.map(
+      (violation) =>
+        `${violation.id}: ${violation.help} @ ${violation.nodes
+          .map((node) => node.target.join(" "))
+          .slice(0, 3)
+          .join(" | ")}`,
+    );
     await page.screenshot({ path: join(shots, `${name}.png`) });
     result.screens.push(name);
   }
@@ -55,7 +65,7 @@ try {
   for (const [name, path, heading] of [
     ["home", "/", "Today"],
     ["settings", "/settings", "Settings"],
-    ["contracts", "/contracts", "Contract graph"],
+    ["contracts", "/contracts", "Workflow"],
     ["team", "/team", "Team roster"],
     ["asset-types", "/inventory/types", "Asset types"],
   ]) {
@@ -63,7 +73,7 @@ try {
     await page.getByRole("heading", { name: heading, exact: true }).waitFor();
     // Not "networkidle": the notice stream keeps a request open for as long as the app is (ADR 0046). The screen is
     // ready once nothing says it is loading.
-    await page.waitForFunction(() => !document.body.innerText.includes("Loading…"));
+    await page.waitForFunction(() => !document.body.textContent?.includes("Loading…"));
     await audit(name);
   }
 

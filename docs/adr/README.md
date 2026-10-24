@@ -50,6 +50,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0043](0043-desktop-notifications-one-policy-shown-once.md) | Desktop notifications: one policy in the core, shown once, by hz's own macOS app | proposed | 2026-10-24 |
 | [0044](0044-themes-are-data-a-plugin-ships.md) | Themes are data a plugin ships: `module.theme(...)` offers them, `hz system theme use` picks one | proposed | 2026-10-24 |
 | [0045](0045-a-chat-that-acts-through-hz-with-confirmation-in-code.md) | A chat that knows where you are and acts through hz, with every change confirmed in code | proposed | 2026-10-24 |
+| [0048](0048-a-terminal-in-the-web-head.md) | A terminal in the web head | proposed | 2026-10-24 |
 | [0046](0046-an-installable-web-app-with-paired-devices.md) | An installable web app on a fixed port, with paired devices and notifications from its service worker | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
@@ -70,7 +71,8 @@ popping up due notices) and [0039](0039-a-web-head-a-react-app-served-by-the-api
 web endpoints, not REST ones); [0045](0045-a-chat-that-acts-through-hz-with-confirmation-in-code.md) amends
 [0018](0018-one-administrative-namespace.md) (`hz chat`), [0029](0029-agent-runners-are-capability-adapters.md)
 (hz operations as agent tools through the MCP head) and [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md)
-(chat sessions instead of the stateless resend);
+(chat sessions instead of the stateless resend); [0048](0048-a-terminal-in-the-web-head.md) amends
+[0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) (a terminal over a WebSocket; inline styles allowed);
 [0046](0046-an-installable-web-app-with-paired-devices.md) amends
 [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) (a fixed port and paired devices) and
 [0043](0043-desktop-notifications-one-policy-shown-once.md) (notifications in the web app). ADRs 0021–0024 are

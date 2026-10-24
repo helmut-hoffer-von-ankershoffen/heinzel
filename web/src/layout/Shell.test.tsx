@@ -15,20 +15,19 @@ describe("Shell", () => {
   it("has the three landmarks, a skip link and every section in the navigation tree in expert mode", async () => {
     mockApi({ ...answers, "/api/system/expert": expert });
     const { container } = renderAt("/doctor"); // Home is the chat itself, so it has no chat sidebar
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
     const navigation = screen.getByRole("navigation", { name: "Main" });
-    for (const name of ["Graph", "Org chart", "Team roster", "Asset types", "Assets", "Doctor"]) {
+    for (const name of ["Workflow", "Org chart", "Team roster", "Asset types", "Assets", "Doctor"]) {
       expect(await within(navigation).findByRole("link", { name })).toBeInTheDocument();
     }
-    expect(within(navigation).getByRole("link", { name: "Home" })).toBeInTheDocument();
-    expect(within(navigation).getByRole("link", { name: "Settings" })).toBeInTheDocument();
     expect(await within(navigation).findByRole("link", { name: "Weekly digest" })).toHaveAttribute(
       "href",
       "/contracts/me%3Aweekly-digest",
     );
     expect(screen.getByRole("main")).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: "Ask" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Chat" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveAttribute("href", "#content");
-    expect(await screen.findByRole("link", { name: /mira/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /mira/i })).toHaveAttribute("aria-haspopup", "menu");
     await expectAccessible(container);
   });
 
@@ -40,12 +39,12 @@ describe("Shell", () => {
     expect(await within(navigation).findByRole("link", { name: "Doctor" })).toBeInTheDocument();
     expect(within(navigation).getByRole("link", { name: "Team roster" })).toBeInTheDocument();
     expect(await within(navigation).findByRole("link", { name: "Weekly digest" })).toBeInTheDocument();
-    for (const name of ["Graph", "Org chart", "Asset types", "Assets"]) {
+    for (const name of ["Workflow", "Org chart", "Asset types", "Assets"]) {
       expect(within(navigation).queryByRole("link", { name })).not.toBeInTheDocument();
     }
     expect(within(navigation).queryByText("Inventory")).not.toBeInTheDocument();
     await user.keyboard("{Meta>}k{/Meta}");
-    await user.type(await screen.findByRole("combobox", { name: /Search/ }), "Graph");
+    await user.type(await screen.findByRole("combobox", { name: /Search/ }), "Workflow");
     expect(screen.getByText("Nothing matches.")).toBeInTheDocument();
   });
 
@@ -59,7 +58,7 @@ describe("Shell", () => {
     await user.type(search, "log_level");
     expect(screen.getByRole("option", { name: /hz\.log_level/ })).toBeInTheDocument();
     await user.keyboard("{Enter}");
-    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
   });
 
   it("switches between light and dark and remembers it", async () => {
@@ -76,10 +75,10 @@ describe("Shell", () => {
     mockApi(answers);
     const user = userEvent.setup();
     renderAt("/doctor");
-    await user.click(screen.getByRole("button", { name: "Collapse the chat" }));
-    expect(screen.queryByRole("complementary", { name: "Ask" })).not.toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "Collapse the chat" })[0] as HTMLElement);
+    expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open the chat" }));
-    expect(screen.getByRole("complementary", { name: "Ask" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Chat" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
     expect(screen.getByRole("button", { name: "Expand navigation" })).toHaveAttribute("aria-expanded", "false");
   });

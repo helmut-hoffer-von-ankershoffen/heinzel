@@ -28,7 +28,7 @@ function useEntries(): Entry[] {
     }
     for (const setting of config.data?.settings ?? []) {
       const key = `${setting.section}.${setting.key}`;
-      entries.push({ label: key, hint: setting.description, to: `/settings?q=${encodeURIComponent(key)}` });
+      entries.push({ label: key, hint: setting.description, to: `?settings=&q=${encodeURIComponent(key)}` });
     }
     const assetTypes = listed("workflow:playbooks", expert.data) ? (playbooks.data?.playbooks ?? []) : [];
     for (const playbook of assetTypes) {

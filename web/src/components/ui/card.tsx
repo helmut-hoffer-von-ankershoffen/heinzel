@@ -3,11 +3,11 @@ import type { ComponentProps } from "react";
 import { cn } from "@/lib/utils";
 
 export function Card({ className, ...props }: ComponentProps<"section">) {
-  return <section className={cn("rounded-lg border border-border bg-card p-4 shadow-xs", className)} {...props} />;
+  return <section className={cn("rounded-xl border border-border bg-card/40 p-4", className)} {...props} />;
 }
 
 export function CardTitle({ className, ...props }: ComponentProps<"h2">) {
-  return <h2 className={cn("mb-2 text-sm font-semibold text-muted-foreground", className)} {...props} />;
+  return <h2 className={cn("mb-2 text-xs font-medium text-muted-foreground", className)} {...props} />;
 }
 
 const tones = {

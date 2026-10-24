@@ -29,8 +29,6 @@ describe("visibleSections", () => {
 
   it("drops expert screens, and sections left empty, outside it; the contracts section stays for its entries", () => {
     expect(labels(visibleSections(sections, everyday))).toEqual([
-      "nav.home",
-      "nav.settings",
       "nav.contracts",
       "nav.organisation",
       "nav.team",
