@@ -312,8 +312,8 @@ adapters are first-party plugins, not separate repositories:
 - Vendor code stays out of `src/heinzel`: import-linter forbids the core from importing any first-party plugin and
   any vendor client, and lets each adapter use only the public API (`heinzel`, `heinzel.kernel`), independent of
   the other plugins.
-- Built: GitHub (`code-host`, `tracker`; through the `gh` CLI, as the ADR "Integrations go through vendor CLIs as an
-  ordinary employee" decides; the pulls list from [ADR 0033](0033-github-rest-api-over-urllib.md)) and Atlassian
+- Built: GitHub (`code-host`, `tracker`; through the `gh` CLI, [ADR 0035](0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md);
+  the pulls list from [ADR 0033](0033-github-rest-api-over-urllib.md)) and Atlassian
   (`tracker`, `documents`; [ADR 0034](0034-atlassian-cloud-rest-apis-over-urllib.md)), both moved from their own repositories at
   their v0.1.0. Planned: Google Workspace, Zoom and Slack.
 - Separate repositories, scaffolded from `template/`, remain the model for community and company plugins (for

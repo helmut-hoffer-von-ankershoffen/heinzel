@@ -39,8 +39,13 @@ def test_a_leftover_api_url_is_refused_with_the_setting_that_replaced_it():
         GithubSettings(api_url="https://ghe.example.com/api/v3")
 
 
-def test_a_project_file_may_not_set_the_host():
-    assert "host" in GithubSettings.ignored_in_project
+def test_a_project_file_may_not_set_the_host_the_program_or_the_timeout():
+    assert {"host", "gh", "timeout"} <= GithubSettings.ignored_in_project
+
+
+def test_gh_is_looked_up_on_path_and_calls_get_a_minute():
+    settings = GithubSettings()
+    assert (settings.gh, settings.timeout) == ("gh", 60.0)
 
 
 @pytest.mark.parametrize(

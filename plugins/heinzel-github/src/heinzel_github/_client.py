@@ -6,6 +6,7 @@ bidirectional characters, and only then cut to length, so a cut can never leave 
 """
 
 import json
+import logging
 import re
 from collections.abc import Iterator, Mapping
 from typing import Any, cast
@@ -22,6 +23,7 @@ MAX_SAID = 300
 """Characters of GitHub's or `gh`'s own error message shown, after redaction."""
 NOT_LOGGED_IN = 4
 """`gh`'s exit code when it has no login for the host."""
+_LOG = logging.getLogger(__name__)
 _STATUS = re.compile(r"\(HTTP (\d{3})\)")
 # Prefixed tokens anywhere, also glued to other text; a classic 40-hex token only as a word of its own.
 _TOKEN = re.compile(r"(?:gh[opsur]_|github_pat_)[A-Za-z0-9_]{16,}|\b[0-9a-f]{40}\b")
@@ -91,7 +93,7 @@ class GhClient:
         if result.returncode is None:
             msg = (
                 f"`gh api {path}` did not finish within {self._timeout:g} seconds; check the network, or allow more "
-                "time with `hz system config set github.timeout 60`."
+                "time with `hz system config set github.timeout 120`."
             )
             raise HeinzelError(msg)
         if result.truncated:
@@ -110,6 +112,7 @@ class GhClient:
     def _problem(self, path: str, result: GhResult) -> str:  # noqa: PLR0911 - one message per kind of failure
         """What went wrong, for a person: GitHub's or `gh`'s words, redacted and cleaned, plus what to do."""
         host, stderr = self._host, result.stderr
+        _LOG.debug("gh api %s failed (exit %s): %s", path, result.returncode, clean_text(redact(stderr[-2000:])))
         found = _STATUS.search(stderr)
         status = int(found.group(1)) if found else None
         text = said(_message(result.stdout) or _first_line(stderr))

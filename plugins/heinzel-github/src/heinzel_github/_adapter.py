@@ -1,10 +1,10 @@
 """The GitHub adapter of the `code-host` and `tracker` capabilities (ADR 0028), read mode only.
 
 Every request goes through the GitHub CLI (`gh api`), which owns authentication: the adapter acts as the person
-`gh` is logged in as, with no app or token of its own (ADR "Integrations go through vendor CLIs as an ordinary
-employee"). Merged pull requests come from the pulls list, not the search API (ADR 0033):
-`repos/{owner}/{repo}/pulls?state=closed&sort=updated&direction=desc`, kept when `merged_at` falls in the window,
-paging stops at the first pull request updated before the window starts, because merging updates a pull request.
+`gh` is logged in as, with no app or token of its own (ADR 0035). Merged pull requests come from the pulls list, not
+the search API (ADR 0033): `repos/{owner}/{repo}/pulls?state=closed&sort=updated&direction=desc`, kept when
+`merged_at` falls in the window; paging stops at the first pull request updated before the window starts, because
+merging updates a pull request.
 Issues come from `repos/{owner}/{repo}/issues?state=all&since=...&sort=updated&direction=asc`, without the pull
 requests GitHub mixes into that list. Every string returned passes `clean_text`.
 """

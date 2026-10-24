@@ -20,10 +20,15 @@ class GithubAbout(BaseModel):
     heinzel_version: str = Field(description="Version of the Heinzelmännchen it runs in.")
     modules: list[str] = Field(description="Qualified names of the modules the plugin provides.")
     host: str = Field(description="The GitHub host the adapter reads, through the GitHub CLI `gh`.")
+    gh: str | None = Field(description="Path of the GitHub CLI every read goes through; none if missing.")
 
 
 class GithubSettings(ModuleSettings):
-    """Settings of the GitHub adapter: the `[github]` table of the `hz` config files, or `HZ_GITHUB__<FIELD>`."""
+    """Settings of the GitHub adapter: the `[github]` table of the `hz` config files, or `HZ_GITHUB__<FIELD>`.
+
+    Authentication is gh's: log in with `gh auth login`. All three are ignored in a project hz.toml: a repository
+    must not choose which program runs, where the login goes, or how long a call may take.
+    """
 
     host: str = Field(
         default=GITHUB_HOST,
@@ -31,11 +36,16 @@ class GithubSettings(ModuleSettings):
         "such as `ghe.example.com`; passed to `gh` as `--hostname` and `GH_HOST`, so `gh` uses its login for that "
         "host. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml.",
     )
+    gh: str = Field(
+        default="gh",
+        min_length=1,
+        description="The GitHub CLI to run: a name looked up on PATH (absolute entries only) or an absolute path.",
+    )
     timeout: float = Field(
-        default=30.0, gt=0, le=300, description="Seconds to wait for each `gh` call before stopping it."
+        default=60.0, gt=0, le=600, description="Seconds to wait for each `gh` call before stopping it."
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"host"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"host", "gh", "timeout"})
 
     @model_validator(mode="before")
     @classmethod

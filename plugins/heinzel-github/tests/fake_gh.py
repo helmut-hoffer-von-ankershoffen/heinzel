@@ -1,11 +1,11 @@
-"""A fake GitHub CLI: answers `gh api` and `gh auth token` from a routes file and records every call. Offline.
+"""A fake GitHub CLI: answers `gh --version` and `gh api` from a routes file and records every call. Offline.
 
-conftest.py installs it as an executable named `gh` on a `PATH` of its own, so the adapter's real `Gh` runner starts
-it as it would start the real one. The routes file (`FAKE_GH_ROUTES`) maps `<path>?page=<n>` to an answer:
-`fixture` (a file in `tests/fixtures`) or `stdout`, plus optional `stderr`, `exit`, `sleep` (seconds) and `pad` (extra
-bytes of output); `logins` lists the hosts `gh auth token` has a login for, `auth_sleep` delays it. Each call is
-appended to `FAKE_GH_LOG` as JSON: its arguments, the `GH_*`, `HZ_*`, `DEBUG` and `NO_COLOR` variables it saw, and the
-names of all variables.
+conftest.py installs it as an executable named `gh` on a `PATH` of its own, with `ROUTES` and `LOG` (the routes file
+and the call log) written above this docstring, so the adapter's real `Gh` runner starts it as it would the real one.
+The routes map `<path>?page=<n>` to an answer: `fixture` (a file in `tests/fixtures`) or `stdout`, plus optional
+`stderr`, `exit`, `sleep` (seconds before answering), `linger` (seconds after) and `pad` (extra bytes of output);
+`version` is what `gh --version` prints. Each call is appended to the log as JSON: its arguments, its whole
+environment and its working directory.
 """
 
 import json
@@ -14,23 +14,17 @@ import sys
 import time
 from pathlib import Path
 
-RECORDED = ("GH_", "HZ_", "DEBUG", "NO_COLOR")
-
 
 def main(argv: list[str]) -> int:
     """Answer one `gh` call; the exit code is the fake's answer."""
-    routes = json.loads(Path(os.environ["FAKE_GH_ROUTES"]).read_text(encoding="utf-8"))
-    env = {key: value for key, value in os.environ.items() if key.startswith(RECORDED)}
-    with Path(os.environ["FAKE_GH_LOG"]).open("a", encoding="utf-8") as log:
-        log.write(json.dumps({"argv": argv, "env": env, "all_env": sorted(os.environ)}) + "\n")
-    if argv[:2] == ["auth", "token"]:
-        time.sleep(routes.get("auth_sleep", 0))
-        host = argv[argv.index("--hostname") + 1]
-        if host in routes.get("logins", []):
-            sys.stdout.write("gho_fakeTokenOnlyTheFakeGhPrints0000\n")
-            return 0
-        sys.stderr.write(f"no oauth token found for {host}\n")
-        return 1
+    routes = json.loads(Path(ROUTES).read_text(encoding="utf-8"))  # noqa: F821 - written by conftest.py
+    with Path(LOG).open("a", encoding="utf-8") as log:  # noqa: F821 - written by conftest.py
+        log.write(json.dumps({"argv": argv, "env": dict(os.environ), "cwd": str(Path.cwd())}) + "\n")
+    if argv == ["--version"]:
+        answer = routes.get("version", {"stdout": "gh version 2.103.2 (2026-10-23)\nhttps://example.invalid\n"})
+        time.sleep(answer.get("sleep", 0))
+        sys.stdout.write(answer["stdout"])
+        return 0
     path = next(arg for arg in argv if arg.startswith("repos/"))
     fields = dict(argv[i + 1].split("=", 1) for i, arg in enumerate(argv) if arg == "--raw-field")
     answer = routes.get("api", {}).get(f"{path}?page={fields.get('page', '1')}")
@@ -46,6 +40,8 @@ def main(argv: list[str]) -> int:
     sys.stdout.buffer.write(data + b" " * answer.get("pad", 0))
     sys.stdout.flush()
     sys.stderr.write(answer.get("stderr", ""))
+    sys.stderr.flush()
+    time.sleep(answer.get("linger", 0))
     return int(answer.get("exit", 0))
 
 

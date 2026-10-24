@@ -66,7 +66,7 @@ def test_a_requester_reads_merged_pull_requests_through_gh(github_kernel, github
             "labels": ["ui"],
         }
     ]
-    (call,) = github.calls()  # a short page, and the second pull request was updated before the window
+    (call,) = github.api_calls()  # a short page, and the second pull request was updated before the window
     assert call["argv"][:3] == ["api", "--hostname", "github.com"]
 
 
@@ -79,7 +79,7 @@ def test_a_requester_reads_issues_through_gh_without_the_pull_requests_mixed_in(
 def test_an_enterprise_host_is_passed_to_gh_as_hostname_and_gh_host(github_kernel, github, monkeypatch):
     monkeypatch.setenv("HZ_GITHUB__HOST", "ghe.example.com")
     assert hz(github_kernel(BOUND, digest=digest()), "digest", "issues", "acme/widgets", SINCE, UNTIL)[0] == 0
-    (call,) = github.calls()
+    (call,) = github.api_calls()
     assert call["argv"][:3] == ["api", "--hostname", "ghe.example.com"]
     assert call["env"]["GH_HOST"] == "ghe.example.com"
 
@@ -113,7 +113,7 @@ def test_without_gh_the_command_and_doctor_say_how_to_install_it(github_kernel, 
     assert code == 0
     gh = {c["name"]: c for c in report["checks"]["github"]}["gh"]
     assert gh["status"] == "degraded"
-    assert gh["fix"] == "install gh from https://cli.github.com, then: gh auth login --hostname github.com"
+    assert gh["fix"] == "install gh (https://cli.github.com), then gh auth login --hostname github.com"
 
 
 def test_doctor_checks_the_login_and_bindings_without_contacting_github(github_kernel, fake_gh_cli):
@@ -121,9 +121,11 @@ def test_doctor_checks_the_login_and_bindings_without_contacting_github(github_k
     assert code == 0
     github = {c["name"]: c for c in report["checks"]["github"]}
     assert github["gh"]["status"] == "up"
-    assert github["gh"]["detail"] == f"gh ({fake_gh_cli.bin / 'gh'}) is logged in to github.com; GitHub not contacted"
+    assert github["gh"]["detail"] == (
+        f"{fake_gh_cli.bin / 'gh'}, gh 2.103.2, has a login for github.com; checked on first use: doctor stays offline"
+    )
     assert github["code-host"]["detail"] == "served by github"
-    assert [c["argv"][:2] for c in fake_gh_cli.calls()] == [["auth", "token"]]  # local only, never `gh api`
+    assert [c["argv"] for c in fake_gh_cli.calls()] == [["--version"]]  # local only, never `gh api`
     assert "credential github/github-token" not in json.dumps(report)
 
 
@@ -146,7 +148,7 @@ def test_unbound_the_requester_fails_and_doctor_names_the_binding(github_kernel,
     assert capability["code-host:read for digest"]["status"] == "degraded"
     github = {c["name"]: c for c in report["checks"]["github"]}
     assert github["bindings"]["status"] == "degraded"
-    assert not [c for c in fake_gh_cli.calls() if c["argv"][0] == "api"]
+    assert not fake_gh_cli.api_calls()
 
 
 def test_a_leftover_api_url_fails_with_the_setting_that_replaced_it(github_kernel, fake_gh_cli):
@@ -154,7 +156,7 @@ def test_a_leftover_api_url_fails_with_the_setting_that_replaced_it(github_kerne
     code, output = hz(github_kernel(config, digest=digest()), "digest", "issues", "acme/widgets", SINCE, UNTIL)
     assert code != 0
     assert "github.host" in str(output)
-    assert not [c for c in fake_gh_cli.calls() if c["argv"][0] == "api"]
+    assert not fake_gh_cli.api_calls()
 
 
 def test_capability_list_shows_the_adapter_with_the_api_host_gh_reaches(github_kernel, monkeypatch):
@@ -178,7 +180,7 @@ def test_a_project_file_can_neither_bind_nor_redirect_gh(github_kernel, github, 
     (project / "hz.toml").write_text('[github]\nhost = "evil.example"\n', encoding="utf-8")
     kernel = github_kernel(Config.load(project), digest=digest())
     assert hz(kernel, "digest", "issues", "acme/widgets", SINCE, UNTIL)[0] == 0
-    assert all(c["env"]["GH_HOST"] == "github.com" for c in github.calls())
+    assert all(c["env"]["GH_HOST"] == "github.com" for c in github.api_calls())
     code, report = hz(kernel, "system", "doctor")
     assert code == 0
     names = [c["name"] for c in report["checks"]["system.doctor"]]

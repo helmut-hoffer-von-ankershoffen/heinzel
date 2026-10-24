@@ -53,7 +53,8 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `host` | `HZ_GITHUB__HOST` | `'github.com'` | The GitHub host `gh` talks to: `github.com`, or the host name of a GitHub Enterprise Server such as `ghe.example.com`; passed to `gh` as `--hostname` and `GH_HOST`, so `gh` uses its login for that host. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml. |
-| `timeout` | `HZ_GITHUB__TIMEOUT` | `30.0` | Seconds to wait for each `gh` call before stopping it. |
+| `gh` | `HZ_GITHUB__GH` | `'gh'` | The GitHub CLI to run: a name looked up on PATH (absolute entries only) or an absolute path. |
+| `timeout` | `HZ_GITHUB__TIMEOUT` | `60.0` | Seconds to wait for each `gh` call before stopping it. |
 
 ## `[org]`
 

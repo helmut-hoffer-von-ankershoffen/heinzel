@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 from heinzel_github import Gh, GhResult
 
-from heinzel import Config, Kernel, Module, Settings
+from heinzel import Config, HeinzelError, Kernel, Module, Settings
 from heinzel.kernel import ModuleRecord, Origin, discover
 
 TESTS = Path(__file__).parent
@@ -54,15 +54,23 @@ class Call:
 
 @dataclass
 class FakeGh(Gh):
-    """The `gh` runner in memory: serves pages per path, answers logins per host, and records every call."""
+    """The `gh` runner in memory: serves pages per path, says its version and login, and records every call."""
 
     routes: dict[str, list[GhResult]] = field(default_factory=dict)
     calls: list[Call] = field(default_factory=list)
     installed: bool = True
-    logins: set[str] = field(default_factory=lambda: {"github.com"})
+    logged: bool = True
+    found: tuple[int, int, int] | None = (2, 103, 2)
+    broken: str | None = None
+    """A message `version` fails with, as for a gh that can't start."""
 
     def executable(self) -> str | None:
         return "/usr/local/bin/gh" if self.installed else None
+
+    def version(self) -> tuple[int, int, int] | None:
+        if self.broken:
+            raise HeinzelError(self.broken)
+        return self.found
 
     def run(self, args: list[str], *, host: str, timeout: float) -> GhResult:
         call = Call(list(args), host, timeout)
@@ -72,8 +80,8 @@ class FakeGh(Gh):
         page = int(call.fields.get("page", "1"))
         return pages[page - 1] if page <= len(pages) else GhResult(0, b"[]", "")
 
-    def logged_in(self, host: str) -> bool:
-        return host in self.logins
+    def logged_in(self) -> bool:
+        return self.logged
 
     def serve(self, path: str, *pages: list[dict[str, Any]]) -> None:
         """Answer `gh api path` with `pages`, one per page number, then empty pages."""
@@ -140,9 +148,12 @@ def fake_gh() -> FakeGh:
     return FakeGh()
 
 
+TOKEN_VARIABLES = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN")
+
+
 @dataclass
 class FakeGhCli:
-    """The fake `gh` executable's routes and the calls it recorded."""
+    """The fake `gh` executable's routes, gh's configuration directory, and the calls it recorded."""
 
     directory: Path
     routes: dict[str, Any] = field(default_factory=dict)
@@ -150,6 +161,11 @@ class FakeGhCli:
     @property
     def bin(self) -> Path:
         return self.directory / "bin"
+
+    @property
+    def config(self) -> Path:
+        """gh's configuration directory (`GH_CONFIG_DIR`), with its hosts file."""
+        return self.directory / "config"
 
     def _save(self) -> None:
         (self.directory / "routes.json").write_text(json.dumps(self.routes), encoding="utf-8")
@@ -159,24 +175,40 @@ class FakeGhCli:
         self.routes["api"][f"{path}?page={page}"] = answer
         self._save()
 
-    def login(self, *hosts: str) -> None:
-        """The hosts `gh auth token` has a login for."""
-        self.routes["logins"] = list(hosts)
+    def version(self, output: str, sleep: float = 0) -> None:
+        """What `gh --version` prints, after `sleep` seconds."""
+        self.routes["version"] = {"stdout": output, "sleep": sleep}
         self._save()
 
+    def login(self, *hosts: str) -> None:
+        """The hosts gh's hosts file has a login for, as gh writes it."""
+        self.config.mkdir(parents=True, exist_ok=True)
+        text = "".join(f"{host}:\n    git_protocol: https\n    user: ada\n" for host in hosts)
+        (self.config / "hosts.yml").write_text(text, encoding="utf-8")
+
     def calls(self) -> list[dict[str, Any]]:
-        """Every call so far: `argv` and the `GH_*`, `HZ_*`, `DEBUG` and `NO_COLOR` variables it saw."""
+        """Every call so far: `argv`, `env` (all variables gh saw) and `cwd`."""
         log = self.directory / "calls.jsonl"
         if not log.exists():
             return []
         return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
 
+    def api_calls(self) -> list[dict[str, Any]]:
+        """The `gh api` calls, without `gh --version`."""
+        return [call for call in self.calls() if call["argv"][:1] == ["api"]]
+
 
 def install_gh(directory: Path, shebang: str = sys.executable) -> Path:
-    """Write `tests/fake_gh.py` as an executable `gh` in `directory`/bin, started by `shebang`."""
+    """Write `tests/fake_gh.py` as an executable `gh` in `directory`/bin, started by `shebang`.
+
+    Its routes file and call log are in `directory`, written into the script: gh's environment is an allowlist, so a
+    variable could not tell the fake where they are.
+    """
     executable = directory / "bin" / "gh"
     executable.parent.mkdir(parents=True, exist_ok=True)
-    executable.write_text(f"#!{shebang}\n" + (TESTS / "fake_gh.py").read_text(encoding="utf-8"), encoding="utf-8")
+    source = (TESTS / "fake_gh.py").read_text(encoding="utf-8")
+    header = f"#!{shebang}\nROUTES = {str(directory / 'routes.json')!r}\nLOG = {str(directory / 'calls.jsonl')!r}\n"
+    executable.write_text(header + source, encoding="utf-8")
     executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
     return executable
 
@@ -188,14 +220,25 @@ def install_gh_fixture() -> Callable[..., Path]:
 
 
 @pytest.fixture
-def fake_gh_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeGhCli:
-    """A fake `gh` as the only program on `PATH`, logged in to github.com, with no routes yet."""
-    cli = FakeGhCli(tmp_path / "gh", {"fixtures": str(FIXTURES), "api": {}, "logins": ["github.com"]})
+def no_gh_login(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """No token variable gh reads, and an empty gh configuration directory (`GH_CONFIG_DIR`), returned."""
+    for name in TOKEN_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    config = tmp_path / "gh-config"
+    monkeypatch.setenv("GH_CONFIG_DIR", str(config))
+    return config
+
+
+@pytest.fixture
+def fake_gh_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_gh_login: Path) -> FakeGhCli:
+    """A fake `gh` 2.103.2 as the only program on `PATH`, logged in to github.com in its hosts file, no routes yet."""
+    del no_gh_login  # wanted for the environment it leaves; the hosts file goes elsewhere
+    cli = FakeGhCli(tmp_path / "gh", {"fixtures": str(FIXTURES), "api": {}})
     install_gh(cli.directory)
     cli._save()
     monkeypatch.setenv("PATH", str(cli.bin))
-    monkeypatch.setenv("FAKE_GH_ROUTES", str(cli.directory / "routes.json"))
-    monkeypatch.setenv("FAKE_GH_LOG", str(cli.directory / "calls.jsonl"))
+    monkeypatch.setenv("GH_CONFIG_DIR", str(cli.config))
+    cli.login("github.com")
     return cli
 
 

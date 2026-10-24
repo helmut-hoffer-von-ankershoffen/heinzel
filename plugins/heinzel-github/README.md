@@ -10,8 +10,9 @@ hz system plugin remove heinzel-github
 
 ## Set up
 
-The adapter talks to GitHub only through the [GitHub CLI](https://cli.github.com) `gh`, which owns authentication. It
-reads what you can read, as you: no app to register, no token to create or store. Install `gh` and log in once:
+The adapter talks to GitHub only through the [GitHub CLI](https://cli.github.com) `gh` (2.40.0 or later), which owns
+authentication ([ADR 0035](../../docs/adr/0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md)). It reads what you can read, as you:
+no app to register, no token to create or store. Install `gh` and log in once:
 
 ```bash
 gh auth login                           # or: gh auth login --hostname ghe.example.com
@@ -50,10 +51,12 @@ or in the file (`api_url` from earlier versions is refused; `host` replaced it):
 ```toml
 [github]
 host = "ghe.example.com"
-timeout = 30   # seconds per gh call
+gh = "gh"      # the GitHub CLI: a name on PATH (absolute entries only) or an absolute path
+timeout = 60   # seconds per gh call
 ```
 
-`host` is ignored in a project `hz.toml`, so a repository can't send your login elsewhere. The adapter's hosts come
+`host`, `gh` and `timeout` are ignored in a project `hz.toml`, so a repository can't send your login elsewhere or pick
+the program that runs. The adapter's hosts come
 from it: `hz system capability list` shows `api.github.com`, or your GitHub Enterprise Server's host.
 
 ## Use
@@ -83,21 +86,23 @@ Repositories and projects are written `owner/repo`; windows are half-open `[sinc
 results are oldest first. A call reads at most 100 pages of 100 (10,000 items), then fails and says what to ask for
 instead: merged pull requests page through every pull request updated since `since`, even after `until`, so they need
 a window that starts more recently; issues stop at `until`, so they need a shorter window. Why the pulls list and not
-the search API: [ADR 0033](../../docs/adr/0033-github-rest-api-over-urllib.md); why `gh`: the ADR "Integrations go
-through vendor CLIs as an ordinary employee".
+the search API: [ADR 0033](../../docs/adr/0033-github-rest-api-over-urllib.md); why `gh`:
+[ADR 0035](../../docs/adr/0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md).
 
 ```bash
 hz github info                  # this plugin, its version and the GitHub host it reads
 hz system capability list       # who reads what, through which adapter and hosts
-hz system doctor                # gh installed and logged in, the bindings; never contacts GitHub
+hz system doctor                # gh on PATH, its version and login, the bindings; never contacts GitHub
 ```
 
-Errors say what to do: no `gh` names where to get it; no login, or a login GitHub rejects, names
+Errors say what to do: no `gh`, or one too old, names where to get it; no login, or a login GitHub rejects, names
 `gh auth login --hostname <host>`; a rate limit says to wait and how to see when it resets; a missing or forbidden
 repository says to check the spelling and what your account can see; a slow call names the timeout setting.
 
-How `gh` is run: with an argument list, never a shell; under the timeout, which kills it; with its output capped; and
-in an environment without Heinzelmännchen's `HZ_CREDENTIAL_*` variables or `gh`'s debug switches (`GH_DEBUG`), which
-would print request headers. Doctor checks the login with `gh auth token`, whose output, the token, goes to
-`/dev/null` unread. Everything GitHub or `gh` says is redacted of anything shaped like a GitHub token, stripped of
-control and bidirectional characters, and only then cut to length; every string the adapter returns is cleaned too.
+How `gh` is run: with an argument list, never a shell, from your home directory, in its own process group, stopped
+(SIGTERM, then SIGKILL) at the timeout, with its output capped, and with an allowlisted environment: never
+Heinzelmännchen's `HZ_CREDENTIAL_*` variables or debug switches such as `GH_DEBUG`, which would print request
+headers. Doctor runs only `gh --version` and looks for the host in gh's hosts file (or a token variable gh reads); it
+never runs a command that prints a token. Everything GitHub or `gh` says is redacted of anything shaped like a GitHub
+token, stripped of control and bidirectional characters, and only then cut to length; every string the adapter
+returns is cleaned too.

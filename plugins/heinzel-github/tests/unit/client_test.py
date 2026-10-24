@@ -116,7 +116,7 @@ def test_a_timeout_names_the_setting_that_allows_more_time(fake_gh):
     fake_gh.fail(PATH, None)
     text = message(fake_gh)
     assert "did not finish within 7 seconds" in text
-    assert "hz system config set github.timeout 60" in text
+    assert "hz system config set github.timeout 120" in text
 
 
 def test_an_answer_over_the_limit_is_refused(fake_gh):
