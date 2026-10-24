@@ -61,7 +61,9 @@ try {
   ]) {
     await page.goto(`${base}${path}`);
     await page.getByRole("heading", { name: heading, exact: true }).waitFor();
-    await page.waitForLoadState("networkidle");
+    // Not "networkidle": the notice stream keeps a request open for as long as the app is (ADR 0046). The screen is
+    // ready once nothing says it is loading.
+    await page.waitForFunction(() => !document.body.innerText.includes("Loading…"));
     await audit(name);
   }
 
