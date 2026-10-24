@@ -125,7 +125,7 @@ class Config:
         for file in files:
             if file.exists:
                 try:
-                    content = tomllib.loads(file.path.read_text(encoding="utf-8"))
+                    content = tomllib.loads(file.path.read_bytes().decode())  # bytes: no newline translation
                 except tomllib.TOMLDecodeError as exc:
                     msg = f"{file.path} is not valid TOML: {exc}"
                     raise HeinzelError(msg) from exc
