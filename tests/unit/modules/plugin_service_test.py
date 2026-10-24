@@ -216,6 +216,7 @@ def test_search_lists_first_party_first_then_community_plugins_by_stars(make_ker
         ("heinzel-clock", "first-party", False, None),
         ("heinzel-github", "first-party", False, None),
         ("heinzel-google", "first-party", False, None),
+        ("heinzel-openmeteo", "first-party", False, None),
         ("heinzel-zoom", "first-party", False, None),
         ("heinzel-many", "github", True, 50),
         ("heinzel-few", "github", True, 1),
@@ -225,12 +226,13 @@ def test_search_lists_first_party_first_then_community_plugins_by_stars(make_ker
 
 def test_search_tells_how_to_install_each_plugin(make_kernel, tmp_path, github):
     github.answer = {"items": [repository("heinzel-crm", 3)]}
-    acme, atlassian, clock, github_, google, zoom, crm = service_for(make_kernel, tmp_path).search().plugins
+    acme, atlassian, clock, github_, google, openmeteo, zoom, crm = service_for(make_kernel, tmp_path).search().plugins
     assert (acme.short_name, acme.install_spec, acme.url) == ("acme", "acme", _service.REFERENCE["acme"][1])
     assert (atlassian.short_name, atlassian.install_spec) == ("atlassian", "atlassian")
     assert (github_.short_name, github_.install_spec) == ("github", "github")
     assert (google.short_name, google.install_spec) == ("google", "google")
     assert (clock.short_name, clock.install_spec) == ("clock", "clock")
+    assert (openmeteo.short_name, openmeteo.install_spec) == ("openmeteo", "openmeteo")
     assert (zoom.short_name, zoom.install_spec) == ("zoom", "zoom")
     assert (crm.short_name, crm.install_spec) == ("crm", "git+https://github.com/someone/heinzel-crm")
 
@@ -244,6 +246,7 @@ def test_search_marks_installed_plugins(make_kernel, tmp_path, github):
         "heinzel-clock": False,
         "heinzel-github": False,
         "heinzel-google": False,
+        "heinzel-openmeteo": False,
         "heinzel-zoom": False,
         "heinzel-old": True,
         "heinzel-new": False,
@@ -261,6 +264,7 @@ def test_search_prefers_first_party_plugins_and_skips_archived_repositories(make
             "heinzel-clock",
             "heinzel-github",
             "heinzel-google",
+            "heinzel-openmeteo",
             "heinzel-zoom",
         ]
     ]
@@ -301,6 +305,7 @@ def test_search_falls_back_to_first_party_plugins_with_a_warning(make_kernel, tm
         "heinzel-clock",
         "heinzel-github",
         "heinzel-google",
+        "heinzel-openmeteo",
         "heinzel-zoom",
     ]
     assert result.warnings == [f"GitHub could not be searched ({reason}); showing first-party plugins only."]

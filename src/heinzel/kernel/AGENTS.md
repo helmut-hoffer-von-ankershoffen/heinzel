@@ -7,7 +7,7 @@ change like a library release: an ADR for a new concept, unit tests for every br
   `credential`, `provides`, `setup`, `playbook`, `layer`, `theme`; `requires=` on modules, operations and jobs;
   `optional=True` on a read-only operation that degrades without its own requirements).
 - `_protocols.py` — integration capability protocols (`CodeHost`, `Tracker`, `Documents`, `Chat`, `Meetings`,
-  `Calendar`, `Mail`, `Directory`, `TeamGraph`; `MailQuery`, the mail query syntax) and their models; `_directory.py` —
+  `Calendar`, `Mail`, `Directory`, `TeamGraph`, `Weather`; `MailQuery`, the mail query syntax) and their models; `_directory.py` —
   `draft_reporting_lines`, the seam setup steps and roster drafting call (fallback adapter:
   `system.directory`); `_text.py` — `clean_text`, which adapters apply to every string they return, and
   `redact_emails`, which keeps addresses out of prompts;

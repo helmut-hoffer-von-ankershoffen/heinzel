@@ -103,6 +103,11 @@ class CapabilitySettings(ModuleSettings):
         "contracts and telemetry), or one from a plugin.",
         json_schema_extra=_options("team-graph"),
     )
+    weather: str | None = Field(
+        default=None,
+        description="Adapter that serves `weather`, e.g. `openmeteo`.",
+        json_schema_extra=_options("weather"),
+    )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
         {
@@ -117,6 +122,7 @@ class CapabilitySettings(ModuleSettings):
             "meetings",
             "team_graph",
             "tracker",
+            "weather",
         }
     )
 

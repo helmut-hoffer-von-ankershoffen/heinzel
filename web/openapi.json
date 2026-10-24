@@ -4318,6 +4318,144 @@
         "title": "OperationAudience",
         "type": "object"
       },
+      "Outlook": {
+        "description": "The weather now and the next days at one place, in the units you read.",
+        "properties": {
+          "adapter": {
+            "description": "The adapter bound to `weather` that answered.",
+            "title": "Adapter",
+            "type": "string"
+          },
+          "days": {
+            "description": "The next days from today.",
+            "items": {
+              "$ref": "#/components/schemas/OutlookDay"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "feels_like": {
+            "description": "What it feels like now.",
+            "title": "Feels Like",
+            "type": "number"
+          },
+          "humidity_percent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Relative humidity; none if the source has none.",
+            "title": "Humidity Percent"
+          },
+          "location": {
+            "description": "The place, as the weather adapter resolved it.",
+            "title": "Location",
+            "type": "string"
+          },
+          "observed_at": {
+            "description": "When the weather now was observed, in the place's time zone.",
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "precipitation": {
+            "description": "Rain and snow in the last hour: mm (metric) or inches (imperial).",
+            "title": "Precipitation",
+            "type": "number"
+          },
+          "summary": {
+            "description": "The sky now in a few words.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "temperature": {
+            "description": "Air temperature now.",
+            "title": "Temperature",
+            "type": "number"
+          },
+          "units": {
+            "$ref": "#/components/schemas/Units",
+            "description": "metric or imperial: the unit of every number below."
+          },
+          "wind": {
+            "description": "Wind speed: km/h (metric) or mph (imperial).",
+            "title": "Wind",
+            "type": "number"
+          }
+        },
+        "required": [
+          "location",
+          "adapter",
+          "units",
+          "observed_at",
+          "summary",
+          "temperature",
+          "feels_like",
+          "humidity_percent",
+          "wind",
+          "precipitation",
+          "days"
+        ],
+        "title": "Outlook",
+        "type": "object"
+      },
+      "OutlookDay": {
+        "description": "One day of the forecast, in the report's units.",
+        "properties": {
+          "day": {
+            "description": "The day, in the place's time zone.",
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "high": {
+            "description": "The day's high.",
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "description": "The day's low.",
+            "title": "Low",
+            "type": "number"
+          },
+          "precipitation": {
+            "description": "Rain and snow expected over the day.",
+            "title": "Precipitation",
+            "type": "number"
+          },
+          "rain_chance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Chance of rain or snow, 0 to 1; none if the source has none.",
+            "title": "Rain Chance"
+          },
+          "summary": {
+            "description": "The sky in a few words.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "summary",
+          "high",
+          "low",
+          "rain_chance",
+          "precipitation"
+        ],
+        "title": "OutlookDay",
+        "type": "object"
+      },
       "Participant": {
         "description": "Someone in a chat, a meeting or an event: how the vendor addresses them, nothing more (ADR 0024).",
         "properties": {
@@ -6503,6 +6641,15 @@
         ],
         "title": "Tool",
         "type": "object"
+      },
+      "Units": {
+        "description": "How temperatures and wind speeds are shown.",
+        "enum": [
+          "metric",
+          "imperial"
+        ],
+        "title": "Units",
+        "type": "string"
       },
       "Unmaintained": {
         "description": "An input that reads a contract's output no contract maintains.",
@@ -9054,6 +9201,70 @@
         "summary": "Show your team: its repository, checkout and members, and what is wrong with them.",
         "tags": [
           "team"
+        ]
+      }
+    },
+    "/weather": {
+      "get": {
+        "description": "Show the weather now and the next days at your primary location, or at a place you name.\n\nRaises:\n    HeinzelError: If no weather adapter is connected, no location is set, the place is unknown, or the adapter\n        fails.",
+        "operationId": "weather",
+        "parameters": [
+          {
+            "description": "A place such as \"Lisbon, PT\" or coordinates such as \"38.72,-9.14\"; your primary one if left out.",
+            "in": "query",
+            "name": "location",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A place such as \"Lisbon, PT\" or coordinates such as \"38.72,-9.14\"; your primary one if left out.",
+              "title": "Location"
+            }
+          },
+          {
+            "description": "How many days of forecast, from today; the adapter may give fewer.",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many days of forecast, from today; the adapter may give fewer.",
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outlook"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the weather now and the next days at your primary location, or at a place you name.",
+        "tags": [
+          "weather"
         ]
       }
     },

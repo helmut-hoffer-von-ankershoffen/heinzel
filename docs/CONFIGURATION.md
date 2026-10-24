@@ -38,6 +38,7 @@ Plugins add their own tables.
 | `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | Adapter that serves `meetings`, e.g. `zoom`. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | Adapter that serves `tracker`, e.g. `github`. |
 | `team_graph` | `HZ_CAPABILITIES__TEAM_GRAPH` | `'hz-graph'` | Adapter that serves `team-graph`: `hz-graph` (the default, the core's graph of your team's contracts and telemetry), or one from a plugin. |
+| `weather` | `HZ_CAPABILITIES__WEATHER` | `None` | Adapter that serves `weather`, e.g. `openmeteo`. |
 
 ## `[ai.access]`
 
@@ -200,6 +201,13 @@ Plugins add their own tables.
 | `repository` | `HZ_TEAM__REPOSITORY` | `None` | Your team repository's URL, the invite others join with (`hz team join <url>`); none for a team repository that exists only on this machine. |
 | `checkout` | `HZ_TEAM__CHECKOUT` | `None` | The local checkout of your team repository; its `workflows/` holds the `team:` contracts. |
 | `layer` | `HZ_TEAM__LAYER` | `None` | Your team's layer plugin by module name, e.g. acme-payments-checkout (ADR 0040), when your team repository's hz.yaml names none or you want another; hz system layer show shows the stack it gives. |
+
+## `[weather]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `locations` | `HZ_WEATHER__LOCATIONS` | `[]` | Where you want the weather for, yours first (the primary one): a place such as "Berlin, DE" or coordinates such as "52.52,13.405". |
+| `units` | `HZ_WEATHER__UNITS` | `None` | metric (°C, km/h) or imperial (°F, mph); unset: imperial where your locale is the US, Liberia or Myanmar, metric everywhere else. |
 
 ## `[workflow]`
 

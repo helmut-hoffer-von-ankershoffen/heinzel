@@ -14,6 +14,7 @@ members = [
     "heinzel-clock",
     "heinzel-github",
     "heinzel-google",
+    "heinzel-openmeteo",
     "heinzel-zoom",
 ]
 
@@ -982,6 +983,7 @@ dev = [
     { name = "heinzel-clock" },
     { name = "heinzel-github" },
     { name = "heinzel-google" },
+    { name = "heinzel-openmeteo" },
     { name = "heinzel-zoom" },
     { name = "httpx" },
     { name = "hypothesis" },
@@ -1010,6 +1012,7 @@ test = [
     { name = "heinzel-clock" },
     { name = "heinzel-github" },
     { name = "heinzel-google" },
+    { name = "heinzel-openmeteo" },
     { name = "heinzel-zoom" },
     { name = "httpx" },
     { name = "hypothesis" },
@@ -1055,6 +1058,7 @@ dev = [
     { name = "heinzel-clock", editable = "plugins/heinzel-clock" },
     { name = "heinzel-github", editable = "plugins/heinzel-github" },
     { name = "heinzel-google", editable = "plugins/heinzel-google" },
+    { name = "heinzel-openmeteo", editable = "plugins/heinzel-openmeteo" },
     { name = "heinzel-zoom", editable = "plugins/heinzel-zoom" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "hypothesis", specifier = ">=6.140" },
@@ -1081,6 +1085,7 @@ test = [
     { name = "heinzel-clock", editable = "plugins/heinzel-clock" },
     { name = "heinzel-github", editable = "plugins/heinzel-github" },
     { name = "heinzel-google", editable = "plugins/heinzel-google" },
+    { name = "heinzel-openmeteo", editable = "plugins/heinzel-openmeteo" },
     { name = "heinzel-zoom", editable = "plugins/heinzel-zoom" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "hypothesis", specifier = ">=6.140" },
@@ -1128,6 +1133,17 @@ requires-dist = [{ name = "heinzel", editable = "." }]
 name = "heinzel-google"
 version = "0.4.0"
 source = { editable = "plugins/heinzel-google" }
+dependencies = [
+    { name = "heinzel" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "heinzel", editable = "." }]
+
+[[package]]
+name = "heinzel-openmeteo"
+version = "0.4.0"
+source = { editable = "plugins/heinzel-openmeteo" }
 dependencies = [
     { name = "heinzel" },
 ]

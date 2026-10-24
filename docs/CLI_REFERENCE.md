@@ -25,12 +25,14 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `google`: (expert) Read Google Docs, Sheets, Drive,...
 * `graph`: Show your team&#x27;s promises: who keeps which...
 * `join`: Join a team from its invite line: finds...
+* `openmeteo`: (expert) Weather from Open-Meteo, with no...
 * `org`: Your profile, and the team, org and...
 * `report`: Telemetry: log what a Heinzelmännchen did,...
 * `setup`: Set up what is still missing, wizard...
 * `system`: Inspect, configure, diagnose and update...
 * `team`: Your team&#x27;s repository: create one (`hz...
 * `ui`: Open the web app in your browser, served...
+* `weather`: Show the weather now and the next days at...
 * `workflow`: Workflow contracts: Markdown files an...
 * `zoom`: (expert) Read meetings from Zoom&#x27;s...
 
@@ -471,6 +473,40 @@ $ hz join [OPTIONS] {URL}
 * `--handle, --as <str>`: Your handle in the team&#x27;s roster.
 * `--answers <file>`: Answer in advance from a TOML file with a table per module, e.g. `role = &quot;engineer&quot;` in the org table; runs without a terminal, for coding agents and teams. Never put secrets in it.
 * `--json`: Print what happened as JSON on stdout.
+* `--help`: Show this message and exit.
+
+## `hz openmeteo`
+
+(expert) Weather from Open-Meteo, with no account and no key: the weather capability.
+
+**Usage**:
+
+```console
+$ hz openmeteo [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `info`: (expert) Show this plugin&#x27;s version, the...
+
+### `hz openmeteo info`
+
+(expert) Show this plugin&#x27;s version, the Heinzelmännchen it runs on and where its weather comes from.
+
+**Usage**:
+
+```console
+$ hz openmeteo info [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
 ## `hz org`
@@ -2155,6 +2191,24 @@ $ hz ui [OPTIONS]
 * `--browser / --no-browser`: Open the default browser at the app; --no-browser prints only its URL.  [default: browser]
 * `--devices`: List the browsers and installed apps paired with hz, then stop.
 * `--revoke <str>`: Unpair a device by its id from --devices, or `all`, then stop.
+* `--help`: Show this message and exit.
+
+## `hz weather`
+
+Show the weather now and the next days at your primary location, or at a place you name.
+
+**Usage**:
+
+```console
+$ hz weather [OPTIONS]
+```
+
+**Options**:
+
+* `--location <str>`: A place such as &quot;Lisbon, PT&quot; or coordinates such as &quot;38.72,-9.14&quot;; your primary one if left out.
+* `--days <int>`: How many days of forecast, from today; the adapter may give fewer.  [default: 3]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
 ## `hz workflow`
