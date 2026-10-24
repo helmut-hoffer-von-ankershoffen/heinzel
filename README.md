@@ -53,9 +53,9 @@
 | src/heinzel/modules/workflow/\_render.py                      |      213 |       15 |      104 |       10 |     90% |98, 116, 159-\>161, 164, 165-\>167, 197-203, 229, 263, 284-294, 352 |
 | src/heinzel/modules/workflow/\_retention.py                   |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
 | src/heinzel/modules/workflow/\_service.py                     |      718 |       17 |      236 |        6 |     98% |338, 426-427, 532-533, 573, 587-\>exit, 598-599, 960-961, 977-979, 1206-1207, 1239-1240 |
-| **TOTAL**                                                     | **14467** |  **161** | **3690** |   **91** | **99%** |           |
+| **TOTAL**                                                     | **14559** |  **161** | **3704** |   **91** | **99%** |           |
 
-118 files skipped due to complete coverage.
+119 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
