@@ -169,10 +169,10 @@ web-dev: ## The web head with hot reload: its API on a free port, Vite in front 
 test-web: ## Run the web app's component tests (Vitest, with axe for accessibility)
 	$(STEPS) "web-tests=$(WEB) exec vitest run"
 
-notifier: ## Build Heinzel Notifier, the macOS notifier app the wheel ships (macOS with the Command Line Tools)
+notifier: ## Build Heinzel Notifier, the macOS notifier app the wheel ships (macOS 14+ with the Command Line Tools)
 	@uv run --quiet --script scripts/notifier.py
 
-icons: ## Draw the web app's icons (web/public) with the notifier's icon drawing (macOS with the Command Line Tools)
+icons: ## Make every image of Heinzelmännchen from heinzel.svg: the web app's icons, the favicon, the theme's logo (macOS 14+)
 	@uv run --quiet --script scripts/notifier.py icons
 
 build: web-build ## Build wheels and sdists into dist/ (the core and every first-party plugin; the web app first)
