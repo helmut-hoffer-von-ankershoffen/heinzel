@@ -424,6 +424,21 @@ def _version(text: str) -> tuple[int, ...]:
     return tuple(int(part) for part in found.group().split(".")) if found else ()
 
 
+def tool_check(tool: Tool, platform_: str, tools_dir: Path = TOOLS_DIR) -> Check:
+    """Whether a tool is installed; only a missing `build` tool fails."""
+    installer, required = GROUPS[tool.group], tool.group == "build"
+    section = f"Tools: {tool.group}" + ("" if required else f" (optional; {installer})")
+    if installed(tool, platform_, tools_dir):
+        return Check(section, state=True, text=f"{tool.name} {tool.version}")
+    system = on_path(tool.name, tools_dir)
+    if tool.files.get(platform_) is None:
+        text = f"{tool.name}: no pinned build for {platform_}, " + (f"using {system}" if system else "not on PATH")
+        return Check(section, True if system else (False if required else None), text, tool.hint(platform_))
+    if system:  # what install falls back to when the download fails
+        return Check(section, None, f"{tool.name} {tool.version}: not installed, {system} stands in", installer)
+    return Check(section, False if required else None, f"{tool.name} {tool.version}: not installed", installer)
+
+
 def checks(
     platform_: str,
     tools: dict[str, Tool],
@@ -461,25 +476,11 @@ def checks(
     hooked = code == 0 and pre_commit.is_file() and "prek" in pre_commit.read_text(encoding="utf-8", errors="replace")
     found.append(Check(section, hooked, "git hooks: pre-commit, commit-msg, pre-push (prek)", "make setup"))
 
+    makefile = ROOT / "Makefile"
+    targets = re.findall(r"(?m)^([\w-]+):", makefile.read_text(encoding="utf-8")) if makefile.is_file() else []
     for group, installer in GROUPS.items():
-        section = f"Tools: {group}" + ("" if group == "build" else f" (optional; {installer})")
-        required_here = group == "build"
-        for tool in (tool for tool in tools.values() if tool.group == group):
-            if installed(tool, platform_, tools_dir):
-                found.append(Check(section, state=True, text=f"{tool.name} {tool.version}"))
-            elif tool.files.get(platform_) is None:
-                system = on_path(tool.name, tools_dir)
-                text = f"{tool.name}: no pinned build for {platform_}, " + (
-                    f"using {system}" if system else "not on PATH"
-                )
-                state = True if system else (False if required_here else None)
-                found.append(Check(section, state, text, tool.hint(platform_)))
-            elif system := on_path(tool.name, tools_dir):  # what install falls back to when the download fails
-                text = f"{tool.name} {tool.version}: not installed, {system} stands in"
-                found.append(Check(section, None, text, installer))
-            else:
-                state = False if required_here else None
-                found.append(Check(section, state, f"{tool.name} {tool.version}: not installed", installer))
+        if group == "build" or installer.removeprefix("make ") in targets:  # a plugin has no `make demo`
+            found += [tool_check(tool, platform_, tools_dir) for tool in tools.values() if tool.group == group]
 
     section = "Accounts"
     gh = (installed(tools["gh"], platform_, tools_dir) if "gh" in tools else None) or on_path("gh", tools_dir)
