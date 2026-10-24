@@ -111,7 +111,8 @@ flowchart TB
 
 Every module is a set of operations, and every operation is a `hz` command, an MCP tool for coding agents
 (`hz system serve mcp`) and a REST endpoint (`hz system serve api`) at once. Modules can also advertise jobs that
-`hz system daemon install` runs in the background on a schedule, under launchd or systemd. Built in today:
+`hz system daemon install` runs in the background on a schedule, under launchd or systemd, unattended and with your
+rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)). Built in today:
 
 <!-- modules:start -->
 - [`clock`](docs/MODULES.md#clock) — What time it is for everyone on the team. *First-party plugin: `hz system plugin add clock`.*
