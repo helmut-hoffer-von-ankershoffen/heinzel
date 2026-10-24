@@ -19,7 +19,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "ci.yml": {
         "uv run --script scripts/check_confidentiality.py --require": "the secret must be configured in this repo",
         "unzip -l ": "asserts what the built wheel contains",
-        'if [ "$EVENT" != pull_request ]': "decides from the changed paths whether a pull request builds the macOS app",
+        'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
@@ -315,3 +315,36 @@ def test_claude_review_skips_events_sent_by_bots():
         "github.event.pull_request.head.repo.full_name == github.repository",
     ):
         assert clause in condition
+
+
+def _generated_plugin_ci() -> dict:
+    import importlib.util
+
+    path = REPO / "scripts" / "sync_template.py"
+    spec = importlib.util.spec_from_file_location("sync_template", path)
+    assert spec
+    assert spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    text = module.ci_workflow()
+    assert "notifier" not in text
+    assert "changes" not in text.replace("upstream changes", "")
+    return yaml.safe_load(text.replace("[[ package_name ]]", "x"))
+
+
+def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
+    jobs = _generated_plugin_ci()["jobs"]
+    for name, job in jobs.items():
+        needs = job.get("needs", [])
+        for need in [needs] if isinstance(needs, str) else needs:
+            assert need in jobs, f"{name} needs {need}"
+    assert jobs["setup"]["strategy"]["matrix"]["os"] == ["ubuntu-latest", "macos-latest"]
+    assert "if" not in jobs["build"]
+
+
+def test_pull_requests_run_one_macos_python_and_ci_ok_waits_for_changes():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    include = jobs["test"]["strategy"]["matrix"]["include"]
+    assert "pull_request" in include
+    assert '[{"os":"macos-latest","python":"3.15"}]' in include
+    assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])

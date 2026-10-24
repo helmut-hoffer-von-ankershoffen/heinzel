@@ -40,8 +40,9 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
+          changed="$(git diff --name-only "$BASE...HEAD" || true)"
           if [ "$EVENT" != pull_request ] \
-            || git diff --name-only "$BASE...HEAD" | grep -qE '^(src/heinzel/modules/system/notify/macos/|scripts/notifier\.py$|scripts/tools\.toml$|\.github/workflows/ci\.yml$)'; then
+            || grep -qE '^(src/heinzel/modules/system/notify/macos/|scripts/notifier\.py$|scripts/tools\.toml$|Makefile$|pyproject\.toml$|\.github/workflows/ci\.yml$)' <<< "$changed"; then
             echo "notifier=true" >> "$GITHUB_OUTPUT"
           else
             echo "notifier=false" >> "$GITHUB_OUTPUT"

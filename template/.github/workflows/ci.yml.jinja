@@ -19,9 +19,6 @@ env:
   UV_FROZEN: "1"
   FORCE_COLOR: "1"
 
-# GitHub-hosted macOS runners are the scarce resource, so a pull request runs macOS on the newest Python only, one
-# `make setup` and the notifier app when its sources change. Everything else (every Python and platform, end-to-end on
-# macOS, Intel) runs on push to main, the daily schedule and dispatch, which includes the release pull request.
 jobs:
   dependency-review:
     name: Dependency review

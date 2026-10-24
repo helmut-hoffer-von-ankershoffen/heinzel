@@ -89,10 +89,13 @@ def ci_workflow() -> str:
     # The core's CI covers every platform of the shared scripts/tools.toml; a plugin, possibly private and paying for
     # its minutes, sets up on the two most contributors use.
     text = re.sub(
-        r"(    name: make setup[^\n]*\n(?:[^\n]*\n)*?        os: )\$\{\{ fromJSON[^\n]*",
+        r"(\n  setup:\n.*?\n        os: )\$\{\{ fromJSON[^\n]*",
         r"\1[ubuntu-latest, macos-latest]",
         text,
+        count=1,
+        flags=re.DOTALL,
     )
+    text = re.sub(r"\n# GitHub-hosted macOS runners.*?\n(?=jobs:)", "\n", text, flags=re.DOTALL)
     return text.replace(", template, build]", ", build]").replace(", changes,", ",")
 
 
