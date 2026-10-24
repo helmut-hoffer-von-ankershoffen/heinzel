@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { InstallApp } from "@/pwa/InstallApp";
+import { SoundButton } from "@/sound/SoundControls";
 import { Branding } from "./Branding";
 import { BellButton } from "./NotificationCenter";
 import { CONTRACTS_SECTION, contractPath, railItems, sections, visibleSections } from "./navigation";
@@ -319,6 +320,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
           </MenuLink>
         </div>
       )}
+      {compact && <SoundButton compact />}
       {compact && <ThemeButton compact />}
       <button
         type="button"
@@ -346,6 +348,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
           </>
         )}
       </button>
+      {!compact && <SoundButton />}
       {!compact && <ThemeButton />}
     </div>
   );

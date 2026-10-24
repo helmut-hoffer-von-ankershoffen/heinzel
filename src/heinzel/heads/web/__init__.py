@@ -18,6 +18,9 @@ fetches a font for `FontFace` or `@font-face` itself and can't add a header. The
 `Sec-Fetch-Site` checks, hold nothing private (what an installed plugin ships), and come through `ThemeFonts`, which
 checks each file again as it reads it (ADR 0044). Themes' logos are served the same way at
 `/theme-assets/<theme>/<light|dark|mark>.svg`, as `image/svg+xml` under a CSP of their own that loads and runs nothing.
+Soundscapes' audio files are served the same way at `/sound-assets/<name>/<layer-n|earcon-kind>.<ext>`, typed by their
+checked signature (ADR 0058). The page itself (`index.html`) admits one frame origin, from `STREAM_PROVIDERS` in code,
+only while the soundscape in effect is a stream: the configuration is read for each page, and any error admits none.
 
 `POST /api/restart` restarts the server in place, for changes a running process can't load, such as an added plugin
 (`restart_required`, ADR 0047): the process executes `hz` again with the same arguments, handing over its listening
@@ -51,11 +54,15 @@ from heinzel.kernel import (
     KERNEL_SECTION,
     LOGO_CSP,
     LOGO_ROUTE,
+    SOUND_CSP,
+    SOUND_ROUTE,
+    STREAM_PROVIDERS,
     Config,
     HeinzelError,
     Kernel,
     Progress,
     Settings,
+    SoundAssets,
     ThemeFonts,
 )
 
@@ -71,14 +78,17 @@ CSP = (
 )
 """Only this origin, for everything; no inline scripts, no frames, no forms posting elsewhere. Inline styles are allowed
 because the terminal (xterm.js) writes its measurements into `<style>` elements; scripts stay this origin's only."""
+CSP_HEADER = "Content-Security-Policy"
 SECURITY_HEADERS = {
-    "Content-Security-Policy": CSP,
+    CSP_HEADER: CSP,
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "X-Frame-Options": "DENY",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
 }
+"""How others may treat our answers; none of them limits what the page embeds. Never add COEP `require-corp`: it
+would block the stream soundscape's player (ADR 0058)."""
 NO_CACHE = frozenset({"sw.js", "manifest.webmanifest", "favicon.svg"})
 """Top-level files a browser must check for a new version every time: the service worker and the manifest."""
 mimetypes.add_type("application/manifest+json", ".webmanifest")
@@ -86,6 +96,7 @@ NOT_FOUND = 404
 FONT_THEME = re.compile(r"[a-z](?:-?[a-z0-9]){0,63}")
 FONT_FILE = re.compile(r"([0-9]{1,2})\.woff2")
 LOGO_FILE = re.compile(r"(light|dark|mark)\.svg")
+SOUND_FILE = re.compile(r"(layer-[0-9]|earcon-[a-z]{1,16})\.(ogg|opus|mp3)")
 IMMUTABLE = "public, max-age=31536000, immutable"
 RESUME = "HEINZEL_UI_RESUME"
 """How a restarting `hz ui` hands its listening socket and token to the process it becomes: `<fd>:<token>`. A
@@ -213,6 +224,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     app.mount("/api", endpoints)
     add_fonts(app, kernel)
     add_logos(app, kernel)
+    add_sounds(app, kernel)
     if static is None:
         return app
     if (static / "assets").is_dir():
@@ -224,21 +236,51 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     files = {file.name: file for file in static.iterdir() if file.is_file() and file != index}
 
     @app.get("/{path:path}", include_in_schema=False)
-    async def page(path: str) -> Response:
+    def page(path: str) -> Response:
+        # Not async: the page's CSP reads the configuration, so FastAPI runs it in its thread pool.
         # Top-level files as themselves; every other path is a route of the app.
         if path in files:
             headers = {"Cache-Control": "no-cache"} if path in NO_CACHE else None
             return FileResponse(files[path], headers=headers)
-        return FileResponse(index, headers={"Cache-Control": "no-store"})
+        return FileResponse(index, headers={"Cache-Control": "no-store", CSP_HEADER: page_csp(kernel)})
 
     return app
 
 
+PAGE_CSPS = frozenset(f"{CSP}; frame-src {provider.frame_origin}" for provider in STREAM_PROVIDERS.values())
+"""Every CSP the page may carry besides `CSP`: one per stream provider, its frame origin admitted."""
+
+
+def page_csp(kernel: Kernel) -> str:
+    """The CSP of the app's page: `CSP`, with `frame-src` for the one host the stream soundscape in effect plays from.
+
+    The origin comes from `STREAM_PROVIDERS`, never from configuration or a plugin; anything going wrong admits none.
+    """
+    try:
+        provider = kernel.resolve(SoundAssets).stream_provider() if kernel.provides(SoundAssets) else None
+    except Exception:  # noqa: BLE001 - fail closed: the page loads with the strict CSP, sound just can't stream
+        provider = None
+    stream = STREAM_PROVIDERS.get(provider) if provider else None
+    return f"{CSP}; frame-src {stream.frame_origin}" if stream else CSP
+
+
 def secure(response: Response, path: str) -> None:
-    """Add the security headers to the answer for `path`, and what the answers of some paths need besides."""
+    """Add the security headers to the answer for `path`, and what the answers of some paths need besides.
+
+    The page's own CSP (`page_csp`) is kept: only it may admit a frame, and only by extending `CSP`.
+    """
+    own = response.headers.get(CSP_HEADER)
     response.headers.update(SECURITY_HEADERS)
+    if (
+        own
+        and own.startswith(CSP + "; frame-src ")
+        and response.headers.get("content-type", "").startswith("text/html")
+    ):
+        response.headers[CSP_HEADER] = own
     if response.status_code != OK:
         return
+    if path.startswith(SOUND_ROUTE + "/"):
+        response.headers[CSP_HEADER] = SOUND_CSP  # an audio file opened on its own loads and runs nothing
     if path.startswith(LOGO_ROUTE + "/"):
         response.headers["Content-Security-Policy"] = LOGO_CSP  # an SVG opened on its own loads and runs nothing
     if path.startswith("/assets/"):
@@ -293,6 +335,35 @@ def logo_response(kernel: Kernel, theme: str, file: str) -> Response:
         return JSONResponse(status_code=NOT_FOUND, content={"error": "No theme ships that logo."})
     # The list's URL carries the content's version (`?v=`), so a changed logo is a new URL: the answer is immutable.
     return Response(content, media_type="image/svg+xml", headers={"Cache-Control": IMMUTABLE})
+
+
+def add_sounds(app: FastAPI, kernel: Kernel) -> None:
+    """Serve the soundscapes' audio files at `SOUND_ROUTE`, outside `/api`, behind the app's middleware (ADR 0058)."""
+
+    @app.get(SOUND_ROUTE + "/{soundscape}/{file}", include_in_schema=False)
+    def soundscape_file(soundscape: str, file: str) -> Response:
+        # Not async: it reads files, so FastAPI runs it in its thread pool and other requests don't wait.
+        return sound_response(kernel, soundscape, file)
+
+
+def sound_response(kernel: Kernel, soundscape: str, file: str) -> Response:
+    """Audio file `<layer-n|earcon-kind>.<ext>` of the available `soundscape`, or 404; served without the token.
+
+    Its type is the one its checked signature says, and the extension asked for must be the declared file's.
+    """
+    # Checked against fixed patterns, then looked up by name and part: a request never builds a path.
+    match = SOUND_FILE.fullmatch(file)
+    found = None
+    if FONT_THEME.fullmatch(soundscape) and match and kernel.provides(SoundAssets):
+        try:
+            found = kernel.resolve(SoundAssets).asset(soundscape, match.group(1), match.group(2))
+        except Exception:  # noqa: BLE001 - system.sound can't be built or read: no soundscape ships files
+            found = None
+    if found is None:
+        return JSONResponse(status_code=NOT_FOUND, content={"error": "No soundscape ships that file."})
+    content, media_type = found
+    # The list's URL carries the content's version (`?v=`), so a changed file is a new URL: the answer is immutable.
+    return Response(content, media_type=media_type, headers={"Cache-Control": IMMUTABLE})
 
 
 def free_socket(host: str = HOST, port: int = 0) -> socket.socket:

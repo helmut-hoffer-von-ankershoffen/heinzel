@@ -12,6 +12,7 @@ from heinzel import (
     LayerStack,
     ModuleRecord,
     Theme,
+    ThemeChoice,
     ThemeFonts,
     ThemeLet,
 )
@@ -87,7 +88,7 @@ def _logo(logos: ThemeLogoFiles | None) -> ThemeLogoView | None:
     return ThemeLogoView(light=light, dark=dark, mark=mark, alt=logos.logo.alt, height=logos.logo.height)
 
 
-class ThemeService(ThemeFonts):
+class ThemeService(ThemeFonts, ThemeChoice):
     """The themes of the web app (ADR 0044): the built-in one and every theme the installed plugins offer."""
 
     def __init__(self, kernel: Kernel, editor: ConfigEditor) -> None:
@@ -200,6 +201,14 @@ class ThemeService(ThemeFonts):
             note=note,
             next=next_steps,
         )
+
+    def selected(self) -> str:
+        """The name of the theme in effect, after every fallback; what `system.sound` follows (ADR 0058).
+
+        Raises:
+            HeinzelError: If a configuration file is not valid TOML.
+        """
+        return self.listing().selected
 
     def font(self, theme: str, index: int) -> bytes | None:
         """The content of font `index` of the available theme `theme` (the one that wins its name), or None."""

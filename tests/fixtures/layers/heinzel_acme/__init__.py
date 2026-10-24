@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from heinzel import Module
+from heinzel import Module, Soundscape
 
 module = Module("acme", "Acme's adapters and defaults: a made-up company for tests.")
 module.layer()
@@ -19,3 +19,14 @@ module.playbook(
     defaults={"capabilities.tracker": "acme", "capabilities.calendar": "acme"},
 )
 module.theme(Path(__file__).parent / "themes")
+# A stream soundscape of the company's, which the team's of the same name hides (ADR 0058).
+module.soundscape(
+    Soundscape.model_validate(
+        {
+            "name": "acme-radio",
+            "title": "Acme radio",
+            "kind": "stream",
+            "stream": {"provider": "youtube", "video": "tRsQsTMvPNg"},
+        }
+    )
+)

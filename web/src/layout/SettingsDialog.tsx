@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
+import { SoundSettings } from "@/sound/SoundControls";
 import { ConnectorsSection } from "./ConnectorsSection";
 import { PluginsSection, Provenance } from "./PluginsSection";
 import { Row, Switch } from "./SettingControls";
@@ -211,6 +212,9 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 <h3 className="mb-1 text-ui font-medium">{t("settings.appearance")}</h3>
                 <ModeRow />
                 <ThemePreviews />
+                <div className="mt-6">
+                  <SoundSettings />
+                </div>
                 <div className="mt-6">
                   <NotificationSettings />
                 </div>

@@ -40,6 +40,7 @@ from heinzel.kernel._lets import (
 )
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, PlaybookSetup, templates_in
 from heinzel.kernel._prompter import Prompter
+from heinzel.kernel._soundscapes import Soundscape, SoundscapeLet, sourced_soundscapes
 from heinzel.kernel._spec import hookimpl
 from heinzel.kernel._themes import Theme, ThemeLet, sourced_themes
 
@@ -555,6 +556,31 @@ class Module:
         lets: list[ThemeLet] = []
         for theme, directory in sourced_themes(source):
             let = ThemeLet(name=theme.name, theme=theme, directory=directory)
+            self.add(let)
+            lets.append(let)
+        return tuple(lets)
+
+    def soundscape(self, source: Path | Soundscape) -> tuple[SoundscapeLet, ...]:
+        """Offer soundscapes for the web app (ADR 0058): a `Soundscape`, a `*.toml` file of one, or a directory of them.
+
+        Data only, read and checked now, at import: `hz system sound list` lists them and `hz system sound use <name>`
+        picks one. A layered soundscape's audio files are relative to its file's directory and checked now (path,
+        size, licence, signature); a stream names a provider of `STREAM_PROVIDERS` and a video, never a URL. Two
+        modules offering one name: the more specific layer wins, as with themes (ADR 0044).
+
+        Example:
+            ```python
+            module.soundscape(Path(__file__).parent / "soundscapes")
+            ```
+
+        Raises:
+            ValueError: If a soundscape is malformed, is called `off`, an audio file doesn't pass its checks, or the
+                module already offers a soundscape of that name.
+            OSError: If a soundscape file can't be read.
+        """
+        lets: list[SoundscapeLet] = []
+        for soundscape, directory in sourced_soundscapes(source):
+            let = SoundscapeLet(name=soundscape.name, soundscape=soundscape, directory=directory)
             self.add(let)
             lets.append(let)
         return tuple(lets)

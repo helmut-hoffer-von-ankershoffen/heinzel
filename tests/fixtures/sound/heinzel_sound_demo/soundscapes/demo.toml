@@ -1,0 +1,18 @@
+# A tiny layered soundscape for tests: one second of soft pink noise that follows the part of the day, and a chime
+# for drafts. Both files were generated for this repository (ffmpeg's anoisesrc and sine) and are CC0.
+name = "demo"
+title = "Demo hum"
+kind = "layers"
+pairs_with = ["acme"]
+fade_seconds = 2
+
+[[layers]]
+file = "sounds/hum.opus"
+licence = "CC0-1.0"
+gain = 0.6
+signal = "daypart"
+curve = { morning = 0.8, afternoon = 1.0, evening = 0.5, night = 0.2 }
+
+[earcons.draft]
+file = "sounds/chime.opus"
+licence = "CC0-1.0"

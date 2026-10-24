@@ -9,6 +9,7 @@ import { Prose } from "@/components/Prose";
 import { Button } from "@/components/ui/button";
 import { format, t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { typed } from "@/sound/store";
 import type { Chat } from "./useChat";
 
 export const MESSAGE_LIMIT = 4000;
@@ -215,7 +216,10 @@ export function Composer({
         rows={2}
         value={message}
         maxLength={MESSAGE_LIMIT}
-        onChange={(event) => setMessage(event.target.value)}
+        onChange={(event) => {
+          setMessage(event.target.value);
+          typed(); // a soundscape plays softer while you type (ADR 0058)
+        }}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) void submit(event);
         }}
