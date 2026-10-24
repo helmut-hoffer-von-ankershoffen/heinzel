@@ -26,6 +26,10 @@ export type SplashState = {
   themed: boolean;
   /** The app was ready once: losing hz now is a reconnect, not a start. */
   booted: boolean;
+  /** hz was asked at least once: the give-up clock can't fire before the first answer, or the lack of one. */
+  asked: boolean;
+  /** hz didn't answer since it last did: when it answers again, every screen has to read again. */
+  lost: boolean;
   /** Bumped when something suspects hz went away, so the controller asks it. */
   checks: number;
 };
@@ -41,7 +45,8 @@ export type SplashEvent =
   | { type: "suspect" }
   | { type: "timeout" }
   | { type: "restart"; at: number }
-  | { type: "restart-failed" };
+  | { type: "restart-failed" }
+  | { type: "restart-refused" };
 
 export const initial: SplashState = {
   phase: "starting",
@@ -52,6 +57,8 @@ export const initial: SplashState = {
   pairing: false,
   themed: false,
   booted: false,
+  asked: false,
+  lost: false,
   checks: 0,
 };
 
@@ -64,7 +71,7 @@ function settle(state: SplashState): SplashState {
 
 export function reduce(state: SplashState, event: SplashEvent): SplashState {
   // A restart ends in a reload (useRestartServer); until then nothing but its failure changes the line.
-  if (state.phase === "restarting" && event.type !== "restart-failed") return state;
+  if (state.phase === "restarting" && event.type !== "restart-failed" && event.type !== "restart-refused") return state;
   switch (event.type) {
     case "mounted":
       return state.phase === "starting" ? settle(state) : state;
@@ -76,26 +83,31 @@ export function reduce(state: SplashState, event: SplashEvent): SplashState {
       return state.phase === "error" ? { ...state, themed: true } : settle({ ...state, themed: true });
     case "answered":
       // hz is back, or let this page in at last: whatever was wrong is over.
-      return settle({ ...state, reachable: true, authorized: true, problem: null });
+      return settle({ ...state, reachable: true, authorized: true, problem: null, asked: true, lost: false });
     case "refused":
-      return { ...state, reachable: true, authorized: false, phase: "error", problem: "token" };
+      return { ...state, reachable: true, authorized: false, phase: "error", problem: "token", asked: true };
     case "unreachable": {
-      if (state.phase === "error") return { ...state, reachable: false, problem: "unreachable" };
-      const next = settle({ ...state, reachable: false });
+      if (state.phase === "error")
+        return { ...state, reachable: false, problem: "unreachable", asked: true, lost: true };
+      const next = settle({ ...state, reachable: false, asked: true, lost: true });
       // The overlay appears now: it counts its least time and its patience from here.
       return state.phase === "ready" ? { ...next, since: event.at } : next;
     }
     case "suspect":
       return state.phase === "error" ? state : { ...state, checks: state.checks + 1 };
     case "timeout":
-      if (state.phase === "ready" || state.phase === "error") return state;
+      // Not before hz was asked: a page that took long to load hasn't waited for hz yet.
+      if (state.phase === "ready" || state.phase === "error" || !state.asked) return state;
       // Nothing answered: say how to start hz. It answered but something else is slow: stop blocking the app.
       if (!state.reachable) return { ...state, phase: "error", problem: "unreachable" };
       return { ...state, phase: "ready", problem: null, booted: true };
     case "restart":
       return { ...state, phase: "restarting", problem: null, since: event.at };
     case "restart-failed":
-      return { ...state, phase: "error", problem: "unreachable", reachable: false };
+      return { ...state, phase: "error", problem: "unreachable", reachable: false, lost: true };
+    case "restart-refused":
+      // hz answered that it can't restart (`make web-dev`): it is there, so the app stays as it was.
+      return settle({ ...state, reachable: true });
   }
 }
 

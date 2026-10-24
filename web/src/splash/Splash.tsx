@@ -23,7 +23,7 @@ import {
   waiting,
 } from "./machine";
 import { remember } from "./snapshot";
-import { type SplashStore, splash } from "./store";
+import { type SplashStore, splash, unreachableError } from "./store";
 
 const LINES: Record<Exclude<Phase, "error">, MessageKey> = {
   starting: "splash.starting",
@@ -41,9 +41,10 @@ export async function probeServer(): Promise<ProbeResult> {
   try {
     const { data, response } = await api.GET("/system/info");
     if (response.status === 401) return { kind: "refused" };
-    // 5xx: a proxy in front of a stopped hz (`make web-dev`), or hz failing to answer at all.
-    if (response.status >= 500) return { kind: "unreachable" };
-    return { kind: "ok", info: data }; // a 403 or 404 is an answer: the screens say what it means
+    // A proxy's gateway error: the hz behind it (`make web-dev`) is stopped. Any other status is hz answering, a 500
+    // too: the screens say what it means.
+    if (unreachableError({ status: response.status })) return { kind: "unreachable" };
+    return { kind: "ok", info: response.ok ? data : undefined };
   } catch {
     return { kind: "unreachable" };
   }
@@ -81,27 +82,42 @@ function Command({ command }: { command: string }) {
   );
 }
 
-/** The fix for a problem: what happened and the command that helps. */
+/** What starts the server this page talks to: `hz ui`, or `make web-dev` while developing the app. */
+export const START = import.meta.env.DEV ? "make web-dev" : "hz ui";
+
+/** The fix for a problem: what happened, what to do, and the command that does it. */
 function Fix({ problem }: { problem: Problem }) {
-  const [title, text] =
+  const [title, text, lead] =
     problem === "token"
-      ? (["splash.tokenTitle", "splash.token"] as const)
-      : (["splash.unreachableTitle", "splash.unreachable"] as const);
+      ? (["splash.tokenTitle", "splash.token", "splash.tokenCommand"] as const)
+      : (["splash.unreachableTitle", "splash.unreachable", "splash.unreachableCommand"] as const);
   return (
     <div role="alert" className="flex max-w-md flex-col items-center gap-3 text-sm">
       <h1 className="text-lg font-semibold text-foreground">{t(title)}</h1>
-      <p className="text-muted-foreground">{t(text)}</p>
-      <Command command="hz ui" />
+      <p className="text-muted-foreground">{t(text, { command: START })}</p>
+      <p className="text-muted-foreground">{t(lead, { command: START })}</p>
+      <Command command={START} />
     </div>
   );
 }
 
+/** The line for a phase; "Signing you in…" only while the token is checked or this browser pairs. */
+function line(state: SplashState): string {
+  if (state.phase === "error") return "";
+  if (state.phase === "signing-in" && state.authorized && !state.pairing) return t("splash.opening");
+  return t(LINES[state.phase]);
+}
+
 const byId = (id: string) => document.getElementById(id);
+/** How long a suspected outage waits before hz is asked a second time. */
+const CONFIRM_MS = 500;
 
 /** Show #splash over the app while `shown` (the app can't take focus meanwhile); fade it out, never too early. */
 function useSplashElement(state: SplashState, now: () => number) {
   const shown = visible(state);
   const { since } = state;
+  // Where focus was when the splash came over the app (`inert` drops it), so it goes back there.
+  const focused = useRef<HTMLElement | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `since` is read through `state`, the latest one
   useEffect(() => {
     const element = byId("splash");
@@ -109,6 +125,8 @@ function useSplashElement(state: SplashState, now: () => number) {
     if (!element) return;
     if (shown) {
       element.hidden = false;
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active !== document.body && app?.contains(active)) focused.current = active;
       app?.setAttribute("inert", "");
       const frame = requestAnimationFrame(() => element.removeAttribute("data-leaving"));
       return () => cancelAnimationFrame(frame);
@@ -117,6 +135,8 @@ function useSplashElement(state: SplashState, now: () => number) {
     const leave = setTimeout(() => {
       element.setAttribute("data-leaving", "");
       app?.removeAttribute("inert");
+      if (focused.current?.isConnected) focused.current.focus({ preventScroll: true });
+      focused.current = null;
       fade = setTimeout(() => {
         element.hidden = true;
       }, fadeMs());
@@ -129,10 +149,10 @@ function useSplashElement(state: SplashState, now: () => number) {
   // The line, and whether the CSS shows the progress or the fix.
   useEffect(() => {
     const element = byId("splash");
-    const line = byId("splash-line");
+    const text = byId("splash-line");
     if (element) element.dataset.state = state.phase === "error" ? "error" : "busy";
-    if (line && state.phase !== "error") line.textContent = t(LINES[state.phase]);
-  }, [state.phase]);
+    if (text && state.phase !== "error") text.textContent = line(state);
+  }, [state]);
 }
 
 type Props = { store?: SplashStore; probe?: () => Promise<ProbeResult>; now?: () => number };
@@ -149,29 +169,51 @@ export function Splash({ store = splash, probe = probeServer, now = clock }: Pro
 
   useEffect(() => store.send({ type: "mounted" }), [store]);
 
-  /** Ask hz once and tell the machine; whether to ask again. */
-  const ask = useCallback(async (): Promise<boolean> => {
-    const answer = await probe();
-    if (answer.kind === "ok") {
-      const back = store.get().booted && store.get().phase !== "ready";
-      const version = (answer.info as { version?: unknown } | undefined)?.version;
-      if (answer.info) client.setQueryData(["system", "info"], answer.info);
-      if (typeof version === "string") {
-        remember({ version });
-        const element = byId("splash-version");
-        if (element) element.textContent = `v${version}`;
+  /** Tell the machine what hz answered; whether to ask again. */
+  const apply = useCallback(
+    (answer: ProbeResult): boolean => {
+      if (answer.kind === "ok") {
+        // hz answers after it didn't (before the app booted, too): every screen reads again, where the person was.
+        const back = store.get().lost;
+        const version = (answer.info as { version?: unknown } | undefined)?.version;
+        if (answer.info) client.setQueryData(["system", "info"], answer.info);
+        if (typeof version === "string") {
+          remember({ version });
+          const element = byId("splash-version");
+          if (element) element.textContent = `v${version}`;
+        }
+        store.send({ type: "answered" });
+        if (back) void client.invalidateQueries();
+        return false;
       }
-      store.send({ type: "answered" });
-      if (back) void client.invalidateQueries(); // hz is back: every screen reads again, where the person was
-      return false;
-    }
-    if (answer.kind === "refused") {
-      store.send({ type: "refused" });
-      return false;
-    }
-    store.send({ type: "unreachable", at: now() });
-    return polling(store.get());
-  }, [probe, store, client, now]);
+      if (answer.kind === "refused") {
+        store.send({ type: "refused" });
+        return false;
+      }
+      store.send({ type: "unreachable", at: now() });
+      return polling(store.get());
+    },
+    [store, client, now],
+  );
+
+  // Answers apply in the order the questions went out: a late "not there" never undoes a newer answer.
+  const asked = useRef(0);
+  const applied = useRef(0);
+  /** Ask hz once and tell the machine; whether to ask again. `confirm` asks twice before calling hz gone. */
+  const ask = useCallback(
+    async (confirm = false): Promise<boolean> => {
+      const number = ++asked.current;
+      let answer = await probe();
+      if (confirm && answer.kind === "unreachable") {
+        await new Promise((resolve) => setTimeout(resolve, CONFIRM_MS));
+        answer = await probe();
+      }
+      if (number < applied.current) return false;
+      applied.current = number;
+      return apply(answer);
+    },
+    [probe, apply],
+  );
 
   // Until hz answered and let this page in, or until it is back: ask every POLL_MS.
   useEffect(() => {
@@ -196,20 +238,21 @@ export function Splash({ store = splash, probe = probeServer, now = clock }: Pro
   useEffect(() => {
     if (state.checks === handled.current) return;
     handled.current = state.checks;
-    if (!asking) void ask();
+    if (!asking) void ask(true); // a blip (a laptop waking up) doesn't bring the overlay back
   }, [state.checks, asking, ask]);
 
   // Give up after GIVE_UP_MS of waiting: the fix instead of a spinner forever.
   useEffect(() => {
-    if (!waits) return;
+    if (!waits || !state.asked) return; // a page that took long to load hasn't waited for hz yet
     const timer = setTimeout(() => store.send({ type: "timeout" }), Math.max(0, state.since + GIVE_UP_MS - now()));
     return () => clearTimeout(timer);
-  }, [waits, state.since, store, now]);
+  }, [waits, state.since, state.asked, store, now]);
 
-  // The theme's branding once the list arrived, drawn by the sidebar's component; until then index.html's.
+  // A theme's logo once the list arrived, drawn by the sidebar's component; the built-in theme keeps index.html's
+  // brand, which shows the app's icon file (/favicon.svg), so the splash doesn't switch artwork while it is up.
   const [brand, setBrand] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
-    if (!theme || brand) return;
+    if (!theme?.logo || theme.name === "default" || brand) return;
     const element = byId("splash-brand");
     element?.replaceChildren();
     setBrand(element);

@@ -41,6 +41,13 @@ afterEach(() => {
 describe("index.html's splash", () => {
   it("paints the default theme's branding and the starting line before React loads", () => {
     paint();
+    // The shared icon file, never a copy: new artwork reaches the splash with no change here.
+    const icon = document.querySelector("#splash-brand img");
+    expect(icon).toHaveAttribute("src", "/favicon.svg");
+    expect(icon).toHaveAttribute("alt", "");
+    expect(markup).not.toMatch(/data:|<svg|🧝/);
+    // One progress element, swappable for an animation file.
+    expect(document.querySelectorAll("#splash-progress")).toHaveLength(1);
     expect(document.getElementById("splash-brand")?.textContent).toContain("Heinzelmännchen");
     const line = document.getElementById("splash-line");
     expect(line?.textContent).toBe("Starting…");
@@ -58,7 +65,7 @@ describe("index.html's splash", () => {
     expect(root.style.colorScheme).toBe("dark");
     expect(root.style.getPropertyValue("--splash-background")).toBe(acmeTheme.dark.background);
     expect(root.style.getPropertyValue("--splash-primary")).toBe(acmeTheme.dark.primary);
-    const logo = document.querySelector("#splash-brand img");
+    const logo = document.querySelector('#splash-brand img[src^="/theme-assets/"]');
     expect(logo).toHaveAttribute("src", acmeTheme.logo?.dark);
     expect(logo).toHaveAttribute("alt", acmeTheme.logo?.alt);
     expect(document.getElementById("splash-version")?.textContent).toBe("v0.9.1");
@@ -82,7 +89,7 @@ describe("index.html's splash", () => {
     expect(root.style.getPropertyValue("--splash-background")).toBe("");
     expect(root.style.getPropertyValue("--splash-primary")).toBe("");
     expect(root.style.getPropertyValue("--splash-font")).toBe("");
-    expect(document.querySelector("#splash-brand img")).toBeNull();
+    expect(document.querySelector('#splash-brand img[src^="/theme-assets/"]')).toBeNull();
     expect(document.getElementById("splash-version")?.textContent).toBe("");
   });
 
@@ -103,7 +110,7 @@ describe("index.html's splash", () => {
 
   it("holds the progress still for someone who asked for less motion", () => {
     expect(page).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*#splash \{\s*transition: none;/);
-    expect(page).toMatch(/#splash-bar::after \{\s*width: 100%;\s*opacity: 0.6;\s*animation: none;/);
+    expect(page).toMatch(/\.splash-bar::after \{\s*width: 100%;\s*opacity: 0.6;\s*animation: none;/);
   });
 });
 

@@ -6,6 +6,8 @@ export type SplashStore = {
   get: () => SplashState;
   send: (event: SplashEvent) => void;
   subscribe: (listener: () => void) => () => void;
+  /** Back to the start, for tests that share the page's store. */
+  reset: () => void;
 };
 
 export function createSplashStore(start: SplashState = initial): SplashStore {
@@ -17,6 +19,10 @@ export function createSplashStore(start: SplashState = initial): SplashStore {
       const next = reduce(state, event);
       if (next === state) return;
       state = next;
+      for (const listener of listeners) listener();
+    },
+    reset: () => {
+      state = start;
       for (const listener of listeners) listener();
     },
     subscribe: (listener) => {

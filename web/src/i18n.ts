@@ -115,12 +115,15 @@ const en = {
   "splash.restarting": "Restarting hz…",
   "splash.reconnecting": "Reconnecting to hz…",
   "splash.ready": "Ready",
+  "splash.opening": "Opening…",
   "splash.unreachableTitle": "hz isn't answering",
   "splash.unreachable":
-    "hz ui isn't running on this machine, or it stopped. Start it in a terminal; this page connects as soon as it answers:",
-  "splash.tokenTitle": "Your sign-in expired",
+    "{command} isn't running on this machine, or it stopped. An installed app connects again by itself once it runs.",
+  "splash.unreachableCommand": "Start it in a terminal; it opens the app with a new link:",
+  "splash.tokenTitle": "Sign in again",
   "splash.token":
-    "hz ui started again with a new link, so it no longer accepts this page's. Open the link it printed, or stop it (Ctrl+C) and start it again for a new one:",
+    "{command} no longer accepts this page's sign-in: it started again with a new link, or this browser was unpaired. Open the link it printed.",
+  "splash.tokenCommand": "For a new link, press Ctrl+C in the terminal running it, then run:",
   "state.loading": "Loading…",
   "state.error": "Couldn't load this:",
   "copy.label": "Copy",

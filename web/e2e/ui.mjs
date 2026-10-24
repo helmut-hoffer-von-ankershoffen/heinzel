@@ -40,14 +40,19 @@ async function axeViolations(page) {
   );
 }
 
-/** The splash, in a context of its own: its aborted requests are meant to fail, so they aren't the app's errors. */
+/** The splash, in a context of its own: its aborted requests are meant to fail, so they aren't the app's errors. A CSP
+ * violation by its inline script still shows in the main context, which loads the same page. */
 async function splash() {
   for (const colorScheme of ["light", "dark"]) {
     const context = await browser.newContext({ viewport, colorScheme });
     const page = await context.newPage();
-    // hz answers slowly: the splash stays up long enough to be seen, then has to go by itself.
+    // hz holds every answer until the splash was seen, then has to let it go by itself.
+    let release = () => undefined;
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
     await page.route(API, async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await held;
       await route.continue().catch(() => undefined);
     });
     await page.goto(url);
@@ -57,6 +62,7 @@ async function splash() {
       line: await page.locator("#splash-line").textContent(),
       background: await page.locator("#splash").evaluate((element) => getComputedStyle(element).backgroundColor),
     };
+    release();
     await page.unroute(API);
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
     await page.getByRole("heading", { name: "Today" }).waitFor();
@@ -69,7 +75,7 @@ async function splash() {
   await page.route(API, (route) => route.abort("connectionrefused"));
   await page.goto(url);
   await page.getByRole("alert").waitFor({ timeout: 15_000 });
-  await page.waitForTimeout(300); // the copy button's icon
+  await page.getByRole("button", { name: /Copy the command/ }).waitFor();
   result.splash.error = await page.getByRole("alert").textContent();
   result.violations["splash-error"] = await axeViolations(page);
   await page.screenshot({ path: join(shots, "splash-error.png") });

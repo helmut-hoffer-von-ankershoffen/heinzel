@@ -71,14 +71,14 @@
         font-size: 14px;
         color: var(--splash-muted-foreground);
       }
-      #splash-bar {
+      .splash-bar {
         width: 120px;
         height: 3px;
         overflow: hidden;
         border-radius: 3px;
         background: color-mix(in srgb, var(--splash-muted-foreground) 25%, transparent);
       }
-      #splash-bar::after {
+      .splash-bar::after {
         content: "";
         display: block;
         width: 40%;
@@ -95,7 +95,7 @@
           transform: translateX(250%);
         }
       }
-      #splash[data-state="error"] #splash-bar,
+      #splash[data-state="error"] #splash-progress,
       #splash[data-state="error"] #splash-line {
         display: none;
       }
@@ -109,7 +109,7 @@
         #splash {
           transition: none;
         }
-        #splash-bar::after {
+        .splash-bar::after {
           width: 100%;
           opacity: 0.6;
           animation: none;
@@ -119,15 +119,19 @@
   </head>
   <body>
     <div id="splash" data-state="busy">
-      <div id="splash-brand"><span aria-hidden="true">🧝</span><span>Heinzelmännchen</span></div>
+      <!-- The app's own icon file, the one the favicon shows: new artwork reaches the splash too. -->
+      <div id="splash-brand"><img src="/favicon.svg" alt="" width="28" height="28" /><span>Heinzelmännchen</span></div>
       <p id="splash-line" role="status" aria-live="polite">Starting…</p>
-      <div id="splash-bar" aria-hidden="true"></div>
+      <!-- The progress: one element, so an animation file can replace it (<img id="splash-progress" src="…" alt="" />). -->
+      <div id="splash-progress" class="splash-bar" aria-hidden="true"></div>
       <div id="splash-problem"></div>
       <p id="splash-version"></p>
     </div>
     <script>
       // Before React: the last mode and theme (hz.theme, hz.splash; web/src/splash/snapshot.ts), so the splash looks
-      // like the app from the first paint. Allowed by its hash in the web head's CSP: change it, change the hash.
+      // like the app from the first paint. Allowed by its hash: a change needs SPLASH_SCRIPT in
+      // src/heinzel/heads/web/__init__.py changed with it, which tests/integration/web_security_test.py prints. Vite's
+      // dev server sends no CSP, so `make web-dev` doesn't notice a stale hash; `hz ui` would block the script.
       (() => {
         const root = document.documentElement;
         const read = (key) => {
@@ -172,7 +176,7 @@
             const image = document.createElement("img");
             image.src = src;
             image.alt = logo.alt.slice(0, 64);
-            if (typeof logo.height === "string" && /^[0-9]{1,3}(?:\.[0-9]{1,4})?(?:px|rem|em)$/.test(logo.height)) {
+            if (typeof logo.height === "string" && /^(?:0|[0-9]{1,3}(?:\.[0-9]{1,4})?(?:px|rem|em))$/.test(logo.height)) {
               root.style.setProperty("--splash-logo-height", logo.height);
             }
             brand.replaceChildren(image);

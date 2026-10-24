@@ -112,9 +112,10 @@ maintainer, 2026-10-24.
 the first paint until it is ready, in the person's last theme and mode, and the fix instead of a spinner when hz
 doesn't answer.
 
-- **What it shows.** The theme's branding (its logo through an `<img>`, or the Heinzel and the app's name), hz's
+- **What it shows.** The theme's branding (its logo through an `<img>`, or the app's own icon file, `/favicon.svg`, and
+  its name, so new artwork reaches the splash unchanged), hz's
   version, one line for what is happening ("Starting…", "Connecting to hz…", "Signing you in…", "Restarting hz…",
-  "Reconnecting to hz…") in a `role="status"` region, and a progress bar that holds still for reduced motion. It stays
+  "Reconnecting to hz…") in a `role="status"` region, and a progress bar (one element, `#splash-progress`, that an animation file can replace) which holds still for reduced motion. It stays
   at least 300 ms and fades out in 200 ms once hz answered with the token accepted and the theme is applied. After 8 s
   without an answer it shows what to do: hz ui isn't running, or it no longer accepts this page's token, with the
   command. It comes back over the app on `POST /api/restart` and when hz stops answering, and leaves the person where

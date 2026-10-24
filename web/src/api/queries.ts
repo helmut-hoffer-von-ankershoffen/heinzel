@@ -1,6 +1,6 @@
 // One query per operation the screens read; TanStack Query caches them, so screens share what they fetched.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { splash } from "@/splash/store";
+import { splash, unreachableError } from "@/splash/store";
 import { api, unwrap } from "./client";
 
 export const keys = {
@@ -197,8 +197,17 @@ export const useRestartServer = ({
 } = {}) =>
   useMutation({
     mutationFn: async () => {
-      await unwrap(api.POST("/restart"));
-      splash.send({ type: "restart", at: performance.now() }); // over the app until the reload brings it back
+      // Over the app from the moment it is asked, until the reload brings it back.
+      splash.send({ type: "restart", at: performance.now() });
+      try {
+        await unwrap(api.POST("/restart"));
+      } catch (error) {
+        // The connection dropped as the process replaced itself: it is restarting all the same.
+        if (!unreachableError(error)) {
+          splash.send({ type: "restart-refused" });
+          throw error;
+        }
+      }
       if (!(await waitForServer(interval))) {
         splash.send({ type: "restart-failed" });
         throw new Error("hz ui didn't answer again; start it in a terminal: hz ui");

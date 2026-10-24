@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { SchemaThemeView } from "@/api/client";
 import { useThemes } from "@/api/queries";
 import { remember, themeSnapshot } from "@/splash/snapshot";
-import { splash } from "@/splash/store";
+import { splash, unreachableError } from "@/splash/store";
 
 const DEFAULT = "default";
 
@@ -77,7 +77,8 @@ export function ThemeTokens() {
     };
   }, [selected, dark]);
   // Applied (or nothing to apply): the splash may go, and the next start paints this theme before React loads.
-  const settled = themes.isSuccess || themes.isError;
+  // A list hz couldn't be reached for isn't settled: the splash waits for hz, then for the list read again.
+  const settled = themes.isSuccess || (themes.isError && !unreachableError(themes.error));
   useEffect(() => {
     if (themes.isSuccess) remember(themeSnapshot(selected));
     if (settled) splash.send({ type: "themed" });

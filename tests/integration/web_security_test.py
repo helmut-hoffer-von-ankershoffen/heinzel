@@ -113,6 +113,10 @@ def test_every_response_carries_the_csp_and_the_other_security_headers(client):
     assert "unsafe-eval" not in web.CSP
 
 
+INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", flags=re.DOTALL)
+"""Every script element without a `src`: an inline script, whatever its attributes."""
+
+
 def script_hash(source: str) -> str:
     """A script's CSP source: `'sha256-<base64>'` of its exact text."""
     return f"'sha256-{base64.b64encode(hashlib.sha256(source.encode()).digest()).decode()}'"
@@ -125,7 +129,7 @@ def script_sources(csp: str) -> list[str]:
 
 def test_the_csp_allows_the_splash_script_by_its_hash_and_no_other_inline_script():
     page = (REPO / "web" / "index.html").read_text(encoding="utf-8")
-    inline = re.findall(r"<script>(.*?)</script>", page, flags=re.DOTALL)
+    inline = INLINE_SCRIPT.findall(page)
     assert len(inline) == 1, "web/index.html has one inline script, the splash's"
     assert script_hash(inline[0]) == web.SPLASH_SCRIPT, f"update SPLASH_SCRIPT to {script_hash(inline[0])}"
     assert script_sources(web.CSP) == ["'self'", web.SPLASH_SCRIPT]
@@ -138,8 +142,8 @@ def test_the_built_page_keeps_the_splash_script_as_written():
     built = web.STATIC / "index.html"
     if not built.is_file():
         pytest.skip("the web app isn't built (make web-build)")
-    inline = re.findall(r"<script>(.*?)</script>", built.read_text(encoding="utf-8"), flags=re.DOTALL)
-    assert [script_hash(source) for source in inline] == [web.SPLASH_SCRIPT]
+    inline = INLINE_SCRIPT.findall(built.read_text(encoding="utf-8"))
+    assert [script_hash(source) for source in inline] == [web.SPLASH_SCRIPT], "the build is stale: make web-build"
 
 
 def test_caching_api_answers_never_and_hashed_assets_forever(client):

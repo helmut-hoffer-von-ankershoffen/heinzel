@@ -45,6 +45,14 @@ describe("the splash's state machine", () => {
     expect(reduce(reduce(gaveUp, { type: "answered" }), { type: "themed" }).phase).toBe("ready");
   });
 
+  it("doesn't give up before hz was asked, and remembers an outage until hz answers", () => {
+    const loading = run({ type: "mounted" });
+    expect(reduce(loading, { type: "timeout" })).toBe(loading);
+    const lost = reduce(loading, { type: "unreachable", at: 100 });
+    expect(lost.lost).toBe(true);
+    expect(reduce(lost, { type: "answered" }).lost).toBe(false);
+  });
+
   it("shows the token fix when hz refuses this page's token, and stops asking", () => {
     const refused = run({ type: "mounted" }, { type: "refused" });
     expect([refused.phase, refused.problem]).toEqual(["error", "token"]);
@@ -78,6 +86,7 @@ describe("the splash's state machine", () => {
     }
     expect(polling(restarting) || waiting(restarting)).toBe(false); // waitForServer asks; the reload ends it
     expect(reduce(restarting, { type: "restart-failed" }).problem).toBe("unreachable");
+    expect(reduce(restarting, { type: "restart-refused" }).phase).toBe("ready"); // hz can't restart: as it was
   });
 
   it("is never left before its least time, and fades unless the system asks for less motion", () => {

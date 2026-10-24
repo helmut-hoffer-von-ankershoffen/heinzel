@@ -64,7 +64,7 @@ STATIC = Path(__file__).parent / "static"
 """Where the build puts the app (`make web-build`, or the wheel's build hook); not in git."""
 HOST = "127.0.0.1"
 OK = 200
-SPLASH_SCRIPT = "'sha256-u8Ysltf4oyZ2Nb3mcKzngr4Se+3FG6DbYG+WTFCvh/E='"
+SPLASH_SCRIPT = "'sha256-pN9jYRjUn1PxYq7efc0qmdmmc/sy6sTVaGnaajkcymU='"
 """The one inline script allowed, by its hash: the splash's in `web/index.html`, which paints the last theme before the
 app loads (ADR 0046). A test recomputes it from the file, so a changed script fails until this changes with it."""
 CSP = (
