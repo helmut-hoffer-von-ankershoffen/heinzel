@@ -1180,6 +1180,141 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/ui/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the buttons modules add to the web app's header, with what each does and its badge.
+         * @description List the buttons modules add to the web app's header, with what each does and its badge.
+         *
+         *     Raises:
+         *         HeinzelError: If `item` names no action.
+         */
+        get: operations["system_ui_actions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/hide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hide a contribution from a slot of the web app, such as the clock from the footer.
+         * @description Hide a contribution from a slot of the web app, such as the clock from the footer.
+         *
+         *     Raises:
+         *         HeinzelError: If no contribution has that id, or it can't show in that slot.
+         */
+        post: operations["system_ui_hide"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every contribution to the web app, where it may show and whether it does; nothing runs.
+         * @description List every contribution to the web app, where it may show and whether it does; nothing runs.
+         */
+        get: operations["system_ui_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show a contribution in a slot of the web app, such as the clock in the sidebar.
+         * @description Show a contribution in a slot of the web app, such as the clock in the sidebar.
+         *
+         *     Raises:
+         *         HeinzelError: If no contribution has that id, or it can't show in that slot.
+         */
+        post: operations["system_ui_show"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the status items modules add to the web app's status bar, with what each shows now.
+         * @description List the status items modules add to the web app's status bar, with what each shows now.
+         *
+         *     Raises:
+         *         HeinzelError: If `item` names no status item.
+         */
+        get: operations["system_ui_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/widgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the widgets modules add to the web app's Today screen, with what each shows now.
+         * @description List the widgets modules add to the web app's Today screen, with what each shows now.
+         *
+         *     Raises:
+         *         HeinzelError: If `item` names no widget.
+         */
+        get: operations["system_ui_widgets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/update": {
         parameters: {
             query?: never;
@@ -1520,6 +1655,70 @@ export interface components {
              * @enum {string}
              */
             use: "chat" | "turns" | "coding";
+        };
+        /**
+         * ActionEntry
+         * @description An action: a labelled icon button with one effect and maybe a badge.
+         */
+        ActionEntry: {
+            /**
+             * Badge
+             * @description A count (0 shows none) or up to four characters.
+             */
+            badge?: number | string | null;
+            /**
+             * Effect
+             * @description What a click does; none when it can't work (`problem`).
+             */
+            effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Icon
+             * @description The icon the app shows.
+             * @enum {string}
+             */
+            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap";
+            /**
+             * Id
+             * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /**
+             * Label
+             * @description Its accessible name and tooltip.
+             */
+            label: string;
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Where it sits among its kind, 0 first; ties go by id.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Why it shows nothing: its source failed, or the declaration can't work.
+             */
+            problem?: string | null;
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does: what the app filters by.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
         };
         /**
          * AdapterCandidate
@@ -1949,6 +2148,39 @@ export interface components {
              * @description As declared, e.g. `documents:read` or `github:tracker:read`.
              */
             requirement: string;
+        };
+        /**
+         * CardWidget
+         * @description A card: a title, a short body and up to three buttons.
+         */
+        CardWidget: {
+            /**
+             * Actions
+             * @description Up to three buttons.
+             */
+            actions?: components["schemas"]["WidgetAction"][];
+            /**
+             * Body
+             * @description Up to 280 characters under the title.
+             */
+            body?: string | null;
+            /**
+             * @description A card. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "card";
+            /**
+             * Title
+             * @description Its title, one line.
+             */
+            title: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
         };
         /**
          * CatchUp
@@ -2803,6 +3035,47 @@ export interface components {
             warnings: number;
         };
         /**
+         * ContributionInfo
+         * @description A contribution as Settings lists it: where it may show and whether it does, without running it.
+         */
+        ContributionInfo: {
+            /**
+             * Defaults
+             * @description Each slot and whether it shows there unless the person decides.
+             */
+            defaults: {
+                [key: string]: boolean;
+            };
+            /**
+             * Id
+             * @description `<module>:<name>`, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /**
+             * Kind
+             * @description A status item, a header action or a widget.
+             * @enum {string}
+             */
+            kind: "status" | "action" | "widget";
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does now.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
+            /**
+             * Title
+             * @description What people know it by: the action's label, or its name in words.
+             */
+            title: string;
+        };
+        /**
          * CredentialInfo
          * @description A declared credential and whether it has a value; never the value itself.
          */
@@ -2924,6 +3197,24 @@ export interface components {
          * @enum {string}
          */
         Delivery: "web" | "daemon";
+        /**
+         * DetailLine
+         * @description A line of an item's detail, shown on hover or focus.
+         */
+        DetailLine: {
+            /**
+             * Text
+             * @description One line, e.g. `New York 08:00, at work`.
+             */
+            text: string;
+            /**
+             * Tone
+             * @description `ok` shows it as good, `warn` and `bad` as needing attention.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+        };
         /**
          * Diagnostic
          * @description A problem in a contract file, with where it is and what to do.
@@ -3611,6 +3902,105 @@ export interface components {
             site: string | null;
         };
         /**
+         * ListEntry
+         * @description A line of a list widget.
+         */
+        ListEntry: {
+            /**
+             * Detail
+             * @description A second, quieter line.
+             */
+            detail?: string | null;
+            /**
+             * Effect
+             * @description What a click does.
+             */
+            effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Text
+             * @description The line, e.g. `Review the Acme roadmap`.
+             */
+            text: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+        };
+        /**
+         * ListWidget
+         * @description A titled list of up to eight lines.
+         */
+        ListWidget: {
+            /**
+             * Items
+             * @description Up to eight lines.
+             */
+            items: components["schemas"]["ListEntry"][];
+            /**
+             * @description A list. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "list";
+            /**
+             * Title
+             * @description Its title, one line.
+             */
+            title: string;
+        };
+        /**
+         * LiveClock
+         * @description The time now in a zone, ticking in the app.
+         */
+        LiveClock: {
+            /**
+             * @description The time now in `zone`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "clock";
+            /**
+             * Zone
+             * @description An IANA time zone, e.g. Europe/Berlin.
+             */
+            zone: string;
+        };
+        /**
+         * LiveTime
+         * @description A moment, shown as a local time in the person's locale.
+         */
+        LiveTime: {
+            /**
+             * At
+             * Format: date-time
+             * @description The moment, with its offset.
+             */
+            at: string;
+            /**
+             * @description `at` as a local time. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "time";
+        };
+        /**
+         * LiveUntil
+         * @description A moment, shown relative to now: "in 12 min", "now", or its time when it isn't today.
+         */
+        LiveUntil: {
+            /**
+             * At
+             * Format: date-time
+             * @description The moment, with its offset.
+             */
+            at: string;
+            /**
+             * @description `at` relative to now. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "until";
+        };
+        /**
          * LogLine
          * @description One line of the daemon's JSON-lines log.
          */
@@ -3748,6 +4138,39 @@ export interface components {
             since: string;
         };
         /**
+         * MetricWidget
+         * @description One number with a label, and how it moved.
+         */
+        MetricWidget: {
+            /**
+             * Delta
+             * @description How it moved, as shown, e.g. `+3 this week`.
+             */
+            delta?: string | null;
+            /**
+             * @description A metric. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "metric";
+            /**
+             * Label
+             * @description What is measured, e.g. `Open reviews`.
+             */
+            label: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Value
+             * @description The figure as shown, up to 16 characters, e.g. `12` or `2/3`.
+             */
+            value: string;
+        };
+        /**
          * ModuleInfo
          * @description A registered module.
          */
@@ -3789,6 +4212,22 @@ export interface components {
              * @description Version of that distribution.
              */
             version: string;
+        };
+        /**
+         * Navigate
+         * @description Open a screen of the app.
+         */
+        Navigate: {
+            /**
+             * @description Open a screen of the app. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "navigate";
+            /**
+             * Path
+             * @description An in-app path, e.g. `/doctor`.
+             */
+            path: string;
         };
         /**
          * Node
@@ -3956,6 +4395,22 @@ export interface components {
             waiting: number;
         };
         /**
+         * OpenUrl
+         * @description Open an https link in a new tab.
+         */
+        OpenUrl: {
+            /**
+             * @description Open an https link in a new tab. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "open";
+            /**
+             * Url
+             * @description An https link without user information.
+             */
+            url: string;
+        };
+        /**
          * Opened
          * @description Whether the system's notification settings were opened.
          */
@@ -3992,6 +4447,45 @@ export interface components {
              * @description The operation's name within its module, e.g. `graph`.
              */
             operation: string;
+        };
+        /**
+         * OperationCall
+         * @description How the app runs an `operation` effect, built by `system.ui` from the operation itself, never by a plugin.
+         */
+        OperationCall: {
+            /**
+             * Command
+             * @description The same call as a person reads it, e.g. `hz clock`.
+             */
+            command: string;
+            /**
+             * Method
+             * @description `GET` for a read-only operation, `POST` for one that writes.
+             * @enum {string}
+             */
+            method: "GET" | "POST";
+            /**
+             * Path
+             * @description The operation's path under `/api`, e.g. `/clock`.
+             */
+            path: string;
+            /**
+             * Query
+             * @description The validated arguments, as query parameters.
+             */
+            query: {
+                [key: string]: boolean | number | string;
+            };
+            /**
+             * Read Only
+             * @description Whether it only reads; the app asks before running one that doesn't.
+             */
+            read_only: boolean;
+            /**
+             * Summary
+             * @description What the operation does: the first line of its docstring.
+             */
+            summary: string;
         };
         /**
          * Participant
@@ -4408,6 +4902,39 @@ export interface components {
             working_hours_set: boolean;
         };
         /**
+         * ProgressWidget
+         * @description How much of something is done.
+         */
+        ProgressWidget: {
+            /**
+             * Done
+             * @description How many are done, at most `total`.
+             */
+            done: number;
+            /**
+             * @description Progress. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "progress";
+            /**
+             * Label
+             * @description What is done, e.g. `Release checklist`.
+             */
+            label: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Total
+             * @description How many there are.
+             */
+            total: number;
+        };
+        /**
          * PublishStatus
          * @description A publish operation a contract names, and whether an installed module provides it.
          */
@@ -4568,6 +5095,28 @@ export interface components {
             restarting: boolean;
         };
         /**
+         * RunCommand
+         * @description Open the terminal with an `hz` command.
+         */
+        RunCommand: {
+            /**
+             * Command
+             * @description e.g. `hz clock`.
+             */
+            command: string;
+            /**
+             * @description Open the terminal with an `hz` command. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "command";
+            /**
+             * Runs
+             * @description Filled in by `system.ui`: whether it names a read-only operation, so the terminal may press Enter; otherwise the person does.
+             * @default false
+             */
+            runs: boolean;
+        };
+        /**
          * RunMeasure
          * @description One draft, measured: how long drafting took, what it cost and read, and how much changed before sending.
          */
@@ -4611,6 +5160,31 @@ export interface components {
             inputs: {
                 [key: string]: string;
             };
+        };
+        /**
+         * RunOperation
+         * @description Run an operation of the contributing module with fixed arguments; one that writes only after confirmation.
+         */
+        RunOperation: {
+            /**
+             * Arguments
+             * @description Its arguments by parameter name: strings, numbers, booleans.
+             */
+            arguments?: {
+                [key: string]: boolean | number | string;
+            };
+            /** @description Filled in by `system.ui`; whatever a plugin sets here is replaced. */
+            call?: components["schemas"]["OperationCall"] | null;
+            /**
+             * @description Run an operation of the module. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "operation";
+            /**
+             * Operation
+             * @description The operation's name in its module, e.g. `sync`.
+             */
+            operation: string;
         };
         /**
          * SettingInfo
@@ -4740,6 +5314,94 @@ export interface components {
          * @enum {string}
          */
         Status: "up" | "degraded" | "down";
+        /**
+         * StatusEntry
+         * @description A status item, or the problem that keeps it from showing.
+         */
+        StatusEntry: {
+            /**
+             * Id
+             * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /** @description What to show; none when there is nothing to show. */
+            item?: components["schemas"]["StatusItem"] | null;
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Where it sits among its kind, 0 first; ties go by id.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Why it shows nothing: its source failed, or the declaration can't work.
+             */
+            problem?: string | null;
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does: what the app filters by.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
+        };
+        /**
+         * StatusItem
+         * @description A short item of the status bar: text, an optional live time after it, detail on hover, a click.
+         */
+        StatusItem: {
+            /**
+             * Actions
+             * @description Up to four buttons shown with the detail, e.g. Install and Logs.
+             */
+            actions?: components["schemas"]["WidgetAction"][];
+            /**
+             * Detail
+             * @description Up to eight lines shown on hover.
+             */
+            detail?: components["schemas"]["DetailLine"][];
+            /**
+             * Effect
+             * @description What a click does.
+             */
+            effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Icon
+             * @description An icon before the text.
+             */
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            /**
+             * Live
+             * @description A time the app renders after `text` and keeps current.
+             */
+            live?: (components["schemas"]["LiveClock"] | components["schemas"]["LiveTime"] | components["schemas"]["LiveUntil"]) | null;
+            /**
+             * Text
+             * @description What it says, one line, e.g. `Standup until`.
+             */
+            text: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+        };
         /**
          * Step
          * @description Something to do next: a command that works, and why.
@@ -5419,6 +6081,75 @@ export interface components {
              */
             week: string;
         };
+        /**
+         * WidgetAction
+         * @description A button of a widget.
+         */
+        WidgetAction: {
+            /**
+             * Effect
+             * @description What a click does.
+             */
+            effect: components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"];
+            /**
+             * Icon
+             * @description An icon before the label.
+             */
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            /**
+             * Label
+             * @description What the button says.
+             */
+            label: string;
+        };
+        /**
+         * WidgetEntry
+         * @description A widget, or the problem that keeps it from showing.
+         */
+        WidgetEntry: {
+            /**
+             * Id
+             * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Where it sits among its kind, 0 first; ties go by id.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Why it shows nothing: its source failed, or the declaration can't work.
+             */
+            problem?: string | null;
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does: what the app filters by.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
+            /**
+             * Widget
+             * @description What to show; none when there is nothing to show.
+             */
+            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"]) | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -5430,6 +6161,7 @@ export type SchemaAccessList = components['schemas']['AccessList'];
 export type SchemaAccessOption = components['schemas']['AccessOption'];
 export type SchemaAccessTestReport = components['schemas']['AccessTestReport'];
 export type SchemaAccessUse = components['schemas']['AccessUse'];
+export type SchemaActionEntry = components['schemas']['ActionEntry'];
 export type SchemaAdapterCandidate = components['schemas']['AdapterCandidate'];
 export type SchemaAdapterInfo = components['schemas']['AdapterInfo'];
 export type SchemaAgenda = components['schemas']['Agenda'];
@@ -5441,6 +6173,7 @@ export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
+export type SchemaCardWidget = components['schemas']['CardWidget'];
 export type SchemaCatchUp = components['schemas']['CatchUp'];
 export type SchemaChannel = components['schemas']['Channel'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
@@ -5463,11 +6196,13 @@ export type SchemaConnectorTest = components['schemas']['ConnectorTest'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
 export type SchemaContractList = components['schemas']['ContractList'];
 export type SchemaContractSummary = components['schemas']['ContractSummary'];
+export type SchemaContributionInfo = components['schemas']['ContributionInfo'];
 export type SchemaCredentialInfo = components['schemas']['CredentialInfo'];
 export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
 export type SchemaDefaultView = components['schemas']['DefaultView'];
 export type SchemaDelivered = components['schemas']['Delivered'];
 export type SchemaDelivery = components['schemas']['Delivery'];
+export type SchemaDetailLine = components['schemas']['DetailLine'];
 export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
@@ -5492,18 +6227,27 @@ export type SchemaLastTest = components['schemas']['LastTest'];
 export type SchemaLayerList = components['schemas']['LayerList'];
 export type SchemaLayerProblemView = components['schemas']['LayerProblemView'];
 export type SchemaLayerView = components['schemas']['LayerView'];
+export type SchemaListEntry = components['schemas']['ListEntry'];
+export type SchemaListWidget = components['schemas']['ListWidget'];
+export type SchemaLiveClock = components['schemas']['LiveClock'];
+export type SchemaLiveTime = components['schemas']['LiveTime'];
+export type SchemaLiveUntil = components['schemas']['LiveUntil'];
 export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaLogin = components['schemas']['Login'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
+export type SchemaMetricWidget = components['schemas']['MetricWidget'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
+export type SchemaNavigate = components['schemas']['Navigate'];
 export type SchemaNode = components['schemas']['Node'];
 export type SchemaNodeMetadata = components['schemas']['NodeMetadata'];
 export type SchemaNotice = components['schemas']['Notice'];
 export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
+export type SchemaOpenUrl = components['schemas']['OpenUrl'];
 export type SchemaOpened = components['schemas']['Opened'];
 export type SchemaOperationAudience = components['schemas']['OperationAudience'];
+export type SchemaOperationCall = components['schemas']['OperationCall'];
 export type SchemaParticipant = components['schemas']['Participant'];
 export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
@@ -5514,17 +6258,22 @@ export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaProfile = components['schemas']['Profile'];
+export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
 export type SchemaRecommendationView = components['schemas']['RecommendationView'];
 export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
 export type SchemaRestart = components['schemas']['Restart'];
+export type SchemaRunCommand = components['schemas']['RunCommand'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
+export type SchemaRunOperation = components['schemas']['RunOperation'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSkill = components['schemas']['Skill'];
 export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStatus = components['schemas']['Status'];
+export type SchemaStatusEntry = components['schemas']['StatusEntry'];
+export type SchemaStatusItem = components['schemas']['StatusItem'];
 export type SchemaStep = components['schemas']['Step'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
 export type SchemaTeamGraphDocument = components['schemas']['TeamGraphDocument'];
@@ -5544,6 +6293,8 @@ export type SchemaUpdateResult = components['schemas']['UpdateResult'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWaiting = components['schemas']['Waiting'];
 export type SchemaWeek = components['schemas']['Week'];
+export type SchemaWidgetAction = components['schemas']['WidgetAction'];
+export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
 export type $defs = Record<string, never>;
 export interface operations {
     ai_access_list: {
@@ -7037,6 +7788,190 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThemeList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_actions: {
+        parameters: {
+            query?: {
+                /** @description Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_hide: {
+        parameters: {
+            query: {
+                /** @description The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item: string;
+                /** @description Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several. */
+                slot?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContributionInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContributionInfo"][];
+                };
+            };
+        };
+    };
+    system_ui_show: {
+        parameters: {
+            query: {
+                /** @description The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item: string;
+                /** @description Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several. */
+                slot?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContributionInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_status: {
+        parameters: {
+            query?: {
+                /** @description Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_widgets: {
+        parameters: {
+            query?: {
+                /** @description Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WidgetEntry"][];
                 };
             };
             /** @description Validation Error */

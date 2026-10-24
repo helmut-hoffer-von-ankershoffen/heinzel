@@ -281,6 +281,176 @@
         "title": "AccessUse",
         "type": "object"
       },
+      "ActionEntry": {
+        "description": "An action: a labelled icon button with one effect and maybe a badge.",
+        "properties": {
+          "badge": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "maxLength": 4,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A count (0 shows none) or up to four characters.",
+            "title": "Badge"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a click does; none when it can't work (`problem`).",
+            "title": "Effect"
+          },
+          "icon": {
+            "description": "The icon the app shows.",
+            "enum": [
+              "activity",
+              "alarm-clock",
+              "bell",
+              "bot",
+              "calendar",
+              "calendar-clock",
+              "chart-line",
+              "circle-alert",
+              "circle-check",
+              "clock",
+              "cloud",
+              "code",
+              "file-text",
+              "git-pull-request",
+              "globe",
+              "heart",
+              "inbox",
+              "info",
+              "link",
+              "list-checks",
+              "mail",
+              "message-square",
+              "play",
+              "rocket",
+              "star",
+              "terminal",
+              "timer",
+              "users",
+              "video",
+              "zap"
+            ],
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "description": "`<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "description": "Its accessible name and tooltip.",
+            "title": "Label",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Where it sits among its kind, 0 first; ties go by id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it shows nothing: its source failed, or the declaration can't work.",
+            "title": "Problem"
+          },
+          "refresh": {
+            "description": "How often to ask again, in seconds.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does: what the app filters by.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "plugin",
+          "order",
+          "refresh",
+          "slots",
+          "label",
+          "icon"
+        ],
+        "title": "ActionEntry",
+        "type": "object"
+      },
       "AdapterCandidate": {
         "description": "An adapter that can serve a capability, and the state of its connector.",
         "properties": {
@@ -985,6 +1155,66 @@
           "problem"
         ],
         "title": "CapabilityUse",
+        "type": "object"
+      },
+      "CardWidget": {
+        "additionalProperties": false,
+        "description": "A card: a title, a short body and up to three buttons.",
+        "properties": {
+          "actions": {
+            "description": "Up to three buttons.",
+            "items": {
+              "$ref": "#/components/schemas/WidgetAction"
+            },
+            "maxItems": 3,
+            "title": "Actions",
+            "type": "array"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "maxLength": 280,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Up to 280 characters under the title.",
+            "title": "Body"
+          },
+          "kind": {
+            "const": "card",
+            "default": "card",
+            "description": "A card.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "title": {
+            "description": "Its title, one line.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "CardWidget",
         "type": "object"
       },
       "CatchUp": {
@@ -2360,6 +2590,78 @@
         "title": "ContractSummary",
         "type": "object"
       },
+      "ContributionInfo": {
+        "description": "A contribution as Settings lists it: where it may show and whether it does, without running it.",
+        "properties": {
+          "defaults": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot and whether it shows there unless the person decides.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Defaults",
+            "type": "object"
+          },
+          "id": {
+            "description": "`<module>:<name>`, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "description": "A status item, a header action or a widget.",
+            "enum": [
+              "status",
+              "action",
+              "widget"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does now.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          },
+          "title": {
+            "description": "What people know it by: the action's label, or its name in words.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "kind",
+          "title",
+          "slots",
+          "defaults"
+        ],
+        "title": "ContributionInfo",
+        "type": "object"
+      },
       "CredentialInfo": {
         "description": "A declared credential and whether it has a value; never the value itself.",
         "properties": {
@@ -2546,6 +2848,36 @@
         ],
         "title": "Delivery",
         "type": "string"
+      },
+      "DetailLine": {
+        "additionalProperties": false,
+        "description": "A line of an item's detail, shown on hover or focus.",
+        "properties": {
+          "text": {
+            "description": "One line, e.g. `New York 08:00, at work`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "`ok` shows it as good, `warn` and `bad` as needing attention.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "DetailLine",
+        "type": "object"
       },
       "Diagnostic": {
         "description": "A problem in a contract file, with where it is and what to do.",
@@ -3671,6 +4003,190 @@
         "title": "LayerView",
         "type": "object"
       },
+      "ListEntry": {
+        "additionalProperties": false,
+        "description": "A line of a list widget.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A second, quieter line.",
+            "title": "Detail"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a click does.",
+            "title": "Effect"
+          },
+          "text": {
+            "description": "The line, e.g. `Review the Acme roadmap`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "ListEntry",
+        "type": "object"
+      },
+      "ListWidget": {
+        "additionalProperties": false,
+        "description": "A titled list of up to eight lines.",
+        "properties": {
+          "items": {
+            "description": "Up to eight lines.",
+            "items": {
+              "$ref": "#/components/schemas/ListEntry"
+            },
+            "maxItems": 8,
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "const": "list",
+            "default": "list",
+            "description": "A list.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "title": {
+            "description": "Its title, one line.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "items"
+        ],
+        "title": "ListWidget",
+        "type": "object"
+      },
+      "LiveClock": {
+        "additionalProperties": false,
+        "description": "The time now in a zone, ticking in the app.",
+        "properties": {
+          "kind": {
+            "const": "clock",
+            "default": "clock",
+            "description": "The time now in `zone`.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "zone": {
+            "description": "An IANA time zone, e.g. Europe/Berlin.",
+            "title": "Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "zone"
+        ],
+        "title": "LiveClock",
+        "type": "object"
+      },
+      "LiveTime": {
+        "additionalProperties": false,
+        "description": "A moment, shown as a local time in the person's locale.",
+        "properties": {
+          "at": {
+            "description": "The moment, with its offset.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "const": "time",
+            "default": "time",
+            "description": "`at` as a local time.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "title": "LiveTime",
+        "type": "object"
+      },
+      "LiveUntil": {
+        "additionalProperties": false,
+        "description": "A moment, shown relative to now: \"in 12 min\", \"now\", or its time when it isn't today.",
+        "properties": {
+          "at": {
+            "description": "The moment, with its offset.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "const": "until",
+            "default": "until",
+            "description": "`at` relative to now.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "title": "LiveUntil",
+        "type": "object"
+      },
       "LogLine": {
         "description": "One line of the daemon's JSON-lines log.",
         "properties": {
@@ -3894,6 +4410,65 @@
         "title": "MemberView",
         "type": "object"
       },
+      "MetricWidget": {
+        "additionalProperties": false,
+        "description": "One number with a label, and how it moved.",
+        "properties": {
+          "delta": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How it moved, as shown, e.g. `+3 this week`.",
+            "title": "Delta"
+          },
+          "kind": {
+            "const": "metric",
+            "default": "metric",
+            "description": "A metric.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "description": "What is measured, e.g. `Open reviews`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "value": {
+            "description": "The figure as shown, up to 16 characters, e.g. `12` or `2/3`.",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "MetricWidget",
+        "type": "object"
+      },
       "ModuleInfo": {
         "description": "A registered module.",
         "properties": {
@@ -3956,6 +4531,29 @@
           "lets"
         ],
         "title": "ModuleInfo",
+        "type": "object"
+      },
+      "Navigate": {
+        "additionalProperties": false,
+        "description": "Open a screen of the app.",
+        "properties": {
+          "kind": {
+            "const": "navigate",
+            "default": "navigate",
+            "description": "Open a screen of the app.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "description": "An in-app path, e.g. `/doctor`.",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "Navigate",
         "type": "object"
       },
       "Node": {
@@ -4266,6 +4864,29 @@
         "title": "NoticeList",
         "type": "object"
       },
+      "OpenUrl": {
+        "additionalProperties": false,
+        "description": "Open an https link in a new tab.",
+        "properties": {
+          "kind": {
+            "const": "open",
+            "default": "open",
+            "description": "Open an https link in a new tab.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "url": {
+            "description": "An https link without user information.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "OpenUrl",
+        "type": "object"
+      },
       "Opened": {
         "description": "Whether the system's notification settings were opened.",
         "properties": {
@@ -4316,6 +4937,73 @@
           "audience"
         ],
         "title": "OperationAudience",
+        "type": "object"
+      },
+      "OperationCall": {
+        "additionalProperties": false,
+        "description": "How the app runs an `operation` effect, built by `system.ui` from the operation itself, never by a plugin.",
+        "properties": {
+          "command": {
+            "description": "The same call as a person reads it, e.g. `hz clock`.",
+            "title": "Command",
+            "type": "string"
+          },
+          "method": {
+            "description": "`GET` for a read-only operation, `POST` for one that writes.",
+            "enum": [
+              "GET",
+              "POST"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "description": "The operation's path under `/api`, e.g. `/clock`.",
+            "title": "Path",
+            "type": "string"
+          },
+          "query": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "maxLength": 280,
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "The validated arguments, as query parameters.",
+            "title": "Query",
+            "type": "object"
+          },
+          "read_only": {
+            "description": "Whether it only reads; the app asks before running one that doesn't.",
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "summary": {
+            "description": "What the operation does: the first line of its docstring.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "path",
+          "query",
+          "command",
+          "summary",
+          "read_only"
+        ],
+        "title": "OperationCall",
         "type": "object"
       },
       "Participant": {
@@ -5110,6 +5798,57 @@
         "title": "Profile",
         "type": "object"
       },
+      "ProgressWidget": {
+        "additionalProperties": false,
+        "description": "How much of something is done.",
+        "properties": {
+          "done": {
+            "description": "How many are done, at most `total`.",
+            "minimum": 0.0,
+            "title": "Done",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "progress",
+            "default": "progress",
+            "description": "Progress.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "description": "What is done, e.g. `Release checklist`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "total": {
+            "description": "How many there are.",
+            "minimum": 1.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "done",
+          "total"
+        ],
+        "title": "ProgressWidget",
+        "type": "object"
+      },
       "PublishStatus": {
         "description": "A publish operation a contract names, and whether an installed module provides it.",
         "properties": {
@@ -5368,6 +6107,35 @@
         "title": "Restart",
         "type": "object"
       },
+      "RunCommand": {
+        "additionalProperties": false,
+        "description": "Open the terminal with an `hz` command.",
+        "properties": {
+          "command": {
+            "description": "e.g. `hz clock`.",
+            "title": "Command",
+            "type": "string"
+          },
+          "kind": {
+            "const": "command",
+            "default": "command",
+            "description": "Open the terminal with an `hz` command.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "runs": {
+            "default": false,
+            "description": "Filled in by `system.ui`: whether it names a read-only operation, so the terminal may press Enter; otherwise the person does.",
+            "title": "Runs",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "title": "RunCommand",
+        "type": "object"
+      },
       "RunMeasure": {
         "description": "One draft, measured: how long drafting took, what it cost and read, and how much changed before sending.",
         "properties": {
@@ -5450,6 +6218,65 @@
           "edit_minutes"
         ],
         "title": "RunMeasure",
+        "type": "object"
+      },
+      "RunOperation": {
+        "additionalProperties": false,
+        "description": "Run an operation of the contributing module with fixed arguments; one that writes only after confirmation.",
+        "properties": {
+          "arguments": {
+            "description": "Its arguments by parameter name: strings, numbers, booleans.",
+            "patternProperties": {
+              "^[a-z_][a-z0-9_]*$": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "maxLength": 280,
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "title": "Arguments",
+            "type": "object"
+          },
+          "call": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationCall"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Filled in by `system.ui`; whatever a plugin sets here is replaced."
+          },
+          "kind": {
+            "const": "operation",
+            "default": "operation",
+            "description": "Run an operation of the module.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The operation's name in its module, e.g. `sync`.",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "RunOperation",
         "type": "object"
       },
       "SettingInfo": {
@@ -5638,6 +6465,248 @@
         ],
         "title": "Status",
         "type": "string"
+      },
+      "StatusEntry": {
+        "description": "A status item, or the problem that keeps it from showing.",
+        "properties": {
+          "id": {
+            "description": "`<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusItem"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What to show; none when there is nothing to show."
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Where it sits among its kind, 0 first; ties go by id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it shows nothing: its source failed, or the declaration can't work.",
+            "title": "Problem"
+          },
+          "refresh": {
+            "description": "How often to ask again, in seconds.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does: what the app filters by.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "plugin",
+          "order",
+          "refresh",
+          "slots"
+        ],
+        "title": "StatusEntry",
+        "type": "object"
+      },
+      "StatusItem": {
+        "additionalProperties": false,
+        "description": "A short item of the status bar: text, an optional live time after it, detail on hover, a click.",
+        "properties": {
+          "actions": {
+            "description": "Up to four buttons shown with the detail, e.g. Install and Logs.",
+            "items": {
+              "$ref": "#/components/schemas/WidgetAction"
+            },
+            "maxItems": 4,
+            "title": "Actions",
+            "type": "array"
+          },
+          "detail": {
+            "description": "Up to eight lines shown on hover.",
+            "items": {
+              "$ref": "#/components/schemas/DetailLine"
+            },
+            "maxItems": 8,
+            "title": "Detail",
+            "type": "array"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a click does.",
+            "title": "Effect"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "activity",
+                  "alarm-clock",
+                  "bell",
+                  "bot",
+                  "calendar",
+                  "calendar-clock",
+                  "chart-line",
+                  "circle-alert",
+                  "circle-check",
+                  "clock",
+                  "cloud",
+                  "code",
+                  "file-text",
+                  "git-pull-request",
+                  "globe",
+                  "heart",
+                  "inbox",
+                  "info",
+                  "link",
+                  "list-checks",
+                  "mail",
+                  "message-square",
+                  "play",
+                  "rocket",
+                  "star",
+                  "terminal",
+                  "timer",
+                  "users",
+                  "video",
+                  "zap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An icon before the text.",
+            "title": "Icon"
+          },
+          "live": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "clock": "#/components/schemas/LiveClock",
+                    "time": "#/components/schemas/LiveTime",
+                    "until": "#/components/schemas/LiveUntil"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/LiveClock"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LiveTime"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LiveUntil"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A time the app renders after `text` and keeps current.",
+            "title": "Live"
+          },
+          "text": {
+            "description": "What it says, one line, e.g. `Standup until`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "StatusItem",
+        "type": "object"
       },
       "Step": {
         "description": "Something to do next: a command that works, and why.",
@@ -6708,6 +7777,205 @@
           "late"
         ],
         "title": "Week",
+        "type": "object"
+      },
+      "WidgetAction": {
+        "additionalProperties": false,
+        "description": "A button of a widget.",
+        "properties": {
+          "effect": {
+            "description": "What a click does.",
+            "discriminator": {
+              "mapping": {
+                "command": "#/components/schemas/RunCommand",
+                "navigate": "#/components/schemas/Navigate",
+                "open": "#/components/schemas/OpenUrl",
+                "operation": "#/components/schemas/RunOperation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Navigate"
+              },
+              {
+                "$ref": "#/components/schemas/OpenUrl"
+              },
+              {
+                "$ref": "#/components/schemas/RunOperation"
+              },
+              {
+                "$ref": "#/components/schemas/RunCommand"
+              }
+            ],
+            "title": "Effect"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "activity",
+                  "alarm-clock",
+                  "bell",
+                  "bot",
+                  "calendar",
+                  "calendar-clock",
+                  "chart-line",
+                  "circle-alert",
+                  "circle-check",
+                  "clock",
+                  "cloud",
+                  "code",
+                  "file-text",
+                  "git-pull-request",
+                  "globe",
+                  "heart",
+                  "inbox",
+                  "info",
+                  "link",
+                  "list-checks",
+                  "mail",
+                  "message-square",
+                  "play",
+                  "rocket",
+                  "star",
+                  "terminal",
+                  "timer",
+                  "users",
+                  "video",
+                  "zap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An icon before the label.",
+            "title": "Icon"
+          },
+          "label": {
+            "description": "What the button says.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "effect"
+        ],
+        "title": "WidgetAction",
+        "type": "object"
+      },
+      "WidgetEntry": {
+        "description": "A widget, or the problem that keeps it from showing.",
+        "properties": {
+          "id": {
+            "description": "`<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Where it sits among its kind, 0 first; ties go by id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it shows nothing: its source failed, or the declaration can't work.",
+            "title": "Problem"
+          },
+          "refresh": {
+            "description": "How often to ask again, in seconds.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does: what the app filters by.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          },
+          "widget": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "card": "#/components/schemas/CardWidget",
+                    "list": "#/components/schemas/ListWidget",
+                    "metric": "#/components/schemas/MetricWidget",
+                    "progress": "#/components/schemas/ProgressWidget"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/CardWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ListWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProgressWidget"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What to show; none when there is nothing to show.",
+            "title": "Widget"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "plugin",
+          "order",
+          "refresh",
+          "slots"
+        ],
+        "title": "WidgetEntry",
         "type": "object"
       }
     }
@@ -8950,6 +10218,334 @@
           }
         },
         "summary": "Use a theme in the web app: writes `[system.theme] name` to your configuration file.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/actions": {
+      "get": {
+        "description": "List the buttons modules add to the web app's header, with what each does and its badge.\n\nRaises:\n    HeinzelError: If `item` names no action.",
+        "operationId": "system_ui_actions",
+        "parameters": [
+          {
+            "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ActionEntry"
+                  },
+                  "title": "Response System Ui Actions",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the buttons modules add to the web app's header, with what each does and its badge.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/hide": {
+      "post": {
+        "description": "Hide a contribution from a slot of the web app, such as the clock from the footer.\n\nRaises:\n    HeinzelError: If no contribution has that id, or it can't show in that slot.",
+        "operationId": "system_ui_hide",
+        "parameters": [
+          {
+            "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": true,
+            "schema": {
+              "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+            "in": "query",
+            "name": "slot",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+              "title": "Slot"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContributionInfo"
+                  },
+                  "title": "Response System Ui Hide",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Hide a contribution from a slot of the web app, such as the clock from the footer.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/list": {
+      "get": {
+        "description": "List every contribution to the web app, where it may show and whether it does; nothing runs.",
+        "operationId": "system_ui_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContributionInfo"
+                  },
+                  "title": "Response System Ui List",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List every contribution to the web app, where it may show and whether it does; nothing runs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/show": {
+      "post": {
+        "description": "Show a contribution in a slot of the web app, such as the clock in the sidebar.\n\nRaises:\n    HeinzelError: If no contribution has that id, or it can't show in that slot.",
+        "operationId": "system_ui_show",
+        "parameters": [
+          {
+            "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": true,
+            "schema": {
+              "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+            "in": "query",
+            "name": "slot",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+              "title": "Slot"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContributionInfo"
+                  },
+                  "title": "Response System Ui Show",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a contribution in a slot of the web app, such as the clock in the sidebar.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/status": {
+      "get": {
+        "description": "List the status items modules add to the web app's status bar, with what each shows now.\n\nRaises:\n    HeinzelError: If `item` names no status item.",
+        "operationId": "system_ui_status",
+        "parameters": [
+          {
+            "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StatusEntry"
+                  },
+                  "title": "Response System Ui Status",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the status items modules add to the web app's status bar, with what each shows now.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/widgets": {
+      "get": {
+        "description": "List the widgets modules add to the web app's Today screen, with what each shows now.\n\nRaises:\n    HeinzelError: If `item` names no widget.",
+        "operationId": "system_ui_widgets",
+        "parameters": [
+          {
+            "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WidgetEntry"
+                  },
+                  "title": "Response System Ui Widgets",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the widgets modules add to the web app's Today screen, with what each shows now.",
         "tags": [
           "system"
         ]
