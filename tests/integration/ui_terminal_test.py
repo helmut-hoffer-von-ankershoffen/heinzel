@@ -150,3 +150,14 @@ def test_the_shell_gets_a_desktop_terminals_environment_without_hzs(monkeypatch)
         "1",
         "heinzel",
     )
+
+
+def test_a_later_resize_changes_the_size_the_shell_sees(client):
+    with connect(client) as socket:
+        socket.send_text(json.dumps({"token": TOKEN}))
+        socket.send_text(json.dumps({"resize": [50, 20]}))
+        socket.send_bytes(b"stty size\n")
+        read_until(socket, b"20 50")
+        socket.send_text(json.dumps({"resize": [133, 41]}))
+        socket.send_bytes(b"stty size\n")
+        read_until(socket, b"41 133")

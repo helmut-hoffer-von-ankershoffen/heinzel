@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { token } from "@/api/token";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { connectTerminal } from "@/lib/terminal";
+import { connectTerminal, followSize } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 
 /** The palette of the dark theme, so the terminal reads as part of the app. */
@@ -141,7 +141,7 @@ export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
       </div>
       <div className="relative min-h-0 flex-1">
         {tabs.map((tab) => (
-          <TerminalView key={tab.id} active={tab.id === active} options={options} />
+          <TerminalView key={tab.id} active={tab.id === active} full={full} options={options} />
         ))}
       </div>
     </section>
@@ -151,10 +151,10 @@ export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
 type State = "connecting" | "open" | "closed";
 
 /** One shell in one tab; it keeps running while another tab is shown. */
-function TerminalView({ active, options }: { active: boolean; options: Options }) {
+function TerminalView({ active, full, options }: { active: boolean; full: boolean; options: Options }) {
   const host = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
+  const refitRef = useRef<(() => void) | null>(null);
   const senderRef = useRef<((text: string) => void) | null>(null);
   const copyOnSelect = useRef(options.copyOnSelect);
   const initial = useRef(options);
@@ -179,21 +179,19 @@ function TerminalView({ active, options }: { active: boolean; options: Options }
     terminal.loadAddon(fit);
     terminal.open(element);
     terminalRef.current = terminal;
-    fitRef.current = fit;
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     const socket = new WebSocket(`${scheme}://${window.location.host}/api/terminal`);
     socket.binaryType = "arraybuffer";
     const encoder = new TextEncoder();
-    const resize = () => {
-      if (element.offsetParent === null) return; // a hidden tab is measured when shown
-      fit.fit();
-      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ resize: [terminal.cols, terminal.rows] }));
-    };
+    const follower = followSize(element, terminal, fit, (cols, rows) => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ resize: [cols, rows] }));
+    });
+    refitRef.current = follower.refit;
     socket.onopen = () => {
       socket.send(JSON.stringify({ token: token() ?? "" }));
       senderRef.current = (text) => socket.send(encoder.encode(text));
       setState("open");
-      resize();
+      follower.refit();
     };
     socket.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) terminal.write(new Uint8Array(event.data));
@@ -209,10 +207,9 @@ function TerminalView({ active, options }: { active: boolean; options: Options }
     const selected = terminal.onSelectionChange(() => {
       if (copyOnSelect.current && terminal.hasSelection()) void navigator.clipboard?.writeText(terminal.getSelection());
     });
-    const observer = new ResizeObserver(() => resize());
-    observer.observe(element);
     return () => {
-      observer.disconnect();
+      follower.dispose();
+      refitRef.current = null;
       typed.dispose();
       selected.dispose();
       socket.onclose = null;
@@ -230,10 +227,15 @@ function TerminalView({ active, options }: { active: boolean; options: Options }
     terminal.options.cursorBlink = options.cursorBlink;
     terminal.options.scrollback = options.scrollback;
   }, [options]);
+  // Full screen changes the container's size: measure again.
+  useEffect(() => {
+    void full;
+    if (active) refitRef.current?.();
+  }, [full, active]);
   // The shown tab receives "Run in the terminal" and gets the focus.
   useEffect(() => {
     if (!active || state !== "open") return;
-    fitRef.current?.fit();
+    refitRef.current?.();
     terminalRef.current?.focus();
     connectTerminal((text) => senderRef.current?.(text));
     return () => connectTerminal(null);
