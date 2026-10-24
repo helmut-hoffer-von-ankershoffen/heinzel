@@ -13,7 +13,7 @@ modules; `hz system modules` lists what is installed.
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
 | [`system.capability`](#systemcapability) | Show which adapters serve which capabilities, and who reads and writes what. |
-| [`system.changelog`](#systemchangelog) | Release notes of the installed version. |
+| [`system.changelog`](#systemchangelog) | Release notes of the installed version and of newer releases. |
 | [`system.config`](#systemconfig) | Show, get, set and initialize configuration. |
 | [`system.credential`](#systemcredential) | Store and check the credentials modules need, in the OS keychain. |
 | [`system.daemon`](#systemdaemon) | Run modules' jobs in the background, supervised by launchd or systemd. |
@@ -118,11 +118,11 @@ Health checks: reported by `hz system doctor`.
 
 ## `system.changelog`
 
-Release notes of the installed version.
+Release notes of the installed version and of newer releases.
 
 | Operation | CLI | MCP tool | REST | Changes state |
 | --- | --- | --- | --- | --- |
-| Show the changelog of the installed version, as Markdown. | `hz system changelog` | `system_changelog` | `GET /system/changelog` |  |
+| Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring. | `hz system changelog` | `system_changelog` | `GET /system/changelog` |  |
 
 ## `system.config`
 

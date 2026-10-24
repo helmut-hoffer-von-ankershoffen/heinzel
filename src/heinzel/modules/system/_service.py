@@ -5,22 +5,37 @@ import re
 import sys
 import urllib.error
 from collections import defaultdict
-from typing import Any, override
+from datetime import date
+from typing import Any, cast, override
 from urllib.parse import urlsplit
 
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel
 
 from heinzel import InfoLet, Kernel, __version__
 from heinzel.kernel import Installation, ReleaseCache, ReleaseSource
 from heinzel.modules.system import _github
-from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, SystemInfo
+from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
 
 DEFAULT_REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
 """Where releases come from when the installation doesn't say, e.g. in a development checkout."""
 RELEASE_TIMEOUT = 5
 """Seconds to wait for the package source, when someone asked, before giving up with a warning."""
 _SEGMENT = re.compile(r"[A-Za-z0-9_.-]+")
+PAGE_SIZE = 30
+"""Releases asked for per page by `hz system changelog --newer`."""
+MAX_PAGES = 4
+"""Pages asked for at most: the newest `PAGE_SIZE * MAX_PAGES` releases, in a bounded number of requests."""
+MAX_NOTES = 20_000
+"""Characters of one release's notes kept at most; longer notes end with a pointer to the release page."""
+UNSAFE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+"""Control characters but tab and line feed, and bidirectional controls: what a terminal acts on, or what makes text
+show something other than it says."""
+
+
+def clean(text: str) -> str:
+    """Third-party text without control and bidirectional characters, with line feeds for line breaks."""
+    return UNSAFE.sub("", text.replace("\r\n", "\n").replace("\r", "\n"))
 
 
 def repository_of(requirement: str | None) -> str:
@@ -72,6 +87,64 @@ class GitHubReleases(ReleaseSource):
     def latest_version(self, timeout: float) -> str:
         """The version of the latest release, for the release cache."""
         return self.latest(timeout)[0]
+
+    def releases_url(self, page: int) -> str:
+        """Where a page of releases, newest first, is asked for."""
+        return f"{_github.GITHUB_API}/repos/{self.repository}/releases?per_page={PAGE_SIZE}&page={page}"
+
+    def newer_than(self, version: str, timeout: float) -> list[ReleaseNotes]:
+        """The notes of every published release newer than `version`, newest first; drafts and pre-releases skipped.
+
+        At most `MAX_PAGES` requests, stopping at the first page that is short or reaches `version`. Notes are
+        third-party text: cleaned of control and bidirectional characters, and cut at `MAX_NOTES` characters.
+
+        Raises:
+            OSError: If GitHub can't be reached or answers with an error, e.g. when rate-limited.
+            ValueError: If an answer is too large or not JSON.
+            TypeError: If an answer is no list.
+        """
+        installed, found = Version(version), dict[Version, ReleaseNotes]()
+        for page in range(1, MAX_PAGES + 1):
+            answer: object = _github.get_json(self.releases_url(page), None, timeout)
+            if not isinstance(answer, list):
+                msg = "the answer is no list of releases"
+                raise TypeError(msg)
+            items = cast("list[object]", answer)
+            reached = False
+            for notes in filter(None, map(_release_notes, items)):
+                if Version(notes.version) > installed:
+                    found.setdefault(Version(notes.version), notes)
+                else:
+                    reached = True
+            if reached or len(items) < PAGE_SIZE:
+                break
+        return [found[key] for key in sorted(found, reverse=True)]
+
+
+def _release_notes(item: object) -> ReleaseNotes | None:
+    """A published release from GitHub's answer; None for drafts, pre-releases and anything that is no release."""
+    if not isinstance(item, dict):
+        return None
+    release = cast("dict[str, object]", item)
+    if release.get("draft") or release.get("prerelease"):
+        return None
+    try:
+        version = Version(clean(str(release.get("tag_name", ""))).removeprefix("v"))
+    except InvalidVersion:
+        return None
+    if version.is_prerelease:
+        return None
+    published = release.get("published_at")
+    try:
+        day = date.fromisoformat(published[:10]) if isinstance(published, str) else None
+    except ValueError:
+        day = None
+    url = _github_link(release.get("html_url"))
+    body = release.get("body")
+    notes = clean(body).strip() if isinstance(body, str) else ""
+    if len(notes) > MAX_NOTES:
+        notes = f"{notes[:MAX_NOTES].rstrip()}\n\n... (cut short; read all of it on {url or 'the release page'})"
+    return ReleaseNotes(version=str(version), date=day, notes=notes, url=url)
 
 
 def github_releases(installation: Installation) -> GitHubReleases:
