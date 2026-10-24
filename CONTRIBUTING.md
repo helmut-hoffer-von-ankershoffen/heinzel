@@ -13,145 +13,110 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 <!-- badges:end -->
 
-Thanks for improving Heinzelmännchen. Contributions from people and from coding agents follow the same path; the repository
-enforces it for both. If you are an agent, also read [AGENTS.md](AGENTS.md).
+Thanks for improving Heinzelmännchen. People and coding agents take the same path, and the repository enforces it
+for both: git hooks on your machine, CI on the pull request. This page gets you from a clone to a merged pull
+request; [AGENTS.md](AGENTS.md) is the short version for agents.
 
-Coding agents: Claude Code, Cursor, Codex, GitHub Copilot, Windsurf and Zed read [AGENTS.md](AGENTS.md) by
-themselves (Claude Code through CLAUDE.md). Gemini CLI needs `"context": {"fileName": ["AGENTS.md"]}` in its
-settings, Aider `read: AGENTS.md` in `.aider.conf.yml`. Git hooks and CI apply to all of them.
+## What you need
 
-## Before you start
+macOS (Apple silicon or Intel) or Linux (x86_64 or arm64) with:
 
-- Read [INTENT.md](INTENT.md): what Heinzelmännchen is for and the tenets that decide trade-offs.
-- Skim [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the [ADRs](docs/adr/).
-- Company-, site- or team-specific features belong in a plugin, not in the core (tenet 9). Scaffold one with
-  `hz system plugin new ../heinzel-<name>`; every plugin is named `heinzel-<name>`
-  ([ADR 0025](docs/adr/0025-plugin-distributions-are-named-heinzel-name.md)).
-- For structural changes (new kind of let, new head, new dependency, changed public API), open an issue or a pull
-  request with an ADR first.
+- **git** and **make**. On macOS both come with the command line tools: `xcode-select --install`.
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/)**: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  (or `brew install uv`). uv brings the right Python.
 
-## Set up
+That is all. `make setup` installs everything else into the clone, without sudo: Python and every Python tool in
+`.venv`, and the few programs that aren't Python packages (gitleaks, the GitHub CLI `gh`) pinned and checksum-verified
+in `.tools/bin` ([ADR 0036](docs/adr/0036-the-build-installs-its-own-tools.md)). `make doctor` shows what is there and
+prints the command that fixes anything missing. Windows: use WSL.
 
-Requirements: [uv](https://docs.astral.sh/uv/) and `make`. uv installs the right Python by itself.
+## Get going
+
+1. **Fork and clone.** Fork the repository on GitHub, then:
+
+   ```bash
+   git clone https://github.com/<you>/heinzel && cd heinzel
+   git remote add upstream https://github.com/helmut-hoffer-von-ankershoffen/heinzel
+   ```
+
+   With write access, clone the repository itself instead and skip `upstream`.
+
+2. **Set up**, then check that everything works, in about a minute:
+
+   ```bash
+   make setup        # .venv, the pinned tools, git hooks; run it again any time, it only adds what's missing
+   make check-fast   # format, lint, import contracts, generated files, unit tests
+   ```
+
+3. **Branch and change.** `git switch -c fix/short-description`, edit, and keep `make check-fast` green while you
+   work. `make fix` repairs what tools can (formatting, lint autofixes, the lockfile, generated docs).
+
+4. **Commit** with a [conventional commit](https://www.conventionalcommits.org) message: `fix(cli): exit 1 when the
+   config is invalid`. The commit-msg hook checks it; the pre-commit hook formats, lints, type-checks and scans for
+   credentials.
+
+5. **Open the pull request**:
+
+   ```bash
+   gh auth login      # once; `gh` is in .tools/bin, and `make doctor` says whether you are logged in
+   make pr TITLE="fix(cli): exit 1 when the config is invalid"
+   ```
+
+   `make pr` runs `make preflight` (what CI checks), pushes the branch to your fork and opens the pull request
+   against `main`. The title must be a conventional commit too: it becomes the commit on `main`, the changelog entry
+   and decides the next version.
+
+`make help` lists every target. Targets are quiet, one line per passing step and the tail of a failing one;
+`VERBOSE=1` streams everything. `make sync` rebases your branch onto the latest `main`, `make ci-logs` shows what
+failed in CI.
+
+## Run the CLI from your checkout
 
 ```bash
-git clone https://github.com/helmut-hoffer-von-ankershoffen/heinzel && cd heinzel
-make setup              # uv sync + git hooks (prek: format/lint/types on commit, conventional commit messages)
-uv run hz --help       # the CLI from your checkout
+uv run hz --help
+uv run hz system info --json
 ```
 
-## The loop
-
-| Step | Command |
-| --- | --- |
-| Fix what tools can fix (lockfile, format, lint autofixes, generated files) | `make fix` |
-| Everything CI checks offline (lint, import contracts, template sync, types, tests + coverage) | `make check` |
-| What CI checks, before pushing (adds template, build, commit messages; `PREFLIGHT=full` adds e2e, audit) | `make preflight` |
-| Open the pull request (preflight, push, PR to `main`, auto-merge) | `make pr TITLE="feat: ..."` |
-| What failed in CI, waiting for a running build | `make ci-logs` |
-| Unit / integration / end-to-end tests | `make test-unit` / `make test-integration` / `make test-e2e` |
-| All supported Pythons (3.12–3.15), each in an isolated environment | `make test-all-pythons` |
-| Render the plugin template and check the result | `make template-test` |
-| Regenerate the template's derived files after changing Makefile, CI or pyproject | `make template-sync` |
-| Dependency audit | `make audit` |
-| Preview the changelog | `make changelog` |
-| Re-render the README demo GIF (needs `vhs` and `jq`) | `make demo` |
-
-`make help` lists everything. Targets are quiet: one line per passing step, the tail of a failing one; `VERBOSE=1`
-streams all output.
-
-We don't use nox or tox: uv creates an isolated environment per Python version in seconds, so `make test-all-pythons`
-is a loop over `uv run --isolated --python 3.X`, and CI runs the same tests in a matrix on macOS and Linux.
-
-### Scripts
-
-The Python scripts in `scripts/` declare their dependencies inline ([PEP 723](https://peps.python.org/pep-0723/)) and
-run with `uv run --script scripts/x.py`: uv builds each one a small environment in its cache (tens of milliseconds the
-first time, reused after that) without syncing the project, so `make` steps, git hooks and plugins (which get the
-scripts through the template) don't depend on the project environment. Their `requires-python` is the project's, and
-any dependency is pinned with `==` to the version in `uv.lock`, so CI's uv cache, keyed on `uv.lock`, already holds it.
-A script that imports heinzel (`generate_docs.py`) runs with `uv run python` and says why in a `# Project-bound:`
-comment. `tests/unit/scripts_test.py` checks both, and that every caller uses the matching command. Shell scripts run
-with `bash scripts/x.sh`; never run a script by path, because plugins get them without the executable bit.
+Every operation takes `--json`; all commands are in [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md). To try it as a
+user would, installed with uv: `uv tool install --editable .`.
 
 ## Tests
 
-Every test is exactly one of `unit`, `integration` or `e2e` — definitions in
-[CODING_STANDARDS.md](docs/CODING_STANDARDS.md#tests), adopted from the Aignostics Python SDK. The suite refuses tests
-without exactly one marker. Coverage of unit + integration must stay ≥ 90 % (branch coverage); pull requests get a
-coverage comment.
+Every test is exactly one of `unit` (one module, mocked collaborators), `integration` (across layers, real files and
+subprocesses, no network) or `e2e` (installs `hz` for real, needs network); the suite refuses anything else.
+Definitions and conventions: [CODING_STANDARDS.md#tests](docs/CODING_STANDARDS.md#tests).
 
-End-to-end tests install Heinzelmännchen for real with `uv tool install` into a sandbox and run the full lifecycle: plugins,
-upgrade, update, uninstall — both directly and through the scripts of the `/hz-init` and `/hz-uninstall` skills.
+| Run | Command |
+| --- | --- |
+| The edit loop | `make check-fast` |
+| Everything CI checks offline (lint, types, unit and integration) | `make check` |
+| One level | `make test-unit`, `make test-integration`, `make test-e2e` |
+| With coverage (at least 90 %, branch coverage) | `make test` |
+| Every supported Python, 3.12 to 3.15 | `make test-all-pythons` |
+| What CI runs, before you push | `make preflight` (`PREFLIGHT=full` adds e2e and the dependency audit) |
 
-## Confidentiality
+## Review and merging
 
-Heinzelmännchen is public and generic: examples use made-up names, and nothing in files or commit messages may
-reveal a company, customer, colleague or internal project. Maintainers keep a private list of such terms, outside the
-repository: one term per line in `~/.config/heinzel-dev/confidential-terms` (or the file in
-`$CONFIDENTIAL_TERMS_FILE`), and the same list in the repository secret `CONFIDENTIAL_TERMS`. The pre-commit and
-commit-msg hooks, `make lint`, CI (files, commit messages, pull request title) and Publish check against it and report
-locations and term numbers only. Without a list, the check is skipped locally; CI on this repository requires it.
+- CI must pass: the `CI OK` check gates `main`. It runs lint and types, the tests on macOS and Linux for every
+  Python, end-to-end tests, the plugin template, a secret scan, a dependency audit, CodeQL and `make setup` on every
+  supported platform. Pull requests get a coverage comment.
+- A maintainer reviews. Answer review comments in the thread and push fixes to the same branch; `main` requires
+  resolved review threads and an up-to-date branch (a workflow merges `main` into auto-merging pull requests).
+- Pull requests are squash-merged. Maintainers' own pull requests merge automatically once green (`make pr` turns
+  on auto-merge); from a fork, the maintainer merges.
+- Structural changes (a new kind of let, a new head, a new dependency, a changed public API, or a change that
+  contradicts an [ADR](docs/adr/)) need an ADR first; open an issue to discuss before writing much code. With Claude
+  Code, run the `review` skill before opening the pull request.
 
-Credentials (API keys, tokens, private keys) are a separate check: [gitleaks](https://github.com/gitleaks/gitleaks)
-runs on every commit and scans the whole history in CI, with GitHub secret scanning and push protection behind it.
+## Make a plugin
 
-## Pull requests
-
-`main` only changes through pull requests.
-
-1. Branch from `main`: `git switch -c feat/short-description`.
-2. Commit with [Conventional Commits](https://www.conventionalcommits.org): `feat(kernel): ...`, `fix(plugin): ...`,
-   `docs: ...`. The commit-msg hook checks it.
-3. Run `make check`; with Claude Code, run the `review` skill (critic, test-engineer, security-reviewer, architect).
-4. Open the pull request; its **title** must be a conventional commit — it becomes the squash commit on `main`, feeds
-   the changelog and decides the next version.
-5. CI must pass (`CI OK`). CodeQL and, if enabled, the Claude review run too. Pull requests are squash-merged and the
-   branch is deleted.
-
-## Releases
-
-Fully automated and pull-request based ([ADR 0013](docs/adr/0013-pull-request-based-development-and-releases.md)):
-
-1. Actions → **Release** → Run workflow (`auto` derives the bump from commits; or force `patch`/`minor`/`major`).
-   It opens a pull request `chore(release): vX.Y.Z` that updates the version everywhere and `CHANGELOG.md`, and
-   runs CI on it. The optional **intro** becomes the release's introduction under its heading in `CHANGELOG.md` and
-   in the release notes; edit it in the pull request like the rest. Introductions of earlier releases survive the
-   regeneration; hand edits to their entries don't, because entries come from the commits.
-2. Review and merge it. **Release tag** then tags the merge commit and **Publish** builds wheel and sdist, attests
-   their provenance and creates the GitHub release with the changelog section as notes.
-
-`make release` (`make release INTRO="..."`) opens the same pull request from a workstation.
-
-## Repository settings (maintainers)
-
-The release and pull-request flow depends on these settings of the GitHub repository:
-
-- A ruleset on `main`: pull requests only (squash), required status check `CI OK` on an up-to-date branch, linear
-  history, resolved review threads, no force pushes or deletions. Version tags are created by the Release tag
-  workflow; Publish refuses a tag that doesn't match the project version. (A tag ruleset that only GitHub Actions may
-  bypass needs an organization-owned repository.)
-- Merges: squash only, commit title = pull request title, delete branches after merge, auto-merge allowed.
-- Actions: workflow permissions read-only by default, "Allow GitHub Actions to create and approve pull requests" on.
-- Security: private vulnerability reporting, secret scanning with push protection, Dependabot alerts and updates.
-- Confidentiality: secret `CONFIDENTIAL_TERMS` for Actions and for Dependabot (its pull requests only see
-  Dependabot secrets): `gh secret set CONFIDENTIAL_TERMS < ~/.config/heinzel-dev/confidential-terms`, again with
-  `--app dependabot`.
-- Reviews on GitHub: secret `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token`; usage counts against that Claude
-  subscription, not API credits) and variable `CLAUDE_REVIEW=true`.
-
-## Extending Heinzelmännchen
-
-- **Operation** (command): `@module.operation` on a typed function — skill `add-operation`.
-- **Module / submodule:** a package with `module = Module(...)` — skill `add-module`.
-- **Settings:** `@module.settings` on a `ModuleSettings` subclass; read from `[<module>]` in config files and
-  `HZ_<MODULE>__*`.
-- **Service:** `module.service(MyService)`; injected wherever `MyService` is asked for.
-- **Info section:** `@module.info` contributes to `hz system info`.
-- **README demo:** a `demo.tape` next to the module's `__init__.py` adds its part to the demo GIF — see
-  [The README demo](#the-readme-demo).
-- **Plugin:** `hz system plugin new <dir>`; keep it current with `make update-template` inside the plugin.
-- **New kind of let or head:** write an ADR (skill `write-adr`) first.
+Company-, team- or site-specific features belong in a plugin, not in the core ([INTENT.md](INTENT.md), tenet 9).
+`uv run hz system plugin new ../heinzel-<name>` scaffolds one with the same tooling, hooks, CI and agent setup
+(every plugin is named `heinzel-<name>`, [ADR 0025](docs/adr/0025-plugin-distributions-are-named-heinzel-name.md));
+inside it, `make setup` works as here and `make update-template` keeps it current. A small complete plugin to copy
+from: [plugins/heinzel-clock](plugins/heinzel-clock). Operations, modules, settings and services: [README
+Extend](README.md#extend) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); with Claude Code, the skills
+`add-module` and `add-operation`.
 
 ### The README demo
 
@@ -182,9 +147,64 @@ snippet starts on a cleared screen; the order is the intro, then first-party plu
 sorted by path, so built-in commands such as `hz system doctor` close the demo. Keep a snippet to a few seconds.
 
 `make demo` renders the GIF locally with the real `hz` from your checkout, installed into a throwaway uv tool
-directory, so your own hz, plugins and settings stay out of it. Look at the last frames, then commit the GIF. On `main`,
-the Demo workflow re-renders it on macOS whenever the tape changes, and opens a pull request.
+directory, so your own hz, plugins and settings stay out of it; it installs vhs, ffmpeg and jq (pinned, like the
+build's tools) the first time, and on macOS needs `brew install ttyd`. Look at the last frames, then commit the GIF.
+On `main`, the Demo workflow re-renders it on macOS whenever the tape changes, and opens a pull request.
 
-## Code of conduct
+## Rules worth knowing
 
-Be kind, assume good intent, critique code and ideas, not people.
+- **Code:** [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md) is the source of truth; hooks and CI enforce it.
+  Fix the cause of a failing check; never bypass a hook (`--no-verify`) or loosen a rule to get green.
+- **Commits:** `type(scope): summary`, the whole line at most 72 characters; types and scopes are in
+  [CODING_STANDARDS.md](docs/CODING_STANDARDS.md#commits-branches-and-releases). A new dependency needs a reason in
+  the commit body. The release process owns `CHANGELOG.md` and version numbers.
+- **Scripts:** Python scripts in `scripts/` declare their dependencies inline
+  ([PEP 723](https://peps.python.org/pep-0723/), pinned to uv.lock's versions) and run with
+  `uv run --script scripts/x.py`, outside the project environment; one that imports heinzel runs with
+  `uv run python` and says why in a `# Project-bound:` comment. Shell scripts run with `bash scripts/x.sh`, never by
+  path: plugins get them without the executable bit. `tests/unit/scripts_test.py` checks both.
+- **Confidentiality:** the repository is public and generic; examples use made-up names, and nothing may name a
+  company, customer, colleague or internal project. Maintainers check against a private list of terms
+  (`~/.config/heinzel-dev/confidential-terms`, or `$CONFIDENTIAL_TERMS_FILE`; without one the check is skipped
+  locally). Credentials are a separate check: gitleaks runs on every commit and over the whole history in CI.
+- **Coding agents:** Claude Code, Cursor, Codex, GitHub Copilot, Windsurf and Zed read [AGENTS.md](AGENTS.md) by
+  themselves (Claude Code through CLAUDE.md); Gemini CLI needs `"context": {"fileName": ["AGENTS.md"]}` in its
+  settings, Aider `read: AGENTS.md` in `.aider.conf.yml`.
+
+## Questions
+
+- Bugs and feature ideas: [open an issue](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues/new/choose).
+- A question about how to do something: an issue is fine too; or open a draft pull request (`make pr DRAFT=1
+  TITLE="..."`) and ask in its description.
+- Security vulnerabilities: privately, as [SECURITY.md](SECURITY.md) describes, never in a public issue.
+- Something in the setup doesn't work: run `make doctor` and paste its output into the issue.
+
+Be kind, assume good intent, critique code and ideas, not people ([CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)).
+
+## For maintainers
+
+**Releases** are pull requests ([ADR 0013](docs/adr/0013-pull-request-based-development-and-releases.md)): Actions →
+**Release** → Run workflow (`auto` derives the bump from the commits, or force `patch`, `minor`, `major`; `make
+release` does the same from a workstation) opens `chore(release): vX.Y.Z` with the version and `CHANGELOG.md`
+updated. The optional **intro** (`make release INTRO="..."`) becomes the release's introduction under its heading in
+`CHANGELOG.md` and in the release notes; edit it in the pull request like the rest. Introductions of earlier releases
+survive the regeneration; hand edits to their entries don't, because entries come from the commits. Merging the pull
+request tags the commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
+release with the changelog section as notes.
+
+**Pinned tools** live in [scripts/tools.toml](scripts/tools.toml); to bump one, change its version and run
+`uv run --script scripts/tools.py pin <name>`.
+
+**Repository settings** the flow depends on:
+
+- A ruleset on `main`: pull requests only (squash), required status check `CI OK` on an up-to-date branch, linear
+  history, resolved review threads, no force pushes or deletions. Version tags are created by the Release tag
+  workflow; Publish refuses a tag that doesn't match the project version.
+- Merges: squash only, commit title = pull request title, delete branches after merge, auto-merge allowed.
+- Actions: workflow permissions read-only by default, "Allow GitHub Actions to create and approve pull requests" on.
+- Security: private vulnerability reporting, secret scanning with push protection, Dependabot alerts and updates.
+- Confidentiality: secret `CONFIDENTIAL_TERMS` for Actions and for Dependabot (its pull requests only see
+  Dependabot secrets): `gh secret set CONFIDENTIAL_TERMS < ~/.config/heinzel-dev/confidential-terms`, again with
+  `--app dependabot`. CI on this repository requires it.
+- Reviews on GitHub: secret `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token`; usage counts against that Claude
+  subscription, not API credits) and variable `CLAUDE_REVIEW=true`.

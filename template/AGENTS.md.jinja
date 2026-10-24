@@ -16,7 +16,8 @@ Instructions for coding agents and humans working on [[ project_name ]], a plugi
 
 | Task | Command |
 | --- | --- |
-| Set up | `make setup` |
+| Set up everything the build needs (deps, pinned tools in .tools/bin, git hooks) | `make setup` |
+| What is missing, and the command that fixes it | `make doctor` |
 | Edit loop, seconds | `make check-fast` |
 | Everything CI checks offline | `make check` |
 | Fix what tools can fix | `make fix` |

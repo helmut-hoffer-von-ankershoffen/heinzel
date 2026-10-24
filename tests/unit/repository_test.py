@@ -152,6 +152,7 @@ UNTRACKED = {
 def test_nothing_names_the_old_directory_of_first_party_plugins():
     """The maintainer named it `plugins/` ("it contains plugins"); only the changelog's history keeps the old name."""
     old = re.compile(r"(?<![\w-])" + "packages" + "/")  # split, so this file doesn't name it either
+    url = re.compile(r"https?://\S+")  # a path in a URL, such as a PyPI file's, is not the directory
     offenders = []
     for directory, subdirectories, files in os.walk(REPO):
         subdirectories[:] = [d for d in subdirectories if d not in UNTRACKED]
@@ -164,6 +165,8 @@ def test_nothing_names_the_old_directory_of_first_party_plugins():
             except UnicodeDecodeError:
                 continue
             offenders += [
-                f"{path.relative_to(REPO)}:{n}" for n, line in enumerate(text.splitlines(), 1) if old.search(line)
+                f"{path.relative_to(REPO)}:{n}"
+                for n, line in enumerate(text.splitlines(), 1)
+                if old.search(url.sub("", line))
             ]
     assert offenders == []
