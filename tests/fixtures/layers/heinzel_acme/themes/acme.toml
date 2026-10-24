@@ -1,10 +1,18 @@
 # Acme's look, a made-up company's theme for tests (ADR 0044).
 name = "acme"
 title = "Acme"
-font_sans = "Avenir Next, system-ui, sans-serif"
+font_sans = '"Acme Sans", Avenir Next, system-ui, sans-serif'
 font_mono = 'ui-monospace, "SF Mono", monospace'
 radius = "0.75rem"
 border_width = "1px"
+font_size = "14px"
+heading_tracking = "-0.5px"
+
+# A made-up font file: only its woff2 signature is real, enough for the checks and for the web head to serve it.
+[[fonts]]
+family = "Acme Sans"
+file = "fonts/acme-sans.woff2"
+weight = "100 900"
 
 [light]
 background = "#fdfcf9"

@@ -130,6 +130,47 @@ declaration, and the choice is an ordinary setting every head reads.
   width; switching between those available; the reference company's theme as the proof.
 - The reference company `heinzel-acme` ships `themes/acme.toml` from its company layer plugin.
 - Open with ADR 0040: the org-site precedence; when it is decided, themes follow the same rule as settings.
-- Extension, not decided: bundled font files (`fonts=` on a theme, served by the web head from the plugin under
-  `'self'`, `woff2` only, with `@font-face` built from checked data); a theme a layer recommends; a per-mode font
-  stack if a theme needs one.
+- Extension, not decided: a theme a layer recommends; a per-mode font stack if a theme needs one. (Bundled font
+  files, listed here first, are decided in the amendment below.)
+
+**Amendment 2026-10-24: type scale, density, icon colours and bundled fonts.** Requested by the maintainer the same day: a theme sets the app's type scale, density and icon look, and ships its own
+font files. Additive: every new field has a default, so a theme written before this stays valid (the token-contract
+consequence above, met by defaults rather than new required fields).
+
+- **Two colours** in `ThemeColours`, both modes: `accent_foreground` (text and icons of the active navigation item
+  and of links; `foreground` when not given) and `icon` (icons that aren't active; `muted_foreground` when not given),
+  hex like the others, as `--color-accent-foreground` and `--color-icon`.
+- **Type and density** on `Theme`, with the built-in values the app uses: `font_size` (`15px`), `font_size_small`
+  (`13px`), `icon_size` (`18px`), `row_height` (navigation and list rows, `36px`), `radius_control` (buttons, inputs,
+  navigation items, `0.5rem`), `radius` (cards and dialogs, now `0.75rem` by default and in the built-in theme),
+  `heading_weight` (`600`), `heading_tracking` (`0`) and `spacing` (Tailwind's base step, `0.25rem`). Lengths take the
+  length grammar above; `heading_tracking` may also be negative (`-0.5px`); `heading_weight` is an integer from 100 to
+  900 (a TOML integer, not a string). The list returns each under its own name.
+- **The built-in theme** takes the app's current palette (`web/src/index.css`): neutral greys with a terracotta
+  primary, light and dark.
+- **Font files.** A theme file may declare `[[fonts]]`, at most 16: `family` (what its stacks call it: letters,
+  digits, single spaces, dots, underscores and dashes, at most 64), `file` (a path relative to the theme file's
+  directory: at most eight plain names of letters, digits, dots, underscores and dashes, none starting with a dot,
+  ending in `.woff2`), `weight` (`"400"` or a variable font's `"100 900"`, 100 to 900, low to high) and `style`
+  (`normal` or `italic`). At import the file must exist, resolve (symlinks followed) inside the theme's directory, be
+  a file, at most 2 MB, and start with the woff2 signature; a `Theme` built in Python can't ship fonts (no directory
+  to be relative to). The let keeps the directory (`ThemeLet.directory`).
+- **Serving.** The web head serves font `n` of a theme at `/theme-fonts/<theme>/<n>.woff2`, outside `/api` and without
+  the token, because the browser fetches fonts for `FontFace` itself and can't send the header; nothing in a font
+  file is private. Every other check of the web head applies (a loopback Host on its port, no other Origin, no
+  cross-site or same-site `Sec-Fetch-Site`), and the CSP's `font-src 'self'` already allows it. The request matches a
+  theme-name pattern and a number, never builds a path, and asks `ThemeFonts` (an interface in the kernel,
+  implemented by `system.theme`, so the head knows no module) for the theme that wins its name; the file is checked
+  again as it is read, through one descriptor that follows no symlink, waits on no FIFO and must be a regular file,
+  and on the bytes read, so a file swapped or removed since import is refused (`404`, a fixed message). Answers are
+  `font/woff2`, `nosniff`, `Cache-Control: public, max-age=31536000, immutable`.
+- **The list** returns `fonts: [{family, url, weight, style}]` per theme; `url` is the route above with `?v=`, a
+  hash of the file's content, so a changed font is a new URL and the long cache is
+  safe. A font whose file is gone is left out. The web app loads each with the `FontFace` API, so no `@font-face`
+  text, inline style or new CSP source is needed.
+- **Public API**, additive: `ThemeFont` and `ThemeFonts` in `heinzel`, `FONT_ROUTE` in `heinzel.kernel`.
+- **Confirmation**: `tests/unit/kernel/themes_test.py` (each new field's grammar with injection attempts, defaults for
+  older themes, font paths that leave the directory by `..`, absolute paths, backslashes and symlinks, the size and
+  signature checks, a file swapped after import) and `tests/integration/theme_test.py` (the list's shape, a font served
+  with its type and cache headers and without the token, refused for an unknown index, theme or file name, for the
+  theme a more specific layer hides, and for another Host, Origin or site).

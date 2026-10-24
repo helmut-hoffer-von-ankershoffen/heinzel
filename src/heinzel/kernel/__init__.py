@@ -100,7 +100,16 @@ from heinzel.kernel._protocols import (
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._text import clean_text
-from heinzel.kernel._themes import DEFAULT_THEME, Theme, ThemeColours, ThemeLet, font_stack_problem
+from heinzel.kernel._themes import (
+    DEFAULT_THEME,
+    FONT_ROUTE,
+    Theme,
+    ThemeColours,
+    ThemeFont,
+    ThemeFonts,
+    ThemeLet,
+    font_stack_problem,
+)
 
 __all__ = [
     "BUILTIN_PACKAGE",
@@ -109,6 +118,7 @@ __all__ = [
     "DEFAULT_THEME",
     "ENTRY_POINT_GROUP",
     "FILENAME",
+    "FONT_ROUTE",
     "INTERRUPT",
     "KERNEL_SECTION",
     "MAX_WINDOW",
@@ -209,6 +219,8 @@ __all__ = [
     "Status",
     "Theme",
     "ThemeColours",
+    "ThemeFont",
+    "ThemeFonts",
     "ThemeLet",
     "TokenUsage",
     "ToolProfile",

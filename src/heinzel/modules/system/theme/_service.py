@@ -4,9 +4,19 @@ from dataclasses import dataclass, field
 
 from pydantic import ValidationError
 
-from heinzel import Config, ConfigEditor, HeinzelError, Kernel, LayerStack, ModuleRecord, Theme, ThemeLet
+from heinzel import (
+    Config,
+    ConfigEditor,
+    HeinzelError,
+    Kernel,
+    LayerStack,
+    ModuleRecord,
+    Theme,
+    ThemeFonts,
+    ThemeLet,
+)
 from heinzel.kernel import DEFAULT_THEME
-from heinzel.modules.system.theme._models import ThemeList, ThemeSettings, ThemeView
+from heinzel.modules.system.theme._models import ThemeFontView, ThemeList, ThemeSettings, ThemeView
 
 SECTION = "system.theme"
 KEY = f"{SECTION}.name"
@@ -20,6 +30,7 @@ class Offered:
     theme: Theme
     record: ModuleRecord | None
     shadows: list[str] = field(default_factory=list[str])
+    let: ThemeLet | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +50,21 @@ def _branch(stack: LayerStack, layer: str) -> str | None:
     return "org"
 
 
-class ThemeService:
+def _fonts(offered: Offered) -> list[ThemeFontView]:
+    """The fonts of a theme with the URLs the web head serves them at; a file gone since import is left out."""
+    views: list[ThemeFontView] = []
+    for index, font in enumerate(offered.theme.fonts):
+        if offered.let is None:
+            break
+        try:
+            url = offered.let.font_url(index)
+        except ValueError:
+            continue
+        views.append(ThemeFontView(family=font.family, url=url, weight=font.weight, style=font.style))
+    return views
+
+
+class ThemeService(ThemeFonts):
     """The themes of the web app (ADR 0044): the built-in one and every theme the installed plugins offer."""
 
     def __init__(self, kernel: Kernel, editor: ConfigEditor) -> None:
@@ -81,7 +106,8 @@ class ThemeService:
                     f"decided which applies, so neither does until {stack.layer or 'your team'} offers it"
                 )
                 continue
-            themes[name] = Offered(lets[winner.qualname, name].theme, winner, [r.qualname for r in others])
+            let = lets[winner.qualname, name]
+            themes[name] = Offered(let.theme, winner, [r.qualname for r in others], let)
         return Available(themes, conflicts)
 
     def listing(self) -> ThemeList:
@@ -132,7 +158,16 @@ class ThemeService:
                     font_sans=offered.theme.font_sans,
                     font_mono=offered.theme.font_mono,
                     radius=offered.theme.radius,
+                    radius_control=offered.theme.radius_control,
                     border_width=offered.theme.border_width,
+                    font_size=offered.theme.font_size,
+                    font_size_small=offered.theme.font_size_small,
+                    icon_size=offered.theme.icon_size,
+                    row_height=offered.theme.row_height,
+                    heading_weight=offered.theme.heading_weight,
+                    heading_tracking=offered.theme.heading_tracking,
+                    spacing=offered.theme.spacing,
+                    fonts=_fonts(offered),
                     shadows=offered.shadows,
                 )
                 for name, offered in available.themes.items()
@@ -141,6 +176,16 @@ class ThemeService:
             note=note,
             next=next_steps,
         )
+
+    def font(self, theme: str, index: int) -> bytes | None:
+        """The content of font `index` of the available theme `theme` (the one that wins its name), or None."""
+        offered = self.available().themes.get(theme)
+        if offered is None or offered.let is None:
+            return None
+        try:
+            return offered.let.font(index)
+        except ValueError:
+            return None
 
     def use(self, name: str) -> ThemeList:
         """Write `name` as the theme to the user configuration file, then list the themes.

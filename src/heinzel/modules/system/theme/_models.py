@@ -26,6 +26,15 @@ class ThemeSettings(ModuleSettings):
     )
 
 
+class ThemeFontView(BaseModel):
+    """A font file a theme ships, where the web head serves it, for a `FontFace` in the web app."""
+
+    family: str = Field(description="The family name the theme's font stacks use, e.g. `Acme Sans`.")
+    url: str = Field(description="Where the web head serves it, e.g. `/theme-fonts/acme/0.woff2?v=1a2b3c4d5e6f`.")
+    weight: str = Field(description="The weight it covers, e.g. `400`, or a variable font's range, e.g. `100 900`.")
+    style: str = Field(description="`normal` or `italic`.")
+
+
 class ThemeView(BaseModel):
     """One available theme with every token value, ready to become the web app's CSS custom properties."""
 
@@ -38,8 +47,21 @@ class ThemeView(BaseModel):
     dark: ThemeColours = Field(description="Colours in dark mode; each field is the token `--color-<field>`.")
     font_sans: str = Field(description="The font-family stack of text (`--font-sans`), installed fonts only.")
     font_mono: str = Field(description="The font-family stack of code (`--font-mono`), installed fonts only.")
-    radius: str = Field(description="The corner radius (`--radius`), a CSS length, e.g. `0.5rem`.")
+    radius: str = Field(description="The corner radius of cards and dialogs (`--radius`), e.g. `0.75rem`.")
+    radius_control: str = Field(
+        description="The corner radius of buttons, inputs and navigation items (`--radius-control`), e.g. `0.5rem`."
+    )
     border_width: str = Field(description="The width of borders (`--border-width`), a CSS length, e.g. `1px`.")
+    font_size: str = Field(description="The size of the app's text (`--font-size`), e.g. `15px`.")
+    font_size_small: str = Field(description="The size of secondary text (`--font-size-small`), e.g. `13px`.")
+    icon_size: str = Field(description="The size of icons (`--icon-size`), e.g. `18px`.")
+    row_height: str = Field(description="The height of navigation and list rows (`--row-height`), e.g. `36px`.")
+    heading_weight: int = Field(description="The weight of headings (`--heading-weight`), 100 to 900, e.g. `600`.")
+    heading_tracking: str = Field(description="The letter spacing of headings (`--heading-tracking`), e.g. `0`.")
+    spacing: str = Field(description="The base step of gaps and padding (`--spacing`), e.g. `0.25rem`.")
+    fonts: list[ThemeFontView] = Field(
+        default_factory=list[ThemeFontView], description="Font files the theme ships, for the web app to load."
+    )
     shadows: list[str] = Field(
         default_factory=list[str],
         description="Modules that offer a theme of the same name, hidden by this one (layer order decides).",

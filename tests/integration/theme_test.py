@@ -7,6 +7,7 @@ layer. Nothing reaches the network.
 
 import importlib
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -14,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from heinzel import Config, Kernel, Module, ModuleRecord, Settings, Theme
+from heinzel import Config, HeinzelError, Kernel, Module, ModuleRecord, Settings, Theme
 from heinzel.heads import web
 from heinzel.heads.cli import build
 from heinzel.kernel import DEFAULT_THEME, Origin, discover, user_config_dir, walk
@@ -201,7 +202,16 @@ def test_the_web_head_lists_the_themes_and_the_pick_round_trips(acme):
         "font_sans",
         "font_mono",
         "radius",
+        "radius_control",
         "border_width",
+        "font_size",
+        "font_size_small",
+        "icon_size",
+        "row_height",
+        "heading_weight",
+        "heading_tracking",
+        "spacing",
+        "fonts",
         "shadows",
     }
     assert client.get("/api/system/theme/list").status_code == 401
@@ -214,3 +224,123 @@ def test_the_web_head_lists_the_themes_and_the_pick_round_trips(acme):
     refused = client.post("/api/system/theme/use", params={"name": "nope"}, headers=AUTH)
     assert refused.status_code >= 400
     assert "No theme is called 'nope'" in refused.text
+
+
+# Type scale, density and font files (ADR 0044, amended 2026-10-24).
+
+FONT = FIXTURES / "heinzel_acme" / "themes" / "fonts" / "acme-sans.woff2"
+
+
+def web_client(kernel: Kernel) -> TestClient:
+    return TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url="http://127.0.0.1:8000")
+
+
+def test_the_list_carries_the_type_scale_density_icon_colours_and_fonts(acme):
+    listed = web_client(acme("heinzel_acme")).get("/api/system/theme/list", headers=AUTH).json()
+    default, company = listed["themes"]
+    assert {key: default[key] for key in ("radius", "radius_control", "font_size", "font_size_small")} == {
+        "radius": "0.75rem",
+        "radius_control": "0.5rem",
+        "font_size": "15px",
+        "font_size_small": "13px",
+    }
+    assert (default["icon_size"], default["row_height"], default["spacing"]) == ("18px", "36px", "0.25rem")
+    assert (default["heading_weight"], default["heading_tracking"], default["fonts"]) == (600, "0", [])
+    assert (default["dark"]["accent_foreground"], default["dark"]["icon"]) == ("#ececec", "#9b9b9b")
+    assert (company["font_size"], company["heading_tracking"]) == ("14px", "-0.5px")
+    assert company["light"]["accent_foreground"] == company["light"]["foreground"]  # derived when not given
+    (shipped,) = company["fonts"]
+    assert set(shipped) == {"family", "url", "weight", "style"}
+    assert (shipped["family"], shipped["weight"], shipped["style"]) == ("Acme Sans", "100 900", "normal")
+    assert shipped["url"].startswith("/theme-fonts/acme/0.woff2?v=")
+
+
+def test_the_web_head_serves_a_themes_font_without_the_token_with_its_type_and_forever(acme):
+    client = web_client(acme("heinzel_acme"))
+    url = client.get("/api/system/theme/list", headers=AUTH).json()["themes"][1]["fonts"][0]["url"]
+    served = client.get(url)
+    assert served.status_code == 200, served.text
+    assert served.content == FONT.read_bytes()
+    assert served.headers["content-type"] == "font/woff2"
+    assert served.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert served.headers["x-content-type-options"] == "nosniff"
+    assert "font-src 'self'" in served.headers["content-security-policy"]
+    assert served.headers["cross-origin-resource-policy"] == "same-origin"
+    assert client.get(url, headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/theme-fonts/acme/1.woff2",
+        "/theme-fonts/acme/-1.woff2",
+        "/theme-fonts/acme/999.woff2",
+        "/theme-fonts/acme/0.ttf",
+        "/theme-fonts/acme/0",
+        "/theme-fonts/acme/fonts%2Facme-sans.woff2",
+        "/theme-fonts/acme/..%2F..%2Fthemes%2Facme.toml",
+        "/theme-fonts/nope/0.woff2",
+        "/theme-fonts/default/0.woff2",
+        "/theme-fonts/Acme/0.woff2",
+        "/theme-fonts/..%2Facme/0.woff2",
+        "/theme-fonts/acme/0.woff2/x",
+    ],
+)
+def test_the_web_head_refuses_a_font_no_theme_ships(acme, path):
+    refused = web_client(acme("heinzel_acme")).get(path)
+    assert refused.status_code == 404
+    assert refused.headers["content-type"].startswith("application/json")
+    assert refused.content != FONT.read_bytes()
+
+
+def test_only_the_theme_that_wins_its_name_serves_fonts(acme):
+    # The team's `acme` hides the company's, and the team ships no font file.
+    client = web_client(acme())
+    (theme,) = [t for t in client.get("/api/system/theme/list", headers=AUTH).json()["themes"] if t["name"] == "acme"]
+    assert theme["fonts"] == []
+    assert client.get("/theme-fonts/acme/0.woff2").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Host": "attacker.example.test:8000"},
+        {"Host": "127.0.0.1:9999"},
+        {"Origin": "http://attacker.example.test"},
+        {"Sec-Fetch-Site": "cross-site"},
+        {"Sec-Fetch-Site": "same-site"},
+    ],
+)
+def test_fonts_are_refused_to_another_host_or_site(acme, headers):
+    refused = web_client(acme("heinzel_acme")).get("/theme-fonts/acme/0.woff2", headers=headers)
+    assert refused.status_code == 403
+    assert refused.content != FONT.read_bytes()
+
+
+def test_no_fonts_are_served_when_the_theme_module_is_off(acme, monkeypatch):
+    kernel = acme("heinzel_acme")
+    client = web_client(kernel)
+    monkeypatch.setattr(kernel, "provides", lambda kind: False)
+    assert client.get("/theme-fonts/acme/0.woff2").status_code == 404
+
+
+def test_no_fonts_are_served_when_the_theme_service_cannot_be_built(acme, monkeypatch):
+    kernel = acme("heinzel_acme")
+
+    def unbuildable(kind: type) -> object:
+        msg = f"No module provides {kind.__name__}"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(kernel, "resolve", unbuildable)
+    assert web_client(kernel).get("/theme-fonts/acme/0.woff2").status_code == 404
+
+
+def test_a_font_file_removed_after_import_is_left_out_and_not_served(acme, tmp_path, monkeypatch):
+    copy = tmp_path / "layers"
+    shutil.copytree(FIXTURES, copy)
+    monkeypatch.syspath_prepend(str(copy))
+    kernel = acme("heinzel_acme")
+    (copy / "heinzel_acme" / "themes" / "fonts" / "acme-sans.woff2").unlink()
+    client = web_client(kernel)
+    assert client.get("/api/system/theme/list", headers=AUTH).json()["themes"][1]["fonts"] == []
+    assert client.get("/theme-fonts/acme/0.woff2").status_code == 404
