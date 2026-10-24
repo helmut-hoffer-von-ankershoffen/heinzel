@@ -139,8 +139,9 @@ def playbooks(service: WorkflowService) -> PlaybookList:
     return service.playbooks()
 
 
-# Hints read your systems; like `drafts`, the CLI and MCP get it, not a web page that can reach a local REST server.
-@module.operation(render=render_discovery, heads={"cli", "mcp"})
+# Hints read your systems; like `drafts`, the CLI, MCP and the web head (behind its session token) get it, not a web
+# page that can reach a local REST server.
+@module.operation(render=render_discovery, heads={"cli", "mcp", "web"})
 def discover(
     service: WorkflowService,
     playbook: Annotated[

@@ -32,6 +32,18 @@ def makefile() -> str:
     text = text.replace("format, lint, contracts, generated files, unit tests", "format, lint, unit tests")
     text = text.replace("check with coverage, template, build", "check with coverage, build")
     text = text.replace("lint, architecture contracts and workflows", "lint and workflows")
+    # The web head's app (web/, ADR 0039): plugins bring operations, not UI.
+    text = text.replace(" web-build web-dev test-web", "")
+    text = re.sub(r"\n# The web head's app in web/.*?\nWEB_TESTS := [^\n]*", "", text, flags=re.DOTALL)
+    text = re.sub(r"\n(web-build|web-dev|test-web):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n\t\t\$\(WEB_LINT\) \$\(WEB_TYPES\) \\", "", text)
+    text = re.sub(r" \$\(WEB_(LINT|TYPES|TESTS)\)", "", text)
+    text = re.sub(r'\n\t\t"&web-client=[^\n]*', "", text)
+    text = re.sub(r"\n\t@\$\(WEB(_PROJECT)?\) [^\n]*", "", text)
+    text = re.sub(r' "&web-vulnerabilities=[^"]*"', "", text)
+    text = text.replace("@$(TOOLS) install build web", "@$(TOOLS) install")
+    text = text.replace("build: web-build ## ", "build: ## ").replace("; the web app first)", ")")
+    text = text.replace(" src/heinzel/heads/web/static", "")
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text + (
         "\nupdate-template: ## Update this plugin to the latest Heinzelmännchen template (needs a clean working tree)\n"
@@ -51,6 +63,9 @@ def ci_workflow() -> str:
         "        run: unzip -l dist/*.whl | grep -q '[[ package_name ]]/__init__.py'",
     )
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
+    # The web head's app (ADR 0039): plugins have none.
+    text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
+    text = re.sub(r"\n      - name: Check the wheel ships the web app\n[^\n]*", "", text)
     text = text.replace("      - run: uv build --all-packages\n", "      - run: uv build\n")
     # The core's CI covers every platform of the shared scripts/tools.toml; a plugin, possibly private and paying for
     # its minutes, sets up on the two most contributors use.
@@ -80,6 +95,7 @@ def pyproject() -> str:
     tools = source[source.index("[tool.ruff]") :]
     tools = re.sub(r'\nextend-exclude = \["template"\][^\n]*', "", tools)
     tools = re.sub(r'\n"fuzz/\*\.py" = \[\n[^\]]*\]', "", tools)
+    tools = re.sub(r'\n"hatch_build\.py" = \[\n[^\]]*\]', "", tools)  # the web head's build hook
     tools = re.sub(r'\n\[\[tool\.mypy\.overrides\]\]\nmodule = \["atheris"\][^\n]*\n[^\n]*\n', "", tools)
     tools = re.sub(r"\n\[tool\.importlinter\].*?(?=\n\[tool\.(?!importlinter)|\Z)", "\n", tools, flags=re.DOTALL)
     tools = re.sub(r'source = \["heinzel"(, "heinzel_\w+")*\]', 'source = ["[[ package_name ]]"]', tools)
@@ -116,7 +132,9 @@ def pyproject() -> str:
 
 def gitignore() -> str:
     """Git won't read a symlinked .gitignore, so the template gets a copy."""
-    return (ROOT / ".gitignore").read_text(encoding="utf-8")
+    text = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    # Without the web head's app (ADR 0039): plugins have no web/.
+    return re.sub(r"(?m)^(node_modules/|src/heinzel/heads/web/static/|web/test-results/)\n", "", text)
 
 
 GENERATED = {

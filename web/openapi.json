@@ -1,0 +1,4248 @@
+{
+  "components": {
+    "schemas": {
+      "AdapterInfo": {
+        "description": "An installed adapter.",
+        "properties": {
+          "adapter": {
+            "description": "Name bindings use, e.g. `github`.",
+            "title": "Adapter",
+            "type": "string"
+          },
+          "capability": {
+            "description": "The capability it implements.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "distribution": {
+            "description": "Distribution that ships the module.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "hosts": {
+            "description": "Hosts it sends data to; `unknown (configured)` when configuration decides.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Hosts",
+            "type": "array"
+          },
+          "modes": {
+            "description": "The modes it serves.",
+            "items": {
+              "enum": [
+                "read",
+                "write"
+              ],
+              "type": "string"
+            },
+            "title": "Modes",
+            "type": "array"
+          },
+          "module": {
+            "description": "Qualified name of the module that provides it.",
+            "title": "Module",
+            "type": "string"
+          }
+        },
+        "required": [
+          "adapter",
+          "capability",
+          "modes",
+          "hosts",
+          "module",
+          "distribution"
+        ],
+        "title": "AdapterInfo",
+        "type": "object"
+      },
+      "AgentResult": {
+        "description": "The outcome of one agent session, for the job's result and its receipt.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "description": "Why the run did not complete; empty when it did.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "draft": {
+            "default": "",
+            "description": "The text the agent produced; empty unless completed.",
+            "title": "Draft",
+            "type": "string"
+          },
+          "duration_seconds": {
+            "description": "Wall-clock time of the run.",
+            "title": "Duration Seconds",
+            "type": "number"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model the agent reported using; none if unknown.",
+            "title": "Model"
+          },
+          "runner": {
+            "description": "The adapter that ran it, e.g. `claude-code` or `command`.",
+            "title": "Runner",
+            "type": "string"
+          },
+          "status": {
+            "description": "`completed`; `timeout` or `budget` when stopped for exceeding a limit; `failed` otherwise.",
+            "enum": [
+              "completed",
+              "timeout",
+              "budget",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tool_calls": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Tool calls the agent made, by tool name; empty if the runner can't tell.",
+            "title": "Tool Calls",
+            "type": "object"
+          },
+          "turns": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Agent turns taken, if reported.",
+            "title": "Turns"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/TokenUsage",
+            "description": "Tokens and cost, as far as reported."
+          },
+          "warnings": {
+            "description": "Limits the runner could not enforce, e.g. a budget the agent ignores.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "runner",
+          "status",
+          "duration_seconds"
+        ],
+        "title": "AgentResult",
+        "type": "object"
+      },
+      "AssetView": {
+        "description": "An asset type a playbook knows.",
+        "properties": {
+          "description": {
+            "description": "What it is.",
+            "title": "Description",
+            "type": "string"
+          },
+          "hints": {
+            "description": "Where `hz workflow discover` looks for candidates.",
+            "items": {
+              "$ref": "#/components/schemas/HintView"
+            },
+            "title": "Hints",
+            "type": "array"
+          },
+          "kept_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The template, `<module>:<name>`, whose output keeps it true; none if none does.",
+            "title": "Kept By"
+          },
+          "name": {
+            "description": "Its name; templates refer to it as `{{asset:<name>}}`.",
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "hints"
+        ],
+        "title": "AssetView",
+        "type": "object"
+      },
+      "AvailablePlugin": {
+        "description": "A plugin one can install with `hz system plugin add`.",
+        "properties": {
+          "community": {
+            "description": "Whether it is a community plugin, not maintained with Heinzelmännchen.",
+            "title": "Community",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "What the plugin does, in its authors' words.",
+            "title": "Description",
+            "type": "string"
+          },
+          "install_spec": {
+            "description": "What to pass to `hz system plugin add` to install it.",
+            "title": "Install Spec",
+            "type": "string"
+          },
+          "installed": {
+            "description": "Whether a plugin of this name is installed.",
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Distribution name, `heinzel-<name>` by convention (ADR 0025).",
+            "title": "Name",
+            "type": "string"
+          },
+          "short_name": {
+            "description": "The name without `heinzel-`: its command group (`hz <short_name>`); for first-party plugins also what `hz system plugin add` takes.",
+            "title": "Short Name",
+            "type": "string"
+          },
+          "source": {
+            "description": "Where it was found: `first-party` (ships with Heinzelmännchen) or `github` (a repository with the topic heinzel-plugin).",
+            "enum": [
+              "first-party",
+              "github"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "stars": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "GitHub stars; none for first-party plugins.",
+            "title": "Stars"
+          },
+          "url": {
+            "description": "Where to read about it.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "short_name",
+          "description",
+          "source",
+          "community",
+          "install_spec",
+          "url",
+          "stars",
+          "installed"
+        ],
+        "title": "AvailablePlugin",
+        "type": "object"
+      },
+      "Candidate": {
+        "description": "Something a hint found that may be an asset of its type.",
+        "properties": {
+          "asset": {
+            "description": "The asset type, as `--asset <type>=<ref>` takes it.",
+            "title": "Asset",
+            "type": "string"
+          },
+          "hint": {
+            "description": "The read method that found it.",
+            "title": "Hint",
+            "type": "string"
+          },
+          "playbook": {
+            "description": "The module whose playbook's hint found it.",
+            "title": "Playbook",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Its reference, in the adapter's notation: what `--asset <type>=<ref>` takes.",
+            "title": "Ref",
+            "type": "string"
+          },
+          "title": {
+            "description": "Its title.",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open it, if it has a web address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "playbook",
+          "asset",
+          "ref",
+          "title",
+          "hint"
+        ],
+        "title": "Candidate",
+        "type": "object"
+      },
+      "CapabilityInfo": {
+        "description": "A capability the core defines and the adapter bound to it.",
+        "properties": {
+          "bound": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The adapter bound in the `[capabilities]` table; none if unbound.",
+            "title": "Bound"
+          },
+          "modes": {
+            "description": "The modes it has: read, and write if any method writes.",
+            "items": {
+              "enum": [
+                "read",
+                "write"
+              ],
+              "type": "string"
+            },
+            "title": "Modes",
+            "type": "array"
+          },
+          "name": {
+            "description": "Name in requirements and bindings, e.g. `tracker`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What the capability covers.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "summary",
+          "modes",
+          "bound"
+        ],
+        "title": "CapabilityInfo",
+        "type": "object"
+      },
+      "CapabilityReport": {
+        "description": "Capabilities, adapters and the matrix of who reads and writes what, through which adapter and hosts.",
+        "properties": {
+          "adapters": {
+            "description": "Every installed adapter.",
+            "items": {
+              "$ref": "#/components/schemas/AdapterInfo"
+            },
+            "title": "Adapters",
+            "type": "array"
+          },
+          "capabilities": {
+            "description": "Every capability the core defines, with its binding.",
+            "items": {
+              "$ref": "#/components/schemas/CapabilityInfo"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "uses": {
+            "description": "Every declared requirement: requester, capability and modes, adapter, hosts, and what is unmet.",
+            "items": {
+              "$ref": "#/components/schemas/CapabilityUse"
+            },
+            "title": "Uses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "capabilities",
+          "adapters",
+          "uses"
+        ],
+        "title": "CapabilityReport",
+        "type": "object"
+      },
+      "CapabilityUse": {
+        "description": "One row of the matrix: who needs which capability in which modes, through which adapter and hosts.",
+        "properties": {
+          "adapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The adapter that serves it: the pinned or bound one; none if none can.",
+            "title": "Adapter"
+          },
+          "capability": {
+            "description": "The capability, e.g. `tracker`.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "hosts": {
+            "description": "Hosts that adapter sends data to; `unknown (configured)` when its configuration decides.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Hosts",
+            "type": "array"
+          },
+          "kind": {
+            "description": "What the requester is.",
+            "enum": [
+              "module",
+              "operation",
+              "job"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "modes": {
+            "description": "The modes declared.",
+            "items": {
+              "enum": [
+                "read",
+                "write"
+              ],
+              "type": "string"
+            },
+            "title": "Modes",
+            "type": "array"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the requirement is unmet; none when it is met.",
+            "title": "Problem"
+          },
+          "requester": {
+            "description": "Who declared it: a module, or `<module> <operation or job>`.",
+            "title": "Requester",
+            "type": "string"
+          },
+          "requirement": {
+            "description": "As declared, e.g. `documents:read` or `github:tracker:read`.",
+            "title": "Requirement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requester",
+          "kind",
+          "requirement",
+          "capability",
+          "modes",
+          "adapter",
+          "hosts",
+          "problem"
+        ],
+        "title": "CapabilityUse",
+        "type": "object"
+      },
+      "CatchUp": {
+        "description": "What a job does about schedule slots it missed while the machine slept or was off.",
+        "enum": [
+          "latest",
+          "all",
+          "skip"
+        ],
+        "title": "CatchUp",
+        "type": "string"
+      },
+      "Check": {
+        "description": "The outcome of one health check. Anything but UP must say what is wrong.",
+        "properties": {
+          "detail": {
+            "default": "",
+            "description": "What was found; required unless UP.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "fix": {
+            "default": "",
+            "description": "What to do about it, when not UP.",
+            "title": "Fix",
+            "type": "string"
+          },
+          "name": {
+            "description": "What was checked.",
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status",
+            "description": "Outcome: up, degraded or down."
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ],
+        "title": "Check",
+        "type": "object"
+      },
+      "CheckReport": {
+        "description": "`hz workflow check`: every contract checked and every problem found.",
+        "properties": {
+          "diagnostics": {
+            "description": "Every error and warning, by file and line.",
+            "items": {
+              "$ref": "#/components/schemas/Diagnostic"
+            },
+            "title": "Diagnostics",
+            "type": "array"
+          },
+          "files": {
+            "description": "The contract files checked.",
+            "items": {
+              "format": "path",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "searched": {
+            "description": "The directories searched, when no path was given.",
+            "items": {
+              "$ref": "#/components/schemas/Directory"
+            },
+            "title": "Searched",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files",
+          "diagnostics"
+        ],
+        "title": "CheckReport",
+        "type": "object"
+      },
+      "CompiledContract": {
+        "description": "`hz workflow show`: a contract as the daemon runs it.",
+        "properties": {
+          "approve": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For team contracts: the `schedule_team` entry that runs exactly this content on your daemon.",
+            "title": "Approve"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What it keeps true, and for whom.",
+            "title": "Description"
+          },
+          "diagnostics": {
+            "description": "Its errors and warnings.",
+            "items": {
+              "$ref": "#/components/schemas/Diagnostic"
+            },
+            "title": "Diagnostics",
+            "type": "array"
+          },
+          "draft_count": {
+            "description": "How many drafts it has so far.",
+            "title": "Draft Count",
+            "type": "integer"
+          },
+          "drafts": {
+            "description": "Where its drafts are saved.",
+            "format": "path",
+            "title": "Drafts",
+            "type": "string"
+          },
+          "file": {
+            "description": "The contract file.",
+            "format": "path",
+            "title": "File",
+            "type": "string"
+          },
+          "inputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Its inputs, by name: the read method it calls.",
+            "title": "Inputs",
+            "type": "object"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its daemon job, `workflow:<namespace>-<name>`; none when not scheduled.",
+            "title": "Job"
+          },
+          "max_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Most a manual run may cost: the lower of your cap and the contract's.",
+            "title": "Max Usd"
+          },
+          "measurements": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Measurements"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its success test: how long drafting took, and how much was changed before sending (`hz workflow sent`); none without drafts."
+          },
+          "name": {
+            "description": "The contract's name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "namespace": {
+            "description": "Where it was found: `me` or `team`.",
+            "enum": [
+              "me",
+              "team",
+              "path"
+            ],
+            "title": "Namespace",
+            "type": "string"
+          },
+          "next": {
+            "description": "What to do next, as commands: fixes while not ready, then how to run it.",
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "outputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Its outputs, by name: their format.",
+            "title": "Outputs",
+            "type": "object"
+          },
+          "publishes": {
+            "description": "Where its draft is meant to go; never published by itself.",
+            "items": {
+              "$ref": "#/components/schemas/PublishStatus"
+            },
+            "title": "Publishes",
+            "type": "array"
+          },
+          "ready": {
+            "description": "Whether a run can start: no errors and every requirement served.",
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "requirements": {
+            "description": "Capabilities it reads, with the adapters bound.",
+            "items": {
+              "$ref": "#/components/schemas/RequirementStatus"
+            },
+            "title": "Requirements",
+            "type": "array"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its cron expression in local time.",
+            "title": "Schedule"
+          },
+          "scheduled": {
+            "description": "Whether your daemon runs it on its schedule.",
+            "title": "Scheduled",
+            "type": "boolean"
+          },
+          "sha256": {
+            "description": "SHA-256 of the file; `[workflow] schedule_team` can pin it.",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long the agent session may take.",
+            "title": "Timeout Seconds"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its display name.",
+            "title": "Title"
+          },
+          "tools": {
+            "description": "Read-only tools the agent may use; empty: the runner's default.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Tools",
+            "type": "array"
+          },
+          "unmet": {
+            "description": "Requirements no bound adapter serves; a run fails until they are met.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Unmet",
+            "type": "array"
+          },
+          "why_not_scheduled": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why your daemon doesn't run it, when it doesn't.",
+            "title": "Why Not Scheduled"
+          }
+        },
+        "required": [
+          "name",
+          "namespace",
+          "file",
+          "title",
+          "description",
+          "job",
+          "schedule",
+          "scheduled",
+          "why_not_scheduled",
+          "requirements",
+          "unmet",
+          "inputs",
+          "outputs",
+          "publishes",
+          "tools",
+          "timeout_seconds",
+          "max_usd",
+          "diagnostics",
+          "sha256",
+          "approve",
+          "drafts",
+          "draft_count",
+          "ready",
+          "next"
+        ],
+        "title": "CompiledContract",
+        "type": "object"
+      },
+      "ConfigFileInfo": {
+        "description": "A configuration file in precedence order.",
+        "properties": {
+          "exists": {
+            "description": "Whether the file exists; missing files are skipped.",
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "Location of the file.",
+            "format": "path",
+            "title": "Path",
+            "type": "string"
+          },
+          "scope": {
+            "description": "site, user, project or explicit.",
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "path",
+          "exists"
+        ],
+        "title": "ConfigFileInfo",
+        "type": "object"
+      },
+      "ConfigReport": {
+        "description": "Where configuration comes from and what is in effect.",
+        "properties": {
+          "files": {
+            "description": "Lowest precedence first; environment variables override all.",
+            "items": {
+              "$ref": "#/components/schemas/ConfigFileInfo"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "settings": {
+            "description": "Every setting in effect.",
+            "items": {
+              "$ref": "#/components/schemas/SettingInfo"
+            },
+            "title": "Settings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "files",
+          "settings"
+        ],
+        "title": "ConfigReport",
+        "type": "object"
+      },
+      "ContractGraph": {
+        "description": "`hz workflow graph`: contracts linked by what they read and maintain; the workflow nobody writes down.",
+        "properties": {
+          "cycles": {
+            "description": "Contracts that depend on themselves, alone or through others, by cycle; they don't run.",
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Cycles",
+            "type": "array"
+          },
+          "edges": {
+            "description": "Who maintains what, and who reads what.",
+            "items": {
+              "$ref": "#/components/schemas/GraphEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "mermaid": {
+            "description": "The graph as a Mermaid flowchart, for documents and pull requests.",
+            "title": "Mermaid",
+            "type": "string"
+          },
+          "next": {
+            "description": "What to do next, as commands.",
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "nodes": {
+            "description": "Contracts, assets and sources.",
+            "items": {
+              "$ref": "#/components/schemas/GraphNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "unmaintained": {
+            "description": "Inputs that read an output no contract maintains.",
+            "items": {
+              "$ref": "#/components/schemas/Unmaintained"
+            },
+            "title": "Unmaintained",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes",
+          "edges",
+          "cycles",
+          "unmaintained",
+          "mermaid",
+          "next"
+        ],
+        "title": "ContractGraph",
+        "type": "object"
+      },
+      "ContractList": {
+        "description": "`hz workflow list`: the directories searched and every contract found in them.",
+        "properties": {
+          "contracts": {
+            "description": "Every contract found, team ones first.",
+            "items": {
+              "$ref": "#/components/schemas/ContractSummary"
+            },
+            "title": "Contracts",
+            "type": "array"
+          },
+          "directories": {
+            "description": "Where contracts are read from, team first.",
+            "items": {
+              "$ref": "#/components/schemas/Directory"
+            },
+            "title": "Directories",
+            "type": "array"
+          },
+          "next": {
+            "description": "What to do next, as commands.",
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "title": "Next",
+            "type": "array"
+          }
+        },
+        "required": [
+          "directories",
+          "contracts",
+          "next"
+        ],
+        "title": "ContractList",
+        "type": "object"
+      },
+      "ContractSummary": {
+        "description": "One contract in `hz workflow list`.",
+        "properties": {
+          "errors": {
+            "description": "How many errors it has.",
+            "title": "Errors",
+            "type": "integer"
+          },
+          "file": {
+            "description": "The contract file.",
+            "format": "path",
+            "title": "File",
+            "type": "string"
+          },
+          "name": {
+            "description": "The contract's name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "namespace": {
+            "description": "Where it was found: `me` (your directory) or `team`.",
+            "enum": [
+              "me",
+              "team",
+              "path"
+            ],
+            "title": "Namespace",
+            "type": "string"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its cron expression; none if it runs only by hand.",
+            "title": "Schedule"
+          },
+          "scheduled": {
+            "description": "Whether your daemon runs it on its schedule.",
+            "title": "Scheduled",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its display name; none if it doesn't parse.",
+            "title": "Title"
+          },
+          "valid": {
+            "description": "Whether it has no errors, so it is compiled.",
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "description": "How many warnings it has.",
+            "title": "Warnings",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "namespace",
+          "title",
+          "file",
+          "schedule",
+          "scheduled",
+          "valid",
+          "errors",
+          "warnings"
+        ],
+        "title": "ContractSummary",
+        "type": "object"
+      },
+      "CredentialInfo": {
+        "description": "A declared credential and whether it has a value; never the value itself.",
+        "properties": {
+          "backend": {
+            "description": "Where the value lives: a keyring backend or `environment`.",
+            "title": "Backend",
+            "type": "string"
+          },
+          "module": {
+            "description": "Qualified name of the module that declared it.",
+            "title": "Module",
+            "type": "string"
+          },
+          "name": {
+            "description": "Name of the credential, e.g. api-token.",
+            "title": "Name",
+            "type": "string"
+          },
+          "present": {
+            "description": "Whether a value is stored.",
+            "title": "Present",
+            "type": "boolean"
+          },
+          "purpose": {
+            "description": "What it is for and where to get one.",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "service": {
+            "description": "Service it is kept under; by default the qualified name of its module.",
+            "title": "Service",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "service",
+          "purpose",
+          "module",
+          "backend",
+          "present"
+        ],
+        "title": "CredentialInfo",
+        "type": "object"
+      },
+      "DaemonStatus": {
+        "description": "Whether the daemon is installed, loaded and healthy.",
+        "properties": {
+          "executable": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The shim the unit runs, as installed.",
+            "title": "Executable"
+          },
+          "failing": {
+            "description": "Jobs whose last run failed or that can't run.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Failing",
+            "type": "array"
+          },
+          "installed": {
+            "description": "Whether the unit files exist.",
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "interval_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minutes between ticks, as installed.",
+            "title": "Interval Minutes"
+          },
+          "jobs": {
+            "description": "How many jobs are registered.",
+            "title": "Jobs",
+            "type": "integer"
+          },
+          "last_tick": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the last tick ran.",
+            "title": "Last Tick"
+          },
+          "loaded": {
+            "description": "Whether launchd or systemd has the unit loaded.",
+            "title": "Loaded",
+            "type": "boolean"
+          },
+          "paused": {
+            "description": "Whether ticks are paused with `hz system daemon pause`.",
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "platform": {
+            "description": "The platform's service manager: darwin (launchd) or linux (systemd).",
+            "title": "Platform",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "installed",
+          "loaded",
+          "paused",
+          "interval_minutes",
+          "executable",
+          "last_tick",
+          "jobs",
+          "failing"
+        ],
+        "title": "DaemonStatus",
+        "type": "object"
+      },
+      "DefaultView": {
+        "description": "A setting a playbook recommends; never applied without your yes.",
+        "properties": {
+          "command": {
+            "description": "The command that applies it, if you agree.",
+            "title": "Command",
+            "type": "string"
+          },
+          "key": {
+            "description": "The setting, `<section>.<key>`.",
+            "title": "Key",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue",
+            "description": "The recommended value."
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "command"
+        ],
+        "title": "DefaultView",
+        "type": "object"
+      },
+      "Diagnostic": {
+        "description": "A problem in a contract file, with where it is and what to do.",
+        "properties": {
+          "code": {
+            "description": "Stable code, `HZC…` (ADR 0021).",
+            "title": "Code",
+            "type": "string"
+          },
+          "field": {
+            "description": "The frontmatter key path or body section concerned.",
+            "title": "Field",
+            "type": "string"
+          },
+          "file": {
+            "description": "The contract file.",
+            "format": "path",
+            "title": "File",
+            "type": "string"
+          },
+          "hint": {
+            "default": "",
+            "description": "What to do about it.",
+            "title": "Hint",
+            "type": "string"
+          },
+          "line": {
+            "description": "Line in the file, from 1.",
+            "title": "Line",
+            "type": "integer"
+          },
+          "message": {
+            "description": "What is wrong.",
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "description": "`error` (the contract isn't compiled) or `warning`.",
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "line",
+          "code",
+          "severity",
+          "field",
+          "message"
+        ],
+        "title": "Diagnostic",
+        "type": "object"
+      },
+      "Directory": {
+        "description": "A directory contracts are read from.",
+        "properties": {
+          "exists": {
+            "description": "Whether it exists; `hz workflow new` creates it.",
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "namespace": {
+            "description": "`me` (your workflows directory) or `team` (the team repository's).",
+            "enum": [
+              "me",
+              "team",
+              "path"
+            ],
+            "title": "Namespace",
+            "type": "string"
+          },
+          "path": {
+            "description": "The directory.",
+            "format": "path",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "namespace",
+          "path",
+          "exists"
+        ],
+        "title": "Directory",
+        "type": "object"
+      },
+      "Discovery": {
+        "description": "`hz workflow discover`: candidates for each asset type, found through capabilities you can read.",
+        "properties": {
+          "candidates": {
+            "description": "What the hints found, by asset type.",
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "next": {
+            "description": "What to do next, as commands.",
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "playbooks": {
+            "description": "The playbooks whose hints ran, by module.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Playbooks",
+            "type": "array"
+          },
+          "problems": {
+            "description": "Hints that couldn't run.",
+            "items": {
+              "$ref": "#/components/schemas/HintProblem"
+            },
+            "title": "Problems",
+            "type": "array"
+          }
+        },
+        "required": [
+          "playbooks",
+          "candidates",
+          "problems",
+          "next"
+        ],
+        "title": "Discovery",
+        "type": "object"
+      },
+      "Disposition": {
+        "description": "How a run ended.",
+        "enum": [
+          "rendered",
+          "skipped",
+          "failed"
+        ],
+        "title": "Disposition",
+        "type": "string"
+      },
+      "GraphEdge": {
+        "description": "A contract maintaining an asset, or a contract reading an asset or a source as one of its inputs.",
+        "properties": {
+          "input": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For `reads`: the reading contract's input name.",
+            "title": "Input"
+          },
+          "kind": {
+            "description": "`maintains` or `reads`.",
+            "enum": [
+              "maintains",
+              "reads"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "source": {
+            "description": "The id it starts at: a contract that maintains, or what is read.",
+            "title": "Source",
+            "type": "string"
+          },
+          "target": {
+            "description": "The id it ends at: the asset maintained, or the contract that reads.",
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "target",
+          "kind"
+        ],
+        "title": "GraphEdge",
+        "type": "object"
+      },
+      "GraphNode": {
+        "description": "A contract, an output it maintains (an asset), or a capability read it takes as input (a source).",
+        "properties": {
+          "id": {
+            "description": "`<namespace>:<name>` for a contract, `contract:<namespace>/<name>#<output>` for an asset, the read method and its arguments for a source.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "description": "What it is.",
+            "enum": [
+              "contract",
+              "asset",
+              "source"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "maintained": {
+            "default": true,
+            "description": "For an asset: whether a contract maintains it; false for an input nobody does.",
+            "title": "Maintained",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind"
+        ],
+        "title": "GraphNode",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthReport": {
+        "description": "All health checks, and the overall status: DOWN beats DEGRADED beats UP.",
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/Check"
+              },
+              "type": "array"
+            },
+            "description": "Checks by qualified module name.",
+            "title": "Checks",
+            "type": "object"
+          },
+          "status": {
+            "$ref": "#/components/schemas/Status",
+            "description": "Overall status: the worst of all checks."
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "HealthReport",
+        "type": "object"
+      },
+      "HintProblem": {
+        "description": "A hint that couldn't run, and what to do about it.",
+        "properties": {
+          "asset": {
+            "description": "The asset type.",
+            "title": "Asset",
+            "type": "string"
+          },
+          "hint": {
+            "description": "The read method.",
+            "title": "Hint",
+            "type": "string"
+          },
+          "playbook": {
+            "description": "The module whose playbook's hint it is.",
+            "title": "Playbook",
+            "type": "string"
+          },
+          "problem": {
+            "description": "Why it couldn't run.",
+            "title": "Problem",
+            "type": "string"
+          }
+        },
+        "required": [
+          "playbook",
+          "asset",
+          "hint",
+          "problem"
+        ],
+        "title": "HintProblem",
+        "type": "object"
+      },
+      "HintView": {
+        "description": "A discovery hint as `hz workflow playbooks` shows it.",
+        "properties": {
+          "args": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Its arguments besides the time window.",
+            "title": "Args",
+            "type": "object"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The pattern a candidate's title must match; every item if none.",
+            "title": "Match"
+          },
+          "read": {
+            "description": "The capability read method it calls.",
+            "title": "Read",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What it looks for, in words.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "window": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How far back it reads, for methods with a time window.",
+            "title": "Window"
+          }
+        },
+        "required": [
+          "read",
+          "args",
+          "window",
+          "match",
+          "summary"
+        ],
+        "title": "HintView",
+        "type": "object"
+      },
+      "InstalledSkill": {
+        "description": "A skill copied into an agent's skill directory.",
+        "properties": {
+          "name": {
+            "description": "Skill name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "target": {
+            "description": "Directory the skill was copied to or removed from.",
+            "format": "path",
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "target"
+        ],
+        "title": "InstalledSkill",
+        "type": "object"
+      },
+      "JobInfo": {
+        "description": "A job as `hz system daemon jobs` lists it.",
+        "properties": {
+          "catch_up": {
+            "$ref": "#/components/schemas/CatchUp",
+            "description": "What happens to missed slots: latest, all or skip."
+          },
+          "job": {
+            "description": "The job, as `<module>:<job>`; pass it to `tick --job`.",
+            "title": "Job",
+            "type": "string"
+          },
+          "last_as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The slot or time of its last run.",
+            "title": "Last As Of"
+          },
+          "last_disposition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Disposition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How its last run ended; None if it never ran."
+          },
+          "next_run": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The next slot; None if the schedule is invalid.",
+            "title": "Next Run"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the job can't run, e.g. an invalid schedule.",
+            "title": "Problem"
+          },
+          "retries": {
+            "description": "Retries within a tick after a failure.",
+            "title": "Retries",
+            "type": "integer"
+          },
+          "schedule": {
+            "description": "Its cron expression, in local time.",
+            "title": "Schedule",
+            "type": "string"
+          },
+          "scope": {
+            "description": "Who runs it: personal.",
+            "title": "Scope",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What the job does.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "description": "How long one run may take.",
+            "title": "Timeout Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "job",
+          "summary",
+          "schedule",
+          "scope",
+          "timeout_seconds",
+          "retries",
+          "catch_up",
+          "next_run",
+          "last_disposition",
+          "last_as_of"
+        ],
+        "title": "JobInfo",
+        "type": "object"
+      },
+      "JsonValue": {},
+      "LogLine": {
+        "description": "One line of the daemon's JSON-lines log.",
+        "properties": {
+          "at": {
+            "description": "When it was written.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The job it concerns.",
+            "title": "Job"
+          },
+          "level": {
+            "description": "INFO, WARNING or ERROR.",
+            "title": "Level",
+            "type": "string"
+          },
+          "message": {
+            "description": "What happened.",
+            "title": "Message",
+            "type": "string"
+          },
+          "receipt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The receipt it wrote.",
+            "title": "Receipt"
+          },
+          "tick": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The tick it belongs to.",
+            "title": "Tick"
+          }
+        },
+        "required": [
+          "at",
+          "level",
+          "message"
+        ],
+        "title": "LogLine",
+        "type": "object"
+      },
+      "Measurements": {
+        "description": "A contract's success test so far: its drafts, how long drafting took and how much was changed.",
+        "properties": {
+          "drafts": {
+            "description": "Drafts saved so far.",
+            "title": "Drafts",
+            "type": "integer"
+          },
+          "mean_changed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mean share of words changed before sending; none until recorded.",
+            "title": "Mean Changed"
+          },
+          "median_drafting_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Median drafting time; none without timed drafts.",
+            "title": "Median Drafting Seconds"
+          },
+          "recent": {
+            "description": "The newest drafts, at most 8, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/RunMeasure"
+            },
+            "title": "Recent",
+            "type": "array"
+          },
+          "sent": {
+            "description": "Drafts with a recorded sent version.",
+            "title": "Sent",
+            "type": "integer"
+          },
+          "total_edit_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sum of your editing estimates; none if you gave none.",
+            "title": "Total Edit Minutes"
+          }
+        },
+        "required": [
+          "drafts",
+          "sent",
+          "median_drafting_seconds",
+          "mean_changed",
+          "total_edit_minutes",
+          "recent"
+        ],
+        "title": "Measurements",
+        "type": "object"
+      },
+      "MemberView": {
+        "description": "A member as `hz team` shows them.",
+        "properties": {
+          "github": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Their GitHub login.",
+            "title": "Github"
+          },
+          "handle": {
+            "description": "Their handle.",
+            "title": "Handle",
+            "type": "string"
+          },
+          "owner": {
+            "description": "Whether they own the roster.",
+            "title": "Owner",
+            "type": "boolean"
+          },
+          "roles": {
+            "description": "Their roles.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "since": {
+            "description": "When they joined.",
+            "format": "date",
+            "title": "Since",
+            "type": "string"
+          }
+        },
+        "required": [
+          "handle",
+          "github",
+          "roles",
+          "owner",
+          "since"
+        ],
+        "title": "MemberView",
+        "type": "object"
+      },
+      "ModuleInfo": {
+        "description": "A registered module.",
+        "properties": {
+          "builtin": {
+            "description": "Whether the module ships with Heinzelmännchen.",
+            "title": "Builtin",
+            "type": "boolean"
+          },
+          "distribution": {
+            "description": "Distribution that ships the module; `hz` for built-ins.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "lets": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "description": "Names of the advertised lets, by kind.",
+            "title": "Lets",
+            "type": "object"
+          },
+          "qualname": {
+            "description": "Qualified name, e.g. `system.changelog`.",
+            "title": "Qualname",
+            "type": "string"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source repository of that distribution, from its Project-URL metadata; none if it names none.",
+            "title": "Repository"
+          },
+          "summary": {
+            "description": "What the module is for, in one sentence.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "version": {
+            "description": "Version of that distribution.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "qualname",
+          "summary",
+          "distribution",
+          "version",
+          "builtin",
+          "repository",
+          "lets"
+        ],
+        "title": "ModuleInfo",
+        "type": "object"
+      },
+      "PlaybookList": {
+        "description": "`hz workflow playbooks`: every playbook the installed modules contribute.",
+        "properties": {
+          "next": {
+            "description": "What to do next, as commands.",
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "playbooks": {
+            "description": "The playbooks, by module.",
+            "items": {
+              "$ref": "#/components/schemas/PlaybookView"
+            },
+            "title": "Playbooks",
+            "type": "array"
+          }
+        },
+        "required": [
+          "playbooks",
+          "next"
+        ],
+        "title": "PlaybookList",
+        "type": "object"
+      },
+      "PlaybookView": {
+        "description": "One playbook: what it is for, its asset types, templates and recommended settings.",
+        "properties": {
+          "assets": {
+            "description": "The asset types it knows.",
+            "items": {
+              "$ref": "#/components/schemas/AssetView"
+            },
+            "title": "Assets",
+            "type": "array"
+          },
+          "defaults": {
+            "description": "The settings it recommends.",
+            "items": {
+              "$ref": "#/components/schemas/DefaultView"
+            },
+            "title": "Defaults",
+            "type": "array"
+          },
+          "module": {
+            "description": "The module that contributes it.",
+            "title": "Module",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What it is for.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "templates": {
+            "description": "The template contracts it offers.",
+            "items": {
+              "$ref": "#/components/schemas/TemplateView"
+            },
+            "title": "Templates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "module",
+          "summary",
+          "assets",
+          "templates",
+          "defaults"
+        ],
+        "title": "PlaybookView",
+        "type": "object"
+      },
+      "PluginInfo": {
+        "description": "An installed plugin distribution and the modules it brings.",
+        "properties": {
+          "distribution": {
+            "description": "Distribution name, e.g. heinzel-clock.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "modules": {
+            "description": "Qualified names of the modules the plugin provides.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Modules",
+            "type": "array"
+          },
+          "version": {
+            "description": "Installed version.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "distribution",
+          "version",
+          "modules"
+        ],
+        "title": "PluginInfo",
+        "type": "object"
+      },
+      "PluginSearch": {
+        "description": "Plugins one can install, and what kept the search from being complete.",
+        "properties": {
+          "plugins": {
+            "description": "First-party plugins first, then community plugins by stars.",
+            "items": {
+              "$ref": "#/components/schemas/AvailablePlugin"
+            },
+            "title": "Plugins",
+            "type": "array"
+          },
+          "warnings": {
+            "description": "Sources that could not be searched, e.g. GitHub while offline.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plugins",
+          "warnings"
+        ],
+        "title": "PluginSearch",
+        "type": "object"
+      },
+      "Profile": {
+        "description": "Your profile as hz knows it, and what is still missing.",
+        "properties": {
+          "coding_agent": {
+            "anyOf": [
+              {
+                "enum": [
+                  "claude-code",
+                  "command",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The coding agent you draft with.",
+            "title": "Coding Agent"
+          },
+          "complete": {
+            "description": "Whether handle, role and time zone are set.",
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your work email; on this machine only.",
+            "title": "Email"
+          },
+          "fix": {
+            "description": "What to run to complete or change the profile.",
+            "title": "Fix",
+            "type": "string"
+          },
+          "github": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your GitHub login.",
+            "title": "Github"
+          },
+          "handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your handle, e.g. mira; none until you set it.",
+            "title": "Handle"
+          },
+          "missing": {
+            "description": "Settings still missing, e.g. org.handle.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your name; on this machine only.",
+            "title": "Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your role, e.g. engineering-manager.",
+            "title": "Role"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your IANA time zone, e.g. Europe/Berlin.",
+            "title": "Timezone"
+          },
+          "working_hours": {
+            "description": "Your working hours there, e.g. 09-18.",
+            "title": "Working Hours",
+            "type": "string"
+          },
+          "working_hours_set": {
+            "description": "Whether you chose the working hours; false while the default holds.",
+            "title": "Working Hours Set",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "handle",
+          "role",
+          "timezone",
+          "working_hours",
+          "working_hours_set",
+          "github",
+          "coding_agent",
+          "name",
+          "email",
+          "complete",
+          "missing",
+          "fix"
+        ],
+        "title": "Profile",
+        "type": "object"
+      },
+      "PublishStatus": {
+        "description": "A publish operation a contract names, and whether an installed module provides it.",
+        "properties": {
+          "action": {
+            "description": "The operation, `<module>.<operation>`.",
+            "title": "Action",
+            "type": "string"
+          },
+          "note": {
+            "description": "What happens: drafts await `hz inbox`, which isn't built yet; nothing is published.",
+            "title": "Note",
+            "type": "string"
+          },
+          "output": {
+            "description": "The output it would publish.",
+            "title": "Output",
+            "type": "string"
+          },
+          "provided": {
+            "description": "Whether an enabled module provides it as a publish operation.",
+            "title": "Provided",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "action",
+          "output",
+          "provided",
+          "note"
+        ],
+        "title": "PublishStatus",
+        "type": "object"
+      },
+      "ReleaseCheck": {
+        "description": "The installed version, the latest release and whether updating would bring something new.",
+        "properties": {
+          "current": {
+            "description": "Installed Heinzelmännchen version.",
+            "title": "Current",
+            "type": "string"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Version of the latest release; none if the source couldn't be asked.",
+            "title": "Latest"
+          },
+          "source": {
+            "description": "Where the latest release was asked for.",
+            "title": "Source",
+            "type": "string"
+          },
+          "update_available": {
+            "description": "Whether the latest release is newer than the installed version.",
+            "title": "Update Available",
+            "type": "boolean"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Release notes of the latest release, on github.com.",
+            "title": "Url"
+          },
+          "warnings": {
+            "description": "Why the source could not be asked, e.g. offline or rate-limited.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "current",
+          "latest",
+          "update_available",
+          "url",
+          "source",
+          "warnings"
+        ],
+        "title": "ReleaseCheck",
+        "type": "object"
+      },
+      "ReleaseNotes": {
+        "description": "A release newer than the installed version and what it brings, from its release page.",
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was published; none if the source didn't say.",
+            "title": "Date"
+          },
+          "notes": {
+            "description": "Its release notes as Markdown: third-party text, without control or bidirectional characters.",
+            "title": "Notes",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its release page, on github.com.",
+            "title": "Url"
+          },
+          "version": {
+            "description": "Version of the release.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "date",
+          "notes",
+          "url"
+        ],
+        "title": "ReleaseNotes",
+        "type": "object"
+      },
+      "RequirementStatus": {
+        "description": "A capability a contract requires, and whether configuration serves it.",
+        "properties": {
+          "adapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The bound adapter that serves it; none if none can.",
+            "title": "Adapter"
+          },
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What to do when unmet.",
+            "title": "Fix"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it is unmet; none when met.",
+            "title": "Problem"
+          },
+          "requirement": {
+            "description": "As required, e.g. `tracker:read`.",
+            "title": "Requirement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requirement",
+          "adapter",
+          "problem"
+        ],
+        "title": "RequirementStatus",
+        "type": "object"
+      },
+      "RunMeasure": {
+        "description": "One draft, measured: how long drafting took, what it cost and read, and how much changed before sending.",
+        "properties": {
+          "changed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Share of its words changed before sending; none until recorded.",
+            "title": "Changed"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the agent session cost, as far as the runner reported.",
+            "title": "Cost Usd"
+          },
+          "created": {
+            "description": "When its render fetched the inputs.",
+            "format": "date-time",
+            "title": "Created",
+            "type": "string"
+          },
+          "draft": {
+            "description": "The draft.",
+            "format": "path",
+            "title": "Draft",
+            "type": "string"
+          },
+          "drafting_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Wall-clock seconds from fetching the inputs to saving the draft; none if the record lacks it.",
+            "title": "Drafting Seconds"
+          },
+          "edit_minutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your own estimate of the minutes spent editing, if given.",
+            "title": "Edit Minutes"
+          },
+          "inputs": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The lineage: SHA-256 of each input's data, by name.",
+            "title": "Inputs",
+            "type": "object"
+          }
+        },
+        "required": [
+          "draft",
+          "created",
+          "drafting_seconds",
+          "cost_usd",
+          "inputs",
+          "changed",
+          "edit_minutes"
+        ],
+        "title": "RunMeasure",
+        "type": "object"
+      },
+      "SettingInfo": {
+        "description": "One effective setting.",
+        "properties": {
+          "default": {
+            "description": "Its default; none when it has none.",
+            "title": "Default"
+          },
+          "description": {
+            "description": "What the setting controls.",
+            "title": "Description",
+            "type": "string"
+          },
+          "env": {
+            "description": "Environment variable that overrides it.",
+            "title": "Env",
+            "type": "string"
+          },
+          "key": {
+            "description": "Setting name within its section.",
+            "title": "Key",
+            "type": "string"
+          },
+          "section": {
+            "description": "TOML table: `hz` for the kernel, the module's qualified name otherwise.",
+            "title": "Section",
+            "type": "string"
+          },
+          "source": {
+            "default": "default",
+            "description": "Where the value in effect comes from: `default`, a file's scope (`site`, `user`, `project`, `explicit`) or `env`.",
+            "title": "Source",
+            "type": "string"
+          },
+          "value": {
+            "description": "Value in effect.",
+            "title": "Value"
+          }
+        },
+        "required": [
+          "section",
+          "key",
+          "value",
+          "env",
+          "description"
+        ],
+        "title": "SettingInfo",
+        "type": "object"
+      },
+      "Skill": {
+        "description": "An Agent Skill (agentskills.io) that ships with Heinzelmännchen.",
+        "properties": {
+          "description": {
+            "description": "When an agent should use the skill.",
+            "title": "Description",
+            "type": "string"
+          },
+          "name": {
+            "description": "Skill name, as in its SKILL.md front matter.",
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "description": "Directory containing SKILL.md.",
+            "format": "path",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "path"
+        ],
+        "title": "Skill",
+        "type": "object"
+      },
+      "Status": {
+        "description": "Health of one check, or of everything: DOWN beats DEGRADED beats UP.",
+        "enum": [
+          "up",
+          "degraded",
+          "down"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "Step": {
+        "description": "Something to do next: a command that works, and why.",
+        "properties": {
+          "command": {
+            "description": "The command line to run.",
+            "title": "Command",
+            "type": "string"
+          },
+          "why": {
+            "description": "What it does for you.",
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "command",
+          "why"
+        ],
+        "title": "Step",
+        "type": "object"
+      },
+      "SystemInfo": {
+        "description": "The state of this Heinzelmännchen installation.",
+        "properties": {
+          "latest_release": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest release last seen by `hz system release` or the CLI's hourly check, from the cache; none if never asked.",
+            "title": "Latest Release"
+          },
+          "modules": {
+            "description": "Every registered module.",
+            "items": {
+              "$ref": "#/components/schemas/ModuleInfo"
+            },
+            "title": "Modules",
+            "type": "array"
+          },
+          "platform": {
+            "description": "Operating system and architecture.",
+            "title": "Platform",
+            "type": "string"
+          },
+          "plugin_errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Plugins that failed to load, by entry point name.",
+            "title": "Plugin Errors",
+            "type": "object"
+          },
+          "python_executable": {
+            "description": "Path of the Python interpreter running hz.",
+            "title": "Python Executable",
+            "type": "string"
+          },
+          "python_version": {
+            "description": "Version of the Python running hz.",
+            "title": "Python Version",
+            "type": "string"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source repository of Heinzelmännchen, from its Project-URL metadata.",
+            "title": "Repository"
+          },
+          "sections": {
+            "additionalProperties": true,
+            "description": "Sections contributed by modules, by qualified module name.",
+            "title": "Sections",
+            "type": "object"
+          },
+          "settings": {
+            "additionalProperties": true,
+            "description": "Kernel settings in effect, by name.",
+            "title": "Settings",
+            "type": "object"
+          },
+          "version": {
+            "description": "Installed Heinzelmännchen version.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "repository",
+          "python_version",
+          "python_executable",
+          "platform",
+          "settings",
+          "modules",
+          "plugin_errors",
+          "sections",
+          "latest_release"
+        ],
+        "title": "SystemInfo",
+        "type": "object"
+      },
+      "TeamShow": {
+        "description": "Your team as configured and as its repository says.",
+        "properties": {
+          "checkout": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its local checkout.",
+            "title": "Checkout"
+          },
+          "exists": {
+            "description": "Whether the checkout exists.",
+            "title": "Exists",
+            "type": "boolean"
+          },
+          "members": {
+            "description": "Active members.",
+            "items": {
+              "$ref": "#/components/schemas/MemberView"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The team's name from `hz.yaml`.",
+            "title": "Name"
+          },
+          "next": {
+            "description": "What to do next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The team plugin the manifest names.",
+            "title": "Plugin"
+          },
+          "problems": {
+            "description": "What is wrong with the checkout or its files.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The team repository's URL.",
+            "title": "Repository"
+          }
+        },
+        "required": [
+          "repository",
+          "checkout",
+          "exists"
+        ],
+        "title": "TeamShow",
+        "type": "object"
+      },
+      "TemplateView": {
+        "description": "A template contract a playbook offers.",
+        "properties": {
+          "assets": {
+            "description": "The asset types its placeholders name, filled with `--asset`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Assets",
+            "type": "array"
+          },
+          "command": {
+            "description": "The command that writes it into your workflows directory.",
+            "title": "Command",
+            "type": "string"
+          },
+          "keeps": {
+            "description": "The asset types its output keeps true.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Keeps",
+            "type": "array"
+          },
+          "template": {
+            "description": "Its qualified name, `<module>:<name>`, as `--template` takes it.",
+            "title": "Template",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template",
+          "assets",
+          "keeps",
+          "command"
+        ],
+        "title": "TemplateView",
+        "type": "object"
+      },
+      "Toggled": {
+        "description": "The pause flag after `pause` or `resume`.",
+        "properties": {
+          "paused": {
+            "description": "Whether ticks are now paused.",
+            "title": "Paused",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "paused"
+        ],
+        "title": "Toggled",
+        "type": "object"
+      },
+      "TokenUsage": {
+        "description": "What a run consumed, as far as the agent reports it; unknown values are none.",
+        "properties": {
+          "cache_read_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Input tokens read from the prompt cache.",
+            "title": "Cache Read Tokens"
+          },
+          "cache_write_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Input tokens written to the prompt cache.",
+            "title": "Cache Write Tokens"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Cost of the run in US dollars, as the agent reports it.",
+            "title": "Cost Usd"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens sent to the model, without cache reads.",
+            "title": "Input Tokens"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens the model produced.",
+            "title": "Output Tokens"
+          }
+        },
+        "title": "TokenUsage",
+        "type": "object"
+      },
+      "Unmaintained": {
+        "description": "An input that reads a contract's output no contract maintains.",
+        "properties": {
+          "asset": {
+            "description": "What it reads, `contract:<namespace>/<name>#<output>`.",
+            "title": "Asset",
+            "type": "string"
+          },
+          "contract": {
+            "description": "The contract with the input, `<namespace>:<name>`.",
+            "title": "Contract",
+            "type": "string"
+          },
+          "input": {
+            "description": "The input's name.",
+            "title": "Input",
+            "type": "string"
+          },
+          "why": {
+            "description": "No such contract, or it has no such output.",
+            "title": "Why",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract",
+          "input",
+          "asset",
+          "why"
+        ],
+        "title": "Unmaintained",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Open-source helpers that keep product teams running. Every endpoint is also a `hz` command.",
+    "title": "🧝 Heinzelmännchen"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/org/show": {
+      "get": {
+        "description": "Show your profile: who you are, your role, time zone and working hours, and what is still missing.",
+        "operationId": "org_show",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Profile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show your profile: who you are, your role, time zone and working hours, and what is still missing.",
+        "tags": [
+          "org"
+        ]
+      }
+    },
+    "/system/agent/install": {
+      "post": {
+        "description": "Copy Heinzelmännchen's skills into each configured agent skill directory.",
+        "operationId": "system_agent_install",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InstalledSkill"
+                  },
+                  "title": "Response System Agent Install",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Copy Heinzelmännchen's skills into each configured agent skill directory.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/agent/skills": {
+      "get": {
+        "description": "List the Agent Skills that ship with Heinzelmännchen.",
+        "operationId": "system_agent_skills",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Skill"
+                  },
+                  "title": "Response System Agent Skills",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the Agent Skills that ship with Heinzelmännchen.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/agent/uninstall": {
+      "post": {
+        "description": "Remove Heinzelmännchen's skills from each configured agent skill directory.",
+        "operationId": "system_agent_uninstall",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InstalledSkill"
+                  },
+                  "title": "Response System Agent Uninstall",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Remove Heinzelmännchen's skills from each configured agent skill directory.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/capability/list": {
+      "get": {
+        "description": "List capabilities, their bindings and adapters, and every requirement with its adapter and hosts.",
+        "operationId": "system_capability_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List capabilities, their bindings and adapters, and every requirement with its adapter and hosts.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/changelog": {
+      "get": {
+        "description": "Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.\n\nOnly `--newer` uses the network: unauthenticated GETs to the GitHub releases API of the repository in the uv tool\nreceipt (or the default repository) with only a `heinzel/<version>` User-Agent (ADR 0031), a few pages at most.\n\nRaises:\n    HeinzelError: If the changelog is not part of this installation, or, with `--newer`, GitHub can't be asked.",
+        "operationId": "system_changelog",
+        "parameters": [
+          {
+            "description": "Show what the releases newer than the installed version bring instead, newest first; asks GitHub, anonymously. As JSON: a list of {version, date, notes, url}.",
+            "in": "query",
+            "name": "newer",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Show what the releases newer than the installed version bring instead, newest first; asks GitHub, anonymously. As JSON: a list of {version, date, notes, url}.",
+              "title": "Newer",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "$ref": "#/components/schemas/ReleaseNotes"
+                      },
+                      "type": "array"
+                    }
+                  ],
+                  "title": "Response System Changelog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/config/get": {
+      "get": {
+        "description": "Show one setting in effect, with its environment variable.",
+        "operationId": "system_config_get",
+        "parameters": [
+          {
+            "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show one setting in effect, with its environment variable.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/config/init": {
+      "post": {
+        "description": "Write a configuration file with every setting commented out, ready to edit.",
+        "operationId": "system_config_init",
+        "parameters": [
+          {
+            "description": "Where to write; defaults to the user configuration file.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "path",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where to write; defaults to the user configuration file.",
+              "title": "Path"
+            }
+          },
+          {
+            "description": "Overwrite an existing file.",
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Overwrite an existing file.",
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "format": "path",
+                  "title": "Response System Config Init",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Write a configuration file with every setting commented out, ready to edit.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/config/set": {
+      "post": {
+        "description": "Change a setting in the user or project configuration file, after validating it.",
+        "operationId": "system_config_set",
+        "parameters": [
+          {
+            "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "description": "New value; TOML syntax for numbers, booleans and lists.",
+            "in": "query",
+            "name": "value",
+            "required": true,
+            "schema": {
+              "description": "New value; TOML syntax for numbers, booleans and lists.",
+              "title": "Value",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Which file to change: user, or the project's hz.toml.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "user",
+              "description": "Which file to change: user, or the project's hz.toml.",
+              "enum": [
+                "user",
+                "project"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "format": "path",
+                  "title": "Response System Config Set",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change a setting in the user or project configuration file, after validating it.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/config/show": {
+      "get": {
+        "description": "Show the configuration files Heinzelmännchen reads and every setting in effect.",
+        "operationId": "system_config_show",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show the configuration files Heinzelmännchen reads and every setting in effect.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/config/unset": {
+      "post": {
+        "description": "Remove a setting from the user or project configuration file, so its default applies again.",
+        "operationId": "system_config_unset",
+        "parameters": [
+          {
+            "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Which file to change: user, or the project's hz.toml.",
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "user",
+              "description": "Which file to change: user, or the project's hz.toml.",
+              "enum": [
+                "user",
+                "project"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "format": "path",
+                  "title": "Response System Config Unset",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove a setting from the user or project configuration file, so its default applies again.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/credential/list": {
+      "get": {
+        "description": "List the credentials modules declare and whether each is stored, never their values.",
+        "operationId": "system_credential_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CredentialInfo"
+                  },
+                  "title": "Response System Credential List",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the credentials modules declare and whether each is stored, never their values.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/daemon/jobs": {
+      "get": {
+        "description": "List every job with its schedule, next slot and last run.",
+        "operationId": "system_daemon_jobs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JobInfo"
+                  },
+                  "title": "Response System Daemon Jobs",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List every job with its schedule, next slot and last run.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/daemon/logs": {
+      "get": {
+        "description": "Show the latest lines of the daemon's log.",
+        "operationId": "system_daemon_logs",
+        "parameters": [
+          {
+            "description": "How many of the latest lines to show.",
+            "in": "query",
+            "name": "lines",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "How many of the latest lines to show.",
+              "title": "Lines",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/LogLine"
+                  },
+                  "title": "Response System Daemon Logs",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the latest lines of the daemon's log.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/daemon/pause": {
+      "post": {
+        "description": "Pause the daemon: ticks run no job until resumed.",
+        "operationId": "system_daemon_pause",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Toggled"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pause the daemon: ticks run no job until resumed.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/daemon/resume": {
+      "post": {
+        "description": "Resume a paused daemon.",
+        "operationId": "system_daemon_resume",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Toggled"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Resume a paused daemon.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/daemon/status": {
+      "get": {
+        "description": "Show whether the daemon is installed, loaded and paused, its last tick and failing jobs.",
+        "operationId": "system_daemon_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DaemonStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show whether the daemon is installed, loaded and paused, its last tick and failing jobs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/doctor": {
+      "get": {
+        "description": "Run every module's health checks; exits with 1 if anything is down.",
+        "operationId": "system_doctor",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthReport"
+                }
+              }
+            },
+            "description": "The result, when its exit code is non-zero."
+          }
+        },
+        "summary": "Run every module's health checks; exits with 1 if anything is down.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/info": {
+      "get": {
+        "description": "Show versions, interpreter, settings, modules and what modules report.",
+        "operationId": "system_info",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show versions, interpreter, settings, modules and what modules report.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/modules": {
+      "get": {
+        "description": "List every module and the lets it advertises.",
+        "operationId": "system_modules",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModuleInfo"
+                  },
+                  "title": "Response System Modules",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List every module and the lets it advertises.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/add": {
+      "post": {
+        "description": "Add a plugin; adding one again replaces the installed version.",
+        "operationId": "system_plugin_add",
+        "parameters": [
+          {
+            "description": "A first-party plugin by name (`clock`), or anything uv installs: a git URL (git+https://github.com/org/heinzel-x@v1.0.0), a local path or a package name.",
+            "in": "query",
+            "name": "spec",
+            "required": true,
+            "schema": {
+              "description": "A first-party plugin by name (`clock`), or anything uv installs: a git URL (git+https://github.com/org/heinzel-x@v1.0.0), a local path or a package name.",
+              "title": "Spec",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginInfo"
+                  },
+                  "title": "Response System Plugin Add",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add a plugin; adding one again replaces the installed version.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/list": {
+      "get": {
+        "description": "List installed plugins and the modules they bring.",
+        "operationId": "system_plugin_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginInfo"
+                  },
+                  "title": "Response System Plugin List",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List installed plugins and the modules they bring.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/remove": {
+      "post": {
+        "description": "Remove a plugin.",
+        "operationId": "system_plugin_remove",
+        "parameters": [
+          {
+            "description": "Distribution name, as `hz system plugin list` shows it.",
+            "in": "query",
+            "name": "distribution",
+            "required": true,
+            "schema": {
+              "description": "Distribution name, as `hz system plugin list` shows it.",
+              "title": "Distribution",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginInfo"
+                  },
+                  "title": "Response System Plugin Remove",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove a plugin.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/search": {
+      "get": {
+        "description": "Find plugins to install: first-party ones, and community ones by querying the GitHub API.\n\nCommunity plugins are GitHub repositories with the topic heinzel-plugin; GH_TOKEN or GITHUB_TOKEN raises the rate\nlimit. Offline, only first-party plugins are listed. PyPI has no keyword search, so it is not queried. Community\nplugins are not reviewed by the Heinzelmännchen maintainers, and every plugin runs with your rights.",
+        "operationId": "system_plugin_search",
+        "parameters": [
+          {
+            "description": "Words that name or describe the plugin, e.g. `calendar`; sent to GitHub's search. All plugins if omitted.",
+            "in": "query",
+            "name": "text",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Words that name or describe the plugin, e.g. `calendar`; sent to GitHub's search. All plugins if omitted.",
+              "title": "Text",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginSearch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Find plugins to install: first-party ones, and community ones by querying the GitHub API.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/release": {
+      "get": {
+        "description": "Ask where Heinzelmännchen was installed from for its latest release, and whether to update.\n\nOne unauthenticated GET to the GitHub releases API of the repository in the uv tool receipt (or the default\nrepository) with only a `heinzel/<version>` User-Agent (ADR 0031); offline or rate-limited, the result carries a\nwarning. Always asks, even when the hourly check (setting `update_check`) asked a minute ago; the answer is\ncached for the update notice.",
+        "operationId": "system_release",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseCheck"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Ask where Heinzelmännchen was installed from for its latest release, and whether to update.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/runner/ask": {
+      "post": {
+        "description": "Ask the bound agent runner, read-only and within a cost cap; this may cost money.\n\nRaises:\n    HeinzelError: If the prompt is blank, or the runner is misconfigured.",
+        "operationId": "system_runner_ask",
+        "parameters": [
+          {
+            "description": "What to ask: a question, or the conversation so far ending with one; nothing is kept between calls.",
+            "in": "query",
+            "name": "prompt",
+            "required": true,
+            "schema": {
+              "description": "What to ask: a question, or the conversation so far ending with one; nothing is kept between calls.",
+              "title": "Prompt",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Most this answer may cost in US dollars, at most the setting system.runner.ask_max_usd.",
+            "in": "query",
+            "name": "budget_usd",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Most this answer may cost in US dollars, at most the setting system.runner.ask_max_usd.",
+              "title": "Budget Usd"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Ask the bound agent runner, read-only and within a cost cap; this may cost money.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/update": {
+      "post": {
+        "description": "Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.\n\nShows the version now installed.\n\nRaises:\n    HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.",
+        "operationId": "system_update",
+        "parameters": [
+          {
+            "description": "Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.",
+              "title": "Source"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response System Update",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/team/show": {
+      "get": {
+        "description": "Show your team: its repository, checkout and members, and what is wrong with them.",
+        "operationId": "team_show",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamShow"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show your team: its repository, checkout and members, and what is wrong with them.",
+        "tags": [
+          "team"
+        ]
+      }
+    },
+    "/workflow/check": {
+      "get": {
+        "description": "Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.",
+        "operationId": "workflow_check",
+        "parameters": [
+          {
+            "description": "A contract file, or a directory searched for *.prose.md; every contract found if none.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "path",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A contract file, or a directory searched for *.prose.md; every contract found if none.",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckReport"
+                }
+              }
+            },
+            "description": "The result, when its exit code is non-zero."
+          }
+        },
+        "summary": "Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.",
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/workflow/discover": {
+      "get": {
+        "description": "Find candidates for each playbook's asset types through the capabilities you have bound; reads only.",
+        "operationId": "workflow_discover",
+        "parameters": [
+          {
+            "description": "Only this module's playbook; every playbook's if omitted.",
+            "in": "query",
+            "name": "playbook",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this module's playbook; every playbook's if omitted.",
+              "title": "Playbook"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Discovery"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Find candidates for each playbook's asset types through the capabilities you have bound; reads only.",
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/workflow/graph": {
+      "get": {
+        "description": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
+        "operationId": "workflow_graph",
+        "parameters": [
+          {
+            "description": "Print only the Mermaid flowchart, to paste into a document or a pull request.",
+            "in": "query",
+            "name": "mermaid",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Print only the Mermaid flowchart, to paste into a document or a pull request.",
+              "title": "Mermaid",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractGraph"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/workflow/list": {
+      "get": {
+        "description": "List the contracts in your and your team's workflows directories, with their schedule and problems.",
+        "operationId": "workflow_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the contracts in your and your team's workflows directories, with their schedule and problems.",
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/workflow/playbooks": {
+      "get": {
+        "description": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
+        "operationId": "workflow_playbooks",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybookList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
+        "tags": [
+          "workflow"
+        ]
+      }
+    },
+    "/workflow/show": {
+      "get": {
+        "description": "Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.",
+        "operationId": "workflow_show",
+        "parameters": [
+          {
+            "description": "The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it.",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompiledContract"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.",
+        "tags": [
+          "workflow"
+        ]
+      }
+    }
+  }
+}

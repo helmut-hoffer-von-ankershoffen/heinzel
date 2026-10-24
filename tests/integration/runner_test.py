@@ -75,10 +75,14 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
     code, info = hz(kernel, "system", "info")
     assert code == 0
     assert isinstance(info, dict)
-    assert info["sections"]["system.capability"] == {"digest → agent-runner:read": "claude-code → api.anthropic.com"}
+    assert info["sections"]["system.capability"] == {
+        "digest → agent-runner:read": "claude-code → api.anthropic.com",
+        "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
+    }
     kernel = make_kernel(builtins=True, digest=digest(), config=command_config(tmp_path))
     assert hz(kernel, "system", "info")[1]["sections"]["system.capability"] == {  # type: ignore[index]
-        "digest → agent-runner:read": "command → unknown (configured)"
+        "digest → agent-runner:read": "command → unknown (configured)",
+        "system.runner ask → agent-runner:read": "command → unknown (configured)",
     }
 
 
@@ -116,10 +120,11 @@ def test_doctor_reports_a_missing_command(make_kernel, tmp_path):
     assert check["detail"] == "no-such-agent-cli not found"
 
 
-def test_doctor_checks_the_claude_cli_only_when_someone_needs_a_runner(make_kernel, tmp_path):
-    [check] = runner_checks(make_kernel(builtins=True))
-    assert (check["status"], check["detail"]) == ("up", "no module requires agent-runner (bound: claude-code)")
+def test_doctor_checks_the_claude_cli_the_core_s_chat_needs(make_kernel, tmp_path):
+    """`hz system runner ask` (the web app's chat, ADR 0039) needs a runner, so the core always has one requirement."""
     config = Config(files=(), data={"system": {"runner": {"claude_executable": str(tmp_path / "no-claude")}}})
+    [check] = runner_checks(make_kernel(builtins=True, config=config))
+    assert check["status"] == "degraded"
     [check] = runner_checks(make_kernel(builtins=True, digest=digest(), config=config))
     assert check["status"] == "degraded"
     assert check["fix"].endswith("or bind the command runner: hz system config set capabilities.agent_runner command")

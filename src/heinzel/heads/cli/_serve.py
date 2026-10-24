@@ -1,5 +1,6 @@
 """`hz system serve`: start the other heads from the CLI."""
 
+from collections.abc import Callable
 from enum import StrEnum
 from typing import Annotated
 
@@ -74,6 +75,48 @@ def serve_group(
         head.serve(kernel, parse_duration(interval), report)
 
     return serve
+
+
+UI_HELP = "Open the web app in your browser, served on localhost for this session only; Ctrl-C stops it."
+
+
+def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
+    """`hz ui`: the web head on a free localhost port, with a token for this session only."""
+
+    def ui(
+        port: Annotated[int, typer.Option(help="Port on 127.0.0.1; 0 picks a free one.")] = 0,
+        browser: Annotated[
+            bool,
+            typer.Option(
+                "--browser/--no-browser", help="Open the default browser at the app; --no-browser prints only its URL."
+            ),
+        ] = True,
+    ) -> None:
+        """Open the web app in your browser, served on localhost for this session only; Ctrl-C stops it.
+
+        Raises:
+            typer.Exit: With 1 when the app isn't built or the port is taken.
+        """
+        from heinzel.heads import web  # noqa: PLC0415 - heavy import, only when serving
+
+        def announce(url: str) -> None:
+            # The URL carries the session's token: it is this terminal's to share, like the session itself.
+            if not browser:
+                typer.echo(url)
+                return
+            err_console.print(f"Heinzelmännchen runs at {url}", soft_wrap=True, highlight=False, markup=False)
+            err_console.print("Press Ctrl-C to stop it.", highlight=False, markup=False)
+
+        try:
+            web.serve(kernel, port=port, browser=browser, announce=announce)
+        except HeinzelError as exc:
+            err_console.print(message("Can't start the web app:", str(exc)))
+            raise typer.Exit(1) from exc
+        except OSError as exc:
+            err_console.print(message("Can't listen:", f"{exc}; try another --port, or 0 for a free one"))
+            raise typer.Exit(1) from exc
+
+    return ui
 
 
 def _duration(value: str) -> str:

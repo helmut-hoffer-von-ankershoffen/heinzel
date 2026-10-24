@@ -134,7 +134,10 @@ def test_system_info_json(app):
     assert result.exit_code == 0, result.output
     info = json.loads(result.output)
     assert info["version"] == __version__
-    assert info["sections"] == {"example": {"greeting": "hi"}}  # an empty section (no capabilities in use) is left out
+    assert info["sections"] == {  # an empty section is left out
+        "example": {"greeting": "hi"},
+        "system.capability": {"system.runner ask → agent-runner:read": "claude-code → api.anthropic.com"},
+    }
     assert {m["qualname"] for m in info["modules"]} >= {"system", "system.changelog", "system.plugin", "example.ping"}
 
 
@@ -451,6 +454,7 @@ def test_commands_are_sorted(app):
         "modules",
         "plugin",
         "release",
+        "runner",
         "serve",
         "update",
     ]
@@ -504,7 +508,7 @@ def test_invalid_arguments_are_rejected_before_running(make_kernel):
 
 # Agent-ready: every operation's command takes --json. The servers are commands but no operations: they run until
 # stopped and print no result to format.
-SERVERS = {"hz system serve api", "hz system serve daemon", "hz system serve mcp"}
+SERVERS = {"hz system serve api", "hz system serve daemon", "hz system serve mcp", "hz ui"}
 SETUP: set[str] = set()  # `hz setup` and `hz join` take --json too (ADR 0032, amended)
 
 

@@ -25,6 +25,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `setup`: Set up what is still missing, wizard...
 * `system`: Inspect, configure, diagnose and update...
 * `team`: Your team&#x27;s repository: create one (`hz...
+* `ui`: Open the web app in your browser, served...
 * `workflow`: Workflow contracts: Markdown files an...
 * `zoom`: Read meetings from Zoom&#x27;s meeting-summary...
 
@@ -238,6 +239,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `modules`: List every module and the lets it advertises.
 * `plugin`: Find, add, remove, list and scaffold plugins.
 * `release`: Ask where Heinzelmännchen was installed...
+* `runner`: Run bounded agent sessions with Claude...
 * `serve`: Serve every operation to coding agents...
 * `update`: Update Heinzelmännchen, keeping plugins;...
 
@@ -897,6 +899,45 @@ $ hz system release [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz system runner`
+
+Run bounded agent sessions with Claude Code or a configured command.
+
+**Usage**:
+
+```console
+$ hz system runner [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `ask`: Ask the bound agent runner, read-only and...
+
+#### `hz system runner ask`
+
+Ask the bound agent runner, read-only and within a cost cap; this may cost money.
+
+**Usage**:
+
+```console
+$ hz system runner ask [OPTIONS] {prompt}
+```
+
+**Arguments**:
+
+* `prompt`: What to ask: a question, or the conversation so far ending with one; nothing is kept between calls.  [required]
+
+**Options**:
+
+* `--budget-usd <float>`: Most this answer may cost in US dollars, at most the setting system.runner.ask_max_usd.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz system serve`
 
 Serve every operation to coding agents (MCP) or over HTTP (REST), or run the daemon in the foreground.
@@ -1114,6 +1155,22 @@ $ hz team show [OPTIONS]
 
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz ui`
+
+Open the web app in your browser, served on localhost for this session only; Ctrl-C stops it.
+
+**Usage**:
+
+```console
+$ hz ui [OPTIONS]
+```
+
+**Options**:
+
+* `--port <int>`: Port on 127.0.0.1; 0 picks a free one.  [default: 0]
+* `--browser / --no-browser`: Open the default browser at the app; --no-browser prints only its URL.  [default: browser]
 * `--help`: Show this message and exit.
 
 ## `hz workflow`
