@@ -53,11 +53,12 @@ HELP = (
 )
 MODULE_HELP = "Set up only this module, by qualified name (`hz setup clock`); every module when left out."
 PRIVACY = (
-    "hz keeps your profile and answers on this machine only. A team repository gets your handle, GitHub login and "
-    "role when you join it; your name, email and anything about how much you do stay off every repository."
+    "hz keeps your profile and answers on this machine only, readable by you alone. Joining a team puts your handle, "
+    "GitHub login and role in its roster; your name and email stay off every repository, and hz records nothing "
+    "about how much you do."
 )
-FINISHED = frozenset({"done", "kept", "skipped"})
-"""Outcomes after which a re-run doesn't offer the step again; failed and interrupted steps are offered again."""
+FINISHED = frozenset({"done", "kept"})
+"""Outcomes after which a re-run doesn't offer the step again; skipped, failed and interrupted ones are offered."""
 
 
 def has_terminal() -> bool:
@@ -163,11 +164,18 @@ def equivalent_commands(kernel: Kernel, record: ModuleRecord) -> list[str]:
 class Runner:
     """Runs setup steps with a prompter and collects what became of each."""
 
-    def __init__(self, kernel: Kernel, prompter: Prompter, state: SetupState | None = None) -> None:
-        """Run steps of `kernel`, asking through `prompter`, recording each finished step in `state`."""
+    def __init__(
+        self, kernel: Kernel, prompter: Prompter, state: SetupState | None = None, *, from_file: bool = True
+    ) -> None:
+        """Run steps of `kernel`, asking through `prompter`, recording each finished step in `state`.
+
+        `from_file` says the preset answers came from a file someone else may have written, so a person confirms
+        before they change a module already set up; flags the person typed need no such question.
+        """
         self.kernel = kernel
         self.prompter = prompter
         self.state = state
+        self.from_file = from_file
         kernel.bind(Prompter, prompter)
 
     def run(self, plan: list[tuple[ModuleRecord, SetupLet]], *, offer_skip: bool) -> list[StepResult]:
@@ -191,6 +199,8 @@ class Runner:
         if self.state is not None and result.outcome is not Outcome.FAILED:
             prefix = f"{record.qualname}."
             answers = {key: value for key, value in self.prompter.answered.items() if key.startswith(prefix)}
+            if result.outcome is Outcome.KEPT and (earlier := self.state.steps.get(record.qualname)):
+                answers = earlier.answers  # nothing changed: the answers that configured it still do
             self.state.record(record.qualname, result.outcome.value, answers)
         return result
 
@@ -226,16 +236,27 @@ class Runner:
     def _ask_and_run(self, record: ModuleRecord, let: SetupLet, *, offer_skip: bool) -> Outcome:
         ask = self.prompter.confirm
         prefix = f"{record.qualname}."
+        configured = is_configured(self.kernel, record)
         if any(key.startswith(prefix) for key in self.prompter.presets):
-            pass  # answered in advance: run it, whether configured or optional, without asking
+            # Answered in advance: run it without asking, unless a person is there and it is configured already, so
+            # a team's answers file never overwrites someone's settings unasked.
+            if (
+                configured
+                and self.from_file
+                and self.prompter.interactive
+                and not ask(
+                    f"{record.qualname} is already set up; the answers file would change it. Change it?", default=False
+                )
+            ):
+                return Outcome.KEPT
         elif not self.prompter.interactive:
             # Only an answers file: a configured module keeps its configuration, an optional step without answers is
             # skipped, and a required one runs and names the first answer it lacks.
-            if is_configured(self.kernel, record):
+            if configured:
                 return Outcome.KEPT
             if offer_skip and not let.required:
                 return Outcome.SKIPPED
-        elif is_configured(self.kernel, record):
+        elif configured:
             if not ask(f"{record.qualname} is already set up. Change it?", default=False):
                 return Outcome.KEPT
         elif offer_skip and not let.required and not ask(f"Set up {record.qualname} now?"):
@@ -359,7 +380,7 @@ class SetupCommands:
             presets = load_answers(options.answers) if options.answers is not None else None
             state = self.state()
             if options.restart:
-                state.clear()
+                state.clear(name)
             if name is None:
                 self._everything(plan, state, presets, as_json=options.as_json)
             else:
@@ -392,7 +413,7 @@ class SetupCommands:
         prompter = self.prompter(plan, presets, as_json=as_json)
         prompter.say(PRIVACY)
         pending = self.pending(plan, state)
-        finished = [record.qualname for record, _ in plan if (record, _) not in pending]
+        finished = [record.qualname for record, let in plan if (record, let) not in pending]
         if finished and not pending:
             last = max(state.steps[name].at for name in finished)[:10]
             prompter.say(
@@ -400,18 +421,17 @@ class SetupCommands:
                 "goes through every step again."
             )
         elif finished:
-            done = ", ".join(finished)
-            prompter.say(f"Continuing where you stopped: {done} {'is' if len(finished) == 1 else 'are'} done.")
+            prompter.say(f"Already done: {', '.join(finished)}.")
         if pending:
             names = ", ".join(f"{r.qualname} ({'required' if s.required else 'optional'})" for r, s in pending)
-            prompter.say(f"Setting up {len(pending)} module{'s' if len(pending) > 1 else ''}: {names}.")
+            prompter.say(f"Still to do: {names}.")
             prompter.say("Ctrl-C stops; steps already finished keep what they wrote, and `hz setup` continues there.")
         results = Runner(self.kernel, prompter, state).run(pending, offer_skip=True)
         self.finish(results, as_json=as_json)
 
     @staticmethod
     def pending(plan: list[tuple[ModuleRecord, SetupLet]], state: SetupState) -> list[tuple[ModuleRecord, SetupLet]]:
-        """The steps of `plan` no earlier run finished: never run, failed or interrupted."""
+        """The steps of `plan` no earlier run finished: never run, skipped, failed or interrupted."""
         return [
             (record, let)
             for record, let in plan

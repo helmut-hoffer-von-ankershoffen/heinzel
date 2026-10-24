@@ -172,7 +172,20 @@ def test_a_time_zone_is_found_by_part_of_its_name():
     prompter = ScriptedPrompter(["atlantis", "america", "new york"])
     assert ask_timezone(prompter, None) == "America/New_York"
     assert "No time zone matches 'atlantis'" in prompter.transcript[1]
-    assert "time zones match 'america'; type more of the name." in prompter.transcript[3]
+    assert "time zones match 'america'; give more of the name." in prompter.transcript[3]
+
+
+@pytest.mark.parametrize(
+    ("preset", "problem"),
+    [("Atlantis", "No time zone matches 'Atlantis'"), ("indiana/v", "2 time zones match 'indiana/v'")],
+)
+def test_a_preset_time_zone_that_isnt_one_fails_instead_of_asking_forever(preset, problem):
+    with pytest.raises(HeinzelError, match=f"The answer for org.timezone is invalid: {problem}"):
+        ask_timezone(answers({"org.timezone": preset}), None)
+
+
+def test_a_preset_part_of_a_name_with_one_match_is_taken():
+    assert ask_timezone(answers({"org.timezone": "lisbon"}), None) == "Europe/Lisbon"
 
 
 def test_a_time_zone_among_a_few_matches_is_chosen():

@@ -58,8 +58,8 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 - **Writing.** A step writes settings through `heinzel.ConfigEditor` (provided by `system.config`, the same validation
   as `hz system config set`, user scope by default) and secrets through `Credentials.set`. A step that is
   interrupted keeps what it already wrote.
-- **Commands (CLI only).** `hz setup [MODULE]` is the one command that runs setup steps: `hz setup` runs every step
-  in order (see *Order*); `hz setup clock` runs one module's step,
+- **Commands (CLI only).** `hz setup [MODULE]` is the command that runs setup steps (`hz join` runs the missing ones
+  too, see *One journey*): `hz setup` runs every step in order (see *Order*); `hz setup clock` runs one module's step,
   without the skip question. A name without a step that can run is a usage error that says why and lists the
   modules with one. An optional step asks "Set up clock now? [Y/n]" first; a required one doesn't. A step whose
   module is already configured says so and asks whether to change it. Ctrl-C stops the run and keeps finished steps;
@@ -97,10 +97,16 @@ head**, because modules stay head-agnostic, steps write through the existing ser
   writes the recorded answers as such a file, so a team bootstraps its answers from one finished setup;
   `--json` prints every step's outcome and doctor's status, questions going to stderr. Secrets are never keyed, so
   they never come from or go to a file ([ADR 0030](0030-credentials-live-in-the-os-keychain.md)).
-- **Names.** `setup` is reserved as a module name, at every level, because `hz setup` is a top-level command. A
-  module's operations may take any name, `setup` included: the step is never one of the module's commands.
-- **Top level.** `hz setup` is an exception to ADR 0018, decided by the maintainer: everything else about
-  Heinzelmännchen itself stays under `hz system`.
+- **Names.** `setup` and `join` are reserved as module names, at every level, because `hz setup` and `hz join` are
+  top-level commands (and `[join]` is the answers file's table for `hz join`'s own questions). A module's operations
+  may take any name, `setup` included: the step is never one of the module's commands.
+- **Top level.** `hz setup` and `hz join` are exceptions to ADR 0018, decided by the maintainer: everything else
+  about Heinzelmännchen itself stays under `hz system`.
+- **Nothing without a yes.** Without a person, `hz join` changes nothing unless the yes was given in advance:
+  `--yes` (or `[join] yes = true`) makes a team whose roster lists you yours, and `--propose` (`[join] propose =
+  true`) separately allows the pull request that asks its owners to add you. A missing yes fails naming the flag. The
+  read-only clone that reads the roster happens before any yes. With a person, an answers file that would change a
+  module already set up asks first; flags the person typed don't.
 
 ### Consequences
 

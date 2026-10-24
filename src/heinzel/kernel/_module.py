@@ -40,9 +40,11 @@ from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, 
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._spec import hookimpl
 
-RESERVED_NAMES = frozenset({"hz", "capabilities", "setup"})
-"""Names a module can't take: the kernel's and the capability bindings' configuration tables, and `hz setup`."""
+RESERVED_NAMES = frozenset({"hz", "capabilities", "setup", "join"})
+"""Names a module can't take: the kernel's and the capability bindings' tables, `hz setup` and `hz join`."""
 SETUP = "setup"
+COMMANDS = frozenset({SETUP, "join"})
+"""Reserved names that are top-level commands of the CLI head."""
 """The top-level command that runs modules' setup steps (ADR 0032), so no module may take its name."""
 SERVICE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$")
 
@@ -79,7 +81,7 @@ class Module:
             msg = f"Module name {name!r} must match {NAME_PATTERN.pattern}"
             raise ValueError(msg)
         if name in RESERVED_NAMES:
-            what = "the command `hz setup`" if name == SETUP else f"`[{name}]`, a configuration table of the kernel"
+            what = f"the command `hz {name}`" if name in COMMANDS else f"`[{name}]`, a kernel configuration table"
             msg = f"Module name {name!r} is reserved: it is {what}"
             raise ValueError(msg)
         requirements = parse_requirements(requires)

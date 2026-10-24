@@ -216,5 +216,29 @@ def test_without_a_person_a_keyed_question_with_a_default_takes_it():
     assert prompter.answered == {"org.working_hours": "09-18", "org.go": False, "org.role": "principal"}
 
 
+@pytest.mark.parametrize("key", ["api_token", "password", "client_secret"])
+def test_a_key_naming_a_secret_is_refused(key):
+    with pytest.raises(ValueError, match="secrets are never keyed"):
+        answering({}).text("Token", key=key)
+
+
+def test_a_hint_names_the_flag_that_answers_a_key():
+    prompter = answering({})
+    prompter.hints = {"org.role": "pass `--role <role>`"}
+    with pytest.raises(HeinzelError, match=r"No answer for org.role \(Role\): pass `--role <role>`, or add `role"):
+        prompter.text("Role", key="role")
+
+
+def test_a_step_can_refuse_a_preset_answer():
+    prompter = answering({"org.zone": "Atlantis"})
+    prompter.text("Zone", key="zone")
+    with pytest.raises(HeinzelError, match=r"The answer for org\.zone is invalid: no such zone"):
+        prompter.refuse("no such zone", "zone")
+    person = ScriptedPrompter(["x"])
+    person.text("Zone", key="zone")
+    person.refuse("no such zone", "zone")
+    assert person.transcript[-1] == "no such zone"
+
+
 def test_keys_without_a_scope_are_full_keys():
     assert answering({"role": "x"}, scope="").text("Role", key="role") == "x"

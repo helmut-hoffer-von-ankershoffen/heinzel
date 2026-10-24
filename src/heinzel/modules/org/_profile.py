@@ -155,19 +155,22 @@ def _name(found: Discovered) -> str | None:
     return (found.google.name if found.google else None) or (found.github.name if found.github else None)
 
 
+KEY = "timezone"
+
+
 def ask_timezone(prompter: Prompter, default: str | None) -> str:
     """An IANA time zone, found by part of its name (`berlin`, `new york`); an empty answer takes `default`."""
     while True:
-        query = prompter.text("Time zone, a city or region such as Berlin", default=default, key="timezone")
+        query = prompter.text("Time zone, a city or region such as Berlin", default=default, key=KEY)
         if query in available_timezones():
             return query
         matches = search(query)
-        if not matches:
-            prompter.say(f"No time zone matches {query!r}; try a city such as Lisbon or a region such as Europe.")
-        elif len(matches) > MAX_MATCHES:
-            prompter.say(f"{len(matches)} time zones match {query!r}; type more of the name.")
-        elif len(matches) == 1:
+        if len(matches) == 1:
             return matches[0]
+        if not matches:
+            prompter.refuse(f"No time zone matches {query!r}; try a city such as Lisbon or a region, Europe.", KEY)
+        elif len(matches) > MAX_MATCHES or prompter.has_preset(KEY):  # a preset can't pick among several
+            prompter.refuse(f"{len(matches)} time zones match {query!r}; give more of the name.", KEY)
         else:
             return prompter.choice("Which one?", matches)
 

@@ -11,7 +11,7 @@ import pytest
 from pydantic import BaseModel, Field
 from typer.testing import CliRunner
 
-from heinzel import Config, ConfigEditor, Kernel, Module, ModuleRecord, ModuleSettings, Prompter
+from heinzel import Config, ConfigEditor, HeinzelError, Kernel, Module, ModuleRecord, ModuleSettings, Prompter
 from heinzel.heads.cli import _setup, build
 from heinzel.kernel import Origin, ScriptedPrompter, discover, user_config_dir
 from heinzel.modules.org import _discovery as discovery
@@ -129,7 +129,7 @@ def test_who_you_are_comes_first_and_the_privacy_line_before_anything(settings, 
     result = runner.invoke(build(kernel), ["setup"])
     assert result.exit_code == 0, result.output
     said = prompter.transcript
-    assert said[0].startswith("hz keeps your profile and answers on this machine only.")
+    assert said[0].startswith("hz keeps your profile and answers on this machine only, readable by you alone.")
     assert said.index(
         "org (required): Tell hz who you are; what your gh and gws logins and this machine say is found, "
         "the rest is asked once."
@@ -149,7 +149,7 @@ def test_a_run_continues_where_the_last_stopped_and_restart_starts_over(settings
     assert setup(["engineer", "", "\x03"])[0] == 130  # Ctrl-C at the note step
     code, said = setup(["", "again"])
     assert code == 0
-    assert "Continuing where you stopped: org is done." in said
+    assert "Already done: org." in said
     assert not any(line.startswith("Your role") for line in said)
     code, said = setup([])
     assert code == 0
@@ -219,7 +219,9 @@ def test_join_finds_you_in_the_roster_and_sets_up_the_rest(settings, found, plac
     said = prompter.transcript
     assert said[0].startswith("hz keeps your profile")
     assert "The roster lists you as mira (engineer)." in said
-    assert "  invite the next one  post the same line: uvx heinzel join " + URL in said
+    invite = next(line for line in said if line.startswith("  invite the next one"))
+    assert invite.startswith("  invite the next one post the same line: uvx --from git+https://github.com/")
+    assert invite.endswith(f"heinzel join {URL}")
     assert user_config()["note"] == {"text": "hi"}
 
 
@@ -244,7 +246,7 @@ def test_join_proposes_you_when_the_roster_lacks_you(settings, found, place, mon
 def test_join_runs_from_a_coding_agent_without_a_terminal(settings, found, place):
     calls: list[dict] = []
     kernel = kernel_of(settings, team=team({}, calls))
-    args = ["join", URL, "--role", "engineer", "--as", "theo", "--yes", "--json"]
+    args = ["join", URL, "--role", "engineer", "--as", "theo", "--propose", "--json"]
     with pytest.MonkeyPatch.context() as patch:
         # No GitHub login found: the flags say who you are; the clock still gives the time zone.
         patch.setattr(discovery, "discover", lambda: Discovered(timezone="Europe/Lisbon"))
@@ -285,8 +287,65 @@ def test_join_without_a_person_changes_nothing_without_an_explicit_yes(settings,
     answers = tmp_path / "answers.toml"
     answers.write_text('[org]\nrole = "engineer"\n', "utf-8")
     result, calls, _ = join_with(settings, {}, None, "--answers", str(answers), "--json")
+    assert result.exit_code == 1
     assert [c["yes"] for c in calls] == [False]
-    assert json.loads(result.stdout)["team"]["done"] is False
+    report = json.loads(result.stdout)
+    assert (report["joined"], report["team"]) == (False, None)
+    assert "Not joined: asking its owners to add you needs a yes; pass `--propose`" in report["error"]
+
+
+def test_join_yes_alone_never_proposes_you(settings, found, place):
+    result, calls, _ = join_with(settings, {}, None, "--role", "engineer", "--yes")
+    assert result.exit_code == 1
+    assert [c["propose"] for c in calls] == [False]
+    assert "pass `--propose`" in " ".join(result.output.split())
+
+
+def test_join_with_a_member_without_a_person_needs_yes(settings, found, place):
+    result, calls, _ = join_with(settings, {"Mira-Example": "mira"}, None, "--role", "engineer")
+    assert result.exit_code == 1
+    assert [c["yes"] for c in calls] == [False]
+    assert "Not joined: joining needs a yes; pass `--yes`" in " ".join(result.output.split())
+    result, calls, _ = join_with(settings, {"Mira-Example": "mira"}, None, "--yes", "--json")
+    assert result.exit_code == 0, result.output
+    assert [c["yes"] for c in calls] == [False, True]
+    assert json.loads(result.stdout)["joined"] is True
+
+
+def test_ctrl_c_while_joining_stops_with_130(settings, found, place, monkeypatch):
+    terminal(monkeypatch)
+    result, calls, _ = join_with(settings, {"Mira-Example": "mira"}, ["engineer", "", "\x03"])
+    assert result.exit_code == 130
+    assert [c["yes"] for c in calls] == [False]
+
+
+def test_a_failing_join_is_reported_in_json(settings, found, place, tmp_path):
+    failing = Module("team", "Teams.")
+
+    @failing.operation(read_only=False, heads={"cli"})
+    def join(url: str, login: str | None = None, yes: bool = False) -> Plan:
+        """Join a team."""
+        msg = f"Couldn't clone {url} with your own access"
+        raise HeinzelError(msg)
+
+    answers = tmp_path / "answers.toml"
+    answers.write_text('[org]\nrole = "engineer"\n', "utf-8")
+    kernel = kernel_of(settings, team=failing)
+    result = runner.invoke(build(kernel), ["join", URL, "--answers", str(answers), "--json"])
+    assert result.exit_code == 1
+    report = json.loads(result.stdout)
+    assert report["error"].startswith("Couldn't clone")
+    assert report["steps"][-1]["outcome"] == "failed"
+
+
+def test_join_flags_change_a_profile_that_is_set_up_already(settings, found, place, monkeypatch):
+    terminal(monkeypatch)
+    join_with(settings, {}, ["engineer", "", "", "n"])  # set up org, then decline to ask the owners
+    assert user_config()["org"]["role"] == "engineer"
+    # Changing a complete profile asks everything but the role the flag gives: handle, time zone, hours, GitHub
+    # login, coding agent; then the roster entry and whether to ask the owners.
+    result, _, _ = join_with(settings, {}, ["", "", "", "", "", "", "n"], "--role", "principal")
+    assert user_config()["org"]["role"] == "principal", result.output
 
 
 def test_join_picks_the_roster_entry_that_is_you(settings, found, place, monkeypatch):
@@ -328,3 +387,19 @@ def test_join_without_the_org_module_still_joins(settings, place, monkeypatch):
     result, calls, _ = join_with(without_org, {}, ["", "y"])  # none of the roster entries, then ask the owners
     assert result.exit_code == 0, result.output
     assert calls[-1]["login"] is None
+
+
+def test_an_answers_file_asks_before_it_changes_what_a_person_set_up(settings, found, place, monkeypatch, tmp_path):
+    terminal(monkeypatch)
+    kernel = kernel_of(settings)
+    scripted(kernel, ["engineer", ""])
+    assert runner.invoke(build(kernel), ["setup"]).exit_code == 0
+    answers = tmp_path / "answers.toml"
+    answers.write_text('[org]\nrole = "principal"\n', "utf-8")
+    kernel = kernel_of(settings)
+    prompter = scripted(kernel, [""])  # keep it
+    assert runner.invoke(build(kernel), ["setup", "org", "--answers", str(answers)]).exit_code == 0
+    assert "org is already set up; the answers file would change it. Change it? [y/N] " in prompter.transcript
+    assert user_config()["org"]["role"] == "engineer"
+    printed = runner.invoke(build(kernel_of(settings)), ["setup", "--print-answers"]).stdout
+    assert tomllib.loads(printed)["org"]["role"] == "engineer"  # kept: the answers that set it up still stand

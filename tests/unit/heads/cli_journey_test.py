@@ -61,6 +61,23 @@ def test_restart_forgets_every_step(tmp_path):
     state.clear()  # nothing to forget is fine too
 
 
+def test_restart_of_one_module_forgets_only_it(tmp_path):
+    state = SetupState.load(tmp_path)
+    state.record("org", "done", {"org.role": "engineer"})
+    state.record("clock", "done", {})
+    state.clear("clock")
+    state.clear("nothing")
+    assert list(SetupState.load(tmp_path).steps) == ["org"]
+
+
+def test_a_leftover_temporary_file_never_lends_its_mode(tmp_path):
+    leftover = tmp_path / ".setup.json.tmp"
+    leftover.write_text("{}", encoding="utf-8")
+    leftover.chmod(0o644)
+    SetupState.load(tmp_path).record("org", "done", {})
+    assert stat.S_IMODE((tmp_path / "setup.json").stat().st_mode) == 0o600
+
+
 @pytest.mark.parametrize("content", ["not json", "[]", '{"steps": {"org": {}}}', '{"steps": 3}'])
 def test_an_unreadable_state_starts_over(tmp_path, content):
     (tmp_path / "setup.json").write_text(content, encoding="utf-8")

@@ -20,7 +20,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `atlassian`: Read Jira issues and Confluence pages...
 * `clock`: Show the time in each of the team&#x27;s time...
 * `github`: Read pull requests and issues from GitHub:...
-* `join`: Join a team from the one line posted in...
+* `join`: Join a team from its invite line: finds...
 * `org`: Your profile, and the team, org and...
 * `setup`: Set up what is still missing, wizard...
 * `system`: Inspect, configure, diagnose and update...
@@ -115,7 +115,7 @@ $ hz github info [OPTIONS]
 
 ## `hz join`
 
-Join a team from the one line posted in its chat: who you are is found from your logins, the team repository is the invite, and the setup steps still missing run after it.
+Join a team from its invite line: finds out who you are, joins the team, then sets up what is missing.
 
 **Usage**:
 
@@ -129,9 +129,10 @@ $ hz join [OPTIONS] {URL}
 
 **Options**:
 
-* `--yes`: Make it your team without asking.
-* `--role <str>`: Your role, if hz should not ask it.
-* `--as <str>`: Your handle, if not your GitHub login.
+* `--yes`: Make it your team without asking (when its roster lists you).
+* `--propose`: When the roster doesn&#x27;t list you, ask its owners to add you without asking: opens a pull request.
+* `--role <str>`: Your role, so hz doesn&#x27;t ask it.
+* `--handle, --as <str>`: Your handle in the team&#x27;s roster.
 * `--answers <file>`: Answer in advance from a TOML file with a table per module, e.g. `role = &quot;engineer&quot;` in the org table; runs without a terminal, for coding agents and teams. Never put secrets in it.
 * `--json`: Print what happened as JSON on stdout.
 * `--help`: Show this message and exit.

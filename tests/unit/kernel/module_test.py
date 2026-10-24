@@ -208,9 +208,10 @@ def test_names_of_kernel_configuration_tables_are_reserved(name):
         Module(name, "x")
 
 
-def test_setup_is_reserved_for_hz_setup():
-    with pytest.raises(ValueError, match="Module name 'setup' is reserved: it is the command `hz setup`"):
-        Module("setup", "x")
+@pytest.mark.parametrize("name", ["setup", "join"])
+def test_top_level_commands_are_reserved(name):
+    with pytest.raises(ValueError, match=f"Module name '{name}' is reserved: it is the command `hz {name}`"):
+        Module(name, "x")
 
 
 def test_setup_decorator_forms():

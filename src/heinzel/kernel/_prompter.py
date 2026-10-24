@@ -5,6 +5,7 @@ behaves the same; a head implements only `read` (one line of input) and `say` (o
 default has nobody to ask and refuses; the CLI binds a console prompter, tests a `ScriptedPrompter`.
 """
 
+import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from types import MappingProxyType
 from typing import cast
@@ -18,6 +19,8 @@ YES = frozenset({"y", "yes"})
 NONE = "none"
 """The answer that picks none of several options."""
 NO = frozenset({"n", "no"})
+SECRET_KEY = re.compile(r"(token|password|passphrase|secret|api_key)", re.IGNORECASE)
+"""Keys that name a secret: refused, so a module can't route one through an answers file or setup.json."""
 
 
 class Prompter:
@@ -34,6 +37,8 @@ class Prompter:
 
     presets: Mapping[str, object] = MappingProxyType({})
     """Answers given in advance, by full key (`org.role`): text, a number, true or false, or a list for `choices`."""
+    hints: Mapping[str, str] = MappingProxyType({})
+    """How a head lets a person answer a key without an answers file, by full key: `pass --role`."""
     scope = ""
     """The qualified name of the module asking, which keys are relative to; the setup runner sets it per step."""
 
@@ -198,11 +203,15 @@ class Prompter:
 
         Raises:
             HeinzelError: If there is no preset, no default and nobody to ask, naming the key for the answers file.
+            ValueError: If the key names a secret: a bug in the step.
         """
         self.__dict__["_from_preset"] = False
         if key is None:
             return self.read(prompt)
         full = self.full_key(key)
+        if SECRET_KEY.search(key):
+            msg = f"{full}: secrets are never keyed, so they never come from or go to a file; ask with `secret()`"
+            raise ValueError(msg)
         if full in self.presets:
             self.__dict__["_from_preset"] = True
             return _typed(self.presets[full])
@@ -210,12 +219,23 @@ class Prompter:
             if has_default:
                 return ""
             section, _, name = full.rpartition(".")
+            hint = f"{self.hints[full]}, or add" if full in self.hints else "add"
             msg = (
-                f"No answer for {full} ({prompt.strip().rstrip(':')}): add `{name} = ...` under [{section}] in the "
-                "answers file, or run setup in a terminal."
+                f"No answer for {full} ({prompt.strip().rstrip(':')}): {hint} `{name} = ...` under [{section}] in an "
+                "answers file (`--answers`), or run it in a terminal."
             )
             raise HeinzelError(msg)
         return self.read(prompt)
+
+    def refuse(self, problem: str, key: str) -> None:
+        """Refuse the last answer to the keyed question `key` for a reason only the step knows (no such time zone).
+
+        A person is told and asked again; a preset answer can't be asked again, so it fails.
+
+        Raises:
+            HeinzelError: If the refused answer was preset.
+        """
+        self._refuse(problem, key)
 
     def _refuse(self, problem: str, key: str | None) -> None:
         """Explain why an answer was refused; a refused preset can't be asked again, so it fails.

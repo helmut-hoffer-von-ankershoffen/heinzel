@@ -95,8 +95,12 @@ class SetupState:
         self.steps[module] = Finished(outcome=outcome, at=at, answers=dict(answers))
         self._save()
 
-    def clear(self) -> None:
-        """Forget every step: `hz setup --restart`."""
+    def clear(self, module: str | None = None) -> None:
+        """Forget every step, or only `module`'s: `hz setup --restart`, `hz setup <module> --restart`."""
+        if module is not None:
+            if self.steps.pop(module, None) is not None:
+                self._save()
+            return
         self.steps.clear()
         self.path.unlink(missing_ok=True)
 
@@ -105,7 +109,7 @@ class SetupState:
         return {key: value for step in self.steps.values() for key, value in step.answers.items()}
 
     def _save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         data = {
             "version": STATE_VERSION,
             "steps": {
@@ -114,8 +118,10 @@ class SetupState:
             },
         }
         temporary = self.path.with_name(f".{self.path.name}.tmp")
-        # 0600: the answers name who you are; written whole, so an interrupted run never leaves half a file.
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        # 0600: the answers name who you are; written whole, so an interrupted run never leaves half a file. A
+        # temporary file left over (or planted, or a link) is removed first, so it can't lend its mode or target.
+        temporary.unlink(missing_ok=True)
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as file:
             file.write(json.dumps(data, indent=2, default=str) + "\n")
         temporary.replace(self.path)
