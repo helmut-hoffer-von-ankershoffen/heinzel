@@ -26,27 +26,40 @@ from heinzel.kernel import KERNEL_SECTION, Budget, CapabilityView, CompiledJobs,
 from heinzel.modules.workflow._contracts import Contract, collect, read_contract
 from heinzel.modules.workflow._models import (
     RUNNER,
+    SUFFIX,
     CheckReport,
     CompiledContract,
+    ContractList,
     ContractSummary,
     Diagnostic,
+    Directory,
+    Draft,
+    DraftList,
     FetchedInput,
     Frontmatter,
     Namespace,
+    NewContract,
     Packet,
     PublishStatus,
     Rendered,
     RequirementStatus,
     RunResult,
     Severity,
+    Step,
     WorkflowSettings,
 )
+from heinzel.modules.workflow._starter import is_name, slug, starter
 
 logger = logging.getLogger(__name__)
 MODULE = "workflow"
 FETCH_MARGIN = timedelta(minutes=2)
 """A job may take this much longer than its agent session: fetching inputs and saving the draft."""
 NOT_PUBLISHED = "the draft waits for `hz inbox` (not built yet); nothing is published automatically"
+STAMP = "%Y%m%dT%H%M%SZ"
+"""Draft file names start with the render's time, so a listing sorts by it without reading the records."""
+NOT_SCHEDULED = "not-scheduled"
+PIN_CHANGED = "pin-changed"
+"""Kinds of reasons a contract isn't a daemon job; the doctor treats a changed pin specially."""
 MAX_INPUT_BYTES = 256 * 1024
 """An input whose JSON is larger fails the run rather than being cut silently: the agent would draft from half."""
 MAX_PROMPT_BYTES = 1024 * 1024
@@ -156,20 +169,41 @@ class WorkflowService:
         """
         if path is None:
             contracts = self.contracts()
+            searched = self.searched()
         else:
-            resolved = path.resolve()
-            roots = [self._workflow.user_dir, Path.cwd()]
-            if self._workflow.team_repository is not None:
-                roots.append(self._workflow.team_repository)
-            if not any(resolved.is_relative_to(root.resolve()) for root in roots):
-                msg = f"{path} is outside your workflows directory, the team repository and the current directory"
-                raise HeinzelError(msg)
-            if not path.exists():
-                msg = f"{path} doesn't exist"
-                raise HeinzelError(msg)
-            files = [path] if path.is_file() else sorted(p for p in path.rglob("*.prose.md") if not p.is_symlink())
-            contracts = [self._safely_checked(read_contract(file, "path")) for file in files if file.is_file()]
-        return CheckReport(files=[c.path for c in contracts], diagnostics=[d for c in contracts for d in c.diagnostics])
+            contracts = self._at(path)
+            searched = []
+        return CheckReport(
+            files=[c.path for c in contracts],
+            diagnostics=[d for c in contracts for d in c.diagnostics],
+            searched=searched,
+        )
+
+    def _at(self, path: Path) -> list[Contract]:
+        """The checked contracts at `path`: the file, or every `*.prose.md` below the directory.
+
+        Raises:
+            HeinzelError: If `path` doesn't exist or is outside the directories `check` may read.
+        """
+        resolved = path.resolve()
+        roots = [self._workflow.user_dir, Path.cwd()]
+        if self._workflow.team_repository is not None:
+            roots.append(self._workflow.team_repository)
+        if not any(resolved.is_relative_to(root.resolve()) for root in roots):
+            msg = f"{path} is outside your workflows directory, the team repository and the current directory"
+            raise HeinzelError(msg)
+        if not path.exists():
+            msg = f"{path} doesn't exist; `hz workflow check` without --path checks every contract found"
+            raise HeinzelError(msg)
+        files = [path] if path.is_file() else sorted(p for p in path.rglob(f"*{SUFFIX}") if not p.is_symlink())
+        return [self._safely_checked(read_contract(file, "path")) for file in files if file.is_file()]
+
+    def searched(self) -> list[Directory]:
+        """The directories contracts are read from, and whether each exists yet."""
+        return [
+            Directory(namespace=namespace, path=directory, exists=directory.is_dir())
+            for namespace, directory in self.directories.items()
+        ]
 
     def _checked(self, contract: Contract) -> Contract:
         """Add what only the kernel knows: publish operations, and tools the bound runner refuses."""
@@ -250,9 +284,90 @@ class WorkflowService:
             raise HeinzelError(msg)
         if not matches:
             where = ", ".join(str(d) for d in self.directories.values())
-            msg = f"No contract {name!r}; `hz workflow list` shows them (searched {where})."
+            team = " --team" if namespace == "team" else ""
+            msg = (
+                f"No contract {name!r}; `hz workflow list` shows them (searched {where}). "
+                f"Write one: hz workflow new {slug(bare)}{team}"
+            )
             raise HeinzelError(msg)
         return matches[0]
+
+    # Writing ---------------------------------------------------------------------------------------------------------
+
+    def new(self, name: str, *, team: bool = False) -> NewContract:
+        """Write a starter contract named `name` into your workflows directory, or the team repository's.
+
+        The starter is valid as written and declares no inputs, so it checks and dry-runs on a fresh installation.
+        Its schedule is commented out: nothing runs on the daemon until you say so.
+
+        Raises:
+            HeinzelError: If the name isn't a contract name, the file exists, `team` is asked without a team
+                repository, or the directory is a symbolic link.
+        """
+        if not is_name(name):
+            msg = (
+                f"{name!r} isn't a contract name (lowercase words joined by single dashes, at most 64 characters). "
+                f"Try: hz workflow new {slug(name)}{' --team' if team else ''}"
+            )
+            raise HeinzelError(msg)
+        namespace: Namespace = "team" if team else "me"
+        if team and self._workflow.team_repository is None:
+            msg = (
+                "No team repository is configured, so there is nowhere to write a team contract. Name a checkout "
+                "of your team's state repository: hz system config set workflow.team_repository /path/to/checkout"
+            )
+            raise HeinzelError(msg)
+        directory = self.directories[namespace]
+        # Contracts are read from real directories only (`collect`), so one written through a link would never be found.
+        if directory.is_symlink():
+            msg = (
+                f"{directory} is a symbolic link; contracts are read from real directories only. Point at the real "
+                f"one: hz system config set workflow.user_dir {directory.resolve()}"
+            )
+            raise HeinzelError(msg)
+        path = directory / f"{name}{SUFFIX}"
+        if path.exists():
+            msg = f"{path} exists; edit it, or write another: hz workflow new {name}-2{' --team' if team else ''}"
+            raise HeinzelError(msg)
+        text = starter(name)
+        if problems := self._checked(read_contract(path, namespace, text=text)).diagnostics:
+            msg = "The starter contract doesn't pass its own checks. This is a bug; report it with:\n" + "\n".join(
+                map(str, problems)
+            )
+            raise HeinzelError(msg)
+        directory.mkdir(parents=True, exist_ok=True)
+        _write(path, text, exclusive=True)
+        qualified = f"{namespace}:{name}"
+        return NewContract(file=path, namespace=namespace, name=name, next=self._next_for_new(qualified, path, team))
+
+    def _next_for_new(self, qualified: str, path: Path, team: bool) -> list[Step]:
+        steps = [
+            Step(command=f"hz workflow check --path {path}", why="every problem by file and line, after each edit"),
+            Step(
+                command=f"hz workflow show {qualified}", why="what it requires, what is bound, and whether it is ready"
+            ),
+            Step(
+                command=f"hz workflow run {qualified} --dry-run", why="the packet the agent would get; nothing is spent"
+            ),
+            Step(
+                command=f"hz workflow run {qualified}",
+                why="draft it now; the draft is saved locally, nothing is published",
+            ),
+        ]
+        if team:
+            repository = cast("Path", self._workflow.team_repository)
+            name = qualified.partition(":")[2]
+            steps += [
+                Step(
+                    command=f"git -C {repository} add {path.relative_to(repository)}",
+                    why="then commit on a branch and open a pull request (CI gate: hz workflow check --path workflows)",
+                ),
+                Step(
+                    command=f"hz system config set workflow.schedule_team '[\"{name}\"]'",
+                    why="once merged and scheduled: lets your daemon run it (team contracts never run uninvited)",
+                ),
+            ]
+        return steps
 
     # Compiling -------------------------------------------------------------------------------------------------------
 
@@ -263,21 +378,28 @@ class WorkflowService:
 
     def scheduled(self, contract: Contract) -> str | None:
         """Why the daemon doesn't run `contract` on a schedule, or None if it does."""
+        return reason[1] if (reason := self._why_not_scheduled(contract)) else None
+
+    def _why_not_scheduled(self, contract: Contract) -> tuple[str, str] | None:
+        """The kind of reason and the reason, ending in what to do, or None when the daemon runs the contract."""
         if not contract.valid or contract.frontmatter is None:
-            return "it has errors; `hz workflow check` lists them"
+            return NOT_SCHEDULED, f"it has errors: hz workflow check --path {contract.path}"
         if contract.frontmatter.hz.schedule is None:
-            return "it has no schedule; run it with `hz workflow run`"
+            return NOT_SCHEDULED, (
+                f'it has no schedule: add `schedule: "0 7 * * MON"` under `hz:` in {contract.path}, '
+                f"or run it by hand: hz workflow run {contract.qualified}"
+            )
         if contract.namespace == "team":
             named, digest = self._workflow.approval(contract.name)
             if not named:
-                return (
-                    f"team contracts run on your daemon only when named in [workflow] schedule_team; add "
-                    f"{contract.name!r} (or `{contract.name}@{contract.sha256}` to pin this content)"
+                return NOT_SCHEDULED, (
+                    "team contracts run on your daemon only when [workflow] schedule_team names them: "
+                    f"{_approve(contract.name)} (or {_approve(contract.name, contract.sha256)} to pin this content)"
                 )
             if digest is not None and digest != contract.sha256:
-                return (
-                    f"it changed since you approved {digest}; read it with `hz workflow show team:{contract.name}` "
-                    f"and approve `{contract.name}@{contract.sha256}` in [workflow] schedule_team"
+                return PIN_CHANGED, (
+                    f"it changed since you approved {digest}; read it with `hz workflow show team:{contract.name}`, "
+                    f"then approve this content: {_approve(contract.name, contract.sha256)}"
                 )
         return None
 
@@ -345,6 +467,20 @@ class WorkflowService:
 
     # Inspecting ------------------------------------------------------------------------------------------------------
 
+    def listing(self) -> ContractList:
+        """The directories searched, every contract found, and what to do next."""
+        contracts = self.summaries()
+        if contracts:
+            steps = [
+                Step(command=f"hz workflow show {c.namespace}:{c.name}", why="is it ready?") for c in contracts[:1]
+            ]
+        else:
+            steps = [
+                Step(command="hz workflow new my-first-workflow", why="write a starter contract, with comments"),
+                Step(command="hz workflow check", why="every problem by file and line"),
+            ]
+        return ContractList(directories=self.searched(), contracts=contracts, next=steps)
+
     def summaries(self) -> list[ContractSummary]:
         """Every contract found, with whether it is valid and scheduled."""
         return [
@@ -374,6 +510,8 @@ class WorkflowService:
         hz = frontmatter.hz if frontmatter else None
         statuses = self._requirements(contract) if contract.valid else []
         operations = self._operations()
+        unmet = [s for s in statuses if s.problem]
+        ready = contract.valid and not unmet
         return CompiledContract(
             name=contract.name,
             namespace=contract.namespace,
@@ -385,7 +523,7 @@ class WorkflowService:
             scheduled=why is None,
             why_not_scheduled=why,
             requirements=statuses,
-            unmet=[s.requirement for s in statuses if s.problem],
+            unmet=[s.requirement for s in unmet],
             inputs={n: i.read for n, i in hz.inputs.items()} if hz else {},
             outputs={n: o.format for n, o in hz.outputs.items()} if hz else {},
             publishes=[
@@ -403,16 +541,128 @@ class WorkflowService:
             diagnostics=list(contract.diagnostics),
             sha256=contract.sha256,
             approve=f"{contract.name}@{contract.sha256}" if contract.namespace == "team" else None,
+            drafts=self._drafts_of(contract),
+            draft_count=len(self._draft_files(self._drafts_of(contract))),
+            ready=ready,
+            next=self._next_for(contract, unmet, why),
         )
+
+    def _next_for(self, contract: Contract, unmet: list[RequirementStatus], why: str | None) -> list[Step]:
+        """What to do with a contract: fix it, bind what it needs, then try it, run it, and let the daemon run it."""
+        if not contract.valid:
+            return [Step(command=f"hz workflow check --path {contract.path}", why="every error with a hint")]
+        if unmet:
+            return [Step(command=s.fix or "", why=f"serves {s.requirement}; runs fail until it is") for s in unmet]
+        budget = self.budget(contract, scheduled=False)
+        steps = [
+            Step(
+                command=f"hz workflow run {contract.qualified} --dry-run",
+                why="the packet the agent gets; nothing is spent",
+            ),
+            Step(
+                command=f"hz workflow run {contract.qualified}",
+                why=f"draft it now, at most {budget:g} USD; the draft is saved under {self._drafts_of(contract)}",
+            ),
+        ]
+        if why is None:
+            steps += [
+                Step(
+                    command="hz system daemon status",
+                    why="is the daemon that runs it on its schedule installed? If not: hz system daemon install",
+                ),
+                Step(
+                    command=f"hz system daemon tick --job {MODULE}:{self.job_name(contract)}",
+                    why="run it now as the daemon would, with a receipt",
+                ),
+            ]
+        return steps
 
     def _requirements(self, contract: Contract) -> list[RequirementStatus]:
         view = self._kernel.resolve(CapabilityView)
         statuses: list[RequirementStatus] = []
         for requirement in self.requester(contract).requires:
             adapter, problem = view.serves(requirement)
-            fix = view.fix(requirement.capability) if problem else None
+            fix = self._fix(requirement.capability) if problem else None
             statuses.append(RequirementStatus(requirement=str(requirement), adapter=adapter, problem=problem, fix=fix))
         return statuses
+
+    def _fix(self, capability: str) -> str:
+        """The command that serves `capability`: bind an installed adapter, or find a plugin that provides one."""
+        view = self._kernel.resolve(CapabilityView)
+        installed = sorted({a.let.adapter for a in view.adapters if a.let.capability == capability})
+        if not installed:
+            return f"hz system plugin search --text {capability}"
+        others = f"  # or {', '.join(installed[1:])}" if len(installed) > 1 else ""
+        return f"hz system config set capabilities.{capability.replace('-', '_')} {installed[0]}{others}"
+
+    # Drafts ----------------------------------------------------------------------------------------------------------
+
+    def drafts(self, name: str | None = None, *, latest: bool = False) -> DraftList:
+        """The drafts saved so far, newest first; of one contract when `name` is given; with the newest's text.
+
+        Drafts outlive their contracts, so `name` matches draft directories, not contracts found.
+
+        Raises:
+            HeinzelError: If the newest draft can't be read.
+        """
+        directories = sorted(p for p in self.drafts_dir.iterdir() if p.is_dir()) if self.drafts_dir.is_dir() else []
+        if name is not None:
+            namespace, _, bare = name.rpartition(":")
+            directories = [
+                d
+                for d in directories
+                if d.name.partition("-")[2] == bare and namespace in {"", d.name.partition("-")[0]}
+            ]
+        found = sorted(
+            (draft for directory in directories for draft in self._draft_files(directory)),
+            key=lambda d: (d.created, d.draft),
+            reverse=True,
+        )
+        text: str | None = None
+        if latest and found:
+            try:
+                text = found[0].draft.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                msg = f"Can't read {found[0].draft}: {exc.strerror or exc}"
+                raise HeinzelError(msg) from exc
+        if found:
+            steps = [
+                Step(command=f"hz workflow drafts --name {found[0].contract} --latest", why="read the newest draft")
+            ]
+        else:
+            example = name or "<name>"
+            steps = [Step(command=f"hz workflow run {example}", why="draft it now; the draft lands here")]
+        return DraftList(directory=self.drafts_dir, drafts=found, latest=text, next=steps)
+
+    def _drafts_of(self, contract: Contract) -> Path:
+        return self.drafts_dir / f"{contract.namespace}-{contract.name}"
+
+    @staticmethod
+    def _draft_files(directory: Path) -> list[Draft]:
+        """The drafts in one contract's directory, from its file names; records aren't opened."""
+        if not directory.is_dir():
+            return []
+        namespace, _, name = directory.name.partition("-")
+        drafts: list[Draft] = []
+        for path in directory.iterdir():
+            if path.name.endswith(".record.json") or path.suffix not in {".md", ".json"} or not path.is_file():
+                continue
+            stamp = path.stem.partition("-")[0]
+            try:
+                created = datetime.strptime(stamp, STAMP).replace(tzinfo=UTC)
+            except ValueError:
+                created = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+            record = directory / f"{path.stem}.record.json"
+            drafts.append(
+                Draft(
+                    contract=f"{namespace}:{name}",
+                    created=created,
+                    draft=path,
+                    record=record if record.is_file() else None,
+                    bytes=path.stat().st_size,
+                )
+            )
+        return drafts
 
     def health(self) -> list[Check]:
         """Contracts with errors, unservable or unapproved scheduled contracts, and stray `schedule_team` names."""
@@ -430,7 +680,14 @@ class WorkflowService:
             )
         if not checks:
             where = ", ".join(str(d) for d in self.directories.values())
-            return [Check(name="workflow", status=Status.UP, detail=f"no contracts in {where}")]
+            return [
+                Check(
+                    name="workflow",
+                    status=Status.UP,
+                    detail=f"no contracts in {where}",
+                    fix="hz workflow new my-first-workflow",
+                )
+            ]
         return checks
 
     def _check_of(self, contract: Contract) -> Check:
@@ -442,9 +699,11 @@ class WorkflowService:
                 detail=f"{len(errors)} error(s), first: {errors[0]}".replace("\n", " "),
                 fix=f"hz workflow check --path {contract.path}",
             )
-        why = self.scheduled(contract)
-        if contract.namespace == "team" and why is not None and why.startswith("it changed"):
-            return Check(name=name, status=Status.DEGRADED, detail=why, fix=f"hz workflow show team:{contract.name}")
+        kind, why = self._why_not_scheduled(contract) or (None, None)
+        if kind == PIN_CHANGED:
+            return Check(
+                name=name, status=Status.DEGRADED, detail=why or "", fix=f"hz workflow show team:{contract.name}"
+            )
         unmet = [s for s in self._requirements(contract) if s.problem]
         if unmet and why is None:
             return Check(
@@ -466,11 +725,17 @@ class WorkflowService:
         """
         contract = self.find(name)
         if dry_run:
-            return RunResult(dry_run=True, packet=self.packet(contract, scheduled=False)[0])
+            packet = self.packet(contract, scheduled=False)[0]
+            note = (
+                f"no agent ran and nothing was spent. `hz workflow run {contract.qualified}` drafts it now, at most "
+                f"{self.budget(contract, scheduled=False):g} USD, and saves the draft under {self._drafts_of(contract)}"
+            )
+            return RunResult(dry_run=True, packet=packet, note=note)
         rendered = self.render(contract, scheduled=False)
         note = (
             f"unreceipted; the record is at {rendered.record}. Daemon runs write receipts: "
-            f"`hz system daemon tick --job {MODULE}:{self.job_name(contract)}` runs it now with one"
+            f"`hz system daemon tick --job {MODULE}:{self.job_name(contract)}` runs it now with one. "
+            f"`hz workflow drafts --name {contract.qualified}` lists the drafts"
         )
         return RunResult(dry_run=False, rendered=rendered, note=note)
 
@@ -606,9 +871,18 @@ def _write(path: Path, text: str, *, exclusive: bool = False) -> None:
 def _valid(contract: Contract) -> Frontmatter:
     if not contract.valid or contract.frontmatter is None:
         errors = [str(d) for d in contract.diagnostics if d.severity == "error"]
-        msg = f"{contract.qualified} has errors; fix them first:\n" + "\n".join(errors)
+        msg = (
+            f"{contract.qualified} has errors; fix them first (`hz workflow check --path {contract.path}` rechecks "
+            "it):\n" + "\n".join(errors)
+        )
         raise HeinzelError(msg)
     return contract.frontmatter
+
+
+def _approve(name: str, sha256: str | None = None) -> str:
+    """The command that lets your daemon run the team contract `name`, pinned to `sha256` when given."""
+    entry = f"{name}@{sha256}" if sha256 else name
+    return f"hz system config set workflow.schedule_team '[\"{entry}\"]'"
 
 
 def _diagnostic(  # noqa: PLR0913 - every part of a diagnostic

@@ -245,7 +245,9 @@ def test_show_reports_requirements_with_their_adapters_and_what_is_unmet(make, d
         ("agent-runner:read", "fake", None),
     ]
     assert shown.unmet == ["tracker:read"]
-    assert 'tracker = "host"' in str(shown.requirements[1].fix)
+    assert shown.requirements[1].fix == "hz system config set capabilities.tracker host"
+    assert shown.ready is False
+    assert [s.command for s in shown.next] == ["hz system config set capabilities.tracker host"]
     assert shown.inputs == {"merged": "code-host.merged_pull_requests", "issues": "tracker.issues_updated"}
     assert shown.outputs == {"digest": "markdown"}
     assert [(p.action, p.provided) for p in shown.publishes] == [("notes.publish", True)]
@@ -613,3 +615,225 @@ def test_check_of_a_path_isolates_each_contract(make, dirs, monkeypatch):
     monkeypatch.setattr(service, "_checked", flaky)
     report = service.check(dirs[0])
     assert [d.message for d in report.diagnostics] == ["can't check it: RuntimeError: boom"]
+
+
+def test_new_writes_a_starter_that_passes_every_check_and_creates_the_directory(make, dirs, tmp_path):
+    me = tmp_path / "fresh" / "workflows"
+    service = make(user_dir=str(me))
+    result = service.new("weekly-digest")
+    assert result.file == me / "weekly-digest.prose.md"
+    assert result.file.is_file()
+    assert result.namespace == "me"
+    assert stat.S_IMODE(result.file.stat().st_mode) == 0o600
+    contract = service.find("weekly-digest")
+    assert contract.diagnostics == ()
+    assert contract.frontmatter is not None
+    assert (contract.frontmatter.hz.schedule, contract.frontmatter.hz.inputs) == (None, {})
+    assert service.check().diagnostics == []
+    assert service.show("weekly-digest").ready is True
+    assert "docs/WORKFLOWS.md" in result.file.read_text()
+    assert [s.command for s in result.next][1:] == [
+        "hz workflow show me:weekly-digest",
+        "hz workflow run me:weekly-digest --dry-run",
+        "hz workflow run me:weekly-digest",
+    ]
+
+
+def test_new_dry_runs_with_only_the_runner_bound(make, dirs, runner):
+    service = make(bindings={"agent_runner": "fake"})
+    service.new("standup-notes")
+    result = service.run("standup-notes", dry_run=True)
+    assert result.packet is not None
+    assert result.packet.inputs == {}
+    assert result.note.startswith("no agent ran and nothing was spent")
+    assert "hz workflow run me:standup-notes" in result.note
+    assert str(service.drafts_dir / "me-standup-notes") in result.note
+    assert runner.runs == []
+
+
+def test_new_refuses_bad_names_existing_files_and_links_with_a_command_that_works(make, dirs, tmp_path):
+    service = make()
+    with pytest.raises(HeinzelError, match=r"Try: hz workflow new weekly-digest$"):
+        service.new("Weekly Digest.prose.md")
+    with pytest.raises(HeinzelError, match=r"Try: hz workflow new my-workflow --team$"):
+        service.new("---", team=True)
+    put(dirs[0])
+    with pytest.raises(HeinzelError, match=r"exists; edit it, or write another: hz workflow new weekly-digest-2$"):
+        service.new("weekly-digest")
+    link = tmp_path / "link"
+    link.symlink_to(dirs[0])
+    with pytest.raises(
+        HeinzelError, match=f"symbolic link.*hz system config set workflow.user_dir {dirs[0].resolve()}"
+    ):
+        make(user_dir=str(link)).new("other")
+    assert not (dirs[0] / "other.prose.md").exists()
+
+
+def test_new_for_the_team_needs_a_repository_and_says_how_to_contribute(make, dirs):
+    _, team = dirs
+    with pytest.raises(HeinzelError, match=r"hz system config set workflow\.team_repository /path/to/checkout"):
+        make(team_repository=None).new("retro-agenda", team=True)
+    result = make().new("retro-agenda", team=True)
+    assert result.file == team / "workflows" / "retro-agenda.prose.md"
+    assert result.namespace == "team"
+    commands = [s.command for s in result.next]
+    assert f"git -C {team} add workflows/retro-agenda.prose.md" in commands
+    assert "hz system config set workflow.schedule_team '[\"retro-agenda\"]'" in commands
+    assert str(make().scheduled(make().find("team:retro-agenda"))).endswith("hz workflow run team:retro-agenda")
+
+
+def test_listing_and_check_say_which_directories_were_searched_and_whether_they_exist(make, dirs, tmp_path):
+    me, team = dirs
+    missing = tmp_path / "nowhere"
+    service = make(user_dir=str(missing))
+    listing = service.listing()
+    assert [(d.namespace, d.path, d.exists) for d in listing.directories] == [
+        ("team", team / "workflows", True),
+        ("me", missing, False),
+    ]
+    assert listing.contracts == []
+    assert [s.command for s in listing.next] == ["hz workflow new my-first-workflow", "hz workflow check"]
+    assert service.check().searched == listing.directories
+    assert service.check(team).searched == []
+    put(me)
+    listing = make().listing()
+    assert [c.name for c in listing.contracts] == ["weekly-digest"]
+    assert [s.command for s in listing.next] == ["hz workflow show me:weekly-digest"]
+
+
+def test_why_not_scheduled_ends_in_a_command(make, dirs):
+    me, team = dirs
+    put(me, "manual", EXAMPLE.read_text().replace("weekly-digest", "manual").replace('  schedule: "0 7 * * MON"\n', ""))
+    put(me, "broken", "no frontmatter")
+    path = put(team / "workflows", "ours")
+    service = make()
+    why = {c.qualified: str(service.scheduled(c)) for c in service.contracts()}
+    assert why["me:broken"].endswith(f"hz workflow check --path {me / 'broken.prose.md'}")
+    assert why["me:manual"].endswith("or run it by hand: hz workflow run me:manual")
+    assert 'add `schedule: "0 7 * * MON"` under `hz:`' in why["me:manual"]
+    sha = service.find("team:ours").sha256
+    assert "hz system config set workflow.schedule_team '[\"ours\"]'" in why["team:ours"]
+    assert f"hz system config set workflow.schedule_team '[\"ours@{sha}\"]'" in why["team:ours"]
+    path.write_text(path.read_text().replace("300 words", "250 words"))
+    changed = make(schedule_team=[f"ours@{sha}"])
+    contract = changed.find("team:ours")
+    assert str(changed.scheduled(contract)).endswith(
+        f"hz system config set workflow.schedule_team '[\"ours@{contract.sha256}\"]'"
+    )
+    assert {c.name: c.status for c in changed.health()}["workflow team:ours"] is Status.DEGRADED
+
+
+def test_an_unmet_requirement_is_fixed_by_binding_an_installed_adapter_or_finding_a_plugin(make_kernel, dirs):
+    put(dirs[0])
+    config = Config(files=(), data={"workflow": {"user_dir": str(dirs[0])}})
+    kernel = make_kernel(builtins=True, config=config)
+    settings = Config(files=(), data={}).settings(Settings, "hz")
+    service = WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings)
+    shown = service.show("weekly-digest")
+    fixes = {s.requirement: s.fix for s in shown.requirements if s.problem}
+    assert fixes == {
+        "code-host:read": "hz system plugin search --text code-host",
+        "tracker:read": "hz system plugin search --text tracker",
+    }
+    assert shown.ready is False
+    assert [s.command for s in shown.next] == list(fixes.values())
+
+
+def test_show_of_a_ready_scheduled_contract_says_how_to_try_run_and_schedule_it(make, dirs):
+    put(dirs[0])
+    shown = make().show("weekly-digest")
+    assert shown.ready is True
+    assert shown.drafts.name == "me-weekly-digest"
+    assert shown.draft_count == 0
+    assert [s.command for s in shown.next] == [
+        "hz workflow run me:weekly-digest --dry-run",
+        "hz workflow run me:weekly-digest",
+        "hz system daemon status",
+        "hz system daemon tick --job workflow:me-weekly-digest",
+    ]
+    assert "0.5 USD" in shown.next[1].why
+    assert "hz system daemon install" in shown.next[2].why
+    put(dirs[0], "broken", "no frontmatter")
+    broken = make().show("broken")
+    assert [s.command for s in broken.next] == [f"hz workflow check --path {dirs[0] / 'broken.prose.md'}"]
+
+
+def test_drafts_are_listed_newest_first_filtered_by_contract_and_the_latest_can_be_read(make, dirs, runner):
+    me, team = dirs
+    put(me)
+    put(team / "workflows", "ours")
+    service = make()
+    assert service.drafts().drafts == []
+    assert service.drafts().next[0].command == "hz workflow run <name>"
+    assert service.drafts("ours").next[0].command == "hz workflow run ours"
+    first = service.run("weekly-digest").rendered
+    runner.draft = "# Later"
+    settings = Config(files=(), data={}).settings(Settings, "hz")
+    later = WorkflowService(service._kernel, service._workflow, settings, clock=lambda: NOW + timedelta(hours=1))
+    second = later.run("weekly-digest").rendered
+    team_draft = later.run("team:ours").rendered  # same time as `second`: paths break the tie
+    assert first
+    assert second
+    assert team_draft
+    listed = service.drafts()
+    assert [(d.contract, d.draft) for d in listed.drafts] == [
+        ("team:ours", team_draft.draft),
+        ("me:weekly-digest", second.draft),
+        ("me:weekly-digest", first.draft),
+    ]
+    assert listed.drafts[1].created == NOW + timedelta(hours=1)
+    assert listed.drafts[1].record == second.record
+    assert listed.drafts[1].bytes == len("# Later")
+    assert listed.latest is None
+    assert listed.next[0].command == "hz workflow drafts --name team:ours --latest"
+    assert [d.draft for d in service.drafts("weekly-digest").drafts] == [second.draft, first.draft]
+    assert [d.draft for d in service.drafts("team:ours").drafts] == [team_draft.draft]
+    assert service.drafts("me:ours").drafts == []
+    assert service.drafts("weekly-digest", latest=True).latest == "# Later"
+    second.record.unlink()
+    (service.drafts_dir / "me-weekly-digest" / "notes.txt").write_text("not a draft")
+    assert [d.record for d in service.drafts("weekly-digest").drafts] == [None, first.record]
+
+
+def test_a_draft_with_a_foreign_name_is_dated_by_its_file(make, dirs):
+    put(dirs[0])
+    service = make()
+    directory = service.drafts_dir / "me-weekly-digest"
+    directory.mkdir(parents=True)
+    stray = directory / "handmade.md"
+    stray.write_text("by hand")
+    listed = service.drafts()
+    assert [d.draft for d in listed.drafts] == [stray]
+    assert listed.drafts[0].created == datetime.fromtimestamp(stray.stat().st_mtime, tz=UTC)
+
+
+def test_the_latest_draft_that_cant_be_read_is_an_error(make, dirs, monkeypatch):
+    put(dirs[0])
+    service = make()
+    service.run("weekly-digest")
+
+    def denied(*_: object, **__: object) -> str:
+        raise PermissionError(13, "denied")
+
+    monkeypatch.setattr(Path, "read_text", denied)
+    with pytest.raises(HeinzelError, match=r"Can.t read .*denied"):
+        service.drafts(latest=True)
+
+
+def test_a_missing_contract_says_how_to_write_one(make, dirs):
+    service = make()
+    with pytest.raises(HeinzelError, match=r"Write one: hz workflow new daily-notes$"):
+        service.find("Daily Notes")
+    with pytest.raises(HeinzelError, match=r"Write one: hz workflow new ours --team$"):
+        service.find("team:ours")
+
+
+def test_a_contract_with_errors_says_how_to_recheck_it(make, dirs):
+    path = put(dirs[0], "broken", "no frontmatter")
+    with pytest.raises(HeinzelError, match=f"hz workflow check --path {path}"):
+        make().run("broken", dry_run=True)
+
+
+def test_health_without_contracts_says_how_to_write_one(make):
+    check = make().health()[0]
+    assert (check.status, check.fix) == (Status.UP, "hz workflow new my-first-workflow")
