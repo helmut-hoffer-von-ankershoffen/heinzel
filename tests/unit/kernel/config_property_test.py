@@ -1,6 +1,7 @@
 """Properties of configuration loading over generated files: later files win key by key, broken ones say so."""
 
 import json
+import string
 import tomllib
 
 import pytest
@@ -11,13 +12,15 @@ from heinzel import Config, HeinzelError
 
 pytestmark = pytest.mark.unit
 
-QUICK = settings(
-    max_examples=40,
-    deadline=None,
-    database=None,
-    suppress_health_check=[HealthCheck.function_scoped_fixture],  # each example overwrites the same two files
+#: Example count, deadline and database come from the profile in tests/unit/conftest.py.
+EACH_EXAMPLE_REWRITES_THE_FILES = settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+#: `[a-z][a-z0-9_-]{0,7}`, drawn from an explicit ASCII alphabet: `from_regex` draws from `characters(codec="utf-8")`,
+#: which on a cold Hypothesis cache (every fresh CI checkout) first encodes all 1.1 million code points, for seconds.
+KEY = st.builds(
+    str.__add__,
+    st.sampled_from(string.ascii_lowercase),
+    st.text(string.ascii_lowercase + string.digits + "_-", max_size=7),
 )
-KEY = st.from_regex(r"[a-z][a-z0-9_-]{0,7}", fullmatch=True)
 SCALAR = (
     st.integers(-(2**63), 2**63 - 1)
     | st.booleans()
@@ -67,7 +70,7 @@ def files(monkeypatch, tmp_path):
     return user, explicit, tmp_path
 
 
-@QUICK
+@EACH_EXAMPLE_REWRITES_THE_FILES
 @given(low=TABLES, high=TABLES)
 def test_a_later_file_overrides_single_keys_not_whole_tables(files, low, high):
     user, explicit, cwd = files
@@ -81,7 +84,7 @@ def test_a_later_file_overrides_single_keys_not_whole_tables(files, low, high):
         assert loaded.section(section) == merged(low, high)[section]
 
 
-@QUICK
+@EACH_EXAMPLE_REWRITES_THE_FILES
 @given(text=st.text(max_size=200))
 def test_any_file_loads_or_is_a_heinzel_error_naming_it(files, text):
     user, explicit, cwd = files
@@ -97,7 +100,6 @@ def test_any_file_loads_or_is_a_heinzel_error_naming_it(files, text):
         assert Config.load(cwd).data == tomllib.loads(text)
 
 
-@QUICK
 @given(tables=TABLES, path=st.lists(KEY, min_size=1, max_size=3))
 def test_a_dotted_section_is_the_nested_table_or_empty(tables, path):
     expected: object = tables
