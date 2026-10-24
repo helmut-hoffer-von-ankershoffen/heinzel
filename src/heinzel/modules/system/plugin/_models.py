@@ -164,6 +164,9 @@ class PluginChange(BaseModel):
         "its server with `POST /api/restart`. Every new `hz` command sees it at once."
     )
     next: list[str] = Field(description="Commands to run next, e.g. the one that confirms.")
+    previewed: bool = Field(
+        default=False, description="Whether a terminal already showed the preview and asked; the CLI says no more."
+    )
 
 
 class PluginEvent(BaseModel):
