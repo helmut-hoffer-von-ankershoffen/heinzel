@@ -314,6 +314,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/connector/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List connectors with their sign-in, what they serve and their tools; offline.
+         * @description List connectors with their sign-in, what they serve and their tools; offline.
+         */
+        get: operations["system_connector_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/connector/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Test a connector live: one cheap read-only call through its tool, with a short timeout.
+         * @description Test a connector live: one cheap read-only call through its tool, with a short timeout.
+         */
+        get: operations["system_connector_test"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/credential/list": {
         parameters: {
             query?: never;
@@ -1246,6 +1286,33 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AdapterCandidate
+         * @description An adapter that can serve a capability, and the state of its connector.
+         */
+        AdapterCandidate: {
+            /**
+             * Adapter
+             * @description The name bindings use, e.g. `github`.
+             */
+            adapter: string;
+            /**
+             * Connector
+             * @description Qualified name of the module that provides it.
+             */
+            connector: string;
+            /**
+             * State
+             * @description Its connector's state.
+             * @enum {string}
+             */
+            state: "connected" | "not-signed-in" | "not-bound" | "attention" | "unknown";
+            /**
+             * Title
+             * @description Its connector's name for people, e.g. `GitHub`.
+             */
+            title: string;
+        };
+        /**
          * AdapterInfo
          * @description An installed adapter.
          */
@@ -1494,6 +1561,58 @@ export interface components {
              * @description Where people open it, if it has a web address.
              */
             url?: string | null;
+        };
+        /**
+         * CapabilityChoice
+         * @description A capability, the adapter serving it and how it was chosen, and every adapter that could.
+         */
+        CapabilityChoice: {
+            /**
+             * Bound
+             * @description The adapter that serves it now; none.
+             */
+            bound: string | null;
+            /**
+             * Candidates
+             * @description Every installed adapter that provides it.
+             */
+            candidates: components["schemas"]["AdapterCandidate"][];
+            /**
+             * Capability
+             * @description The capability, e.g. `code-host`.
+             */
+            capability: string;
+            /**
+             * Find
+             * @description The command line that finds a plugin providing it.
+             */
+            find: string;
+            /**
+             * How
+             * @description How that adapter was chosen.
+             * @enum {string}
+             */
+            how: "configured" | "automatic" | "default" | "off" | "unbound";
+            /**
+             * Key
+             * @description Its configuration key, e.g. `capabilities.code_host`.
+             */
+            key: string;
+            /**
+             * Problem
+             * @description Why the chosen adapter can't serve it, e.g. not installed; none if it can.
+             */
+            problem: string | null;
+            /**
+             * Purpose
+             * @description What it is for, in a few plain words, e.g. `pull requests and reviews`.
+             */
+            purpose: string;
+            /**
+             * Title
+             * @description Its name for people, e.g. `Code host`.
+             */
+            title: string;
         };
         /**
          * CapabilityInfo
@@ -1911,6 +2030,8 @@ export interface components {
              * @default
              */
             fix: string;
+            /** @description For a check of a sign-in: whether there is one, as whom, and how to make one; left out if none. */
+            login?: components["schemas"]["Login"] | null;
             /**
              * Name
              * @description What was checked.
@@ -2179,6 +2300,161 @@ export interface components {
             values: {
                 [key: string]: components["schemas"]["JsonValue"];
             };
+        };
+        /**
+         * Connector
+         * @description A module that provides adapters, with its state, sign-in, tools and the commands that connect it.
+         */
+        Connector: {
+            /**
+             * Bind
+             * @description Command lines that make it serve the capabilities it doesn't serve yet.
+             */
+            bind: string[];
+            /**
+             * Builtin
+             * @description Whether it is part of the core rather than a plugin.
+             */
+            builtin: boolean;
+            /**
+             * Capabilities
+             * @description The capabilities its adapters provide.
+             */
+            capabilities: components["schemas"]["ConnectorCapability"][];
+            /**
+             * Checks
+             * @description Its offline health checks, as doctor runs them.
+             */
+            checks: components["schemas"]["Check"][];
+            /**
+             * Connect
+             * @description Command lines that sign its tool in, run by the person in a terminal.
+             */
+            connect: string[];
+            /**
+             * Distribution
+             * @description The distribution that ships it.
+             */
+            distribution: string;
+            /** @description What its checks found about its sign-in; none if its tool has none. */
+            login: components["schemas"]["Login"] | null;
+            /**
+             * Name
+             * @description Qualified name of the module, e.g. `github`; `hz system connector test` takes it.
+             */
+            name: string;
+            /**
+             * State
+             * @description Connected, not signed in, not bound, needs attention, or unknown until tested.
+             * @enum {string}
+             */
+            state: "connected" | "not-signed-in" | "not-bound" | "attention" | "unknown";
+            /**
+             * Summary
+             * @description What it connects, the module's summary.
+             */
+            summary: string;
+            /**
+             * Testable
+             * @description Whether it has a live test (`hz system connector test`).
+             */
+            testable: boolean;
+            /**
+             * Title
+             * @description Its name for people, e.g. `GitHub`.
+             */
+            title: string;
+            /**
+             * Tools
+             * @description The capability methods its adapters implement, with their modes.
+             */
+            tools: components["schemas"]["Tool"][];
+        };
+        /**
+         * ConnectorCapability
+         * @description A capability one of the connector's adapters provides, and whether that adapter serves it.
+         */
+        ConnectorCapability: {
+            /**
+             * Adapter
+             * @description The connector's adapter for it, the name bindings use, e.g. `github`.
+             */
+            adapter: string;
+            /**
+             * Bound
+             * @description The adapter that serves the capability now, this one or another; none.
+             */
+            bound: string | null;
+            /**
+             * Capability
+             * @description The capability, e.g. `tracker`.
+             */
+            capability: string;
+            /**
+             * How
+             * @description How that adapter was chosen.
+             * @enum {string}
+             */
+            how: "configured" | "automatic" | "default" | "off" | "unbound";
+            /**
+             * Modes
+             * @description The modes the adapter serves.
+             */
+            modes: ("read" | "write")[];
+            /**
+             * Title
+             * @description Its name for people, e.g. `Tracker`.
+             */
+            title: string;
+            /**
+             * Used
+             * @description Whether this adapter serves the capability now.
+             */
+            used: boolean;
+        };
+        /**
+         * ConnectorReport
+         * @description Every connector, and for every capability who serves it and who could.
+         */
+        ConnectorReport: {
+            /**
+             * Capabilities
+             * @description Every capability the core defines, by title.
+             */
+            capabilities: components["schemas"]["CapabilityChoice"][];
+            /**
+             * Connectors
+             * @description Every module that provides adapters, by title.
+             */
+            connectors: components["schemas"]["Connector"][];
+        };
+        /**
+         * ConnectorTest
+         * @description The outcome of a connector's live test: one cheap read-only call through its tool.
+         */
+        ConnectorTest: {
+            /**
+             * Checks
+             * @description The live checks: what was called and what came back.
+             */
+            checks: components["schemas"]["Check"][];
+            /**
+             * Latency Ms
+             * @description How long the test took, in milliseconds.
+             */
+            latency_ms: number;
+            /** @description Who the tool says it is signed in as, if it says. */
+            login: components["schemas"]["Login"] | null;
+            /**
+             * Name
+             * @description Qualified name of the module tested.
+             */
+            name: string;
+            /**
+             * Passed
+             * @description Whether every live check is up.
+             */
+            passed: boolean;
         };
         /**
          * ContractGraph
@@ -3095,6 +3371,38 @@ export interface components {
              * @description The tick it belongs to.
              */
             tick?: string | null;
+        };
+        /**
+         * Login
+         * @description What a check found about the sign-in of the tool an adapter goes through, such as a vendor CLI (ADR 0055).
+         *
+         *     The tool owns the sign-in (ADR 0035): this says only whether there is one, as whom and where, and the command
+         *     that makes one, which the person runs in a terminal and where the tool itself asks for any secret.
+         */
+        Login: {
+            /**
+             * Account
+             * @description Who it is signed in as, as the tool names them (a login or the person's own address); never a secret. Empty when the tool doesn't say.
+             * @default
+             */
+            account: string;
+            /**
+             * Command
+             * @description The command line that signs it in, run by the person in a terminal; empty when there is none.
+             * @default
+             */
+            command: string;
+            /**
+             * Signed In
+             * @description Whether the tool has a sign-in; none when that can't be known without asking the service.
+             */
+            signed_in: boolean | null;
+            /**
+             * Site
+             * @description Where it is signed in: a host or site name; empty when it doesn't say.
+             * @default
+             */
+            site: string;
         };
         /**
          * Measurements
@@ -4678,6 +4986,33 @@ export interface components {
             output_tokens?: number | null;
         };
         /**
+         * Tool
+         * @description A capability method the connector implements: what hz can do through it.
+         */
+        Tool: {
+            /**
+             * Capability
+             * @description The capability, e.g. `code-host`.
+             */
+            capability: string;
+            /**
+             * Method
+             * @description The method, e.g. `merged_pull_requests`.
+             */
+            method: string;
+            /**
+             * Mode
+             * @description `read` or `write`; writes run only from publish operations.
+             * @enum {string}
+             */
+            mode: "read" | "write";
+            /**
+             * Summary
+             * @description What the method does, the first line of its docstring.
+             */
+            summary: string;
+        };
+        /**
          * Unmaintained
          * @description An input that reads a contract's output no contract maintains.
          */
@@ -4775,12 +5110,14 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type SchemaAdapterCandidate = components['schemas']['AdapterCandidate'];
 export type SchemaAdapterInfo = components['schemas']['AdapterInfo'];
 export type SchemaAgenda = components['schemas']['Agenda'];
 export type SchemaAgentResult = components['schemas']['AgentResult'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
 export type SchemaCandidate = components['schemas']['Candidate'];
+export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
@@ -4799,6 +5136,10 @@ export type SchemaConfigFileInfo = components['schemas']['ConfigFileInfo'];
 export type SchemaConfigReport = components['schemas']['ConfigReport'];
 export type SchemaConfigRevealed = components['schemas']['ConfigRevealed'];
 export type SchemaConflictView = components['schemas']['ConflictView'];
+export type SchemaConnector = components['schemas']['Connector'];
+export type SchemaConnectorCapability = components['schemas']['ConnectorCapability'];
+export type SchemaConnectorReport = components['schemas']['ConnectorReport'];
+export type SchemaConnectorTest = components['schemas']['ConnectorTest'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
 export type SchemaContractList = components['schemas']['ContractList'];
 export type SchemaContractSummary = components['schemas']['ContractSummary'];
@@ -4831,6 +5172,7 @@ export type SchemaLayerList = components['schemas']['LayerList'];
 export type SchemaLayerProblemView = components['schemas']['LayerProblemView'];
 export type SchemaLayerView = components['schemas']['LayerView'];
 export type SchemaLogLine = components['schemas']['LogLine'];
+export type SchemaLogin = components['schemas']['Login'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
@@ -4875,6 +5217,7 @@ export type SchemaThemeLogoView = components['schemas']['ThemeLogoView'];
 export type SchemaThemeView = components['schemas']['ThemeView'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
+export type SchemaTool = components['schemas']['Tool'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWaiting = components['schemas']['Waiting'];
@@ -5266,6 +5609,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_connector_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorReport"];
+                };
+            };
+        };
+    };
+    system_connector_test: {
+        parameters: {
+            query: {
+                /** @description The connector, as `hz system connector list` names it, e.g. `github`. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectorTest"];
                 };
             };
             /** @description Validation Error */

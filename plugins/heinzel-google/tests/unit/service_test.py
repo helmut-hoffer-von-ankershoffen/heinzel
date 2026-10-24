@@ -1,9 +1,11 @@
-"""What the plugin says about itself, and its doctor checks, which never reach Google."""
+"""What the plugin says about itself, its doctor checks, which never reach Google, and its live test."""
+
+import json
 
 import pytest
-from heinzel_google import LOGIN, GoogleService, GoogleSession, GoogleSettings
+from heinzel_google import LOGIN, GoogleService, GoogleSession, GoogleSettings, Process
 
-from heinzel import Status
+from heinzel import Login, Status
 
 pytestmark = pytest.mark.unit
 
@@ -85,3 +87,50 @@ def test_without_an_oauth_client_doctor_says_so(session, fake_gws):
         checks["gws"].detail
         == "gws 0.22.5 has no OAuth client and is not signed in; checked locally, Google not contacted"
     )
+
+
+def test_the_gws_check_says_whether_gws_is_signed_in_and_how_to_sign_in(session, fake_gws, tmp_path):
+    gws = {c.name: c for c in service(session).checks(Bound())}["gws"]
+    assert gws.login == Login(signed_in=True, command="hz setup google")
+    fake_gws.sign_out()
+    gws = {c.name: c for c in service(session).checks(Bound())}["gws"]
+    assert gws.login == Login(signed_in=False, command="hz setup google")
+    missing = GoogleSession(GoogleSettings(gws_path=str(tmp_path / "nope")), fake_gws)
+    assert {c.name: c for c in service(missing).checks(Bound())}["gws"].login.signed_in is False
+
+
+def _answer(fake_gws, body, exit_code=0):
+    fake_gws.on(("drive", "about", "get"), Process(exit_code, json.dumps(body).encode(), b""))
+
+
+def test_the_live_test_asks_drive_who_is_signed_in_with_a_short_timeout(session, fake_gws):
+    _answer(fake_gws, {"user": {"displayName": "Ada", "emailAddress": "ada@example.com"}})
+    (check,) = service(session).live()
+    assert check.status is Status.UP
+    assert check.login == Login(signed_in=True, account="ada@example.com", site="google.com", command="hz setup google")
+    (run,) = fake_gws.api_runs
+    assert run.command == ("drive", "about", "get")
+    assert run.params == {"fields": "user(displayName,emailAddress)"}
+    assert run.timeout == 15.0
+
+
+def test_a_live_test_whose_sign_in_expired_is_not_signed_in(session, fake_gws):
+    _answer(fake_gws, {"error": {"code": 401, "message": "Invalid Credentials"}}, exit_code=1)
+    (check,) = service(session).live()
+    assert check.status is Status.DEGRADED
+    assert check.fix == "hz setup google"
+    assert check.login == Login(signed_in=False, command="hz setup google")
+
+
+def test_a_live_test_google_refuses_otherwise_is_down(session, fake_gws):
+    _answer(fake_gws, {"error": {"code": 500, "message": "Backend Error"}}, exit_code=1)
+    (check,) = service(session).live()
+    assert check.status is Status.DOWN
+    assert check.login is None
+
+
+def test_a_live_answer_without_a_user_names_no_account(session, fake_gws):
+    _answer(fake_gws, {})
+    (check,) = service(session).live()
+    assert check.status is Status.UP
+    assert check.login.account == ""

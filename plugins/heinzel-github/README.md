@@ -61,6 +61,15 @@ timeout = 60   # seconds per gh call
 the program that runs. The adapter's hosts come
 from it: `hz system capability list` shows `api.github.com`, or your GitHub Enterprise Server's host.
 
+### Is it connected?
+
+Bound automatically while it is the only installed adapter of a capability (usually `code-host`; `tracker` once another
+tracker is installed needs a choice), [ADR
+0055](../../docs/adr/0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md). `hz
+system connector list` (or Settings → Connectors in `hz ui`) shows whether `gh` is logged in and as whom, read from gh's
+hosts file without asking GitHub; `hz system connector test github` asks GitHub who gh is (`gh api user`, 15 s at most),
+and only when you run it.
+
 ## Use
 
 Workflows ask for `code-host` and `tracker`, never for GitHub:

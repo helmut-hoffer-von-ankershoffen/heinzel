@@ -14,11 +14,12 @@ from enum import StrEnum
 from typing import Any, Literal, Self, get_args
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from rich.console import RenderableType
 
 from heinzel.kernel._capabilities import Mode, Requirement
 from heinzel.kernel._config import ModuleSettings
+from heinzel.kernel._text import clean_text
 
 Audience = Literal["everyday", "expert"]
 """Who an operation is for: `everyday` is the small surface newcomers see, `expert` everything else (ADR 0041)."""
@@ -188,6 +189,38 @@ class Status(StrEnum):
     DOWN = "down"
 
 
+LOGIN_TEXT = 200
+"""Characters kept of a sign-in's account and site: a login, an address or a host name, never a paragraph."""
+
+
+class Login(BaseModel):
+    """What a check found about the sign-in of the tool an adapter goes through, such as a vendor CLI (ADR 0055).
+
+    The tool owns the sign-in (ADR 0035): this says only whether there is one, as whom and where, and the command
+    that makes one, which the person runs in a terminal and where the tool itself asks for any secret.
+    """
+
+    signed_in: bool | None = Field(
+        description="Whether the tool has a sign-in; none when that can't be known without asking the service."
+    )
+    account: str = Field(
+        default="",
+        description="Who it is signed in as, as the tool names them (a login or the person's own address); never a "
+        "secret. Empty when the tool doesn't say.",
+    )
+    site: str = Field(default="", description="Where it is signed in: a host or site name; empty when it doesn't say.")
+    command: str = Field(
+        default="",
+        description="The command line that signs it in, run by the person in a terminal; empty when there is none.",
+    )
+
+    @field_validator("account", "site", "command")
+    @classmethod
+    def _plain(cls, value: str) -> str:
+        """One clean line: a tool's words are data, and a terminal or a prompt shows them (ADR 0028)."""
+        return " ".join(clean_text(value).split())[:LOGIN_TEXT]
+
+
 class Check(BaseModel):
     """The outcome of one health check. Anything but UP must say what is wrong."""
 
@@ -195,6 +228,11 @@ class Check(BaseModel):
     status: Status = Field(description="Outcome: up, degraded or down.")
     detail: str = Field(default="", description="What was found; required unless UP.")
     fix: str = Field(default="", description="What to do about it, when not UP.")
+    login: Login | None = Field(
+        default=None,
+        description="For a check of a sign-in: whether there is one, as whom, and how to make one; left out if none.",
+        exclude_if=lambda login: login is None,  # most checks have none: their JSON stays as it was
+    )
 
     @model_validator(mode="after")
     def _explain_problems(self) -> Self:
@@ -209,6 +247,9 @@ class HealthLet(Let):
     """Health checks for `hz system doctor`. The provider returns checks and may ask for injected services."""
 
     provider: Callable[..., list[Check]]
+    live: bool = False
+    """Whether the provider reaches the network to test a connection, as `hz system connector test` does on demand;
+    doctor stays offline and leaves it out (ADR 0055)."""
 
 
 class CatchUp(StrEnum):

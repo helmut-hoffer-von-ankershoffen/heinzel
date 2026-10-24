@@ -567,6 +567,7 @@ def test_commands_are_sorted(app):
         "capability",
         "changelog",
         "config",
+        "connector",
         "credential",
         "daemon",
         "doctor",

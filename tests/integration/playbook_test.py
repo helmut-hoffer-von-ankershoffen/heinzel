@@ -231,11 +231,12 @@ def test_discover_finds_candidates_through_what_you_can_read(make):
 
 
 def test_discover_says_once_how_to_bind_an_unbound_capability(make):
-    code, found = hz(make({"agent_runner": "fake"}), "workflow", "discover")
+    off = {"agent_runner": "fake", "documents": "none"}  # the sole adapter would serve it automatically (ADR 0055)
+    code, found = hz(make(off), "workflow", "discover")
     assert code == 0
     assert [p["hint"] for p in found["problems"]] == ["documents.read"]
     assert "hz system config set capabilities.documents docs" in found["problems"][0]["problem"]
-    code, text = hz(make({"agent_runner": "fake"}), "workflow", "discover", json_output=False)
+    code, text = hz(make(off), "workflow", "discover", json_output=False)
     assert "No candidates found." in str(text)
     assert "capabilities.documents" in "".join(str(text).split())
 

@@ -1,14 +1,18 @@
 """What the plugin says about itself: `hz zoom info`, its `hz system info` section and its doctor checks."""
 
+from datetime import UTC, datetime, timedelta
 from importlib.metadata import PackageNotFoundError, version
 from typing import Protocol
 
-from heinzel import Check, Kernel, Status, __version__
+from heinzel import Check, HeinzelError, Kernel, Mail, Status, Window, __version__
 from heinzel_zoom._models import SUMMARY_SETTING, ZoomAbout, ZoomSettings
+from heinzel_zoom._summary import title_of
 
 DISTRIBUTION = "heinzel-zoom"
 ADAPTER = "zoom"
 SOURCE = "Zoom's meeting-summary emails, read through the adapter bound to mail"
+LIVE_WINDOW = timedelta(days=1)
+"""How far back the live test looks for summary emails: one list call through the mail adapter, no message read."""
 
 
 class Bindings(Protocol):
@@ -84,3 +88,30 @@ class ZoomService:
                 )
             )
         return checks
+
+    def live(self, mail: Mail) -> list[Check]:
+        """List the last day's summary emails through the bound mail adapter: one read, no message opened.
+
+        The mail adapter's own timeout bounds it; Zoom itself is never asked, since the adapter has no Zoom API.
+        """
+        until = datetime.now(UTC)
+        try:
+            found = mail.messages(self._settings.query, Window(since=until - LIVE_WINDOW, until=until))
+        except HeinzelError as exc:
+            return [
+                Check(
+                    name="summary emails",
+                    status=Status.DEGRADED,
+                    detail=f"the mail adapter could not list summary emails: {exc}",
+                    fix="see how the mail connector is doing: hz system connector list",
+                )
+            ]
+        summaries = sum(1 for message in found if title_of(message.subject))
+        noun = "summary email" if summaries == 1 else "summary emails"
+        return [
+            Check(
+                name="summary emails",
+                status=Status.UP,
+                detail=f"the mail adapter listed {summaries} Zoom {noun} from the last day (`{self._settings.query}`)",
+            )
+        ]

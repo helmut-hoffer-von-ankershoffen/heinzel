@@ -28,6 +28,13 @@ hz system plugin remove heinzel-zoom
 `hz system doctor` checks both bindings and says where summaries are switched on. It reads no mail and contacts
 nothing.
 
+### Is it connected?
+
+Bound automatically to `meetings` while it is the only installed adapter, [ADR
+0055](../../docs/adr/0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md). It has
+no sign-in of its own: `hz system connector test zoom` lists the last day's summary emails through the bound mail
+adapter (no message is opened), and only when you run it.
+
 ## Use
 
 Workflows ask for `meetings`, never for Zoom:

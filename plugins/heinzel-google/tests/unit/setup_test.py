@@ -21,11 +21,20 @@ class Editor:
 
 
 class Bound:
-    def __init__(self, **bound: str) -> None:
-        self._bound = bound
+    """Configured bindings, and those Google serves automatically as the only installed adapter (ADR 0055)."""
+
+    def __init__(self, automatic: tuple[str, ...] = (), **bound: str) -> None:
+        self._bound = bound | dict.fromkeys(automatic, "google")
+        self._automatic = automatic
 
     def bound(self, capability: str) -> str | None:
         return self._bound.get(capability)
+
+    def binding(self, capability: str) -> tuple[str | None, str]:
+        bound = self._bound.get(capability)
+        if capability in self._automatic:
+            return bound, "automatic"
+        return bound, "configured" if bound else "unbound"
 
 
 def setup(session, fake_gws, answers, view=None, settings=None) -> tuple[ScriptedPrompter, Editor]:
@@ -104,3 +113,14 @@ def test_mail_bound_before_offers_signing_in_again_with_gmails_scope(session, fa
     assert (fake_gws.logins, editor.written) == ([], {})
     setup(session, fake_gws, ["y"], bound)
     assert fake_gws.logins == [LOGIN_WITH_MAIL.split()[1:]]
+
+
+def test_google_serving_automatically_is_asked_and_declined_mail_is_turned_off(session, fake_gws):
+    prompter, editor = setup(session, fake_gws, ["", "", ""], Bound(automatic=("documents", "calendar", "mail")))
+    assert editor.written == {
+        "capabilities.documents": "google",
+        "capabilities.calendar": "google",
+        "capabilities.mail": "none",
+    }
+    assert not any("instead of google" in line for line in prompter.transcript)
+    assert fake_gws.logins == []  # signed in already, and mail stays off

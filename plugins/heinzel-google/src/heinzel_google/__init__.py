@@ -88,6 +88,12 @@ def health(service: GoogleService, view: CapabilityView) -> list[Check]:
     return service.checks(view)
 
 
+@module.health(live=True)
+def live(service: GoogleService) -> list[Check]:
+    """Ask Google who `gws` is signed in as: one read, run only by `hz system connector test google`."""
+    return service.live()
+
+
 __all__ = [
     "CALENDAR_HOSTS",
     "DOCUMENT_HOSTS",

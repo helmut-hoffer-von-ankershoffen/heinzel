@@ -150,7 +150,7 @@ def test_a_confirmed_manager_replaces_the_guess_and_is_named_from_the_directory(
 
 
 def test_without_a_calendar_the_draft_says_why_instead_of_failing(make_kernel):
-    kernel = make_kernel(builtins=True, **modules())
+    kernel = make_kernel(builtins=True, config=bound(calendar="none"), **modules())
     code, draft = hz(kernel, "roster", "draft", "mira@example.com", "--manager", "ada")
     assert code == 0, draft
     assert "calendar:read" in draft["problem"]

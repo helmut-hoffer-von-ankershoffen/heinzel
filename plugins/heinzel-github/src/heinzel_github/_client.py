@@ -34,6 +34,10 @@ _STATUS = re.compile(r"\(HTTP (\d{3})\)\s*$", re.MULTILINE)
 _TOKEN = re.compile(r"(?:gh[opsur]_|github_pat_)[A-Za-z0-9_]{16,}|\b[0-9a-f]{40}\b")
 
 
+class GhLoginError(HeinzelError):
+    """`gh` has no login for the host, or GitHub rejected it: the message names `gh auth login`."""
+
+
 def redact(text: str) -> str:
     """`text` with anything shaped like a GitHub token (`ghp_…`, `github_pat_…`, 40 hex digits) replaced by `***`."""
     return _TOKEN.sub("***", text)
@@ -89,7 +93,28 @@ class GhClient:
         msg = f"{path} has {MAX_PAGES} or more full pages of results; {too_many}."
         raise HeinzelError(msg)
 
+    def get(self, path: str) -> dict[str, Any]:
+        """GET one object, such as `user` (who gh is logged in as), within the client's timeout.
+
+        Raises:
+            HeinzelError: If `gh` is missing or not logged in, GitHub refuses or answers with something else.
+        """
+        found, _ = self._call(path, {}, self._timeout)
+        if not isinstance(found, dict):
+            msg = f"GitHub answered {path} with something other than an object; is {self._host} a GitHub server?"
+            raise HeinzelError(msg)
+        return cast("dict[str, Any]", found)
+
     def _list(self, path: str, params: Mapping[str, str], left: float) -> tuple[list[dict[str, Any]], int]:
+        items, size = self._call(path, params, left)
+        if not isinstance(items, list) or not all(isinstance(item, dict) for item in cast("list[object]", items)):
+            msg = (
+                f"GitHub answered {path} with something other than a list of objects; is {self._host} a GitHub server?"
+            )
+            raise HeinzelError(msg)
+        return cast("list[dict[str, Any]]", items), size  # checked above
+
+    def _call(self, path: str, params: Mapping[str, str], left: float) -> tuple[Any, int]:
         args = [
             "api",
             "--hostname",
@@ -116,14 +141,9 @@ class GhClient:
             msg = f"GitHub's answer for {path} is larger than {MAX_BYTES} bytes; ask for a shorter window."
             raise HeinzelError(msg)
         if result.returncode != 0:
-            raise HeinzelError(self._problem(path, result))
-        items = _json(result.stdout, path)
-        if not isinstance(items, list) or not all(isinstance(item, dict) for item in cast("list[object]", items)):
-            msg = (
-                f"GitHub answered {path} with something other than a list of objects; is {self._host} a GitHub server?"
-            )
-            raise HeinzelError(msg)
-        return cast("list[dict[str, Any]]", items), len(result.stdout)  # checked above
+            problem = self._problem(path, result)
+            raise (GhLoginError if login_fix(self._host) in problem else HeinzelError)(problem)
+        return _json(result.stdout, path), len(result.stdout)
 
     def _problem(self, path: str, result: GhResult) -> str:  # noqa: PLR0911 - one message per kind of failure
         """What went wrong, for a person: GitHub's or `gh`'s words, redacted and cleaned, plus what to do."""
