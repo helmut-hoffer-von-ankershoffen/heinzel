@@ -54,8 +54,8 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
             Capability(
                 name="chat",
                 protocol=Chat,
-                summary="Channels people talk in: read messages and threads; post through publish operations.",
-                methods=MappingProxyType({"channel": "read", "messages": "read", "thread": "read", "post": "write"}),
+                summary="Channels people talk in: read their messages; post through publish operations.",
+                methods=MappingProxyType({"messages": "read", "post": "write"}),
             ),
             Capability(
                 name="code-host",
@@ -73,7 +73,7 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 name="meetings",
                 protocol=Meetings,
                 summary="Meetings the user took part in, and their transcripts.",
-                methods=MappingProxyType({"ended": "read", "transcript": "read"}),
+                methods=MappingProxyType({"ended": "read", "transcripts": "read", "transcript": "read"}),
             ),
             Capability(
                 name="tracker",

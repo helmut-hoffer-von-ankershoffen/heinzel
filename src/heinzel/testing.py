@@ -164,14 +164,12 @@ def assert_adapter(adapter: object, capability: str, modes: Iterable[str] = ("re
     """Assert `adapter` (a class or an instance) implements `capability`'s protocol in `modes` (ADR 0028).
 
     The kernel checks the same when it registers an adapter; this runs it in a plugin's own unit tests, and also
-    compares each method's parameters with the protocol's, which the kernel does not.
+    compares each method's parameters and their defaults with the protocol's, which the kernel does not.
 
     Raises:
         AssertionError: Naming every method of those modes the adapter lacks or declares with other parameters.
         ValueError: If `capability` is not one the core defines.
     """
-    import inspect  # noqa: PLC0415 - see the module comment
-
     from heinzel.kernel import CAPABILITIES  # noqa: PLC0415 - see the module comment
 
     spec = CAPABILITIES.get(capability)
@@ -187,14 +185,25 @@ def assert_adapter(adapter: object, capability: str, modes: Iterable[str] = ("re
         if not callable(method):
             problems.append(f"{name} is missing (mode {mode})")
             continue
-        expected = [p for p in inspect.signature(getattr(spec.protocol, name)).parameters if p != "self"]
-        found = [p for p in inspect.signature(method).parameters if p != "self"]
+        expected = _parameters(getattr(spec.protocol, name))
+        found = _parameters(method)
         if found != expected:
             problems.append(f"{name} takes ({', '.join(found)}), the protocol ({', '.join(expected)})")
     if problems:
         label = adapter.__name__ if isinstance(adapter, type) else type(adapter).__name__
         msg = f"{label} doesn't implement {capability} ({spec.protocol.__name__}): " + "; ".join(problems)
         raise AssertionError(msg)
+
+
+def _parameters(function: Callable[..., object]) -> list[str]:
+    """A method's parameters but `self`, as `name` or `name=default`, so defaults are compared too."""
+    import inspect  # noqa: PLC0415 - see the module comment
+
+    return [
+        p.name if p.default is inspect.Parameter.empty else f"{p.name}={p.default!r}"
+        for p in inspect.signature(function).parameters.values()
+        if p.name != "self"
+    ]
 
 
 @pytest.fixture

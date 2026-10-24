@@ -51,7 +51,6 @@ from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._protocols import (
     Calendar,
-    Channel,
     Chat,
     CodeHost,
     Document,
@@ -90,7 +89,6 @@ __all__ = [
     "Capability",
     "CapabilityView",
     "CatchUp",
-    "Channel",
     "Chat",
     "Check",
     "CodeHost",

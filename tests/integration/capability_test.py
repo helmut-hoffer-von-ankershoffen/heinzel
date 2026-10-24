@@ -14,7 +14,6 @@ from typer.testing import CliRunner
 
 from heinzel import (
     Calendar,
-    Channel,
     Chat,
     Config,
     Document,
@@ -222,21 +221,23 @@ class Talk:
     def __init__(self) -> None:
         self.posted: list[PostedMessage] = []
 
-    def channel(self, name: str) -> Channel:
-        return Channel(id="C1", name=clean_text(name.lstrip("#")), url="https://talk.invalid/C1")
+    @staticmethod
+    def resolve(channel: str) -> str:
+        return "C1" if channel in {"C1", "#platform"} else channel
 
     def messages(self, channel: str, window: Window) -> list[Message]:
+        channel = self.resolve(channel)
         text = clean_text("shipped \x1b[31mthe\x1b[0m release")
-        return [Message(channel=channel, id="1.0", author=MIRA, posted_at=window.since, text=text, reply_count=1)]
-
-    def thread(self, channel: str, message: str) -> list[Message]:
         reply = Message(
-            channel=channel, id="1.1", author=MIRA, posted_at=WINDOW.since, text="and the notes", thread="1.0"
+            channel=channel, id="1.1", author=MIRA, posted_at=window.since, text="and the notes", thread="1.0"
         )
-        return [*self.messages(channel, WINDOW), reply]
+        return [
+            Message(channel=channel, id="1.0", author=MIRA, posted_at=window.since, text=text, reply_count=1),
+            reply,
+        ]
 
     def post(self, channel: str, text: str, thread: str | None = None) -> PostedMessage:
-        self.posted.append(PostedMessage(channel=channel, id=f"{len(self.posted) + 2}.0", thread=thread))
+        self.posted.append(PostedMessage(channel=self.resolve(channel), id=f"{len(self.posted) + 2}.0", thread=thread))
         return self.posted[-1]
 
 
@@ -246,7 +247,7 @@ class Rooms:
     def ended(self, window: Window) -> list[Meeting]:
         return [
             Meeting(
-                id="m-1",
+                id="uuid-1",
                 title="Mira / Jonas 1:1",
                 started_at=window.since,
                 ended_at=window.since + timedelta(minutes=30),
@@ -256,17 +257,16 @@ class Rooms:
             )
         ]
 
+    def transcripts(self, window: Window) -> list[Transcript]:
+        return [self.transcript(meeting.id) for meeting in self.ended(window) if meeting.has_transcript]
+
     def transcript(self, meeting: str) -> Transcript:
+        held = next(m for m in self.ended(WINDOW) if m.id == meeting)
         segments = [
             TranscriptSegment(speaker="Mira", offset_seconds=0, text="How was the launch?"),
             TranscriptSegment(speaker="Jonas", offset_seconds=4.5, text="Quiet, which is good."),
         ]
-        return Transcript(
-            meeting=meeting,
-            language="en",
-            segments=segments,
-            text="\n".join(f"{s.speaker}: {s.text}" for s in segments),
-        )
+        return Transcript(meeting=held, language="en", segments=segments)
 
 
 class Agenda:
@@ -303,13 +303,18 @@ def prep() -> Module:
     @module.operation
     def meeting(chat: Chat, meetings: Meetings, calendar: Calendar) -> dict[str, object]:
         """Correlate the last one-on-one's transcript, its calendar event and the channel thread."""
-        held = meetings.ended(WINDOW)[0]
-        event = next(e for e in calendar.events(WINDOW) if e.conference_id == held.conference_id)
+        held = meetings.transcripts(WINDOW)[0].meeting
+        event = next(
+            e
+            for e in calendar.events(WINDOW)
+            if e.conference_id == held.conference_id and e.start < held.ended_at and held.started_at < e.end
+        )
+        said = meetings.transcript(held.id).segments
         return {
             "title": event.title,
             "attendees": [a.email for a in event.attendees],
-            "said": meetings.transcript(held.id).text,
-            "thread": [m.text for m in chat.thread("#platform", chat.messages("#platform", WINDOW)[0].id)],
+            "said": "\n".join(f"{s.speaker}: {s.text}" for s in said),
+            "thread": [(m.channel, m.text) for m in chat.messages("#platform", WINDOW)],
         }
 
     @module.operation
@@ -338,7 +343,7 @@ def test_chat_meetings_and_calendar_read_through_bound_adapters_and_correlate(pr
         "title": "Mira / Jonas 1:1",
         "attendees": ["mira@example.com", "jonas@example.com"],
         "said": "Mira: How was the launch?\nJonas: Quiet, which is good.",
-        "thread": ["shipped [31mthe[0m release", "and the notes"],
+        "thread": [["C1", "shipped [31mthe[0m release"], ["C1", "and the notes"]],
     }
     response = TestClient(api.build(prepared), base_url="http://localhost").get("/prep/meeting")
     assert response.json()["said"].startswith("Mira:")

@@ -8,7 +8,6 @@ import pytest
 from pydantic import Field
 
 from heinzel import (
-    Channel,
     Chat,
     Config,
     Document,
@@ -532,19 +531,13 @@ class Talk:
     def __init__(self) -> None:
         self.posted: list[tuple[str, str, str | None]] = []
 
-    def channel(self, name: str) -> Channel:
-        return Channel(id="C1", name=name.lstrip("#"))
-
     def messages(self, channel: str, window: Window) -> list[Message]:
         author = Participant(name="Mira", email="mira@example.com")
-        return [Message(channel=channel, id="1.0", author=author, posted_at=window.since, text="hi")]
-
-    def thread(self, channel: str, message: str) -> list[Message]:
-        return [m for m in self.messages(channel, WINDOW) if m.id == message]
+        return [Message(channel="C1", id="1.0", author=author, posted_at=window.since, text="hi")]
 
     def post(self, channel: str, text: str, thread: str | None = None) -> PostedMessage:
         self.posted.append((channel, text, thread))
-        return PostedMessage(channel=channel, id="2.0", thread=thread)
+        return PostedMessage(channel="C1", id="2.0", thread=thread)
 
 
 def announcer_module() -> Module:
@@ -592,18 +585,18 @@ def test_a_publish_operation_that_declared_chat_write_posts(talking):
 
 
 @pytest.mark.parametrize(
-    ("capability", "method"), [("meetings", "transcript"), ("calendar", "events"), ("chat", "thread")]
+    ("capability", "method"), [("meetings", "transcripts"), ("calendar", "events"), ("chat", "messages")]
 )
 def test_an_adapter_class_must_define_every_read_method_of_the_new_capabilities(make_kernel, capability, method):
     class Partial:
         def ended(self, window: Window) -> list[Meeting]:
             return []
 
-        def channel(self, name: str) -> Channel:
-            return Channel(id="C1", name=name)
+        def transcript(self, meeting: str) -> None:
+            return None
 
-        def messages(self, channel: str, window: Window) -> list[Message]:
-            return []
+        def post(self, channel: str, text: str, thread: str | None = None) -> None:
+            return None
 
     module = Module("partial", "Lacks a read method.")
     module.provides(capability, modes={"read"})(Partial)

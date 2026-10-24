@@ -1,15 +1,16 @@
 """Capability specs and requirement strings (ADR 0028)."""
 
 import inspect
+from datetime import datetime
 from typing import get_type_hints
 
 import pytest
+from pydantic import ValidationError
 
 from heinzel.kernel import CAPABILITIES, Requirement
 from heinzel.kernel._capabilities import capability_of, parse_requirements
 from heinzel.kernel._protocols import (
     Calendar,
-    Channel,
     Chat,
     Documents,
     Event,
@@ -45,8 +46,8 @@ def test_only_documents_and_chat_can_write():
 
 
 def test_chat_meetings_and_calendar_read_in_windows_and_only_chat_posts():
-    assert CAPABILITIES["chat"].methods == {"channel": "read", "messages": "read", "thread": "read", "post": "write"}
-    assert CAPABILITIES["meetings"].methods == {"ended": "read", "transcript": "read"}
+    assert CAPABILITIES["chat"].methods == {"messages": "read", "post": "write"}
+    assert CAPABILITIES["meetings"].methods == {"ended": "read", "transcripts": "read", "transcript": "read"}
     assert CAPABILITIES["calendar"].methods == {"events": "read"}
     assert CAPABILITIES["chat"].protocol is Chat
     assert CAPABILITIES["meetings"].protocol is Meetings
@@ -66,12 +67,40 @@ def test_read_methods_take_only_required_json_shaped_arguments_so_contracts_can_
                 continue
             assert parameter.default is inspect.Parameter.empty, f"{name}.{method}: {parameter.name} is optional"
             assert hints[parameter.name] in {str, Window}, f"{name}.{method}: {parameter.name} isn't str or Window"
+        windows = [p for p, hint in hints.items() if hint is Window]
+        assert len(windows) <= 1, f"{name}.{method} takes {len(windows)} windows; a contract input sets one"
+
+
+def test_contract_shaped_reads_take_a_window_and_id_reads_serve_operations():
+    """Only window reads are contract-shaped; a contract can't know a document or meeting id (ADR 0028)."""
+    by_window = {
+        (name, method)
+        for name, spec in CAPABILITIES.items()
+        for method, mode in spec.methods.items()
+        if mode == "read" and Window in get_type_hints(getattr(spec.protocol, method)).values()
+    }
+    assert by_window == {
+        ("calendar", "events"),
+        ("chat", "messages"),
+        ("code-host", "merged_pull_requests"),
+        ("meetings", "ended"),
+        ("meetings", "transcripts"),
+        ("tracker", "issues_updated"),
+    }
 
 
 def test_protocol_results_are_models_with_described_fields():
-    for model in (Channel, Message, PostedMessage, Meeting, Transcript, TranscriptSegment, Event, Participant):
+    for model in (Message, PostedMessage, Meeting, Transcript, TranscriptSegment, Event, Participant):
         for field_name, info in model.model_fields.items():
             assert info.description, f"{model.__name__}.{field_name} has no description"
+
+
+def test_new_datetimes_and_windows_must_be_timezone_aware():
+    naive = datetime(2026, 10, 1)  # noqa: DTZ001 - the point of the test
+    with pytest.raises(ValidationError):
+        Window(since=naive, until=naive)
+    with pytest.raises(ValidationError):
+        Event(id="e", title="t", start=naive, end=naive)
 
 
 def test_people_are_names_and_emails_only():

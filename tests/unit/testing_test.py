@@ -99,14 +99,8 @@ def test_plugins_get_the_policy_from_heinzel_testing():
 class Chatter:
     """A test-only chat adapter that reads and posts."""
 
-    def channel(self, name: str) -> object:
-        return name
-
     def messages(self, channel: str, window: object) -> list[object]:
         return [channel, window]
-
-    def thread(self, channel: str, message: str) -> list[object]:
-        return [channel, message]
 
     def post(self, channel: str, text: str, thread: str | None = None) -> object:
         return (channel, text, thread)
@@ -123,20 +117,33 @@ def test_assert_adapter_names_missing_methods_and_other_parameters():
     from heinzel.testing import assert_adapter
 
     class Partial:
-        def channel(self, name: str) -> object:
-            return name
-
         def messages(self, channel: str) -> list[object]:
             return [channel]
 
+        def transcripts(self, window: object) -> list[object]:
+            return [window]
+
     with pytest.raises(AssertionError, match=r"messages takes \(channel\), the protocol \(channel, window\)"):
         assert_adapter(Partial, "chat")
-    with pytest.raises(AssertionError, match=r"thread is missing \(mode read\)"):
-        assert_adapter(Partial(), "chat")
+    with pytest.raises(AssertionError, match=r"ended is missing \(mode read\); transcript is missing \(mode read\)"):
+        assert_adapter(Partial(), "meetings")
     with pytest.raises(
         AssertionError, match=r"^Partial doesn't implement chat \(Chat\): post is missing \(mode write\)$"
     ):
         assert_adapter(Partial, "chat", modes={"write"})
+
+
+def test_assert_adapter_compares_parameter_defaults_too():
+    from heinzel.testing import assert_adapter
+
+    class Poster:
+        def post(self, channel: str, text: str, thread: str) -> object:
+            return (channel, text, thread)
+
+    with pytest.raises(
+        AssertionError, match=r"post takes \(channel, text, thread\), the protocol \(channel, text, thread=None\)"
+    ):
+        assert_adapter(Poster, "chat", modes={"write"})
 
 
 def test_assert_adapter_refuses_unknown_capabilities():

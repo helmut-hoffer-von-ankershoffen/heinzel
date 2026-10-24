@@ -62,8 +62,8 @@ integration becomes a configuration change.
   - Calling a capability or mode that wasn't declared fails, at runtime and in a test.
 - **First adapters, planned for 0.2**: GitHub (code host, tracker), Atlassian (tracker, documents), Google Workspace
   (documents, calendar; spreadsheets and mail later), Zoom (meetings and transcripts) and Slack (chat). All five are
-  first-party plugins in `packages/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md)): maintainer's
-  decision, 2026-10-24.
+  first-party plugins in `plugins/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md); the move from
+  `packages/` is in flight): maintainer's decision, 2026-10-24.
 
 ### Consequences
 
@@ -80,9 +80,10 @@ Partly, for the part built in 0.2 (see the implementation status under More Info
 capability or mode it didn't declare, through every head, for documents and for chat
 (`tests/unit/kernel/bindings_test.py`, `tests/integration/capability_test.py`, with test-only chat, meetings and
 calendar adapters that correlate an event with its meeting); requirement strings and the registry stay in step with
-the protocols, read methods stay nameable by contracts, and people stay names and emails
-(`tests/unit/kernel/capabilities_test.py`); contract inputs name the new methods
-(`tests/unit/modules/workflow_contracts_test.py`); `clean_text` (`tests/unit/kernel/text_test.py`) and
+the protocols, window reads stay contract-shaped and id reads stay the only others, new datetimes are timezone-aware,
+and people stay names and emails (`tests/unit/kernel/capabilities_test.py`); contract inputs name the new methods
+(`tests/unit/modules/workflow_contracts_test.py`); the packet builder cleans every string and drops emails
+(`tests/unit/modules/workflow_service_test.py`); `clean_text` (`tests/unit/kernel/text_test.py`) and
 `assert_adapter` (`tests/unit/testing_test.py`); declarations are checked when a module is imported
 (`tests/unit/kernel/module_test.py`); a hostile project `hz.toml` can neither bind nor configure execution, and
 doctor names the keys it tried (`tests/integration/capability_test.py`); doctor reports every unmet requirement and
@@ -118,33 +119,56 @@ request (director's decisions, 2026-10-24):
   `code-host`, `documents`, `meetings` and `tracker`; the core defines the set (plugins cannot add capabilities yet)
   and grows it under the growth rule above. An adapter must implement the methods of the modes it declares, checked
   when the kernel registers an adapter class and when it builds one from a factory; `heinzel.testing.assert_adapter`
-  runs the same check, plus the parameter names, in a plugin's own tests (a first piece of the shared adapter suite).
+  runs the same check, plus the parameter names and defaults, in a plugin's own tests (a first piece of the shared
+  adapter suite).
 - **Chat, meetings and calendar** (director's decisions on the maintainer's instruction to start the Google Workspace,
   Zoom and Slack adapters, 2026-10-24). They serve the first management workflows: a weekly digest and 1:1
   preparation from channels and threads, meeting transcripts, and the calendar that says which meetings happened and
-  are coming. Every method is designed for a contract input (`{read: <capability>.<method>, args, window}`,
-  [ADR 0021](0021-workflow-contracts.md)): read methods take only required `str` arguments and at most one `Window`,
-  so a contract can name them with fixed `args`; a unit test keeps it so.
-  - `chat` (Slack first; Teams later): `channel(name)`, `messages(channel, window)` (thread replies included, because
-    a contract can't fetch each thread afterwards), `thread(channel, message)` (the message and its replies), all
-    `read`; `post(channel, text, thread=None)` is the only `write`, reachable from publish operations alone. Channel
-    arguments take an id or a `#name`; the adapter resolves names. Message ids are the vendor's (a Slack `ts`).
+  are coming (revised on review of the pull request, 2026-10-24). Only reads that take a `Window` are
+  contract-shaped: a contract input (`{read: <capability>.<method>, args, window}`,
+  [ADR 0021](0021-workflow-contracts.md)) passes fixed `args` once, so such a method takes only required `str`
+  arguments and exactly one `Window`, and a unit test keeps it so. Reads that take an id (`documents.read`,
+  `meetings.transcript`) serve module operations, which know the id; a contract can't. Fewer methods are better:
+  every one is frozen under the growth rule.
+  - **The window bounds the result.** An adapter pages until the window is covered or a byte budget of its own is
+    passed, then raises a `HeinzelError` that says to narrow the window. Results stay plain lists: no truncated
+    flag, because a silently partial digest is worse than a run that says what to change.
+  - `chat` (Slack first; Teams later): `messages(channel, window)`, the messages posted in the window, top level or
+    reply, oldest first (a reply whose parent was posted before the window is included, the parent isn't), `read`;
+    `post(channel, text, thread=None)` is the only `write`, reachable from publish operations alone, and in 0.2 only
+    from module operations: a contract's `publishes` names an operation, never a capability method. `text` is plain
+    text or Markdown; the adapter neutralises broadcast and mention syntax (Slack `<!channel>`, `<!here>`, `<@U…>`;
+    Teams `<at>`) so a draft can't page a channel, and applies the vendor's length limit as it sees fit. One channel
+    rule: a `channel` argument is an id or a `#name`, the adapter resolves names, and results carry the id. On Teams a
+    `#name` is a channel of the configured team; direct messages and group chats are out of scope. Message ids are
+    the vendor's (a Slack `ts`). No `channel(name)` lookup and no `thread(channel, message)`: `messages` already
+    includes replies and no listed workflow needs a name lookup.
   - `meetings` (Zoom first; Meet and Teams later): `ended(window)` lists the user's meetings that ended in the window
-    with their participants; `transcript(meeting)` returns speaker-attributed segments and the same words as plain
-    text. Both `read`; nothing schedules or records.
-  - `calendar` (Google Calendar first; Outlook later): `events(window)`, the user's events overlapping the window
-    with organizer, attendees and status, `read` only. `Event.conference_id` and `Meeting.conference_id` carry the
-    vendor's conference identifier (a Zoom meeting number), so a workflow correlates the event with the meeting that
-    took place. Contract windows end at the run in 0.2, so "meetings coming up" waits for ADR 0021's later window
-    semantics; the method is not limited to the past.
+    with their participants; `transcripts(window)` returns the transcripts of those that have one, each carrying its
+    `Meeting` (id, title, start, end, participants) and speaker-attributed segments, so a contract reads transcripts
+    without knowing ids; `transcript(meeting)` is the operation-level read for a known `Meeting.id`. All `read`;
+    nothing schedules or records. There is no plain-text field: it derives from the segments, and a transcript is
+    large enough as it is.
+  - `calendar` (Google Calendar first; Outlook later): `events(window)`, the user's events overlapping the window as
+    expanded single occurrences, with organizer, attendees and status, `read` only. Contract windows end at the run
+    in 0.2, so "meetings coming up" waits for ADR 0021's later window semantics; the method is not limited to the past.
+  - **Correlation.** A meeting matches an event when both have the same `conference_id` and their times overlap: the
+    id recurs across occurrences, the time picks the occurrence. `Meeting.id` identifies the occurrence (a Zoom
+    meeting UUID, not its number); `conference_id` is in the meeting tool's notation on both sides, so the calendar
+    adapter writes the meeting tool's id (a Zoom number extracted from the conferencing data, location or description).
   - **People** appear as `Participant`: display name and email only, how the vendor shows them; no field counts,
     rates or ranks anyone ([ADR 0024](0024-people-and-org.md)). The email is the join key ADR 0024's directory and
-    selectors will resolve to; a transcript segment names its speaker as the transcript labels them.
-  - **Text is data.** Every string an adapter returns passes `heinzel.clean_text` (the one helper, moved into the
-    kernel from the Atlassian adapter): C0 controls but tab and newline, DEL, C1, and bidirectional overrides and
-    isolates are removed, so a channel post or a transcript can't hide or reorder what a terminal or an agent's
-    prompt shows. The kernel doesn't clean results itself: an adapter knows which strings it builds; the planned
-    contract-test suite will check it, and review does until then.
+    selectors will resolve to; a transcript segment names its speaker as the transcript labels them. The workflow
+    packet builder drops every `Participant.email` and keeps the names, until people selectors need the join key: a
+    render argues about work, not addresses. Run records (`.record.json`, receipts) hold the names and the full inputs
+    until the user deletes them; retention is an open question for ADR 0024.
+  - **Text is data.** Every string an adapter returns passes `heinzel.clean_text`, the one helper: C0 controls but
+    tab and newline (so a carriage return too), DEL, C1, zero-width characters, line and paragraph separators,
+    direction marks, bidirectional overrides and isolates, and the Unicode tag characters (U+E0000–E007F, invisible
+    ASCII a model still reads) are removed, so a channel post or a transcript can't hide or reorder what a terminal
+    or an agent's prompt shows. The workflow packet builder runs `clean_text` over every string of every fetched input
+    and over an adapter exception's text in one place, whatever the adapter did; the adapter's obligation stands for
+    every other reader (operations, `hz` output).
   - **Documents and Google Docs.** `Documents.read(ref)` and `replace_section(ref, marker, text)` fit Google Docs as
     they fit Confluence: the adapter exports the document as text and locates the marker in the document's body for
     the write. A `search(query, window)` read is not added: no 0.2 workflow needs it, and adding a read method later

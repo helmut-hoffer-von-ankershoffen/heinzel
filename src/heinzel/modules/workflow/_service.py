@@ -19,9 +19,23 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
+from pydantic import BaseModel, JsonValue
 from pydantic_core import to_jsonable_python
 
-from heinzel import AgentRunner, CatchUp, Check, Config, HeinzelError, JobLet, Kernel, OperationLet, Settings, Status
+from heinzel import (
+    AgentRunner,
+    CatchUp,
+    Check,
+    Config,
+    HeinzelError,
+    JobLet,
+    Kernel,
+    OperationLet,
+    Participant,
+    Settings,
+    Status,
+    clean_text,
+)
 from heinzel.kernel import KERNEL_SECTION, Budget, CapabilityView, CompiledJobs, Requester, ToolProfile
 from heinzel.modules.workflow._contracts import Contract, collect, read_contract
 from heinzel.modules.workflow._models import (
@@ -496,9 +510,10 @@ class WorkflowService:
             except HeinzelError:
                 raise
             except Exception as exc:  # isolation boundary: an adapter's failure becomes the run's error, not a crash
-                msg = f"{contract.qualified}: input {name!r} ({spec.read}) failed: {type(exc).__name__}: {exc}"
+                why = clean_text(f"{type(exc).__name__}: {exc}")
+                msg = f"{contract.qualified}: input {name!r} ({spec.read}) failed: {why}"
                 raise HeinzelError(msg) from exc
-            data = to_jsonable_python(result)
+            data = cast("JsonValue", _minimised(to_jsonable_python(_without_emails(result))))
             size = len(json.dumps(data, ensure_ascii=False).encode())
             if size > MAX_INPUT_BYTES:
                 msg = (
@@ -601,6 +616,34 @@ def _write(path: Path, text: str, *, exclusive: bool = False) -> None:
         handle.write(text)
         handle.flush()
         os.fsync(handle.fileno())
+
+
+def _without_emails(value: object) -> object:
+    """`value` with every `Participant`'s email dropped: a render needs names, not addresses (ADR 0024, ADR 0028).
+
+    Until people selectors need the join key, the packet, the prompt and the record hold display names only.
+    """
+    if isinstance(value, Participant):
+        return Participant(name=value.name)
+    if isinstance(value, BaseModel):
+        fields = {name: _without_emails(getattr(value, name)) for name in type(value).model_fields}
+        return value.model_copy(update=fields)
+    if isinstance(value, list):
+        return [_without_emails(item) for item in cast("list[object]", value)]
+    if isinstance(value, dict):
+        return {key: _without_emails(item) for key, item in cast("dict[object, object]", value).items()}
+    return value
+
+
+def _minimised(data: object) -> object:
+    """`data` (JSON-shaped) with every string cleaned, in one place, whatever the adapter did (ADR 0028)."""
+    if isinstance(data, str):
+        return clean_text(data)
+    if isinstance(data, list):
+        return [_minimised(item) for item in cast("list[object]", data)]
+    if isinstance(data, dict):
+        return {key: _minimised(item) for key, item in cast("dict[str, object]", data).items()}
+    return data
 
 
 def _valid(contract: Contract) -> Frontmatter:

@@ -280,9 +280,8 @@ title: One-on-one prep
 requires: [chat:read, meetings:read, calendar:read]
 inputs:
   issues: {read: chat.messages, args: {channel: "#platform"}, window: 7d}
-  thread: {read: chat.thread, args: {channel: "#platform", message: "1729.0001"}}
   meetings: {read: meetings.ended, window: 7d}
-  transcript: {read: meetings.transcript, args: {meeting: m-1}}
+  transcripts: {read: meetings.transcripts, window: 7d}
   events: {read: calendar.events, window: 7d}
 outputs:
   digest: {format: markdown}
@@ -290,9 +289,8 @@ outputs:
 
 MEETINGS_BODY = BODY.replace(
     "- `issues`: issues that changed this week.",
-    "- `issues`: what the channel discussed this week.\n- `thread`: the thread to prepare.\n"
-    "- `meetings`: meetings that ended this week.\n- `transcript`: what the last one-on-one said.\n"
-    "- `events`: this week's calendar.",
+    "- `issues`: what the channel discussed this week.\n- `meetings`: meetings that ended this week.\n"
+    "- `transcripts`: what this week's meetings said.\n- `events`: this week's calendar.",
 )
 
 
@@ -309,6 +307,7 @@ def test_inputs_can_name_chat_meetings_and_calendar_read_methods():
         ("{read: chat.post, args: {channel: x, text: y}}", "writes"),
         ("{read: chat.messages, args: {channel: x}}", "set `window`"),
         ("{read: meetings.transcript, args: {meeting: m-1}, window: 7d}", "takes no time window"),
+        ("{read: chat.thread, args: {channel: x, message: y}}", "has no method 'thread'"),
         ("{read: calendar.events, args: {calendar: work}, window: 7d}", "no argument 'calendar'"),
         ("{read: meetings.ended, window: 7d}", "needs `meetings:read`"),
     ],
