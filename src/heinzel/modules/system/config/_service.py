@@ -1,6 +1,7 @@
 """Service of the config submodule."""
 
 import json
+import shlex
 from pathlib import Path
 from typing import Any, Literal
 
@@ -20,6 +21,7 @@ HEADER = """\
 """
 
 Scope = Literal["user", "project"]
+PLACEHOLDER_LIST: list[str] = ["first", "second"]  # the example for a list setting that is empty
 
 
 class ConfigService:
@@ -92,7 +94,7 @@ class ConfigService:
         try:
             Config(files=(), data=_nest(section, table)).settings(model, section)
         except ValidationError as exc:
-            msg = f"Invalid value for {key}: {exc.errors()[0]['msg']}"
+            msg = f"Invalid value for {key}: {exc.errors()[0]['msg']}\n{self._example(key, section, name, model)}"
             raise HeinzelError(msg) from exc
         path = self._scope_file(scope)
         document = _load(path)
@@ -126,6 +128,27 @@ class ConfigService:
         known = ", ".join(f"{s.section}.{s.key}" for s in self.report().settings)
         msg = f"Unknown setting {key!r}. Known settings: {known}"
         raise HeinzelError(msg)
+
+    def _example(self, key: str, section: str, name: str, model: type[ModuleSettings]) -> str:
+        """How to write a value for `key`: what kind of value it takes and a command line that sets one."""
+        schema = model.model_json_schema()["properties"].get(name, {})
+        current = next((getattr(s, name) for c, s in self._kernel.settings_of() if c == section), None)
+        value: Any = to_jsonable_python(current)
+        if choices := schema.get("enum"):
+            kind = ""  # the validation message already lists the choices
+            value = choices[0]
+        elif schema.get("type") == "array":
+            kind = "A list, written as a TOML array in single quotes."
+            value = value or PLACEHOLDER_LIST
+        elif isinstance(value, bool):
+            kind = "true or false."
+        elif isinstance(value, int | float):
+            kind = "A number."
+        else:
+            kind = "Text."
+            value = value or "text"
+        text = value if isinstance(value, str) else _toml(value)
+        return f"{kind} For example:".lstrip() + f"\n  hz system config set {key} {shlex.quote(text)}"
 
     def _scope_file(self, scope: Scope) -> Path:
         if scope == "user":

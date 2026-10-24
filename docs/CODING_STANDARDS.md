@@ -29,7 +29,9 @@ Each rule has a reason. If a rule gets in your way, change the rule in a pull re
 - **Data:** pydantic models for anything that crosses a boundary (operation results, settings, files).
   Frozen dataclasses with `slots=True` for internal value objects.
 - **Errors:** raise `HeinzelError` with a message written for the person or agent who will read it — what went wrong
-  and what to do. Other exceptions are bugs. Catch broad exceptions only at isolation boundaries and comment why.
+  and what to do. When the input was wrong, "what to do" is a command line that would work, for the same key or
+  argument the user typed (e.g. `hz system config set clock.zones '["Europe/Berlin", "Asia/Tokyo"]'`). Other
+  exceptions are bugs. Catch broad exceptions only at isolation boundaries and comment why.
 - **Side effects:** no work at import time beyond declarations. No global mutable state except declared module
   objects. Subprocesses take argument lists, never `shell=True`.
 - **Names:** say what a thing is (`PluginService`, `installed()`), not how it is built. Private helpers start with
