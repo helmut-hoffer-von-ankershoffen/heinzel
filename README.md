@@ -195,8 +195,10 @@ disabled_modules = []
 greeting = "Moin"
 ```
 
-`hz setup` asks for every module's settings and credentials, wizard style, in a terminal (`hz setup clock` for
-one module). `hz system config set example.greeting Moin` edits your user file (`--scope project` the project's `hz.toml`),
+Joining a team is one line, posted in its chat: `uvx heinzel join <team repository>` finds out who you are from your
+`gh` and `gws` logins, joins the team and sets up what is missing. `hz setup` asks for whatever is still missing, wizard
+style, and continues where the last run stopped (`hz setup clock` for one module, `--answers answers.toml` without a
+terminal, `--print-answers` to write that file from a finished setup). `hz system config set example.greeting Moin` edits your user file (`--scope project` the project's `hz.toml`),
 `hz system config init` writes a commented starter file. Environment variables: `HZ_<SETTING>` for the kernel
 (`HZ_LOG_LEVEL=DEBUG`), `HZ_<MODULE>__<SETTING>` for modules (`HZ_EXAMPLE__GREETING=Hi`). Every setting:
 [docs/CONFIGURATION.md](docs/CONFIGURATION.md).

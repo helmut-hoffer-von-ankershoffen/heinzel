@@ -1,4 +1,4 @@
-"""Answers files and the setup state file of `hz setup` (ADR 0032, amended by ADR 0033)."""
+"""Answers files and the setup state file of `hz setup` (ADR 0032, amended)."""
 
 import json
 import stat

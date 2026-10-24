@@ -1,4 +1,4 @@
-"""The org module: who you are to hz and, later, whom you work with: your team, org and company (ADR 0024, 0033).
+"""The org module: who you are to hz and, later, whom you work with: your team, org and company (ADR 0024).
 
 Your profile (handle, role, time zone, working hours, GitHub login, coding agent) is asked once by `hz setup` and kept
 in your user configuration, `[org]`; nothing about you is written to a repository by this module. Other modules ask

@@ -208,5 +208,13 @@ def test_a_person_answers_what_is_not_preset_and_keyed_answers_are_kept():
     assert "  1) engineer" in prompter.transcript  # a preset choice lists no options; an asked one does
 
 
+def test_without_a_person_a_keyed_question_with_a_default_takes_it():
+    prompter = answering({})
+    assert prompter.text("Hours", default="09-18", key="working_hours") == "09-18"
+    assert prompter.confirm("Go?", default=False, key="go") is False
+    assert prompter.choice("Role", ["engineer", "principal"], default="principal", key="role") == "principal"
+    assert prompter.answered == {"org.working_hours": "09-18", "org.go": False, "org.role": "principal"}
+
+
 def test_keys_without_a_scope_are_full_keys():
     assert answering({"role": "x"}, scope="").text("Role", key="role") == "x"

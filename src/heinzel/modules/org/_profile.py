@@ -1,4 +1,4 @@
-"""Your profile: what the identity step finds, what it still asks, and where it writes (ADR 0033 §2, §5).
+"""Your profile: what the identity step finds, what it still asks, and where it writes (the perfect-onboarding ADR).
 
 Identity is found, not asked: handle and GitHub login from `gh`, name and email from `gws`, the time zone from this
 machine, the coding agent from your PATH (`_discovery`). A first run asks only what can't be found: always your role

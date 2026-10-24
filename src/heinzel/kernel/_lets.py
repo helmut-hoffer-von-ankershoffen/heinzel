@@ -331,4 +331,4 @@ class SetupLet(Let):
     required: bool = False
     """Whether `hz setup` runs it without offering to skip it."""
     phase: SetupPhase = "connect"
-    """Where in `hz setup` it runs: phases run in `SETUP_PHASES` order (ADR 0032, amended by ADR 0033)."""
+    """Where in `hz setup` it runs: phases run in `SETUP_PHASES` order (ADR 0032, amended)."""

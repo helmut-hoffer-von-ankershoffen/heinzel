@@ -385,7 +385,7 @@ class Module:
             func: The function, when used as a bare decorator.
             required: `hz setup` runs it without offering to skip it; optional steps can be skipped.
             phase: Where in `hz setup` it runs: `identity`, `membership`, `connect` (the default: tools, credentials,
-                bindings), `work` or `run` (ADR 0032, amended by ADR 0033).
+                bindings), `work` or `run` (ADR 0032, amended).
 
         Raises:
             ValueError: If the docstring is missing, the phase unknown, or the module already has a step.

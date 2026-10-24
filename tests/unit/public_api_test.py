@@ -206,7 +206,7 @@ def api_change(exported: list[str], snapshot: list[str]) -> dict[str, list[str]]
 
 
 def test_heinzel_is_the_same_command_as_hz():
-    """`uvx heinzel join <team repository>` is the invite line (ADR 0033): uvx runs the script named like it."""
+    """`uvx heinzel join <team repository>` is the invite line: uvx runs the script named like the package."""
     scripts = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     assert scripts["scripts"]["heinzel"] == scripts["scripts"]["hz"] == "heinzel.heads.cli:main"
 

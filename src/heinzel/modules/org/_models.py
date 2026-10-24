@@ -1,4 +1,4 @@
-"""Models of the org module: your profile in `[org]` and what `hz org show` reports (ADR 0024, 0033)."""
+"""Models of the org module: your profile in `[org]` and what `hz org show` reports (ADR 0024)."""
 
 import json
 import re
@@ -20,7 +20,7 @@ ROLES = (
     "product-leadership",
     "program-manager",
 )
-"""The core role vocabulary (ADR 0033 §1); team, org and company manifests may add roles, never rename these."""
+"""The core role vocabulary (the perfect-onboarding ADR); a team's layers may add roles, never rename these."""
 ROLE_MEANINGS = {
     "engineer": "builds and runs the product",
     "principal": "senior engineer who shapes how it is built",

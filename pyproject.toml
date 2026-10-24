@@ -40,7 +40,7 @@ dependencies = [
 
 [project.scripts]
 hz = "heinzel.heads.cli:main"
-heinzel = "heinzel.heads.cli:main" # the same command, so `uvx heinzel join <team repository>` runs without an install (ADR 0033)
+heinzel = "heinzel.heads.cli:main" # the same command, so `uvx heinzel join <team repository>` runs without an install (perfect-onboarding ADR)
 
 [project.entry-points.pytest11]
 heinzel = "heinzel.testing"
@@ -241,7 +241,7 @@ allowed_prefixes = ["Merge", "Revert", "Pull request", "fixup!", "squash!", "ame
 
 [tool.commitizen.customize]
 schema = "<type>(<scope>)!: <summary of at most 72 characters>\n\n<body: why>\n\n<footers>"
-schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|workflow|team|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|clock|github|atlassian|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
+schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|setup|workflow|team|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|clock|github|atlassian|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
 example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 

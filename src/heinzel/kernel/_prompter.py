@@ -69,7 +69,7 @@ class Prompter:
             HeinzelError: If nobody can answer, or a preset answer is invalid.
         """
         while True:
-            answer = self._answer(_prompt(question, default), key).strip()
+            answer = self._answer(_prompt(question, default), key, has_default=default is not None).strip()
             if not answer:
                 if default is not None:
                     return self._keep(key, default)
@@ -98,7 +98,7 @@ class Prompter:
         """
         suffix = "[Y/n]" if default else "[y/N]"
         while True:
-            answer = self._answer(f"{question} {suffix} ", key).strip().lower()
+            answer = self._answer(f"{question} {suffix} ", key, has_default=True).strip().lower()
             if not answer:
                 return self._keep(key, default)
             if answer in YES | NO:
@@ -190,11 +190,14 @@ class Prompter:
         """Whether the question `key` is answered in advance: a step asks it even where it would otherwise not."""
         return key is not None and self.full_key(key) in self.presets
 
-    def _answer(self, prompt: str, key: str | None) -> str:
+    def _answer(self, prompt: str, key: str | None, *, has_default: bool) -> str:
         """The preset answer for `key` as a person would type it, or one read from the person.
 
+        With nobody to ask, a keyed question that has a default takes it (an empty answer), as a person pressing
+        Enter would; only one without a default needs its answer in the file.
+
         Raises:
-            HeinzelError: If there is no preset and nobody to ask, naming the key to add to the answers file.
+            HeinzelError: If there is no preset, no default and nobody to ask, naming the key for the answers file.
         """
         self.__dict__["_from_preset"] = False
         if key is None:
@@ -204,6 +207,8 @@ class Prompter:
             self.__dict__["_from_preset"] = True
             return _typed(self.presets[full])
         if not self.interactive:
+            if has_default:
+                return ""
             section, _, name = full.rpartition(".")
             msg = (
                 f"No answer for {full} ({prompt.strip().rstrip(':')}): add `{name} = ...` under [{section}] in the "

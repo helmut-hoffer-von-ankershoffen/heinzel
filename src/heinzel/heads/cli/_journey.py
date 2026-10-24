@@ -1,4 +1,4 @@
-"""What makes `hz setup` one journey: answers given in advance, and where a run stopped (ADR 0032, amended by 0033).
+"""What makes `hz setup` one journey: answers given in advance, and where a run stopped (ADR 0032, amended).
 
 An answers file is TOML with one table per module, keys named after the questions (`[org] role = "engineer"`), so a
 coding agent or a team can set someone up without a terminal. `<state_dir>/setup.json` records each finished step,
