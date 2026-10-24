@@ -25,8 +25,11 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `agent_runner` | `HZ_CAPABILITIES__AGENT_RUNNER` | `'claude-code'` | Adapter that serves `agent-runner`: `claude-code` (the default, because `command` needs a command line first), `command`, or one from a plugin. |
+| `calendar` | `HZ_CAPABILITIES__CALENDAR` | `None` | Adapter that serves `calendar`, e.g. `google`. |
+| `chat` | `HZ_CAPABILITIES__CHAT` | `None` | Adapter that serves `chat`, e.g. `slack`. |
 | `code_host` | `HZ_CAPABILITIES__CODE_HOST` | `None` | Adapter that serves `code-host`, e.g. `github`. |
 | `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | Adapter that serves `documents`. |
+| `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | Adapter that serves `meetings`, e.g. `zoom`. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | Adapter that serves `tracker`, e.g. `github`. |
 
 ## `[clock]`

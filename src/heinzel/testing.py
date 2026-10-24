@@ -22,7 +22,7 @@ run in that order, and each test has its level's timeout (`TIMEOUTS`) unless it 
 
 import json
 import os
-from collections.abc import Callable, MutableMapping
+from collections.abc import Callable, Iterable, MutableMapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -159,6 +159,52 @@ class MemoryBackend:
     def delete(self, service: str, name: str) -> bool:
         """Remove a value; whether there was one."""
         return self.values.pop((service, name), None) is not None
+
+
+def assert_adapter(adapter: object, capability: str, modes: Iterable[str] = ("read",)) -> None:
+    """Assert `adapter` (a class or an instance) implements `capability`'s protocol in `modes` (ADR 0028).
+
+    The kernel checks the same when it registers an adapter; this runs it in a plugin's own unit tests, and also
+    compares each method's parameters and their defaults with the protocol's, which the kernel does not.
+
+    Raises:
+        AssertionError: Naming every method of those modes the adapter lacks or declares with other parameters.
+        ValueError: If `capability` is not one the core defines.
+    """
+    from heinzel.kernel import CAPABILITIES  # noqa: PLC0415 - see the module comment
+
+    spec = CAPABILITIES.get(capability)
+    if spec is None:
+        msg = f"Unknown capability {capability!r}; known: {', '.join(sorted(CAPABILITIES))}"
+        raise ValueError(msg)
+    served = set(modes)
+    problems: list[str] = []
+    for name, mode in spec.methods.items():
+        if mode not in served:
+            continue
+        method = getattr(adapter, name, None)
+        if not callable(method):
+            problems.append(f"{name} is missing (mode {mode})")
+            continue
+        expected = _parameters(getattr(spec.protocol, name))
+        found = _parameters(method)
+        if found != expected:
+            problems.append(f"{name} takes ({', '.join(found)}), the protocol ({', '.join(expected)})")
+    if problems:
+        label = adapter.__name__ if isinstance(adapter, type) else type(adapter).__name__
+        msg = f"{label} doesn't implement {capability} ({spec.protocol.__name__}): " + "; ".join(problems)
+        raise AssertionError(msg)
+
+
+def _parameters(function: Callable[..., object]) -> list[str]:
+    """A method's parameters but `self`, as `name` or `name=default`, so defaults are compared too."""
+    import inspect  # noqa: PLC0415 - see the module comment
+
+    return [
+        p.name if p.default is inspect.Parameter.empty else f"{p.name}={p.default!r}"
+        for p in inspect.signature(function).parameters.values()
+        if p.name != "self"
+    ]
 
 
 @pytest.fixture
