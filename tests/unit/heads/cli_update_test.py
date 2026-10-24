@@ -113,7 +113,9 @@ def test_the_notice_comes_from_the_cache(latest, expected):
     if latest is not None:
         cache_of(hz).remember(latest)
     text = _update.notice(hz)
-    assert (text == f"hz 9.0.0 is available (installed {__version__}): hz system update") is expected
+    assert (
+        text == f"hz 9.0.0 is available (installed {__version__}): hz system update\n{_update.WHATS_NEW}"
+    ) is expected
     assert (text is None) is not expected
 
 
@@ -127,7 +129,10 @@ def test_the_notice_is_printed_only_to_a_terminal(monkeypatch):
     monkeypatch.setattr(_update, "is_terminal", lambda console: True)
     with console.capture() as capture:
         _update.print_notice(hz, console)
-    assert capture.get().strip() == f"hz 9.0.0 is available (installed {__version__}): hz system update"
+    assert (
+        capture.get().strip()
+        == f"hz 9.0.0 is available (installed {__version__}): hz system update\n{_update.WHATS_NEW}"
+    )
 
 
 def test_is_terminal_asks_the_console():
@@ -135,25 +140,22 @@ def test_is_terminal_asks_the_console():
     assert not _update.is_terminal(Console(force_terminal=False))
 
 
-def test_the_changelog_header_names_both_versions_and_where_to_read_more(monkeypatch):
+def test_the_changelog_header_names_both_versions_and_what_shows_whats_new(monkeypatch):
     hz = Kernel(Settings(update_check=True), discover(plugins=False)[0])
     assert _update.changelog_header(hz) is None
     cache_of(hz).remember("9.0.0")
-    assert _update.changelog_header(hz) == (
-        f"You're on hz {__version__}; hz 9.0.0 is available: hz system update. "
-        "What's new: https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases"
+    assert (
+        _update.changelog_header(hz)
+        == f"You're on hz {__version__}; hz 9.0.0 is available: hz system update. {_update.WHATS_NEW}"
     )
     console = Console(width=300, force_terminal=False)
     with console.capture() as capture:
-        _update.print_changelog_header(hz, console)
+        _update.print_changelog_header(hz, console, "# Changelog")
     assert capture.get() == ""
     monkeypatch.setattr(_update, "is_terminal", lambda console: True)
     with console.capture() as capture:
-        _update.print_changelog_header(hz, console)
+        _update.print_changelog_header(hz, console, [])  # `--newer` shows the newer releases themselves
+    assert capture.get() == ""
+    with console.capture() as capture:
+        _update.print_changelog_header(hz, console, "# Changelog")
     assert capture.get().startswith("You're on hz")
-
-
-def test_the_changelog_header_without_a_core_repository_names_no_link():
-    hz = kernel()
-    cache_of(hz).remember("9.0.0")
-    assert _update.changelog_header(hz) == f"You're on hz {__version__}; hz 9.0.0 is available: hz system update."

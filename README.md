@@ -77,6 +77,7 @@ hz system info                 # versions, settings, modules, what plugins repor
 hz system doctor               # every module's health checks; exits 1 if anything is down
 hz system modules              # every module and submodule with the lets it advertises
 hz system changelog            # release notes of the installed version
+hz system changelog --newer    # what the releases newer than yours bring, before you update
 hz system config show          # configuration files, settings in effect, their environment variables
 hz system config set hz.log_level INFO
 hz system release              # is there a newer release? (asks GitHub now; hz checks hourly on its own)
@@ -132,7 +133,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
 - [`system.capability`](docs/MODULES.md#systemcapability) — Show which adapters serve which capabilities, and who reads and writes what.
-- [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version.
+- [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version and of newer releases.
 - [`system.config`](docs/MODULES.md#systemconfig) — Show, get, set and initialize configuration.
 - [`system.credential`](docs/MODULES.md#systemcredential) — Store and check the credentials modules need, in the OS keychain.
 - [`system.daemon`](docs/MODULES.md#systemdaemon) — Run modules' jobs in the background, supervised by launchd or systemd.
