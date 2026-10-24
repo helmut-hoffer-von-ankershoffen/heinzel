@@ -4,7 +4,7 @@
 
 | Name                                                          |    Stmts |     Miss |   Branch |   BrPart |   Cover |   Missing |
 |-------------------------------------------------------------- | -------: | -------: | -------: | -------: | ------: | --------: |
-| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        1 |       30 |        2 |     98% |79-\>81, 226 |
+| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        0 |       30 |        1 |     99% |   79-\>81 |
 | plugins/heinzel-atlassian/src/heinzel\_atlassian/\_storage.py |      291 |        1 |      150 |        5 |     99% |245, 252-\>exit, 258-\>exit, 262-\>exit, 312-\>exit |
 | src/heinzel/heads/api/\_\_init\_\_.py                         |       71 |        0 |       18 |        1 |     99% | 130-\>133 |
 | src/heinzel/heads/cli/\_\_init\_\_.py                         |      130 |        4 |       24 |        4 |     95% |115-\>117, 124-127, 132-\>exit, 158-\>152, 225-\>227 |
@@ -40,7 +40,7 @@
 | src/heinzel/modules/workflow/\_render.py                      |      213 |       15 |      104 |       10 |     90% |98, 116, 159-\>161, 164, 165-\>167, 197-203, 229, 263, 284-294, 352 |
 | src/heinzel/modules/workflow/\_retention.py                   |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
 | src/heinzel/modules/workflow/\_service.py                     |      676 |       14 |      222 |        4 |     98% |335, 423-424, 529-530, 889-890, 906-908, 1135-1136, 1168-1169 |
-| **TOTAL**                                                     | **11019** |   **93** | **2786** |   **58** | **99%** |           |
+| **TOTAL**                                                     | **11019** |   **92** | **2786** |   **57** | **99%** |           |
 
 95 files skipped due to complete coverage.
 
