@@ -24,6 +24,7 @@ INSTALL = "https://developer.atlassian.com/cloud/acli/guides/install-acli/"
 LOGIN: dict[Product, str] = {"Jira": "acli jira auth login", "Confluence": "acli confluence auth login"}
 SWITCH: dict[Product, str] = {"Jira": "acli jira auth switch", "Confluence": "acli confluence auth switch"}
 GATEWAY = "https://api.atlassian.com/ex/"
+NOT_LOGGED_IN = "acli is not logged in to"
 _SITE_HOST = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.atlassian\.net")
 MESSAGE_CHARS = 300
 """Characters of acli's own error text logged, cut after redaction."""
@@ -52,6 +53,10 @@ _UNAUTHORIZED = re.compile(rf"(?i)\bunauthori[sz]ed\b|\bnot (?:logged in|authent
 _RATE_LIMITED = re.compile(rf"(?i)\brate.?limit|\btoo many requests\b|{_STATUS.format(429)}")
 _FORBIDDEN = re.compile(rf"(?i)\bforbidden\b|\b(?:do|does) not have permission\b|{_STATUS.format(403)}")
 _NOT_FOUND = re.compile(rf"(?i)\bnot found\b|\bdoes(?:n't| not) exist\b|{_STATUS.format(404)}")
+
+
+class AcliLoginError(HeinzelError):
+    """acli is not logged in to the product, or its login expired: the message names the login command."""
 
 
 def redact(text: str) -> str:
@@ -154,7 +159,8 @@ class AcliClient:
             msg = f"acli printed more than {MAX_BYTES} bytes for {subject}; ask for a shorter window."
             raise HeinzelError(msg)
         if done.returncode != 0:
-            raise HeinzelError(_problem(product, subject, done))
+            problem = _problem(product, subject, done)
+            raise (AcliLoginError if problem.startswith(NOT_LOGGED_IN) else HeinzelError)(problem)
         try:
             return documents(done.stdout.decode("utf-8"))
         except ValueError:  # UnicodeDecodeError is one too
@@ -196,7 +202,7 @@ def _problem(product: Product, subject: str, done: Completed) -> str:
     words = said(done.stderr or done.stdout)
     _LOG.debug("acli failed for %s with exit status %s: %s", subject, done.returncode, words)
     if _UNAUTHORIZED.search(words):
-        return f"acli is not logged in to {product}, or its login expired. Log in: {LOGIN[product]}"
+        return f"{NOT_LOGGED_IN} {product}, or its login expired. Log in: {LOGIN[product]}"
     if _RATE_LIMITED.search(words):
         return f"Atlassian's rate limit is reached for {subject}; retry in a minute."
     if _FORBIDDEN.search(words):

@@ -146,6 +146,10 @@ def dirs(tmp_path) -> tuple[Path, Path]:
     return me, team
 
 
+OFF = dict.fromkeys(("code_host", "tracker", "documents", "calendar", "mail", "meetings"), "none")
+"""What a test leaves unbound: a sole installed fake would otherwise serve it automatically (ADR 0055)."""
+
+
 @pytest.fixture
 def make(make_kernel, host, runner, dirs, tmp_path):
     """A service over a kernel with the fakes bound; `bindings` and `workflow` override the configuration."""
@@ -154,7 +158,7 @@ def make(make_kernel, host, runner, dirs, tmp_path):
         me, team = dirs
         table = {"user_dir": str(me), "team_repository": str(team)} | dict(workflow.items())
         capabilities = (
-            {"agent_runner": "fake", "code_host": "host", "tracker": "host"} if bindings is None else bindings
+            {"agent_runner": "fake", "code_host": "host", "tracker": "host"} if bindings is None else OFF | bindings
         )
         config = Config(files=(), data={"capabilities": capabilities, "workflow": table})
         kernel = make_kernel(builtins=True, fakes=adapters(host, runner), notes=notes(), config=config)
@@ -1019,7 +1023,8 @@ def test_an_alternative_adapter_is_named_in_the_step_not_the_command(make_kernel
     put(dirs[0])
     second = Module("more", "Another tracker.")
     second.provides("tracker", modes={"read"}, name="other")(lambda: host)
-    config = Config(files=(), data={"capabilities": {"agent_runner": "fake"}, "workflow": {"user_dir": str(dirs[0])}})
+    bindings = OFF | {"agent_runner": "fake"}
+    config = Config(files=(), data={"capabilities": bindings, "workflow": {"user_dir": str(dirs[0])}})
     kernel = make_kernel(builtins=True, fakes=adapters(host, runner), more=second, config=config)
     settings = Config(files=(), data={}).settings(Settings, "hz")
     shown = WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings).show("weekly-digest")

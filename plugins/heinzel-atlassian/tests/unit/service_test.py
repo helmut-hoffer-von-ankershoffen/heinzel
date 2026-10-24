@@ -2,7 +2,7 @@ import pytest
 from heinzel_atlassian import AtlassianService, AtlassianSettings
 from heinzel_atlassian._acli import AcliTimeoutError
 
-from heinzel import Kernel, Status, __version__
+from heinzel import Kernel, Login, Status, __version__
 
 pytestmark = pytest.mark.unit
 
@@ -108,3 +108,42 @@ def test_installed_but_serving_nothing_is_degraded_with_the_fix(fake_acli):
     assert checks["bindings"].fix is not None
     assert "hz system config set capabilities.documents atlassian" in checks["bindings"].fix
     assert "[" not in checks["bindings"].fix + checks["tracker"].detail  # Rich markup would eat it
+
+
+def test_offline_the_sign_in_is_unknown_with_the_login_of_the_product_in_use(fake_acli):
+    jira = check(fake_acli, bindings=Bindings(tracker="atlassian"), **CONFIGURED).login
+    assert jira == Login(signed_in=None, site="acme.atlassian.net", command="acli jira auth login")
+    confluence = check(fake_acli, bindings=Bindings(documents="atlassian")).login
+    assert confluence == Login(signed_in=None, command="acli confluence auth login")
+    fake_acli.location = None
+    assert check(fake_acli, bindings=Bindings()).login == Login(signed_in=None, command="acli jira auth login")
+
+
+def test_the_live_test_reads_one_item_of_each_product_in_use(fake_acli):
+    fake_acli.search([fake_acli.issue(1, updated="2026-10-20T10:00:00.000+0000")])
+    fake_acli.answer("confluence space list", [{"key": "WID"}])
+    both = Bindings(tracker="atlassian", documents="atlassian")
+    checks = service(fake_acli, **CONFIGURED).live(both)
+    assert [(c.name, c.status) for c in checks] == [("Jira read", Status.UP), ("Confluence read", Status.UP)]
+    assert all(c.login is not None and c.login.signed_in for c in checks)
+    assert [call.args[:3] for call in fake_acli.calls] == [
+        ["jira", "workitem", "search"],
+        ["confluence", "space", "list"],
+    ]
+    assert all(call.timeout == 15.0 for call in fake_acli.calls)
+    assert fake_acli.calls[0].args[fake_acli.calls[0].args.index("--limit") + 1] == "1"
+
+
+def test_a_logged_out_live_test_is_not_signed_in_with_the_login(fake_acli):
+    fake_acli.fail(fake_acli.SEARCH, fake_acli.UNAUTHORIZED)
+    (jira,) = service(fake_acli, **CONFIGURED).live(Bindings())
+    assert jira.status is Status.DEGRADED
+    assert jira.fix == "acli jira auth login"
+    assert jira.login == Login(signed_in=False, site="acme.atlassian.net", command="acli jira auth login")
+
+
+def test_a_live_test_that_fails_otherwise_is_down_without_a_sign_in(fake_acli):
+    fake_acli.fail("confluence space list", "boom", exit_status=3)
+    (confluence,) = service(fake_acli).live(Bindings(documents="atlassian"))
+    assert confluence.status is Status.DOWN
+    assert confluence.login is None

@@ -730,7 +730,7 @@ def test_configuration_chooses_between_providers_of_one_capability(make_kernel):
 
 
 def test_a_provider_built_on_mail_reports_mail_unbound(make_kernel):
-    kernel = make_kernel(builtins=True, config=bound(meetings="summaries"), **mail_modules())
+    kernel = make_kernel(builtins=True, config=bound(meetings="summaries", mail="none"), **mail_modules())
     code, output = hz(kernel, "minutes", "held")
     assert code != 0
     assert "mail:read" in str(output)

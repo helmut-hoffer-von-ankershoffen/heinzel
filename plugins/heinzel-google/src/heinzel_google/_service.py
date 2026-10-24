@@ -1,15 +1,18 @@
 """What the plugin says about itself: `hz google info`, its `hz system info` section and its doctor checks."""
 
 from importlib.metadata import PackageNotFoundError, version
-from typing import Protocol
+from typing import Any, Protocol, cast
 
-from heinzel import Check, HeinzelError, Kernel, Status, __version__
-from heinzel_google._gws import SCOPES, SETUP, GoogleSession
+from heinzel import Check, HeinzelError, Kernel, Login, Status, __version__, clean_text
+from heinzel_google._gws import SCOPES, SETUP, GoogleSession, GwsSignInError, redact
 from heinzel_google._models import GoogleAbout
 
 DISTRIBUTION = "heinzel-google"
 ADAPTER = "google"
 CAPABILITIES = ("documents", "calendar", "mail")
+LIVE_TIMEOUT = 15.0
+"""Seconds the live test's one read may take: Drive's `about.get` for the signed-in user, nothing more."""
+ABOUT = ("drive", "about", "get")
 APIS = [
     "Google Docs API v1 (documents.get)",
     "Google Sheets API v4 (spreadsheets.get)",
@@ -65,11 +68,18 @@ class GoogleService:
         try:
             signed_in, detail = self._session.signed_in()
         except HeinzelError as exc:
-            checks = [Check(name="gws", status=Status.DEGRADED, detail=str(exc), fix=SETUP)]
+            login = Login(signed_in=False, command=SETUP)
+            checks = [Check(name="gws", status=Status.DEGRADED, detail=str(exc), fix=SETUP, login=login)]
         else:
+            login = Login(signed_in=signed_in, command=SETUP)
             if signed_in:
                 checks = [
-                    Check(name="gws", status=Status.UP, detail=f"{detail}; checked locally, Google not contacted")
+                    Check(
+                        name="gws",
+                        status=Status.UP,
+                        detail=f"{detail}; checked locally, Google not contacted",
+                        login=login,
+                    )
                 ]
             else:
                 checks = [
@@ -78,6 +88,7 @@ class GoogleService:
                         status=Status.DEGRADED,
                         detail=f"{detail}; checked locally, Google not contacted",
                         fix=SETUP,
+                        login=login,
                     )
                 ]
         bound = {capability: bindings.bound(capability) for capability in CAPABILITIES}
@@ -99,3 +110,27 @@ class GoogleService:
                 )
             )
         return checks
+
+    def live(self) -> list[Check]:
+        """Ask Google who `gws` is signed in as (Drive's `about.get`), within `LIVE_TIMEOUT`; nothing is written."""
+        name = "drive about get"
+        try:
+            about, _ = self._session.get(
+                "Google Drive", ABOUT, {"fields": "user(displayName,emailAddress)"}, "your account", LIVE_TIMEOUT
+            )
+        except GwsSignInError as exc:
+            login = Login(signed_in=False, command=SETUP)
+            return [Check(name=name, status=Status.DEGRADED, detail=str(exc), fix=SETUP, login=login)]
+        except HeinzelError as exc:
+            return [Check(name=name, status=Status.DOWN, detail=str(exc), fix=SETUP)]
+        user: object = about.get("user")
+        email = cast("dict[str, Any]", user).get("emailAddress") if isinstance(user, dict) else None
+        account = " ".join(clean_text(redact(email)).split()) if isinstance(email, str) else ""
+        return [
+            Check(
+                name=name,
+                status=Status.UP,
+                detail=f"Google answered: gws is signed in as {account or 'an account it does not name'}",
+                login=Login(signed_in=True, account=account, site="google.com", command=SETUP),
+            )
+        ]

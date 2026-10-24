@@ -323,7 +323,7 @@ def test_the_view_says_which_adapter_would_serve_a_requirement_without_building_
 
 
 def test_an_unbound_capability_fails_with_the_binding_to_write(make_kernel):
-    kernel = make_kernel(notes=notes_module(), digest=digest_module())
+    kernel = make_kernel(notes=notes_module(), digest=digest_module(), config=bind(documents="none"))
     fix = r"Bind an installed adapter \(notes\): hz system config set capabilities.documents notes$"
     with pytest.raises(HeinzelError, match=rf"no adapter bound. {fix}"):
         run(kernel, "digest", "show")
@@ -338,7 +338,7 @@ def test_an_unserved_optional_operation_is_injected_and_refused_only_when_it_cal
         _, problem = view.serves(Requirement.parse("documents:read"))
         return f"unserved: {problem}" if problem else documents.read("weekly").title
 
-    kernel = make_kernel(notes=notes_module(), footer=module, digest=digest_module())
+    kernel = make_kernel(notes=notes_module(), footer=module, digest=digest_module(), config=bind(documents="none"))
     assert run(kernel, "footer", "peek") == "unserved: no adapter bound"
     assert repr(kernel._capabilities.handle(CAPABILITIES["documents"], operation(kernel, "footer", "peek").func)) == (
         "<documents:unserved for footer peek>"
@@ -986,3 +986,36 @@ def test_a_binding_is_defaulted_only_while_no_file_or_variable_sets_it(make_kern
     assert not explicit.defaulted("agent-runner")
     monkeypatch.setenv("HZ_CAPABILITIES__DIRECTORY", "one-on-ones")
     assert not make_kernel().resolve(CapabilityView).defaulted("directory")
+
+
+def test_the_only_installed_adapter_serves_its_capability_automatically(make_kernel):
+    kernel = make_kernel(notes=notes_module(), digest=digest_module())
+    view = kernel.resolve(CapabilityView)
+    assert view.binding("documents") == ("notes", "automatic")
+    assert view.binding("tracker") == (None, "unbound")
+    assert view.serves(Requirement("documents", frozenset({"read"}))) == ("notes", None)
+
+
+def test_two_installed_adapters_leave_the_choice_to_the_person(make_kernel):
+    kernel = make_kernel(notes=notes_module(), wiki=notes_module(name="wiki"), digest=digest_module())
+    assert kernel.resolve(CapabilityView).binding("documents") == (None, "unbound")
+
+
+def test_none_turns_an_automatic_choice_off_and_a_configured_one_wins(make_kernel):
+    off = make_kernel(notes=notes_module(), config=bind(documents="none")).resolve(CapabilityView)
+    assert off.binding("documents") == (None, "off")
+    assert ("documents", "none") not in off.unknown_bindings()
+    chosen = make_kernel(notes=notes_module(), wiki=notes_module(name="wiki"), config=bind(documents="wiki"))
+    assert chosen.resolve(CapabilityView).binding("documents") == ("wiki", "configured")
+
+
+def test_a_default_stays_the_default_and_counts_as_defaulted(make_kernel):
+    view = make_kernel(notes=notes_module()).resolve(CapabilityView)
+    assert view.binding("agent-runner") == ("claude-code", "default")
+    assert view.defaulted("agent-runner")
+
+
+def test_no_adapter_may_be_named_none():
+    module = Module("none", "Would shadow the binding that binds nothing.")
+    with pytest.raises(ValueError, match="reserved"):
+        module.provides("documents", modes={"read"})(Notes)

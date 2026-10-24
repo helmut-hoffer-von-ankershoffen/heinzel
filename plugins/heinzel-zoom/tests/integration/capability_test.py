@@ -97,8 +97,22 @@ def test_without_a_mail_adapter_the_requester_fails_and_doctor_says_what_to_bind
     assert "AI Companion" in zoom["summaries"]["detail"]
 
 
+def test_alone_it_serves_meetings_automatically(zoom_kernel, mailbox, emails):
+    mailbox.holding(emails("sync"))
+    code, meetings = hz(
+        zoom_kernel(Config(files=(), data={"capabilities": {"mail": "inbox"}}), prep=prep()),
+        "prep",
+        "ended",
+        SINCE,
+        UNTIL,
+    )
+    assert code == 0, meetings
+    assert [m["id"] for m in meetings] == ["sync"]
+
+
 def test_unbound_the_requester_fails_and_doctor_names_the_binding(zoom_kernel, mailbox):
-    kernel = zoom_kernel(prep=prep())
+    off = Config(files=(), data={"capabilities": {"meetings": "none"}})
+    kernel = zoom_kernel(off, prep=prep())
     code, output = hz(kernel, "prep", "ended", SINCE, UNTIL)
     assert code != 0
     assert "hz system config set capabilities.meetings zoom" in str(output)

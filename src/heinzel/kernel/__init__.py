@@ -4,9 +4,9 @@ The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets
 """
 
 from heinzel.kernel._agents import AgentResult, AgentRunner, Budget, McpServer, RunStatus, TokenUsage, ToolProfile
-from heinzel.kernel._bindings import CapabilityView, Requester
+from heinzel.kernel._bindings import HOWS, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
-from heinzel.kernel._capabilities import CAPABILITIES, MODES, Capability, Mode, Requirement
+from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._chat import ActionGate, ProposedCall
 from heinzel.kernel._config import (
     FILENAME,
@@ -55,6 +55,7 @@ from heinzel.kernel._lets import (
     InfoLet,
     JobLet,
     Let,
+    Login,
     OperationLet,
     ProviderLet,
     RequirementLet,
@@ -137,12 +138,14 @@ __all__ = [
     "FILENAME",
     "FONT_ROUTE",
     "HEINZEL_ID",
+    "HOWS",
     "INTERRUPT",
     "KERNEL_SECTION",
     "LOGO_CSP",
     "LOGO_ROUTE",
     "MAX_WINDOW",
     "MODES",
+    "NO_ADAPTER",
     "PROJECT_FILENAME",
     "SETUP_PHASES",
     "VERBS",
@@ -179,6 +182,7 @@ __all__ = [
     "Event",
     "HealthLet",
     "HeinzelError",
+    "How",
     "InfoLet",
     "Installation",
     "Issue",
@@ -194,6 +198,7 @@ __all__ = [
     "LayerStack",
     "Layers",
     "Let",
+    "Login",
     "Mail",
     "MailContent",
     "MailMessage",

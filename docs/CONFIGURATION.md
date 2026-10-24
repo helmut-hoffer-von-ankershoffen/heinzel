@@ -34,8 +34,8 @@ Plugins add their own tables.
 | `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | Adapter that serves `documents`. |
 | `mail` | `HZ_CAPABILITIES__MAIL` | `None` | Adapter that serves `mail`, e.g. `google`. |
 | `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | Adapter that serves `meetings`, e.g. `zoom`. |
-| `team_graph` | `HZ_CAPABILITIES__TEAM_GRAPH` | `'hz-graph'` | Adapter that serves `team-graph`: `hz-graph` (the default, the core's graph of your team's contracts and telemetry), or one from a plugin. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | Adapter that serves `tracker`, e.g. `github`. |
+| `team_graph` | `HZ_CAPABILITIES__TEAM_GRAPH` | `'hz-graph'` | Adapter that serves `team-graph`: `hz-graph` (the default, the core's graph of your team's contracts and telemetry), or one from a plugin. |
 
 ## `[atlassian]`
 

@@ -19,7 +19,7 @@ from typing import Any, ClassVar, Literal, cast
 
 from pydantic import Field, model_validator
 
-from heinzel.kernel._capabilities import CAPABILITIES, MODES, Capability, Mode, Requirement
+from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._config import ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._lets import ProviderLet, host_of, settings_parameters
@@ -29,39 +29,74 @@ logger = logging.getLogger(__name__)
 CAPABILITIES_SECTION = "capabilities"
 
 RequesterKind = Literal["module", "operation", "job"]
+How = Literal["configured", "automatic", "default", "off", "unbound"]
+"""How a capability got its adapter (ADR 0055): a configured binding; the only installed adapter, chosen
+automatically while nothing is configured; the core's default; `off`, configured to `none`; or none at all."""
+HOWS: tuple[How, ...] = ("configured", "automatic", "default", "off", "unbound")
+
+
+def _options(capability: str) -> dict[str, Any]:
+    """The JSON Schema extra of a binding: its values are the installed adapters of `capability`, or `none`.
+
+    The web head resolves the source into a list to choose from, so no binding is ever typed (ADR 0055).
+    """
+    return {"x-options": {"source": "adapters", "capability": capability, "none": NO_ADAPTER}}
 
 
 class CapabilitySettings(ModuleSettings):
     """Which adapter serves each capability: the `[capabilities]` table or `HZ_CAPABILITIES__<CAPABILITY>` variables.
 
     Keys are capability names with `_` or `-` (`code_host` or `code-host`); values are adapter names, as
-    `hz system capability list` shows them. A capability without a binding serves nobody. A project `hz.toml` can't
-    bind: only the site, user and `HZ_CONFIG` files and the environment can.
+    `hz system capability list` shows them, or `none` for no adapter at all. While a capability has no binding, the
+    only installed adapter that provides it serves it automatically, else the core's default if it has one, else
+    nobody (ADR 0055). A project `hz.toml` can't bind: only the site, user and `HZ_CONFIG` files and the environment
+    can.
     """
 
     agent_runner: str | None = Field(
         default="claude-code",
         description="Adapter that serves `agent-runner`: `claude-code` (the default, because `command` needs a "
         "command line first), `command`, or one from a plugin.",
+        json_schema_extra=_options("agent-runner"),
     )
-    calendar: str | None = Field(default=None, description="Adapter that serves `calendar`, e.g. `google`.")
-    chat: str | None = Field(default=None, description="Adapter that serves `chat`, e.g. `slack`.")
-    code_host: str | None = Field(default=None, description="Adapter that serves `code-host`, e.g. `github`.")
+    calendar: str | None = Field(
+        default=None,
+        description="Adapter that serves `calendar`, e.g. `google`.",
+        json_schema_extra=_options("calendar"),
+    )
+    chat: str | None = Field(
+        default=None, description="Adapter that serves `chat`, e.g. `slack`.", json_schema_extra=_options("chat")
+    )
+    code_host: str | None = Field(
+        default=None,
+        description="Adapter that serves `code-host`, e.g. `github`.",
+        json_schema_extra=_options("code-host"),
+    )
     directory: str | None = Field(
         default="one-on-ones",
         description="Adapter that serves `directory`: `one-on-ones` (the default, the core's guesses from recurring "
         "1:1s in the bound calendar, each marked as a guess for the user to confirm), or one from a plugin that reads "
         "a directory of record.",
+        json_schema_extra=_options("directory"),
     )
-    documents: str | None = Field(default=None, description="Adapter that serves `documents`.")
-    mail: str | None = Field(default=None, description="Adapter that serves `mail`, e.g. `google`.")
-    meetings: str | None = Field(default=None, description="Adapter that serves `meetings`, e.g. `zoom`.")
+    documents: str | None = Field(
+        default=None, description="Adapter that serves `documents`.", json_schema_extra=_options("documents")
+    )
+    mail: str | None = Field(
+        default=None, description="Adapter that serves `mail`, e.g. `google`.", json_schema_extra=_options("mail")
+    )
+    meetings: str | None = Field(
+        default=None, description="Adapter that serves `meetings`, e.g. `zoom`.", json_schema_extra=_options("meetings")
+    )
+    tracker: str | None = Field(
+        default=None, description="Adapter that serves `tracker`, e.g. `github`.", json_schema_extra=_options("tracker")
+    )
     team_graph: str | None = Field(
         default="hz-graph",
         description="Adapter that serves `team-graph`: `hz-graph` (the default, the core's graph of your team's "
         "contracts and telemetry), or one from a plugin.",
+        json_schema_extra=_options("team-graph"),
     )
-    tracker: str | None = Field(default=None, description="Adapter that serves `tracker`, e.g. `github`.")
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
         {
@@ -86,14 +121,22 @@ class CapabilitySettings(ModuleSettings):
         return data  # pragma: no cover - pydantic-settings always passes a mapping
 
     def bound(self, capability: str) -> str | None:
-        """The adapter bound to `capability`, or None."""
-        return cast("str | None", getattr(self, capability.replace("-", "_"), None))
+        """The adapter configured or defaulted for `capability`, or None; `none` and an empty value are None.
+
+        Doesn't choose automatically: that needs the installed adapters, which `Capabilities.binding` knows.
+        """
+        value = cast("str | None", getattr(self, capability.replace("-", "_"), None))
+        return None if value in {None, "", NO_ADAPTER} else value
+
+    def configured(self, capability: str) -> bool:
+        """Whether a configuration file or variable sets `capability`, to an adapter or to `none`."""
+        return capability.replace("-", "_") in self.model_fields_set
 
     def defaulted(self, capability: str) -> bool:
-        """Whether `capability` is bound by the core's default, because no configuration or variable sets it."""
+        """Whether `capability` would be bound by the core's default, because no configuration or variable sets it."""
         field = capability.replace("-", "_")
         default = type(self).model_fields[field].default if field in type(self).model_fields else None
-        return default is not None and field not in self.model_fields_set
+        return default is not None and not self.configured(capability)
 
 
 @dataclass(frozen=True, slots=True)
@@ -259,7 +302,7 @@ class Capabilities:
 
     def adapter_for(self, requirement: Requirement) -> tuple[Adapter | None, str | None]:
         """The adapter that serves `requirement` (pinned or bound), and why it can't, if it can't."""
-        name = requirement.adapter or self.settings.bound(requirement.capability)
+        name = requirement.adapter or self.bound(requirement.capability)
         if name is None:
             return None, "no adapter bound"
         candidates = self.adapters.get((requirement.capability, name), [])
@@ -343,6 +386,28 @@ class Capabilities:
             for name in CAPABILITIES
             if (bound := self.settings.bound(name)) is not None and (name, bound) not in self.adapters
         ]
+
+    def binding(self, capability: str) -> tuple[str | None, How]:
+        """The adapter that serves `capability` unless a requirement pins another, and how it was chosen (ADR 0055).
+
+        A configured binding wins, `none` included. Otherwise the only installed adapter of the capability serves
+        it automatically: installing it was the choice, and there is nothing to choose between. With several, the
+        core's default serves, if the capability has one; else nothing until the person picks one.
+        """
+        if self.settings.configured(capability):
+            bound = self.settings.bound(capability)
+            return (bound, "configured") if bound is not None else (None, "off")
+        installed = self.installed(capability)
+        default = self.settings.bound(capability)
+        if len(installed) == 1 and installed[0] != default:
+            return installed[0], "automatic"
+        if default is not None:
+            return default, "default"
+        return None, "unbound"
+
+    def bound(self, capability: str) -> str | None:
+        """The adapter that serves `capability` unless a requirement pins another: `binding` without the how."""
+        return self.binding(capability)[0]
 
     def handle(self, capability: Capability, func: Callable[..., Any]) -> object:
         """The handle `func` gets for `capability`, for the injector.
@@ -485,12 +550,16 @@ class CapabilityView:
         return self._capabilities.unknown_keys
 
     def bound(self, capability: str) -> str | None:
-        """The adapter bound to `capability`, or None."""
-        return self._capabilities.settings.bound(capability)
+        """The adapter that serves `capability`: configured, chosen automatically or the default; None if none."""
+        return self._capabilities.bound(capability)
+
+    def binding(self, capability: str) -> tuple[str | None, How]:
+        """The adapter that serves `capability`, and how it was chosen: configured, automatic, default, off, unbound."""
+        return self._capabilities.binding(capability)
 
     def defaulted(self, capability: str) -> bool:
-        """Whether `capability` is bound by the core's default, because no configuration or variable sets it."""
-        return self._capabilities.settings.defaulted(capability)
+        """Whether `capability` is served by the core's default, because nothing is configured or chosen."""
+        return self._capabilities.binding(capability)[1] == "default"
 
     def hosts(self, adapter: Adapter) -> tuple[tuple[str, ...], str | None]:
         """The host names `adapter` reaches, and why they are unknown when its settings decide them and that failed."""
