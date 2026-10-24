@@ -13,6 +13,7 @@ import json
 import logging
 import math
 import os
+import shlex
 import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -323,7 +324,7 @@ class WorkflowService:
             key, real = ("team_repository", directory.parent.resolve()) if team else ("user_dir", directory.resolve())
             msg = (
                 f"{directory} is a symbolic link; contracts are read from real directories only. Point at the real "
-                f"one: hz system config set workflow.{key} {real}"
+                f"one: hz system config set workflow.{key} {shlex.quote(str(real))}"
             )
             raise HeinzelError(msg)
         path = directory / f"{name}{SUFFIX}"
@@ -343,7 +344,7 @@ class WorkflowService:
 
     def _next_for_new(self, qualified: str, path: Path, team: bool) -> list[Step]:
         steps = [
-            Step(command=f"hz workflow check --path {path}", why="every problem by file and line, after each edit"),
+            Step(command=f"hz workflow check --path {shlex.quote(str(path))}", why="every problem by file and line"),
             Step(
                 command=f"hz workflow show {qualified}", why="what it requires, what is bound, and whether it is ready"
             ),
@@ -357,10 +358,11 @@ class WorkflowService:
         ]
         if team:
             repository = cast("Path", self._workflow.team_repository)
+            relative = shlex.quote(str(path.relative_to(repository)))
             name = qualified.partition(":")[2]
             steps += [
                 Step(
-                    command=f"git -C {repository} add {path.relative_to(repository)}",
+                    command=f"git -C {shlex.quote(str(repository))} add {relative}",
                     why="then commit on a branch and open a pull request (CI gate: hz workflow check --path workflows)",
                 ),
                 Step(
@@ -384,7 +386,7 @@ class WorkflowService:
     def _why_not_scheduled(self, contract: Contract) -> tuple[str, str] | None:
         """The kind of reason and the reason, ending in what to do, or None when the daemon runs the contract."""
         if not contract.valid or contract.frontmatter is None:
-            return NOT_SCHEDULED, f"it has errors: hz workflow check --path {contract.path}"
+            return NOT_SCHEDULED, f"it has errors: {_recheck(contract)}"
         if contract.frontmatter.hz.schedule is None:
             return NOT_SCHEDULED, (
                 f'it has no schedule: add `schedule: "0 7 * * MON"` under `hz:` in {contract.path}, '
@@ -551,9 +553,12 @@ class WorkflowService:
     def _next_for(self, contract: Contract, unmet: list[RequirementStatus], why: str | None) -> list[Step]:
         """What to do with a contract: fix it, bind what it needs, then try it, run it, and let the daemon run it."""
         if not contract.valid:
-            return [Step(command=f"hz workflow check --path {contract.path}", why="every error with a hint")]
+            return [Step(command=_recheck(contract), why="every error with a hint")]
         if unmet:
-            return [Step(command=s.fix or "", why=f"serves {s.requirement}; runs fail until it is") for s in unmet]
+            return [
+                Step(command=s.fix or "", why=f"serves {s.requirement}; runs fail until it is{self._alternatives(s)}")
+                for s in unmet
+            ]
         budget = self.budget(contract, scheduled=False)
         steps = [
             Step(
@@ -589,12 +594,19 @@ class WorkflowService:
 
     def _fix(self, capability: str) -> str:
         """The command that serves `capability`: bind an installed adapter, or find a plugin that provides one."""
-        view = self._kernel.resolve(CapabilityView)
-        installed = sorted({a.let.adapter for a in view.adapters if a.let.capability == capability})
+        installed = self._installed(capability)
         if not installed:
             return f"hz system plugin search --text {capability}"
-        others = f"  # or {', '.join(installed[1:])}" if len(installed) > 1 else ""
-        return f"hz system config set capabilities.{capability.replace('-', '_')} {installed[0]}{others}"
+        return f"hz system config set capabilities.{capability.replace('-', '_')} {installed[0]}"
+
+    def _alternatives(self, status: RequirementStatus) -> str:
+        """The other installed adapters a fix could name instead, for the step's explanation."""
+        others = self._installed(status.requirement.partition(":")[0])[1:]
+        return f" (or bind {', '.join(others)})" if others else ""
+
+    def _installed(self, capability: str) -> list[str]:
+        view = self._kernel.resolve(CapabilityView)
+        return sorted({a.let.adapter for a in view.adapters if a.let.capability == capability})
 
     # Drafts ----------------------------------------------------------------------------------------------------------
 
@@ -698,7 +710,7 @@ class WorkflowService:
                 name=name,
                 status=Status.DEGRADED,
                 detail=f"{len(errors)} error(s), first: {errors[0]}".replace("\n", " "),
-                fix=f"hz workflow check --path {contract.path}",
+                fix=_recheck(contract),
             )
         kind, why = self._why_not_scheduled(contract) or (None, None)
         if kind == PIN_CHANGED:
@@ -872,12 +884,16 @@ def _write(path: Path, text: str, *, exclusive: bool = False) -> None:
 def _valid(contract: Contract) -> Frontmatter:
     if not contract.valid or contract.frontmatter is None:
         errors = [str(d) for d in contract.diagnostics if d.severity == "error"]
-        msg = (
-            f"{contract.qualified} has errors; fix them first (`hz workflow check --path {contract.path}` rechecks "
-            "it):\n" + "\n".join(errors)
+        msg = f"{contract.qualified} has errors; fix them first (`{_recheck(contract)}` rechecks it):\n" + "\n".join(
+            errors
         )
         raise HeinzelError(msg)
     return contract.frontmatter
+
+
+def _recheck(contract: Contract) -> str:
+    """The command that checks one contract file; quoted, since the default directory has a space on macOS."""
+    return f"hz workflow check --path {shlex.quote(str(contract.path))}"
 
 
 def _approve(name: str, sha256: str | None = None) -> str:

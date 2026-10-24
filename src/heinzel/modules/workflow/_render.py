@@ -52,7 +52,7 @@ def render_list(listing: ContractList) -> RenderableType:
             "scheduled" if contract.scheduled else "-",
             f"[red]{problems}[/red]" if contract.errors else problems,
         )
-    return Group(table, _directories("Directories", listing.directories))
+    return Group(table, _directories("Directories", listing.directories), _next(listing.next))
 
 
 def _directories(title: str, directories: list[Directory]) -> Table:

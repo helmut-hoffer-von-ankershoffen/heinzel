@@ -207,6 +207,9 @@ def test_new_for_the_team_writes_into_the_repository_and_says_how_to_contribute(
     assert (code, shown["namespace"], shown["scheduled"]) == (0, "team", False)
     code, listed = hz(kernel, "workflow", "list")
     assert [(d["namespace"], d["exists"]) for d in listed["directories"]] == [("team", True), ("me", False)]
+    assert listed["next"] == [{"command": "hz workflow show team:retro-agenda", "why": "is it ready?"}]
+    code, text = hz(kernel, "workflow", "list", json_output=False)
+    assert "hz workflow show team:retro-agenda" in str(text)
 
 
 def test_drafts_lists_what_runs_saved_and_shows_the_latest(kernel, tmp_path):

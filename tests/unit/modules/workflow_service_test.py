@@ -1,6 +1,8 @@
 """WorkflowService with test-only adapters and a fake agent runner: never a real agent, never the network."""
 
 import json
+import re
+import shlex
 import stat
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -837,3 +839,48 @@ def test_a_contract_with_errors_says_how_to_recheck_it(make, dirs):
 def test_health_without_contracts_says_how_to_write_one(make):
     check = make().health()[0]
     assert (check.status, check.fix) == (Status.UP, "hz workflow new my-first-workflow")
+
+
+def test_commands_quote_paths_with_spaces_as_the_default_macos_directory_has(make, tmp_path):
+    """`~/Library/Application Support/hz/workflows` is the default: a pasted command must survive the space."""
+    me = tmp_path / "Application Support" / "workflows"
+    service = make(user_dir=str(me))
+    written = service.new("weekly-digest")
+    quoted = shlex.quote(str(written.file))
+    assert " " in str(written.file)
+    assert written.next[0].command == f"hz workflow check --path {quoted}"
+    put(me, "broken", "no frontmatter")
+    broken = service.find("broken")
+    recheck = f"hz workflow check --path {shlex.quote(str(broken.path))}"
+    assert service.show("broken").next[0].command == recheck
+    assert str(service.scheduled(broken)).endswith(recheck)
+    assert {c.name: c.fix for c in service.health()}["workflow me:broken"] == recheck
+    with pytest.raises(HeinzelError, match=re.escape(recheck)):
+        service.run("broken", dry_run=True)
+    link = tmp_path / "a link"
+    link.symlink_to(me)
+    with pytest.raises(HeinzelError, match=re.escape(f"workflow.user_dir {shlex.quote(str(me.resolve()))}")):
+        make(user_dir=str(link)).new("other")
+
+
+def test_a_team_directory_behind_a_link_names_the_repository(make, dirs, tmp_path):
+    _, team = dirs
+    link = tmp_path / "team-link"
+    link.symlink_to(team)
+    (team / "workflows").rmdir()
+    (team / "workflows").symlink_to(tmp_path)
+    with pytest.raises(HeinzelError, match=f"hz system config set workflow.team_repository {team.resolve()}"):
+        make(team_repository=str(link)).new("other", team=True)
+
+
+def test_an_alternative_adapter_is_named_in_the_step_not_the_command(make_kernel, dirs, host, runner):
+    put(dirs[0])
+    second = Module("more", "Another tracker.")
+    second.provides("tracker", modes={"read"}, name="other")(lambda: host)
+    config = Config(files=(), data={"capabilities": {"agent_runner": "fake"}, "workflow": {"user_dir": str(dirs[0])}})
+    kernel = make_kernel(builtins=True, fakes=adapters(host, runner), more=second, config=config)
+    settings = Config(files=(), data={}).settings(Settings, "hz")
+    shown = WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings).show("weekly-digest")
+    steps = {s.command: s.why for s in shown.next}
+    assert steps["hz system config set capabilities.tracker host"].endswith("(or bind other)")
+    assert steps["hz system config set capabilities.code_host host"].endswith("runs fail until it is")
