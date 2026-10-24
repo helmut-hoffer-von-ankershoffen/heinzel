@@ -58,8 +58,16 @@ class RunnerSettings(ModuleSettings):
         "the variable that holds its own login; HZ_CREDENTIAL_* variables are never passed.",
     )
 
+    ask_max_usd: float = Field(
+        default=0.25,
+        gt=0,
+        allow_inf_nan=False,
+        description="Most one answer of `hz system runner ask` (the web app's chat) may cost in US dollars.",
+    )
+
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
         {
+            "ask_max_usd",
             "claude_executable",
             "read_only_tools",
             "command",

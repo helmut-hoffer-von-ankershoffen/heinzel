@@ -75,6 +75,7 @@ jobs:
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
       - run: make typecheck
+      - run: make test-web # the web app's component tests (Vitest with axe); core only
 
   secrets:
     name: Secret scan
@@ -235,6 +236,8 @@ jobs:
       - run: make build
       - name: Check the wheel ships the changelog
         run: unzip -l dist/heinzel-[0-9]*.whl | grep -q 'heinzel/CHANGELOG.md'
+      - name: Check the wheel ships the web app
+        run: unzip -l dist/heinzel-[0-9]*.whl | grep -q 'heinzel/heads/web/static/index.html'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist

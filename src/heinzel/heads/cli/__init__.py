@@ -30,7 +30,7 @@ from heinzel.heads.cli._join import HELP as JOIN_HELP
 from heinzel.heads.cli._join import JoinCommand
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
-from heinzel.heads.cli._serve import serve_group
+from heinzel.heads.cli._serve import UI_HELP, serve_group, ui_command
 from heinzel.heads.cli._setup import HELP as SETUP_HELP
 from heinzel.heads.cli._setup import SetupCommands
 from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
@@ -117,6 +117,9 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     # The invite line, `uvx heinzel join <team repository>`: the second exception to ADR 0018, by the maintainer.
     join = JoinCommand(kernel, console, err_console).command()
     app.command(name="join", help=JOIN_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(join)
+    # Top level too, by the maintainer's decision: the web head is how people who don't live in a terminal start
+    # (ADR 0039, "a web head: a React app served by the API head").
+    app.command(name="ui", help=UI_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(ui_command(kernel, err_console))
     if system := mount.groups.get("system"):
         system.add_typer(serve_group(SortedGroup, footer, kernel, console, err_console), cls=SortedGroup)
     return app

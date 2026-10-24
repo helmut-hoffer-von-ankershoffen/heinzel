@@ -4,8 +4,14 @@ Both are adapters of the `agent-runner` capability; `[capabilities] agent_runner
 """
 
 import shutil
+import tempfile
+from datetime import timedelta
+from pathlib import Path
+from typing import Annotated
 
-from heinzel import Check, Module, Status
+from pydantic import Field
+
+from heinzel import AgentResult, AgentRunner, Budget, Check, HeinzelError, Module, Status, ToolProfile
 from heinzel.kernel import CapabilityView
 from heinzel.modules.system.runner._claude import BIND_COMMAND_RUNNER, HOSTS, ClaudeCodeRunner
 from heinzel.modules.system.runner._claude import DOCS as CLAUDE_CODE_DOCS
@@ -16,6 +22,58 @@ module = Module("runner", "Run bounded agent sessions with Claude Code or a conf
 module.settings(RunnerSettings)
 module.provides("agent-runner", modes={"read"}, hosts=HOSTS, name="claude-code")(ClaudeCodeRunner)
 module.provides("agent-runner", modes={"read"}, name="command")(CommandRunner)
+
+
+ASK_TIMEOUT = timedelta(minutes=3)
+ASK_PREAMBLE = (
+    "You answer in the chat of Heinzelmännchen (hz), open-source helpers for product teams. Answer briefly, in "
+    "Markdown. You can't run hz or change anything; when the user should run a command, name it. What follows is the "
+    "conversation so far, or just a question; answer its last message.\n\n"
+)
+PROMPT_LIMIT = 6000
+"""Characters a prompt may have: a question, or a short transcript the web app resends each turn (no session)."""
+
+
+# A question spends money, within its cap: the CLI, MCP and the web head (behind its session token) get it, never the
+# unauthenticated REST head (ADR 0039).
+@module.operation(read_only=False, heads={"cli", "mcp", "web"}, requires=["agent-runner:read"])
+def ask(
+    runner: AgentRunner,
+    settings: RunnerSettings,
+    prompt: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=PROMPT_LIMIT,
+            description="What to ask: a question, or the conversation so far ending with one; nothing is kept between "
+            "calls.",
+        ),
+    ],
+    budget_usd: Annotated[
+        float | None,
+        Field(
+            gt=0, description="Most this answer may cost in US dollars, at most the setting system.runner.ask_max_usd."
+        ),
+    ] = None,
+) -> AgentResult:
+    """Ask the bound agent runner, read-only and within a cost cap; this may cost money.
+
+    Raises:
+        HeinzelError: If the prompt is blank, or the runner is misconfigured.
+    """
+    cap = min(budget_usd or settings.ask_max_usd, settings.ask_max_usd)
+    if not prompt.strip():
+        msg = "Ask something: the prompt is empty, e.g. hz system runner ask 'What does hz workflow graph show?'"
+        raise HeinzelError(msg)
+    # An empty working directory: the answer reads nothing on this machine.
+    with tempfile.TemporaryDirectory(prefix="hz-ask-") as directory:
+        return runner.run(
+            ASK_PREAMBLE + prompt.strip(),
+            contract="chat",
+            tools=ToolProfile(working_dir=Path(directory)),
+            timeout=ASK_TIMEOUT,
+            budget=Budget(max_usd=cap),
+        )
 
 
 @module.health
@@ -59,4 +117,4 @@ def runner(capabilities: CapabilityView, settings: RunnerSettings) -> list[Check
     return [Check(name="runner", status=Status.UP, detail=f"agent-runner is bound to {bound or 'nothing'}")]
 
 
-__all__ = ["ClaudeCodeRunner", "CommandRunner", "RunnerSettings", "module"]
+__all__ = ["ASK_TIMEOUT", "ClaudeCodeRunner", "CommandRunner", "RunnerSettings", "module"]

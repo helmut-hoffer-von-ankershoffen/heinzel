@@ -8,8 +8,12 @@ The server has no authentication, so it answers only requests that name a loopba
 `[hz] api_allowed_hosts`) on its own port, and refuses requests from another origin with `403`: a web page in your
 browser can reach `127.0.0.1` too, directly or through DNS rebinding, and must not be able to call operations.
 Operations that spend money or act unattended (`hz workflow run`, `hz system daemon tick`) aren't exposed here.
+
+The web head (`hz ui`) mounts the same endpoints with `head="web"` and a per-session `token`: every request must then
+carry the token as `Authorization: Bearer <token>` as well, and the operations that list the `web` head are exposed too.
 """
 
+import hmac
 import inspect
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Annotated, Any, get_args, get_origin
@@ -25,25 +29,40 @@ from heinzel.kernel import HeinzelError, Kernel, boot
 HEAD = "api"
 UNAVAILABLE = 503
 FORBIDDEN = 403
+UNAUTHORIZED = 401
 DEFAULT_PORTS = frozenset({80, 443})
 LOOPBACK = frozenset({"localhost", "127.0.0.1", "[::1]"})
 """Hosts the REST head always answers; `[hz] api_allowed_hosts` adds others."""
 
 
-def build(kernel: Kernel, *, port: int | None = None, allowed_hosts: Iterable[str] = ()) -> FastAPI:
+def build(  # noqa: PLR0913 - the head, where it listens and its credential, all by keyword
+    kernel: Kernel,
+    *,
+    port: int | None = None,
+    allowed_hosts: Iterable[str] = (),
+    head: str = HEAD,
+    token: str | None = None,
+    docs: bool = True,
+) -> FastAPI:
     """A FastAPI app with one endpoint per exposed operation, answering only local, same-origin requests.
 
     Args:
         kernel: The kernel whose operations become endpoints.
         port: The port it listens on; a request naming another port is refused. Any port when None.
         allowed_hosts: Host names to answer besides localhost, 127.0.0.1 and [::1].
+        head: Whose operations to expose: `api`, or `web` for the web head, which sets a `token` too.
+        token: When set, every request must carry it as `Authorization: Bearer <token>`.
+        docs: Serve the interactive docs at `/docs`; they load scripts from a CDN, which the web head's CSP forbids.
     """
     app = FastAPI(
         title="🧝 Heinzelmännchen",
         version=__version__,
         description="Open-source helpers that keep product teams running. Every endpoint is also a `hz` command.",
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
     )
     hosts = LOOPBACK | {host.strip().lower() for host in allowed_hosts}
+    bearer = f"Bearer {token}".encode() if token is not None else b""
 
     @app.middleware("http")
     async def local_only(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -52,20 +71,34 @@ def build(kernel: Kernel, *, port: int | None = None, allowed_hosts: Iterable[st
             headers.get("host", ""), headers.get("origin"), hosts, port, headers.get("sec-fetch-site")
         ):
             return JSONResponse(status_code=FORBIDDEN, content={"error": problem})
-        return await call_next(request)
+        if token is not None and not hmac.compare_digest(headers.get("authorization", "").encode(), bearer):
+            # A header, not a cookie: another site can make the browser send cookies along, never this header.
+            problem = "Refused: send the session token `hz ui` opened the app with, as `Authorization: Bearer <token>`."
+            return JSONResponse(
+                status_code=UNAUTHORIZED, content={"error": problem}, headers={"WWW-Authenticate": "Bearer"}
+            )
+        response = await call_next(request)
+        if token is not None:
+            response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.exception_handler(HeinzelError)
     async def heinzel_error(request: object, exc: HeinzelError) -> JSONResponse:  # noqa: ARG001 - FastAPI signature
         return JSONResponse(status_code=400, content={"error": str(exc)})
 
-    for item in exposed(kernel, HEAD):
+    for item in exposed(kernel, head):
+        returns = item.returns if item.returns is not inspect.Signature.empty else None
         app.add_api_route(
             "/" + "/".join(item.path),
             endpoint(kernel, item),
             methods=["GET" if item.operation.read_only else "POST"],
             summary=item.operation.summary,
             description=inspect.getdoc(item.operation.func) or "",
-            response_model=item.returns if item.returns is not inspect.Signature.empty else None,
+            response_model=returns,
+            # The same result when its exit code is non-zero (doctor says DOWN), so clients can read it there too.
+            responses={UNAVAILABLE: {"model": returns, "description": "The result, when its exit code is non-zero."}}
+            if item.operation.exit_code is not None and returns is not None
+            else None,
             tags=[item.record.path[0]],
             operation_id=item.name,
         )
