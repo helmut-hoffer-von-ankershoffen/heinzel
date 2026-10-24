@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-10-23
 amends: 0024
-amended-by: 0055
+amended-by: 0049, 0055
 related: 0012, 0017, 0021, 0022, 0023
 ---
 
@@ -76,6 +76,15 @@ integration becomes a configuration change.
     who reads and writes what, through which adapter and which hosts, which also answers "where can my data go"
     for a privacy notice ([ADR 0024](0024-people-and-org.md)).
   - Calling a capability or mode that wasn't declared fails, at runtime and in a test.
+- **Fingerprints per facet** (amended 2026-10-24 by [ADR 0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md)
+  statement 20, borrowed from [OpenProse Reactor](https://github.com/openprose/reactor)'s facets): a capability's read
+  results are fingerprinted as a map `{facet: hash}`: the adapter returns each facet's canonical, normalised content,
+  with what is noise (a poll timestamp, a request id, list order) left out in code, and hz computes the SHA-256 by
+  ADR 0021 §8's single rule, never trusting an adapter's own hash. Facets are the parts a reader can name in a
+  contract input (`inputs.<name>.facet`, [ADR 0021](0021-workflow-contracts.md) §2 and §8): a document's tab or
+  heading, a tracker's row by id; an adapter that knows no facets returns the single facet `@all`. The facets an
+  adapter supports are part of its capability's protocol, additive like any method, and shown in the capability
+  matrix.
 - **First adapters, planned for 0.2**: GitHub (code host, tracker), Atlassian (tracker, documents), Google Workspace
   (documents, calendar, mail; spreadsheets later), Zoom (meetings, from Zoom's meeting-summary emails read through the
   bound `mail` adapter, not from Zoom's API: maintainer's decision, 2026-10-24) and Slack (chat). All five are
