@@ -1,17 +1,17 @@
 """Service of the config submodule."""
 
-import json
 import shlex
+import shutil
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import tomlkit
 from pydantic import ValidationError
 from pydantic_core import to_jsonable_python
 from tomlkit.exceptions import ParseError
 
-from heinzel import Config, HeinzelError, Kernel, ModuleSettings
-from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, user_config_dir
+from heinzel import Config, ConfigEditor, HeinzelError, Kernel, ModuleSettings
+from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, toml_value, user_config_dir
 from heinzel.modules.system.config._models import ConfigFileInfo, ConfigReport, SettingInfo
 
 HEADER = """\
@@ -24,7 +24,7 @@ Scope = Literal["user", "project"]
 PLACEHOLDER_LIST: list[str] = ["first", "second"]  # the example for a list setting that is empty
 
 
-class ConfigService:
+class ConfigService(ConfigEditor):
     """Explains and initializes configuration."""
 
     def __init__(self, kernel: Kernel) -> None:
@@ -69,7 +69,7 @@ class ConfigService:
             if setting.value is None:
                 lines.append(f"# {setting.key}: not set by default")
             else:
-                lines.append(f"# {setting.key} = {_toml(setting.value)}")
+                lines.append(f"# {setting.key} = {toml_value(setting.value)}")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return target
@@ -88,8 +88,21 @@ class ConfigService:
         Raises:
             HeinzelError: If the key is unknown or the value is invalid for it.
         """
+        return self.write(key, _parse_value(value), scope)
+
+    def write(self, key: str, value: object, scope: Scope = "user") -> Path:
+        """Validate a value (JSON-compatible, or a pydantic model) for the setting `key` and write it to the file.
+
+        What setup steps call through `ConfigEditor` (ADR 0032); `set` parses text and calls this.
+
+        Raises:
+            HeinzelError: If the key is unknown or the value is invalid for it.
+        """
         section, name, model = self._locate(key)
-        parsed = _parse_value(value)
+        parsed = _without_none(to_jsonable_python(value))
+        if parsed is None:
+            msg = f"TOML has no null; to let {key} take its default, run `hz system config unset {key}`."
+            raise HeinzelError(msg)
         table = {**self._kernel.config.section(section), name: parsed}
         try:
             Config(files=(), data=_nest(section, table)).settings(model, section)
@@ -99,8 +112,7 @@ class ConfigService:
         path = self._scope_file(scope)
         document = _load(path)
         _table(document, section)[name] = parsed
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(tomlkit.dumps(document), encoding="utf-8")
+        _save(path, document)
         return path
 
     def unset(self, key: str, scope: Scope = "user") -> Path:
@@ -117,7 +129,7 @@ class ConfigService:
             msg = f"{key} is not set in {path}"
             raise HeinzelError(msg)
         del table[name]
-        path.write_text(tomlkit.dumps(document), encoding="utf-8")
+        _save(path, document)
         return path
 
     def _locate(self, key: str) -> tuple[str, str, type[ModuleSettings]]:
@@ -140,6 +152,8 @@ class ConfigService:
         elif schema.get("type") == "array":
             kind = "A list, written as a TOML array in single quotes."
             value = value or PLACEHOLDER_LIST
+        elif schema.get("type") == "object":
+            kind = "A table, written as a TOML inline table in single quotes."
         elif isinstance(value, bool):
             kind = "true or false."
         elif isinstance(value, int | float):
@@ -147,7 +161,7 @@ class ConfigService:
         else:
             kind = "Text."
             value = value or "text"
-        text = value if isinstance(value, str) else _toml(value)
+        text = value if isinstance(value, str) else toml_value(value)
         return f"{kind} For example:".lstrip() + f"\n  hz system config set {key} {shlex.quote(text)}"
 
     def _scope_file(self, scope: Scope) -> Path:
@@ -161,18 +175,38 @@ class ConfigService:
         return ConfigFileInfo(scope=file.scope, path=file.path, exists=file.exists)
 
 
-def _toml(value: object) -> str:
-    """A TOML literal for JSON-compatible values (JSON strings, numbers and arrays are valid TOML)."""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return json.dumps(value)
-
-
 def _parse_value(value: str) -> Any:  # noqa: ANN401 - any TOML value
     try:
         return tomlkit.parse(f"value = {value}")["value"].unwrap()
     except ParseError:
         return value
+
+
+def _without_none(value: Any) -> Any:  # noqa: ANN401 - any JSON-compatible value
+    """`value` without None in tables and arrays: TOML has no null, an absent key means its default."""
+    if isinstance(value, dict):
+        return {k: _without_none(v) for k, v in cast("dict[str, Any]", value).items() if v is not None}
+    if isinstance(value, list):
+        return [_without_none(v) for v in cast("list[object]", value) if v is not None]
+    return value
+
+
+def _save(path: Path, document: tomlkit.TOMLDocument) -> None:
+    """Write the file whole or not at all: Ctrl-C or a full disk never leaves half a configuration behind.
+
+    A symlinked file (dotfile managers) is written where the link points, keeping the link and the file's mode.
+    """
+    target = path.resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.tmp")
+    try:
+        temporary.write_text(tomlkit.dumps(document), encoding="utf-8")
+        if target.exists():
+            shutil.copymode(target, temporary)
+        temporary.replace(target)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def _nest(section: str, table: dict[str, Any]) -> dict[str, Any]:

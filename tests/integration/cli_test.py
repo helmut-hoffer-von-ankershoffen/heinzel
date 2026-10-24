@@ -466,6 +466,7 @@ def test_invalid_arguments_are_rejected_before_running(make_kernel):
 # Agent-ready: every operation's command takes --json. The servers are commands but no operations: they run until
 # stopped and print no result to format.
 SERVERS = {"hz system serve api", "hz system serve daemon", "hz system serve mcp"}
+SETUP = {"hz setup", "hz clock setup"}  # setup steps are interactive, not operations (ADR 0032)
 
 
 def leaves_without_json(command, path: str = "hz") -> list[str]:
@@ -494,7 +495,7 @@ def test_finds_commands_without_json():
 
 def test_every_operation_accepts_json(make_kernel):
     app = build(make_kernel(builtins=True, clock=heinzel_clock.module, **example_modules()))
-    assert set(leaves_without_json(typer.main.get_command(app))) == SERVERS
+    assert set(leaves_without_json(typer.main.get_command(app))) == SERVERS | SETUP
     help_text = " ".join(click.unstyle(runner.invoke(app, ["--help"]).output).split())  # CI forces colours
     assert "Every operation accepts --json" in help_text
 

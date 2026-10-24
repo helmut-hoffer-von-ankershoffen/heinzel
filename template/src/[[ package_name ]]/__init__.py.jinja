@@ -4,7 +4,7 @@ A Heinzelmännchen plugin, discovered through the `heinzel.modules` entry point 
 below it that declares `module = Module(...)` becomes a submodule (see `hello/`).
 """
 
-from heinzel import Module
+from heinzel import ConfigEditor, Module, Prompter
 
 from [[ package_name ]]._models import [[ class_prefix ]]About, [[ class_prefix ]]Settings
 from [[ package_name ]]._service import [[ class_prefix ]]Service
@@ -24,6 +24,14 @@ def info(service: [[ class_prefix ]]Service) -> [[ class_prefix ]]About:
 def system_info(service: [[ class_prefix ]]Service) -> [[ class_prefix ]]About:
     """Contribute this plugin's details to `hz system info`."""
     return service.about()
+
+
+@module.setup(required=False)  # optional: `hz setup` offers to skip it; `hz [[ plugin_name ]] setup` runs it alone
+def setup(settings: [[ class_prefix ]]Settings, prompter: Prompter, editor: ConfigEditor) -> None:
+    """Choose how `hello` greets."""
+    greeting = prompter.text("How should `hello` greet?", default=settings.greeting)
+    path = editor.write("[[ plugin_name ]].greeting", greeting)  # validated like `hz system config set`, user scope
+    prompter.say(f"Saved to {path}.")
 
 
 __all__ = ["[[ class_prefix ]]About", "[[ class_prefix ]]Service", "[[ class_prefix ]]Settings", "module"]

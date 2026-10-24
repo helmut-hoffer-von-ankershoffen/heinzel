@@ -28,6 +28,15 @@ is no registry to edit. A package nested in a module's package that declares its
 6. Check it shows up: `uv run hz system modules`, `uv run hz <name> --help`.
 7. Update README (usage) and ARCHITECTURE.md if the module is part of the core story.
 
+## Setup step (optional)
+
+If people must or may configure the module before using it, declare one setup step: `@module.setup` (or
+`required=True`) on a function that asks through an injected `Prompter` (`text`, `choice`, `choices`, `confirm`,
+`number`, `secret`) and writes through `ConfigEditor.write("<module>.<key>", value)` and `Credentials.set(...)`. It
+becomes `hz <module> setup` and part of `hz setup` ([ADR 0032](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0032-modules-declare-interactive-setup-steps.md)).
+Modules without a declared step get none. Test it with scripted answers: `ScriptedPrompter([...])` bound with
+`kernel.bind(Prompter, ...)`, or the `hz_prompter` fixture.
+
 ## Red flags
 
 - The module imports another module's `_private` file → inject its service instead.

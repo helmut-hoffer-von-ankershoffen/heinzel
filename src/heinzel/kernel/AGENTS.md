@@ -4,7 +4,7 @@ Every module and plugin depends on this package; its public API is `hz` and `hei
 change like a library release: an ADR for a new concept, unit tests for every branch.
 
 - `_module.py` — `Module` and its decorators (`operation`, `job`, `service`, `settings`, `info`, `health`,
-  `credential`, `provides`; `requires=` on modules, operations and jobs).
+  `credential`, `provides`, `setup`; `requires=` on modules, operations and jobs).
 - `_protocols.py` — integration capability protocols (`CodeHost`, `Tracker`, `Documents`, `Chat`, `Meetings`,
   `Calendar`) and their models; `_text.py` — `clean_text`, which adapters apply to every string they return;
   `_agents.py` — the `AgentRunner` protocol and `AgentResult` (ADR 0029; adapters live in `system.runner`);
@@ -23,4 +23,6 @@ change like a library release: an ADR for a new concept, unit tests for every br
 - `_config.py`, `_settings.py` — layered TOML + env configuration (`ignored_in_project`: fields a project
   `hz.toml` can't set); `_installation.py` — the uv tool environment;
   `_progress.py` — head-agnostic progress; `_duration.py` — `parse_duration` (`5m`); `_release.py` —
-  `ReleaseCache` and `ReleaseSource`, the latest release last seen and who asks for it (ADR 0031).
+  `ReleaseCache` and `ReleaseSource`, the latest release last seen and who asks for it (ADR 0031);
+  `_prompter.py` — `Prompter`, head-agnostic questions for setup steps, and `ScriptedPrompter` (ADR 0032;
+  the CLI head runs the steps); `ConfigEditor` in `_config.py` is implemented by `system.config`.

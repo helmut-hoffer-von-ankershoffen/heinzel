@@ -36,11 +36,13 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0029](0029-agent-runners-are-capability-adapters.md) | Agent runners are capability adapters; core ships Claude Code and a generic command adapter | proposed | 2026-10-23 |
 | [0030](0030-credentials-live-in-the-os-keychain.md) | Credentials live in the OS keychain behind a credentials service | accepted | 2026-10-24 |
 | [0031](0031-update-check.md) | The CLI checks for a newer release hourly, anonymously and in the background, and says so on stderr | accepted | 2026-10-24 |
+| [0032](0032-modules-declare-interactive-setup-steps.md) | Modules declare interactive setup steps; `hz setup` runs them all | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
 [0008](0008-release-from-conventional-commits.md); [0020](0020-daemon-head.md) and
-[0021](0021-workflow-contracts.md) amend [0010](0010-towards-a-reactive-workflow-engine.md). ADRs 0021–0024 are
+[0021](0021-workflow-contracts.md) amend [0010](0010-towards-a-reactive-workflow-engine.md);
+[0032](0032-modules-declare-interactive-setup-steps.md) amends [0018](0018-one-administrative-namespace.md) (`hz setup`). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 
