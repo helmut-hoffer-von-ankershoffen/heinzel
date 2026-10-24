@@ -213,6 +213,7 @@ Workflow contracts: Markdown files an agent drafts from, by hand or on your daem
 | Record how much of a draft you changed before sending it; `hz workflow show` reports it. | `hz workflow sent` | `workflow_sent` | — | yes |
 | Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate. | `hz workflow check` | `workflow_check` | `GET /workflow/check` |  |
 | Render a contract now: fetch its inputs, run the agent and save the draft; nothing is published. | `hz workflow run` | `workflow_run` | — | yes |
+| Delete drafts and records older than `[workflow] retention_days` (default 90); receipts are kept. | `hz workflow prune` | `workflow_prune` | — | yes |
 
 Settings: [`[workflow]`](CONFIGURATION.md#workflow).
 

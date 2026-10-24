@@ -983,6 +983,7 @@ $ hz workflow [OPTIONS] COMMAND [ARGS]...
 * `list`: List the contracts in your and your team&#x27;s...
 * `new`: Write a starter contract, or a playbook&#x27;s...
 * `playbooks`: List the playbooks plugins contribute:...
+* `prune`: Delete drafts and records older than...
 * `run`: Render a contract now: fetch its inputs,...
 * `sent`: Record how much of a draft you changed...
 * `show`: Show a contract as the daemon runs it:...
@@ -1090,6 +1091,23 @@ $ hz workflow playbooks [OPTIONS]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz workflow prune`
+
+Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
+
+**Usage**:
+
+```console
+$ hz workflow prune [OPTIONS]
+```
+
+**Options**:
+
+* `--dry-run / --no-dry-run`: Only list what would be deleted; delete nothing.  [default: no-dry-run]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

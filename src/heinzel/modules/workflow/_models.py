@@ -39,6 +39,14 @@ SUFFIX = ".prose.md"
 RUNNER = "agent-runner"
 """Every contract renders with an agent session, so it always requires `agent-runner:read`."""
 MAX_TIMEOUT = timedelta(hours=2)
+MAX_RETENTION_DAYS = 36_500
+"""A century: a bound against typos (0, not a huge number, means forever); `datetime` would fail near 739,000."""
+DRAFTS = ("workflow", "drafts")
+"""Where drafts are saved, below the data directory: one directory per contract, `<namespace>-<name>`."""
+DRAFT_STAMP = "%Y%m%dT%H%M%SZ"
+"""Draft file names start with the render's time, so a listing sorts by it and retention ages by it."""
+DRAFT_NAME = re.compile(r"(?P<stamp>\d{8}T\d{6}Z)(?:-[1-9]\d*)?(?P<suffix>\.record\.json|\.md|\.json)")
+"""The names a render gives drafts and records: `<stamp>[-<n>]` and the suffix; only these are ever pruned."""
 RUNNER_IS_CONFIGURATION = (
     "the runner and model are configuration: `[capabilities] agent_runner`, `[system.runner] model`"
 )
@@ -419,8 +427,18 @@ class WorkflowSettings(ModuleSettings):
         "in every head. A scheduled slot's retries share it.",
     )
 
+    retention_days: int = Field(
+        default=90,
+        ge=0,
+        le=MAX_RETENTION_DAYS,
+        description="Days drafts and their `.record.json` files (the packet with the fetched inputs) are kept, "
+        "counted from the render; older ones are deleted by the daemon's daily `workflow:prune` job or by "
+        "`hz workflow prune`, never by reading them. 0 keeps them forever, at most 36500. Receipts are kept and hold "
+        "the draft's hash, not its text (ADR 0021).",
+    )
+
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
-        {"user_dir", "team_repository", "schedule_team", "max_usd"}
+        {"user_dir", "team_repository", "schedule_team", "max_usd", "retention_days"}
     )
 
     @field_validator("schedule_team")
@@ -520,6 +538,23 @@ class Draft(BaseModel):
     draft: Path = Field(description="The draft file.")
     record: Path | None = Field(description="Its record: packet, input hashes and the agent's report; none if lost.")
     bytes: int = Field(description="The draft's size.")
+
+
+class PruneReport(BaseModel):
+    """`hz workflow prune`: the drafts and records past `[workflow] retention_days`, deleted unless a dry run."""
+
+    dry_run: bool = Field(description="Whether only what would be deleted was listed.")
+    retention_days: int = Field(description="Days drafts and records are kept; 0 keeps them forever.")
+    cutoff: datetime | None = Field(description="Files rendered before this expire; none when kept forever.")
+    directory: Path = Field(description="Where drafts are saved; nothing outside it is touched.")
+    files: list[Path] = Field(description="The expired files, oldest first: deleted, or to delete in a dry run.")
+    drafts: int = Field(description="How many of them are drafts.")
+    records: int = Field(description="How many of them are `.record.json` files.")
+    bytes: int = Field(description="Their total size.")
+    problems: list[str] = Field(
+        default_factory=list, description="Directories and files that couldn't be read or deleted; the rest were."
+    )
+    next: list[Step] = Field(description="What to do next, as commands.")
 
 
 class DraftList(BaseModel):

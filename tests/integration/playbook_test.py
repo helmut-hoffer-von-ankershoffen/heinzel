@@ -308,7 +308,7 @@ def test_a_dry_run_reads_every_input_and_costs_nothing(kernel):
 def test_the_daemon_drafts_it_on_friday_at_17_local_with_lineage(kernel, tmp_path):
     """Nothing on Thursday 17:03 or Friday 16:58; the Friday 17:00 slot at the 17:03 tick, once."""
     drafts = written(kernel, schedule=True)
-    assert hz(kernel, "system", "daemon", "jobs")[1][0]["job"] == "workflow:me-weekly-report"
+    assert "workflow:me-weekly-report" in [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]]
     thursday = FRIDAY - timedelta(days=1)
     assert daemon(kernel, tmp_path, thursday.replace(hour=17, minute=3)).tick().runs == []
     assert daemon(kernel, tmp_path, FRIDAY.replace(hour=16, minute=58)).tick().runs == []

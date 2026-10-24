@@ -55,8 +55,14 @@ def calls() -> list[str]:
 
 
 @pytest.fixture
-def kernel(make_kernel, calls):
-    return make_kernel(builtins=True, example=job_module(calls))
+def without_workflow(settings):
+    """Kernel settings without the workflow module, whose daily `workflow:prune` would join ticks near midnight."""
+    return settings.model_copy(update={"disabled_modules": frozenset({"workflow"})})
+
+
+@pytest.fixture
+def kernel(make_kernel, calls, without_workflow):
+    return make_kernel(builtins=True, settings_=without_workflow, example=job_module(calls))
 
 
 def hz(kernel, *args: str):
@@ -115,8 +121,9 @@ def test_tick_says_another_tick_is_running(kernel, settings):
         assert "Another tick is running" in hz(kernel, "system", "daemon", "tick").output
 
 
-def test_jobs_without_any(make_kernel):
-    assert "No module advertises a job" in hz(make_kernel(builtins=True), "system", "daemon", "jobs").output
+def test_jobs_without_any(make_kernel, without_workflow):
+    kernel = make_kernel(builtins=True, settings_=without_workflow)
+    assert "No module advertises a job" in hz(kernel, "system", "daemon", "jobs").output
 
 
 def test_install_dry_run_and_uninstall_with_a_fake_service_manager(kernel, settings, tmp_path):
