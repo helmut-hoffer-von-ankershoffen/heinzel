@@ -9,7 +9,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, SystemInfo
+from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, SystemInfo, UpdateResult
 
 
 def render_modules(modules: list[ModuleInfo]) -> RenderableType:
@@ -67,3 +67,8 @@ def render_release(check: ReleaseCheck) -> RenderableType:
             f"What's new: hz system changelog --newer{notes}"
         )
     return Text(f"hz {check.current} is up to date; the latest release is {check.latest}.")
+
+
+def render_update(result: UpdateResult) -> RenderableType:
+    """What the update did, or what the installation is pinned to and the command that moves it."""
+    return Text(result.message)
