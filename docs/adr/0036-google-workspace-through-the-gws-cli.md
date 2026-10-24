@@ -91,5 +91,7 @@ runs only `gws --version` and `gws auth status`); `tests/unit/docs_test.py` (a p
 ## More Information
 
 - The maintainer chose `gws` as the backend on 2026-10-24, replacing a first draft with its own OAuth flow.
-- Mail (Gmail) and the directory join this plugin as further `gws`-backed providers once their protocols are in the
-  core; they follow this record.
+- Mail (Gmail) follows this record: `gmail users messages list/get` and `users labels list` through `gws`, with
+  `gmail.readonly`, which Google classes as restricted and which covers all of a person's mail, asked for only when
+  `mail` is bound to `google` (setup offers it with "no" as the default, then signs in again with the scope added).
+- The directory joins this plugin as a further `gws`-backed provider once its protocol is in the core.

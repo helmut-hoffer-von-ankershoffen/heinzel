@@ -53,7 +53,7 @@ def test_setup_through_the_cli(google_kernel, fake_gws, tmp_path, monkeypatch):
     home = tmp_path / "config"
     monkeypatch.setenv("HZ_CONFIG_HOME", str(home))
     kernel = google_kernel()
-    prompter = ScriptedPrompter(["y", "", ""])  # change it (gws_path is set), then read both from Google
+    prompter = ScriptedPrompter(["y", "", "", ""])  # change it (gws_path is set); documents and calendar; no mail
     kernel.bind(Prompter, prompter)
     result = runner.invoke(build(kernel), ["google", "setup"])
     assert result.exit_code == 0, result.output

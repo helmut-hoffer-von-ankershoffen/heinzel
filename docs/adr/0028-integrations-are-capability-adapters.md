@@ -314,7 +314,7 @@ adapters are first-party plugins, not separate repositories:
   the other plugins.
 - Built: GitHub (`code-host`, `tracker`; [ADR 0033](0033-github-rest-api-over-urllib.md)) and Atlassian (`tracker`,
   `documents`; [ADR 0034](0034-atlassian-cloud-rest-apis-over-urllib.md)), both moved from their own repositories at
-  their v0.1.0, and Google Workspace (`documents`, `calendar`; [ADR 0036](0036-google-workspace-through-the-gws-cli.md)).
+  their v0.1.0, and Google Workspace (`documents`, `calendar`, `mail`; [ADR 0036](0036-google-workspace-through-the-gws-cli.md)).
   Planned: Zoom and Slack.
 - Separate repositories, scaffolded from `template/`, remain the model for community and company plugins (for
   example `heinzel-example`).

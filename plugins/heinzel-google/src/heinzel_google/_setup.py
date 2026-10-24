@@ -5,10 +5,12 @@ from pathlib import Path
 
 from heinzel import ConfigEditor, HeinzelError, Prompter
 from heinzel.kernel import CapabilityView
-from heinzel_google._gws import CLIENT, INSTALL, LOGIN, GoogleSession, Gws
+from heinzel_google._gws import CLIENT, INSTALL, LOGIN, LOGIN_WITH_MAIL, GoogleSession, Gws
 from heinzel_google._models import GoogleSettings
 
-CAPABILITIES = ("documents", "calendar")
+CAPABILITIES = ("documents", "calendar", "mail")
+OPT_IN = frozenset({"mail"})
+"""Capabilities offered with "no" as the default: Gmail's read scope covers all of a person's mail."""
 LOGIN_TIMEOUT = 900.0
 """Seconds `gws auth login` may take, consent in the browser included."""
 
@@ -47,15 +49,29 @@ def run_setup(  # noqa: PLR0913, PLR0917 - what the step is injected with
     if not signed_in and "OAuth client" in detail:
         prompter.say(f"Give gws an OAuth client first, then run hz google setup again: {CLIENT}")
         return
-    if not signed_in:
-        prompter.say(f"Signing in asks Google for read-only access only: {LOGIN}")
-        if prompter.confirm("Sign gws in now? It opens your browser"):
-            code = gws.login(executable, LOGIN.split()[1:], LOGIN_TIMEOUT)
-            prompter.say("gws is signed in." if code == 0 else f"gws auth login did not finish (exit {code}).")
+    newly = _bind(view, prompter, editor)
+    mail = "mail" in newly or view.bound("mail") == "google"
+    if signed_in and "mail" not in newly:
+        return
+    login = LOGIN_WITH_MAIL if mail else LOGIN
+    why = "read-only access, to your mail too" if mail else "read-only access only"
+    prompter.say(f"Signing in asks Google for {why}: {login}")
+    if prompter.confirm("Sign gws in now? It opens your browser"):
+        code = gws.login(executable, login.split()[1:], LOGIN_TIMEOUT)
+        prompter.say("gws is signed in." if code == 0 else f"gws auth login did not finish (exit {code}).")
+
+
+def _bind(view: CapabilityView, prompter: Prompter, editor: ConfigEditor) -> set[str]:
+    """Offer each capability not yet read from Google; the ones now bound to it."""
+    newly: set[str] = set()
     for capability in CAPABILITIES:
         bound = view.bound(capability)
         if bound == "google":
             continue
         question = f"Read {capability} from Google" + (f" instead of {bound}?" if bound else "?")
-        if prompter.confirm(question, default=bound is None):
+        if capability in OPT_IN:
+            question += " Google then lets the plugin read all of your mail"
+        if prompter.confirm(question, default=bound is None and capability not in OPT_IN):
             prompter.say(f"Saved to {editor.write(f'capabilities.{capability}', 'google')}.")
+            newly.add(capability)
+    return newly

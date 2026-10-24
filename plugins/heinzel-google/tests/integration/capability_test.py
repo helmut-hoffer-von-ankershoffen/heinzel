@@ -126,6 +126,7 @@ def test_capability_list_shows_the_adapter_and_its_hosts(google_kernel):
     assert ours == [
         ("calendar", ["read"], ["www.googleapis.com"]),
         ("documents", ["read"], ["www.googleapis.com", "docs.googleapis.com", "sheets.googleapis.com"]),
+        ("mail", ["read"], ["gmail.googleapis.com"]),
     ]
 
 

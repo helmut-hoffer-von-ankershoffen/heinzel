@@ -47,7 +47,10 @@ SCOPES = (
     "https://www.googleapis.com/auth/calendar.readonly",
 )
 """The read-only scopes the adapters need; `LOGIN` asks `gws` for exactly these."""
+MAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+"""Gmail's read-only scope, asked for only when `mail` is read from Google: Google classes it as restricted."""
 LOGIN = f"gws auth login --scopes {','.join(SCOPES)}"
+LOGIN_WITH_MAIL = f"gws auth login --scopes {','.join((*SCOPES, MAIL_SCOPE))}"
 INSTALL = "npm install -g @googleworkspace/cli (or set google.gws_path to the gws executable)"
 MIN_VERSION = (0, 22, 0)
 """The oldest `gws` this plugin was written and tested against (ADR 0035): its JSON and exit codes are no contract."""
@@ -401,10 +404,11 @@ class GoogleSession:
         reasons = _reasons(error)
         if reasons & _RATE or code == 429:  # noqa: PLR2004 - Too Many Requests
             return f"{api}'s rate limit is reached for {subject} after {waits} retries: retry in a minute."
+        login = LOGIN_WITH_MAIL if api == "Gmail" else LOGIN
         if process.exit_code == 2 or code == 401:  # noqa: PLR2004 - gws's auth error, or Unauthorized
-            return f"gws is not signed in to Google, or its sign-in expired ({said}). Sign in: {LOGIN}"
+            return f"gws is not signed in to Google, or its sign-in expired ({said}). Sign in: {login}"
         if reasons & _SCOPE:
-            return f"{api} refused {subject}: gws's sign-in lacks the read-only scope ({said}). Sign in: {LOGIN}"
+            return f"{api} refused {subject}: gws's sign-in lacks the read-only scope ({said}). Sign in: {login}"
         if reasons & _DISABLED:
             return f"{api} is not enabled in the Google Cloud project of gws's OAuth client ({said}); enable it there."
         if code == 404:  # noqa: PLR2004 - Not Found

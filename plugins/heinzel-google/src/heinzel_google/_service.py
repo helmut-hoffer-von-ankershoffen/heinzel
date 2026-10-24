@@ -9,12 +9,13 @@ from heinzel_google._models import GoogleAbout
 
 DISTRIBUTION = "heinzel-google"
 ADAPTER = "google"
-CAPABILITIES = ("documents", "calendar")
+CAPABILITIES = ("documents", "calendar", "mail")
 APIS = [
     "Google Docs API v1 (documents.get)",
     "Google Sheets API v4 (spreadsheets.get)",
     "Google Drive API v3 (files.get, files.list; metadata only)",
     "Google Calendar API v3 (events.list)",
+    "Gmail API v1 (users.messages.list, users.messages.get, users.labels.list; only when mail is bound)",
 ]
 
 

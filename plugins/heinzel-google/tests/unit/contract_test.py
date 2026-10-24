@@ -3,7 +3,7 @@
 import inspect
 
 import pytest
-from heinzel_google import CALENDAR_HOSTS, DOCUMENT_HOSTS, GoogleCalendar, GoogleDocuments, module
+from heinzel_google import CALENDAR_HOSTS, DOCUMENT_HOSTS, MAIL_HOSTS, Gmail, GoogleCalendar, GoogleDocuments, module
 
 from heinzel import ProviderLet
 from heinzel.kernel import CAPABILITIES
@@ -14,19 +14,21 @@ pytestmark = pytest.mark.unit
 PROVIDERS = [let for let in module.lets if isinstance(let, ProviderLet)]
 
 
-def test_the_adapter_serves_documents_and_calendar_read_only_on_googles_hosts():
+def test_the_adapter_serves_documents_calendar_and_mail_read_only_on_googles_hosts():
     assert sorted((p.name, sorted(p.modes)) for p in PROVIDERS) == [
         ("google:calendar", ["read"]),
         ("google:documents", ["read"]),
+        ("google:mail", ["read"]),
     ]
     hosts = {p.capability: p.hosts for p in PROVIDERS}
-    assert hosts == {"documents": tuple(DOCUMENT_HOSTS), "calendar": tuple(CALENDAR_HOSTS)}
-    assert all(host.endswith(".googleapis.com") for host in (*DOCUMENT_HOSTS, *CALENDAR_HOSTS))
+    assert hosts == {"documents": tuple(DOCUMENT_HOSTS), "calendar": tuple(CALENDAR_HOSTS), "mail": tuple(MAIL_HOSTS)}
+    assert all(host.endswith(".googleapis.com") for host in (*DOCUMENT_HOSTS, *CALENDAR_HOSTS, *MAIL_HOSTS))
 
 
 def test_the_adapters_pass_the_shared_check():
     assert_adapter(GoogleDocuments, "documents")
     assert_adapter(GoogleCalendar, "calendar")
+    assert_adapter(Gmail, "mail")
 
 
 @pytest.mark.parametrize("provider", PROVIDERS, ids=lambda p: p.name)

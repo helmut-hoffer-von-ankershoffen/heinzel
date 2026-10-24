@@ -128,7 +128,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`atlassian`](docs/MODULES.md#atlassian) — Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. *First-party plugin: `hz system plugin add atlassian`.*
 - [`clock`](docs/MODULES.md#clock) — What time it is for everyone on the team. *First-party plugin: `hz system plugin add clock`.*
 - [`github`](docs/MODULES.md#github) — Read pull requests and issues from GitHub: the code-host and tracker capabilities. *First-party plugin: `hz system plugin add github`.*
-- [`google`](docs/MODULES.md#google) — Read Google Docs, Sheets, Drive and Calendar: the documents and calendar capabilities. *First-party plugin: `hz system plugin add google`.*
+- [`google`](docs/MODULES.md#google) — Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. *First-party plugin: `hz system plugin add google`.*
 - [`org`](docs/MODULES.md#org) — Your profile, and the team, org and company you work with.
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
@@ -156,7 +156,7 @@ so you only get the integrations you use. `hz system plugin add <name>` installs
 | [heinzel-clock](plugins/heinzel-clock) | What time it is for everyone on the team | `hz system plugin add clock` |
 | [heinzel-github](plugins/heinzel-github) | Pull requests and issues from GitHub: the `code-host` and `tracker` capabilities | `hz system plugin add github` |
 | [heinzel-atlassian](plugins/heinzel-atlassian) | Jira issues and Confluence pages: the `tracker` and `documents` capabilities | `hz system plugin add atlassian` |
-| [heinzel-google](plugins/heinzel-google) | Google Docs, Sheets, Drive and Calendar through the Google Workspace CLI: the `documents` and `calendar` capabilities | `hz system plugin add google` |
+| [heinzel-google](plugins/heinzel-google) | Google Docs, Sheets, Drive, Calendar and Gmail through the Google Workspace CLI: the `documents`, `calendar` and `mail` capabilities | `hz system plugin add google` |
 
 Zoom and Slack adapters are planned as first-party plugins too. Community and company plugins live
 in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
