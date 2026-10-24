@@ -57,6 +57,16 @@ describe("Themes", () => {
     expect(screen.getByTestId("theme-preview-default").style.getPropertyValue("--color-main-tint")).toBe("transparent");
   });
 
+  it("brands each preview as the sidebar would: the theme's wordmark, else the Heinzel and the name", async () => {
+    themedApi("default");
+    renderAt("/doctor?settings=hz");
+    const acme = await screen.findByTestId("theme-preview-acme");
+    expect(acme.querySelector("img")).toHaveAttribute("src", "/theme-assets/acme/light.svg?v=1");
+    const builtIn = screen.getByTestId("theme-preview-default");
+    expect(builtIn.querySelector("img")).toBeNull();
+    expect(builtIn).toHaveTextContent("🧝Heinzelmännchen");
+  });
+
   it("names the plugin under a preview only when it says more than the title", async () => {
     const night = { ...acmeTheme, name: "acme-night", title: "Acme Night" };
     mockApi({ ...shell, "/api/system/theme/list": themeList("default", [theme(), acmeTheme, night]) });

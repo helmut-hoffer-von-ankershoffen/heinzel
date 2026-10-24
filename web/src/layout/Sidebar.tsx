@@ -20,16 +20,15 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router";
-import type { SchemaThemeLogoView } from "@/api/client";
-import { useContracts, useExpert, useProfile, useSetExpert, useThemes } from "@/api/queries";
-import { HeinzelIcon } from "@/components/HeinzelIcon";
+import { useContracts, useExpert, useProfile, useSetExpert } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { InstallApp } from "@/pwa/InstallApp";
+import { Branding } from "./Branding";
 import { BellButton } from "./NotificationCenter";
-import { CONTRACTS_SECTION, contractPath, railItems, SYSTEM_SECTION, sections, visibleSections } from "./navigation";
-import { useDark } from "./ThemeTokens";
+import { CONTRACTS_SECTION, contractPath, railItems, sections, visibleSections } from "./navigation";
+import { useDark, useSelectedTheme } from "./ThemeTokens";
 import { useTheme } from "./theme";
 
 const link = ({ isActive }: { isActive: boolean }) =>
@@ -221,28 +220,10 @@ function Rail({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
         </button>
       </div>
       <nav aria-label={t("nav.label")} className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto py-2">
-        {visibleSections(sections, expert.data).map((section) => (
-          // The System group sits apart under a hairline, as it comes last in the full sidebar.
-          <div
-            key={section.label}
-            className={cn(
-              "flex w-full flex-col items-center gap-1",
-              section.label === SYSTEM_SECTION && "mt-1 border-t-[0.5px] border-foreground/20 pt-2",
-            )}
-          >
-            {railItems([section]).map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end
-                className={railLink}
-                aria-label={t(item.label)}
-                title={t(item.label)}
-              >
-                <item.icon aria-hidden />
-              </NavLink>
-            ))}
-          </div>
+        {railItems(visibleSections(sections, expert.data)).map((item) => (
+          <NavLink key={item.to} to={item.to} end className={railLink} aria-label={t(item.label)} title={t(item.label)}>
+            <item.icon aria-hidden />
+          </NavLink>
         ))}
       </nav>
       <Footer compact />
@@ -251,34 +232,9 @@ function Rail({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
 }
 
 /** The selected theme's logo (ADR 0044): its wordmark for the mode shown, or its square mark; nothing without one. */
+/** The selected theme's branding, as `Branding` draws it. */
 function ThemeLogo({ mark = false, className }: { mark?: boolean; className?: string }) {
-  const themes = useThemes();
-  const dark = useDark();
-  // The branding is always there: a plugin theme's logo, else the Heinzel and the app's name (the built-in theme too).
-  const selected = themes.data?.themes.find((theme) => theme.name === themes.data?.selected);
-  const pick = (logo: SchemaThemeLogoView | null | undefined) =>
-    logo ? (mark ? logo.mark : dark ? logo.dark : logo.light) : null;
-  const logo = selected && selected.name !== "default" ? selected.logo : null;
-  const src = pick(logo);
-  if (!logo || !src) {
-    return mark ? (
-      <HeinzelIcon className={cn("text-xl", className)} />
-    ) : (
-      <span className="flex min-w-0 items-center gap-2 text-ui font-medium">
-        <HeinzelIcon className="text-xl" />
-        <span className="truncate">{t("app.name")}</span>
-      </span>
-    );
-  }
-  // An <img>, never inline SVG: a script in the file can't run, and the web head serves it under a strict CSP.
-  return (
-    <img
-      src={src}
-      alt={logo.alt}
-      style={mark ? undefined : { height: logo.height }}
-      className={cn(mark ? "object-contain" : "w-auto max-w-44 object-contain object-left", className)}
-    />
-  );
+  return <Branding theme={useSelectedTheme()} dark={useDark()} mark={mark} className={className} />;
 }
 
 /** Short role labels, as in a chat app's account line; unknown roles show as they are. */

@@ -8,6 +8,7 @@ import type { SchemaThemeView } from "@/api/client";
 import { useSetTheme, useThemes } from "@/api/queries";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { Branding } from "./Branding";
 import { tokens, useDark } from "./ThemeTokens";
 
 /** The corners index.css derives from the two theme radii, declared again on the preview so they use its radii. */
@@ -111,6 +112,9 @@ function Miniature({ theme, dark }: { theme: SchemaThemeView; dark: boolean }) {
         className="absolute top-0 left-0 flex h-[200%] w-[200%] origin-top-left scale-50 bg-background text-ui text-foreground"
       >
         <span className="flex w-[30%] flex-col gap-1 border-r border-border bg-sidebar p-2">
+          <span className="mb-1 flex h-9 items-center px-1">
+            <Branding theme={theme} dark={dark} />
+          </span>
           <span className="flex h-(--row) items-center gap-2 rounded-lg bg-accent px-2 text-accent-foreground">
             <Home className="size-(--icon) shrink-0 text-accent-foreground" />
             <span className="truncate">{t("nav.home")}</span>

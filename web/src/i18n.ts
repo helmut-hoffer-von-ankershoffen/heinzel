@@ -18,7 +18,6 @@ const en = {
   "nav.assetTypes": "Asset types",
   "nav.assets": "Assets",
   "nav.doctor": "Doctor",
-  "nav.system": "System",
   "nav.profile": "Profile",
   "account.help": "Get help",
   "account.changelog": "View changelog",

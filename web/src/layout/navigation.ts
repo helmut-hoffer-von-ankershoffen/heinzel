@@ -1,7 +1,7 @@
 // The navigation tree: sections and their screens. Contracts add one entry each, from `hz workflow list`.
 // A screen names the operation it shows; outside expert mode only screens of everyday operations are listed, the
 // same split `hz --help` makes (ADR 0041). A screen that isn't listed still opens by its URL.
-import { Boxes, type LucideIcon, Network, Shapes, Share2, Stethoscope, Users, Workflow } from "lucide-react";
+import { Boxes, type LucideIcon, Network, Shapes, Share2, Users, Workflow } from "lucide-react";
 import type { SchemaExpertMode } from "@/api/client";
 import type { MessageKey } from "@/i18n";
 
@@ -17,8 +17,9 @@ export type NavSection = {
 };
 
 export const CONTRACTS_SECTION: MessageKey = "nav.contracts";
-export const SYSTEM_SECTION: MessageKey = "nav.system";
 
+// The navigation holds only what people work with to get their work done. hz itself (the doctor, daemon jobs,
+// plugins) lives in the account menu and in Settings; its screens still open by URL (`/doctor`).
 export const sections: NavSection[] = [
   {
     label: CONTRACTS_SECTION,
@@ -41,11 +42,6 @@ export const sections: NavSection[] = [
       { to: "/inventory/types", label: "nav.assetTypes", icon: Shapes, operation: "workflow:playbooks" },
       { to: "/inventory/assets", label: "nav.assets", icon: Boxes, operation: "workflow:discover" },
     ],
-  },
-  // hz itself, not your work: last, apart from the rest (daemon jobs and the like join it later).
-  {
-    label: SYSTEM_SECTION,
-    items: [{ to: "/doctor", label: "nav.doctor", icon: Stethoscope, operation: "system.doctor:doctor" }],
   },
 ];
 
