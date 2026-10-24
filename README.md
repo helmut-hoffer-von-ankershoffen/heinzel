@@ -8,10 +8,9 @@
 | src/heinzel/heads/api/\_\_init\_\_.py                |       38 |        2 |        6 |        1 |     93% |69-\>72, 79-81 |
 | src/heinzel/heads/cli/\_\_init\_\_.py                |      116 |        7 |       24 |        2 |     94% |104-\>106, 111-117, 141-\>135 |
 | src/heinzel/heads/cli/\_command.py                   |       72 |        2 |       18 |        2 |     96% |   84, 129 |
-| src/heinzel/heads/cli/\_serve.py                     |       18 |        4 |        0 |        0 |     78% |36-38, 46-48 |
+| src/heinzel/heads/cli/\_serve.py                     |       39 |        4 |        6 |        1 |     89% |43-45, 53-55, 71-\>exit |
 | src/heinzel/heads/mcp/\_\_init\_\_.py                |       32 |        4 |        4 |        0 |     83% |     63-67 |
 | src/heinzel/kernel/\_boot.py                         |        9 |        4 |        0 |        0 |     56% |     11-14 |
-| src/heinzel/kernel/\_config.py                       |       86 |        0 |       20 |        1 |     99% | 152-\>154 |
 | src/heinzel/kernel/\_discovery.py                    |       45 |        2 |       12 |        0 |     96% |     56-57 |
 | src/heinzel/kernel/\_installation.py                 |       84 |        0 |       20 |        1 |     99% |123-\>exit |
 | src/heinzel/modules/system/\_\_init\_\_.py           |       29 |        7 |        2 |        0 |     71% |     54-64 |
@@ -21,11 +20,12 @@
 | src/heinzel/modules/system/config/\_\_init\_\_.py    |       27 |        2 |        0 |        0 |     93% |    40, 57 |
 | src/heinzel/modules/system/config/\_render.py        |       17 |        1 |        8 |        1 |     92% |        17 |
 | src/heinzel/modules/system/config/\_service.py       |      107 |        4 |       24 |        0 |     97% |138, 165-167 |
+| src/heinzel/modules/system/daemon/\_schedule.py      |       65 |        3 |       20 |        1 |     95% |43-44, 102 |
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py    |       26 |        2 |        0 |        0 |     92% |    36, 64 |
 | src/heinzel/modules/system/plugin/\_service.py       |      124 |        5 |       28 |        2 |     95% |38-\>40, 115-116, 122, 129, 222 |
-| **TOTAL**                                            | **2006** |   **53** |  **366** |   **13** | **97%** |           |
+| **TOTAL**                                            | **2910** |   **56** |  **570** |   **14** | **98%** |           |
 
-30 files skipped due to complete coverage.
+40 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
