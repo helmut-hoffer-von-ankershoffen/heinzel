@@ -1,0 +1,25 @@
+name: Bug report
+description: Something in Heinzelmännchen doesn't work as documented.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Commands you ran, ideally with `--json` output.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `hz --version` and `hz system doctor --json`
+      render: json
+    validations:
+      required: true

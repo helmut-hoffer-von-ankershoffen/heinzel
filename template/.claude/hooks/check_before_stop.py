@@ -1,0 +1,1 @@
+../../../.claude/hooks/check_before_stop.py

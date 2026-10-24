@@ -1,0 +1,15 @@
+[project]
+name = "heinzel-clock"
+version = "0.0.0"
+description = "What time it is for everyone on the team: a Heinzelmännchen plugin."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = ["heinzel>=0.0.0"] # released together; the release process bumps the bound
+
+[project.entry-points."heinzel.modules"]
+clock = "heinzel_clock"
+
+[build-system]
+requires = ["hatchling>=1.29.0"]
+build-backend = "hatchling.build"

@@ -1,0 +1,29 @@
+"""[[ plugin_summary ]]
+
+A Heinzelmännchen plugin, discovered through the `heinzel.modules` entry point in pyproject.toml. Every package
+below it that declares `module = Module(...)` becomes a submodule (see `hello/`).
+"""
+
+from heinzel import Module
+
+from [[ package_name ]]._models import [[ class_prefix ]]About, [[ class_prefix ]]Settings
+from [[ package_name ]]._service import [[ class_prefix ]]Service
+
+module = Module("[[ plugin_name ]]", "[[ plugin_summary ]]")
+module.settings([[ class_prefix ]]Settings)
+module.service([[ class_prefix ]]Service)
+
+
+@module.operation
+def info(service: [[ class_prefix ]]Service) -> [[ class_prefix ]]About:
+    """Show this plugin's version, the Heinzelmännchen it runs on and the modules it brings."""
+    return service.about()
+
+
+@module.info
+def system_info(service: [[ class_prefix ]]Service) -> [[ class_prefix ]]About:
+    """Contribute this plugin's details to `hz system info`."""
+    return service.about()
+
+
+__all__ = ["[[ class_prefix ]]About", "[[ class_prefix ]]Service", "[[ class_prefix ]]Settings", "module"]

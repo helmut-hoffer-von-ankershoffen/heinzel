@@ -1,0 +1,94 @@
+name: Update pull requests
+
+# main requires pull requests to be up to date before they merge, and auto-merge does not update them. So whenever
+# main moves, bring every open, auto-merging pull request from this repository up to date; auto-merge then merges it
+# once CI OK is green. GitHub holds the pull_request runs this update triggers for approval (it treats the workflow's
+# bot as a first-time contributor), so the job approves them: same-repository branches only, never forks.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: update-prs
+  cancel-in-progress: true
+
+jobs:
+  update:
+    name: Update auto-merging pull requests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # merge main into pull request branches
+      pull-requests: write
+      actions: write # approve the CI runs the update triggers
+      security-events: read # whether the code-scanning alert behind a review thread is still open
+    steps:
+      # main requires resolved review threads, and code scanning leaves one per alert on the pull request, also after
+      # the alert is fixed or dismissed. Resolve those, so they don't hold auto-merge back without a word.
+      - name: Resolve review threads of closed code-scanning alerts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # shellcheck disable=SC2016 # $owner, $repo, $number and $id are GraphQL variables, not shell expansions
+          threads='query($owner: String!, $repo: String!, $number: Int!) {
+            repository(owner: $owner, name: $repo) { pullRequest(number: $number) { reviewThreads(first: 100) {
+              nodes { id isResolved comments(first: 1) { nodes { author { login } body } } } } } } }'
+          # shellcheck disable=SC2016 # GraphQL variable
+          resolve='mutation($id: ID!) { resolveReviewThread(input: {threadId: $id}) { thread { isResolved } } }'
+          bot='select((.isResolved | not) and .comments.nodes[0].author.login == "github-advanced-security")'
+          alert='(.comments.nodes[0].body | capture("/security/code-scanning/(?<n>[0-9]+)").n) // ""'
+          gh pr list --repo "$REPO" --state open --base main \
+            --json number,autoMergeRequest,isCrossRepository \
+            --jq '.[] | select(.autoMergeRequest != null and (.isCrossRepository | not)) | .number' |
+          while read -r number; do
+            gh api graphql -f query="$threads" -F owner="${REPO%/*}" -F repo="${REPO#*/}" -F number="$number" \
+              --jq ".data.repository.pullRequest.reviewThreads.nodes[] | $bot | \"\(.id) \($alert)\"" |
+            while read -r thread number_of_alert; do
+              [ -n "$number_of_alert" ] || continue
+              state="$(gh api "repos/$REPO/code-scanning/alerts/$number_of_alert" --jq .state)" || continue
+              [ "$state" != open ] || continue
+              if gh api graphql -f query="$resolve" -f id="$thread" >/dev/null; then
+                echo "Resolved the thread of alert $number_of_alert ($state) on #$number"
+              else
+                echo "::warning::could not resolve the review thread $thread of alert $number_of_alert ($state) on #$number; resolve it on the pull request"
+              fi
+            done
+          done
+
+      - name: Update and test pull requests that are behind main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh pr list --repo "$REPO" --state open --base main \
+            --json number,headRefName,autoMergeRequest,isCrossRepository \
+            --jq '.[] | select(.autoMergeRequest != null and (.isCrossRepository | not)) | "\(.number) \(.headRefName)"' |
+          while read -r number branch; do
+            # Fails (and is skipped) when the branch is already up to date or has conflicts with main.
+            if gh pr update-branch "$number" --repo "$REPO" 2>/dev/null; then
+              echo "Updated #$number ($branch)"
+              for _ in 1 2 3 4 5 6 7 8 9; do  # the merge commit and its runs appear within seconds
+                sleep 10
+                # Re-read the head each time: right after the update the pull request still reports the old commit.
+                head="$(gh pr view "$number" --repo "$REPO" --json headRefOid --jq .headRefOid)"
+                held="$(gh api "repos/$REPO/actions/runs?head_sha=$head&status=action_required" \
+                  --jq '.workflow_runs[].id')"
+                [ -n "$held" ] || continue
+                for run in $held; do
+                  if gh api --method POST "repos/$REPO/actions/runs/$run/approve" >/dev/null; then
+                    echo "  approved run $run"
+                  else
+                    echo "::warning::could not approve run $run; approve it in the Actions tab"
+                  fi
+                done
+                break
+              done
+            else
+              echo "Left #$number ($branch) as it is: up to date, or conflicts with main"
+            fi
+          done

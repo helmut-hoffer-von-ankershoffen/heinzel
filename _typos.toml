@@ -1,0 +1,3 @@
+[default.extend-words]
+CPY = "CPY" # ruff rule prefix (flake8-copyright)
+Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-contracts.md

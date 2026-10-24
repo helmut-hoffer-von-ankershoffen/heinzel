@@ -1,0 +1,1 @@
+../../scripts/ci_logs.py

@@ -1,0 +1,12 @@
+{
+  "name": "heinzel",
+  "owner": { "name": "Helmut Hoffer von Ankershoffen", "email": "helmuthva@gmail.com" },
+  "description": "Heinzelmännchen: an open-source, AI-driven operating system for product development teams.",
+  "plugins": [
+    {
+      "name": "heinzel",
+      "source": "./agent-skills",
+      "description": "Install and use the Heinzelmännchen CLI from your agent: /hz-init sets Heinzelmännchen up, the hz skill teaches agents to drive it."
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+[project]
+name = "heinzel-dummy"
+version = "1.2.3"
+description = "Minimal plugin used by Heinzelmännchen's own end-to-end tests."
+requires-python = ">=3.12"
+dependencies = ["heinzel"]
+
+[project.entry-points."heinzel.modules"]
+dummy = "heinzel_dummy"
+
+[build-system]
+requires = ["hatchling>=1.29.0"]
+build-backend = "hatchling.build"

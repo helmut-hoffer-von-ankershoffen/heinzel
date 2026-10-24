@@ -1,0 +1,26 @@
+---
+name: add-module
+description: Add a module or submodule to this Heinzelmännchen plugin the idiomatic way, with service, operations, tests and docs. Use when asked for a new command group or a new area of functionality in the plugin.
+---
+
+# Add a module
+
+A module is a package whose `__init__.py` declares `module = Module(name, summary)`. Heinzelmännchen discovers every such
+package below `src/[[ package_name ]]/` through the plugin's entry point; nested ones are submodules. Nothing to
+register by hand.
+
+## Process
+
+1. Create `src/[[ package_name ]]/<name>/__init__.py` with `module = Module("<name>", "<one sentence>")`.
+2. Put logic in a service (`module.service(MyService)`, constructor parameters injected by type), results in pydantic
+   models, and thin `@module.operation` functions that call the service (skill: `add-operation`).
+3. Tests (skill: `write-tests`): unit tests for the service; integration tests through Heinzelmännchen's CLI head with the
+   `boot` fixture (`build(boot())`), asserting `--json` output.
+4. Check: `make check`, then `hz system plugin add .` and `hz [[ plugin_name ]] <name> --help`.
+5. Document the new commands in README.md.
+
+## Verification
+
+- [ ] `make check` passes
+- [ ] `hz system modules` lists the module
+- [ ] `hz [[ plugin_name ]] <name> ... --json` returns valid JSON

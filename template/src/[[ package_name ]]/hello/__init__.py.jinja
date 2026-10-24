@@ -1,0 +1,20 @@
+"""A submodule. Its only operation shares its name, so the CLI collapses it to `hz [[ plugin_name ]] hello`."""
+
+from typing import Annotated
+
+from heinzel import Module
+from pydantic import Field
+
+from [[ package_name ]]._models import [[ class_prefix ]]Greeting
+from [[ package_name ]]._service import [[ class_prefix ]]Service
+
+module = Module("hello", "Greet someone.")
+
+
+@module.operation
+def hello(
+    service: [[ class_prefix ]]Service,
+    name: Annotated[str, Field(description="Who to greet.")] = "world",
+) -> [[ class_prefix ]]Greeting:
+    """Greet someone by name."""
+    return service.greet(name)

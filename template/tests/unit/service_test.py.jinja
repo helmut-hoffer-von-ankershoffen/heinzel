@@ -1,0 +1,18 @@
+import pytest
+from heinzel import Kernel, __version__
+
+from [[ package_name ]] import [[ class_prefix ]]Service, [[ class_prefix ]]Settings
+
+pytestmark = pytest.mark.unit
+
+
+def test_about_describes_plugin_without_modules_in_an_empty_kernel():
+    about = [[ class_prefix ]]Service(Kernel(), [[ class_prefix ]]Settings()).about()
+    assert about.plugin == "[[ project_name ]]"
+    assert about.heinzel_version == __version__
+    assert about.modules == []
+
+
+def test_greet_uses_the_configured_greeting():
+    service = [[ class_prefix ]]Service(Kernel(), [[ class_prefix ]]Settings(greeting="Hi"))
+    assert service.greet("Ada").text == "Hi, Ada!"

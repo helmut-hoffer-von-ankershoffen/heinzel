@@ -1,0 +1,66 @@
+name: Claude review
+
+# Opt-in: runs the reviewer agents on pull requests through the review skill, on a Claude subscription. Enable with
+# the secret CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) and the repository variable CLAUDE_REVIEW=true.
+# Pull requests from forks get no secrets, so they are skipped.
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+permissions: {}
+
+concurrency: # a new push supersedes the review of the previous one
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: vars.CLAUDE_REVIEW == 'true' && !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write # the action authenticates to GitHub with OIDC unless given a token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Choose the review tier
+        id: tier
+        # Deterministic and free: release and Dependabot pull requests get none, documentation-only changes a light
+        # review on Haiku, everything else the review skill (a Sonnet orchestrator; each reviewer runs on the model its
+        # definition sets).
+        env:
+          BASE: ${{ github.base_ref }}
+          TITLE: ${{ github.event.pull_request.title }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          files="$(git diff --name-only "origin/${BASE}...HEAD")"
+          if [[ "$TITLE" == "chore(release):"* || "$AUTHOR" == "dependabot[bot]" ]]; then tier=none
+          elif ! grep -qvE '(\.md$|^docs/)' <<<"$files"; then tier=light
+          else tier=full; fi
+          echo "tier=$tier" >> "$GITHUB_OUTPUT"
+          echo "Review tier: $tier"
+      - if: steps.tier.outputs.tier == 'light'
+        uses: anthropics/claude-code-action@ae68417a745a5df4b2124873632bd73a2255e6f6 # v1.0.259
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          claude_args: --model haiku
+          prompt: |
+            This pull request only changes documentation. Run the docs-reviewer agent on it (compare against
+            origin/${{ github.base_ref }}) and post its findings and verdict as one pull request comment.
+            The comment is public: never quote a confidential term, refer to it by file and line.
+      - if: steps.tier.outputs.tier == 'full'
+        uses: anthropics/claude-code-action@ae68417a745a5df4b2124873632bd73a2255e6f6 # v1.0.259
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }} # comment as github-actions; no separate GitHub App needed
+          claude_args: --model sonnet
+          prompt: |
+            Use the review skill on this pull request (compare against origin/${{ github.base_ref }}).
+            Post the merged findings and the GO / NO-GO verdict as one pull request comment.
+            The comment is public: never quote a confidential term, refer to it by file and line.

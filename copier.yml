@@ -1,0 +1,70 @@
+# Copier template for Heinzelmännchen plugins. Scaffold one with `hz system plugin new <dir>`, or:
+#   uvx copier copy gh:helmut-hoffer-von-ankershoffen/heinzel <dir>
+# Update a plugin to the latest Heinzelmännchen standards with `copier update`. See docs/adr/0007-plugins-scaffolded-with-copier.md.
+
+_subdirectory: template
+_templates_suffix: .jinja
+_answers_file: .copier-answers.yml
+# GitHub Actions uses ${{ }}, so the template uses [[ ]] for variables and [% %] for blocks.
+_envops:
+  block_start_string: "[%"
+  block_end_string: "%]"
+  variable_start_string: "[["
+  variable_end_string: "]]"
+  comment_start_string: "[#"
+  comment_end_string: "#]"
+  keep_trailing_newline: true
+_message_after_copy: |
+  Your Heinzelmännchen plugin is ready in [[ _copier_conf.dst_path ]]. Next:
+    cd [[ _copier_conf.dst_path ]] && git init -b main && make setup && make check
+    hz system plugin add .
+    hz [[ plugin_name ]] --help
+
+plugin_name:
+  type: str
+  help: Name of the plugin's module and command group (lowercase, dashes allowed)
+  default: example
+  validator: >-
+    [% if not (plugin_name | regex_search('^[a-z][a-z0-9-]*$')) %]Use lowercase letters, digits and dashes.[% endif %]
+
+plugin_summary:
+  type: str
+  help: One sentence on what the plugin does
+  default: Show how a Heinzelmännchen plugin is built.
+
+project_name:
+  type: str
+  help: Distribution and repository name
+  default: heinzel-[[ plugin_name ]]
+
+package_name:
+  type: str
+  help: Python package name
+  default: heinzel_[[ plugin_name | replace('-', '_') ]]
+
+author_name:
+  type: str
+  help: Your name
+
+author_email:
+  type: str
+  help: Your email address
+
+github_owner:
+  type: str
+  help: GitHub user or organization that will host the repository
+
+class_prefix:
+  type: str
+  default: "[[ plugin_name | replace('-', ' ') | title | replace(' ', '') ]]"
+  when: false
+
+heinzel_owner:
+  type: str
+  default: helmut-hoffer-von-ankershoffen
+  when: false
+
+heinzel_version:
+  type: str
+  default: "0.0.0" # bumped by the release process
+  when: false

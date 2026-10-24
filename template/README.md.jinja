@@ -1,0 +1,53 @@
+# [[ project_name ]]
+
+[[ plugin_summary ]]
+
+A plugin for [Heinzelmännchen](https://github.com/[[ heinzel_owner ]]/heinzel), the open-source, AI-driven operating system for
+product development teams.
+
+[![Coverage](https://raw.githubusercontent.com/[[ github_owner ]]/[[ project_name ]]/python-coverage-comment-action-data/badge.svg)](https://github.com/[[ github_owner ]]/[[ project_name ]]/tree/python-coverage-comment-action-data)
+[![CI](https://github.com/[[ github_owner ]]/[[ project_name ]]/actions/workflows/ci.yml/badge.svg)](https://github.com/[[ github_owner ]]/[[ project_name ]]/actions/workflows/ci.yml)
+
+## Install
+
+With Heinzelmännchen installed (`uv tool install git+https://github.com/[[ heinzel_owner ]]/heinzel`):
+
+```bash
+hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]]
+```
+
+Pin a version with `@vX.Y.Z`. Running `hz system plugin add` again upgrades; `hz system plugin remove [[ project_name ]]` removes it.
+
+## Use
+
+```bash
+hz [[ plugin_name ]] info                 # this plugin, its version and the Heinzelmännchen it runs on
+hz [[ plugin_name ]] hello --name Ada     # a submodule collapsed into a command
+hz [[ plugin_name ]] info --json          # every command speaks JSON, for scripts and agents
+hz system info                  # includes a section contributed by this plugin
+```
+
+## Develop
+
+```bash
+make setup     # dependencies and git hooks
+make check     # lint, types, unit + integration tests
+make test-e2e  # installs Heinzelmännchen with uv and adds this checkout as a plugin
+```
+
+The modules live in `src/[[ package_name ]]/`. Read [AGENTS.md](AGENTS.md) and
+[docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md) before changing them; the reviewer agents and hooks in
+`.claude/` enforce them.
+
+## Release
+
+Actions → **Release** → Run workflow opens a release pull request; merging it tags and publishes. The version comes
+from conventional commits, the changelog from git-cliff; the GitHub release carries the wheel, the sdist and
+provenance attestations. `main` changes only through pull requests.
+
+Add the topic `heinzel-plugin` to the GitHub repository so `hz system plugin search` lists the plugin.
+
+## Stay current
+
+This repository was generated from Heinzelmännchen's copier template ([[ heinzel_version ]]). `make update-template` pulls in the
+latest standards, tooling and CI from Heinzelmännchen.

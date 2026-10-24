@@ -1,0 +1,63 @@
+name: Publish
+
+# Build a tagged version, attest its provenance and create the GitHub release with notes from git-cliff.
+# Runs when a version tag is pushed, and is called by the Release workflow (whose pushes don't trigger workflows).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    secrets:
+      CONFIDENTIAL_TERMS:
+        required: false
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Build and publish ${{ inputs.tag || github.ref_name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Check that the tag matches the project version
+        run: test "v$(uv version --short)" = "$TAG"
+      - name: Check the release for confidential terms
+        env:
+          CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
+        run: uv run python scripts/check_confidentiality.py
+      - name: Check that runtime dependencies keep the release MIT-compatible
+        run: make licenses
+      - run: make build # Heinzelmännchen builds the core and every first-party plugin, released together
+      - name: Software bill of materials (CycloneDX) of the runtime dependencies
+        run: |
+          name="$(uv version --color never | cut -d' ' -f1)"
+          uv export --quiet --frozen --no-dev --format cyclonedx1.5 --output-file "dist/${name}-${TAG#v}.cdx.json"
+      - id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
+      - name: Write release notes
+        run: uv run --frozen python scripts/release_notes.py "$TAG" > release-notes.md
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          cp "$BUNDLE" "dist/provenance.sigstore.json"
+          gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag

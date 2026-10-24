@@ -1,0 +1,256 @@
+[project]
+name = "[[ project_name ]]"
+version = "0.0.0"
+description = "[[ plugin_summary ]]"
+readme = "README.md"
+authors = [{ name = "[[ author_name ]]", email = "[[ author_email ]]" }]
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+keywords = ["heinzel", "heinzel-plugin", "heinzelmaennchen"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Typing :: Typed",
+]
+# Heinzelmännchen resolves to the installed Heinzelmännchen when the plugin is added with `hz system plugin add`.
+dependencies = ["heinzel>=[[ heinzel_version ]],<1"]
+
+[project.entry-points."heinzel.modules"]
+[[ plugin_name ]] = "[[ package_name ]]"
+
+[project.urls]
+Source = "https://github.com/[[ github_owner ]]/[[ project_name ]]"
+Changelog = "https://github.com/[[ github_owner ]]/[[ project_name ]]/blob/main/CHANGELOG.md"
+Issues = "https://github.com/[[ github_owner ]]/[[ project_name ]]/issues"
+
+[dependency-groups]
+# What the unit, integration and e2e tests need, and no more: CI installs only this group for the test matrix.
+test = [
+    "heinzel @ git+https://github.com/[[ heinzel_owner ]]/heinzel@v[[ heinzel_version ]]",
+    "coverage>=7.12",
+    "httpx>=0.28",
+    "prek>=0.2",
+    "pytest>=9.0.3,<10",
+    "pytest-timeout>=2.4.0,<3",
+    "pytest-xdist>=3.8",
+    "pyyaml>=6.0.2",
+]
+dev = [
+    { include-group = "test" },
+    "actionlint-py>=1.7.12",
+    "bump-my-version>=1.2.4,<2",
+    "commitizen>=4.10.0,<5",
+    "git-cliff>=2.14.0,<3",
+    "mypy>=1.19.0,<3",
+    "pip-audit>=2.10.0,<3",
+    "pyright>=1.1.408",
+    "ruff>=0.14.8,<1",
+    "shellcheck-py>=0.10",
+    "typos>=1.51",
+    "zizmor>=1.31",
+]
+
+[build-system]
+requires = ["hatchling>=1.29.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/[[ package_name ]]"]
+
+[tool.uv]
+required-version = ">=0.13.0"
+
+[tool.ruff]
+line-length = 120
+fix = true
+
+[tool.ruff.lint]
+select = ["ALL"]
+# pydoclint (DOC): docstring sections must match what the code raises, returns and yields. Preview rules, opted into
+# one by one so no other preview rule sneaks in.
+preview = true
+explicit-preview-rules = true
+extend-select = ["DOC201", "DOC202", "DOC402", "DOC403", "DOC501", "DOC502"]
+ignore = [
+    "COM812",  # conflicts with the ruff formatter
+    "CPY001",  # no copyright header in OSS files
+    "D203",    # incompatible with D211
+    "DOC201",  # a return value is documented by the type and the summary line; Returns: only when it adds meaning
+    "DOC502",  # documenting exceptions raised by callees is useful for callers
+    "D213",    # incompatible with D212
+    "FBT001",  # boolean positional arguments are idiomatic for Typer options
+    "FBT002",  # same as FBT001
+    "ISC001",  # conflicts with the ruff formatter
+    "TD003",   # todos don't need an issue link
+    "FIX002",  # todos are allowed
+]
+
+[tool.ruff.lint.per-file-ignores]
+".claude/hooks/*.py" = [
+    "D103",    # hook entry points are documented by the module docstring
+    "INP001",  # hooks are scripts, not a package
+    "S603",    # subprocess calls with fixed argument lists
+    "S607",    # tools (uv, git, make) are resolved from PATH on purpose
+    "T201",    # hooks talk to the agent through stdout/stderr
+]
+"scripts/*.py" = [
+    "INP001",  # scripts are not a package
+    "T201",    # scripts report on stdout/stderr
+]
+"**/tests/**/*.py" = [
+    "ANN",
+    "DOC",     # test docstrings describe behaviour, not interfaces     # fixtures and tests don't need full annotations
+    "ARG",     # fixtures are used for their side effects
+    "D",       # test names are the documentation
+    "INP001",  # tests are not a package
+    "PLC0415", # local imports keep fixtures isolated
+    "PLR2004", # magic values are fine in assertions
+    "S101",    # asserts are what tests do
+    "S603",    # subprocess calls with trusted input
+    "S607",    # partial executable paths (uv, hz) are resolved from PATH on purpose
+    "SLF001",  # private access is needed for solitary unit tests
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+strict = true
+warn_unreachable = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+plugins = ["pydantic.mypy"]
+files = ["src"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest]
+minversion = "9.0"
+strict = true
+testpaths = ["tests"]
+norecursedirs = ["tests/fixtures"]
+addopts = ["-ra", "--import-mode=importlib"]
+filterwarnings = ["error"]
+log_level = "INFO"
+timeout = "15" # Fallback; heinzel.testing gives each test its level's timeout (unit 5 s, integration 15 s, e2e 120 s).
+session_timeout = "900" # Nothing waits longer than this for a hung suite; make test caps unit + integration lower.
+markers = [
+    # Test categories, following the Aignostics Python SDK (Martin Fowler's solitary vs. sociable distinction).
+    # Every test carries exactly one of them; heinzel.testing (pytest11) enforces this.
+    "unit: Solitary unit tests - test one layer of a module in isolation with all collaborators mocked, except shared utils. Must pass offline. Timeout 5 s.",
+    "integration: Sociable integration tests - test interactions across layers (CLI -> service -> utils) or between modules with real collaborators, real file I/O and real subprocesses. Must pass offline; external services are mocked. Timeout 15 s.",
+    "e2e: End-to-end tests - complete workflows against real external services (PyPI, GitHub, a real `uv tool` install). Need network. Timeout 120 s; mark as long_running if a test needs >= 5 min.",
+    "long_running: Tests with a timeout >= 5 min.",
+]
+
+[tool.coverage.run]
+source = ["[[ package_name ]]"]
+branch = true
+relative_files = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "@overload", "raise NotImplementedError", "if __name__ == .__main__.:"]
+
+[tool.commitizen]
+# Only `cz check` is used (commit-msg hook, `make commits`, CI); git-cliff and bump-my-version release.
+# docs/CODING_STANDARDS.md#commits-branches-and-releases: these types and scopes, a summary of at most 72 characters
+# (plus the " (#12)" a squash merge appends).
+name = "cz_customize"
+# Commitizen's defaults, plus the titles Dependabot writes (.github/dependabot.yml), which long package names can push
+# past the length limit.
+allowed_prefixes = ["Merge", "Revert", "Pull request", "fixup!", "squash!", "amend!", "build: bump ", "ci: bump "]
+
+[tool.commitizen.customize]
+schema = "<type>(<scope>)!: <summary of at most 72 characters>\n\n<body: why>\n\n<footers>"
+schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\([a-z0-9-]+\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
+example = "fix(cli): exit with code 1 when an operation fails"
+info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
+
+[tool.bumpversion]
+current_version = "0.0.0"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+commit = false
+tag = false
+
+[[ "[[" ]]tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = "name = \"[[ project_name ]]\"\nversion = \"{current_version}\""
+replace = "name = \"[[ project_name ]]\"\nversion = \"{new_version}\""
+
+[tool.git-cliff.remote.github]
+owner = "[[ github_owner ]]"
+repo = "[[ project_name ]]"
+
+[tool.git-cliff.changelog]
+header = "# Changelog\n\nAll notable changes to this plugin, newest first. Versions follow [Semantic Versioning](https://semver.org); entries are generated by [git-cliff](https://git-cliff.org) from [conventional commits](https://www.conventionalcommits.org).\n"
+body = """
+{% macro remote_url() -%}https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}{%- endmacro -%}
+{% if version %}
+## [{{ version | trim_start_matches(pat="v") }}]({{ self::remote_url() }}/releases/tag/{{ version }}) - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}
+## [Unreleased]
+{% endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.message | upper_first }} ([{{ commit.id | truncate(length=7, end="") }}]({{ self::remote_url() }}/commit/{{ commit.id }})){% if commit.breaking and commit.breaking_description and commit.breaking_description != commit.message %} — **Breaking:** {{ commit.breaking_description | split(pat="\n\n") | first | trim | replace(from="\n", to=" ") }}{% endif %}
+{%- endfor %}
+{% endfor %}
+"""
+trim = true
+
+[tool.git-cliff.bump]
+initial_tag = "v0.1.0"
+# SemVer 0.x: breaking changes and features bump the minor version, everything else the patch. git-cliff defaults
+# breaking changes to a major bump, which would jump to 1.0.0 on the next `!` commit.
+breaking_always_bump_major = false
+features_always_bump_minor = true
+
+[tool.git-cliff.git]
+conventional_commits = true
+filter_unconventional = true
+commit_preprocessors = [
+    # Drop what squash merges append after the body: the "🤖 Generated with" line, the "-----" separator, co-authors.
+    { pattern = '(?m)^🤖 Generated with.*$\n?', replace = "" },
+    { pattern = '(?m)^-+ *$\n?', replace = "" },
+    { pattern = '(?mi)^Co-authored-by:.*$\n?', replace = "" },
+    # Link pull request numbers that squash merges append: "(#12)".
+    { pattern = '\(#(\d+)\)', replace = "([[ "[#" ]]${1}](https://github.com/[[ github_owner ]]/[[ project_name ]]/pull/${1}))" },
+]
+commit_parsers = [
+    { message = "^chore\\(release\\)", skip = true },
+    { field = "breaking", pattern = "true", group = "<!-- 00 -->💥 Breaking changes" },
+    { message = "^[a-z]+\\(security\\)", group = "<!-- 01 -->🛡️ Security" },
+    { body = "CVE-\\d{4}-\\d+|GHSA-[0-9a-z]{4}-", group = "<!-- 01 -->🛡️ Security" },
+    { message = "^feat", group = "<!-- 02 -->✨ Features" },
+    { message = "^fix", group = "<!-- 03 -->🐛 Bug fixes" },
+    { message = "^perf", group = "<!-- 04 -->⚡ Performance" },
+    { message = "^docs?", group = "<!-- 05 -->📚 Documentation" },
+    { message = "^refactor", group = "<!-- 06 -->♻️ Refactoring" },
+    { message = "^test", group = "<!-- 07 -->🧪 Testing" },
+    { message = "^(build|ci)", group = "<!-- 08 -->🏗️ Build and CI" },
+    { message = "^revert", group = "<!-- 09 -->⏪ Reverts" },
+    { message = "^(chore|style)", group = "<!-- 10 -->🧹 Miscellaneous" },
+]
+protect_breaking_commits = true
+tag_pattern = "v[0-9].*"
+
+[tool.pyright]
+include = ["src"]
+typeCheckingMode = "strict"
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"

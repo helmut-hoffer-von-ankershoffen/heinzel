@@ -1,0 +1,56 @@
+name: Release
+
+# Step 1 of a release: open the release pull request. Derives the next version from conventional commits (or a forced
+# bump), updates versions and CHANGELOG.md on `release/vX.Y.Z`, opens the pull request and starts CI on it.
+# Step 2 happens when the pull request is merged: see release-tag.yml. ADR 0008 and 0013 explain the flow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  pull-request:
+    name: Open the release pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - run: uv sync --frozen
+      - name: Prepare the release branch and open the pull request
+        id: release
+        shell: bash # -eo pipefail: a failing release.sh must fail the step, not yield an empty tag
+        env:
+          BUMP: ${{ inputs.bump }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          tag="$(scripts/release.sh "$BUMP" --open-pr | tail -n 1)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Run CI on the release pull request
+        # Pull requests opened with the GitHub token don't trigger workflows; a dispatched run does.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: gh workflow run ci.yml --ref "release/$TAG"

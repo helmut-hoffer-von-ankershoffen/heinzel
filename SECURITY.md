@@ -1,0 +1,56 @@
+# Security policy
+
+## Reporting a vulnerability
+
+Please report vulnerabilities privately, not through public issues:
+[open a private security advisory](../../security/advisories/new) for this repository (its Security tab →
+**Report a vulnerability**; GitHub explains the steps in
+[Privately reporting a security vulnerability](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/report-privately)).
+Expect an acknowledgement within a few working days. Include what is affected, how to reproduce it and what an
+attacker gains.
+
+## Supported versions
+
+Only the latest release receives security fixes while the project is on 0.x.
+
+## What Heinzelmännchen does on your machine
+
+- It runs with your user's rights and writes only to its configuration, data and cache directories (see
+  `hz system config show`) and to the uv tool environment it is installed in.
+- **Plugins run with the same rights.** Only add plugins you trust, from sources you trust; `hz system plugin list`
+  shows where each one came from.
+- `hz` sends nothing anywhere on its own: no telemetry. Network access happens when you install, update or add
+  plugins (through uv) and when a plugin you installed calls a service.
+- `hz system serve mcp|api` listens on `127.0.0.1` unless you pass another `--host`; the servers have no
+  authentication, so don't expose them to a network you don't trust.
+- External commands (uv, git, copier) run without a shell, from argument lists, with timeouts.
+
+## How we keep the project secure
+
+| Area | Measure | Where |
+| --- | --- | --- |
+| Dependencies | Locked in `uv.lock`; CI installs exactly the lockfile | `UV_FROZEN` in CI |
+| | Known vulnerabilities in runtime dependencies fail the build (pip-audit, daily as well) | `make audit`, CI |
+| | Licenses of runtime dependencies must be on an allow-list (permissive, plus LGPL/MPL), so releases stay MIT | `.license-allowlist`, `make licenses` (in `make audit` and Publish) |
+| | New dependencies with moderate or worse advisories block pull requests | dependency-review in CI |
+| | Weekly grouped updates with a 7-day cooldown, so compromised releases are usually caught first; security updates as they appear | Dependabot (`.github/dependabot.yml`), Dependabot alerts and security updates |
+| Code | Static analysis on every pull request and weekly | CodeQL |
+| | Strict typing and an extensive lint rule set, including security rules (`S`) | ruff, mypy, pyright |
+| Secrets | Credentials (API keys, tokens, private keys) are blocked on commit and the whole history is scanned in CI | gitleaks (prek hook, `Secret scan` job) |
+| | Pushes with known secret formats are rejected | GitHub secret scanning with push protection |
+| | Confidential names (employers, customers, internal projects) are blocked in files, commit messages, branch names and pull request titles, against a private list kept outside the repository | `scripts/check_confidentiality.py`, hooks, CI, Publish |
+| Workflows | Actions pinned to full commit SHAs, read-only token by default, least privilege per job, no persisted credentials, no untrusted input in `run:` | zizmor, actionlint (`make lint`) |
+| | Supply-chain posture tracked | OpenSSF Scorecard |
+| Changes | `main` only changes through squash-merged pull requests with green CI (`CI OK`), linear history, no force pushes or deletions | repository ruleset |
+| | Reviewer agents, including a security reviewer, on pull requests (opt-in) | `.claude/agents/`, `claude-review.yml` |
+| Releases | Tags are created by the release workflow for release commits only; Publish refuses a tag that doesn't match the version | `release-tag.yml`, `publish.yml` |
+| | Wheels, source distributions and the SBOM carry Sigstore build provenance attestations | `actions/attest-build-provenance` |
+| | Each release ships a CycloneDX software bill of materials of its runtime dependencies | `*.cdx.json` release asset |
+
+Verify a release artifact:
+
+```bash
+gh attestation verify heinzel-0.1.0-py3-none-any.whl --repo helmut-hoffer-von-ankershoffen/heinzel
+```
+
+Plugins created from the template inherit the same hooks, checks and release workflow.

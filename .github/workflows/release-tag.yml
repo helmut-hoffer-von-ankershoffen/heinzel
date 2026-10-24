@@ -1,0 +1,60 @@
+name: Release tag
+
+# Step 2 of a release: when a release pull request ("chore(release): vX.Y.Z") is merged into main, tag the merge
+# commit and publish. Tags pushed with the GitHub token don't trigger workflows, so Publish is called directly.
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: release-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag the release
+    if: "startsWith(github.event.head_commit.message, 'chore(release): v')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - id: tag
+        name: Create and push the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          tag="v$(uv version --short)"
+          # Only a real release commit for the current version tags; anything else titled like one is ignored.
+          if [[ "$MESSAGE" != "chore(release): $tag"* ]] || git ls-remote --exit-code --tags origin "$tag" >/dev/null; then
+            echo "Not a release of $tag, or already tagged; nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "$tag"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    uses: ./.github/workflows/publish.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    secrets:
+      CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write

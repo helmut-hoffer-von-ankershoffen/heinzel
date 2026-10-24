@@ -1,0 +1,18 @@
+# Licenses runtime dependencies may use, so the project stays releasable under MIT.
+# One per line, matched as a substring of the SPDX expression or classifier (pip-licenses --partial-match).
+# Permissive licenses only, plus weak copyleft that doesn't affect our license when used as a library (LGPL, MPL).
+# Strong copyleft (GPL, AGPL, SSPL) and unknown licenses fail `make audit`. Changing this list needs a pull request.
+0BSD
+Apache
+BSD
+CC0
+ISC
+LGPL
+GNU Lesser General Public License
+MIT
+MPL-2.0
+Mozilla Public License 2.0
+PSF
+Python Software Foundation License
+Unlicense
+Zlib

@@ -1,0 +1,5 @@
+rules:
+  # zizmor suggests the new `$/...` self-repository syntax for reusable workflows, which actionlint (and older
+  # runners) reject. `./.github/workflows/...` is the documented form; revisit when actionlint supports `$/`.
+  self-repository:
+    disable: true

@@ -1,0 +1,35 @@
+"""The plugin's logic, independent of any head."""
+
+from importlib.metadata import PackageNotFoundError, version
+
+from heinzel import Kernel, __version__
+
+from [[ package_name ]]._models import [[ class_prefix ]]About, [[ class_prefix ]]Greeting, [[ class_prefix ]]Settings
+
+DISTRIBUTION = "[[ project_name ]]"
+
+
+class [[ class_prefix ]]Service:
+    """Everything the [[ plugin_name ]] modules do; operations stay thin and call into it."""
+
+    def __init__(self, kernel: Kernel, settings: [[ class_prefix ]]Settings) -> None:
+        """Create the service; the kernel and the plugin's settings are injected."""
+        self._kernel = kernel
+        self._settings = settings
+
+    def about(self) -> [[ class_prefix ]]About:
+        """Describe the plugin and the Heinzelmännchen installation it runs in."""
+        try:
+            installed = version(DISTRIBUTION)
+        except PackageNotFoundError:  # pragma: no cover - only when running from an uninstalled source tree
+            installed = "0.0.0"
+        return [[ class_prefix ]]About(
+            plugin=DISTRIBUTION,
+            version=installed,
+            heinzel_version=__version__,
+            modules=[r.qualname for r in self._kernel.modules if r.origin.distribution == DISTRIBUTION],
+        )
+
+    def greet(self, name: str) -> [[ class_prefix ]]Greeting:
+        """Greet someone by name, the way the settings say."""
+        return [[ class_prefix ]]Greeting(text=f"{self._settings.greeting}, {name}!")

@@ -1,0 +1,189 @@
+# 🧝 Heinzelmännchen
+
+[![CI](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/ci.yml)
+[![Coverage](https://raw.githubusercontent.com/helmut-hoffer-von-ankershoffen/heinzel/python-coverage-comment-action-data/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/python-coverage-comment-action-data)
+[![Release](https://img.shields.io/github/v/release/helmut-hoffer-von-ankershoffen/heinzel?sort=semver)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+**Heinzelmännchen are open-source helpers that keep product development teams running.** They draft the busywork of
+running a team — status, tracker updates, agendas, reports — in the background, and people approve it. Like the
+[Heinzelmännchen of Cologne](https://en.wikipedia.org/wiki/Heinzelm%C3%A4nnchen), who finished the town's work at
+night. Why it exists and where it is going: [INTENT.md](INTENT.md).
+
+This release is the foundation — kernel, heads, plugins and release automation; the first team workflows arrive in
+0.x ([roadmap](INTENT.md#where-we-are)).
+
+![hz from install to the first commands: version, system info, adding the clock plugin, clock, doctor, JSON into jq](docs/assets/demo.gif)
+
+**What you can do today:**
+
+- **Write an operation once, use it everywhere.** A typed Python function is a `hz` command, an MCP tool for coding
+  agents and a REST endpoint at once — with help text, validation and `--json`.
+- **Extend it with plugins.** `hz system plugin add clock` adds a first-party plugin; `hz system plugin new` scaffolds
+  your own `heinzel-*` repository with tests, CI/CD and agent setup.
+- **Run it with confidence.** `hz system doctor` checks every module's health, `hz system config` manages layered
+  settings, `hz system update` updates in place and keeps your plugins.
+
+You talk to them with **`hz`**, a small modulith: the kernel discovers *modules* and the *lets* they advertise — typed
+declarations of operations, services, settings and health checks — and *heads* expose them.
+
+## Install
+
+You need [uv](https://docs.astral.sh/uv/) (`brew install uv`). Then:
+
+<!-- docs-test -->
+```bash
+uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel
+```
+
+Pin a release with `@vX.Y.Z`; `hz system update` updates in place (`--source <spec>` moves to another version),
+keeping plugins. Shell completion: `hz --install-completion`.
+
+**From Claude Code**, add the plugin and let `/hz-init` do everything — install, plugins, configuration, agent
+skills:
+
+```text
+/plugin marketplace add helmut-hoffer-von-ankershoffen/heinzel
+/plugin install heinzel@heinzel
+/hz-init
+```
+
+Other agents: `hz system agent install` copies the skills into the directories set in `[system.agent] skill_dirs`.
+
+**Uninstall** with `/hz-uninstall` from Claude Code, or:
+
+<!-- docs-test -->
+```bash
+hz system agent uninstall             # remove the skills from your agents
+uv tool uninstall heinzel      # remove Heinzelmännchen and its plugins
+```
+
+Your configuration files stay; `hz system config show` lists them before you uninstall.
+
+## Use
+
+<!-- docs-test -->
+```bash
+hz --version
+hz system info                 # versions, settings, modules, what plugins report
+hz system doctor               # every module's health checks; exits 1 if anything is down
+hz system modules              # every module and submodule with the lets it advertises
+hz system changelog            # release notes of the installed version
+hz system config show          # configuration files, settings in effect, their environment variables
+hz system config set hz.log_level INFO
+hz system update               # update, keeping plugins
+hz system plugin add clock     # a first-party plugin
+hz clock                       # its command: the time for everyone on the team
+hz system agent install               # install the skills for coding agents
+```
+
+Every operation takes `--json` (or `--format json`; `HZ_OUTPUT_FORMAT=json` makes it the default) for scripts and
+agents; the long-running `serve` commands are the exception. Exit codes: `0` success, `1` an error with a readable message, `2` a usage error, `78` invalid
+configuration. All commands: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
+
+How the pieces fit — more in [ARCHITECTURE.md](docs/ARCHITECTURE.md):
+
+```mermaid
+flowchart TB
+    People(["People"]) --> CLI
+    Scripts(["Scripts"]) -- "--json" --> CLI
+    Agents(["Coding agents"]) --> MCP
+    subgraph Heads["Heads: views on the same operations"]
+        CLI["CLI<br/>hz …"]
+        MCP["MCP server"]
+        REST["REST API"]
+        Daemon["Daemon<br/>(next)"]
+    end
+    subgraph Kernel["Kernel"]
+        Core["discovery · lets<br/>injection · config"]
+    end
+    subgraph Modules["Modules and plugins"]
+        System["system<br/>(built-in)"]
+        Clock["clock<br/>(first-party)"]
+        Ext["heinzel-*<br/>(external)"]
+    end
+    CLI & MCP & REST & Daemon --> Core
+    System & Clock & Ext -- "advertise lets" --> Core
+```
+
+## What's inside
+
+Every module is a set of operations, and every operation is a `hz` command, an MCP tool for coding agents
+(`hz system serve mcp`) and a REST endpoint (`hz system serve api`) at once. Built in today:
+
+<!-- modules:start -->
+- [`clock`](docs/MODULES.md#clock) — What time it is for everyone on the team. *First-party plugin: `hz system plugin add clock`.*
+- [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
+- [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
+- [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version.
+- [`system.config`](docs/MODULES.md#systemconfig) — Show, get, set and initialize configuration.
+- [`system.doctor`](docs/MODULES.md#systemdoctor) — Check that Heinzelmännchen and its modules are healthy.
+- [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, list and scaffold plugins.
+<!-- modules:end -->
+
+Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add their own modules.
+
+## Configure
+
+Settings come from, lowest precedence first: defaults, the site file, your user file
+(`~/Library/Application Support/hz/config.toml` on macOS, `~/.config/hz/config.toml` on Linux; `HZ_CONFIG_HOME`
+moves it), the nearest `hz.toml` in the working directory or above (share it in a team repository), the file in
+`$HZ_CONFIG`, and environment variables.
+
+```toml
+[hz]
+log_level = "INFO"
+disabled_modules = []
+
+[example]               # each module has its own table
+greeting = "Moin"
+```
+
+`hz system config set example.greeting Moin` edits your user file (`--scope project` the project's `hz.toml`),
+`hz system config init` writes a commented starter file. Environment variables: `HZ_<SETTING>` for the kernel
+(`HZ_LOG_LEVEL=DEBUG`), `HZ_<MODULE>__<SETTING>` for modules (`HZ_EXAMPLE__GREETING=Hi`). Every setting:
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+
+## Extend
+
+A module is a package that declares `module = Module(name, summary)`; operations are typed functions; services and
+settings are injected by type (put injected parameters first):
+
+```python
+from typing import Annotated
+
+from pydantic import Field
+
+from heinzel import Module, ModuleSettings
+
+module = Module("greet", "Greet people.")
+
+
+@module.settings
+class GreetSettings(ModuleSettings):
+    greeting: str = Field(default="Hello", description="How to greet.")
+
+
+@module.operation
+def hello(settings: GreetSettings, name: Annotated[str, Field(description="Who to greet.")] = "world") -> str:
+    """Greet someone."""
+    return f"{settings.greeting}, {name}!"
+```
+
+That is `hz greet hello --name Ada` in the CLI, with `--json`, help text, argument validation and
+`HZ_GREET__GREETING` — and the same operation is an MCP tool and a REST endpoint. Scaffold a plugin repository
+with all the tooling, CI/CD and agent setup: `hz system plugin new ../heinzel-mine`. A complete plugin to copy from:
+[packages/heinzel-clock](packages/heinzel-clock) (one module, settings, an operation and a health check). See
+[ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Contribute
+
+```bash
+git clone https://github.com/helmut-hoffer-von-ankershoffen/heinzel && cd heinzel
+make setup   # dependencies and git hooks
+make check   # everything CI checks offline, in seconds
+```
+
+[CONTRIBUTING.md](CONTRIBUTING.md) explains the workflow; [AGENTS.md](AGENTS.md) is the guide for coding agents;
+[docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md) the rules; [docs/adr/](docs/adr/) the decisions.
+Security issues: [SECURITY.md](SECURITY.md).

@@ -1,0 +1,51 @@
+"""Install Heinzelmännchen with `uv tool install`, add this plugin from the checkout, use it. Needs network.
+
+Set HZ_SPEC to test against another Heinzelmännchen, e.g. `HZ_SPEC=git+https://github.com/[[ heinzel_owner ]]/heinzel@main`.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+
+pytestmark = [pytest.mark.e2e, pytest.mark.timeout(300)]
+
+REPO = Path(__file__).resolve().parents[2]
+HZ_SPEC = os.environ.get("HZ_SPEC", "git+https://github.com/[[ heinzel_owner ]]/heinzel@v[[ heinzel_version ]]")
+
+
+@pytest.fixture(scope="module")
+def hz(tmp_path_factory):
+    root = tmp_path_factory.mktemp("uv-tools")
+    env = {**os.environ, "UV_TOOL_DIR": str(root / "tools"), "UV_TOOL_BIN_DIR": str(root / "bin")}
+    env.pop("VIRTUAL_ENV", None)
+    uv = shutil.which("uv")
+    assert uv, "uv is not on PATH: https://docs.astral.sh/uv/"
+    subprocess.run([uv, "tool", "install", HZ_SPEC], check=True, env=env, timeout=240)
+
+    def run(*args: str) -> str:
+        result = subprocess.run(
+            [str(root / "bin" / "hz"), *args], capture_output=True, text=True, check=False, env=env, timeout=240
+        )
+        assert result.returncode == 0, f"hz {' '.join(args)} failed:\n{result.stdout}\n{result.stderr}"
+        return result.stdout
+
+    run("system", "plugin", "add", str(REPO))
+    return run
+
+
+def test_info(hz):
+    about = json.loads(hz("[[ plugin_name ]]", "info", "--json"))
+    assert about["plugin"] == "[[ project_name ]]"
+
+
+def test_hello(hz):
+    assert json.loads(hz("[[ plugin_name ]]", "hello", "--name", "Ada", "--json")) == {"text": "Hello, Ada!"}
+
+
+def test_listed_as_plugin(hz):
+    plugins = json.loads(hz("system", "plugin", "list", "--json"))
+    assert [p["distribution"] for p in plugins] == ["[[ project_name ]]"]

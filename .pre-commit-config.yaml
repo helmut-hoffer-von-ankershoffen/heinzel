@@ -1,0 +1,65 @@
+# Install with `make setup`. Hooks run tools from the project environment, so versions match uv.lock.
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+default_stages: [pre-commit]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: debug-statements
+      - id: detect-private-key
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks # credentials: API keys, tokens, private keys (confidential terms: scripts/check_confidentiality.py)
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: confidentiality
+        name: confidential terms
+        entry: uv run python scripts/check_confidentiality.py
+        language: system
+      - id: confidentiality-identity
+        name: confidential terms in the author and committer
+        entry: uv run python scripts/check_confidentiality.py --identity
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: confidentiality-branch
+        name: confidential terms in the branch name
+        entry: uv run python scripts/check_confidentiality.py --branch
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+      - id: confidentiality-commit-msg
+        name: confidential terms in the commit message
+        entry: uv run python scripts/check_confidentiality.py --commit-msg
+        language: system
+        stages: [commit-msg]
+      - id: commitizen
+        name: conventional commit message
+        entry: uv run cz check --commit-msg-file
+        language: system
+        stages: [commit-msg]

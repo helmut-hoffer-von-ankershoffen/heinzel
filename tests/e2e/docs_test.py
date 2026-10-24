@@ -1,0 +1,63 @@
+"""The README's install, use and uninstall instructions work, run verbatim on macOS and Linux.
+
+Every fenced block right after a `<!-- docs-test -->` marker is run with bash in a sandbox, in order, except that the
+block that uninstalls runs last. Only the GitHub URL of Heinzelmännchen is redirected, to this checkout; first-party
+plugins like `clock` then come from the same checkout. Needs network (PyPI) and a git checkout with at least one
+commit.
+"""
+
+import os
+import re
+import subprocess
+from pathlib import Path
+
+import pytest
+
+pytestmark = pytest.mark.e2e
+
+REPO = Path(__file__).resolve().parents[2]
+HEAD = subprocess.run(
+    ["git", "-C", str(REPO), "rev-parse", "HEAD"], capture_output=True, text=True, check=False, timeout=300
+).stdout.strip()
+HZ_URL = "git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
+UNINSTALL = "uv tool uninstall heinzel"
+MARKER = re.compile(r"<!-- docs-test -->\s*\n```bash\n(.*?)\n```", re.DOTALL)
+
+
+def documented_blocks(path: Path) -> list[str]:
+    """The shell blocks of a document that are marked for testing, the one that uninstalls last."""
+    return sorted(MARKER.findall(path.read_text(encoding="utf-8")), key=lambda block: UNINSTALL in block)
+
+
+def test_the_readme_has_tested_blocks():
+    blocks = documented_blocks(REPO / "README.md")
+    assert len(blocks) == 3
+    assert HZ_URL in blocks[0]
+    assert "hz system plugin add clock" in blocks[1]
+    assert UNINSTALL in blocks[-1]
+
+
+def test_readme_instructions(tmp_path):
+    if not HEAD:
+        pytest.skip("needs a git checkout with at least one commit")
+    env = {
+        **os.environ,
+        "UV_TOOL_DIR": str(tmp_path / "tools"),
+        "UV_TOOL_BIN_DIR": str(tmp_path / "bin"),
+        "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        "HZ_CONFIG_HOME": str(tmp_path / "config"),
+        "HZ_DATA_DIR": str(tmp_path / "data"),
+        "HZ_CACHE_DIR": str(tmp_path / "cache"),
+        "HZ_SYSTEM_AGENT__SKILL_DIRS": f'["{tmp_path / "skills"}"]',
+    }
+    env.pop("VIRTUAL_ENV", None)
+
+    for block in documented_blocks(REPO / "README.md"):
+        script = block.replace(HZ_URL, f"git+file://{REPO}@{HEAD}")
+        result = subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", script],
+            capture_output=True, text=True, check=False, env=env, cwd=tmp_path, timeout=500,
+        )  # fmt: skip
+        assert result.returncode == 0, f"README block failed:\n{script}\n---\n{result.stdout}\n{result.stderr}"
+
+    assert not (tmp_path / "bin" / "hz").exists()

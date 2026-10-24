@@ -1,0 +1,502 @@
+# CLI reference
+
+🧝 Heinzelmännchen: open-source helpers that keep product teams running. Every operation accepts --json.
+
+**Usage**:
+
+```console
+$ hz [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `-V, --version`: Show the version, Python, platform, installation and plugins, then exit.
+* `--install-completion`: Install completion for the current shell.
+* `--show-completion`: Show completion for the current shell, to copy it or customize the installation.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `clock`: Show the time in each of the team&#x27;s time...
+* `system`: Inspect, configure, diagnose and update...
+
+## `hz clock`
+
+Show the time in each of the team&#x27;s time zones.
+
+**Usage**:
+
+```console
+$ hz clock [OPTIONS]
+```
+
+**Options**:
+
+* `--at ISO-8601`: Moment to show instead of now (ISO 8601).
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz system`
+
+Inspect, configure, diagnose and update Heinzelmännchen itself.
+
+**Usage**:
+
+```console
+$ hz system [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `agent`: Install the Heinzelmännchen skills for...
+* `changelog`: Show the changelog of the installed...
+* `config`: Show, get, set and initialize configuration.
+* `doctor`: Run every module&#x27;s health checks; exits...
+* `info`: Show versions, interpreter, settings,...
+* `modules`: List every module and the lets it advertises.
+* `plugin`: Find, add, remove, list and scaffold plugins.
+* `serve`: Serve every operation to coding agents...
+* `update`: Update Heinzelmännchen, keeping installed...
+
+### `hz system agent`
+
+Install the Heinzelmännchen skills for coding agents.
+
+**Usage**:
+
+```console
+$ hz system agent [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `install`: Copy Heinzelmännchen&#x27;s skills into each...
+* `skills`: List the Agent Skills that ship with...
+* `uninstall`: Remove Heinzelmännchen&#x27;s skills from each...
+
+#### `hz system agent install`
+
+Copy Heinzelmännchen&#x27;s skills into each configured agent skill directory.
+
+**Usage**:
+
+```console
+$ hz system agent install [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system agent skills`
+
+List the Agent Skills that ship with Heinzelmännchen.
+
+**Usage**:
+
+```console
+$ hz system agent skills [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system agent uninstall`
+
+Remove Heinzelmännchen&#x27;s skills from each configured agent skill directory.
+
+**Usage**:
+
+```console
+$ hz system agent uninstall [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system changelog`
+
+Show the changelog of the installed version, as Markdown.
+
+**Usage**:
+
+```console
+$ hz system changelog [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system config`
+
+Show, get, set and initialize configuration.
+
+**Usage**:
+
+```console
+$ hz system config [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `get`: Show one setting in effect, with its...
+* `init`: Write a configuration file with every...
+* `set`: Change a setting in the user or project...
+* `show`: Show the configuration files...
+* `unset`: Remove a setting from the user or project...
+
+#### `hz system config get`
+
+Show one setting in effect, with its environment variable.
+
+**Usage**:
+
+```console
+$ hz system config get [OPTIONS] {key}
+```
+
+**Arguments**:
+
+* `key`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system config init`
+
+Write a configuration file with every setting commented out, ready to edit.
+
+**Usage**:
+
+```console
+$ hz system config init [OPTIONS]
+```
+
+**Options**:
+
+* `--path <path>`: Where to write; defaults to the user configuration file.
+* `--force / --no-force`: Overwrite an existing file.  [default: no-force]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system config set`
+
+Change a setting in the user or project configuration file, after validating it.
+
+**Usage**:
+
+```console
+$ hz system config set [OPTIONS] {key} {value}
+```
+
+**Arguments**:
+
+* `key`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
+* `value`: New value; TOML syntax for numbers, booleans and lists.  [required]
+
+**Options**:
+
+* `--scope <user|project>`: Which file to change: user, or the project&#x27;s hz.toml.  [default: user]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system config show`
+
+Show the configuration files Heinzelmännchen reads and every setting in effect.
+
+**Usage**:
+
+```console
+$ hz system config show [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system config unset`
+
+Remove a setting from the user or project configuration file, so its default applies again.
+
+**Usage**:
+
+```console
+$ hz system config unset [OPTIONS] {key}
+```
+
+**Arguments**:
+
+* `key`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
+
+**Options**:
+
+* `--scope <user|project>`: Which file to change: user, or the project&#x27;s hz.toml.  [default: user]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system doctor`
+
+Run every module&#x27;s health checks; exits with 1 if anything is down.
+
+**Usage**:
+
+```console
+$ hz system doctor [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system info`
+
+Show versions, interpreter, settings, modules and what modules report.
+
+**Usage**:
+
+```console
+$ hz system info [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system modules`
+
+List every module and the lets it advertises.
+
+**Usage**:
+
+```console
+$ hz system modules [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system plugin`
+
+Find, add, remove, list and scaffold plugins.
+
+**Usage**:
+
+```console
+$ hz system plugin [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `add`: Add a plugin; adding one again replaces...
+* `list`: List installed plugins and the modules...
+* `new`: Scaffold a plugin repository from the...
+* `remove`: Remove a plugin.
+* `search`: Find plugins to install: first-party ones,...
+
+#### `hz system plugin add`
+
+Add a plugin; adding one again replaces the installed version.
+
+**Usage**:
+
+```console
+$ hz system plugin add [OPTIONS] {spec}
+```
+
+**Arguments**:
+
+* `spec`: A first-party plugin by name (`clock`), or anything uv installs: a git URL (git+https://github.com/org/heinzel-x@v1.0.0), a local path or a package name.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin list`
+
+List installed plugins and the modules they bring.
+
+**Usage**:
+
+```console
+$ hz system plugin list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin new`
+
+Scaffold a plugin repository from the Heinzelmännchen template, asking for answers not given.
+
+**Usage**:
+
+```console
+$ hz system plugin new [OPTIONS] {destination}
+```
+
+**Arguments**:
+
+* `destination`: Directory for the new plugin repository.  [required]
+
+**Options**:
+
+* `--data <str>`: Answer a template question as key=value, e.g. plugin_name=crm; repeat for each.
+* `--template <str>`: Copier template: a git URL, gh:owner/repo or a local path.  [default: gh:helmut-hoffer-von-ankershoffen/heinzel]
+* `--ref <str>`: Template version; defaults to this Heinzelmännchen&#x27;s release tag.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin remove`
+
+Remove a plugin.
+
+**Usage**:
+
+```console
+$ hz system plugin remove [OPTIONS] {distribution}
+```
+
+**Arguments**:
+
+* `distribution`: Distribution name, as `hz system plugin list` shows it.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin search`
+
+Find plugins to install: first-party ones, and community ones by querying the GitHub API.
+
+**Usage**:
+
+```console
+$ hz system plugin search [OPTIONS]
+```
+
+**Options**:
+
+* `--text <str>`: Words that name or describe the plugin, e.g. `calendar`; sent to GitHub&#x27;s search. All plugins if omitted.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system serve`
+
+Serve every operation to coding agents (MCP) or over HTTP (REST).
+
+**Usage**:
+
+```console
+$ hz system serve [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `api`: Serve every operation as a REST endpoint;...
+* `mcp`: Serve every operation as an MCP tool, e.g.
+
+#### `hz system serve api`
+
+Serve every operation as a REST endpoint; OpenAPI docs at /docs.
+
+**Usage**:
+
+```console
+$ hz system serve api [OPTIONS]
+```
+
+**Options**:
+
+* `--host <str>`: Interface to listen on.  [default: 127.0.0.1]
+* `--port <int>`: Port to listen on.  [default: 8000]
+* `--help`: Show this message and exit.
+
+#### `hz system serve mcp`
+
+Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
+
+**Usage**:
+
+```console
+$ hz system serve mcp [OPTIONS]
+```
+
+**Options**:
+
+* `--transport <stdio|streamable-http>`: stdio for agents that start hz; streamable-http to share.  [default: stdio]
+* `--host <str>`: Interface for streamable-http.  [default: 127.0.0.1]
+* `--port <int>`: Port for streamable-http.  [default: 8765]
+* `--help`: Show this message and exit.
+
+### `hz system update`
+
+Update Heinzelmännchen, keeping installed plugins, and show the version now installed.
+
+**Usage**:
+
+```console
+$ hz system update [OPTIONS]
+```
+
+**Options**:
+
+* `--source <str>`: Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.

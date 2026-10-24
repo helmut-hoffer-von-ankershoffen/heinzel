@@ -1,0 +1,1 @@
+../../../.claude/hooks/lint_python.py

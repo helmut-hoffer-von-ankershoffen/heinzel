@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Prepare a release as a pull request: derive the next semantic version from conventional commits (or force a bump),
+# update the version everywhere bump-my-version knows about, regenerate CHANGELOG.md, and commit
+# "chore(release): vX.Y.Z" on a new branch `release/vX.Y.Z`.
+#
+# Usage: scripts/release.sh [auto|patch|minor|major] [--open-pr]
+#   --open-pr  pushes the branch and opens the release pull request with gh. Merging it tags and publishes the
+#              release (workflow "Release tag"). Prints the tag on the last line.
+set -euo pipefail
+
+bump="${1:-auto}"
+open_pr="${2:-}"
+
+die() { echo "error: $*" >&2; exit 1; }
+
+[[ "$bump" =~ ^(auto|patch|minor|major)$ ]] || die "bump must be auto, patch, minor or major, not '$bump'"
+[[ -z "$(git status --porcelain)" ]] || die "working tree is not clean"
+[[ "$(git rev-parse --abbrev-ref HEAD)" == "main" ]] || die "releases are prepared from main"
+
+git fetch --tags --quiet origin 2>/dev/null || true
+
+current="$(uv run --frozen bump-my-version show current_version)"
+if [[ "$bump" == "auto" ]]; then
+  next="$(uv run --frozen git-cliff --offline --bumped-version)"
+else
+  next="$(uv run --frozen bump-my-version show --increment "$bump" new_version)"
+fi
+next="${next#v}"
+tag="v$next"
+
+[[ "$next" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "could not determine the next version (got '$next')"
+[[ "$next" != "$current" ]] || die "no releasable commits since v$current"
+git rev-parse -q --verify "refs/tags/$tag" >/dev/null && die "tag $tag already exists"
+
+echo "Preparing $tag (was $current)" >&2
+git switch --quiet --create "release/$tag"
+uv run --frozen bump-my-version bump --new-version "$next" --no-commit --no-tag --allow-dirty >&2
+uv lock --quiet
+uv run --frozen git-cliff --offline --tag "$tag" --output CHANGELOG.md
+git add --update
+git commit --quiet --message "chore(release): $tag"
+
+if [[ "$open_pr" == "--open-pr" ]]; then
+  git ls-remote --exit-code --heads origin "release/$tag" >/dev/null && die "release/$tag already exists on origin"
+  notes="$(mktemp)"
+  trap 'rm -f "$notes"' EXIT
+  git push --quiet --set-upstream origin "release/$tag"
+  uv run --frozen git-cliff --offline --unreleased --tag "$tag" --strip header > "$notes"
+  gh pr create --base main --head "release/$tag" --title "chore(release): $tag" --body-file "$notes" >&2
+fi
+echo "$tag"

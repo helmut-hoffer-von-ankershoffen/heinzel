@@ -1,0 +1,21 @@
+name: Feature or friction point
+description: Something that should be easier, or a capability Heinzelmännchen should have.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: friction
+    attributes:
+      label: What is the friction, and for which role?
+      description: Heinzelmännchen is for engineers, product managers and managers alike (INTENT.md).
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+  - type: dropdown
+    id: where
+    attributes:
+      label: Core or plugin?
+      description: Anything company-, site- or team-specific belongs in a plugin.
+      options: [Core, Plugin, Not sure]

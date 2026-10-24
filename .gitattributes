@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.sh text eol=lf
+uv.lock linguist-generated=true
+docs/CLI_REFERENCE.md linguist-generated=true
+docs/CONFIGURATION.md linguist-generated=true
+CHANGELOG.md linguist-generated=true

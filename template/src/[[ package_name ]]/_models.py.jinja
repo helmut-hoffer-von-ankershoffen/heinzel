@@ -1,0 +1,25 @@
+"""Models returned by the plugin's operations."""
+
+from heinzel import ModuleSettings
+from pydantic import BaseModel, Field
+
+
+class [[ class_prefix ]]About(BaseModel):
+    """What this plugin is and where it runs."""
+
+    plugin: str = Field(description="Distribution name of the plugin.")
+    version: str = Field(description="Installed version of the plugin.")
+    heinzel_version: str = Field(description="Version of the Heinzelmännchen it runs in.")
+    modules: list[str] = Field(description="Qualified names of the modules the plugin provides.")
+
+
+class [[ class_prefix ]]Greeting(BaseModel):
+    """A greeting."""
+
+    text: str
+
+
+class [[ class_prefix ]]Settings(ModuleSettings):
+    """Settings of the plugin: its table in the `hz` config files, or `HZ_<PLUGIN>__<FIELD>` variables."""
+
+    greeting: str = Field(default="Hello", description="How `hello` greets.")
