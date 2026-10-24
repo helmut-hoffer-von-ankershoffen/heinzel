@@ -49,7 +49,7 @@ hz --version
 ```
 
 What you should see: the version on the first line (hz 0.x.y), then the repository, Python, platform and installation, and one line
-per installed plugin (none on a fresh install). Pin a release with `@vX.Y.Z`; `hz system update` updates in place and keeps your plugins. From
+per installed plugin (none on a fresh install). Pin a release with `@vX.Y.Z`; `hz system update` then moves to the latest release and keeps your plugins. From
 Claude Code, `/hz-init` does the same ([README](../../README.md#install)).
 
 ## 2. Sign in to the tools you already use
