@@ -60,7 +60,7 @@ def sync(
     return service.sync(accept)
 
 
-@module.setup(required=True)
+@module.setup(required=True, phase="identity")
 def setup(settings: OrgSettings, prompter: Prompter, editor: ConfigEditor) -> None:
     """Tell hz who you are; what your gh and gws logins and this machine say is found, the rest is asked once."""
     prompter.say("Your profile is kept on this machine only; nothing goes into a repository.")

@@ -19,6 +19,7 @@ from heinzel.kernel._config import ConfigEditor, ModuleSettings
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._lets import (
     NAME_PATTERN,
+    SETUP_PHASES,
     CatchUp,
     Check,
     CredentialLet,
@@ -32,6 +33,7 @@ from heinzel.kernel._lets import (
     ServiceLet,
     SettingsLet,
     SetupLet,
+    SetupPhase,
     host_of,
 )
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, PlaybookSetup, templates_in
@@ -367,9 +369,13 @@ class Module:
     def setup[F: Callable[..., Any]](self, func: F, /) -> F: ...
 
     @overload
-    def setup[F: Callable[..., Any]](self, /, *, required: bool = False) -> Callable[[F], F]: ...
+    def setup[F: Callable[..., Any]](
+        self, /, *, required: bool = False, phase: SetupPhase = "connect"
+    ) -> Callable[[F], F]: ...
 
-    def setup[F: Callable[..., Any]](self, func: F | None = None, /, *, required: bool = False) -> F | Callable[[F], F]:
+    def setup[F: Callable[..., Any]](
+        self, func: F | None = None, /, *, required: bool = False, phase: SetupPhase = "connect"
+    ) -> F | Callable[[F], F]:
         """Advertise the module's interactive setup step (ADR 0032): `hz setup <module>`, and part of `hz setup`.
 
         The function asks for `Prompter` and whatever else it needs by type, like an operation, and writes through
@@ -378,17 +384,24 @@ class Module:
         Args:
             func: The function, when used as a bare decorator.
             required: `hz setup` runs it without offering to skip it; optional steps can be skipped.
+            phase: Where in `hz setup` it runs: `identity`, `membership`, `connect` (the default: tools, credentials,
+                bindings), `work` or `run` (ADR 0032, amended by ADR 0033).
 
         Raises:
-            ValueError: If the docstring is missing or the module already has a step.
+            ValueError: If the docstring is missing, the phase unknown, or the module already has a step.
         """
+        if phase not in SETUP_PHASES:
+            msg = f"Setup phase {phase!r} is not one of {', '.join(SETUP_PHASES)}"
+            raise ValueError(msg)
 
         def decorate(target: F) -> F:
             summary = inspect.getdoc(target)
             if not summary:
                 msg = f"Setup step {target.__qualname__} needs a docstring; it introduces the step."
                 raise ValueError(msg)
-            self.add(SetupLet(name=self.name, func=target, summary=summary.splitlines()[0], required=required))
+            self.add(
+                SetupLet(name=self.name, func=target, summary=summary.splitlines()[0], required=required, phase=phase)
+            )
             return target
 
         return decorate(func) if func is not None else decorate
