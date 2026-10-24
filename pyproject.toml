@@ -40,6 +40,7 @@ dependencies = [
 
 [project.scripts]
 hz = "heinzel.heads.cli:main"
+heinzel = "heinzel.heads.cli:main" # the same command, so `uvx heinzel join <team repository>` runs without an install (ADR 0033)
 
 [project.entry-points.pytest11]
 heinzel = "heinzel.testing"
