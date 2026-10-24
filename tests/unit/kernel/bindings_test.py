@@ -8,15 +8,20 @@ import pytest
 from pydantic import Field
 
 from heinzel import (
+    Chat,
     Config,
     Document,
     Documents,
     HeinzelError,
     JobLet,
     Kernel,
+    Meeting,
+    Message,
     Module,
     ModuleSettings,
     OperationLet,
+    Participant,
+    PostedMessage,
     SectionReplacement,
     Tracker,
     Window,
@@ -518,6 +523,85 @@ class TestInvokeValidatesBeforeInjecting:
 
     def test_an_explicitly_passed_capability_is_accepted_as_is(self, kernel):
         assert run(kernel, "digest", "show", documents=Reader()) == "reader:weekly"
+
+
+class Talk:
+    """A test-only chat adapter keeping messages in memory."""
+
+    def __init__(self) -> None:
+        self.posted: list[tuple[str, str, str | None]] = []
+
+    def messages(self, channel: str, window: Window) -> list[Message]:
+        author = Participant(name="Mira", email="mira@example.com")
+        return [Message(channel="C1", id="1.0", author=author, posted_at=window.since, text="hi")]
+
+    def post(self, channel: str, text: str, thread: str | None = None) -> PostedMessage:
+        self.posted.append((channel, text, thread))
+        return PostedMessage(channel="C1", id="2.0", thread=thread)
+
+
+def announcer_module() -> Module:
+    module = Module("announcer", "Reads a channel and posts to it.", requires=["chat:read"])
+
+    @module.operation
+    def latest(chat: Chat) -> str:
+        """The latest message of the channel."""
+        return chat.messages("#team", WINDOW)[-1].text
+
+    @module.operation
+    def sneak(chat: Chat) -> str:
+        """Try to post from a read-only operation."""
+        return chat.post("#team", "sneaky").id
+
+    @module.operation(read_only=False, requires=["chat:write"])
+    def announce(chat: Chat) -> str:
+        """Post the announcement."""
+        return chat.post("#team", "shipped", thread="1.0").id
+
+    return module
+
+
+@pytest.fixture
+def talking(make_kernel) -> Kernel:
+    module = Module("talk", "Test-only chat adapter.")
+    module.provides("chat", modes={"read", "write"}, hosts=["talk.invalid"])(Talk)
+    return make_kernel(talk=module, announcer=announcer_module(), config=bind(chat="talk"))
+
+
+def test_chat_reads_through_the_bound_adapter(talking):
+    assert run(talking, "announcer", "latest") == "hi"
+
+
+def test_posting_from_a_read_declaration_fails(talking):
+    with pytest.raises(HeinzelError, match=r"announcer sneak can't call chat.post, which needs write"):
+        run(talking, "announcer", "sneak")
+
+
+def test_a_publish_operation_that_declared_chat_write_posts(talking):
+    assert run(talking, "announcer", "announce") == "2.0"
+    adapter = talking._capabilities._instances["chat", "talk"]
+    assert isinstance(adapter, Talk)
+    assert adapter.posted == [("#team", "shipped", "1.0")]
+
+
+@pytest.mark.parametrize(
+    ("capability", "method"), [("meetings", "transcripts"), ("calendar", "events"), ("chat", "messages")]
+)
+def test_an_adapter_class_must_define_every_read_method_of_the_new_capabilities(make_kernel, capability, method):
+    class Partial:
+        def ended(self, window: Window) -> list[Meeting]:
+            return []
+
+        def transcript(self, meeting: str) -> None:
+            return None
+
+        def post(self, channel: str, text: str, thread: str | None = None) -> None:
+            return None
+
+    module = Module("partial", "Lacks a read method.")
+    module.provides(capability, modes={"read"})(Partial)
+    kernel = make_kernel(partial=module)
+    assert kernel.errors["partial"] == f"Adapter skipped: adapter partial:{capability} lacks {method} of {capability}"
 
 
 def test_capabilities_is_kernel_internal():
