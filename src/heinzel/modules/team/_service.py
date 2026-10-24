@@ -602,12 +602,18 @@ class TeamService:
         return tuple(found)
 
     def manifest(self) -> Manifest | None:
-        """The configured team's manifest; None when no team is configured.
+        """The configured team's manifest alone; None without a team, or before `hz team join` cloned it.
 
         Raises:
-            HeinzelError: If it is missing, unreadable or invalid.
+            HeinzelError: If the checkout has no manifest, or it is unreadable, a link or invalid.
         """
-        return None if self.checkout is None else self._team_files(self.checkout)[0]
+        checkout = self.checkout
+        if checkout is None or not checkout.is_dir():
+            return None
+        if not _exists(checkout, MANIFEST):
+            msg = f"{checkout} has no {MANIFEST}, so it isn't a team repository; `hz team show` says what to do"
+            raise HeinzelError(msg)
+        return _parsed(Manifest, checkout, MANIFEST)
 
     def adopt(self, path: Path) -> Adopted:
         """Record an existing checkout as your team repository, replacing the deprecated `workflow.team_repository`.

@@ -6,6 +6,10 @@ by writing your own user configuration through `ConfigEditor`. A binding becomes
 contract an entry of `[workflow] schedule_team` pinned to the file's SHA-256. Plugins and credentials are never
 applied by `sync`: installing code and storing a secret stay explicit commands, which it names.
 
+Your team's layers (ADR 0040) recommend too: the capability bindings their playbooks recommend, as the stack decides
+them (most specific first, an undecided org-site conflict left out), join the team repository's, which win for the same
+capability. Their other settings are offered by `hz setup`.
+
 `all` and the suggested command take only what you have no choice for yet (`pending`). What you chose otherwise
 (`differs`) needs its id, and a contract whose content changed since you pinned it asks you to read it first.
 """
@@ -20,7 +24,7 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel import Check, ConfigEditor, Credentials, HeinzelError, Kernel, Status
-from heinzel.kernel import CapabilityView, OrgContext, Recommendation
+from heinzel.kernel import CapabilityView, LayerStack, OrgContext, Recommendation
 
 logger = logging.getLogger(__name__)
 WORKFLOW = "workflow"
@@ -48,7 +52,7 @@ class SyncItem(BaseModel):
 class SyncReport(BaseModel):
     """Your team's recommendations and what became of them."""
 
-    team: bool = Field(description="Whether you are in a team that could recommend anything.")
+    team: bool = Field(description="Whether a team you joined or your layers recommend anything to you.")
     items: list[SyncItem] = Field(description="Every recommendation, in the manifest's order.")
     next: list[str] = Field(description="What to do next.")
 
@@ -65,9 +69,12 @@ class SyncService:
     def report(self) -> SyncReport:
         """Every recommendation beside what you have; changes nothing."""
         context = self._context()
-        if context is None or context.team_checkout() is None:
+        joined = context is not None and context.team_checkout() is not None
+        found = list(context.recommendations()) if context is not None and joined else []
+        found += layer_bindings(self._kernel.layer_stack(), {r.name for r in found if r.kind == "binding"})
+        if not joined and not found:
             return SyncReport(team=False, items=[], next=["Join your team first: hz team join <url>"])
-        items = [self._item(r) for r in context.recommendations()]
+        items = [self._item(r) for r in found]
         return SyncReport(team=True, items=items, next=_next(items))
 
     def sync(self, accept: str | None) -> SyncReport:
@@ -85,7 +92,7 @@ class SyncService:
         known = {item.id for item in report.items}
         if unknown := sorted(wanted - known - {"all"}):
             ids = ", ".join(sorted(known)) or "none"
-            msg = f"Your team recommends no {', '.join(unknown)}; its recommendations: {ids}. See them: hz org sync"
+            msg = f"Nothing recommends {', '.join(unknown)} to you; the recommendations: {ids}. See them: hz org sync"
             raise HeinzelError(msg)
         chosen = [
             i
@@ -114,7 +121,7 @@ class SyncService:
         if not waiting:
             detail = f"{len(report.items)} recommended, none waiting"
             return [Check(name="recommendations", status=Status.UP, detail=detail)]
-        detail = f"your team recommends {', '.join(i.id for i in waiting)}, which you don't have yet"
+        detail = f"your team or its layers recommend {', '.join(i.id for i in waiting)}, which you don't have yet"
         return [Check(name="recommendations", status=Status.DEGRADED, detail=detail, fix="hz org sync")]
 
     # Comparing and applying ------------------------------------------------------------------------------------------
@@ -208,6 +215,25 @@ class SyncService:
             logger.info("Applied the team's recommendations %s", ", ".join(f"contract:{n}" for n in contracts))
 
 
+def layer_bindings(stack: LayerStack, taken: set[str]) -> list[Recommendation]:
+    """The capability bindings your stack's playbooks recommend, most specific first, as team recommendations.
+
+    A capability in `taken` (the team repository recommends it) is left to the repository's recommendation.
+    """
+    plugins = {layer.name: layer.distribution for layer in stack.layers}
+    found: list[Recommendation] = []
+    recommended, _ = stack.recommendations()
+    for recommendation in recommended:
+        section, _, key = recommendation.key.partition(".")
+        capability = key.replace("_", "-")
+        if section != "capabilities" or capability in taken or not isinstance(recommendation.value, str):
+            continue
+        origin = f"layer {recommendation.layer} ({plugins[recommendation.layer]}), its playbook"
+        found.append(Recommendation(kind="binding", name=capability, value=recommendation.value, origin=origin))
+        taken = taken | {capability}  # the stack offers one value per capability; never two rows for one id
+    return found
+
+
 def _item(recommendation: Recommendation, *, current: str | None, state: SyncState, action: str) -> SyncItem:
     return SyncItem(
         id=recommendation.id,
@@ -227,7 +253,7 @@ def _next(items: list[SyncItem]) -> list[str]:
     if pending := [i.id for i in items if i.state == "pending"]:
         steps.append(f"Accept them: hz org sync --accept {shlex.quote(','.join(pending))}")
     steps += [f"{i.id}: {i.action}" for i in items if i.state in {"differs", "by-hand", "missing"}]
-    return steps or ["You have everything your team recommends."]
+    return steps or ["You have everything your team and its layers recommend."]
 
 
 def _why_not(item: SyncItem) -> str:
@@ -245,7 +271,8 @@ def render_sync(report: SyncReport) -> RenderableType:
     """One row per recommendation: what is recommended, what you have, and what accepting does."""
     if not report.items:
         return Group(*(Text(line) for line in report.next))
-    table = Table(title=f"Recommended by {report.items[0].origin.split(', ')[0]}")
+    origins = list(dict.fromkeys(item.origin.split(", ")[0] for item in report.items))
+    table = Table(title=f"Recommended by {' and '.join(origins)}")
     for column in ("Id", "Recommended", "You have", "State", "What it does"):
         table.add_column(column, overflow="fold")
     for item in report.items:

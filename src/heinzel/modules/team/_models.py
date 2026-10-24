@@ -110,12 +110,23 @@ class TeamSettings(ModuleSettings):
         description="The local checkout of your team repository; its `workflows/` holds the `team:` contracts.",
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"repository", "checkout"})
+    layer: str | None = Field(
+        default=None,
+        description="Your team's layer plugin by module name, e.g. acme-payments-checkout (ADR 0040), when your team "
+        "repository's hz.yaml names none or you want another; hz system layer show shows the stack it gives.",
+    )
+
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"repository", "checkout", "layer"})
 
     @field_validator("repository")
     @classmethod
     def _url(cls, url: str | None) -> str | None:
         return None if url is None else check_url(url)
+
+    @field_validator("layer")
+    @classmethod
+    def _layer(cls, layer: str | None) -> str | None:
+        return None if layer is None else check_name(layer, "layer name")
 
 
 class _Strict(BaseModel):

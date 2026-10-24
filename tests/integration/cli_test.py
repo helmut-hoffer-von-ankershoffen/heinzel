@@ -453,6 +453,7 @@ def test_commands_are_sorted(app):
         "daemon",
         "doctor",
         "info",
+        "layer",
         "modules",
         "plugin",
         "release",

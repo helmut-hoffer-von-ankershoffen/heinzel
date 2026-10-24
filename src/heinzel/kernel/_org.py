@@ -38,7 +38,7 @@ class OrgContext:
     """The team a person belongs to; a module provides a subclass (the `team` module in the core).
 
     A base class rather than a protocol, so that the kernel can inject it by type like any other service. Only what
-    readers need today is here; org, company and site layers add methods when they exist. The team repository only
+    readers need today is here. The team repository only
     holds data: nothing in it binds a capability, stores a credential, installs a plugin or schedules a contract.
     """
 
@@ -53,3 +53,15 @@ class OrgContext:
     def recommendations(self) -> tuple[Recommendation, ...]:
         """What the person's team repository recommends; nothing by default."""
         return ()
+
+    def layer(self) -> str | None:
+        """The layer the person's team declares (ADR 0040), by its module name or its plugin's name.
+
+        E.g. `acme-payments-checkout` or `heinzel-acme-payments-checkout`; the kernel stacks the installed
+        layers from it (`Kernel.layer_stack`). None, the default, when nothing
+        declares one; the kernel then takes the only team layer installed.
+
+        Raises:
+            HeinzelError: If the team's declaration can't be read; the kernel reports it and stacks what is installed.
+        """
+        return None

@@ -809,9 +809,10 @@ class WorkflowService:
             msg = f"The playbook {playbook.name!r} isn't contributed by an enabled module"
             raise HeinzelError(msg)
         applied = False
-        if playbook.defaults:
+        offered = self._offered(qualname, playbook, prompter)
+        if offered:
             prompter.say("It recommends these settings; each is applied only if you say yes:")
-        for key, value in playbook.defaults.items():
+        for key, value in offered.items():
             if not prompter.confirm(f"Set {key} = {toml_value(value)}?", default=False):
                 continue
             try:
@@ -821,6 +822,37 @@ class WorkflowService:
                 prompter.say(f"Not saved: {clean_text(str(exc))}")
         if playbook.templates:
             self._offer_templates(prompter, qualname, playbook, applied=applied)
+
+    def _offered(self, qualname: str, playbook: PlaybookLet, prompter: Prompter) -> dict[str, object]:
+        """The playbook's recommended settings to offer: those its layer wins in your stack (ADR 0040).
+
+        A playbook of a layer you aren't in, or of no layer, offers all of its settings. In your stack, a setting a
+        more specific layer recommends too is offered with that layer's playbook instead, and one an org and your site
+        disagree on is offered by neither until your team decides; each is said, so nothing is left out silently.
+        """
+        stack = self._kernel.layer_stack()
+        layer = next((found for found in stack.layers if found.module == qualname), None)
+        if layer is None:
+            return dict(playbook.defaults)
+        recommendations, conflicts = stack.recommendations()
+        winners = {r.key: r for r in recommendations}
+        disputed = {c.key: c for c in conflicts}
+        offered: dict[str, object] = {}
+        for key, value in playbook.defaults.items():
+            # The stack spells a capability as configuration does: `capabilities.code-host` is `code_host`.
+            stacked = (
+                f"capabilities.{key.partition('.')[2].replace('-', '_')}" if key.startswith("capabilities.") else key
+            )
+            winner = winners.get(stacked)
+            if stacked in disputed:
+                said = ", ".join(f"{name} recommends {toml_value(v)}" for name, v in disputed[stacked].values)
+                decider = stack.layer or "your layer"
+                prompter.say(f"{key}: {said}; {decider} decides, so neither is offered (`hz system layer show`).")
+            elif winner is not None and winner.layer != layer.name:
+                prompter.say(f"{key}: {winner.layer} recommends {toml_value(winner.value)}; offered with its playbook.")
+            else:
+                offered[key] = value
+        return offered
 
     def _offer_templates(self, prompter: Prompter, qualname: str, playbook: PlaybookLet, *, applied: bool) -> None:
         discovery = _playbooks.discover(self._kernel, MODULE, self._clock, qualname)

@@ -117,3 +117,32 @@ module.playbook(
   asset lives, approved in place, is planned.
 - `module.playbook` declares the module's setup step; a module with its own step passes `setup=False` and asks for
   `heinzel.kernel.PlaybookSetup` in it.
+
+## Layers: company, org, site, team
+
+A company's playbooks come in layers ([ADR 0040](adr/0040-layers-and-playbooks-are-plugins.md)): one plugin per
+company, org, site and team, each declaring where it sits. The made-up Acme:
+
+```python
+module = Module("acme-payments-checkout", "The Checkout team of Acme Payments.")
+module.layer(parent="acme-payments", site="acme-lisbon", roles=["checkout-captain"])
+module.playbook("How Checkout tracks its work.", defaults={"capabilities.tracker": "acme-payments-checkout"})
+```
+
+- `parent` and `site` name other layers by module name; the company has no parent. Layers have no kind: company,
+  org, site and team are labels from position (the root; a layer with layers below; a layer named as a site; a leaf).
+- Name a layer by its path, joined with dashes: `acme`, `acme-payments`, `acme-payments-checkout`, and the site
+  `acme-lisbon`. Doctor hints at a name that doesn't follow it; nothing refuses it.
+- List the parent's and the site's plugins as dependencies, so installing the team installs its stack. A missing
+  parent or site, a cycle, a layer two plugins declare, a layer on a submodule and a site in the layer's own line are
+  doctor findings with their fix.
+- Your layer is the plugin your team repository's `hz.yaml` names, or `[team] layer` when you set it, or the only team
+  layer installed. `hz system layer show` prints your stack, `acme → acme-payments + acme-lisbon →
+  acme-payments-checkout`, the roles it adds and the settings its playbooks recommend, most specific first, each with
+  the more general layers' values as alternatives. `hz org sync` lists the bindings among them beside what you have
+  and writes the ones you accept; `hz setup` walks the layers' playbooks in that order, and a setting a more specific
+  layer recommends too is offered only with that layer's.
+- Where an org and the site recommend different values and the team is silent, nothing is offered: doctor names both
+  layers and the key, and your file decides until the team's playbook sets it. That rule is
+  `ORG_SITE_PRECEDENCE` (`team_decides`) in the kernel, the one place to change while the question is open; a
+  plugin can't change it.

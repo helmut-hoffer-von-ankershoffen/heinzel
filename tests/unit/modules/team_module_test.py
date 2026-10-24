@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-from heinzel import Config, Status
+from heinzel import Config, HeinzelError, Status
 from heinzel.kernel import OrgContext
 from heinzel.modules import team
 from heinzel.modules.team import TeamContext, TeamService, TeamSettings
@@ -35,7 +35,8 @@ class NoEditor:
 
 
 def context(tmp_path, **settings) -> TeamContext:
-    return TeamContext(TeamService(TeamSettings(**settings), tmp_path, NoEditor(), run=lambda *_: ""))
+    configured = TeamSettings(**settings)
+    return TeamContext(TeamService(configured, tmp_path, NoEditor(), run=lambda *_: ""), configured)
 
 
 def test_the_context_has_no_checkout_without_a_team(tmp_path):
@@ -62,7 +63,7 @@ def test_the_base_context_has_no_checkout_of_its_own():
 
 
 def test_a_project_file_cannot_point_at_another_team():
-    assert TeamSettings.ignored_in_project == {"repository", "checkout"}
+    assert TeamSettings.ignored_in_project == {"repository", "checkout", "layer"}
 
 
 def test_a_repository_url_in_the_settings_is_checked():
@@ -250,3 +251,49 @@ def test_recommendations_come_in_kind_order():
         ("credential", "a/b", None),
         ("contract", "c", None),
     ]
+
+
+def team_checkout(tmp_path, manifest: str) -> Path:
+    checkout = tmp_path / "checkout"
+    (checkout / "team").mkdir(parents=True)
+    (checkout / "hz.yaml").write_text(manifest, encoding="utf-8")
+    return checkout
+
+
+def test_the_context_declares_no_layer_without_a_team(tmp_path):
+    assert context(tmp_path).layer() is None
+
+
+def test_the_context_declares_the_layer_you_set(tmp_path):
+    checkout = team_checkout(tmp_path, "name: checkout\nplugin: {name: heinzel-acme-payments-checkout}\n")
+    assert context(tmp_path, checkout=checkout, layer="acme-payments").layer() == "acme-payments"
+
+
+def test_the_context_declares_the_plugin_your_team_repository_names(tmp_path):
+    checkout = team_checkout(tmp_path, "name: checkout\nplugin: {name: heinzel-acme-payments-checkout}\n")
+    assert context(tmp_path, checkout=checkout).layer() == "heinzel-acme-payments-checkout"
+
+
+def test_the_context_declares_no_layer_for_a_team_without_a_plugin(tmp_path):
+    assert context(tmp_path, checkout=team_checkout(tmp_path, "name: checkout\n")).layer() is None
+
+
+def test_the_context_reads_the_manifest_alone_so_a_broken_roster_doesnt_hide_the_layer(tmp_path):
+    checkout = team_checkout(tmp_path, "name: checkout\nplugin: {name: heinzel-acme-payments-checkout}\n")
+    (checkout / "team" / "roster.yaml").write_text("members: [broken\n", encoding="utf-8")
+    assert context(tmp_path, checkout=checkout).layer() == "heinzel-acme-payments-checkout"
+
+
+def test_the_context_declares_no_layer_before_join_clones_the_repository(tmp_path):
+    assert context(tmp_path, repository=URL).layer() is None
+
+
+def test_a_checkout_without_a_manifest_is_an_error_that_says_what_to_run(tmp_path):
+    (tmp_path / "empty").mkdir()
+    with pytest.raises(HeinzelError, match="hz team show"):
+        context(tmp_path, checkout=tmp_path / "empty").layer()
+
+
+def test_a_layer_setting_is_a_layer_name():
+    with pytest.raises(ValueError, match="isn't a layer name"):
+        TeamSettings(layer="Acme Payments")

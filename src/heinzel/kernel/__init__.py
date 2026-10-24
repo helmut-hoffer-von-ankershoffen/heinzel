@@ -34,6 +34,17 @@ from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation, requirement_from_receipt
 from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
+from heinzel.kernel._layers import (
+    Label,
+    Layer,
+    LayerConflict,
+    LayerLet,
+    LayerProblem,
+    LayerProblemKind,
+    LayerRecommendation,
+    Layers,
+    LayerStack,
+)
 from heinzel.kernel._lets import (
     SETUP_PHASES,
     CatchUp,
@@ -136,6 +147,15 @@ __all__ = [
     "Issue",
     "JobLet",
     "Kernel",
+    "Label",
+    "Layer",
+    "LayerConflict",
+    "LayerLet",
+    "LayerProblem",
+    "LayerProblemKind",
+    "LayerRecommendation",
+    "LayerStack",
+    "Layers",
     "Let",
     "Mail",
     "MailContent",
