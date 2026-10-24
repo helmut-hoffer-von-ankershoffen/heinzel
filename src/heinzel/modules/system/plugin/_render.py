@@ -64,6 +64,10 @@ def render_list(plugins: list[PluginInfo]) -> RenderableType:
 def render_change(change: PluginChange) -> RenderableType:
     """For `add` without confirming: what would be installed and the command that confirms; otherwise what was done."""
     parts: list[RenderableType] = []
+    if (candidate := change.candidate) is not None and not change.done and change.previewed:
+        parts.append(Text("Not installed.", style="bold"))
+        parts.extend(Text(f"To install later: {command}") for command in change.next)
+        return Group(*parts)
     if (candidate := change.candidate) is not None and not change.done:
         table = Table.grid(padding=(0, 2))
         table.add_column(style="bold")
@@ -85,12 +89,32 @@ def render_change(change: PluginChange) -> RenderableType:
                 table.add_row(label, Text(value))
         parts.append(table)
         parts.extend(Text(f"Warning: {warning}", style="yellow") for warning in candidate.warnings)
-        parts.append(Text(RIGHTS, style="dim"))
-        parts.extend(Text(f"To install it: {command}") for command in change.next)
+        if not candidate.first_party:
+            parts.append(Text(RIGHTS, style="dim"))
+        parts.append(Text("Not installed yet: this was a preview.", style="bold"))
+        parts.extend(Text(f"To install: {command}") for command in change.next)
         return Group(*parts)
     done = {"add": "Added", "develop": "Added", "remove": "Removed", "enable": "Enabled", "disable": "Disabled"}
-    parts.append(Text(f"{done[change.action]} {change.distribution or 'the plugin'}."))
-    if change.restart_required:
-        parts.append(Text(RESTART, style="dim"))
+    if change.action == "add" and change.candidate is not None:
+        version = f" {change.candidate.version}" if change.candidate.version else ""
+        parts.append(Text(f"✓ Installed {change.distribution or 'the plugin'}{version}.", style="green"))
+        parts.append(Text("Restart hz ui to load it (or click Restart in the app)."))
+        parts.extend(Text(line) for line in _brings(change))
+    else:
+        parts.append(Text(f"{done[change.action]} {change.distribution or 'the plugin'}."))
+        if change.restart_required:
+            parts.append(Text(RESTART, style="dim"))
     parts.extend(Text(f"Undo with: {command}", style="dim") for command in change.next)
     return Group(*parts)
+
+
+def _brings(change: PluginChange) -> list[str]:
+    """What the plugin just added: its themes and the commands of its modules."""
+    info = next((i for i in change.plugins if i.distribution == change.distribution), None)
+    if info is None:
+        return []
+    lines = [f"Adds the theme {theme}: hz system theme use {theme}" for theme in info.themes]
+    if "capability" in info.kinds:
+        lines.append(f"Adds commands: hz {info.name} --help")
+    lines.extend(f"Adds the integration {capability}." for capability in info.capabilities)
+    return lines

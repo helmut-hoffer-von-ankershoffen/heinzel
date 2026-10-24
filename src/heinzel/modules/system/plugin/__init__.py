@@ -5,7 +5,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Module
+from heinzel import Module, Prompter
 from heinzel.modules.system.plugin._models import (
     AvailablePlugin,
     PluginCandidate,
@@ -39,6 +39,7 @@ def list_(service: PluginService) -> list[PluginInfo]:
 @module.operation(read_only=False, heads=CHANGES, render=render_change)
 def add(
     service: PluginService,
+    prompter: Prompter,
     spec: Annotated[
         str,
         Field(
@@ -62,7 +63,16 @@ def add(
     release or commit it read; with `confirm` it installs that and records it in the plugin history. Running servers
     (`hz ui`, MCP) see the plugin after a restart (`restart_required`).
     """
-    return service.add(spec, confirm=confirm)
+    change = service.add(spec, confirm=confirm)
+    if confirm or not prompter.interactive or change.candidate is None:
+        return change
+    # A person at a terminal sees the preview and answers, instead of retyping the command with --confirm.
+    prompter.show(render_change(change))
+    candidate = change.candidate
+    name = f"{candidate.distribution or spec} {candidate.version or ''}".strip()
+    if prompter.confirm(f"Install {name} now?", default=False):
+        return service.add(spec, confirm=True)
+    return change.model_copy(update={"previewed": True})
 
 
 @module.operation(read_only=False, heads={"cli"}, render=render_change)  # a path on this machine, typed at it
