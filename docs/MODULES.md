@@ -192,10 +192,10 @@ Health checks: reported by `hz system doctor`.
 
 Show the layer plugins installed and the stack you are in, general to specific.
 
-| Operation | CLI | MCP tool | REST | Changes state |
-| --- | --- | --- | --- | --- |
-| List the installed layer plugins: where each sits, what it brings and what is wrong with the tree. | `hz system layer list` | `system_layer_list` | `GET /system/layer/list` |  |
-| Show your stack: company, org and site, team; what the layers bring and the settings they recommend. | `hz system layer show` | `system_layer_show` | `GET /system/layer/show` |  |
+| Operation | CLI | MCP tool | REST | Web | Changes state |
+| --- | --- | --- | --- | --- | --- |
+| List the installed layer plugins: where each sits, what it brings and what is wrong with the tree. | `hz system layer list` | `system_layer_list` | `GET /system/layer/list` | `GET /api/system/layer/list` |  |
+| Show your stack: company, org and site, team; what the layers bring and the settings they recommend. | `hz system layer show` | `system_layer_show` | `GET /system/layer/show` | `GET /api/system/layer/show` |  |
 
 Health checks: reported by `hz system doctor`.
 

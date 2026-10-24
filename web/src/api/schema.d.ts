@@ -390,6 +390,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/layer/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the installed layer plugins: where each sits, what it brings and what is wrong with the tree.
+         * @description List the installed layer plugins: where each sits, what it brings and what is wrong with the tree.
+         */
+        get: operations["system_layer_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/layer/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show your stack: company, org and site, team; what the layers bring and the settings they recommend.
+         * @description Show your stack: company, org and site, team; what the layers bring and the settings they recommend.
+         */
+        get: operations["system_layer_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/modules": {
         parameters: {
             query?: never;
@@ -1239,6 +1279,29 @@ export interface components {
             settings: components["schemas"]["SettingInfo"][];
         };
         /**
+         * ConflictView
+         * @description An org and the site recommend different values and your team is silent: nothing is offered.
+         */
+        ConflictView: {
+            /**
+             * Fix
+             * @description How it gets decided.
+             */
+            fix: string;
+            /**
+             * Key
+             * @description The setting they disagree on.
+             */
+            key: string;
+            /**
+             * Values
+             * @description Each layer's value, general to specific.
+             */
+            values: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
+        /**
          * ContractGraph
          * @description `hz workflow graph`: contracts linked by what they read and maintain; the workflow nobody writes down.
          */
@@ -1755,6 +1818,109 @@ export interface components {
         };
         JsonValue: unknown;
         /**
+         * LayerList
+         * @description `hz system layer list`: every installed layer, and what is wrong with the tree.
+         */
+        LayerList: {
+            /**
+             * Layers
+             * @description Every installed layer that passed the checks, by name.
+             */
+            layers: components["schemas"]["LayerView"][];
+            /**
+             * Next
+             * @description What to run next.
+             */
+            next: string[];
+            /**
+             * Problems
+             * @description Layers left out or incomplete, each with its fix.
+             */
+            problems: components["schemas"]["LayerProblemView"][];
+        };
+        /**
+         * LayerProblemView
+         * @description Something wrong with an installed layer, and what fixes it.
+         */
+        LayerProblemView: {
+            /**
+             * Detail
+             * @description What is wrong.
+             */
+            detail: string;
+            /**
+             * Fix
+             * @description What fixes it, as a command where one does.
+             */
+            fix: string;
+            /**
+             * Layer
+             * @description The layer it is about; empty when it is about none in particular.
+             */
+            layer: string;
+            /**
+             * Problem
+             * @description What kind, e.g. missing-parent, cycle, declared-twice or not-installed.
+             */
+            problem: string;
+        };
+        /**
+         * LayerView
+         * @description An installed layer: where it sits and what it brings.
+         */
+        LayerView: {
+            /**
+             * Adapters
+             * @description The adapters its plugin brings, `<adapter>:<capability>`.
+             */
+            adapters: string[];
+            /**
+             * Hint
+             * @description How its name would follow its path from the company; none when it does.
+             */
+            hint: string | null;
+            /**
+             * Label
+             * @description Where it sits, derived from its position: company, org, site or team.
+             */
+            label: string;
+            /**
+             * Module
+             * @description The module that declares it.
+             */
+            module: string;
+            /**
+             * Name
+             * @description The layer's module name, e.g. acme-payments-checkout.
+             */
+            name: string;
+            /**
+             * Parent
+             * @description The layer above it; none for the company.
+             */
+            parent: string | null;
+            /**
+             * Playbook
+             * @description What its playbook is for; none without one.
+             */
+            playbook: string | null;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. heinzel-acme-payments-checkout.
+             */
+            plugin: string;
+            /**
+             * Roles
+             * @description The roles it adds to the core vocabulary.
+             */
+            roles: string[];
+            /**
+             * Site
+             * @description The site layer it is at; none if it names none.
+             */
+            site: string | null;
+        };
+        /**
          * LogLine
          * @description One line of the daemon's JSON-lines log.
          */
@@ -2079,6 +2245,36 @@ export interface components {
             provided: boolean;
         };
         /**
+         * RecommendationView
+         * @description A setting the stack recommends; applied only when you accept it.
+         */
+        RecommendationView: {
+            /**
+             * Alternatives
+             * @description What more general layers recommend instead, by layer, most specific first.
+             */
+            alternatives: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Command
+             * @description The command that applies it, if you agree.
+             */
+            command: string;
+            /**
+             * Key
+             * @description The setting, `<section>.<key>`.
+             */
+            key: string;
+            /**
+             * Layer
+             * @description The layer whose value is offered.
+             */
+            layer: string;
+            /** @description The value offered: the most specific layer's. */
+            value: components["schemas"]["JsonValue"];
+        };
+        /**
          * ReleaseCheck
          * @description The installed version, the latest release and whether updating would bring something new.
          */
@@ -2274,6 +2470,57 @@ export interface components {
              * @description Directory containing SKILL.md.
              */
             path: string;
+        };
+        /**
+         * StackView
+         * @description `hz system layer show`: the layers you are in, general to specific, and what they bring together.
+         */
+        StackView: {
+            /**
+             * Conflicts
+             * @description Keys an org and the site disagree on, left to you and your team.
+             */
+            conflicts: components["schemas"]["ConflictView"][];
+            /**
+             * Layer
+             * @description Your layer, e.g. your team's; none when nothing says which.
+             */
+            layer: string | null;
+            /**
+             * Layers
+             * @description The layers, general to specific.
+             */
+            layers: components["schemas"]["LayerView"][];
+            /**
+             * Next
+             * @description What to run next.
+             */
+            next: string[];
+            /**
+             * Problems
+             * @description Why the stack is empty or incomplete, with fixes.
+             */
+            problems: components["schemas"]["LayerProblemView"][];
+            /**
+             * Recommendations
+             * @description The settings the layers' playbooks recommend, most specific first; none is applied by itself.
+             */
+            recommendations: components["schemas"]["RecommendationView"][];
+            /**
+             * Roles
+             * @description The roles the layers add, general to specific.
+             */
+            roles: string[];
+            /**
+             * Source
+             * @description Where your layer came from, e.g. your team.
+             */
+            source: string;
+            /**
+             * Stack
+             * @description The stack in one line: company → org + site → team.
+             */
+            stack: string;
         };
         /**
          * Status
@@ -2533,6 +2780,7 @@ export type SchemaCheckReport = components['schemas']['CheckReport'];
 export type SchemaCompiledContract = components['schemas']['CompiledContract'];
 export type SchemaConfigFileInfo = components['schemas']['ConfigFileInfo'];
 export type SchemaConfigReport = components['schemas']['ConfigReport'];
+export type SchemaConflictView = components['schemas']['ConflictView'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
 export type SchemaContractList = components['schemas']['ContractList'];
 export type SchemaContractSummary = components['schemas']['ContractSummary'];
@@ -2552,6 +2800,9 @@ export type SchemaHintView = components['schemas']['HintView'];
 export type SchemaInstalledSkill = components['schemas']['InstalledSkill'];
 export type SchemaJobInfo = components['schemas']['JobInfo'];
 export type SchemaJsonValue = components['schemas']['JsonValue'];
+export type SchemaLayerList = components['schemas']['LayerList'];
+export type SchemaLayerProblemView = components['schemas']['LayerProblemView'];
+export type SchemaLayerView = components['schemas']['LayerView'];
 export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
@@ -2562,12 +2813,14 @@ export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaProfile = components['schemas']['Profile'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
+export type SchemaRecommendationView = components['schemas']['RecommendationView'];
 export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSkill = components['schemas']['Skill'];
+export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStatus = components['schemas']['Status'];
 export type SchemaStep = components['schemas']['Step'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
@@ -3044,6 +3297,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemInfo"];
+                };
+            };
+        };
+    };
+    system_layer_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayerList"];
+                };
+            };
+        };
+    };
+    system_layer_show: {
+        parameters: {
+            query?: {
+                /** @description Show this layer's stack instead of yours, e.g. acme-payments-checkout. */
+                layer?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StackView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

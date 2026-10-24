@@ -865,6 +865,36 @@
         "title": "ConfigReport",
         "type": "object"
       },
+      "ConflictView": {
+        "description": "An org and the site recommend different values and your team is silent: nothing is offered.",
+        "properties": {
+          "fix": {
+            "description": "How it gets decided.",
+            "title": "Fix",
+            "type": "string"
+          },
+          "key": {
+            "description": "The setting they disagree on.",
+            "title": "Key",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Each layer's value, general to specific.",
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "key",
+          "values",
+          "fix"
+        ],
+        "title": "ConflictView",
+        "type": "object"
+      },
       "ContractGraph": {
         "description": "`hz workflow graph`: contracts linked by what they read and maintain; the workflow nobody writes down.",
         "properties": {
@@ -1679,6 +1709,178 @@
         "type": "object"
       },
       "JsonValue": {},
+      "LayerList": {
+        "description": "`hz system layer list`: every installed layer, and what is wrong with the tree.",
+        "properties": {
+          "layers": {
+            "description": "Every installed layer that passed the checks, by name.",
+            "items": {
+              "$ref": "#/components/schemas/LayerView"
+            },
+            "title": "Layers",
+            "type": "array"
+          },
+          "next": {
+            "description": "What to run next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "problems": {
+            "description": "Layers left out or incomplete, each with its fix.",
+            "items": {
+              "$ref": "#/components/schemas/LayerProblemView"
+            },
+            "title": "Problems",
+            "type": "array"
+          }
+        },
+        "required": [
+          "layers",
+          "problems",
+          "next"
+        ],
+        "title": "LayerList",
+        "type": "object"
+      },
+      "LayerProblemView": {
+        "description": "Something wrong with an installed layer, and what fixes it.",
+        "properties": {
+          "detail": {
+            "description": "What is wrong.",
+            "title": "Detail",
+            "type": "string"
+          },
+          "fix": {
+            "description": "What fixes it, as a command where one does.",
+            "title": "Fix",
+            "type": "string"
+          },
+          "layer": {
+            "description": "The layer it is about; empty when it is about none in particular.",
+            "title": "Layer",
+            "type": "string"
+          },
+          "problem": {
+            "description": "What kind, e.g. missing-parent, cycle, declared-twice or not-installed.",
+            "title": "Problem",
+            "type": "string"
+          }
+        },
+        "required": [
+          "layer",
+          "problem",
+          "detail",
+          "fix"
+        ],
+        "title": "LayerProblemView",
+        "type": "object"
+      },
+      "LayerView": {
+        "description": "An installed layer: where it sits and what it brings.",
+        "properties": {
+          "adapters": {
+            "description": "The adapters its plugin brings, `<adapter>:<capability>`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Adapters",
+            "type": "array"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How its name would follow its path from the company; none when it does.",
+            "title": "Hint"
+          },
+          "label": {
+            "description": "Where it sits, derived from its position: company, org, site or team.",
+            "title": "Label",
+            "type": "string"
+          },
+          "module": {
+            "description": "The module that declares it.",
+            "title": "Module",
+            "type": "string"
+          },
+          "name": {
+            "description": "The layer's module name, e.g. acme-payments-checkout.",
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The layer above it; none for the company.",
+            "title": "Parent"
+          },
+          "playbook": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What its playbook is for; none without one.",
+            "title": "Playbook"
+          },
+          "plugin": {
+            "description": "The plugin it comes with, e.g. heinzel-acme-payments-checkout.",
+            "title": "Plugin",
+            "type": "string"
+          },
+          "roles": {
+            "description": "The roles it adds to the core vocabulary.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "site": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The site layer it is at; none if it names none.",
+            "title": "Site"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "parent",
+          "site",
+          "plugin",
+          "module",
+          "adapters",
+          "roles",
+          "playbook",
+          "hint"
+        ],
+        "title": "LayerView",
+        "type": "object"
+      },
       "LogLine": {
         "description": "One line of the daemon's JSON-lines log.",
         "properties": {
@@ -2229,6 +2431,47 @@
         "title": "PublishStatus",
         "type": "object"
       },
+      "RecommendationView": {
+        "description": "A setting the stack recommends; applied only when you accept it.",
+        "properties": {
+          "alternatives": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "What more general layers recommend instead, by layer, most specific first.",
+            "title": "Alternatives",
+            "type": "object"
+          },
+          "command": {
+            "description": "The command that applies it, if you agree.",
+            "title": "Command",
+            "type": "string"
+          },
+          "key": {
+            "description": "The setting, `<section>.<key>`.",
+            "title": "Key",
+            "type": "string"
+          },
+          "layer": {
+            "description": "The layer whose value is offered.",
+            "title": "Layer",
+            "type": "string"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue",
+            "description": "The value offered: the most specific layer's."
+          }
+        },
+        "required": [
+          "key",
+          "value",
+          "layer",
+          "alternatives",
+          "command"
+        ],
+        "title": "RecommendationView",
+        "type": "object"
+      },
       "ReleaseCheck": {
         "description": "The installed version, the latest release and whether updating would bring something new.",
         "properties": {
@@ -2550,6 +2793,94 @@
           "path"
         ],
         "title": "Skill",
+        "type": "object"
+      },
+      "StackView": {
+        "description": "`hz system layer show`: the layers you are in, general to specific, and what they bring together.",
+        "properties": {
+          "conflicts": {
+            "description": "Keys an org and the site disagree on, left to you and your team.",
+            "items": {
+              "$ref": "#/components/schemas/ConflictView"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "layer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your layer, e.g. your team's; none when nothing says which.",
+            "title": "Layer"
+          },
+          "layers": {
+            "description": "The layers, general to specific.",
+            "items": {
+              "$ref": "#/components/schemas/LayerView"
+            },
+            "title": "Layers",
+            "type": "array"
+          },
+          "next": {
+            "description": "What to run next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "problems": {
+            "description": "Why the stack is empty or incomplete, with fixes.",
+            "items": {
+              "$ref": "#/components/schemas/LayerProblemView"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "recommendations": {
+            "description": "The settings the layers' playbooks recommend, most specific first; none is applied by itself.",
+            "items": {
+              "$ref": "#/components/schemas/RecommendationView"
+            },
+            "title": "Recommendations",
+            "type": "array"
+          },
+          "roles": {
+            "description": "The roles the layers add, general to specific.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "source": {
+            "description": "Where your layer came from, e.g. your team.",
+            "title": "Source",
+            "type": "string"
+          },
+          "stack": {
+            "description": "The stack in one line: company → org + site → team.",
+            "title": "Stack",
+            "type": "string"
+          }
+        },
+        "required": [
+          "layer",
+          "source",
+          "stack",
+          "layers",
+          "roles",
+          "recommendations",
+          "conflicts",
+          "problems",
+          "next"
+        ],
+        "title": "StackView",
         "type": "object"
       },
       "Status": {
@@ -3633,6 +3964,80 @@
           }
         },
         "summary": "Show versions, interpreter, settings, modules and what modules report.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/layer/list": {
+      "get": {
+        "description": "List the installed layer plugins: where each sits, what it brings and what is wrong with the tree.",
+        "operationId": "system_layer_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LayerList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the installed layer plugins: where each sits, what it brings and what is wrong with the tree.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/layer/show": {
+      "get": {
+        "description": "Show your stack: company, org and site, team; what the layers bring and the settings they recommend.",
+        "operationId": "system_layer_show",
+        "parameters": [
+          {
+            "description": "Show this layer's stack instead of yours, e.g. acme-payments-checkout.",
+            "in": "query",
+            "name": "layer",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Show this layer's stack instead of yours, e.g. acme-payments-checkout.",
+              "title": "Layer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StackView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show your stack: company, org and site, team; what the layers bring and the settings they recommend.",
         "tags": [
           "system"
         ]
