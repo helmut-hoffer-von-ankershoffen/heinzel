@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
+amended-by: 0039
 ---
 
 # 0019: MCP and REST heads derive everything from operations
