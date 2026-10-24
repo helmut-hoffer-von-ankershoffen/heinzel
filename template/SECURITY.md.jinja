@@ -78,12 +78,13 @@ Only the latest release receives security fixes while the project is on 0.x.
 | Local servers | The REST head refuses requests whose Host isn't a loopback name on its port (DNS rebinding) and requests from another origin, with `403`; operations that spend money or act unattended aren't REST endpoints (ADR 0019) | `heinzel.heads.api`, `tests/integration/rest_security_test.py` |
 | Terminal output | The CLI prints values from configuration, plugins and contracts as plain text without control characters, so escape sequences (colours, OSC 8 links, OSC 52 clipboard writes, C1 controls) never reach your terminal; JSON escapes them | `heinzel.heads.cli._render`, `tests/integration/cli_plain_text_test.py` |
 | Workflow contracts | Contract files are data: the parser refuses aliases, tags, deep nesting, control characters and large files; one bad file is only that file's diagnostic; contracts read only what they declare, through adapters configuration binds, with a user-scope cost cap; drafts are published by nobody (ADR 0021) | `hz workflow check`, `tests/unit/modules/workflow_contracts_test.py`, `tests/unit/modules/workflow_service_test.py` |
+| | The parser is fuzzed with atheris (weekly and when it changes) and checked with hypothesis properties in every test run: whatever the input, it reports diagnostics and never needs its isolation boundary | `fuzz/contract_fuzz.py` (`fuzz.yml`), `tests/unit/modules/workflow_contracts_property_test.py` |
 | Workflows | Actions pinned to full commit SHAs, read-only token by default, least privilege per job, no persisted credentials, no untrusted input in `run:` | zizmor, actionlint (`make lint`) |
 | | Supply-chain posture tracked | OpenSSF Scorecard |
 | Changes | `main` only changes through squash-merged pull requests with green CI (`CI OK`), linear history, no force pushes or deletions | repository ruleset |
 | | Reviewer agents, including a security reviewer, on pull requests (opt-in) | `.claude/agents/`, `claude-review.yml` |
 | Releases | Tags are created by the release workflow for release commits only; Publish refuses a tag that doesn't match the version | `release-tag.yml`, `publish.yml` |
-| | Wheels, source distributions and the SBOM carry Sigstore build provenance attestations | `actions/attest-build-provenance` |
+| | Wheels, source distributions and the SBOM carry Sigstore build provenance attestations, attached to each release as the Sigstore bundle (`provenance.sigstore.json`) and its signed in-toto SLSA provenance (`provenance.intoto.jsonl`) | `actions/attest-build-provenance`, `publish.yml` |
 | | Each release ships a CycloneDX software bill of materials of its runtime dependencies | `*.cdx.json` release asset |
 
 Verify a release artifact:

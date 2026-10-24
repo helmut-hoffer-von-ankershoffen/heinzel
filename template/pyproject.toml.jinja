@@ -33,6 +33,7 @@ test = [
     "heinzel @ git+https://github.com/[[ heinzel_owner ]]/heinzel@v[[ heinzel_version ]]",
     "coverage>=7.12",
     "httpx>=0.28",
+    "hypothesis>=6.140",
     "jsonschema>=4.26",
     "prek>=0.2",
     "pytest>=9.0.3,<10",
@@ -140,7 +141,7 @@ warn_required_dynamic_aliases = true
 minversion = "9.0"
 strict = true
 testpaths = ["tests"]
-norecursedirs = ["tests/fixtures"]
+norecursedirs = ["tests/fixtures", ".hypothesis"]
 addopts = ["-ra", "--import-mode=importlib"]
 filterwarnings = ["error"]
 log_level = "INFO"
@@ -257,3 +258,8 @@ typeCheckingMode = "strict"
 pythonVersion = "3.12"
 venvPath = "."
 venv = ".venv"
+
+[tool.typos.default.extend-words] # in pyproject.toml, so plugins get them with the shared files
+CPY = "CPY" # ruff rule prefix (flake8-copyright)
+Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-contracts.md
+intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl

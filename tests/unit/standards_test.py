@@ -87,6 +87,7 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    ".github/workflows/fuzz.yml": "fuzzes Heinzelmännchen's contract parser (fuzz/); plugins have no fuzz targets",
     ".github/workflows/demo.yml": "records the README demo with hz's own commands; plugins have no demo tape",
     ".claude/audit/evals.yaml": "cases from Heinzelmännchen's history; a plugin's self-audit skips self-improvement",
     ".claude/audit/ledger.jsonl": "Heinzelmännchen's own audit record; skill self-audit starts a plugin's empty",
