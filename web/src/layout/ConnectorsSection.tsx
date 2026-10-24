@@ -171,7 +171,7 @@ function Card({ entry, connector, onOpen }: { entry: Entry; connector: SchemaCon
   const test = useTestConnector();
   const report = useConnectors();
   // A test answers for the state it was run against: once the report is read again ("Check again", a binding
-  // changed, the window got focus after signing in), the fresh state speaks, not the old result.
+  // changed), the fresh state speaks, not the old result.
   const [testedAt, setTestedAt] = useState(0);
   const fresh = testedAt >= report.dataUpdatedAt;
   const tested = fresh && test.data?.name === connector.name ? test.data : undefined;
@@ -231,7 +231,7 @@ function Card({ entry, connector, onOpen }: { entry: Entry; connector: SchemaCon
   );
 }
 
-/** Types the sign-in into the terminal for the person to run; "Check again" (or coming back) reads the result. */
+/** Types the sign-in into the terminal for the person to run; "Check again" reads the result. */
 function ConnectButton({ command }: { command: string }) {
   return (
     <Button size="sm" title={t("connectors.connectHint", { command })} onClick={() => offerInTerminal(command)}>

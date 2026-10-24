@@ -142,7 +142,7 @@ def known_settings() -> dict[str, dict[str, object]]:
 
 
 def test_the_web_app_renders_the_real_schemas_of_settings_with_known_values():
-    """`web/src/layout/settingSchema.test.ts` checks each of these is a choice; this keeps them the real ones."""
+    """`web/src/layout/OptionsValue.test.tsx` checks each of these is a choice; this keeps them the real ones."""
     text = json.dumps(known_settings(), indent=2, sort_keys=True) + "\n"
     if os.environ.get("HZ_UPDATE_FIXTURES"):
         KNOWN.write_text(text, encoding="utf-8")
