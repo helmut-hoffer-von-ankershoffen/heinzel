@@ -34,7 +34,10 @@ if (env / "block").exists():
     sys.exit(1)
 core = sys.argv[sys.argv.index("--python") + 2]
 url, tag = core.split(" @ git+", 1)[1].rsplit("@", 1)
-(env / "version").write_text(tag.removeprefix("v"))
+if tag.startswith("v"):
+    (env / "version").write_text(tag[1:])
+elif (env / "main-version").exists():  # what the branch has now
+    (env / "version").write_text((env / "main-version").read_text())
 receipt = (env / "uv-receipt.toml").read_text().splitlines()
 receipt[2] = '    {{ name = "heinzel", git = "' + url + '?rev=' + tag + '" }},'
 (env / "uv-receipt.toml").write_text("\\n".join(receipt) + "\\n")
@@ -91,7 +94,7 @@ def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(ap
     github_releases(monkeypatch, "v99.0.0", f"v{__version__}", "v99.1.0rc1")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == f"Updated hz {__version__} → 99.0.0"
+    assert result.output.strip() == f"Updated hz {__version__} → 99.0.0."
     [command] = uv_log(env)
     assert command.endswith(f"heinzel @ git+{REPO}@v99.0.0 --with {PLUGIN}")
     assert "rev=v99.0.0" in (env / "uv-receipt.toml").read_text()
@@ -115,20 +118,34 @@ def test_the_latest_release_installed_is_said_not_silent(app, env, monkeypatch):
     github_releases(monkeypatch, f"v{__version__}")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == f"hz {__version__} is the latest release"
+    assert result.output.strip() == f"hz {__version__} is up to date (releases)."
     assert uv_log(env) == []
+
+
+def test_a_main_pin_is_updated_in_place_to_the_newest_commit(app, env, monkeypatch):
+    receipt = env / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text().replace(f"rev=v{__version__}", "rev=main"))
+    (env / "main-version").write_text("99.0.0.dev7")
+    github_releases(monkeypatch, "v0.0.1")
+    result = runner.invoke(app, ["system", "update", "--channel", "main"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == f"Updated hz {__version__} \u2192 99.0.0.dev7."
+    [command] = uv_log(env)
+    assert command.endswith(f"heinzel @ git+{REPO}@main --with {PLUGIN}")
+    assert "rev=main" in receipt.read_text()
 
 
 def test_a_branch_pin_is_left_alone_with_the_command_that_moves_it(app, env, monkeypatch):
     receipt = env / "uv-receipt.toml"
-    receipt.write_text(receipt.read_text().replace(f"rev=v{__version__}", "rev=main"))
+    receipt.write_text(receipt.read_text().replace(f"rev=v{__version__}", "rev=feature"))
     github_releases(monkeypatch, "v99.0.0")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
     assert (
-        f"Pinned to main; to update to the latest release (99.0.0) run: hz system update --source git+{REPO}@v99.0.0"
+        f"Pinned to feature; to get its newest commit run: hz system update --source git+{REPO}@feature"
         in result.output
     )
+    assert f"run hz system update --source git+{REPO}@v99.0.0 to switch to releases" in " ".join(result.output.split())
     assert uv_log(env) == []
 
 
@@ -141,3 +158,13 @@ def test_a_blocking_plugin_is_named_and_the_previous_hz_stays(app, env, monkeypa
     assert "the plugin heinzel-acme does not allow it" in result.output
     assert f"hz {__version__} is still installed, with every plugin." in result.output
     assert (env / "uv-receipt.toml").read_text() == before
+
+
+def test_channel_release_switches_a_main_pin_to_the_newest_release(app, env, monkeypatch):
+    receipt = env / "uv-receipt.toml"
+    receipt.write_text(receipt.read_text().replace(f"rev=v{__version__}", "rev=main"))
+    github_releases(monkeypatch, "v99.0.0")
+    result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == f"Updated hz {__version__} \u2192 99.0.0."
+    assert "rev=v99.0.0" in receipt.read_text()
