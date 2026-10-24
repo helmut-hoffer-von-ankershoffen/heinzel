@@ -476,12 +476,12 @@ def _surfaces(colours: ThemeColours) -> list[tuple[str, str]]:
 def contrast_problems(colours: ThemeColours) -> list[str]:
     """Where text in `colours` falls under 4.5:1, in words.
 
-    `foreground` is checked on cards, the sidebar, popovers and every main surface, `muted_foreground` on every main
-    surface.
+    `foreground` and `muted_foreground` are checked on cards, the sidebar, popovers and every main surface.
     """
     pairs = [
-        ("foreground", surface, colours.foreground, getattr(colours, surface))
+        (text, surface, getattr(colours, text), getattr(colours, surface))
         for surface in ("card", "sidebar", "popover")
+        for text in ("foreground", "muted_foreground")
     ]
     for surface, value in _surfaces(colours):
         pairs += [

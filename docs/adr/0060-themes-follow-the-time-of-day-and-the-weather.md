@@ -69,8 +69,8 @@ the facts about now come from an operation like everything else, and readability
   0.6). The web app sets `--theme-backdrop` from these parts only, each stop as `color-mix(in srgb, <hex or
   var(--color-token)> <opacity>%, transparent)`, and checks them again; anything else draws `none`. It is drawn
   behind the main area only: the sidebar, cards and dialogs stay solid.
-- **Contrast**: for each mode, the base and the base with each variant applied, `foreground` must reach 4.5:1 on
-  `card` and, with `muted_foreground`, on `background`, `main_tint` and each backdrop stop blended over the
+- **Contrast**: for each mode, the base and the base with each variant applied, `foreground` and `muted_foreground` must reach 4.5:1 on
+  `card`, `sidebar`, `popover`, `background`, `main_tint` and each backdrop stop blended over the
   background at its opacity. A theme failing anywhere is refused at import with every failing pair named. This
   amends ADR 0044: a base theme is checked too.
 - **Transitions**: the main colour tokens are registered with `@property` as `<color>`; when the variant of the
