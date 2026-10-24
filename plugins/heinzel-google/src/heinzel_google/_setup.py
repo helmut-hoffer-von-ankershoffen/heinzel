@@ -51,7 +51,16 @@ def run_setup(  # noqa: PLR0913, PLR0917 - what the step is injected with
         return
     newly = _bind(view, prompter, editor)
     mail = "mail" in newly or view.bound("mail") == "google"
+    if signed_in and not mail:
+        return
     if signed_in and "mail" not in newly:
+        # Mail was bound before; whether that sign-in included Gmail's scope, gws's status doesn't say.
+        prompter.say(
+            f"If gws was signed in before mail was read from Google, it lacks Gmail's scope: {LOGIN_WITH_MAIL}"
+        )
+        if prompter.confirm("Sign gws in again with Gmail's scope? It opens your browser", default=False):
+            code = gws.login(executable, LOGIN_WITH_MAIL.split()[1:], LOGIN_TIMEOUT)
+            prompter.say("gws is signed in." if code == 0 else f"gws auth login did not finish (exit {code}).")
         return
     login = LOGIN_WITH_MAIL if mail else LOGIN
     why = "read-only access, to your mail too" if mail else "read-only access only"
@@ -68,9 +77,8 @@ def _bind(view: CapabilityView, prompter: Prompter, editor: ConfigEditor) -> set
         bound = view.bound(capability)
         if bound == "google":
             continue
-        question = f"Read {capability} from Google" + (f" instead of {bound}?" if bound else "?")
-        if capability in OPT_IN:
-            question += " Google then lets the plugin read all of your mail"
+        question = f"Read {capability} from Google" + (f" instead of {bound}" if bound else "")
+        question += " (this grants read access to all of your mail)?" if capability in OPT_IN else "?"
         if prompter.confirm(question, default=bound is None and capability not in OPT_IN):
             prompter.say(f"Saved to {editor.write(f'capabilities.{capability}', 'google')}.")
             newly.add(capability)

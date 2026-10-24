@@ -51,10 +51,9 @@ def gmail(session, fake_gws):
 def test_the_search_carries_the_query_and_a_widened_window():
     query = MailQuery.parse('from:zoe@example.com subject:"Meeting summary" label:Summaries')
     assert gmail_search(query, WEEK) == (
-        f"after:{int(SINCE.timestamp()) - 1} before:{int(UNTIL.timestamp()) + 1} "
-        'from:"zoe@example.com" subject:"Meeting summary" label:"Summaries"'
-    )
-    assert gmail_search(MailQuery(subject='a "b\\c'), WEEK).endswith('subject:"a  b c"')
+        f'after:{int(SINCE.timestamp()) - 1} before:{int(UNTIL.timestamp()) + 1} from:"zoe@example.com"'
+    )  # Gmail's subject: matches whole words and label: names differ: both are checked otherwise
+    assert gmail_search(MailQuery(sender='a"b\\c.example'), WEEK).endswith('from:"a b c.example"')
 
 
 def test_messages_in_the_window_that_match_oldest_first(gmail, fake_gws):
@@ -83,10 +82,10 @@ def test_messages_in_the_window_that_match_oldest_first(gmail, fake_gws):
         ["INBOX", "Summaries"],
         "tm1",
     )
-    assert first["url"] == "https://mail.google.com/mail/u/0/#all/m1"
+    assert first["url"] == "https://mail.google.com/mail/#all/m1"
     list_run = next(r for r in fake_gws.runs if r.command == LIST)
     assert list_run.params["userId"] == "me"
-    assert 'subject:"meeting summary"' in list_run.params["q"]
+    assert list_run.params["q"].endswith('from:"example.com"')
     get_run = next(r for r in fake_gws.runs if r.command == GET)
     assert get_run.params == {
         "userId": "me",
@@ -178,7 +177,8 @@ def test_parts_are_bounded_and_walked_without_recursion(gmail, fake_gws, monkeyp
     for _ in range(2000):
         deep = {"mimeType": "multipart/mixed", "parts": [deep]}
     fake_gws.json(GET, message("m1", SINCE, **deep))
-    assert gmail.read("m1").text == ""
+    with pytest.raises(HeinzelError, match="more than 3 MIME parts"):
+        gmail.read("m1")
 
 
 def test_a_malformed_encoded_word_stays_as_it_is(gmail, fake_gws):
@@ -208,3 +208,56 @@ def test_a_message_without_sender_or_body_and_with_repeated_headers(gmail, fake_
 
 def test_html_to_text_tidies_whitespace():
     assert html_to_text("<div>a  <b>b</b></div><br><br><br><br><p>c</p>") == "a b\n\nc"
+
+
+def test_an_encoded_display_name_cannot_pose_as_the_sender(gmail, fake_gws):
+    forged = message("m1", SINCE, sender="=?utf-8?q?ceo=40corp.example=2C?= <attacker@evil.example>")
+    fake_gws.json(GET, forged)
+    assert gmail.read("m1").message.sender.model_dump() == {"name": None, "email": "attacker@evil.example"}
+    comma = message("m1", SINCE, sender="=?utf-8?q?M=C3=BCller=2C_Hans?= <hans@example.com>")
+    fake_gws.json(GET, comma)
+    assert gmail.read("m1").message.sender.model_dump() == {"name": "Müller, Hans", "email": "hans@example.com"}
+    bare = message("m1", SINCE, sender="not an address")
+    fake_gws.json(GET, bare)
+    assert gmail.read("m1").message.sender.email is None
+
+
+def test_a_body_is_read_in_its_own_charset(gmail, fake_gws):
+    latin = base64.urlsafe_b64encode("Grüße".encode("latin-1")).decode()
+    part = {"mimeType": "text/plain", "headers": [{"name": "Content-Type", "value": "text/plain; charset=ISO-8859-1"}]}
+    fake_gws.json(GET, message("m1", SINCE, **part, body={"data": latin}))
+    assert gmail.read("m1").text == "Grüße"
+    odd = {"mimeType": "text/plain", "headers": [{"name": "Content-Type", "value": "text/plain; charset=x-unknown"}]}
+    fake_gws.json(GET, message("m1", SINCE, **odd, body={"data": b64("plain")}))
+    assert gmail.read("m1").text == "plain"
+
+
+def test_html_with_an_open_head_or_title_still_shows_its_body():
+    assert html_to_text("<head><meta charset=utf-8><body>visible text") == "visible text"
+    assert html_to_text("<title>unclosed<p>still here") == "unclosed still here" or "still here" in html_to_text(
+        "<title>unclosed<p>still here"
+    )
+
+
+def test_subject_parts_and_labels_are_matched_here(gmail, fake_gws):
+    fake_gws.json(LIST, {"messages": [{"id": "m1"}]})
+    fake_gws.json(GET, message("m1", datetime(2026, 10, 20, tzinfo=UTC)))
+    assert [m.id for m in gmail.messages("subject:meet label:summaries", WEEK)] == ["m1"]
+    run = next(r for r in fake_gws.runs if r.command == LIST)
+    assert "subject:" not in run.params["q"]
+    assert run.params["labelIds"] == ["Label_1"]
+    assert gmail.messages("label:nowhere", WEEK) == []
+
+
+def test_labels_are_read_once_and_repeated_headers_joined(gmail, fake_gws):
+    full = message("m1", SINCE, mimeType="text/plain", body={"data": b64("x")})
+    full["payload"]["headers"] += [
+        {"name": "References", "value": "<a@x>"},
+        {"name": "References", "value": "<b@x>"},
+        {"value": "nameless"},
+    ]
+    fake_gws.json(GET, full)
+    gmail.read("m1")
+    content = gmail.read("m1")
+    assert content.headers["references"] == "<a@x>, <b@x>"
+    assert [r.command for r in fake_gws.runs].count(LABELS) == 1

@@ -68,8 +68,8 @@ test = [
     "pytest-timeout>=2.4.0,<3",
     "pytest-xdist>=3.8",
 ]
-# Fuzzing the contract parser (`make fuzz`, weekly in CI); atheris ships wheels for Linux and Python 3.12 to 3.14.
-fuzz = ["atheris>=3.1; sys_platform == 'linux' and python_version < '3.15'"]
+# Fuzzing the contract parser (`make fuzz`, weekly in CI); atheris has wheels for x86_64 Linux, Python 3.12 to 3.14.
+fuzz = ["atheris>=3.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version < '3.15'"]
 dev = [
     { include-group = "test" },
     "actionlint-py>=1.7.12",
@@ -80,7 +80,7 @@ dev = [
     "import-linter>=2.5",
     "mypy>=1.19.0,<3",
     "pip-audit>=2.10.0,<3",
-    "pyright>=1.1.408",
+    "pyright[nodejs]>=1.1.408", # Node.js from a locked wheel, instead of a download at the first run
     "ruff>=0.14.8,<1",
     "shellcheck-py>=0.10",
     "types-croniter>=6.2.4",
@@ -436,6 +436,7 @@ modules = [
     "heinzel.modules.system.config",
     "heinzel.modules.system.credential",
     "heinzel.modules.system.daemon",
+    "heinzel.modules.system.directory",
     "heinzel.modules.system.doctor",
     "heinzel.modules.system.plugin",
     "heinzel.modules.system.runner",

@@ -40,14 +40,17 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0033](0033-github-rest-api-over-urllib.md) | Read GitHub through its REST API with urllib; merged pull requests from the pulls list | accepted | 2026-10-24 |
 | [0034](0034-atlassian-cloud-rest-apis-over-urllib.md) | Read Jira and Confluence Cloud through their REST APIs with urllib, Basic auth and epoch-millisecond JQL | accepted | 2026-10-24 |
 | [0035](0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md) | Integrations go through the vendor's CLI as an ordinary employee | proposed | 2026-10-24 |
-| [0036](0036-google-workspace-through-the-gws-cli.md) | Read Google Workspace through the Google Workspace CLI (`gws`) | accepted | 2026-10-24 |
+| [0036](0036-the-build-installs-its-own-tools.md) | `make install` installs every tool the build needs, pinned and checksummed, on macOS and Linux | proposed | 2026-10-24 |
 | [0037](0037-plugins-bring-playbooks.md) | Plugins bring playbooks: asset types with discovery hints, template contracts and recommended settings | proposed | 2026-10-24 |
+| [0038](0038-google-workspace-through-the-gws-cli.md) | Read Google Workspace through the Google Workspace CLI (`gws`) | accepted | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
 [0008](0008-release-from-conventional-commits.md); [0020](0020-daemon-head.md) and
 [0021](0021-workflow-contracts.md) amend [0010](0010-towards-a-reactive-workflow-engine.md);
-[0032](0032-modules-declare-interactive-setup-steps.md) amends [0018](0018-one-administrative-namespace.md) (`hz setup`). ADRs 0021–0024 are
+[0032](0032-modules-declare-interactive-setup-steps.md) amends [0018](0018-one-administrative-namespace.md) (`hz setup`);
+[0028](0028-integrations-are-capability-adapters.md) amends [0024](0024-people-and-org.md) (the directory is a
+capability). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 

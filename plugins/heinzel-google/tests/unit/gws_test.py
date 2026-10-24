@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 from heinzel_google import GoogleSession, GoogleSettings, Process, _gws
-from heinzel_google._gws import LOGIN, MAX_SAID, redact
+from heinzel_google._gws import LOGIN, MAIL_SCOPE, MAX_SAID, redact
 
 from heinzel import HeinzelError
 
@@ -151,7 +151,7 @@ def test_failures_say_what_to_do(session, fake_gws, process, expected):
 
 def test_not_signed_in_names_the_exact_login(session, fake_gws):
     fake_gws.on(FILES, output({"error": {"code": 401, "reason": "authError"}}, 2))
-    assert failure(session).endswith(f"Sign in: {LOGIN}")
+    assert f"Sign in: {LOGIN} (add ,{MAIL_SCOPE} if you read mail from Google)" in failure(session)
 
 
 def test_gws_text_is_cleaned_and_redacted_whole_before_it_is_cut(session, fake_gws):

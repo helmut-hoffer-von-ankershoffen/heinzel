@@ -18,6 +18,7 @@ modules; `hz system modules` lists what is installed.
 | [`system.config`](#systemconfig) | Show, get, set and initialize configuration. |
 | [`system.credential`](#systemcredential) | Store and check the credentials modules need, in the OS keychain. |
 | [`system.daemon`](#systemdaemon) | Run modules' jobs in the background, supervised by launchd or systemd. |
+| [`system.directory`](#systemdirectory) | Guess reporting lines from recurring 1:1s in your calendar, for setup to confirm. |
 | [`system.doctor`](#systemdoctor) | Check that Heinzelmännchen and its modules are healthy. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
@@ -183,6 +184,12 @@ Run modules' jobs in the background, supervised by launchd or systemd.
 Settings: [`[system.daemon]`](CONFIGURATION.md#systemdaemon).
 
 Health checks: reported by `hz system doctor`.
+
+## `system.directory`
+
+Guess reporting lines from recurring 1:1s in your calendar, for setup to confirm.
+
+Settings: [`[system.directory]`](CONFIGURATION.md#systemdirectory).
 
 ## `system.doctor`
 

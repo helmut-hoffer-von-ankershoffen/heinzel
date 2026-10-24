@@ -54,7 +54,7 @@ def test_binding_mail_signs_in_again_with_gmails_scope(session, fake_gws):
 
 
 def test_already_signed_in_and_bound_asks_nothing(session, fake_gws):
-    _, editor = setup(session, fake_gws, [], Bound(documents="google", calendar="google", mail="google"))
+    _, editor = setup(session, fake_gws, ["n"], Bound(documents="google", calendar="google", mail="other"))
     assert (fake_gws.logins, editor.written) == ([], {})
 
 
@@ -80,8 +80,8 @@ def test_asks_for_the_path_of_gws_when_it_is_not_found(fake_gws, gws_path, tmp_p
     prompter, editor = setup(
         session,
         fake_gws,
-        ["relative/gws", str(tmp_path), gws_path],
-        Bound(documents="google", calendar="google", mail="google"),
+        ["relative/gws", str(tmp_path), gws_path, "n"],
+        Bound(documents="google", calendar="google", mail="other"),
     )
     assert editor.written == {"google.gws_path": gws_path}
     assert "Please give an absolute path, such as /opt/homebrew/bin/gws." in prompter.transcript
@@ -100,3 +100,11 @@ def test_a_declined_sign_in_runs_nothing(session, fake_gws):
     fake_gws.status = NOT_SIGNED_IN
     _, editor = setup(session, fake_gws, ["n", "n"], Bound(documents="google", calendar="google"))
     assert (fake_gws.logins, editor.written) == ([], {})
+
+
+def test_mail_bound_before_offers_signing_in_again_with_gmails_scope(session, fake_gws):
+    bound = Bound(documents="google", calendar="google", mail="google")
+    _, editor = setup(session, fake_gws, [""], bound)
+    assert (fake_gws.logins, editor.written) == ([], {})
+    setup(session, fake_gws, ["y"], bound)
+    assert fake_gws.logins == [LOGIN_WITH_MAIL.split()[1:]]

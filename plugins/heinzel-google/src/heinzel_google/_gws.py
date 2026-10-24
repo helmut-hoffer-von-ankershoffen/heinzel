@@ -6,7 +6,7 @@ shell string, with the executable resolved to an absolute path (`google.gws_path
 or `gws` on an absolute PATH entry), an environment without Heinzelmännchen's credentials, the root directory as its
 working directory (gws reads a `.env` from where it runs, which a project could otherwise ship), a timeout that kills
 its process group, and at most `MAX_BYTES` of output kept. Every failure becomes a `HeinzelError` that says what to
-do; text from `gws` passes `clean_text`, token-shaped strings are redacted whole before anything is cut (ADR 0036).
+do; text from `gws` passes `clean_text`, token-shaped strings are redacted whole before anything is cut (ADR 0038).
 """
 
 import contextlib
@@ -404,7 +404,8 @@ class GoogleSession:
         reasons = _reasons(error)
         if reasons & _RATE or code == 429:  # noqa: PLR2004 - Too Many Requests
             return f"{api}'s rate limit is reached for {subject} after {waits} retries: retry in a minute."
-        login = LOGIN_WITH_MAIL if api == "Gmail" else LOGIN
+        # Whether mail is read from Google isn't known here: outside Gmail, say how to keep Gmail's scope.
+        login = LOGIN_WITH_MAIL if api == "Gmail" else f"{LOGIN} (add ,{MAIL_SCOPE} if you read mail from Google)"
         if process.exit_code == 2 or code == 401:  # noqa: PLR2004 - gws's auth error, or Unauthorized
             return f"gws is not signed in to Google, or its sign-in expired ({said}). Sign in: {login}"
         if reasons & _SCOPE:

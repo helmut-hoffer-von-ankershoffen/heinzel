@@ -22,7 +22,7 @@ json` as an argument list (never through a shell), with the executable resolved 
 directory (so no project's `.env` reaches `gws`), with an allowlisted environment (never Heinzelmännchen's own
 credentials or other secrets), a
 timeout that stops `gws` and anything it started, and at most 10 MB of output read. Why `gws`:
-[ADR 0036](../../docs/adr/0036-google-workspace-through-the-gws-cli.md).
+[ADR 0038](../../docs/adr/0038-google-workspace-through-the-gws-cli.md).
 
 What leaves this machine, and where to: file ids, the Drive query (the modified-time window and the `--name` text)
 the calendar window and the mail search, to Google's API hosts (`www.googleapis.com` for Drive and Calendar,
@@ -108,10 +108,13 @@ def notes(documents: Documents) -> Document:
   event's meeting; conference links are kept only on the conferencing services' own hosts (Meet, Zoom, Teams, Webex),
   without their query, where passcodes live. A display name that is an address is dropped.
 - **Mail** is your Gmail: `messages` takes the shared query syntax (`from:<address or domain> subject:<text>
-  label:<name>`) and a window, translated into Gmail's search and checked again on what comes back, oldest first, at
-  most 500 messages a window; `read` gives the text part, or the HTML part as text, without attachments, and the
-  headers that carry no addresses. Senders and recipients are names and emails, which the workflow packet builder
-  drops before anything reaches an agent's prompt; a message longer than 2 million characters is refused, not cut.
+  label:<name>`) and a window. The window and the sender go into Gmail's search and the label as its id; the subject
+  is matched by the plugin, because Gmail's `subject:` matches whole words only. Results come oldest first, at most
+  200 messages a window (one `gws` run each). `read` gives the text part, or the HTML part as text, in the part's own
+  charset, without attachments, and only the headers that carry no addresses. Senders and recipients are names and
+  emails, parsed before any encoded name is decoded, so a display name can't pose as an address; the workflow packet
+  builder drops the addresses before anything reaches an agent's prompt. A message longer than 2 million characters,
+  or with more than 500 MIME parts, is refused, not cut.
 - **Text is data.** Every string returned passes `heinzel.clean_text` (no control, invisible or bidirectional
   characters).
 - **Bounds.** One `gws` run prints at most 10 MB, one call reads at most 100 pages or 25 MB, a Doc's text at most four
