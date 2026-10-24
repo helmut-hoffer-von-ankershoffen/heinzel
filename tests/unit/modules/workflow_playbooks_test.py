@@ -264,3 +264,59 @@ def test_recommended_values_are_quoted_for_the_shell_when_they_arent_plain_words
         "hz system config set teamwork.region eu",
     ]
     assert playbooks._shell_value(["a b"]) == "'[\"a b\"]'"
+
+
+def layer(name: str, parent: str | None = None, site: str | None = None, **defaults: str) -> Module:
+    """A made-up Acme layer whose playbook only recommends `defaults` (ADR 0040)."""
+    module = Module(name, f"The {name} layer.")
+    module.layer(parent=parent, site=site)
+    module.playbook(f"How {name} works.", defaults=defaults)
+    return module
+
+
+def acme(make, **team: str) -> WorkflowService:
+    """Acme, its org Payments and site Lisbon disagreeing on the calendar, and the team Checkout with `team`."""
+    return make(
+        plugin(defaults=False),
+        layer("acme", **{"capabilities.tracker": "tracker", "capabilities.calendar": "acme"}),
+        layer("acme-payments", "acme", **{"capabilities.calendar": "payments"}),
+        layer("acme-lisbon", "acme", **{"capabilities.calendar": "lisbon"}),
+        layer("acme-payments-checkout", "acme-payments", "acme-lisbon", **team),
+    )
+
+
+def test_a_setting_a_more_specific_layer_recommends_is_left_to_its_playbook(make):
+    service = acme(make, **{"capabilities.tracker": "docs"})
+    prompter, editor = ScriptedPrompter([]), Editor()
+    service.setup(the_playbook(service, "acme"), prompter, editor)
+    assert editor.written == {}
+    said = "\n".join(prompter.transcript)
+    assert 'capabilities.tracker: acme-payments-checkout recommends "docs"; offered with its playbook.' in said
+
+
+def test_the_layer_that_wins_a_setting_offers_it(make):
+    service = acme(make, **{"capabilities.tracker": "docs"})
+    prompter, editor = ScriptedPrompter(["y"]), Editor()
+    service.setup(the_playbook(service, "acme-payments-checkout"), prompter, editor)
+    assert editor.written == {"capabilities.tracker": "docs"}
+
+
+@pytest.mark.parametrize("name", ["acme-payments", "acme-lisbon"])
+def test_a_disputed_setting_is_offered_by_neither_and_said(make, name):
+    service = acme(make)
+    prompter, editor = ScriptedPrompter([]), Editor()
+    service.setup(the_playbook(service, name), prompter, editor)
+    assert editor.written == {}
+    assert "acme-payments-checkout decides, so neither is offered" in "\n".join(prompter.transcript)
+
+
+def test_a_layer_playbook_outside_your_stack_offers_all_its_settings(make):
+    service = make(
+        plugin(defaults=False),
+        layer("acme", **{"capabilities.calendar": "acme"}),
+        layer("acme-payments-checkout", "acme"),
+        layer("acme-payments-refunds", "acme"),
+    )
+    prompter, editor = ScriptedPrompter(["y"]), Editor()
+    service.setup(the_playbook(service, "acme"), prompter, editor)  # two teams and none declared: no stack
+    assert editor.written == {"capabilities.calendar": "acme"}

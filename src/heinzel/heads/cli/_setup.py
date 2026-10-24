@@ -124,9 +124,23 @@ class StepResult:
 
 
 def steps(kernel: Kernel) -> list[tuple[ModuleRecord, SetupLet]]:
-    """Every setup step that can run, in order: by phase, then built-in modules first, then by qualified name."""
+    """Every setup step that can run, in order: by phase, then built-in modules first, then by qualified name.
+
+    Among plugins, the layers of your stack come first, most specific first, so your team's recommendations are
+    offered before your org's and your company's (ADR 0040); the order is the stack's when the run starts.
+    """
     found = [(record, let) for record, let in kernel.lets(SetupLet) if kernel.available(let.func)]
-    return sorted(found, key=lambda pair: (SETUP_PHASES.index(pair[1].phase), not pair[0].origin.builtin, pair[0].path))
+    layers = [layer.module for layer in kernel.layer_stack().layers]
+    rank = {module: index for index, module in enumerate(reversed(layers))}
+    return sorted(
+        found,
+        key=lambda pair: (
+            SETUP_PHASES.index(pair[1].phase),
+            not pair[0].origin.builtin,
+            rank.get(pair[0].path[0], len(rank)),
+            pair[0].path,
+        ),
+    )
 
 
 def is_configured(kernel: Kernel, record: ModuleRecord) -> bool:

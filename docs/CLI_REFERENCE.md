@@ -290,6 +290,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `daemon`: Run modules&#x27; jobs in the background,...
 * `doctor`: Run every module&#x27;s health checks; exits...
 * `info`: Show versions, interpreter, settings,...
+* `layer`: Show the layer plugins installed and the...
 * `modules`: List every module and the lets it advertises.
 * `plugin`: Find, add, remove, list and scaffold plugins.
 * `release`: Ask where Heinzelmännchen was installed...
@@ -799,6 +800,58 @@ $ hz system info [OPTIONS]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system layer`
+
+Show the layer plugins installed and the stack you are in, general to specific.
+
+**Usage**:
+
+```console
+$ hz system layer [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `list`: List the installed layer plugins: where...
+* `show`: Show your stack: company, org and site,...
+
+#### `hz system layer list`
+
+List the installed layer plugins: where each sits, what it brings and what is wrong with the tree.
+
+**Usage**:
+
+```console
+$ hz system layer list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system layer show`
+
+Show your stack: company, org and site, team; what the layers bring and the settings they recommend.
+
+**Usage**:
+
+```console
+$ hz system layer show [OPTIONS]
+```
+
+**Options**:
+
+* `--layer <str>`: Show this layer&#x27;s stack instead of yours, e.g. acme-payments-checkout.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

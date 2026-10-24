@@ -130,6 +130,7 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `repository` | `HZ_TEAM__REPOSITORY` | `None` | Your team repository's URL, the invite others join with (`hz team join <url>`); none for a team repository that exists only on this machine. |
 | `checkout` | `HZ_TEAM__CHECKOUT` | `None` | The local checkout of your team repository; its `workflows/` holds the `team:` contracts. |
+| `layer` | `HZ_TEAM__LAYER` | `None` | Your team's layer plugin by module name, e.g. acme-payments-checkout (ADR 0040), when your team repository's hz.yaml names none or you want another; hz system layer show shows the stack it gives. |
 
 ## `[workflow]`
 
