@@ -71,6 +71,8 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
             ),
             Capability(
                 name="ai-access",
+                title="AI access",
+                purpose="how hz reaches AI",
                 protocol=AiAccess,
                 summary="How hz reaches AI: whether an option is there and signed in, and a cheap live check of it.",
                 methods=MappingProxyType({"status": "read", "test": "read"}),

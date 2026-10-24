@@ -217,3 +217,12 @@ def test_one_capability_cannot_be_pinned_to_two_adapters():
 def test_documents_write_method_is_marked_write():
     assert CAPABILITIES["documents"].methods == {"read": "read", "replace_section": "write"}
     assert CAPABILITIES["documents"].protocol is Documents
+
+
+@pytest.mark.parametrize("name", sorted(CAPABILITIES))
+def test_every_capability_has_a_name_and_a_purpose_people_read(name):
+    """Settings → Connectors shows each capability in plain words, never its identifier (ADR 0055)."""
+    capability = CAPABILITIES[name]
+    assert capability.title
+    assert capability.purpose
+    assert "`" not in capability.title + capability.purpose

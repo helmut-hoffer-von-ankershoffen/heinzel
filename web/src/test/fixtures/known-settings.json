@@ -17,6 +17,24 @@
       "source": "adapters"
     }
   },
+  "capabilities.ai_access": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": "claude-code",
+    "description": "How hz reaches AI, the AI access in use: `claude-code` (the default), `gateway` (a company CLI configured in `[ai.access]`), `pydantic-ai`, or one from a plugin; `hz ai access use` sets it (ADR 0057).",
+    "title": "Ai Access",
+    "x-options": {
+      "capability": "ai-access",
+      "none": "none",
+      "source": "adapters"
+    }
+  },
   "capabilities.calendar": {
     "anyOf": [
       {
