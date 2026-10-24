@@ -12,8 +12,8 @@ branch="$(git rev-parse --abbrev-ref HEAD)"
 [ -z "$(git status --porcelain)" ] || { echo "Uncommitted changes; commit them first." >&2; exit 2; }
 
 uv run --quiet cz check --message "$title" >/dev/null
-uv run --quiet python scripts/check_confidentiality.py --text "$title"
-uv run --quiet python scripts/check_confidentiality.py --branch
+uv run --quiet --script scripts/check_confidentiality.py --text "$title"
+uv run --quiet --script scripts/check_confidentiality.py --branch
 git fetch --quiet origin main
 git merge-base --is-ancestor origin/main HEAD || { echo "Behind main; run make sync first." >&2; exit 2; }
 [ -n "${NO_PREFLIGHT:-}" ] || make --no-print-directory preflight

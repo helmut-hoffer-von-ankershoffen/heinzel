@@ -3,7 +3,7 @@
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
-STEPS := @uv run --quiet python scripts/steps.py
+STEPS := @uv run --quiet --script scripts/steps.py
 BASE ?= origin/main
 
 # Cheapest checks first, so a typo fails in a second; the rest runs in parallel.
@@ -12,7 +12,7 @@ LINT := \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
 		"&actionlint=uv run actionlint" \
 		"&typos=uv run typos" \
-		"&confidential=uv run python scripts/check_confidentiality.py"
+		"&confidential=uv run --script scripts/check_confidentiality.py"
 TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Unit, then integration (the suite orders them), on 4 workers, stopping at the first failure; coverage is in make test.
 TESTS := "&tests=uv run pytest -m 'unit or integration' -n 4 -x -q --session-timeout=120"
@@ -72,9 +72,9 @@ test-parallel: ## Unit and integration tests on 4 workers, stopping at the first
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
 		'conventional=[ -z "$$(git rev-list $(BASE)..HEAD)" ] || uv run cz check --rev-range $(BASE)..HEAD' \
-		"&confidential=uv run python scripts/check_confidentiality.py --messages $(BASE)..HEAD" \
-		'&title=[ -z "$$TITLE" ] || { uv run cz check --message "$$TITLE" && uv run python scripts/check_confidentiality.py --text "$$TITLE"; }' \
-		'&branch=[ -z "$$BRANCH" ] || uv run python scripts/check_confidentiality.py --text "$$BRANCH"'
+		"&confidential=uv run --script scripts/check_confidentiality.py --messages $(BASE)..HEAD" \
+		'&title=[ -z "$$TITLE" ] || { uv run cz check --message "$$TITLE" && uv run --script scripts/check_confidentiality.py --text "$$TITLE"; }' \
+		'&branch=[ -z "$$BRANCH" ] || uv run --script scripts/check_confidentiality.py --text "$$BRANCH"'
 
 test-all-pythons: ## Run unit and integration tests on every supported Python, in isolated environments
 	$(STEPS) $(foreach python,3.12 3.13 3.14 3.15,"python-$(python)=uv run --isolated --python $(python) pytest -m 'unit or integration' -q -p no:cacheprovider")
@@ -101,7 +101,7 @@ changelog: ## Preview the changelog for unreleased commits
 	uv run git-cliff --unreleased
 
 ci-logs: ## The failing steps of the latest CI run of this branch (waits for a running one); JSON=1 for machines
-	@uv run --quiet python scripts/ci_logs.py $(if $(JSON),--json)
+	@uv run --quiet --script scripts/ci_logs.py $(if $(JSON),--json)
 
 pr: ## Push this branch and open a squash-merged, auto-merging pull request to main: make pr TITLE="feat: ..." (DRAFT=1: draft, no auto-merge)
 	@bash scripts/pr.sh "$(TITLE)"
