@@ -238,6 +238,7 @@ def test_the_base_class_only_declares():
             call()
 
 
+@pytest.mark.timeout(30)  # runs every built-in module's real doctor checks: ~3 s idle, more under load
 def test_once_an_hour_the_tick_reports_what_doctor_finds(make_kernel, monkeypatch, clock):
     monkeypatch.setenv("HZ_SYSTEM_NOTIFY__DOCTOR", "true")  # tests turn it off (heinzel.testing)
     sick = Module("sick", "A module whose check fails.")
