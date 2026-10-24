@@ -1,6 +1,7 @@
 import tomllib
 
 import pytest
+from pydantic import Field
 
 from heinzel import Config, HeinzelError, Module, ModuleSettings
 from heinzel.modules.system.config import ConfigService
@@ -13,6 +14,9 @@ class ExampleSettings(ModuleSettings):
 
     greeting: str = "Hello"
     nickname: str | None = None
+    zones: list[str] = Field(default_factory=lambda: ["Europe/Berlin", "Asia/Tokyo"])
+    loud: bool = False
+    retries: int = 3
 
 
 @pytest.fixture
@@ -80,3 +84,34 @@ def test_set_validates_and_rejects_unknown_keys(kernel, tmp_path, monkeypatch):
 def test_project_scope_writes_hz_toml(kernel, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     assert ConfigService(kernel).set("hz.log_level", "ERROR", scope="project") == tmp_path / "hz.toml"
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "example"),
+    [
+        (
+            "example.zones",
+            "Europe/Berlin,Asia/Tokyo",
+            """hz system config set example.zones '["Europe/Berlin", "Asia/Tokyo"]'""",
+        ),
+        ("example.loud", "maybe", "hz system config set example.loud false"),
+        ("example.retries", "many", "hz system config set example.retries 3"),
+        ("hz.log_level", "LOUD", "hz system config set hz.log_level DEBUG"),
+    ],
+)
+def test_an_invalid_value_shows_a_command_line_for_the_same_key(kernel, key, value, example):
+    with pytest.raises(HeinzelError) as caught:
+        ConfigService(kernel).set(key, value)
+    assert str(caught.value).endswith(f"For example:\n  {example}")
+
+
+def test_an_empty_list_setting_still_gets_an_example(make_kernel):
+    class Lists(ModuleSettings):
+        """Settings with an empty list."""
+
+        names: list[str] = Field(default_factory=list)
+
+    module = Module("lists", "x")
+    module.settings(Lists)
+    with pytest.raises(HeinzelError, match=r"""set lists\.names '\["first", "second"\]'"""):
+        ConfigService(make_kernel(lists=module)).set("lists.names", "a,b")
