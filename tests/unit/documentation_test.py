@@ -105,7 +105,10 @@ def test_python_badge_lists_the_versions_pyproject_declares():
 
 @pytest.mark.parametrize("page", TEMPLATE_BADGE_PAGES)
 def test_plugins_show_the_same_badges_for_their_own_repository(page):
-    ours = badge_block(REPO / "README.md").replace("helmut-hoffer-von-ankershoffen/heinzel", "OWNER/REPO")
+    # The OpenSSF Best Practices badge is this repository's registration; a plugin registers on its own.
+    ours = "".join(
+        line for line in badge_block(REPO / "README.md").splitlines(keepends=True) if "bestpractices.dev" not in line
+    ).replace("helmut-hoffer-von-ankershoffen/heinzel", "OWNER/REPO")
     theirs = badge_block(REPO / "template" / page).replace("[[ github_owner ]]/[[ project_name ]]", "OWNER/REPO")
     assert theirs == ours
 
