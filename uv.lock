@@ -13,6 +13,7 @@ members = [
     "heinzel-atlassian",
     "heinzel-clock",
     "heinzel-github",
+    "heinzel-google",
     "heinzel-zoom",
 ]
 
@@ -920,6 +921,7 @@ dev = [
     { name = "heinzel-atlassian" },
     { name = "heinzel-clock" },
     { name = "heinzel-github" },
+    { name = "heinzel-google" },
     { name = "heinzel-zoom" },
     { name = "httpx" },
     { name = "hypothesis" },
@@ -947,6 +949,7 @@ test = [
     { name = "heinzel-atlassian" },
     { name = "heinzel-clock" },
     { name = "heinzel-github" },
+    { name = "heinzel-google" },
     { name = "heinzel-zoom" },
     { name = "httpx" },
     { name = "hypothesis" },
@@ -986,6 +989,7 @@ dev = [
     { name = "heinzel-atlassian", editable = "plugins/heinzel-atlassian" },
     { name = "heinzel-clock", editable = "plugins/heinzel-clock" },
     { name = "heinzel-github", editable = "plugins/heinzel-github" },
+    { name = "heinzel-google", editable = "plugins/heinzel-google" },
     { name = "heinzel-zoom", editable = "plugins/heinzel-zoom" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "hypothesis", specifier = ">=6.140" },
@@ -1011,6 +1015,7 @@ test = [
     { name = "heinzel-atlassian", editable = "plugins/heinzel-atlassian" },
     { name = "heinzel-clock", editable = "plugins/heinzel-clock" },
     { name = "heinzel-github", editable = "plugins/heinzel-github" },
+    { name = "heinzel-google", editable = "plugins/heinzel-google" },
     { name = "heinzel-zoom", editable = "plugins/heinzel-zoom" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "hypothesis", specifier = ">=6.140" },
@@ -1047,6 +1052,17 @@ requires-dist = [{ name = "heinzel", editable = "." }]
 name = "heinzel-github"
 version = "0.2.0"
 source = { editable = "plugins/heinzel-github" }
+dependencies = [
+    { name = "heinzel" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "heinzel", editable = "." }]
+
+[[package]]
+name = "heinzel-google"
+version = "0.2.0"
+source = { editable = "plugins/heinzel-google" }
 dependencies = [
     { name = "heinzel" },
 ]

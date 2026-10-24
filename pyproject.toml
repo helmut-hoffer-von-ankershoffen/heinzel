@@ -59,6 +59,7 @@ test = [
     "heinzel-atlassian>=0.2.0",
     "heinzel-clock>=0.2.0",
     "heinzel-github>=0.2.0",
+    "heinzel-google>=0.2.0",
     "heinzel-zoom>=0.2.0",
     "coverage>=7.12",
     "httpx>=0.28",
@@ -122,6 +123,7 @@ heinzel = { workspace = true }
 heinzel-atlassian = { workspace = true }
 heinzel-clock = { workspace = true }
 heinzel-github = { workspace = true }
+heinzel-google = { workspace = true }
 heinzel-zoom = { workspace = true }
 
 [tool.ruff]
@@ -192,7 +194,7 @@ docstring-code-format = true
 
 [tool.mypy]
 strict = true
-mypy_path = ["src", "plugins/heinzel-atlassian/src", "plugins/heinzel-clock/src", "plugins/heinzel-github/src", "plugins/heinzel-zoom/src"]
+mypy_path = ["src", "plugins/heinzel-atlassian/src", "plugins/heinzel-clock/src", "plugins/heinzel-github/src", "plugins/heinzel-google/src", "plugins/heinzel-zoom/src"]
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 plugins = ["pydantic.mypy"]
@@ -227,7 +229,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_zoom"]
+source = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
 branch = true
 relative_files = true
 # make test runs the suite on xdist workers: subprocesses, measured through coverage's .pth hook into a data file each
@@ -252,7 +254,7 @@ allowed_prefixes = ["Merge", "Revert", "Pull request", "fixup!", "squash!", "ame
 
 [tool.commitizen.customize]
 schema = "<type>(<scope>)!: <summary of at most 72 characters>\n\n<body: why>\n\n<footers>"
-schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|setup|workflow|team|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|web|clock|github|atlassian|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
+schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|setup|workflow|team|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|web|clock|github|atlassian|google|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
 example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
@@ -297,6 +299,21 @@ replace = "\"heinzel>={new_version}\""
 filename = "pyproject.toml"
 search = "\"heinzel-github>={current_version}\""
 replace = "\"heinzel-github>={new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "plugins/heinzel-google/pyproject.toml"
+search = "name = \"heinzel-google\"\nversion = \"{current_version}\""
+replace = "name = \"heinzel-google\"\nversion = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "plugins/heinzel-google/pyproject.toml"
+search = "\"heinzel>={current_version}\""
+replace = "\"heinzel>={new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = "\"heinzel-google>={current_version}\""
+replace = "\"heinzel-google>={new_version}\""
 
 [[tool.bumpversion.files]]
 filename = "plugins/heinzel-zoom/pyproject.toml"
@@ -409,13 +426,13 @@ Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-cont
 intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
 
 [tool.importlinter]
-root_packages = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_zoom"]
+root_packages = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
 include_external_packages = true # so contracts can forbid a head's toolkit
 
 [[tool.importlinter.contracts]]
 name = "Modules never import a head's toolkit: they return results, heads present them"
 type = "forbidden"
-source_modules = ["heinzel.modules", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_zoom"]
+source_modules = ["heinzel.modules", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
 forbidden_modules = ["typer", "fastapi", "mcp", "uvicorn"]
 
 [[tool.importlinter.contracts]]
@@ -477,20 +494,20 @@ allow_indirect_imports = true # going through heinzel.kernel's public API is the
 [[tool.importlinter.contracts]]
 name = "First-party plugins use only the public API, like any plugin"
 type = "forbidden"
-source_modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_zoom"]
+source_modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
 forbidden_modules = ["heinzel.heads", "heinzel.modules", "heinzel.kernel._boot", "heinzel.kernel._kernel", "heinzel.kernel._module"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 name = "First-party plugins are independent of each other, like separate repositories"
 type = "independence"
-modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_zoom"]
+modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
 
 [[tool.importlinter.contracts]]
 name = "The core imports no plugin: first-party plugins are installed on request, never by default (ADR 0017, 0028)"
 type = "forbidden"
 source_modules = ["heinzel"]
-forbidden_modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_zoom"]
+forbidden_modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
 
 [[tool.importlinter.contracts]]
 name = "Heads only know what the kernel discovered"

@@ -57,6 +57,13 @@ Plugins add their own tables.
 | `gh` | `HZ_GITHUB__GH` | `'gh'` | The GitHub CLI to run: a name looked up on PATH (absolute entries only) or an absolute path. |
 | `timeout` | `HZ_GITHUB__TIMEOUT` | `60.0` | Seconds to wait for each `gh` call before stopping it. |
 
+## `[google]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `gws_path` | `HZ_GOOGLE__GWS_PATH` | `None` | Absolute path of the Google Workspace CLI (`gws`) executable; `gws` on PATH when not set. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml. |
+| `timeout` | `HZ_GOOGLE__TIMEOUT` | `60.0` | Seconds to wait for each `gws` run before stopping it. |
+
 ## `[org]`
 
 | Key | Environment variable | Default | Description |

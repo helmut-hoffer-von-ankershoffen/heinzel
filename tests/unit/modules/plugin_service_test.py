@@ -207,6 +207,7 @@ def test_search_lists_first_party_first_then_community_plugins_by_stars(make_ker
         ("heinzel-atlassian", "first-party", False, None),
         ("heinzel-clock", "first-party", False, None),
         ("heinzel-github", "first-party", False, None),
+        ("heinzel-google", "first-party", False, None),
         ("heinzel-zoom", "first-party", False, None),
         ("heinzel-many", "github", True, 50),
         ("heinzel-few", "github", True, 1),
@@ -216,9 +217,10 @@ def test_search_lists_first_party_first_then_community_plugins_by_stars(make_ker
 
 def test_search_tells_how_to_install_each_plugin(make_kernel, tmp_path, github):
     github.answer = {"items": [repository("heinzel-crm", 3)]}
-    atlassian, clock, github_, zoom, crm = service_for(make_kernel, tmp_path).search().plugins
+    atlassian, clock, github_, google, zoom, crm = service_for(make_kernel, tmp_path).search().plugins
     assert (atlassian.short_name, atlassian.install_spec) == ("atlassian", "atlassian")
     assert (github_.short_name, github_.install_spec) == ("github", "github")
+    assert (google.short_name, google.install_spec) == ("google", "google")
     assert (clock.short_name, clock.install_spec) == ("clock", "clock")
     assert (zoom.short_name, zoom.install_spec) == ("zoom", "zoom")
     assert (crm.short_name, crm.install_spec) == ("crm", "git+https://github.com/someone/heinzel-crm")
@@ -231,6 +233,7 @@ def test_search_marks_installed_plugins(make_kernel, tmp_path, github):
         "heinzel-atlassian": False,
         "heinzel-clock": False,
         "heinzel-github": False,
+        "heinzel-google": False,
         "heinzel-zoom": False,
         "heinzel-old": True,
         "heinzel-new": False,
@@ -241,16 +244,17 @@ def test_search_prefers_first_party_plugins_and_skips_archived_repositories(make
     github.answer = {"items": [repository("heinzel-github", 99), repository("heinzel-gone", 9, archived=True)]}
     plugins = service_for(make_kernel, tmp_path).search().plugins
     assert [(p.name, p.source) for p in plugins] == [
-        (name, "first-party") for name in ["heinzel-atlassian", "heinzel-clock", "heinzel-github", "heinzel-zoom"]
+        (name, "first-party")
+        for name in ["heinzel-atlassian", "heinzel-clock", "heinzel-github", "heinzel-google", "heinzel-zoom"]
     ]
 
 
 def test_search_filters_first_party_plugins_and_passes_the_text_to_github(make_kernel, tmp_path, github):
     service = service_for(make_kernel, tmp_path)
     assert [p.name for p in service.search("TIME team").plugins] == ["heinzel-clock"]
-    assert service.search("calendar").plugins == []
+    assert service.search("invoicing").plugins == []
     url, token, timeout = github.requests[-1]
-    assert url.startswith("https://api.github.com/search/repositories?q=topic%3Aheinzel-plugin+calendar&")
+    assert url.startswith("https://api.github.com/search/repositories?q=topic%3Aheinzel-plugin+invoicing&")
     assert (token, timeout) == (None, 10)
 
 
@@ -274,5 +278,11 @@ def test_search_sends_a_github_token_from_the_environment(make_kernel, tmp_path,
 def test_search_falls_back_to_first_party_plugins_with_a_warning(make_kernel, tmp_path, github, answer, reason):
     github.answer = answer
     result = service_for(make_kernel, tmp_path).search()
-    assert [p.name for p in result.plugins] == ["heinzel-atlassian", "heinzel-clock", "heinzel-github", "heinzel-zoom"]
+    assert [p.name for p in result.plugins] == [
+        "heinzel-atlassian",
+        "heinzel-clock",
+        "heinzel-github",
+        "heinzel-google",
+        "heinzel-zoom",
+    ]
     assert result.warnings == [f"GitHub could not be searched ({reason}); showing first-party plugins only."]

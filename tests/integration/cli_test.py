@@ -242,6 +242,7 @@ def test_plugin_search_lists_first_party_and_community_plugins(app, monkeypatch)
         ("heinzel-atlassian", "first-party", False, "atlassian"),
         ("heinzel-clock", "first-party", False, "clock"),
         ("heinzel-github", "first-party", False, "github"),
+        ("heinzel-google", "first-party", False, "google"),
         ("heinzel-zoom", "first-party", False, "zoom"),
         ("heinzel-crm", "github", True, "git+https://github.com/someone/heinzel-crm"),
     ]
@@ -267,6 +268,7 @@ def test_plugin_search_offline_shows_first_party_plugins_and_a_warning(app, monk
         "heinzel-atlassian",
         "heinzel-clock",
         "heinzel-github",
+        "heinzel-google",
         "heinzel-zoom",
     ]
     assert found["warnings"] == [

@@ -20,6 +20,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `atlassian`: Read Jira issues and Confluence pages...
 * `clock`: Show the time in each of the team&#x27;s time...
 * `github`: Read pull requests and issues from GitHub:...
+* `google`: Read Google Docs, Sheets, Drive, Calendar...
 * `join`: Join a team from its invite line: finds...
 * `org`: Your profile, and the team, org and...
 * `setup`: Set up what is still missing, wizard...
@@ -106,6 +107,59 @@ Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the GitHub 
 
 ```console
 $ hz github info [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz google`
+
+Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
+
+**Usage**:
+
+```console
+$ hz google [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `files`: List the Google Docs and Sheets you can...
+* `info`: Show this plugin&#x27;s version, the...
+
+### `hz google files`
+
+List the Google Docs and Sheets you can open that changed recently, newest first.
+
+**Usage**:
+
+```console
+$ hz google files [OPTIONS]
+```
+
+**Options**:
+
+* `--days <int>`: How many days back to look for changes, 1 to 366.  [default: 7]
+* `--name <str>`: Only files whose name contains this text; all Docs and Sheets when not given.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz google info`
+
+Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the gws, scopes and APIs it uses.
+
+**Usage**:
+
+```console
+$ hz google info [OPTIONS]
 ```
 
 **Options**:

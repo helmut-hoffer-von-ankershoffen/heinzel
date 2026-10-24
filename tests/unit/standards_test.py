@@ -15,6 +15,7 @@ from typing import get_origin
 import heinzel_atlassian
 import heinzel_clock
 import heinzel_github
+import heinzel_google
 import heinzel_zoom
 import pytest
 from packaging.requirements import Requirement
@@ -209,6 +210,7 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         atlassian=heinzel_atlassian.module,
         clock=heinzel_clock.module,
         github=heinzel_github.module,
+        google=heinzel_google.module,
         zoom=heinzel_zoom.module,
     )
     known = {
@@ -364,6 +366,7 @@ def test_injected_parameters_come_first(make_kernel):
                 atlassian=heinzel_atlassian.module,
                 clock=heinzel_clock.module,
                 github=heinzel_github.module,
+                google=heinzel_google.module,
                 zoom=heinzel_zoom.module,
             )
         )
