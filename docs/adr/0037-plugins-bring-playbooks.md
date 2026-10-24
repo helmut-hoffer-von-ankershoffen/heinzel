@@ -51,7 +51,8 @@ them without the core knowing what they are about.
   and `kept_by` names something the playbook declares. A hint's arguments are checked when it runs, like a contract
   input's, and a mismatch is reported as the playbook's mistake.
 - **Asset types and hints.** An `AssetType` has a name, a description, `DiscoveryHint`s and optionally `kept_by`, the
-  template whose output keeps it true. A hint is a contract input's shape (`read`, `args`, `window`) plus `match`, a
+  template whose output keeps it true. A hint is a contract input's shape (`read`, `args`, `window`, one window grammar
+  in the kernel: `30d`, `last 30d` or `next 14d`, at most 366 days, amended 2026-10-24) plus `match`, a
   pattern on each returned item's `title`; a matching item's `ref`, `key`, `id` or `url` is the candidate's reference.
 - **Templates.** A `ContractTemplate` is a contract's text with `{{asset:<type>}}` placeholders, which must sit in
   double-quoted strings in the frontmatter (refused anywhere else: unquoted they could add keys, in the body they
