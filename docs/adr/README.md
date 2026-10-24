@@ -43,6 +43,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0036](0036-the-build-installs-its-own-tools.md) | `make install` installs every tool the build needs, pinned and checksummed, on macOS and Linux | proposed | 2026-10-24 |
 | [0037](0037-plugins-bring-playbooks.md) | Plugins bring playbooks: asset types with discovery hints, template contracts and recommended settings | proposed | 2026-10-24 |
 | [0038](0038-drafts-are-approved-in-place.md) | Drafts are approved in place | proposed | 2026-10-24 |
+| [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) | A web head: a React app served by the API head | proposed | 2026-10-24 |
 | [0040](0040-layers-and-playbooks-are-plugins.md) | Layers and playbooks are plugins: a plugin may be a layer with a parent and a site, and layers stack general to specific | proposed | 2026-10-24 |
 | [0042](0042-google-workspace-through-the-gws-cli.md) | Read Google Workspace through the Google Workspace CLI (`gws`) | accepted | 2026-10-24 |
 
@@ -53,7 +54,10 @@ Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0032](0032-modules-declare-interactive-setup-steps.md) amends [0018](0018-one-administrative-namespace.md) (`hz setup`);
 [0028](0028-integrations-are-capability-adapters.md) amends [0024](0024-people-and-org.md) (the directory is a
 capability); [0038](0038-drafts-are-approved-in-place.md) amends [0010](0010-towards-a-reactive-workflow-engine.md) and
-[0020](0020-daemon-head.md) (approval in place instead of an approval queue; `hz inbox` is a view). ADRs 0021–0024 are
+[0020](0020-daemon-head.md) (approval in place instead of an approval queue; `hz inbox` is a view);
+[0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) amends [0018](0018-one-administrative-namespace.md)
+(`hz ui`) and [0019](0019-mcp-and-rest-heads.md) (a token-protected web head may expose what the unauthenticated REST
+head doesn't). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 

@@ -103,6 +103,7 @@ flowchart TB
         CLI["CLI<br/>hz …"]
         MCP["MCP server"]
         REST["REST API"]
+        Web["Web app<br/>hz ui"]
         Daemon["Daemon<br/>local jobs"]
     end
     subgraph Kernel["Kernel"]
@@ -113,7 +114,7 @@ flowchart TB
         Clock["clock · github · atlassian · google<br/>(first-party)"]
         Ext["heinzel-*<br/>(external)"]
     end
-    CLI & MCP & REST & Daemon --> Core
+    CLI & MCP & REST & Web & Daemon --> Core
     System & Clock & Ext -- "advertise lets" --> Core
 ```
 
@@ -121,7 +122,9 @@ flowchart TB
 
 Every module is a set of operations, and every operation is a `hz` command, an MCP tool (`hz system serve mcp`)
 and a REST endpoint (`hz system serve api`) at once. Coding agents use whichever suits them: the CLI with `--json`,
-or the MCP tools. Modules can also advertise jobs that
+or the MCP tools. People who'd rather click run `hz ui`: a web app on localhost, for this session only, with a
+navigation tree of settings, contracts, your team, inventory and the doctor's fixes, and a chat with your agent runner
+that says what it may cost before it runs. Modules can also advertise jobs that
 `hz system daemon install` runs in the background on a schedule, under launchd or systemd, unattended and with your
 rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)). Built in today:
 

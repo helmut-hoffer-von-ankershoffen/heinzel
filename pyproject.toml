@@ -103,6 +103,14 @@ packages = ["src/heinzel"]
 "CHANGELOG.md" = "heinzel/CHANGELOG.md"
 "agent-skills/skills" = "heinzel/skills"
 
+# The web head's app (web/, ADR 0039) ships built inside the package: hatch_build.py builds it into
+# src/heinzel/heads/web/static (not in git) when it is missing or stale, and includes it in the sdist and the wheel.
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.sdist]
+exclude = ["web/node_modules", "web/test-results"]
+
 [tool.uv]
 required-version = ">=0.13.0"
 
@@ -154,6 +162,9 @@ ignore = [
 ]
 "fuzz/*.py" = [
     "INP001",  # fuzz targets are scripts, not a package
+]
+"hatch_build.py" = [
+    "INP001",  # the build hook hatch loads by path, not a package
 ]
 "scripts/*.py" = [
     "INP001",  # scripts are not a package
@@ -243,7 +254,7 @@ allowed_prefixes = ["Merge", "Revert", "Pull request", "fixup!", "squash!", "ame
 
 [tool.commitizen.customize]
 schema = "<type>(<scope>)!: <summary of at most 72 characters>\n\n<body: why>\n\n<footers>"
-schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|setup|workflow|team|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|clock|github|atlassian|google|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
+schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|setup|workflow|team|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|web|clock|github|atlassian|google|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
 example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 

@@ -21,8 +21,9 @@ module.service(ProfileService)
 module.service(SyncService)
 
 
-# Your name and email are in it; a web page can reach a local REST server, so the CLI and MCP get it, like drafts.
-@module.operation(render=render_profile, heads={"cli", "mcp"})
+# Your name and email are in it; a web page can reach a local REST server, so the CLI, MCP and the web head (which
+# needs its session token) get it, like drafts.
+@module.operation(render=render_profile, heads={"cli", "mcp", "web"})
 def show(service: ProfileService) -> Profile:
     """Show your profile: who you are, your role, time zone and working hours, and what is still missing."""
     return service.profile()

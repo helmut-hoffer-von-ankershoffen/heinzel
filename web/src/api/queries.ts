@@ -1,0 +1,46 @@
+// One query per operation the screens read; TanStack Query caches them, so screens share what they fetched.
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { api, unwrap } from "./client";
+
+export const keys = {
+  doctor: ["system", "doctor"],
+  config: ["system", "config", "show"],
+  profile: ["org", "show"],
+  team: ["team", "show"],
+  contracts: ["workflow", "list"],
+  graph: ["workflow", "graph"],
+  contract: (name: string) => ["workflow", "show", name],
+  playbooks: ["workflow", "playbooks"],
+  discover: ["workflow", "discover"],
+  jobs: ["system", "daemon", "jobs"],
+} as const;
+
+export const useDoctor = () => useQuery({ queryKey: keys.doctor, queryFn: () => unwrap(api.GET("/system/doctor")) });
+export const useConfig = () =>
+  useQuery({ queryKey: keys.config, queryFn: () => unwrap(api.GET("/system/config/show")) });
+export const useProfile = () => useQuery({ queryKey: keys.profile, queryFn: () => unwrap(api.GET("/org/show")) });
+export const useTeam = () => useQuery({ queryKey: keys.team, queryFn: () => unwrap(api.GET("/team/show")) });
+export const useContracts = () =>
+  useQuery({ queryKey: keys.contracts, queryFn: () => unwrap(api.GET("/workflow/list")) });
+export const useGraph = () => useQuery({ queryKey: keys.graph, queryFn: () => unwrap(api.GET("/workflow/graph")) });
+export const useContract = (name: string) =>
+  useQuery({
+    queryKey: keys.contract(name),
+    queryFn: () => unwrap(api.GET("/workflow/show", { params: { query: { name } } })),
+  });
+export const usePlaybooks = () =>
+  useQuery({ queryKey: keys.playbooks, queryFn: () => unwrap(api.GET("/workflow/playbooks")) });
+/** Discovery reads your systems through bound capabilities; it runs when asked, not on every visit. */
+export const useDiscover = (enabled: boolean) =>
+  useQuery({ queryKey: keys.discover, queryFn: () => unwrap(api.GET("/workflow/discover")), enabled });
+export const useJobs = () => useQuery({ queryKey: keys.jobs, queryFn: () => unwrap(api.GET("/system/daemon/jobs")) });
+
+export const useAsk = () =>
+  useMutation({
+    mutationFn: (variables: { prompt: string; budget?: number }) =>
+      unwrap(
+        api.POST("/system/runner/ask", {
+          params: { query: { prompt: variables.prompt, budget_usd: variables.budget ?? null } },
+        }),
+      ),
+  });

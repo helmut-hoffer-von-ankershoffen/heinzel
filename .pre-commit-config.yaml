@@ -12,6 +12,7 @@ repos:
       - id: check-merge-conflict
       - id: check-toml
       - id: check-yaml
+        args: [--allow-multiple-documents] # pnpm-lock.yaml is several documents
       - id: end-of-file-fixer
       - id: trailing-whitespace
   - repo: local
