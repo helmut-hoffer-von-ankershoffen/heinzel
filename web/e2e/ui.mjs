@@ -94,6 +94,8 @@ try {
   });
 
   async function audit(name) {
+    // The splash fades over the app after every load; audited mid-fade, the app's text is measured through it.
+    await page.locator("#splash").waitFor({ state: "hidden" });
     result.violations[name] = await axeViolations(page);
     await page.screenshot({ path: join(shots, `${name}.png`) });
     result.screens.push(name);
