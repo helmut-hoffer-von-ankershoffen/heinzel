@@ -19,6 +19,7 @@ from heinzel.kernel._config import ConfigEditor, ModuleSettings
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._lets import (
     NAME_PATTERN,
+    SETUP_PHASES,
     CatchUp,
     Check,
     CredentialLet,
@@ -32,16 +33,19 @@ from heinzel.kernel._lets import (
     ServiceLet,
     SettingsLet,
     SetupLet,
+    SetupPhase,
     host_of,
 )
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, PlaybookSetup, templates_in
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._spec import hookimpl
 
-RESERVED_NAMES = frozenset({"hz", "capabilities", "setup"})
-"""Names a module can't take: the kernel's and the capability bindings' configuration tables, and `hz setup`."""
+RESERVED_NAMES = frozenset({"hz", "capabilities", "setup", "join"})
+"""Names a module can't take: the kernel's and the capability bindings' tables, `hz setup` and `hz join`."""
 SETUP = "setup"
 """The top-level command that runs modules' setup steps (ADR 0032), so no module may take its name."""
+COMMANDS = frozenset({SETUP, "join"})
+"""Reserved names that are top-level commands of the CLI head."""
 SERVICE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$")
 
 
@@ -77,7 +81,7 @@ class Module:
             msg = f"Module name {name!r} must match {NAME_PATTERN.pattern}"
             raise ValueError(msg)
         if name in RESERVED_NAMES:
-            what = "the command `hz setup`" if name == SETUP else f"`[{name}]`, a configuration table of the kernel"
+            what = f"the command `hz {name}`" if name in COMMANDS else f"`[{name}]`, a kernel configuration table"
             msg = f"Module name {name!r} is reserved: it is {what}"
             raise ValueError(msg)
         requirements = parse_requirements(requires)
@@ -367,9 +371,13 @@ class Module:
     def setup[F: Callable[..., Any]](self, func: F, /) -> F: ...
 
     @overload
-    def setup[F: Callable[..., Any]](self, /, *, required: bool = False) -> Callable[[F], F]: ...
+    def setup[F: Callable[..., Any]](
+        self, /, *, required: bool = False, phase: SetupPhase = "connect"
+    ) -> Callable[[F], F]: ...
 
-    def setup[F: Callable[..., Any]](self, func: F | None = None, /, *, required: bool = False) -> F | Callable[[F], F]:
+    def setup[F: Callable[..., Any]](
+        self, func: F | None = None, /, *, required: bool = False, phase: SetupPhase = "connect"
+    ) -> F | Callable[[F], F]:
         """Advertise the module's interactive setup step (ADR 0032): `hz setup <module>`, and part of `hz setup`.
 
         The function asks for `Prompter` and whatever else it needs by type, like an operation, and writes through
@@ -378,17 +386,24 @@ class Module:
         Args:
             func: The function, when used as a bare decorator.
             required: `hz setup` runs it without offering to skip it; optional steps can be skipped.
+            phase: Where in `hz setup` it runs: `identity`, `membership`, `connect` (the default: tools, credentials,
+                bindings), `work` or `run` (ADR 0032, amended).
 
         Raises:
-            ValueError: If the docstring is missing or the module already has a step.
+            ValueError: If the docstring is missing, the phase unknown, or the module already has a step.
         """
+        if phase not in SETUP_PHASES:
+            msg = f"Setup phase {phase!r} is not one of {', '.join(SETUP_PHASES)}"
+            raise ValueError(msg)
 
         def decorate(target: F) -> F:
             summary = inspect.getdoc(target)
             if not summary:
                 msg = f"Setup step {target.__qualname__} needs a docstring; it introduces the step."
                 raise ValueError(msg)
-            self.add(SetupLet(name=self.name, func=target, summary=summary.splitlines()[0], required=required))
+            self.add(
+                SetupLet(name=self.name, func=target, summary=summary.splitlines()[0], required=required, phase=phase)
+            )
             return target
 
         return decorate(func) if func is not None else decorate

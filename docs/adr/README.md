@@ -37,9 +37,9 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0030](0030-credentials-live-in-the-os-keychain.md) | Credentials live in the OS keychain behind a credentials service | accepted | 2026-10-24 |
 | [0031](0031-update-check.md) | The CLI checks for a newer release hourly, anonymously and in the background, and says so on stderr | accepted | 2026-10-24 |
 | [0032](0032-modules-declare-interactive-setup-steps.md) | Modules declare interactive setup steps; `hz setup` runs them all | proposed | 2026-10-24 |
-| [0033](0033-github-rest-api-over-urllib.md) | Read GitHub through its REST API with urllib; merged pull requests from the pulls list | accepted | 2026-10-24 |
-| [0034](0034-atlassian-cloud-rest-apis-over-urllib.md) | Read Jira and Confluence Cloud through their REST APIs with urllib, Basic auth and epoch-millisecond JQL | accepted | 2026-10-24 |
-| [0035](0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md) | Integrations go through the vendor's CLI as an ordinary employee | proposed | 2026-10-24 |
+| [0033](0033-github-rest-api-over-urllib.md) | Read GitHub through its REST API with urllib; merged pull requests from the pulls list | superseded | 2026-10-24 |
+| [0034](0034-atlassian-cloud-rest-apis-over-urllib.md) | Read Jira and Confluence Cloud through their REST APIs with urllib, Basic auth and epoch-millisecond JQL | superseded | 2026-10-24 |
+| [0035](0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md) | Integrations go through the vendor's CLI as an ordinary employee | accepted | 2026-10-24 |
 | [0036](0036-the-build-installs-its-own-tools.md) | `make install` installs every tool the build needs, pinned and checksummed, on macOS and Linux | proposed | 2026-10-24 |
 | [0037](0037-plugins-bring-playbooks.md) | Plugins bring playbooks: asset types with discovery hints, template contracts and recommended settings | proposed | 2026-10-24 |
 | [0038](0038-drafts-are-approved-in-place.md) | Drafts are approved in place | proposed | 2026-10-24 |
@@ -56,6 +56,10 @@ capability); [0038](0038-drafts-are-approved-in-place.md) amends [0010](0010-tow
 [0020](0020-daemon-head.md) (approval in place instead of an approval queue; `hz inbox` is a view). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
+
+Supersessions: [0035](0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md) supersedes
+[0033](0033-github-rest-api-over-urllib.md) and [0034](0034-atlassian-cloud-rest-apis-over-urllib.md) (vendor CLIs
+instead of REST over urllib with tokens).
 
 ## Rules
 

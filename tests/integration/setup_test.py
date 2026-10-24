@@ -108,7 +108,7 @@ def test_setup_runs_every_step_writes_through_the_services_and_ends_with_doctor(
     }
     assert kernel.resolve(Credentials).backend.values == {("vault", "api-token"): "s3cret"}
     output = result.output
-    assert "Setting up 3 modules: clock (optional), greet (optional), vault (required)." in output
+    assert "Still to do: clock (optional), greet (optional), vault (required)." in output
     assert "Set up vault now?" not in output
     assert "s3cret" not in output
     assert "Asia/Tokyo 10-19" in output

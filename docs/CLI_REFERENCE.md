@@ -21,8 +21,9 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `clock`: Show the time in each of the team&#x27;s time...
 * `github`: Read pull requests and issues from GitHub:...
 * `google`: Read Google Docs, Sheets, Drive, Calendar...
+* `join`: Join a team from its invite line: finds...
 * `org`: Your profile, and the team, org and...
-* `setup`: Set up every module that has a setup step,...
+* `setup`: Set up what is still missing, wizard...
 * `system`: Inspect, configure, diagnose and update...
 * `team`: Your team&#x27;s repository: create one (`hz...
 * `workflow`: Workflow contracts: Markdown files an...
@@ -166,6 +167,30 @@ $ hz google info [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+## `hz join`
+
+Join a team from its invite line: finds out who you are, joins the team, then sets up what is missing.
+
+**Usage**:
+
+```console
+$ hz join [OPTIONS] {URL}
+```
+
+**Arguments**:
+
+* `URL`: The team repository&#x27;s URL, the invite: https, ssh or a local path.  [required]
+
+**Options**:
+
+* `--yes`: Make it your team without asking (when its roster lists you).
+* `--propose`: When the roster doesn&#x27;t list you, ask its owners to add you without asking: opens a pull request.
+* `--role <str>`: Your role, so hz doesn&#x27;t ask it.
+* `--handle, --as <str>`: Your handle in the team&#x27;s roster.
+* `--answers <file>`: Answer in advance from a TOML file with a table per module, e.g. `role = &quot;engineer&quot;` in the org table; runs without a terminal, for coding agents and teams. Never put secrets in it.
+* `--json`: Print what happened as JSON on stdout.
+* `--help`: Show this message and exit.
+
 ## `hz org`
 
 Your profile, and the team, org and company you work with.
@@ -220,7 +245,7 @@ $ hz org sync [OPTIONS]
 
 ## `hz setup`
 
-Set up every module that has a setup step, wizard style; optional steps can be skipped. With MODULE, set up only that module.
+Set up what is still missing, wizard style: every step not finished yet, in order; optional steps can be skipped, and a run continues where the last one stopped. With MODULE, set up only that module.
 
 **Usage**:
 
@@ -234,6 +259,10 @@ $ hz setup [OPTIONS] [MODULE]
 
 **Options**:
 
+* `--restart`: Forget which steps finished and go through every one again.
+* `--answers <file>`: Answer in advance from a TOML file with a table per module, e.g. `role = &quot;engineer&quot;` in the org table; runs without a terminal, for coding agents and teams. Never put secrets in it.
+* `--print-answers`: Print the answers of the steps that finished as an answers file, and run nothing.
+* `--json`: Print the outcome of every step as JSON on stdout; questions, if any, go to stderr.
 * `--help`: Show this message and exit.
 
 ## `hz system`
