@@ -29,7 +29,7 @@ from pydantic import (
 from pydantic_core import PydanticCustomError
 
 from heinzel import AgentResult, ModuleSettings, Window
-from heinzel.kernel import CAPABILITIES, Requirement, parse_duration, user_config_dir
+from heinzel.kernel import CAPABILITIES, Requirement, parse_duration, schedule_problem, user_config_dir
 
 SCHEMA_VERSION = 1
 """The version of the frontmatter format this Heinzelmännchen reads (`hz.schema`)."""
@@ -353,20 +353,18 @@ class Frontmatter(_Strict):
     hz: Hz = Field(description="Heinzelmännchen's keys.")
 
 
-CRON_SHORTCUTS = ("@yearly", "@annually", "@monthly", "@weekly", "@daily", "@midnight", "@hourly")
-
-
 def cron_problem(schedule: str) -> str | None:
-    """Why a cron expression can't schedule a job, or None if it can."""
+    """Why a cron expression can't schedule a job, or None if it can.
+
+    The shape is the kernel's own check, the one `JobLet` applies (five ASCII fields or an alias such as `@daily`), so
+    a contract that passes here always compiles; croniter then checks the values.
+    """
     from croniter import croniter  # noqa: PLC0415 - only needed when a contract has a schedule
 
-    fields = schedule.split()
-    shortcut = schedule in CRON_SHORTCUTS
-    if not (shortcut or (len(fields) == 5 and croniter.is_valid(schedule))):  # noqa: PLR2004 - cron fields
-        return (
-            f"invalid schedule {schedule!r}: use five cron fields (minute hour day month weekday), e.g. 0 7 * * MON, "
-            f"or one of {', '.join(CRON_SHORTCUTS)}"
-        )
+    if problem := schedule_problem(schedule):
+        return f"invalid {problem}; e.g. 0 7 * * MON"
+    if not schedule.startswith("@") and not croniter.is_valid(schedule):
+        return f"invalid schedule {schedule!r}: a field is out of range, e.g. minute 0-59, hour 0-23, weekday MON-SUN"
     return None
 
 

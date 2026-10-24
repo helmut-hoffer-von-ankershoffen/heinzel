@@ -131,8 +131,9 @@ request (director's decisions, 2026-10-24):
   ([ADR 0021](0021-workflow-contracts.md)). The workflow module reaches it through `Kernel.handle_for(requester,
   capability)` (2026-10-24), which serves only requesters of kind `job` of the enabled module providing
   `CompiledJobs`, refuses publishing requesters and adapter pins, and so hands out read handles only; compiled jobs
-  appear in the matrix like declared ones. Like the rest of this design, it makes intent explicit in code and review;
-  it is not an isolation boundary (below). `hz workflow run` is `read_only=False` (it spends money and writes a local
+  appear in the matrix like declared ones. The module check guards against mistakes (a module asking on another's
+  behalf by accident), not against plugins: plugins are trusted code that runs with the user's rights
+  ([ADR 0020](0020-daemon-head.md)), and like the rest of this design the check is no isolation boundary (below). `hz workflow run` is `read_only=False` (it spends money and writes a local
   draft) without declaring any `write` capability: the two are separate.
 - **Write only through publish operations, declared there.** Until approvals exist, "approved publish operation" is
   enforced structurally: `write` is granted only to operations with `read_only=False` that declared it themselves.

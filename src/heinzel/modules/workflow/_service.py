@@ -7,8 +7,10 @@ packet or the empty working directory it starts in (ADR 0029, option a). Nothing
 foreground daemon loop.
 """
 
+import errno
 import hashlib
 import json
+import logging
 import math
 import os
 import tempfile
@@ -40,6 +42,7 @@ from heinzel.modules.workflow._models import (
     WorkflowSettings,
 )
 
+logger = logging.getLogger(__name__)
 MODULE = "workflow"
 FETCH_MARGIN = timedelta(minutes=2)
 """A job may take this much longer than its agent session: fetching inputs and saving the draft."""
@@ -105,7 +108,7 @@ class WorkflowService:
         found: list[Contract] = []
         for namespace, directory in self.directories.items():
             try:
-                paths = collect(directory)
+                paths = self._paths(namespace, directory)
             except OSError as exc:  # an unreadable directory is reported, not fatal
                 problem = Diagnostic(
                     file=directory,
@@ -118,16 +121,29 @@ class WorkflowService:
                 )
                 found.append(Contract(directory, namespace, directory.name, None, "", (problem,)))
                 continue
-            for path in paths:
-                contract = read_contract(path, namespace)
-                try:
-                    contract = self._checked(contract)
-                except Exception as exc:  # noqa: BLE001 - isolation boundary: one contract's failure is its own
-                    contract = contract.adding(
-                        _diagnostic(contract, "HZC001", ("file",), f"can't check it: {type(exc).__name__}: {exc}", "")
-                    )
-                found.append(contract)
+            found += [self._safely_checked(read_contract(path, namespace)) for path in paths]
         return found
+
+    def _paths(self, namespace: Namespace, directory: Path) -> list[Path]:
+        """The contract files of a namespace.
+
+        Raises:
+            NotADirectoryError: If the team repository or the directory is a file.
+            OSError: If the directory is a symbolic link or can't be listed.
+        """
+        repository = self._workflow.team_repository
+        if namespace == "team" and repository is not None and repository.exists() and not repository.is_dir():
+            raise NotADirectoryError(errno.ENOTDIR, f"the team repository {repository} is a file")
+        return collect(directory)
+
+    def _safely_checked(self, contract: Contract) -> Contract:
+        """`_checked`, with any failure as the contract's own diagnostic, so the others are still checked."""
+        try:
+            return self._checked(contract)
+        except Exception as exc:  # noqa: BLE001 - isolation boundary: one contract's failure is its own
+            return contract.adding(
+                _diagnostic(contract, "HZC001", ("file",), f"can't check it: {type(exc).__name__}: {exc}", "")
+            )
 
     def check(self, path: Path | None = None) -> CheckReport:
         """Check every contract found, or the contract files at `path` (a file, or a directory searched recursively).
@@ -152,7 +168,7 @@ class WorkflowService:
                 msg = f"{path} doesn't exist"
                 raise HeinzelError(msg)
             files = [path] if path.is_file() else sorted(p for p in path.rglob("*.prose.md") if not p.is_symlink())
-            contracts = [self._checked(read_contract(file, "path")) for file in files if file.is_file()]
+            contracts = [self._safely_checked(read_contract(file, "path")) for file in files if file.is_file()]
         return CheckReport(files=[c.path for c in contracts], diagnostics=[d for c in contracts for d in c.diagnostics])
 
     def _checked(self, contract: Contract) -> Contract:
@@ -185,6 +201,11 @@ class WorkflowService:
                         "name an operation with read_only=False that writes the draft",
                     )
                 )
+        if not problems and contract.valid and contract.frontmatter.hz.schedule is not None:
+            try:  # what `check` accepts must compile: the daemon's job is built the same way
+                self._job_let(contract)
+            except ValueError as exc:
+                problems.append(_diagnostic(contract, "HZC011", ("hz", "schedule"), str(exc), "fix the schedule"))
         runner, accepted = self._runner_tools()
         if accepted is not None:
             for index, tool in enumerate(contract.frontmatter.hz.agent.tools):
@@ -274,22 +295,32 @@ class WorkflowService:
         """The daemon jobs: one per valid contract with a schedule that your daemon runs, read afresh."""
         jobs: list[JobLet] = []
         for contract in self.contracts():
-            if self.scheduled(contract) is not None or contract.frontmatter is None:
+            if self.scheduled(contract) is not None:
                 continue
-            hz = contract.frontmatter.hz
-            jobs.append(
-                JobLet(
-                    name=self.job_name(contract),
-                    func=self._job(contract),
-                    summary=hz.title,
-                    schedule=cast("str", hz.schedule),
-                    timeout=hz.timeout + FETCH_MARGIN,
-                    retries=hz.retries,
-                    catch_up=CatchUp(hz.catch_up),
-                    requires=self.requester(contract).requires,
-                )
-            )
+            try:
+                jobs.append(self._job_let(contract))
+            except Exception:
+                logger.exception("compiling %s failed; the other contracts still run", contract.qualified)
         return CompiledJobs(jobs=tuple(jobs))
+
+    def _job_let(self, contract: Contract) -> JobLet:
+        """The daemon job of a valid contract with a schedule.
+
+        Raises:
+            HeinzelError: If the contract has errors.
+            ValueError: If `JobLet` refuses what the contract says.
+        """
+        hz = _valid(contract).hz
+        return JobLet(
+            name=self.job_name(contract),
+            func=self._job(contract),
+            summary=hz.title,
+            schedule=cast("str", hz.schedule),
+            timeout=hz.timeout + FETCH_MARGIN,
+            retries=hz.retries,
+            catch_up=CatchUp(hz.catch_up),
+            requires=tuple(hz.requirements().values()),
+        )
 
     def _job(self, contract: Contract) -> Callable[[], Rendered]:
         def render() -> Rendered:

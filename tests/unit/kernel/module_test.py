@@ -270,3 +270,9 @@ def test_provides_records_an_adapter_named_after_the_module_by_default():
 def test_provides_refuses_unknown_capabilities_modes_and_names(capability, modes, name, problem):
     with pytest.raises(ValueError, match=problem):
         Module("acme", "x").provides(capability, modes=modes, name=name)
+
+
+@pytest.mark.parametrize("schedule", ["\uff10 9 * * MON", "0 9 * *", "@reboot", "0 9 * * MON extra"])
+def test_jobs_refuse_schedules_that_arent_five_ascii_cron_fields(schedule):
+    with pytest.raises(ValueError, match="must be five cron fields"):
+        JobLet(name="x", func=lambda: None, summary="s", schedule=schedule)

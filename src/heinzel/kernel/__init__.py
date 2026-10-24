@@ -45,6 +45,7 @@ from heinzel.kernel._lets import (
     ServiceLet,
     SettingsLet,
     Status,
+    schedule_problem,
 )
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
@@ -125,6 +126,7 @@ __all__ = [
     "environment_variable",
     "parse_duration",
     "requirement_from_receipt",
+    "schedule_problem",
     "subprocess_environment",
     "user_config_dir",
     "walk",

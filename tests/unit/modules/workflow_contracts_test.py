@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from heinzel import JobLet, Window
+from heinzel.kernel import schedule_problem
 from heinzel.modules.workflow import _contracts as contracts
 from heinzel.modules.workflow._contracts import _load, collect, contract_name, read_contract, sections
 from heinzel.modules.workflow._models import NAME, Frontmatter, _format_duration, cron_problem
@@ -142,7 +143,7 @@ def test_the_name_must_equal_the_file_stem_and_the_suffix_is_required():
         ("schema: 1\noutputs: {d: {}}\n", "hz.title", "`title` is required"),
         ("schema: 1\ntitle: T\noutputs: {d: {}}\ncolour: blue\n", "hz.colour", "unknown key `colour`"),
         ("schema: 1\ntitle: T\nowner: '@mira'\noutputs: {d: {}}\n", "hz.owner", "people (ADR 0024)"),
-        ("schema: 1\ntitle: T\nscope: team\noutputs: {d: {}}\n", "hz.scope", "'personal'"),
+        ("schema: 1\ntitle: T\nscope: team\noutputs: {d: {}}\n", "hz.scope", "leases in the state repository"),
         ("schema: 1\ntitle: T\noutputs: {d: {target: 'state:x'}}\n", "hz.outputs.d.target", "hz inbox"),
         ("schema: 1\ntitle: T\noutputs: {d: {}}\nagent: {model: deep}\n", "hz.agent.model", "configuration"),
         ("schema: 1\ntitle: T\noutputs: {d: {}, e: {}}\n", "hz.outputs", "exactly one output"),
@@ -435,3 +436,13 @@ def test_every_contract_name_makes_a_valid_job_name(name):
 @pytest.mark.parametrize("name", ["A", "1a", "a-", "a--b", "a_b"])
 def test_names_the_job_pattern_allows_but_contracts_dont(name):
     assert not re.fullmatch(NAME, name)
+
+
+def test_a_schedule_with_non_ascii_digits_is_refused_like_the_kernel_refuses_it():
+    fullwidth = chr(0xFF10) + " 7 * * MON"
+    found = read_contract(
+        PATH, "me", contract(hz=f'schema: 1\ntitle: T\nschedule: "{fullwidth}"\noutputs: {{d: {{}}}}\n')
+    )
+    assert [d.code for d in found.diagnostics if d.field == "hz.schedule"] == ["HZC011"]
+    assert schedule_problem(fullwidth) is not None
+    assert cron_problem("0 7 * * MON") is None

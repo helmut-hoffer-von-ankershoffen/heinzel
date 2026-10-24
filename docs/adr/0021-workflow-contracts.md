@@ -137,7 +137,10 @@ readable prose. Each point says what 0.2 builds and what comes later.
     - 0.2: `hz workflow list`, `show <name>` (schedule, daemon job or why there is none, requirements with their
       adapters, inputs, outputs, publishes, limits, the SHA-256 to approve, diagnostics), `check [--path]` (exits with 1
       on errors, for a team's CI; a path must be inside your workflows directory, the team repository or the current
-      directory, because every head exposes `check`) and `run <name> [--dry-run]`. A manual run saves the draft and a
+      directory, because every head exposes `check`) and `run <name> [--dry-run]` (CLI and MCP only: a render spends
+      money, and a web page can reach a local REST server, [ADR 0019](0019-mcp-and-rest-heads.md)). What `check` accepts
+      compiles: the schedule is checked with the kernel's own cron shape check, and a contract the kernel would refuse
+      as a job is invalid in `check` too; compiling one contract never stops the others. A manual run saves the draft and a
       `.record.json` but no ledger receipt and says so; receipted runs go through the daemon
       (`hz system daemon tick --job workflow:<namespace>-<name>`).
     - Later: `new`, `graph`, `fingerprint`, `migrate`, `export --prose`.
@@ -170,12 +173,14 @@ checks, compilation into daemon jobs, the cost cap and its split, pinned team co
 fetched through capability handles and its size caps, drafts and their records, and the health check, with test-only
 adapters and a fake agent runner (`tests/unit/modules/workflow_service_test.py`); the committed JSON Schema against
 the example and the filled model (`tests/unit/modules/workflow_schema_test.py`, and `make check` for drift);
-`hz workflow` through the CLI and REST heads, a receipted daemon run, escaped contract text, compiled jobs in the
-capability matrix, and a hostile project `hz.toml` that can't point discovery at its own contracts or raise the cap
-(`tests/integration/workflow_test.py`); the daemon running compiled jobs and surviving a failing compiler
+`hz workflow` through the CLI and REST heads, a receipted daemon run, one bad schedule leaving the other jobs and
+matrix rows intact while `check` fails, compiled jobs in the capability matrix, and a hostile project `hz.toml` that
+can't point discovery at its own contracts or raise the cap (`tests/integration/workflow_test.py`); contract names,
+titles, error messages and doctor text shown as written, never as Rich markup
+(`tests/integration/cli_plain_text_test.py`); `run` not reachable over REST (`tests/integration/rest_security_test.py`); the daemon running compiled jobs and surviving a failing compiler
 (`tests/unit/modules/daemon_service_test.py`); the kernel's `handle_for` serving only the compiler's read-only jobs
-(`tests/unit/kernel/bindings_test.py`). No test runs a real agent. Still planned: golden tests for fingerprints, the contract graph, and
-`hz workflow check` in a team repository's CI template.
+(`tests/unit/kernel/bindings_test.py`). No test runs a real agent. Still planned: golden tests for fingerprints,
+the contract graph, and `hz workflow check` in a team repository's CI template.
 
 ## More Information
 

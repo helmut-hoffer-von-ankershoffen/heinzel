@@ -557,3 +557,59 @@ def test_a_manual_run_says_it_has_no_receipt(make, dirs):
     assert result.rendered is not None
     assert result.note.startswith(f"unreceipted; the record is at {result.rendered.record}")
     assert "hz system daemon tick --job workflow:me-weekly-digest" in result.note
+
+
+def test_a_contract_that_cant_compile_leaves_the_others_compiled(make, dirs, monkeypatch):
+    put(dirs[0], "good")
+    put(dirs[0], "bad")
+    service = make()
+    original = service._job_let
+
+    def refuse(contract):
+        if contract.name == "bad":
+            msg = "the kernel refuses this job"
+            raise ValueError(msg)
+        return original(contract)
+
+    monkeypatch.setattr(service, "_job_let", refuse)
+    assert [job.name for job in service.compiled().jobs] == ["me-good"]
+    bad = next(c for c in service.contracts() if c.name == "bad")
+    assert [(d.code, d.message) for d in bad.diagnostics] == [("HZC011", "the kernel refuses this job")]
+
+
+def test_a_symlinked_or_file_directory_is_reported(make, dirs, tmp_path):
+    real = tmp_path / "real"
+    real.mkdir()
+    put(real)
+    link = tmp_path / "linked"
+    link.symlink_to(real)
+    contracts = make(user_dir=str(link)).contracts()
+    assert [d.message for c in contracts for d in c.diagnostics] == [
+        "can't read the directory: it is a symbolic link; contracts are read from real directories only"
+    ]
+    a_file = tmp_path / "a-file"
+    a_file.write_text("")
+    messages = [
+        d.message for c in make(user_dir=str(a_file), team_repository=str(a_file)).contracts() for d in c.diagnostics
+    ]
+    assert messages == [
+        f"can't read the directory: the team repository {a_file} is a file",
+        "can't read the directory: it is a file, not a directory",
+    ]
+
+
+def test_check_of_a_path_isolates_each_contract(make, dirs, monkeypatch):
+    put(dirs[0], "first")
+    put(dirs[0], "second")
+    service = make()
+    original = service._checked
+
+    def flaky(contract):
+        if contract.name == "first":
+            msg = "boom"
+            raise RuntimeError(msg)
+        return original(contract)
+
+    monkeypatch.setattr(service, "_checked", flaky)
+    report = service.check(dirs[0])
+    assert [d.message for d in report.diagnostics] == ["can't check it: RuntimeError: boom"]

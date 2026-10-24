@@ -4,6 +4,7 @@ Everything here is pure: text in, a `Contract` with its diagnostics out. Nothing
 kernel; checks that need the kernel (publish operations, name collisions) live in the service.
 """
 
+import errno
 import hashlib
 import re
 from collections.abc import Callable, Iterator, Mapping
@@ -396,6 +397,10 @@ def _deferred(data: dict[str, Any]) -> list[tuple[KeyPath, str]]:
     ]
     if hz_map.get("catch_up") == "all":
         found.append((("hz", "catch_up"), "`catch_up: all` is not supported yet: it comes with schedule slots"))
+    if hz_map.get("scope") == "team":
+        found.append(
+            (("hz", "scope"), "`scope: team` is not supported yet: it comes with leases in the state repository")
+        )
     return found
 
 
@@ -534,8 +539,17 @@ def _check_items(by_name: dict[str, Section], end: int, frontmatter: Frontmatter
 
 
 def collect(directory: Path) -> list[Path]:
-    """The contract files in `directory`, sorted; none if it doesn't exist."""
-    if not directory.is_dir():
-        return []
+    """The contract files in `directory`, sorted; none if it doesn't exist.
+
+    Raises:
+        NotADirectoryError: If `directory` is a file.
+        OSError: If `directory` is a symbolic link, or can't be listed.
+    """
     # Symbolic links are skipped: a link in a team repository could make your daemon read a file outside it.
+    if directory.is_symlink():
+        raise OSError(errno.ELOOP, "it is a symbolic link; contracts are read from real directories only")
+    if not directory.exists():
+        return []
+    if not directory.is_dir():
+        raise NotADirectoryError(errno.ENOTDIR, "it is a file, not a directory")
     return sorted(p for p in directory.iterdir() if p.name.endswith(SUFFIX) and not p.is_symlink() and p.is_file())

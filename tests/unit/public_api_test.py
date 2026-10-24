@@ -114,6 +114,7 @@ KERNEL = [
     "environment_variable",
     "parse_duration",
     "requirement_from_receipt",
+    "schedule_problem",
     "subprocess_environment",
     "user_config_dir",
     "walk",

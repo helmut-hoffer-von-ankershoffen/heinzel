@@ -21,7 +21,21 @@ from heinzel.kernel._config import ModuleSettings
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 """Names of modules, jobs and credentials: lowercase words joined by dashes."""
 CRON_ALIASES = frozenset({"@yearly", "@annually", "@monthly", "@weekly", "@daily", "@midnight", "@hourly"})
-_CRON_FIELD = re.compile(r"^[0-9A-Za-z*/,?LW#-]+$")
+_CRON_FIELD = re.compile(r"^[0-9A-Za-z*/,?LW#-]+$", re.ASCII)
+
+
+def schedule_problem(schedule: str) -> str | None:
+    """Why `schedule` isn't the shape of a cron expression, or None: five ASCII fields, or an alias like `@daily`.
+
+    The kernel has no cron library, so it checks only the shape; `hz system daemon` and the workflow module check the
+    values. ASCII only: Python reads a fullwidth zero (U+FF10) as a digit, a cron library might too, and nobody means
+    it.
+    """
+    fields = schedule.split()
+    if schedule in CRON_ALIASES or (len(fields) == 5 and all(map(_CRON_FIELD.fullmatch, fields))):  # noqa: PLR2004 - minute hour day month weekday
+        return None
+    aliases = ", ".join(sorted(CRON_ALIASES))
+    return f"schedule {schedule!r} must be five cron fields (minute hour day month weekday) or one of {aliases}"
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -161,10 +175,8 @@ class JobLet(Let):
         if not NAME_PATTERN.fullmatch(self.name):
             msg = f"Job name {self.name!r} must match {NAME_PATTERN.pattern}"
             raise ValueError(msg)
-        fields = self.schedule.split()
-        if self.schedule not in CRON_ALIASES and (len(fields) != 5 or not all(map(_CRON_FIELD.fullmatch, fields))):  # noqa: PLR2004 - minute hour day month weekday
-            aliases = ", ".join(sorted(CRON_ALIASES))
-            msg = f"Job {self.name!r}: schedule {self.schedule!r} must be five cron fields or one of {aliases}"
+        if problem := schedule_problem(self.schedule):
+            msg = f"Job {self.name!r}: {problem}"
             raise ValueError(msg)
         if self.timeout <= timedelta(0):
             msg = f"Job {self.name!r}: timeout must be positive, not {self.timeout}"
