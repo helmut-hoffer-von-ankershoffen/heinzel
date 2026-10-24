@@ -29,7 +29,7 @@ says.
 ## 2. Set it up
 
 ```bash
-hz <module> setup     # or `hz setup`, which runs every module's step
+hz setup <module>     # or `hz setup`, which runs every module's step
 ```
 
 The step offers each recommended setting and applies it only if you say yes to it. It runs the playbook's hints through

@@ -86,7 +86,7 @@ def test_setup_picks_zones_by_search_and_hours_per_zone(hz, hz_prompter):
         "19",
         "",  # save
     ]
-    result = hz("clock", "setup", json=False)
+    result = hz("setup", "clock", json=False)
     assert result.exit_code == 0, result.output
     assert config() == {
         "clock": {
@@ -106,7 +106,7 @@ def test_setup_picks_zones_by_search_and_hours_per_zone(hz, hz_prompter):
 
 def test_setup_chooses_among_a_few_matches_and_skips_duplicates(hz, hz_prompter):
     hz_prompter.answers += ["", "berlin", "indiana/v", "2", "", *[""] * 8, ""]  # 4 zones: start and end hour each
-    result = hz("clock", "setup", json=False)
+    result = hz("setup", "clock", json=False)
     assert result.exit_code == 0, result.output
     assert "Europe/Berlin is already in the list." in hz_prompter.transcript
     assert "  1) America/Indiana/Vevay" in hz_prompter.transcript
@@ -115,7 +115,7 @@ def test_setup_chooses_among_a_few_matches_and_skips_duplicates(hz, hz_prompter)
 
 def test_setup_needs_one_zone_and_saves_nothing_when_declined(hz, hz_prompter):
     hz_prompter.answers += ["none", "", "tokyo", "", "", "", "n"]  # keep none, then add one
-    result = hz("clock", "setup", json=False)
+    result = hz("setup", "clock", json=False)
     assert result.exit_code == 0, result.output
     assert "The team needs at least one time zone." in hz_prompter.transcript
     assert "Nothing was saved." in hz_prompter.transcript
@@ -130,7 +130,7 @@ def test_setup_replaces_the_old_shape(hz, hz_prompter, monkeypatch):
     monkeypatch.setenv("HZ_CLOCK__WORKING_HOURS", "[8, 22]")
     hz_prompter.answers += ["y", "", "", "", "", ""]  # change it, keep Tokyo, add none, keep 8-22, save
     with pytest.warns(DeprecationWarning, match="working_hours is deprecated"):
-        result = hz("clock", "setup", json=False)
+        result = hz("setup", "clock", json=False)
     assert result.exit_code == 0, result.output
     assert config() == {"clock": {"zones": [{"name": "Asia/Tokyo", "hours": [8, 22]}]}}
 
@@ -146,7 +146,7 @@ def test_setup_succeeds_when_old_working_hours_come_only_from_the_environment(hz
     monkeypatch.setenv("HZ_CLOCK__WORKING_HOURS", "[8, 22]")
     hz_prompter.answers += ["y", "", "", "", "", ""]
     with pytest.warns(DeprecationWarning, match="working_hours is deprecated"):
-        result = hz("clock", "setup", json=False)
+        result = hz("setup", "clock", json=False)
     assert result.exit_code == 0, result.output
     assert config() == {"clock": {"zones": [{"name": "Asia/Tokyo", "hours": [8, 22]}]}}
 
@@ -154,7 +154,7 @@ def test_setup_succeeds_when_old_working_hours_come_only_from_the_environment(hz
 def test_setup_without_zones_asks_only_to_add_some(hz, hz_prompter, monkeypatch):
     monkeypatch.setenv("HZ_CLOCK__ZONES", "[]")
     hz_prompter.answers += ["y", "", "tokyo", "", "", "", ""]
-    result = hz("clock", "setup", json=False)
+    result = hz("setup", "clock", json=False)
     assert result.exit_code == 0, result.output
     assert not [line for line in hz_prompter.transcript if line.startswith("Time zones to keep")]
     assert "The team needs at least one time zone." in hz_prompter.transcript

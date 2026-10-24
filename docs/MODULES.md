@@ -53,7 +53,7 @@ Settings: [`[clock]`](CONFIGURATION.md#clock).
 
 Health checks: reported by `hz system doctor`.
 
-Setup: `hz clock setup` (optional), also part of `hz setup`.
+Setup: `hz setup clock` (optional), also part of `hz setup`.
 
 ## `github`
 
@@ -81,7 +81,7 @@ Settings: [`[org]`](CONFIGURATION.md#org).
 
 Health checks: reported by `hz system doctor`.
 
-Setup: `hz org setup` (required), also part of `hz setup`.
+Setup: `hz setup org` (required), also part of `hz setup`.
 
 ## `system`
 

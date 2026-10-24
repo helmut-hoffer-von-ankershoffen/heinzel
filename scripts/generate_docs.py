@@ -150,7 +150,7 @@ def module_catalog() -> str:
         step = next((let for owner, let in k.lets(SetupLet) if owner.qualname == record.qualname), None)
         if step is not None:
             kind = "required" if step.required else "optional"
-            lines += [f"Setup: `hz {' '.join(record.path)} setup` ({kind}), also part of `hz setup`.", ""]
+            lines += [f"Setup: `hz setup {record.qualname}` ({kind}), also part of `hz setup`.", ""]
     return "\n".join(lines).rstrip() + "\n"
 
 

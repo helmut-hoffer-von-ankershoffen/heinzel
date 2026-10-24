@@ -232,7 +232,7 @@ def hz_credentials(hz_kernel: "Kernel") -> "Credentials":
 def hz_prompter(hz_kernel: "Kernel") -> "ScriptedPrompter":
     """Scripted answers for setup steps run through `hz` (ADR 0032): `hz_prompter.answers += ["", "Tokyo"]`.
 
-    `hz("clock", "setup", json=False)` then asks this prompter instead of a terminal; `hz_prompter.transcript` holds
+    `hz("setup", "clock", json=False)` then asks this prompter instead of a terminal; `hz_prompter.transcript` holds
     every question with its answer and every line the step said.
     """
     from heinzel.kernel import Prompter, ScriptedPrompter  # noqa: PLC0415 - see the module comment
