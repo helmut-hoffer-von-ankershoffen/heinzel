@@ -80,6 +80,9 @@ def load(text: str) -> dict[str, Any]:
     except yaml.YAMLError as exc:
         msg = f"doesn't parse: {exc}"
         raise YamlError(msg) from exc
+    except ValueError as exc:  # PyYAML's scanner lets an escape past U+10FFFF (`"\U00110000"`) escape as chr()'s error
+        msg = f"doesn't parse: an escape names no character ({exc})"
+        raise YamlError(msg) from exc
     if not isinstance(data, dict):
         msg = "must be a mapping of keys to values"
         raise YamlError(msg)

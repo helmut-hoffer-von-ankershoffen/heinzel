@@ -237,7 +237,7 @@ class MemberView(BaseModel):
 class TeamPlan(BaseModel):
     """What `hz team new`, `join` or `add` does: without `--yes` the plan, with it what was done."""
 
-    operation: Literal["new", "join", "add"] = Field(description="The operation.")
+    operation: Literal["new", "join", "add", "draft"] = Field(description="The operation.")
     team: str | None = Field(description="The team's name, once known.")
     repository: str | None = Field(description="The team repository's URL; none for one on this machine only.")
     checkout: Path | None = Field(description="Where the team repository is checked out.")
@@ -252,6 +252,9 @@ class TeamPlan(BaseModel):
     )
     drafted: list[MemberView] = Field(
         default_factory=list[MemberView], description="The roster `new` drafted for you to review, beside you."
+    )
+    guesses: list[str] = Field(
+        default_factory=list[str], description="Drafted members the directory only guessed, with what each rests on."
     )
     plugin: str | None = Field(default=None, description="The team plugin the manifest names; nothing installs it.")
     pull_request: str | None = Field(default=None, description="The pull request opened, if one was.")

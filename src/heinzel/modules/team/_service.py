@@ -24,10 +24,22 @@ from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
 
-from heinzel.kernel import KERNEL_SECTION, Config, ConfigEditor, HeinzelError, Settings, clean_text
+from heinzel.kernel import (
+    KERNEL_SECTION,
+    Config,
+    ConfigEditor,
+    ConfirmedLines,
+    Directory,
+    HeinzelError,
+    Relation,
+    Settings,
+    clean_text,
+    draft_reporting_lines,
+)
 from heinzel.modules.team import _template
 from heinzel.modules.team._models import (
     CODEOWNERS,
+    EMAIL,
     MANIFEST,
     PEOPLE,
     ROSTER,
@@ -394,7 +406,6 @@ class TeamService:
         self, checkout: Path, manifest: Manifest, member: Member, *, branch: str, person: bool
     ) -> list[_Step]:
         """Write `member` into the roster: on a branch with a pull request when the checkout has a remote."""
-        remote = self._origin(checkout)
         files = [ROSTER, CODEOWNERS, *([f"{PEOPLE}/{member.handle}.yaml"] if person else [])]
 
         def write() -> None:
@@ -421,6 +432,23 @@ class TeamService:
 
         message = f"Add {member.handle} to {manifest.name} as {', '.join(member.roles)}"
         write_step = self._local(f"add {member.handle} ({', '.join(member.roles)}) to {', '.join(files)}", write)
+        recovery = "if you can read the team but may not push to it, an owner adds you: " + _shown(
+            _again(["hz", "team", "add", member.handle], login=member.github, role=member.roles[0])
+        )
+        return self._change_steps(checkout, manifest, write_step, files, message, branch, recovery)
+
+    def _change_steps(  # noqa: PLR0913, PLR0917 - one roster change, described fully
+        self,
+        checkout: Path,
+        manifest: Manifest,
+        write_step: _Step,
+        files: list[str],
+        message: str,
+        branch: str,
+        recovery: str,
+    ) -> list[_Step]:
+        """`write_step` committed on its own branch with a pull request when the checkout has a remote, else at once."""
+        remote = self._origin(checkout)
         stage = self._git("stage the change", "-C", checkout, "add", "--", *files)
         # `-- <files>` commits only the roster change, whatever else someone staged in the checkout.
         commit = self._git("commit it", "-C", checkout, "commit", "--quiet", "-m", message, "--", *files)
@@ -445,13 +473,11 @@ class TeamService:
         ]
         for step in steps[3:]:
             step.cleanup = undo
-        steps[-1].recovery = "if you can read the team but may not push to it, an owner adds you: " + _shown(
-            _again(["hz", "team", "add", member.handle], login=member.github, role=member.roles[0])
-        )
+        steps[-1].recovery = recovery
         if (github := github_of(remote)) is not None:
             body = (
                 f"{message}. Opened by hz; the owners of {manifest.name} (CODEOWNERS of team/) merge it. The roster "
-                "holds a handle, a GitHub login, roles and dates, nothing else."
+                "holds handles, logins, work e-mails, roles and dates, nothing else."
             )
             pr = ["gh", "pr", "create", "--repo", github, "--head", branch, "--title", message, "--body", body]
             step = self._remote(f"open a pull request on {github}", pr)
@@ -464,6 +490,58 @@ class TeamService:
             steps.append(note)
         steps.append(self._git("switch your checkout back", "-C", checkout, "switch", "--quiet", default))
         return steps
+
+    # Drafting from the directory -------------------------------------------------------------------------------------
+
+    def draft(self, directory: Directory, *, person: str | None = None, yes: bool = False) -> TeamPlan:
+        """Draft the roster from the directory: your direct reports, for you to review; a pull request with `yes`.
+
+        The seam for the `directory` capability: no operation declares `directory:read` yet, because doing so makes
+        the core's `one-on-ones` adapter's own `calendar:read` an unmet requirement on every installation without a
+        calendar. Whatever step first needs the directory (the setup journey's roster step) passes its handle here.
+
+        The roster is what you confirmed: it goes back to the draft as `ConfirmedLines`, so a guess you accepted
+        stays, and only people the roster lacks are drafted. Guesses are marked with what they rest on.
+
+        Raises:
+            HeinzelError: If no team is configured, nobody says who you are, or a step fails.
+        """
+        checkout = self._configured()
+        manifest, roster = self._team_files(checkout)
+        me = person or self._me(None, "hz team draft --person <your login or work e-mail>")
+        today = self._today()
+        # The rest of the roster is who you confirmed reports to you; you aren't your own report.
+        on_roster = [
+            key
+            for m in roster.members
+            if m.active(today) and (key := m.github or m.email) and me.lower() not in {key.lower(), m.handle}
+        ]
+        drafted = draft_reporting_lines(directory, me, ConfirmedLines(reports=[x for x in on_roster if x]))
+        plan = TeamPlan(
+            operation="draft", team=manifest.name, repository=self._settings.repository, checkout=checkout, handle=""
+        )
+        new = _new_members(roster, drafted.reports, today)
+        plan.drafted = [_view(m, manifest) for m, _ in new]
+        plan.guesses = [f"{m.handle}: {'; '.join(r.evidence)}" for m, r in new if r.guess]
+        plan.next = ([f"The directory couldn't be read: {drafted.problem}"] if drafted.problem else []) + list(
+            drafted.conflicts
+        )
+        if not new:
+            plan.done = True
+            plan.next.append(f"The roster of {manifest.name} has everyone the directory knows reports to {me}.")
+            return plan
+
+        def write() -> None:
+            current = self._team_files(checkout)[1]
+            fresh = [m for m, _ in _new_members(current, [r for _, r in new], today)]
+            _write_files(checkout, {ROSTER: _template.roster_file(Roster(members=[*current.members, *fresh]))})
+
+        message = f"Draft {len(new)} member(s) into {manifest.name}'s roster from the directory"
+        write_step = self._local(f"add {', '.join(m.handle for m, _ in new)} to {ROSTER}", write)
+        recovery = "if you may not push to the team, send the drafted entries to one of its owners"
+        steps = self._change_steps(checkout, manifest, write_step, [ROSTER], message, "hz/draft-roster", recovery)
+        self._carry_out(plan, steps, yes=yes, again=_again(["hz", "team", "draft"], person=person))
+        return plan
 
     # Showing and adopting --------------------------------------------------------------------------------------------
 
@@ -813,6 +891,26 @@ def _same(first: str, second: str) -> bool:
     if (a := github_of(first)) is not None and (b := github_of(second)) is not None:
         return a.lower() == b.lower()
     return first.rstrip("/").removesuffix(".git") == second.rstrip("/").removesuffix(".git")
+
+
+def _new_members(roster: Roster, relations: list[Relation], today: date) -> list[tuple[Member, Relation]]:
+    """Roster entries for the people in `relations` the roster lacks, by e-mail and login, with handles of their own.
+
+    A directory's login may be a chat name rather than a GitHub login, so it is never written as one: the person
+    claims their entry with their GitHub login when they join (`hz team join --propose --handle`).
+    """
+    known = {value.lower() for m in roster.members for value in (m.github, m.email, m.handle) if value}
+    taken = {m.handle for m in roster.members}
+    found: list[tuple[Member, Relation]] = []
+    for relation in relations:
+        email = relation.who.email if relation.who.email and EMAIL.fullmatch(relation.who.email) else None
+        if {value.lower() for value in (email, relation.login) if value} & known:
+            continue
+        base = _suggest(relation.login or (email or "").partition("@")[0] or relation.who.name or "member")
+        handle = next(h for h in (base, *(f"{base}-{n}" for n in range(2, 100))) if h not in taken)
+        taken.add(handle)
+        found.append((Member(handle=handle, email=email, roles=["engineer"], since=today), relation))
+    return found
 
 
 def _view(member: Member, manifest: Manifest | None) -> MemberView:

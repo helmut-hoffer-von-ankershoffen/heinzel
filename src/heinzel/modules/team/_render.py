@@ -33,6 +33,7 @@ def render_plan(plan: TeamPlan) -> RenderableType:
         parts.append(Text(f"The team names the plugin {plan.plugin}; install it yourself if you want it."))
     if plan.drafted:
         parts.append(_members("Drafted roster, for you to review", plan.drafted))
+    parts += [Text(f"Guessed: {guess}") for guess in plan.guesses]
     if plan.pull_request:
         parts.append(Text(f"Pull request: {plan.pull_request}"))
     parts += [Text(line) for line in plan.next]

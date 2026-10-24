@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from heinzel.kernel import HeinzelError
+from heinzel.kernel import HeinzelError, Participant, Person, Relation
 from heinzel.modules.team import _template
 from heinzel.modules.team._models import Member, TeamSettings
 from heinzel.modules.team._repo import HARDENING, CommandFailed
@@ -735,3 +735,58 @@ def test_add_never_takes_over_an_entry_without_a_login(tmp_path, remote):
     team, _, _ = joined(tmp_path, remote, login="mira-example")
     with pytest.raises(HeinzelError, match="has a member ana already"):
         team.add("ana", login="ana-example", yes=True)
+
+
+class Org:
+    """A directory: Mira's reports are Theo (on the roster), Ana by e-mail, and Kim, guessed from 1:1s."""
+
+    def __init__(self, fail: bool = False) -> None:
+        self.fail = fail
+        self.asked: list[str] = []
+
+    def person(self, person):
+        self.asked.append(person)
+        if self.fail:
+            msg = "no calendar is bound"
+            raise HeinzelError(msg)
+        reports = [
+            Relation(who=Participant(name="Theo", email="theo@acme.example"), login="theo-example"),
+            Relation(who=Participant(name="Kim", email="kim@acme.example"), guess=True, evidence=["a weekly 1:1"]),
+        ]
+        return Person(who=Participant(name="Mira"), login=person, reports=reports)
+
+    def reports(self, person):
+        return []
+
+
+def test_draft_adds_the_reports_the_roster_lacks_and_marks_guesses(tmp_path, remote):
+    team, fake, checkout = joined(tmp_path, remote, login="mira-example")
+    org = Org()
+    plan = team.draft(org)
+    assert org.asked == ["mira-example"]
+    assert [(m.handle, m.github) for m in plan.drafted] == [("kim", None)]
+    assert plan.guesses == ["kim: a weekly 1:1"]
+    assert not plan.done
+    plan = team.draft(org, yes=True)
+    assert plan.done
+    roster = (checkout / "team" / "roster.yaml").read_text()
+    assert "email: kim@acme.example" in roster
+    assert "Kim" not in roster
+    assert ["git", "-C", str(checkout), "switch", "--quiet", "-C", "hz/draft-roster", "origin/trunk"] in fake.commands
+
+
+def test_draft_with_nobody_new_says_the_roster_is_complete(tmp_path, remote):
+    roster = remote / "team" / "roster.yaml"
+    roster.write_text(
+        roster.read_text() + "- handle: kim\n  email: kim@acme.example\n  roles: [engineer]\n  since: 2026-10-24\n"
+    )
+    team, _, _ = joined(tmp_path, remote, login="mira-example")
+    plan = team.draft(Org())
+    assert plan.done
+    assert plan.next == ["The roster of payments has everyone the directory knows reports to mira-example."]
+
+
+def test_draft_says_why_the_directory_could_not_be_read(tmp_path, remote):
+    team, _, _ = joined(tmp_path, remote, login="mira-example")
+    plan = team.draft(Org(fail=True))
+    assert plan.next[0] == "The directory couldn't be read: no calendar is bound"

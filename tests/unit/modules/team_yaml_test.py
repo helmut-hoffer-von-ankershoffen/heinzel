@@ -36,6 +36,7 @@ def test_an_empty_file_is_an_empty_mapping():
         ("- a\n", "mapping"),
         ("a: [\n", "doesn't parse"),
         ('a: "\\e[31m"\n', "control characters"),
+        ('a: "\\U00110000"\n', "an escape names no character"),
         ("a: \x1b[31m\n", "control characters"),
         ("a: " + "[" * 40 + "]" * 40 + "\n", "nested deeper"),
         ("a: [" + ",".join(["1"] * 10_001) + "]\n", "more than"),
