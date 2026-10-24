@@ -9,6 +9,7 @@ import { Shell } from "@/layout/Shell";
 import { Contract } from "@/pages/Contract";
 import { Contracts } from "@/pages/Contracts";
 import { Doctor } from "@/pages/Doctor";
+import { GraphView } from "@/pages/graph/GraphView";
 import { Home } from "@/pages/Home";
 import { Assets, AssetTypes } from "@/pages/Inventory";
 import { OrgChart, Team } from "@/pages/Organisation";
@@ -30,6 +31,7 @@ export const routes: RouteObject[] = [
       { path: "notifications", element: <Navigate replace to="/?panel=notifications" /> },
       { path: "contracts", element: <Contracts /> },
       { path: "contracts/:name", element: <Contract /> },
+      { path: "graph", element: <GraphView /> },
       { path: "org", element: <OrgChart /> },
       { path: "team", element: <Team /> },
       { path: "inventory/types", element: <AssetTypes /> },

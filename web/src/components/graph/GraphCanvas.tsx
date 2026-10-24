@@ -5,13 +5,15 @@ import {
   Controls,
   type Edge,
   MiniMap,
+  type Node,
   type NodeChange,
   type NodeMouseHandler,
+  type NodeTypes,
   ReactFlow,
   useReactFlow,
 } from "@xyflow/react";
 import { useEffect } from "react";
-import { type FlowNodeType, nodeTypes } from "./FlowNode";
+import { type FlowTone, nodeTypes as flowNodeTypes } from "./FlowNode";
 
 const toneColour = {
   neutral: "var(--color-muted-foreground)",
@@ -34,7 +36,10 @@ function Refit() {
   return null;
 }
 
-export function GraphCanvas({
+/** Any node with a tone, which colours it in the minimap. */
+type TonedNode = Node<{ tone: FlowTone }>;
+
+export function GraphCanvas<N extends TonedNode>({
   nodes,
   edges,
   label,
@@ -42,20 +47,23 @@ export function GraphCanvas({
   onSelect,
   onClear,
   fitKey,
+  nodeTypes = flowNodeTypes as NodeTypes,
 }: {
-  nodes: FlowNodeType[];
+  nodes: N[];
   edges: Edge[];
   label: string;
   minimapLabel: string;
-  onSelect: (id: string) => void;
-  onClear: () => void;
+  onSelect?: (id: string) => void;
+  onClear?: () => void;
   /** Changes when the view should fit again: the nodes drawn, or the canvas's width. */
   fitKey: string;
+  /** The node components; the left-to-right cards (`FlowNode`) unless a screen draws its own. */
+  nodeTypes?: NodeTypes;
 }) {
-  const click: NodeMouseHandler<FlowNodeType> = (_, node) => onSelect(node.id);
+  const click: NodeMouseHandler<N> = (_, node) => onSelect?.(node.id);
   // Keyboard selection (Enter on a focused node) arrives as a change, since the nodes are ours to keep.
-  const change = (changes: NodeChange<FlowNodeType>[]) => {
-    for (const item of changes) if (item.type === "select" && item.selected) onSelect(item.id);
+  const change = (changes: NodeChange<N>[]) => {
+    for (const item of changes) if (item.type === "select" && item.selected) onSelect?.(item.id);
   };
   return (
     <ReactFlow
@@ -88,7 +96,7 @@ export function GraphCanvas({
         bgColor="var(--color-card)"
         maskColor="color-mix(in oklab, var(--color-muted) 70%, transparent)"
         maskStrokeColor="var(--color-border)"
-        nodeColor={(node) => toneColour[(node as FlowNodeType).data.tone]}
+        nodeColor={(node) => toneColour[(node as TonedNode).data.tone]}
         nodeStrokeColor="transparent"
         nodeBorderRadius={6}
         style={{ width: 168, height: 112 }}

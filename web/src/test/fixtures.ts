@@ -118,6 +118,7 @@ const audiences: SchemaExpertMode["operations"] = [
   { module: "system.doctor", operation: "doctor", audience: "everyday" },
   { module: "team", operation: "show", audience: "everyday" },
   { module: "workflow", operation: "list", audience: "everyday" },
+  { module: "graph", operation: "graph", audience: "everyday" },
   { module: "workflow", operation: "graph", audience: "expert" },
   { module: "workflow", operation: "playbooks", audience: "expert" },
   { module: "workflow", operation: "discover", audience: "expert" },

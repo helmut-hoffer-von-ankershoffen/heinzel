@@ -18,6 +18,8 @@ export default defineConfig({
     modulePreload: { polyfill: false },
     assetsInlineLimit: 0,
     chunkSizeWarningLimit: 1024,
+    // The licenses of what the app bundles, served next to it: MIT and EPL-2.0 (elkjs) both ask for their notices.
+    license: { fileName: "licenses.md" },
   },
   server: api
     ? {

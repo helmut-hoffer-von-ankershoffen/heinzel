@@ -66,6 +66,7 @@ try {
     ["home", "/", "Today"],
     ["settings", "/settings", "Settings"],
     ["contracts", "/contracts", "Workflow"],
+    ["team-graph", "/graph", "Team graph"],
     ["team", "/team", "Team roster"],
     ["asset-types", "/inventory/types", "Asset types"],
   ]) {
