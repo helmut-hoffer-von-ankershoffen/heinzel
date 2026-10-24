@@ -27,7 +27,7 @@ macOS (Apple silicon or Intel) or Linux (x86_64 or arm64) with:
 
 That is all. `make setup` installs everything else into the clone, without sudo: Python and every Python tool in
 `.venv`, and the few programs that aren't Python packages (gitleaks, the GitHub CLI `gh`) pinned and checksum-verified
-in `.tools/bin` ([ADR 0034](docs/adr/0034-the-build-installs-its-own-tools.md)). `make doctor` shows what is there and
+in `.tools/bin` ([ADR 0036](docs/adr/0036-the-build-installs-its-own-tools.md)). `make doctor` shows what is there and
 prints the command that fixes anything missing. Windows: use WSL.
 
 ## Get going
@@ -114,7 +114,7 @@ Company-, team- or site-specific features belong in a plugin, not in the core ([
 `uv run hz system plugin new ../heinzel-<name>` scaffolds one with the same tooling, hooks, CI and agent setup
 (every plugin is named `heinzel-<name>`, [ADR 0025](docs/adr/0025-plugin-distributions-are-named-heinzel-name.md));
 inside it, `make setup` works as here and `make update-template` keeps it current. A small complete plugin to copy
-from: [packages/heinzel-clock](packages/heinzel-clock). Operations, modules, settings and services: [README
+from: [plugins/heinzel-clock](plugins/heinzel-clock). Operations, modules, settings and services: [README
 Extend](README.md#extend) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); with Claude Code, the skills
 `add-module` and `add-operation`.
 
