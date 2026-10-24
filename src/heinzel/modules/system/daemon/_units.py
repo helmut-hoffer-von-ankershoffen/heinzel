@@ -46,11 +46,23 @@ def systemd_paths(unit_dir: Path) -> tuple[Path, Path]:
     return unit_dir / f"{SYSTEMD_NAME}.service", unit_dir / f"{SYSTEMD_NAME}.timer"
 
 
+NOTIFIER_BUNDLE_ID = "dev.heinzel.notifier"
+"""Bundle id of Heinzel Notifier.app (notify/macos/Info.plist), whose icon and name Login Items shows."""
+
+NOTIFIER_APP = "Heinzel Notifier.app"
+"""Where the app is installed, under ~/Applications."""
+
+LOGIN_ITEM_HINT = "Install the notifier to show Heinzelmännchen with its icon in Login Items: hz system notify install"
+"""Said by `install` while the app is missing; the plist already names it, so installing it later is enough."""
+
+
 def launchd_plist(executable: Path, minutes: int, log_dir: Path) -> str:
     """The LaunchAgent: a tick at every `minutes`-minute slot, in the background, at low priority."""
     check_interval(minutes)
     agent = {
         "Label": LABEL,
+        # macOS 13+ attributes the Login Items entry to this app, so it shows its icon and name, not a bare "hz".
+        "AssociatedBundleIdentifiers": [NOTIFIER_BUNDLE_ID],
         "ProgramArguments": [str(executable), *TICK],
         "StartCalendarInterval": [{"Minute": minute} for minute in range(0, 60, minutes)],
         "ProcessType": "Background",
