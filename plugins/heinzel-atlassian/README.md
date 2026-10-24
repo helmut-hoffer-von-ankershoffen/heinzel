@@ -13,7 +13,7 @@ hz system plugin remove heinzel-atlassian
 ## Set up
 
 The plugin does only what you could do yourself: every read runs [acli](https://developer.atlassian.com/cloud/acli/),
-logged in as you ([ADR 0035](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md),
+logged in as you ([ADR 0035](../../docs/adr/0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md),
 proposed). It stores no token and needs no app an administrator registers. Install acli 1.3.39 or later
 ([guide](https://developer.atlassian.com/cloud/acli/guides/install-acli/)) and log in to both products, in the
 browser or with an API token without scopes:
