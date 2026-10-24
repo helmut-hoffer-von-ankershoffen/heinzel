@@ -1108,7 +1108,11 @@ export interface paths {
          * Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
          * @description Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
          *
-         *     Shows the version now installed.
+         *     Installed from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases
+         *     only if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`
+         *     makes. Pinned to a branch, a commit or a local source, it changes nothing and says which `--source` moves it.
+         *     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
+         *     version, the error names it and the previous version stays installed.
          *
          *     Raises:
          *         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
@@ -4957,6 +4961,47 @@ export interface components {
              */
             why: string;
         };
+        /**
+         * UpdateResult
+         * @description What `hz system update` did, or why it left the installation as it was.
+         */
+        UpdateResult: {
+            /**
+             * After
+             * @description Heinzelmännchen version installed now; the same as `before` if nothing changed.
+             */
+            after: string;
+            /**
+             * Before
+             * @description Heinzelmännchen version installed before.
+             */
+            before: string;
+            /**
+             * Latest
+             * @description Highest published release in SemVer order, when it was asked for: for an installation pinned to a release tag, a branch, a commit or a local source; none otherwise or if it couldn't be asked.
+             */
+            latest: string | null;
+            /**
+             * Message
+             * @description What happened, or what the installation is pinned to and how to move it.
+             */
+            message: string;
+            /**
+             * Next
+             * @description Commands that would move the installation, when it was left pinned.
+             */
+            next: string[];
+            /**
+             * Pinned To
+             * @description The release tag, branch, commit, path, URL or version specifier the installation is pinned to now; none if it follows a git repository's default branch or the package index without a specifier.
+             */
+            pinned_to: string | null;
+            /**
+             * Updated
+             * @description Whether Heinzelmännchen was reinstalled.
+             */
+            updated: boolean;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -5136,6 +5181,7 @@ export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
+export type SchemaUpdateResult = components['schemas']['UpdateResult'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWaiting = components['schemas']['Waiting'];
 export type SchemaWeek = components['schemas']['Week'];
@@ -6550,7 +6596,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string;
+                    "application/json": components["schemas"]["UpdateResult"];
                 };
             };
             /** @description Validation Error */

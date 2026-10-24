@@ -127,6 +127,7 @@ KERNEL = [
     "ConfigFile",
     "ConfirmedLines",
     "ContractTemplate",
+    "CorePin",
     "CredentialBackend",
     "CredentialLet",
     "Credentials",

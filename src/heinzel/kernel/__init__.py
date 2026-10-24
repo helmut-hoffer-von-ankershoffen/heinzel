@@ -32,7 +32,12 @@ from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_repo
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError
-from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation, requirement_from_receipt
+from heinzel.kernel._installation import (
+    CORE_DISTRIBUTION,
+    CorePin,
+    Installation,
+    requirement_from_receipt,
+)
 from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._layers import (
@@ -168,6 +173,7 @@ __all__ = [
     "ConfigFile",
     "ConfirmedLines",
     "ContractTemplate",
+    "CorePin",
     "CredentialBackend",
     "CredentialLet",
     "Credentials",
