@@ -5,7 +5,7 @@ import type { SchemaConfigReport, SchemaPluginInfo } from "@/api/client";
 import { config, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { toToml } from "./settingSchema";
-import { displayName, settingsNav } from "./settingsSections";
+import { displayName, inWords, settingsNav } from "./settingsSections";
 
 const plugin = (overrides: Partial<SchemaPluginInfo>): SchemaPluginInfo =>
   ({
@@ -201,7 +201,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     expect(within(dialog).getByRole("heading", { name: "Which connector serves what" })).toBeInTheDocument();
     await user.click(card);
     expect(await within(dialog).findByRole("heading", { name: "GitHub" })).toBeInTheDocument();
-    expect(within(dialog).getByLabelText("Api url")).toHaveValue("https://api.github.com");
+    expect(within(dialog).getByLabelText("API URL")).toHaveValue("https://api.github.com");
     const nav = within(dialog).getByRole("navigation", { name: "Settings" });
     expect(within(nav).getByRole("button", { name: "Connectors" })).toHaveAttribute("aria-current", "page");
   });
@@ -212,7 +212,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     renderAt("/doctor?settings=hz");
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
     await user.type(await within(dialog).findByRole("searchbox"), "api_url");
-    expect(await within(dialog).findByLabelText("Api url")).toBeInTheDocument();
+    expect(await within(dialog).findByLabelText("API URL")).toBeInTheDocument();
   });
 
   it("shows a configuration file in Finder through hz system config reveal", async () => {
@@ -355,6 +355,17 @@ describe("Installed plugins by kind", () => {
 });
 
 describe("Where settings live", () => {
+  it("keeps the capitals of acronyms in module and setting names", () => {
+    expect(displayName("ai")).toBe("AI");
+    expect(displayName("mcp")).toBe("MCP");
+    expect(displayName("cli")).toBe("CLI");
+    expect(displayName("github")).toBe("GitHub");
+    expect(displayName("ai-access")).toBe("AI access");
+    expect(inWords("ui_port")).toBe("UI port");
+    expect(inWords("api_allowed_hosts")).toBe("API allowed hosts");
+    expect(inWords("weekly_digest")).toBe("Weekly digest");
+  });
+
   it("names plugins as their authors write them", () => {
     expect(displayName("github", github.summary)).toBe("GitHub");
     expect(displayName("atlassian", "Read Jira issues")).toBe("Atlassian");
