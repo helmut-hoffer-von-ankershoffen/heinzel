@@ -1,4 +1,4 @@
-"""The MCP head: every operation becomes a tool for coding agents (Claude Code, Codex, Cursor, …).
+"""The MCP head: every operation becomes a tool for MCP clients such as coding agents (which can also use the CLI).
 
 The tool's input schema comes from the operation's parameters (`Annotated[T, Field(description=...)]`), its
 description from the docstring, its output schema from the return model, and `read_only` from the operation's flag.
