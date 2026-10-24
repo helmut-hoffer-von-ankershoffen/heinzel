@@ -109,3 +109,25 @@ def test_the_daemon_runs_a_job_asked_for_by_its_old_id(kernel):
 def test_the_kernel_knows_what_a_module_was_called(kernel):
     assert kernel.renamed("jottings") == "notes"
     assert kernel.renamed("notes") is None
+
+
+def test_getting_or_setting_an_old_key_names_the_new_one(kernel):
+    for args in (["get", "jottings.greeting"], ["set", "jottings.greeting", "Hi"]):
+        result = runner.invoke(build(kernel), ["system", "config", *args])
+        assert result.exit_code == 1
+        assert "[jottings] is now [notes]: use notes.greeting" in result.output
+
+
+def test_unsetting_an_old_key_removes_it_from_the_old_table(kernel, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    (tmp_path / "config.toml").write_text('[jottings]\ngreeting = "Moin"\n', encoding="utf-8")
+    result = runner.invoke(build(kernel), ["system", "config", "unset", "jottings.greeting"])
+    assert result.exit_code == 0, result.output
+    assert "greeting" not in (tmp_path / "config.toml").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("job", ["nothere:tidy", "tidy"])
+def test_an_unknown_job_is_still_no_job(kernel, job):
+    result = runner.invoke(build(kernel), ["system", "daemon", "tick", "--job", job])
+    assert result.exit_code == 1
+    assert f"No job {job!r}" in result.output

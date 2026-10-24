@@ -1350,3 +1350,56 @@ def test_a_forward_window_asks_the_calendar_for_the_coming_days(make_kernel, dir
     assert agenda.windows == [Window(since=NOW, until=NOW + timedelta(days=7))]
     window = packet.inputs["week"].arguments["window"]
     assert Window.model_validate(window) == Window(since=NOW, until=NOW + timedelta(days=7))
+
+
+def test_each_heinzelmaennchen_has_a_state_and_its_next_run(make, dirs):
+    me, team = dirs
+    put(me)
+    put(me, "bad", "no frontmatter")
+    put(team / "workflows", "ours")
+    listed = {f"{h.namespace}:{h.name}": h for h in make().listing().heinzelmaennchen}
+    assert {name: h.state for name, h in listed.items()} == {
+        "team:ours": "manual",  # not in schedule_team: it runs when woken
+        "me:weekly-digest": "scheduled",
+        "me:bad": "broken",
+    }
+    scheduled = listed["me:weekly-digest"]
+    assert scheduled.next_run is not None
+    assert scheduled.next_run > NOW
+    assert (scheduled.last_run, scheduled.drafts, listed["team:ours"].next_run) == (None, 0, None)
+    blocked = make(bindings={"agent_runner": "fake", "code_host": "host"}).listing().heinzelmaennchen
+    assert [(h.name, h.state, h.unmet) for h in blocked if h.name == "weekly-digest"] == [
+        ("weekly-digest", "blocked", ["tracker:read"])
+    ]
+
+
+def test_listing_filters_by_state_contract_and_artifact(make, dirs):
+    me, team = dirs
+    put(me)
+    put(team / "workflows", "ours")
+    service = make()
+    manual = service.listing(state="manual")
+    assert ([h.name for h in manual.heinzelmaennchen], manual.filtered) == (["ours"], True)
+    assert [h.name for h in service.listing(contract="me:week").heinzelmaennchen] == ["weekly-digest"]
+    by_artifact = service.listing(artifact="contract:me/weekly-digest#digest").heinzelmaennchen
+    assert [h.name for h in by_artifact] == ["weekly-digest"]
+    none = service.listing(state="blocked")
+    assert (none.heinzelmaennchen, [s.command for s in none.next]) == ([], ["hz heinzel list"])
+    assert service.listing().filtered is False
+
+
+def test_a_schedule_that_never_fires_has_no_next_run(make):
+    service = make()
+    assert service._next_run("0 0 30 2 *") is None
+    assert service._next_run("not cron") is None
+
+
+def test_doctor_names_settings_still_under_the_old_name(make, monkeypatch):
+    service = make()
+    assert service.renamed_settings(Config(files=(), data={})) == []
+    monkeypatch.setenv("HZ_WORKFLOW__MAX_USD", "1")
+    (check,) = service.renamed_settings(Config(files=(), data={"workflow": {"retention_days": 30}}))
+    assert (check.name, check.status) == ("heinzel renamed settings", Status.DEGRADED)
+    assert "workflow.retention_days, HZ_WORKFLOW__MAX_USD" in check.detail
+    assert "hz system config unset workflow.retention_days" in check.fix
+    assert "rename HZ_WORKFLOW__MAX_USD to HZ_HEINZEL__MAX_USD" in check.fix
