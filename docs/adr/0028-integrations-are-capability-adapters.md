@@ -224,7 +224,38 @@ request (director's decisions, 2026-10-24):
   bound`, an adapter that is not installed or is ambiguous, or one that lacks a mode), each binding to an adapter
   nobody provides and each `[capabilities]` key that names no capability. `hz system info` shows requester →
   capability:modes → adapter → hosts; hosts are what the adapter declares, `unknown (configured)` when its
-  configuration decides.
+  configuration decides and it doesn't say how (next bullet).
+- **Hosts that settings decide** (director's decision, 2026-10-24). An adapter whose settings decide where data goes,
+  such as a code host adapter whose `api_url` may name a self-hosted server, passes a function instead of a list:
+  `@module.provides("code-host", modes={"read"}, hosts=github_hosts)` with
+  `def github_hosts(settings: GithubSettings) -> list[str]: return [settings.api_url]`. A static list stays valid,
+  so the change is additive ([ADR 0026](0026-plugin-api-versioned-with-semver.md)); the function is stored on
+  `ProviderLet.configured_hosts`, and `ProviderLet.hosts` stays a tuple.
+  - *Why a function, not `hosts_from="<setting name>"`*: settings are already injected by type
+    ([ADR 0005](0005-dependency-injection-by-type.md)), so the function is type-checked in the plugin, says which
+    settings class it reads when a module has several, and can return more than one host (an API and an upload
+    host). A setting name is a string checked only at run time, against a class the kernel would have to guess, and
+    covers exactly one URL field.
+  - *Safe by construction, as far as declarations go*: the function may take only `ModuleSettings` subclasses
+    (checked when the module is imported) of its own module (checked when the kernel registers the adapter; a plugin
+    adapter that reads another module's settings is skipped and reported). The kernel resolves those settings itself
+    instead of calling it through the injector, so it never gets `Credentials`, services, capability handles or the
+    kernel, and has nothing to reach the network with. It must be cheap and do no I/O; like the rest of this design
+    that is review's job, not an isolation boundary.
+  - *Effective settings*: the function gets the same settings instance the adapter's factory gets, so the hosts
+    shown are where data actually goes. Whether a project `hz.toml` can steer them depends on the adapter listing
+    the field in `ignored_in_project`, which it should; then doctor names the project key, as for bindings.
+  - *Host names only*: each value may be a host name or a URL; the kernel keeps only the lowercase host name (no
+    scheme, user information, port, path or query), so a token in a URL never reaches `hz system info`. ASCII host
+    names (punycode for international ones) and IP addresses are valid; wildcards (`*.example.com`) are not. A static
+    list is held to the same rule when the module is imported.
+  - *When the matrix is built*, once per adapter and kernel (the settings it reads are resolved once per kernel too).
+    It never raises into `hz system capability list`, info or doctor: if the settings can't be read, the function
+    fails or returns something that isn't a host, or returns nothing, the hosts show as `unknown (configured)`, and
+    if the adapter is bound or serves a requirement, doctor adds a degraded `hosts of <adapter>:<capability>` check;
+    an installed adapter nobody uses sends nothing and doesn't degrade doctor. The check and the log name the
+    exception type and the position of a bad value, never the value, the exception's message or a traceback, which
+    may carry a URL with a token (pydantic's validation errors repeat the input).
 - **Not an isolation boundary.** Every module and plugin runs in the same process with the user's rights. A plugin can
   import an adapter's module and build it, reach the adapter through a handle's closures with introspection, or call
   the kernel's private modules. Handles and declarations make intent explicit and misuse visible in review, as

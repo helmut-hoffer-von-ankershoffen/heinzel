@@ -7,6 +7,7 @@ from heinzel import (
     InfoLet,
     JobLet,
     Module,
+    ModuleSettings,
     OperationLet,
     ProviderLet,
     RequirementLet,
@@ -340,6 +341,38 @@ def test_provides_records_an_adapter_named_after_the_module_by_default():
 def test_provides_refuses_unknown_capabilities_modes_and_names(capability, modes, name, problem):
     with pytest.raises(ValueError, match=problem):
         Module("acme", "x").provides(capability, modes=modes, name=name)
+
+
+class AcmeSettings(ModuleSettings):
+    api_url: str = "https://api.acme.invalid"
+
+
+def test_provides_reduces_static_urls_to_host_names():
+    module = Module("acme", "x")
+    module.provides("tracker", modes={"read"}, hosts=["https://API.acme.invalid/v3"])(object)
+    let = next(let for let in module.lets if isinstance(let, ProviderLet))
+    assert let.hosts == ("api.acme.invalid",)
+    assert let.configured_hosts is None
+
+
+def test_provides_takes_a_function_of_settings_for_hosts_configuration_decides():
+    def hosts(settings: AcmeSettings) -> list[str]:
+        return [settings.api_url]
+
+    module = Module("acme", "x")
+    module.provides("tracker", modes={"read"}, hosts=hosts)(object)
+    let = next(let for let in module.lets if isinstance(let, ProviderLet))
+    assert let.hosts == ()
+    assert let.configured_hosts is hosts
+
+
+@pytest.mark.parametrize(
+    ("hosts", "problem"),
+    [(["not a host"], "hosts must be host names"), (lambda: ["api.acme.invalid"], "takes no settings")],
+)
+def test_provides_refuses_invalid_hosts(hosts, problem):
+    with pytest.raises(ValueError, match=problem):
+        Module("acme", "x").provides("tracker", modes={"read"}, hosts=hosts)(object)
 
 
 @pytest.mark.parametrize("schedule", ["\uff10 9 * * MON", "0 9 * *", "@reboot", "0 9 * * MON extra"])

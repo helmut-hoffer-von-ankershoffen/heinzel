@@ -11,6 +11,7 @@ an adapter's instance through introspection or import the adapter's module. Hand
 visible in review, as `Credentials` does (ADR 0030); they don't stop a malicious plugin.
 """
 
+import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, cast
@@ -20,7 +21,9 @@ from pydantic import Field, model_validator
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, Capability, Mode, Requirement
 from heinzel.kernel._config import ModuleSettings
 from heinzel.kernel._errors import HeinzelError
-from heinzel.kernel._lets import ProviderLet
+from heinzel.kernel._lets import ProviderLet, host_of, settings_parameters
+
+logger = logging.getLogger(__name__)
 
 CAPABILITIES_SECTION = "capabilities"
 
@@ -118,7 +121,7 @@ class CapabilityUse:
     adapter: str | None
     """The adapter that serves it: the pinned or bound one; None if none can."""
     hosts: tuple[str, ...]
-    """Hosts that adapter declares; empty if it leaves them to its configuration, or none serves."""
+    """Hosts that adapter reaches, declared or read from its settings; empty if unknown, or none serves."""
     problem: str | None
     """Why the requirement is unmet; None when it is met."""
 
@@ -174,6 +177,7 @@ class Capabilities:
         build: Callable[[Callable[..., Any]], Any],
         unknown_keys: Iterable[str] = (),
         compiled: Callable[[], Iterable[Requester]] = list,
+        settings_of: Callable[[type[ModuleSettings]], ModuleSettings] | None = None,
     ) -> None:
         """Hold what the kernel registered.
 
@@ -185,6 +189,8 @@ class Capabilities:
             build: Calls an adapter factory with injection, e.g. `Kernel.call`.
             unknown_keys: Keys of the `[capabilities]` table that name no capability, e.g. typos.
             compiled: Requesters of jobs compiled from data (ADR 0021), asked afresh for every matrix.
+            settings_of: The effective settings of a class, e.g. `Kernel.resolve`, for hosts that settings decide;
+                such hosts are unknown without it.
         """
         self.adapters: dict[tuple[str, str], list[Adapter]] = {}
         for adapter in adapters:
@@ -195,7 +201,10 @@ class Capabilities:
         self.unknown_keys = tuple(unknown_keys)
         self._compiled = compiled
         self._build = build
+        self._settings_of = settings_of
         self._instances: dict[tuple[str, str], object] = {}
+        # By adapter, not by name: two adapters may share a name (an ambiguous binding) and differ in hosts.
+        self._hosts: dict[Adapter, tuple[tuple[str, ...], str | None]] = {}
 
     def adapter_for(self, requirement: Requirement) -> tuple[Adapter | None, str | None]:
         """The adapter that serves `requirement` (pinned or bound), and why it can't, if it can't."""
@@ -228,11 +237,48 @@ class Capabilities:
                         capability=requirement.capability,
                         modes=tuple(m for m in MODES if m in requirement.modes),
                         adapter=adapter.let.adapter if adapter else None,
-                        hosts=adapter.let.hosts if adapter else (),
+                        hosts=self.hosts_of(adapter)[0] if adapter else (),
                         problem=problem,
                     )
                 )
         return rows
+
+    def hosts_of(self, adapter: Adapter) -> tuple[tuple[str, ...], str | None]:
+        """The host names `adapter` reaches, and why they are unknown if its settings decide them and it failed.
+
+        Never raises and never repeats a setting's value: a URL may carry a token, and so may an exception's message.
+        """
+        let = adapter.let
+        if let.configured_hosts is None:
+            return let.hosts, None
+        if adapter not in self._hosts:
+            self._hosts[adapter] = self._configured_hosts(let)
+        return self._hosts[adapter]
+
+    def _configured_hosts(self, let: ProviderLet) -> tuple[tuple[str, ...], str | None]:
+        function = cast("Callable[..., Iterable[str]]", let.configured_hosts)
+        if self._settings_of is None:
+            return (), f"the hosts of {let.name} come from its settings, which nothing provides"
+        try:
+            settings = {name: self._settings_of(model) for name, model in settings_parameters(function).items()}
+            result: object = function(**settings)
+            # A plugin may return anything; a lone string is one host, not a sequence of letters.
+            values = [result] if isinstance(result, str) else list(cast("Iterable[object]", result))
+        except Exception as exc:  # noqa: BLE001 - isolate plugins: their settings or hosts never break info or doctor
+            # No traceback and no message: pydantic's and a plugin's messages may repeat a URL with a token in it,
+            # and warnings reach the terminal.
+            name = getattr(function, "__qualname__", repr(function))
+            logger.warning("Reading the hosts of adapter %s through %s failed: %s", let.name, name, type(exc).__name__)
+            return (), f"the hosts of {let.name} come from its settings, which couldn't be read ({type(exc).__name__})"
+        hosts = [host_of(value) if isinstance(value, str) else None for value in values]
+        if invalid := [str(number) for number, host in enumerate(hosts, 1) if host is None]:
+            return (), (
+                f"the hosts of {let.name} come from its settings, but value {', '.join(invalid)} of {len(hosts)} is "
+                f"not a host name or URL"
+            )
+        if not hosts:
+            return (), f"the hosts of {let.name} come from its settings, which name no host"
+        return tuple(dict.fromkeys(cast("list[str]", hosts))), None
 
     def unknown_bindings(self) -> list[tuple[str, str]]:
         """Bindings that name an adapter no installed module provides, as (capability, adapter)."""
@@ -354,6 +400,10 @@ class CapabilityView:
     def bound(self, capability: str) -> str | None:
         """The adapter bound to `capability`, or None."""
         return self._capabilities.settings.bound(capability)
+
+    def hosts(self, adapter: Adapter) -> tuple[tuple[str, ...], str | None]:
+        """The host names `adapter` reaches, and why they are unknown when its settings decide them and that failed."""
+        return self._capabilities.hosts_of(adapter)
 
     def matrix(self) -> list[CapabilityUse]:
         """Who needs what, in which modes, through which adapter and hosts, and what is unmet."""
