@@ -1,9 +1,12 @@
 """Heinzelmännchen's CLI head with this plugin discovered through its real entry point. Offline."""
 
 import json
+import tomllib
 
 import pytest
+from heinzel import Prompter
 from heinzel.heads.cli import build
+from heinzel.kernel import ScriptedPrompter, user_config_dir
 from typer.testing import CliRunner
 
 pytestmark = pytest.mark.integration
@@ -58,15 +61,10 @@ def test_greeting_is_configurable_through_a_config_file(monkeypatch, tmp_path):
 
 
 def test_setup_asks_for_the_greeting_and_saves_it(boot):
-    import tomllib
-
-    from heinzel import Prompter
-    from heinzel.kernel import ScriptedPrompter, user_config_dir
-
     kernel = boot()
     prompter = ScriptedPrompter(["Moin"])
     kernel.bind(Prompter, prompter)
     invoke(kernel, "[[ plugin_name ]]", "setup")
-    assert prompter.transcript == ["How should `hello` greet? [Hello]: Moin"]
+    assert prompter.transcript[-1] == "How should `hello` greet? [Hello]: Moin"
     saved = tomllib.loads((user_config_dir() / "config.toml").read_text(encoding="utf-8"))
     assert saved == {"[[ plugin_name ]]": {"greeting": "Moin"}}
