@@ -8,6 +8,9 @@ def test_clock(hz):
     assert times[0]["zone"] == "Europe/Berlin"
 ```
 
+Every test sees the terminal CI has: 80 columns and no colour, whatever the developer's terminal and `FORCE_COLOR`
+say (`pin_terminal`), so output that depends on either fails locally too.
+
 Every test runs with its own configuration, data, cache, state, log and daemon unit directories, so nothing touches
 the developer's setup, and credentials come from the (empty) environment instead of the OS keychain. A test that
 stores credentials asks for `hz_credentials`, which keeps them in memory.
@@ -19,7 +22,7 @@ run in that order, and each test has its level's timeout (`TIMEOUTS`) unless it 
 
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -43,6 +46,10 @@ ISOLATED = (
     "XDG_CONFIG_HOME",
 )
 
+TERMINAL_WIDTH = "80"
+UNCOLOURED = ("FORCE_COLOR", "NO_COLOR", "PY_COLORS", "CLICOLOR_FORCE")
+"""Variables that switch colour on or off; unset, so output is plain whether or not the CI sets one."""
+
 OWN_DIRECTORIES = (
     "HZ_CONFIG_HOME",
     "HZ_DATA_DIR",
@@ -65,6 +72,25 @@ class Result:
     def json(self) -> Any:  # noqa: ANN401 - whatever the command printed
         """The output parsed as JSON (the command must have run with `--json`, which `hz(...)` adds)."""
         return json.loads(self.output)
+
+
+def pin_terminal(environ: MutableMapping[str, str]) -> None:
+    """Make terminal width and colour the same everywhere: 80 columns, no colour, no matter where tests run.
+
+    Typer reads `TERMINAL_WIDTH` and `_TYPER_FORCE_DISABLE_TERMINAL` once, when it is imported; Rich reads `COLUMNS`
+    and the colour variables when it prints. So this runs before any test module is imported (`pytest_configure`) and
+    again for every test.
+    """
+    for name in UNCOLOURED:
+        environ.pop(name, None)
+    environ["COLUMNS"] = TERMINAL_WIDTH
+    environ["TERMINAL_WIDTH"] = TERMINAL_WIDTH
+    environ["_TYPER_FORCE_DISABLE_TERMINAL"] = "1"
+
+
+def pytest_configure(config: pytest.Config) -> None:  # noqa: ARG001 - the hook's signature
+    """Pin the terminal before Typer is imported by any test module (see `pin_terminal`)."""
+    pin_terminal(os.environ)
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -100,6 +126,9 @@ def hz_isolation(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempP
     for name in OWN_DIRECTORIES:
         monkeypatch.setenv(name, str(tmp_path_factory.mktemp(name.lower())))
     isolate_credentials(monkeypatch)
+    for name in (*UNCOLOURED, "COLUMNS", "TERMINAL_WIDTH"):
+        monkeypatch.delenv(name, raising=False)  # registers the restore; a test may change them
+    pin_terminal(os.environ)
 
 
 def isolate_credentials(monkeypatch: pytest.MonkeyPatch) -> None:

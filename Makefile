@@ -44,7 +44,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	$(STEPS) $(GATE) $(LINT) $(TYPES) \
 		"&tests=uv run coverage run -m pytest -m 'unit or integration' -x -q --session-timeout=300 && uv run coverage report --format=total --fail-under=90" \
-		"&template=bash scripts/template-test.sh" \
+		"&template=TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" \
 		"&build=uv build --all-packages --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
 		"&commits=$(MAKE) --no-print-directory commits"
 	@if [ "$(PREFLIGHT)" = full ]; then $(MAKE) --no-print-directory audit test-e2e; fi
@@ -103,8 +103,8 @@ audit: ## Audit runtime dependencies: known vulnerabilities (pip-audit) and lice
 licenses: ## Check that runtime dependencies' licenses are on .license-allowlist, so releases stay MIT-compatible
 	bash scripts/check_licenses.sh
 
-template-test: ## Render the plugin template and run its checks against this checkout (KEEP=dir keeps it)
-	bash scripts/template-test.sh $(KEEP)
+template-test: ## Render the plugin template and run its checks against this checkout (KEEP=dir keeps it; AUDIT=1 adds make audit, which needs network)
+	TEMPLATE_AUDIT=$(AUDIT) bash scripts/template-test.sh $(KEEP)
 
 docs: ## Regenerate docs/CLI_REFERENCE.md from the code
 	uv run python scripts/generate_docs.py
