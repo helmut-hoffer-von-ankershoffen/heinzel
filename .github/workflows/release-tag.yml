@@ -6,6 +6,7 @@ name: Release tag
 on:
   push:
     branches: [main]
+  workflow_dispatch: # fallback if a merge made with the GitHub token doesn't trigger the push event
 
 permissions: {}
 
@@ -16,7 +17,7 @@ concurrency:
 jobs:
   tag:
     name: Tag the release
-    if: "startsWith(github.event.head_commit.message, 'chore(release): v')"
+    if: "github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'chore(release): v')"
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -35,6 +36,7 @@ jobs:
           MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           tag="v$(uv version --short)"
+          MESSAGE="${MESSAGE:-$(git log -1 --format=%B)}" # dispatched by hand: the commit checked out
           # Only a real release commit for the current version tags; anything else titled like one is ignored.
           if [[ "$MESSAGE" != "chore(release): $tag"* ]] || git ls-remote --exit-code --tags origin "$tag" >/dev/null; then
             echo "Not a release of $tag, or already tagged; nothing to do."

@@ -53,7 +53,8 @@ The modules live in `src/[[ package_name ]]/`. Read [AGENTS.md](AGENTS.md) and
 
 ## Release
 
-Actions → **Release** → Run workflow opens a release pull request; merging it tags and publishes. The version comes
+`make release` (or Actions → **Prepare release** → Run workflow) opens a release pull request on GitHub that merges itself
+once CI is green; merging tags and publishes. The version comes
 from conventional commits, the changelog from git-cliff; the GitHub release carries the wheel, the sdist and
 provenance attestations. `main` changes only through pull requests.
 
