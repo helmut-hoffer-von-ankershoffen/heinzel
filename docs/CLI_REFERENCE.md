@@ -20,6 +20,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `atlassian`: Read Jira issues and Confluence pages...
 * `clock`: Show the time in each of the team&#x27;s time...
 * `github`: Read pull requests and issues from GitHub:...
+* `google`: Read Google Docs, Sheets, Drive and...
 * `org`: Your profile, and the team, org and...
 * `setup`: Set up every module that has a setup step,...
 * `system`: Inspect, configure, diagnose and update...
@@ -126,6 +127,74 @@ $ hz github info [OPTIONS]
 
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz google`
+
+Read Google Docs, Sheets, Drive and Calendar: the documents and calendar capabilities.
+
+**Usage**:
+
+```console
+$ hz google [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `files`: List the Google Docs and Sheets you can...
+* `info`: Show this plugin&#x27;s version, the...
+* `setup`: Find the Google Workspace CLI, sign it in...
+
+### `hz google files`
+
+List the Google Docs and Sheets you can open that changed recently, newest first.
+
+**Usage**:
+
+```console
+$ hz google files [OPTIONS]
+```
+
+**Options**:
+
+* `--days <int>`: How many days back to look for changes, 1 to 366.  [default: 7]
+* `--name <str>`: Only files whose name contains this text; all Docs and Sheets when not given.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz google info`
+
+Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the gws, scopes and APIs it uses.
+
+**Usage**:
+
+```console
+$ hz google info [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz google setup`
+
+Find the Google Workspace CLI, sign it in with read-only access and read documents and calendar from Google.
+
+**Usage**:
+
+```console
+$ hz google setup [OPTIONS]
+```
+
+**Options**:
+
 * `--help`: Show this message and exit.
 
 ## `hz org`

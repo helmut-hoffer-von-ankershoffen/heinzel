@@ -9,6 +9,7 @@ modules; `hz system modules` lists what is installed.
 | [`atlassian`](#atlassian) | Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. |
 | [`clock`](#clock) | What time it is for everyone on the team. |
 | [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
+| [`google`](#google) | Read Google Docs, Sheets, Drive and Calendar: the documents and calendar capabilities. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
@@ -65,6 +66,23 @@ First-party plugin `heinzel-github`: `hz system plugin add github`.
 Settings: [`[github]`](CONFIGURATION.md#github).
 
 Health checks: reported by `hz system doctor`.
+
+## `google`
+
+Read Google Docs, Sheets, Drive and Calendar: the documents and calendar capabilities.
+
+First-party plugin `heinzel-google`: `hz system plugin add google`.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| Show this plugin's version, the Heinzelmännchen it runs on and the gws, scopes and APIs it uses. | `hz google info` | `google_info` | `GET /google/info` |  |
+| List the Google Docs and Sheets you can open that changed recently, newest first. | `hz google files` | `google_files` | `GET /google/files` |  |
+
+Settings: [`[google]`](CONFIGURATION.md#google).
+
+Health checks: reported by `hz system doctor`.
+
+Setup: `hz google setup` (optional), also part of `hz setup`.
 
 ## `org`
 

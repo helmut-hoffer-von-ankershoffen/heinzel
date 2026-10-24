@@ -210,6 +210,7 @@ def test_plugin_search_lists_first_party_and_community_plugins(app, monkeypatch)
         ("heinzel-atlassian", "first-party", False, "atlassian"),
         ("heinzel-clock", "first-party", False, "clock"),
         ("heinzel-github", "first-party", False, "github"),
+        ("heinzel-google", "first-party", False, "google"),
         ("heinzel-crm", "github", True, "git+https://github.com/someone/heinzel-crm"),
     ]
     assert found["warnings"] == []
@@ -230,7 +231,12 @@ def test_plugin_search_offline_shows_first_party_plugins_and_a_warning(app, monk
     result = runner.invoke(app, ["system", "plugin", "search", "--json"])
     assert result.exit_code == 0, result.output
     found = json.loads(result.output)
-    assert [p["name"] for p in found["plugins"]] == ["heinzel-atlassian", "heinzel-clock", "heinzel-github"]
+    assert [p["name"] for p in found["plugins"]] == [
+        "heinzel-atlassian",
+        "heinzel-clock",
+        "heinzel-github",
+        "heinzel-google",
+    ]
     assert found["warnings"] == [
         "GitHub could not be searched (network is unreachable); showing first-party plugins only."
     ]

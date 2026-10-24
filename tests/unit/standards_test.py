@@ -15,6 +15,7 @@ from typing import get_origin
 import heinzel_atlassian
 import heinzel_clock
 import heinzel_github
+import heinzel_google
 import pytest
 from packaging.requirements import Requirement
 
@@ -202,7 +203,11 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
     """A variable nothing reads isolates nothing: settings (`HZ_<FIELD>`, `HZ_<MODULE>__<FIELD>`) and the variables
     code reads by name (HZ_CONFIG, HZ_CONFIG_HOME, HZ_SOURCE in install.sh, HZ_SPEC in the template's e2e test)."""
     kernel = make_kernel(
-        builtins=True, atlassian=heinzel_atlassian.module, clock=heinzel_clock.module, github=heinzel_github.module
+        builtins=True,
+        atlassian=heinzel_atlassian.module,
+        clock=heinzel_clock.module,
+        github=heinzel_github.module,
+        google=heinzel_google.module,
     )
     known = {
         f"{env_prefix(section)}{key.upper()}"
@@ -357,6 +362,7 @@ def test_injected_parameters_come_first(make_kernel):
                 atlassian=heinzel_atlassian.module,
                 clock=heinzel_clock.module,
                 github=heinzel_github.module,
+                google=heinzel_google.module,
             )
         )
         == []
