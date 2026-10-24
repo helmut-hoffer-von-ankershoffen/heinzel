@@ -106,6 +106,11 @@ def test_notes_are_third_party_text_without_controls_or_invisible_characters(git
     assert notes.notes == "a[31mred]52;c;AAAAevilx\nnext!"
 
 
+def test_a_run_of_variation_selectors_keeps_only_the_first():
+    selectors = "".join(map(chr, (0xFE0F, 0xFE01, 0xFE02, 0xE0100, 0xE01EF)))
+    assert clean(f"{chr(0xFE00)}a{selectors}b{chr(0xE0101)}") == f"a{chr(0xFE0F)}b"
+
+
 def test_clean_keeps_tabs_line_feeds_and_emoji():
     family = f"x{ZWJ}y"
     assert clean(f"\ttab\nline{chr(0x061C)}\r{family}") == f"\ttab\nline\n{family}"
@@ -117,6 +122,7 @@ def test_clean_keeps_tabs_line_feeds_and_emoji():
         f"https://github.com/org/heinzel/releases/tag/v2.0.0{RLO}",
         "https://github.com/someone-else/heinzel/releases/tag/v2.0.0",
         "https://github.com/org/heinzel/releases/tag/v2.0.0/../../../evil",
+        "https://github.com/org/hein" + chr(0x212A) + "el/releases/tag/v2.0.0",
         None,
     ],
 )

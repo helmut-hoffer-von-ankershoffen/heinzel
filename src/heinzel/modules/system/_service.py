@@ -33,6 +33,9 @@ CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]")
 """Control characters but tab and line feed, and the Unicode line and paragraph separators."""
 ZERO_WIDTH_JOINER = "\u200d"
 """The one invisible format character kept: emoji are built with it."""
+VARIATION_SELECTORS = re.compile(r"[\U000e0100-\U000e01ef]|(?<=[\ufe00-\ufe0f])[\ufe00-\ufe0f]+|^[\ufe00-\ufe0f]+")
+"""Supplementary variation selectors, and the basic ones but the first after a character (emoji need U+FE0F): a run of
+them after one visible character can carry a payload a reader can't see."""
 _TAG = re.compile(r"[A-Za-z0-9._+-]+")
 
 
@@ -40,10 +43,12 @@ def clean(text: str) -> str:
     """Third-party text without control or invisible format characters, with line feeds for line breaks.
 
     Format characters (Unicode category Cf) are bidirectional controls, zero-width characters and tag characters: they
-    make text show something other than it says, or hide text a reader can't see but a model reads.
+    make text show something other than it says, or hide text a reader can't see but a model reads. So can a run of
+    variation selectors, which keeps at most one.
     """
     text = CONTROLS.sub("", text.replace("\r\n", "\n").replace("\r", "\n"))
-    return "".join(c for c in text if c == ZERO_WIDTH_JOINER or unicodedata.category(c) != "Cf")
+    text = "".join(c for c in text if c == ZERO_WIDTH_JOINER or unicodedata.category(c) != "Cf")
+    return VARIATION_SELECTORS.sub("", text)
 
 
 def repository_of(requirement: str | None) -> str:
@@ -132,7 +137,9 @@ class GitHubReleases(ReleaseSource):
 def _release_page(url: object, repository: str) -> str | None:
     """`url` if it is a release page of `repository` on github.com, character by character; None otherwise."""
     prefix = f"https://github.com/{repository}/releases/tag/"
-    if isinstance(url, str) and url.lower().startswith(prefix.lower()) and _TAG.fullmatch(url[len(prefix) :]):
+    if not isinstance(url, str) or not url.isascii():
+        return None
+    if url.lower().startswith(prefix.lower()) and _TAG.fullmatch(url[len(prefix) :]):
         return url
     return None
 
