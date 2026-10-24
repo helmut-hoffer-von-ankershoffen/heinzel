@@ -53,7 +53,10 @@ Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
 [dependency-groups]
 # What the unit, integration and e2e tests need, and no more: CI installs only this group for the test matrix.
 test = [
-    "heinzel-clock>=0.2.0", # the workspace member; the release process bumps the bound
+    # The first-party plugins (workspace members), so their tests run in this suite; the release process bumps the
+    # bounds. Test-only: `hz system plugin add <name>` installs them for users, nothing installs them by default.
+    "heinzel-clock>=0.2.0",
+    "heinzel-slack>=0.2.0",
     "coverage>=7.12",
     "httpx>=0.28",
     "hypothesis>=6.140",
@@ -101,11 +104,12 @@ required-version = ">=0.13.0"
 
 # First-party plugins (ADR 0017): separate distributions in packages/, developed and released with the core.
 [tool.uv.workspace]
-members = ["packages/*"]
+members = ["packages/*", "plugins/*"]
 
 [tool.uv.sources]
 heinzel = { workspace = true }
 heinzel-clock = { workspace = true }
+heinzel-slack = { workspace = true }
 
 [tool.ruff]
 line-length = 120
@@ -172,11 +176,11 @@ docstring-code-format = true
 
 [tool.mypy]
 strict = true
-mypy_path = ["src", "packages/heinzel-clock/src"]
+mypy_path = ["src", "packages/heinzel-clock/src", "plugins/heinzel-slack/src"]
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 plugins = ["pydantic.mypy"]
-files = ["src", "packages/*/src"]
+files = ["src", "packages/*/src", "plugins/*/src"]
 
 [[tool.mypy.overrides]]
 module = ["atheris"] # no type information; installed only for `make fuzz` on Linux
@@ -190,7 +194,7 @@ warn_required_dynamic_aliases = true
 [tool.pytest]
 minversion = "9.0"
 strict = true
-testpaths = ["tests", "packages"]
+testpaths = ["tests", "packages", "plugins"]
 norecursedirs = ["tests/fixtures", ".hypothesis"]
 addopts = ["-ra", "--import-mode=importlib"]
 filterwarnings = ["error"]
@@ -207,7 +211,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["heinzel", "heinzel_clock"]
+source = ["heinzel", "heinzel_clock", "heinzel_slack"]
 branch = true
 relative_files = true
 
@@ -228,7 +232,7 @@ allowed_prefixes = ["Merge", "Revert", "Pull request", "fixup!", "squash!", "ame
 
 [tool.commitizen.customize]
 schema = "<type>(<scope>)!: <summary of at most 72 characters>\n\n<body: why>\n\n<footers>"
-schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|workflow|plugin|template|ci|docs|adr|agents|dx|security|release|deps)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
+schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|workflow|plugin|template|ci|docs|adr|agents|dx|security|release|deps|clock|slack)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
 example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
@@ -258,6 +262,21 @@ replace = "\"heinzel>={new_version}\""
 filename = "pyproject.toml"
 search = "\"heinzel-clock>={current_version}\""
 replace = "\"heinzel-clock>={new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "plugins/heinzel-slack/pyproject.toml"
+search = "name = \"heinzel-slack\"\nversion = \"{current_version}\""
+replace = "name = \"heinzel-slack\"\nversion = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "plugins/heinzel-slack/pyproject.toml"
+search = "\"heinzel>={current_version}\""
+replace = "\"heinzel>={new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = "\"heinzel-slack>={current_version}\""
+replace = "\"heinzel-slack>={new_version}\""
 
 [[tool.bumpversion.files]]
 filename = "agent-skills/.claude-plugin/plugin.json"
@@ -328,7 +347,7 @@ protect_breaking_commits = true
 tag_pattern = "v[0-9].*"
 
 [tool.pyright]
-include = ["src", "packages/*/src"]
+include = ["src", "packages/*/src", "plugins/*/src"]
 typeCheckingMode = "strict"
 pythonVersion = "3.12"
 venvPath = "."
@@ -340,13 +359,13 @@ Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-cont
 intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
 
 [tool.importlinter]
-root_packages = ["heinzel", "heinzel_clock"]
+root_packages = ["heinzel", "heinzel_clock", "heinzel_slack"]
 include_external_packages = true # so contracts can forbid a head's toolkit
 
 [[tool.importlinter.contracts]]
 name = "Modules never import a head's toolkit: they return results, heads present them"
 type = "forbidden"
-source_modules = ["heinzel.modules", "heinzel_clock"]
+source_modules = ["heinzel.modules", "heinzel_clock", "heinzel_slack"]
 forbidden_modules = ["typer", "fastapi", "mcp", "uvicorn"]
 
 [[tool.importlinter.contracts]]
@@ -402,9 +421,20 @@ allow_indirect_imports = true # going through heinzel.kernel's public API is the
 [[tool.importlinter.contracts]]
 name = "First-party plugins use only the public API, like any plugin"
 type = "forbidden"
-source_modules = ["heinzel_clock"]
+source_modules = ["heinzel_clock", "heinzel_slack"]
 forbidden_modules = ["heinzel.heads", "heinzel.modules", "heinzel.kernel._boot", "heinzel.kernel._kernel", "heinzel.kernel._module"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "First-party plugins are independent of each other, like separate repositories"
+type = "independence"
+modules = ["heinzel_clock", "heinzel_slack"]
+
+[[tool.importlinter.contracts]]
+name = "The core imports no plugin: first-party plugins are installed on request, never by default (ADR 0017, 0028)"
+type = "forbidden"
+source_modules = ["heinzel"]
+forbidden_modules = ["heinzel_clock", "heinzel_slack"]
 
 [[tool.importlinter.contracts]]
 name = "Heads only know what the kernel discovered"

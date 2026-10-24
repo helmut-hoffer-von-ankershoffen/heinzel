@@ -1,0 +1,15 @@
+[project]
+name = "heinzel-slack"
+version = "0.2.0"
+description = "Read and post Slack channel messages: the chat capability."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = ["heinzel>=0.2.0"] # released together; the release process bumps the bound
+
+[project.entry-points."heinzel.modules"]
+slack = "heinzel_slack"
+
+[build-system]
+requires = ["hatchling>=1.29.0"]
+build-backend = "hatchling.build"
