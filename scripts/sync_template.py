@@ -21,10 +21,10 @@ PYPROJECT_HEAD = ROOT / "scripts" / "template_pyproject_head.toml.tmpl"
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
-    text = text.replace(" template-test template-sync docs", "")
+    text = text.replace(" template-test template-sync docs fuzz", "")
     text = text.replace(" release clean\n", " release clean update-template\n", 1)
     text = text.replace(" (KEEP=dir keeps it)", "")
-    text = re.sub(r"\n(template-test|template-sync|docs):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n(template-test|template-sync|docs|fuzz):.*?\n(?:\t.*\n)+", "\n", text)
     # Steps only Heinzelmännchen has: import contracts, the template and generated docs (never a target's last step).
     text = re.sub(r'\n\t\t"&?(contracts|template|docs)=[^\n]*', "", text)
     text = text.replace("uv build --all-packages", "uv build")
@@ -62,6 +62,8 @@ def pyproject() -> str:
     # Only Heinzelmännchen itself needs these: the template renderer, its import contracts, its first-party plugin and
     # the type stubs of its own dependencies.
     dev = re.sub(r'\n    "(copier|import-linter|heinzel-clock|types-croniter)[^\n]*', "", dev)
+    # Fuzzing targets Heinzelmännchen's contract parser (fuzz/).
+    dev = re.sub(r"\n# Fuzzing[^\n]*\nfuzz = [^\n]*", "", dev)
     # The Heinzelmännchen the plugin is developed against: a direct URL in the test group, never in
     # [tool.uv.sources], because uv applies a plugin's sources when `hz system plugin add` installs it from a path or
     # git and would fetch this Heinzelmännchen then.
@@ -71,6 +73,8 @@ def pyproject() -> str:
     )
     tools = source[source.index("[tool.ruff]") :]
     tools = re.sub(r'\nextend-exclude = \["template"\][^\n]*', "", tools)
+    tools = re.sub(r'\n"fuzz/\*\.py" = \[\n[^\]]*\]', "", tools)
+    tools = re.sub(r'\n\[\[tool\.mypy\.overrides\]\]\nmodule = \["atheris"\][^\n]*\n[^\n]*\n', "", tools)
     tools = re.sub(r"\n\[tool\.importlinter\].*?(?=\n\[tool\.(?!importlinter)|\Z)", "\n", tools, flags=re.DOTALL)
     tools = tools.replace('source = ["heinzel", "heinzel_clock"]', 'source = ["[[ package_name ]]"]')
     # The workspace (packages/) exists only here.

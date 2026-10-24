@@ -10,6 +10,7 @@ coverage.xml
 htmlcov/
 reports/
 .pytest_cache/
+.hypothesis/
 .mypy_cache/
 .ruff_cache/
 .DS_Store

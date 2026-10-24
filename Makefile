@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses template-test template-sync docs build changelog ci-logs pr sync release clean
+.PHONY: help install setup check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses template-test template-sync docs fuzz build changelog ci-logs pr sync release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -108,6 +108,9 @@ template-test: ## Render the plugin template and run its checks against this che
 
 docs: ## Regenerate docs/CLI_REFERENCE.md from the code
 	uv run python scripts/generate_docs.py
+
+fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; Linux, Python 3.12 to 3.14)
+	uv run --group fuzz python fuzz/contract_fuzz.py -max_total_time=$(or $(FUZZ_SECONDS),60) -timeout=10
 
 template-sync: ## Regenerate the template's Makefile, CI workflow and pyproject from Heinzelmännchen's
 	uv run --script scripts/sync_template.py

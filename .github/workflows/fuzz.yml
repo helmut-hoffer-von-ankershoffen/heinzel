@@ -1,0 +1,30 @@
+name: Fuzz
+
+# Fuzz the workflow contract parser with atheris (fuzz/), weekly and when the parser or a target changes.
+# Contract files are untrusted data (ADR 0021); every test run checks the same properties briefly with hypothesis.
+
+on:
+  pull_request:
+    paths: ["src/heinzel/modules/workflow/**", "fuzz/**", ".github/workflows/fuzz.yml"]
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  fuzz:
+    name: Fuzz the contract parser
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      UV_FROZEN: "1"
+      UV_PYTHON: "3.14" # atheris has Linux wheels for 3.12 to 3.14
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - run: make fuzz FUZZ_SECONDS=300
