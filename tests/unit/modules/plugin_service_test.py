@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-=======
-import io
 import os
->>>>>>> e58493d (fix(system): harden credential storage after security review)
 import subprocess
 import sys
 import urllib.error

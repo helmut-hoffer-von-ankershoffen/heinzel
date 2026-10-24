@@ -14,12 +14,8 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
 from heinzel import HeinzelError, Kernel, __version__
-<<<<<<< HEAD
-from heinzel.kernel import CORE_DISTRIBUTION, Installation
-from heinzel.modules.system._github import get_json
-=======
 from heinzel.kernel import CORE_DISTRIBUTION, Installation, subprocess_environment
->>>>>>> e58493d (fix(system): harden credential storage after security review)
+from heinzel.modules.system._github import get_json
 from heinzel.modules.system.plugin._models import AvailablePlugin, PluginInfo, PluginSearch, PluginSettings
 
 TEMPLATE = "gh:helmut-hoffer-von-ankershoffen/heinzel"
