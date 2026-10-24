@@ -2,6 +2,7 @@
 // header and the token must never be in a URL. Reconnects with a growing delay; stops when its signal aborts.
 import type { SchemaNotice } from "@/api/client";
 import { token } from "@/api/token";
+import { splash, unreachableError } from "@/splash/store";
 
 export type StreamEvent = { event: "notice"; notice: SchemaNotice } | { event: "changed"; latest: string | null };
 
@@ -52,6 +53,7 @@ export async function follow(
       const headers = { Accept: "text/event-stream", ...(value ? { Authorization: `Bearer ${value}` } : {}) };
       const response = await globalThis.fetch(new Request(url, { headers, signal, cache: "no-store" }));
       if (response.status === 401 || response.status === 403) return; // a stale token: the screens say what to do
+      if (unreachableError({ status: response.status })) splash.send({ type: "suspect" }); // a proxy without hz
       if (response.ok && response.body) {
         delay = 1_000;
         const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -66,6 +68,7 @@ export async function follow(
       }
     } catch {
       if (signal.aborted) return;
+      splash.send({ type: "suspect" }); // the stream broke: hz may be gone, and the splash checks
     }
     await wait(delay);
     delay = Math.min(delay * 2, MAX_DELAY);

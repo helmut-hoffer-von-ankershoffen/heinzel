@@ -1,5 +1,10 @@
 """The web head (ADR 0039): the app at `/`, the API at `/api` behind a session token, all under a strict CSP."""
 
+import base64
+import hashlib
+import re
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,6 +14,7 @@ from heinzel.heads._exposure import exposed
 
 pytestmark = pytest.mark.integration
 
+REPO = Path(__file__).resolve().parents[2]
 TOKEN = "s3ssion-token-for-tests"
 BASE = "http://127.0.0.1:8000"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -100,11 +106,44 @@ def test_every_response_carries_the_csp_and_the_other_security_headers(client):
         assert response.headers["X-Frame-Options"] == "DENY"
         assert response.headers["Cross-Origin-Opener-Policy"] == "same-origin"
     assert "default-src 'none'" in web.CSP
-    # Inline styles only, for the terminal (ADR 0045); scripts stay this origin's.
-    assert "script-src 'self';" in web.CSP
+    # Inline styles only, for the terminal (ADR 0045) and the splash; scripts stay this origin's and the splash's hash.
+    assert f"script-src 'self' {web.SPLASH_SCRIPT};" in web.CSP
     assert "style-src 'self' 'unsafe-inline';" in web.CSP
     assert web.CSP.count("unsafe-inline") == 1
     assert "unsafe-eval" not in web.CSP
+
+
+INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", flags=re.DOTALL)
+"""Every script element without a `src`: an inline script, whatever its attributes."""
+
+
+def script_hash(source: str) -> str:
+    """A script's CSP source: `'sha256-<base64>'` of its exact text."""
+    return f"'sha256-{base64.b64encode(hashlib.sha256(source.encode()).digest()).decode()}'"
+
+
+def script_sources(csp: str) -> list[str]:
+    directive = next(part.strip() for part in csp.split(";") if part.strip().startswith("script-src "))
+    return directive.split()[1:]
+
+
+def test_the_csp_allows_the_splash_script_by_its_hash_and_no_other_inline_script():
+    page = (REPO / "web" / "index.html").read_text(encoding="utf-8")
+    inline = INLINE_SCRIPT.findall(page)
+    assert len(inline) == 1, "web/index.html has one inline script, the splash's"
+    assert script_hash(inline[0]) == web.SPLASH_SCRIPT, f"update SPLASH_SCRIPT to {script_hash(inline[0])}"
+    assert script_sources(web.CSP) == ["'self'", web.SPLASH_SCRIPT]
+    for other in ("alert(1)", inline[0] + " ", inline[0].replace("hz.splash", "hz.other")):
+        assert script_hash(other) not in web.CSP
+    assert not any(source in web.CSP for source in ("'unsafe-hashes'", "'strict-dynamic'", "'nonce-"))
+
+
+def test_the_built_page_keeps_the_splash_script_as_written():
+    built = web.STATIC / "index.html"
+    if not built.is_file():
+        pytest.skip("the web app isn't built (make web-build)")
+    inline = INLINE_SCRIPT.findall(built.read_text(encoding="utf-8"))
+    assert [script_hash(source) for source in inline] == [web.SPLASH_SCRIPT], "the build is stale: make web-build"
 
 
 def test_caching_api_answers_never_and_hashed_assets_forever(client):
