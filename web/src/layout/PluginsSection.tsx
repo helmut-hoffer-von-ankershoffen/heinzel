@@ -198,9 +198,22 @@ function CandidateDetails({ candidate }: { candidate: SchemaPluginCandidate }) {
   );
 }
 
-export function PluginsSection({ reload, restartInterval }: { reload?: () => void; restartInterval?: number } = {}) {
-  const [tab, setTab] = useState<"yours" | "discover">("yours");
-  const [query, setQuery] = useState("");
+type SectionProps = {
+  reload?: () => void;
+  restartInterval?: number;
+  /** Where it opens: a connector row's "Find one" opens Discover, searching for the capability. */
+  initialTab?: "yours" | "discover";
+  initialQuery?: string;
+};
+
+export function PluginsSection({
+  reload,
+  restartInterval,
+  initialTab = "yours",
+  initialQuery = "",
+}: SectionProps = {}) {
+  const [tab, setTab] = useState<"yours" | "discover">(initialTab);
+  const [query, setQuery] = useState(initialQuery);
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);

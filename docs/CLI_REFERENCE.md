@@ -1325,6 +1325,7 @@ $ hz system connector [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `list`: (expert) List connectors with their...
+* `status`: (expert) List connectors with their state,...
 * `test`: (expert) Test a connector live: one cheap...
 
 #### `hz system connector list`
@@ -1335,6 +1336,22 @@ $ hz system connector [OPTIONS] COMMAND [ARGS]...
 
 ```console
 $ hz system connector list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system connector status`
+
+(expert) List connectors with their state, what they serve and their tools, without accounts; offline.
+
+**Usage**:
+
+```console
+$ hz system connector status [OPTIONS]
 ```
 
 **Options**:

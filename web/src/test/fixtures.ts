@@ -1,6 +1,9 @@
 // Made-up answers of the API, shaped by the generated schema so they drift with it.
 import type {
+  SchemaCapabilityChoice,
   SchemaConfigReport,
+  SchemaConnector,
+  SchemaConnectorReport,
   SchemaContractGraph,
   SchemaExpertMode,
   SchemaHealthReport,
@@ -242,3 +245,70 @@ export const themeList = (selected: string, themes: SchemaThemeView[] = [theme()
     note: null,
     next: [],
   }) as unknown as SchemaThemeList;
+
+/** A connector as `hz system connector list` reports it: GitHub, signed in as ada, serving code-host but not tracker. */
+export const connector = (overrides: Partial<SchemaConnector> = {}): SchemaConnector => ({
+  name: "github",
+  title: "GitHub",
+  summary: "Read pull requests and issues from GitHub.",
+  distribution: "heinzel-github",
+  builtin: false,
+  state: "connected",
+  login: { signed_in: true, account: "ada", site: "github.com", command: "gh auth login --hostname github.com" },
+  capabilities: [
+    { capability: "code-host", title: "Code host", adapter: "github", modes: ["read"], used: true, bound: "github", how: "automatic" },
+    { capability: "tracker", title: "Tracker", adapter: "github", modes: ["read"], used: false, bound: null, how: "unbound" },
+  ],
+  tools: [
+    { capability: "code-host", method: "merged_pull_requests", mode: "read", summary: "Pull requests merged in a window." },
+    { capability: "tracker", method: "issues_updated", mode: "read", summary: "Issues updated in a window." },
+  ],
+  checks: [],
+  connect: ["gh auth login --hostname github.com"],
+  bind: ["hz system config set capabilities.tracker github"],
+  testable: true,
+  ...overrides,
+});
+
+export const choice = (overrides: Partial<SchemaCapabilityChoice> = {}): SchemaCapabilityChoice => ({
+  capability: "code-host",
+  title: "Code host",
+  purpose: "pull requests and reviews",
+  key: "capabilities.code_host",
+  bound: "github",
+  how: "automatic",
+  problem: null,
+  candidates: [{ adapter: "github", connector: "github", title: "GitHub", state: "connected" }],
+  find: "hz system plugin search --text code-host",
+  ...overrides,
+});
+
+export const connectorReport = (
+  connectors: SchemaConnector[] = [connector()],
+  capabilities: SchemaCapabilityChoice[] = [
+    choice(),
+    choice({
+      capability: "tracker",
+      title: "Tracker",
+      purpose: "issues and tickets",
+      key: "capabilities.tracker",
+      bound: null,
+      how: "unbound",
+      candidates: [
+        { adapter: "github", connector: "github", title: "GitHub", state: "connected" },
+        { adapter: "atlassian", connector: "atlassian", title: "Atlassian", state: "not-signed-in" },
+      ],
+      find: "hz system plugin search --text tracker",
+    }),
+    choice({
+      capability: "chat",
+      title: "Chat",
+      purpose: "the channels your team talks in",
+      key: "capabilities.chat",
+      bound: null,
+      how: "unbound",
+      candidates: [],
+      find: "hz system plugin search --text chat",
+    }),
+  ],
+): SchemaConnectorReport => ({ connectors, capabilities });

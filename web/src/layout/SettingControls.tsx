@@ -55,7 +55,7 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
   const schema = (setting.json_schema ?? null) as JsonSchema | null;
   const control = controlFor(schema);
   // Lists get the row's whole width, under the label; single values sit on its right.
-  const wide = control.kind === "table" || control.kind === "chips";
+  const wide = control.kind === "table" || control.kind === "chips" || (control.kind === "options" && control.multiple);
   const disabled = fromEnv || save.isPending;
   const commit = (next: unknown) => save.mutate({ key, value: next === null ? null : toToml(next) });
   const editor =

@@ -140,9 +140,14 @@ class ConnectorService:
             testable=bool(self._health(record.qualname, live=True)),
         )
 
-    def report(self) -> ConnectorReport:
-        """Every connector with its state, and every capability with who serves it and who could; nothing live."""
+    def report(self, *, accounts: bool = True) -> ConnectorReport:
+        """Every connector with its state, and every capability with who serves it and who could; nothing live.
+
+        Without `accounts`, no sign-in says whom it is for: for heads whose readers needn't know (MCP).
+        """
         connectors = [self._connector(record, adapters) for record, adapters in self._records().values()]
+        if not accounts:
+            connectors = [_anonymous(connector) for connector in connectors]
         by_name = {connector.name: connector for connector in connectors}
         choices: list[CapabilityChoice] = []
         for spec in CAPABILITIES.values():
@@ -202,6 +207,16 @@ class ConnectorService:
             login=login_of(checks),
             checks=checks,
         )
+
+
+def _anonymous(connector: Connector) -> Connector:
+    """`connector` with every sign-in's account left out."""
+
+    def plain(login: Login | None) -> Login | None:
+        return None if login is None else login.model_copy(update={"account": ""})
+
+    checks = [check.model_copy(update={"login": plain(check.login)}) for check in connector.checks]
+    return connector.model_copy(update={"login": plain(connector.login), "checks": checks})
 
 
 def _key(capability: str) -> str:

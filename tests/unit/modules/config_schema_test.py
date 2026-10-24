@@ -102,3 +102,20 @@ def test_every_setting_reports_its_schema(make_kernel):
         "type": "string",
     }
     assert ConfigService(kernel).get("hz.log_level").json_schema is not None
+
+
+def test_settings_whose_values_depend_on_what_is_installed_name_their_source():
+    """ADR 0056: the web app offers these as a choice; without `x-options` they would be free text."""
+    from heinzel import Settings
+    from heinzel.kernel import CAPABILITIES
+    from heinzel.kernel._bindings import CapabilitySettings
+    from heinzel.modules.system.theme._models import ThemeSettings
+    from heinzel.modules.team._models import TeamSettings
+
+    bindings = setting_schemas(CapabilitySettings)
+    assert {name: schema["x-options"]["capability"] for name, schema in bindings.items()} == {
+        name.replace("-", "_"): name for name in CAPABILITIES
+    }
+    assert setting_schemas(ThemeSettings)["name"]["x-options"] == {"source": "themes"}
+    assert setting_schemas(TeamSettings)["layer"]["x-options"] == {"source": "layers"}
+    assert setting_schemas(Settings)["disabled_modules"]["x-options"] == {"source": "modules"}

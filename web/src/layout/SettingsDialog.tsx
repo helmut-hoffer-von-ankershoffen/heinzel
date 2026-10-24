@@ -32,6 +32,7 @@ import { Row, Switch } from "./SettingControls";
 import type { JsonSchema } from "./settingSchema";
 import {
   CONNECTORS,
+  DISCOVER,
   displayName,
   FILES,
   group,
@@ -132,11 +133,15 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
   const preference = nav.preferences.find((entry) => entry.id === section);
   // A connector's own page is part of Connectors; a section nobody knows (yet: the plugin list may still load) is
   // General's.
+  // `plugins:discover:<text>`: Plugins → Discover, searching for <text> (a connector row's "Find one").
+  const discover = section?.startsWith(DISCOVER) ? section.slice(DISCOVER.length) : null;
   const current = connector
     ? CONNECTORS
-    : preference || [FILES, PLUGINS, CONNECTORS].includes(section ?? "")
-      ? (section as string)
-      : (nav.preferences[0]?.id ?? FILES);
+    : discover !== null
+      ? PLUGINS
+      : preference || [FILES, PLUGINS, CONNECTORS].includes(section ?? "")
+        ? (section as string)
+        : (nav.preferences[0]?.id ?? FILES);
   const needle = query.trim().toLowerCase();
   const titled = (entry: SettingsEntry) => entry.title || t("settings.general");
   const matching = needle
@@ -193,7 +198,11 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
         {needle ? (
           <Sections settings={matching} heading={t("settings.results")} />
         ) : current === PLUGINS ? (
-          <PluginsSection />
+          <PluginsSection
+            key={discover ?? ""}
+            initialTab={discover !== null ? "discover" : "yours"}
+            initialQuery={discover ?? ""}
+          />
         ) : current === FILES ? (
           <Files report={report} />
         ) : current === CONNECTORS ? (
@@ -202,6 +211,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
             open={connector}
             settings={settings}
             onOpen={go}
+            onFind={(capability) => go(`${DISCOVER}${capability}`)}
             renderSettings={(settings, heading) => <Sections settings={settings} heading={heading} />}
           />
         ) : (

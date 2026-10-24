@@ -20,8 +20,9 @@ from heinzel.modules.system.connector._service import ConnectorService
 module = Module("connector", "Show whether each connector is signed in and serves something, and test one live.")
 module.service(ConnectorService)
 
-# Not the REST head: it has no authentication, and a test reaches the vendor as you (ADR 0047, ADR 0055).
-HEADS = frozenset({"cli", "mcp", "web"})
+# Not the REST head: it has no authentication, and a test reaches the vendor as you (ADR 0047). Not MCP either: the
+# account is the person's own login or address, which an agent's context doesn't need; MCP gets `status`.
+HEADS = frozenset({"cli", "web"})
 
 Name = Annotated[str, Field(description="The connector, as `hz system connector list` names it, e.g. `github`.")]
 
@@ -30,6 +31,12 @@ Name = Annotated[str, Field(description="The connector, as `hz system connector 
 def list_(service: ConnectorService) -> ConnectorReport:
     """List connectors with their sign-in, what they serve and their tools; offline."""
     return service.report()
+
+
+@module.operation(render=render_report, heads={"mcp"})
+def status(service: ConnectorService) -> ConnectorReport:
+    """List connectors with their state, what they serve and their tools, without accounts; offline."""
+    return service.report(accounts=False)
 
 
 @module.operation(render=render_test, heads=HEADS)

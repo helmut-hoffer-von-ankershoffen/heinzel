@@ -6,9 +6,10 @@ import pytest
 from typer.testing import CliRunner
 
 from heinzel import Check, Config, Document, Kernel, Login, Module, Status
-from heinzel.heads import api, web
+from heinzel.heads import api, mcp, web
 from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
+from heinzel.modules.system.connector import ConnectorService
 
 pytestmark = pytest.mark.integration
 
@@ -71,7 +72,16 @@ def test_test_runs_the_live_check_and_a_none_binding_turns_it_off(make_kernel):
     assert connector["bind"] == ["hz system config set capabilities.documents wiki"]
 
 
-def test_the_web_head_has_it_and_the_rest_head_does_not(make_kernel):
-    kernel = make_kernel(builtins=True)
-    assert {"system_connector_list", "system_connector_test"} <= {item.name for item in exposed(kernel, web.HEAD)}
-    assert not {"system_connector_list", "system_connector_test"} & {item.name for item in exposed(kernel, api.HEAD)}
+def test_the_web_head_has_it_mcp_gets_it_without_accounts_and_rest_has_none(make_kernel):
+    kernel = make_kernel(builtins=True, wiki=wiki(signed_in=True))
+    full = {"system_connector_list", "system_connector_test"}
+    assert full <= {item.name for item in exposed(kernel, web.HEAD)}
+    names = {item.name for item in exposed(kernel, mcp.HEAD)}
+    assert "system_connector_status" in names
+    assert not full & names
+    assert not (full | {"system_connector_status"}) & {item.name for item in exposed(kernel, api.HEAD)}
+    report = kernel.resolve(ConnectorService).report(accounts=False)
+    wiki_report = next(c for c in report.connectors if c.name == "wiki")
+    assert wiki_report.login is not None
+    assert wiki_report.login.account == ""
+    assert all(check.login is None or check.login.account == "" for check in wiki_report.checks)

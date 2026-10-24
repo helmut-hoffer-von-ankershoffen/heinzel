@@ -22,7 +22,12 @@ export type JsonSchema = {
   title?: string;
   deprecated?: boolean;
   description?: string;
+  /** Where the valid values come from when the server knows them but they change with what is installed (ADR 0056). */
+  "x-options"?: OptionsSource;
 };
+
+/** A source of valid values the web app resolves: a capability's adapters (with `none`), themes, layers, modules. */
+export type OptionsSource = { source: string; capability?: string; none?: string };
 
 export const TIMEZONE = "iana-timezone";
 /** A range this small is a list of choices (the hours of a day are 25). */
@@ -47,6 +52,7 @@ export type Control =
   | { kind: "range"; options: number[] }
   | { kind: "chips" }
   | { kind: "table"; item: JsonSchema; columns: [string, JsonSchema][] }
+  | { kind: "options"; from: OptionsSource; multiple: boolean }
   | { kind: "text" };
 
 /** The whole numbers from `schema`'s bounds, when there are few enough to choose from. */
@@ -63,6 +69,9 @@ export function controlFor(raw: JsonSchema | undefined | null): Control {
   const schema = unwrap(raw ?? undefined);
   if (!schema) return { kind: "text" };
   const type = typeOf(schema);
+  // Known values that depend on what is installed: a choice the app fills in, never a text field (ADR 0056).
+  const from = raw?.["x-options"] ?? schema["x-options"];
+  if (from) return { kind: "options", from, multiple: type === "array" };
   if (schema.enum?.every((value) => typeof value === "string" || typeof value === "number")) {
     return { kind: "choice", options: schema.enum as (string | number)[] };
   }

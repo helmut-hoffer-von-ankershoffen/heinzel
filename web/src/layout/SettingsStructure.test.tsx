@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { SchemaConfigReport, SchemaPluginInfo } from "@/api/client";
-import { config, shell } from "@/test/fixtures";
+import { config, connectorReport, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { toToml } from "./settingSchema";
 import { displayName, inWords, settingsNav } from "./settingsSections";
@@ -85,6 +85,10 @@ const report: SchemaConfigReport = {
       source: "user",
       env: "HZ_CAPABILITIES__TRACKER",
       description: "Adapter that serves `tracker`.",
+      json_schema: {
+        anyOf: [{ type: "string" }, { type: "null" }],
+        "x-options": { source: "adapters", capability: "tracker", none: "none" },
+      },
     },
     {
       section: "clock",
@@ -118,6 +122,7 @@ const answers = {
     adapters: [],
     uses: [],
   },
+  "/api/system/connector/list": connectorReport(),
   "/api/system/config/set": "/home/mira/.config/hz/hz.toml",
   "/api/system/config/reveal": {
     scope: "user",
@@ -190,20 +195,34 @@ describe("Settings: Preferences, Customize, This computer", () => {
     );
   });
 
-  it("lists connectors as cards with what they connect, and opens one's settings inside Connectors", async () => {
+  it("lists connectors as cards with their state, and opens one's settings inside Connectors", async () => {
     mockApi(answers);
     const user = userEvent.setup();
     renderAt("/doctor?settings=connectors");
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    const card = (await within(dialog).findByText("Connects: code-host, tracker")).closest("button") as HTMLElement;
-    expect(card).toHaveTextContent("Connects: code-host, tracker");
-    expect(await within(card).findByText("In use for tracker")).toBeInTheDocument();
-    expect(within(dialog).getByRole("heading", { name: "Which connector serves what" })).toBeInTheDocument();
-    await user.click(card);
+    const card = await within(dialog).findByRole("article", { name: "GitHub" });
+    expect(await within(card).findByText("Connected as ada")).toBeInTheDocument();
+    expect(within(card).getByText("Serves Code host")).toBeInTheDocument();
+    expect(await within(dialog).findByRole("heading", { name: "Which connector serves what" })).toBeInTheDocument();
+    await user.click(within(card).getByRole("button", { name: "GitHub" }));
     expect(await within(dialog).findByRole("heading", { name: "GitHub" })).toBeInTheDocument();
     expect(within(dialog).getByLabelText("API URL")).toHaveValue("https://api.github.com");
     const nav = within(dialog).getByRole("navigation", { name: "Settings" });
     expect(within(nav).getByRole("button", { name: "Connectors" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("offers a setting with known values as a choice, never as a text field", async () => {
+    mockApi(answers);
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=hz");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    await user.type(await within(dialog).findByRole("searchbox"), "serves `tracker`");
+    const picker = (await within(dialog).findByLabelText("Tracker")) as HTMLSelectElement;
+    expect(picker.tagName).toBe("SELECT");
+    await waitFor(() =>
+      expect([...picker.options].map((option) => option.value)).toEqual(["", "github", "atlassian", "none"]),
+    );
+    expect(picker.value).toBe("github");
   });
 
   it("finds a setting of any part by search", async () => {

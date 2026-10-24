@@ -14,6 +14,7 @@ export const keys = {
   discover: ["heinzel", "discover"],
   jobs: ["system", "daemon", "jobs"],
   expert: ["system", "expert"],
+  connectors: ["system", "connector", "list"],
 } as const;
 
 export const useDoctor = () => useQuery({ queryKey: keys.doctor, queryFn: () => unwrap(api.GET("/system/doctor")) });
@@ -81,7 +82,12 @@ export const useSetSetting = () => {
               params: { query: { key: variables.key, value: variables.value, scope: "user" } },
             }),
           ),
-    onSettled: () => client.invalidateQueries({ queryKey: keys.config }),
+    onSettled: () => {
+      client.invalidateQueries({ queryKey: keys.config });
+      // A binding is a setting: what serves each capability, and so each connector's state, may have changed.
+      client.invalidateQueries({ queryKey: keys.connectors });
+      client.invalidateQueries({ queryKey: ["system", "capability", "list"] });
+    },
   });
 };
 
@@ -104,8 +110,8 @@ export const useInfo = () =>
   useQuery({ queryKey: ["system", "info"], queryFn: () => unwrap(api.GET("/system/info")), staleTime: 10 * 60 * 1000 });
 
 /** `hz system theme list`: every theme the plugins offer, the selected one first in effect (ADR 0044). */
-export const useThemes = () =>
-  useQuery({ queryKey: ["system", "theme", "list"], queryFn: () => unwrap(api.GET("/system/theme/list")) });
+export const useThemes = (enabled = true) =>
+  useQuery({ queryKey: ["system", "theme", "list"], queryFn: () => unwrap(api.GET("/system/theme/list")), enabled });
 
 /** `hz system theme signals`: the daypart and the weather the theme's variants follow, asked again every minute. */
 export const useThemeSignals = () =>
@@ -218,3 +224,21 @@ export const useRestartServer = ({
       reload();
     },
   });
+
+/** `hz system connector list`: each connector's state, sign-in, tools and commands, and who serves what; offline. */
+export const useConnectors = (enabled = true) =>
+  useQuery({ queryKey: keys.connectors, queryFn: () => unwrap(api.GET("/system/connector/list")), enabled });
+
+/** `hz system connector test <name>`: one cheap read-only call through the connector's tool, only when asked. */
+export const useTestConnector = () =>
+  useMutation({
+    mutationFn: (name: string) => unwrap(api.GET("/system/connector/test", { params: { query: { name } } })),
+  });
+
+/** `hz system layer list`: the installed layer plugins, for choosing your team's layer. */
+export const useLayers = (enabled = true) =>
+  useQuery({ queryKey: ["system", "layer", "list"], queryFn: () => unwrap(api.GET("/system/layer/list")), enabled });
+
+/** `hz system modules`: every module, for choosing which to switch off. */
+export const useModules = (enabled = true) =>
+  useQuery({ queryKey: ["system", "modules"], queryFn: () => unwrap(api.GET("/system/modules")), enabled });

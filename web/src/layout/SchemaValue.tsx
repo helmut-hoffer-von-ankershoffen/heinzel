@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { OptionsValue } from "./OptionsValue";
 import { asRow, type Control, controlFor, initial, type JsonSchema, ownZone, TIMEZONE } from "./settingSchema";
 import { cityOf, TimeZonePicker } from "./TimeZonePicker";
 
@@ -109,6 +110,18 @@ export function SchemaValue({ id, label, schema, control = controlFor(schema), v
         <Chips
           label={label}
           value={Array.isArray(value) ? value.map(String) : []}
+          disabled={disabled}
+          onChange={onChange}
+        />
+      );
+    case "options":
+      return (
+        <OptionsValue
+          id={id}
+          label={label}
+          from={control.from}
+          multiple={control.multiple}
+          value={value}
           disabled={disabled}
           onChange={onChange}
         />

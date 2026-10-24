@@ -249,8 +249,8 @@ Show whether each connector is signed in and serves something, and test one live
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| List connectors with their sign-in, what they serve and their tools; offline. | `hz system connector list` | `system_connector_list` | — | `GET /api/system/connector/list` |  | expert |
-| Test a connector live: one cheap read-only call through its tool, with a short timeout. | `hz system connector test` | `system_connector_test` | — | `GET /api/system/connector/test` |  | expert |
+| List connectors with their sign-in, what they serve and their tools; offline. | `hz system connector list` | — | — | `GET /api/system/connector/list` |  | expert |
+| Test a connector live: one cheap read-only call through its tool, with a short timeout. | `hz system connector test` | — | — | `GET /api/system/connector/test` |  | expert |
 
 ## `system.credential`
 

@@ -5,6 +5,8 @@ import type { SchemaPluginInfo } from "@/api/client";
 
 export const FILES = "files";
 export const PLUGINS = "plugins";
+/** A section id prefix: Plugins → Discover, searching for what follows (`plugins:discover:tracker`). */
+export const DISCOVER = "plugins:discover:";
 export const CONNECTORS = "connectors";
 /** The settings of the clock plugin: its time zones and working hours, which the status bar's clock links to. */
 export const CLOCK_SETTINGS = "clock";
