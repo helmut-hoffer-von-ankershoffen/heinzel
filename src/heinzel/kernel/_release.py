@@ -32,6 +32,17 @@ class ReleaseSource:
         """
         raise NotImplementedError
 
+    def highest_version(self, timeout: float, *, prereleases: bool = False) -> str:
+        """The highest version among the published releases in SemVer order, for `hz system update`.
+
+        Drafts never count; pre-releases only with `prereleases`. Waits at most `timeout` seconds per network
+        operation.
+
+        Raises:
+            NotImplementedError: Always; subclasses ask their package source and raise anything when it can't tell.
+        """
+        raise NotImplementedError
+
 
 @dataclass(frozen=True, slots=True)
 class ReleaseCache:
