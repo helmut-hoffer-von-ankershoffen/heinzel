@@ -16,7 +16,8 @@ app's shell, never API data.
 Themes' font files are served outside `/api`, at `/theme-fonts/<theme>/<index>.woff2`, without the token: the browser
 fetches a font for `FontFace` or `@font-face` itself and can't add a header. They pass the same Host, Origin and
 `Sec-Fetch-Site` checks, hold nothing private (what an installed plugin ships), and come through `ThemeFonts`, which
-checks each file again as it reads it (ADR 0044).
+checks each file again as it reads it (ADR 0044). Themes' logos are served the same way at
+`/theme-assets/<theme>/<light|dark|mark>.svg`, as `image/svg+xml` under a CSP of their own that loads and runs nothing.
 
 `POST /api/restart` restarts the server in place, for changes a running process can't load, such as an added plugin
 (`restart_required`, ADR 0047): the process executes `hz` again with the same arguments, handing over its listening
@@ -45,7 +46,18 @@ from heinzel.heads.web import _terminal
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._stream import add_stream
-from heinzel.kernel import FONT_ROUTE, KERNEL_SECTION, Config, HeinzelError, Kernel, Progress, Settings, ThemeFonts
+from heinzel.kernel import (
+    FONT_ROUTE,
+    KERNEL_SECTION,
+    LOGO_CSP,
+    LOGO_ROUTE,
+    Config,
+    HeinzelError,
+    Kernel,
+    Progress,
+    Settings,
+    ThemeFonts,
+)
 
 HEAD = "web"
 STATIC = Path(__file__).parent / "static"
@@ -73,6 +85,7 @@ mimetypes.add_type("application/manifest+json", ".webmanifest")
 NOT_FOUND = 404
 FONT_THEME = re.compile(r"[a-z](?:-?[a-z0-9]){0,63}")
 FONT_FILE = re.compile(r"([0-9]{1,2})\.woff2")
+LOGO_FILE = re.compile(r"(light|dark|mark)\.svg")
 IMMUTABLE = "public, max-age=31536000, immutable"
 RESUME = "HEINZEL_UI_RESUME"
 """How a restarting `hz ui` hands its listening socket and token to the process it becomes: `<fd>:<token>`. A
@@ -182,9 +195,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
             response: Response = JSONResponse(status_code=api.FORBIDDEN, content={"error": problem})
         else:
             response = await call_next(request)
-        response.headers.update(SECURITY_HEADERS)
-        if request.url.path.startswith("/assets/") and response.status_code == OK:
-            response.headers["Cache-Control"] = IMMUTABLE  # file names carry their hash
+        secure(response, request.url.path)
         return response
 
     paired = devices or devices_for_user()
@@ -201,6 +212,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     add_stream(endpoints, kernel)  # behind the same middleware: Host, Origin and the token
     app.mount("/api", endpoints)
     add_fonts(app, kernel)
+    add_logos(app, kernel)
     if static is None:
         return app
     if (static / "assets").is_dir():
@@ -220,6 +232,17 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         return FileResponse(index, headers={"Cache-Control": "no-store"})
 
     return app
+
+
+def secure(response: Response, path: str) -> None:
+    """Add the security headers to the answer for `path`, and what the answers of some paths need besides."""
+    response.headers.update(SECURITY_HEADERS)
+    if response.status_code != OK:
+        return
+    if path.startswith(LOGO_ROUTE + "/"):
+        response.headers["Content-Security-Policy"] = LOGO_CSP  # an SVG opened on its own loads and runs nothing
+    if path.startswith("/assets/"):
+        response.headers["Cache-Control"] = IMMUTABLE  # file names carry their hash
 
 
 def add_fonts(app: FastAPI, kernel: Kernel) -> None:
@@ -245,6 +268,31 @@ def font_response(kernel: Kernel, theme: str, file: str) -> Response:
         return JSONResponse(status_code=NOT_FOUND, content={"error": "No theme ships that font."})
     # The list's URL carries the content's version (`?v=`), so a changed font is a new URL: the answer is immutable.
     return Response(content, media_type="font/woff2", headers={"Cache-Control": IMMUTABLE})
+
+
+def add_logos(app: FastAPI, kernel: Kernel) -> None:
+    """Serve the themes' logos at `LOGO_ROUTE`, outside `/api`, behind the app's middleware (ADR 0044)."""
+
+    @app.get(LOGO_ROUTE + "/{theme}/{file}", include_in_schema=False)
+    def theme_logo(theme: str, file: str) -> Response:
+        # Not async: it reads files, so FastAPI runs it in its thread pool and other requests don't wait.
+        return logo_response(kernel, theme, file)
+
+
+def logo_response(kernel: Kernel, theme: str, file: str) -> Response:
+    """Logo `<light|dark|mark>.svg` of the available theme `theme`, or 404; served without the token (ADR 0044)."""
+    # Checked against fixed patterns, then looked up by theme name and logo name: a request never builds a path.
+    name = LOGO_FILE.fullmatch(file)
+    content = None
+    if FONT_THEME.fullmatch(theme) and name and kernel.provides(ThemeFonts):
+        try:
+            content = kernel.resolve(ThemeFonts).logo(theme, name.group(1))
+        except HeinzelError:  # system.theme can't be built (a module it needs is off): no theme ships a logo
+            content = None
+    if content is None:
+        return JSONResponse(status_code=NOT_FOUND, content={"error": "No theme ships that logo."})
+    # The list's URL carries the content's version (`?v=`), so a changed logo is a new URL: the answer is immutable.
+    return Response(content, media_type="image/svg+xml", headers={"Cache-Control": IMMUTABLE})
 
 
 def free_socket(host: str = HOST, port: int = 0) -> socket.socket:

@@ -4061,6 +4061,11 @@ export interface components {
              */
             input: string;
             /**
+             * Main Tint
+             * @description A tint behind the main content area (`--color-main-tint`); none when not given.
+             */
+            main_tint?: string | null;
+            /**
              * Muted
              * @description A hex colour, `#rgb` or `#rrggbb`.
              */
@@ -4164,6 +4169,37 @@ export interface components {
             themes: components["schemas"]["ThemeView"][];
         };
         /**
+         * ThemeLogoView
+         * @description A theme's logo, where the web head serves each file, for an `<img>` in the web app.
+         */
+        ThemeLogoView: {
+            /**
+             * Alt
+             * @description What the logo says, for screen readers, e.g. `Acme`.
+             */
+            alt: string;
+            /**
+             * Dark
+             * @description The logo on a dark background; the light one's URL when the theme has none.
+             */
+            dark: string;
+            /**
+             * Height
+             * @description How tall the logo is shown, a CSS length, e.g. `24px`.
+             */
+            height: string;
+            /**
+             * Light
+             * @description The logo on a light background, e.g. `/theme-assets/acme/light.svg?v=1a2b3c4d`.
+             */
+            light: string;
+            /**
+             * Mark
+             * @description A square logo for a collapsed sidebar; none when the theme has none.
+             */
+            mark: string | null;
+        };
+        /**
          * ThemeView
          * @description One available theme with every token value, ready to become the web app's CSS custom properties.
          */
@@ -4217,6 +4253,8 @@ export interface components {
             icon_size: string;
             /** @description Colours in light mode; each field is the token `--color-<field>`. */
             light: components["schemas"]["ThemeColours"];
+            /** @description The theme's logo; none if it ships none. */
+            logo?: components["schemas"]["ThemeLogoView"] | null;
             /**
              * Module
              * @description The qualified name of the module offering it; none for the built-in one.
@@ -4442,6 +4480,7 @@ export type SchemaTested = components['schemas']['Tested'];
 export type SchemaThemeColours = components['schemas']['ThemeColours'];
 export type SchemaThemeFontView = components['schemas']['ThemeFontView'];
 export type SchemaThemeList = components['schemas']['ThemeList'];
+export type SchemaThemeLogoView = components['schemas']['ThemeLogoView'];
 export type SchemaThemeView = components['schemas']['ThemeView'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];

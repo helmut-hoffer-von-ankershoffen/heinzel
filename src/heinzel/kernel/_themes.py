@@ -5,7 +5,8 @@ density and corner radii, a border width, and optionally font files of its own. 
 property, so each is checked against a grammar that can't leave its declaration: hex colours, a CSS length, an integer
 weight, and font stacks of family names from a small character set. A font file is a `.woff2` inside the theme's own
 directory, checked at import and again when the web head serves it from its own origin: the web head's CSP
-(`font-src 'self'`) loads no remote font.
+(`font-src 'self'`) loads no remote font. A logo is SVG files in the same directory, held to the same path rules and
+refused if they could run anything or load anything from outside themselves.
 """
 
 import hashlib
@@ -13,6 +14,7 @@ import os
 import re
 import stat
 import tomllib
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal, cast
@@ -59,6 +61,22 @@ WOFF2_SIGNATURE = b"wOF2"
 WEIGHT_MIN, WEIGHT_MAX = 100, 900
 FONT_ROUTE = "/theme-fonts"
 """Where the web head serves themes' font files, outside `/api`: `@font-face` and `FontFace` send no session token."""
+LOGO_FILE = r"^(?:[A-Za-z0-9_][A-Za-z0-9._-]*/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\.svg$"
+"""A relative path of plain names inside the theme's directory ending in `.svg`: no `..`, no leading `/` or `.`."""
+MAX_LOGO_BYTES = 200 * 1024
+"""The largest logo file a theme may ship, 200 KB."""
+MAX_ALT = 64
+LOGO_ROUTE = "/theme-assets"
+"""Where the web head serves themes' logos, outside `/api`: an `<img>` sends no session token."""
+LOGO_NAMES = ("light", "dark", "mark")
+"""The logo files a theme can have, by the name the web head serves them under: `<name>.svg`."""
+LOGO_CSP = "default-src 'none'; style-src 'unsafe-inline'"
+"""The Content Security Policy of a served logo: opened on its own, it loads nothing and runs nothing."""
+_SVG = "{http://www.w3.org/2000/svg}"
+_REFERENCES = frozenset({"href", "src"})
+_LOGO_PATH_RULE = (
+    "a path inside the theme's directory of letters, digits, dots, underscores and dashes, ending in .svg, e.g. "
+)
 _LENGTH_RULE = "a CSS length: 0, or a number with px, rem or em, e.g. "
 _RULES = {
     "string_pattern_mismatch": {
@@ -78,6 +96,10 @@ _RULES = {
             "e.g. fonts/acme-sans.woff2"
         ),
         "weight": "one weight or a range of two, 100 to 900, e.g. 400 or 100 900",
+        "light": _LOGO_PATH_RULE + "logo/wordmark-light.svg",
+        "dark": _LOGO_PATH_RULE + "logo/wordmark-dark.svg",
+        "mark": _LOGO_PATH_RULE + "logo/mark.svg",
+        "height": _LENGTH_RULE + "24px",
     },
 }
 
@@ -128,6 +150,13 @@ def _one_line(value: str) -> str:
     return value
 
 
+def _one_line_alt(value: str) -> str:
+    if any(not character.isprintable() for character in value):
+        msg = "the alt text is one line of printable characters"
+        raise ValueError(msg)
+    return value
+
+
 def _weight_range(value: str) -> str:
     weights = [int(part) for part in value.split(" ")]
     if any(not WEIGHT_MIN <= weight <= WEIGHT_MAX for weight in weights) or weights != sorted(weights):
@@ -162,6 +191,43 @@ class ThemeFont(BaseModel):
     style: Literal["normal", "italic"] = Field(default="normal", description="`normal` or `italic`.")
 
 
+LogoFile = Annotated[str, Field(pattern=LOGO_FILE, max_length=MAX_FONT_FILE)]
+
+
+class ThemeLogo(BaseModel):
+    """A theme's logo (`[logo]` in its file): SVG files inside its theme's directory, served by the web head."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
+
+    light: LogoFile = Field(
+        description="The logo on a light background, relative to the theme file's directory, e.g. `logo/light.svg`."
+    )
+    dark: LogoFile | None = Field(default=None, description="The logo on a dark background; `light` when not given.")
+    mark: LogoFile | None = Field(
+        default=None, description="A square logo for narrow places such as a collapsed sidebar; none when not given."
+    )
+    alt: Annotated[str, AfterValidator(_one_line_alt)] = Field(
+        min_length=1, max_length=MAX_ALT, description="What the logo says, for screen readers, e.g. `Acme`."
+    )
+    height: Length = Field(default="24px", description="How tall the logo is shown, e.g. `24px`.")
+
+    def file(self, name: str) -> str | None:
+        """The file of logo `name` (`light`, `dark` or `mark`): `dark` falls back to `light`; None if there is none."""
+        match name:
+            case "light":
+                return self.light
+            case "dark":
+                return self.dark or self.light
+            case "mark":
+                return self.mark
+            case _:
+                return None
+
+    def files(self) -> tuple[str, ...]:
+        """Every file the logo names, each once."""
+        return tuple(dict.fromkeys(file for file in (self.light, self.dark, self.mark) if file))
+
+
 class ThemeColours(BaseModel):
     """The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes)."""
 
@@ -187,6 +253,9 @@ class ThemeColours(BaseModel):
         description="Text and icons of the active navigation item and of links; `foreground` when not given."
     )
     icon: Colour = Field(description="Icons that aren't active; `muted_foreground` when not given.")
+    main_tint: Colour | None = Field(
+        default=None, description="A tint behind the main content area (`--color-main-tint`); none when not given."
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -239,6 +308,9 @@ class Theme(BaseModel):
         max_length=MAX_FONTS,
         description="Font files the theme ships (`[[fonts]]` in its file); its stacks name their families.",
     )
+    logo: ThemeLogo | None = Field(
+        default=None, description="The logo the theme ships (`[logo]` in its file), SVG files beside it; none if not."
+    )
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -253,8 +325,9 @@ class ThemeLet(Let):
         """Check the theme again, so one built with `model_construct` can't skip the grammar, and its font files.
 
         Raises:
-            ValueError: If the theme isn't valid, is called `default`, the let isn't named after it, or a font file
-                is missing, leaves the theme's directory, isn't a woff2 file or is larger than 2 MB.
+            ValueError: If the theme isn't valid, is called `default`, the let isn't named after it, a font file
+                is missing, leaves the theme's directory, isn't a woff2 file or is larger than 2 MB, or a logo file
+                doesn't pass the checks of `logo_file`.
         """
         try:
             theme = Theme.model_validate(self.theme.model_dump())
@@ -270,9 +343,21 @@ class ThemeLet(Let):
         if theme.fonts and self.directory is None:
             msg = f"Theme {theme.name!r} ships fonts, so it comes from a theme file: font files are relative to it"
             raise ValueError(msg)
+        if theme.logo and self.directory is None:
+            msg = f"Theme {theme.name!r} ships a logo, so it comes from a theme file: logo files are relative to it"
+            raise ValueError(msg)
         for font in theme.fonts:
             font_file(self._directory(), font)
+        if theme.logo:
+            for file in theme.logo.files():
+                logo_file(self._directory(), file)
         object.__setattr__(self, "theme", theme)
+
+    def logos(self) -> "ThemeLogoFiles | None":
+        """The theme's logo files, to read and serve; None if it ships no logo."""
+        if self.theme.logo is None or self.directory is None:
+            return None
+        return ThemeLogoFiles(theme=self.theme.name, logo=self.theme.logo, directory=self.directory)
 
     def _directory(self) -> Path:
         if self.directory is None:
@@ -342,31 +427,195 @@ def read_font(directory: Path, font: ThemeFont) -> bytes:
         ValueError: If the file doesn't pass the checks of `font_file`, can't be read, or changed meanwhile.
     """
     path = font_file(directory, font)
-    try:
-        # One descriptor for the check and the read: no symlink swapped in, no FIFO to block on, a regular file.
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(descriptor, "rb") as handle:
-            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-                msg = f"Font file {font.file!r} of {directory} isn't a file"
-                raise ValueError(msg)
-            content = handle.read(MAX_FONT_BYTES + 1)
-    except OSError as exc:
-        msg = f"Font file {font.file!r} of {directory} can't be read: {exc}"
-        raise ValueError(msg) from exc
+    content = _read_regular(path, MAX_FONT_BYTES, f"Font file {font.file!r} of {directory}")
     if len(content) > MAX_FONT_BYTES or not content.startswith(WOFF2_SIGNATURE):
         msg = f"Font file {font.file!r} of {directory} changed into something that isn't a woff2 file of up to 2 MB"
         raise ValueError(msg)
     return content
 
 
-class ThemeFonts:
-    """The font files of the available themes, by theme name and index; provided by `system.theme` (ADR 0044).
+def _read_regular(path: Path, limit: int, where: str) -> bytes:
+    """Up to `limit + 1` bytes of `path`, through one descriptor that follows no symlink and must be a regular file.
 
-    The web head serves them at `FONT_ROUTE`; the kernel declares the interface, so the head needn't know the module.
+    Raises:
+        ValueError: If `path` is a symlink, a FIFO or anything else that isn't a regular file, or can't be read.
+    """
+    try:
+        # One descriptor for the check and the read: no symlink swapped in, no FIFO to block on, a regular file.
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                msg = f"{where} isn't a file"
+                raise ValueError(msg)
+            return handle.read(limit + 1)
+    except OSError as exc:
+        msg = f"{where} can't be read: {exc}"
+        raise ValueError(msg) from exc
+
+
+def _local(name: str) -> str:
+    """An XML name without its `{namespace}`, lowercase."""
+    return name.rpartition("}")[2].lower()
+
+
+def _svg_text_problem(text: str) -> str | None:
+    """Why the text of an SVG file could run or load something, or None; checked before it is parsed."""
+    lowered = text.lower()
+    for marker, problem in (
+        ("<!doctype", "declares a DOCTYPE; entities aren't allowed"),
+        ("<!entity", "declares an entity; entities aren't allowed"),
+        ("<script", "holds a <script>"),
+        ("<foreignobject", "holds a <foreignObject>"),
+        ("xml-stylesheet", "links a stylesheet"),
+        ("@import", "imports a stylesheet"),
+        ("image-set(", "loads an image (image-set)"),
+    ):
+        if marker in lowered:
+            return problem
+    for match in re.finditer(r"url\(\s*['\"]?\s*(.?)", lowered):
+        if match.group(1) != "#":
+            return "refers to something outside itself (url(...)); only url(#id) is allowed"
+    return None
+
+
+def _svg_element_problem(element: ET.Element) -> str | None:
+    """Why one element of an SVG file could run or load something, or None."""
+    tag = _local(element.tag)
+    if tag in {"script", "foreignobject"}:
+        return f"holds a <{tag}>"
+    for name, value in element.attrib.items():
+        attribute = _local(name)
+        if attribute.startswith("on"):
+            return f"has an event handler ({attribute}=)"
+        if attribute in _REFERENCES and not value.strip().startswith("#"):
+            return f"refers to something outside itself ({attribute}={value[:40]!r}); only #id is allowed"
+        if tag in {"set", "animate"} and attribute == "attributename":
+            target = value.strip().lower().rpartition(":")[2]
+            if target in _REFERENCES or target.startswith("on"):
+                return f"animates {target}, which could point outside the file"
+    return None
+
+
+def svg_problem(content: bytes) -> str | None:
+    """Why `content` isn't a safe SVG logo, or None.
+
+    A logo is UTF-8 XML of at most 200 KB whose root is `<svg>`, without a DOCTYPE or entities, a `<script>`, a
+    `<foreignObject>`, an event-handler attribute (`on...=`), or a reference (`href`, `xlink:href`, `src`, `url(...)`)
+    to anything but an element of the same file (`#id`): no external file, no `data:` URI.
+    """
+    if len(content) > MAX_LOGO_BYTES:
+        return f"is larger than {MAX_LOGO_BYTES // 1024} KB; simplify it, e.g. with svgo"
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        return "isn't UTF-8 text"
+    return _svg_text_problem(text) or _svg_tree_problem(content)
+
+
+def _svg_tree_problem(content: bytes) -> str | None:
+    """Why the parsed elements of an SVG file aren't a safe logo, or None; its text passed `_svg_text_problem`."""
+    try:
+        root = ET.fromstring(content)  # noqa: S314 - DOCTYPE and entities are refused before: nothing expands
+    except ET.ParseError as exc:
+        return f"isn't well-formed XML: {exc}"
+    if root.tag not in {"svg", f"{_SVG}svg"}:
+        return "isn't an SVG image: its root element isn't <svg>"
+    return next((problem for element in root.iter() if (problem := _svg_element_problem(element))), None)
+
+
+def logo_file(directory: Path, file: str) -> Path:
+    """The resolved path of logo `file` in `directory`, after checking it is a safe SVG file of at most 200 KB in it.
+
+    Symlinks are resolved before the check, so one pointing out of the theme's directory is refused.
+
+    Raises:
+        ValueError: If the file is missing, leads out of the directory, isn't a file, or isn't a safe SVG logo.
+    """
+    where = f"Logo file {file!r} of {directory}"
+    if not re.fullmatch(LOGO_FILE, file):
+        msg = f"{where} isn't {_LOGO_PATH_RULE}logo/light.svg"
+        raise ValueError(msg)
+    try:
+        root = directory.resolve(strict=True)
+        path = (root / file).resolve(strict=True)
+    except OSError as exc:
+        msg = f"{where} doesn't exist; its path is relative to the theme file's directory"
+        raise ValueError(msg) from exc
+    if not path.is_relative_to(root):
+        msg = f"{where} leads out of the theme's directory; keep logo files beside the theme file"
+        raise ValueError(msg)
+    if not path.is_file():
+        msg = f"{where} isn't a file"
+        raise ValueError(msg)
+    if path.stat().st_size > MAX_LOGO_BYTES:
+        msg = f"{where} is larger than {MAX_LOGO_BYTES // 1024} KB; simplify it, e.g. with svgo"
+        raise ValueError(msg)
+    if problem := svg_problem(path.read_bytes()):
+        msg = f"{where} {problem}"
+        raise ValueError(msg)
+    return path
+
+
+def read_logo(directory: Path, file: str) -> bytes:
+    """The content of logo `file`, checked by `logo_file` and again on the bytes read, so a file swapped is caught.
+
+    Raises:
+        ValueError: If the file doesn't pass the checks of `logo_file`, can't be read, or changed meanwhile.
+    """
+    path = logo_file(directory, file)
+    where = f"Logo file {file!r} of {directory}"
+    content = _read_regular(path, MAX_LOGO_BYTES, where)
+    if problem := svg_problem(content):
+        msg = f"{where} changed and now {problem}"
+        raise ValueError(msg)
+    return content
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class ThemeLogoFiles:
+    """The logo files of one theme where they are on disk: what the web head serves at `LOGO_ROUTE`."""
+
+    theme: str
+    """The theme's name, as in the URL."""
+    logo: ThemeLogo
+    directory: Path
+    """The directory the logo's files are relative to."""
+
+    def content(self, name: str) -> bytes:
+        """The content of logo `name` (`light`, `dark` falling back to `light`, or `mark`), checked as it is read.
+
+        Raises:
+            ValueError: If the theme has no such logo, or its file doesn't pass the checks of `read_logo`.
+        """
+        file = self.logo.file(name)
+        if file is None:
+            msg = f"Theme {self.theme!r} has no {name!r} logo"
+            raise ValueError(msg)
+        return read_logo(self.directory, file)
+
+    def url(self, name: str) -> str:
+        """Where the web head serves logo `name`, with a version of its content, so a changed logo is a new URL.
+
+        Raises:
+            ValueError: If the theme has no such logo, or its file doesn't pass the checks of `read_logo`.
+        """
+        version = hashlib.sha256(self.content(name)).hexdigest()[:16]
+        return f"{LOGO_ROUTE}/{self.theme}/{name}.svg?v={version}"
+
+
+class ThemeFonts:
+    """The font files and logos of the available themes, by theme name; provided by `system.theme` (ADR 0044).
+
+    The web head serves them at `FONT_ROUTE` and `LOGO_ROUTE`; the kernel declares the interface, so the head needn't
+    know the module.
     """
 
     def font(self, theme: str, index: int) -> bytes | None:
         """The content of font `index` of the available theme `theme`, or None if there is no such font."""
+        raise NotImplementedError
+
+    def logo(self, theme: str, name: str) -> bytes | None:
+        """The content of logo `name` (`light`, `dark`, `mark`) of the available theme `theme`, or None if none."""
         raise NotImplementedError
 
 
@@ -480,4 +729,21 @@ DEFAULT_THEME = Theme(
     heading_tracking="0",
     spacing="0.25rem",
 )
-"""The built-in theme: always available, the one in effect until the person picks another."""
+"""The built-in theme: always available, the one in effect until the person picks another.
+
+It names no logo, so a plugin can copy it (`DEFAULT_THEME.model_dump() | {...}`) for a theme of its own; its logo is
+`DEFAULT_LOGO`, shipped inside the package.
+"""
+
+DEFAULT_LOGO = ThemeLogoFiles(
+    theme=DEFAULT,
+    logo=ThemeLogo(
+        light="logo/wordmark-light.svg",
+        dark="logo/wordmark-dark.svg",
+        mark="logo/mark.svg",
+        alt="Heinzelmännchen",
+        height="24px",
+    ),
+    directory=Path(__file__).parent / "assets" / "theme",
+)
+"""The built-in theme's logo: the Heinzelmännchen mark and wordmark, package data of the kernel."""

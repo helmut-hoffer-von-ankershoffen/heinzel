@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 120" role="img" aria-label="Acme">
+  <!-- A made-up company's logo for tests: a peak shaped like an anvil, and the name. -->
+  <path d="M12 104 L60 16 L108 104 L84 104 L60 58 L36 104 Z" fill="#0f766e"/>
+  <rect x="4" y="96" width="112" height="14" rx="3" fill="#0f766e"/>
+  <rect x="44" y="72" width="32" height="10" rx="2" fill="#0f766e"/>
+  <text x="132" y="90" font-family="ui-sans-serif, system-ui, sans-serif" font-size="72" font-weight="700"
+        fill="#221811">Acme</text>
+</svg>

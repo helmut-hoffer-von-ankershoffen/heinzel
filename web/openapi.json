@@ -4665,6 +4665,20 @@
             "title": "Input",
             "type": "string"
           },
+          "main_tint": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A tint behind the main content area (`--color-main-tint`); none when not given.",
+            "title": "Main Tint"
+          },
           "muted": {
             "description": "A hex colour, `#rgb` or `#rrggbb`.",
             "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
@@ -4828,6 +4842,52 @@
         "title": "ThemeList",
         "type": "object"
       },
+      "ThemeLogoView": {
+        "description": "A theme's logo, where the web head serves each file, for an `<img>` in the web app.",
+        "properties": {
+          "alt": {
+            "description": "What the logo says, for screen readers, e.g. `Acme`.",
+            "title": "Alt",
+            "type": "string"
+          },
+          "dark": {
+            "description": "The logo on a dark background; the light one's URL when the theme has none.",
+            "title": "Dark",
+            "type": "string"
+          },
+          "height": {
+            "description": "How tall the logo is shown, a CSS length, e.g. `24px`.",
+            "title": "Height",
+            "type": "string"
+          },
+          "light": {
+            "description": "The logo on a light background, e.g. `/theme-assets/acme/light.svg?v=1a2b3c4d`.",
+            "title": "Light",
+            "type": "string"
+          },
+          "mark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A square logo for a collapsed sidebar; none when the theme has none.",
+            "title": "Mark"
+          }
+        },
+        "required": [
+          "light",
+          "dark",
+          "mark",
+          "alt",
+          "height"
+        ],
+        "title": "ThemeLogoView",
+        "type": "object"
+      },
       "ThemeView": {
         "description": "One available theme with every token value, ready to become the web app's CSS custom properties.",
         "properties": {
@@ -4886,6 +4946,17 @@
           "light": {
             "$ref": "#/components/schemas/ThemeColours",
             "description": "Colours in light mode; each field is the token `--color-<field>`."
+          },
+          "logo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeLogoView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The theme's logo; none if it ships none."
           },
           "module": {
             "anyOf": [

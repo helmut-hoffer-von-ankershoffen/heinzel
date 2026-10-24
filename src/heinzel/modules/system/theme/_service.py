@@ -15,8 +15,8 @@ from heinzel import (
     ThemeFonts,
     ThemeLet,
 )
-from heinzel.kernel import DEFAULT_THEME
-from heinzel.modules.system.theme._models import ThemeFontView, ThemeList, ThemeSettings, ThemeView
+from heinzel.kernel import DEFAULT_LOGO, DEFAULT_THEME, ThemeLogoFiles
+from heinzel.modules.system.theme._models import ThemeFontView, ThemeList, ThemeLogoView, ThemeSettings, ThemeView
 
 SECTION = "system.theme"
 KEY = f"{SECTION}.name"
@@ -31,6 +31,7 @@ class Offered:
     record: ModuleRecord | None
     shadows: list[str] = field(default_factory=list[str])
     let: ThemeLet | None = None
+    logos: ThemeLogoFiles | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +65,28 @@ def _fonts(offered: Offered) -> list[ThemeFontView]:
     return views
 
 
+def _logo(logos: ThemeLogoFiles | None) -> ThemeLogoView | None:
+    """A theme's logo with the URLs the web head serves it at; none if its light file is gone since import.
+
+    A dark logo whose file is gone falls back to the light one, a mark whose file is gone is left out.
+    """
+    if logos is None:
+        return None
+    try:
+        light = logos.url("light")
+    except ValueError:
+        return None
+    try:
+        dark = logos.url("dark") if logos.logo.dark else light
+    except ValueError:
+        dark = light
+    try:
+        mark = logos.url("mark") if logos.logo.mark else None
+    except ValueError:
+        mark = None
+    return ThemeLogoView(light=light, dark=dark, mark=mark, alt=logos.logo.alt, height=logos.logo.height)
+
+
 class ThemeService(ThemeFonts):
     """The themes of the web app (ADR 0044): the built-in one and every theme the installed plugins offer."""
 
@@ -92,7 +115,7 @@ class ThemeService(ThemeFonts):
         for record, let in sorted(self._kernel.lets(ThemeLet), key=order):
             by_name.setdefault(let.name, []).append(record)
             lets[record.qualname, let.name] = let
-        themes = {DEFAULT_THEME.name: Offered(DEFAULT_THEME, None)}
+        themes = {DEFAULT_THEME.name: Offered(DEFAULT_THEME, None, logos=DEFAULT_LOGO)}
         conflicts: list[str] = []
         for name, records in by_name.items():
             winner, *others = records
@@ -107,7 +130,7 @@ class ThemeService(ThemeFonts):
                 )
                 continue
             let = lets[winner.qualname, name]
-            themes[name] = Offered(let.theme, winner, [r.qualname for r in others], let)
+            themes[name] = Offered(let.theme, winner, [r.qualname for r in others], let, let.logos())
         return Available(themes, conflicts)
 
     def listing(self) -> ThemeList:
@@ -168,6 +191,7 @@ class ThemeService(ThemeFonts):
                     heading_tracking=offered.theme.heading_tracking,
                     spacing=offered.theme.spacing,
                     fonts=_fonts(offered),
+                    logo=_logo(offered.logos),
                     shadows=offered.shadows,
                 )
                 for name, offered in available.themes.items()
@@ -184,6 +208,16 @@ class ThemeService(ThemeFonts):
             return None
         try:
             return offered.let.font(index)
+        except ValueError:
+            return None
+
+    def logo(self, theme: str, name: str) -> bytes | None:
+        """The content of logo `name` of the available theme `theme` (the one that wins its name), or None."""
+        offered = self.available().themes.get(theme)
+        if offered is None or offered.logos is None:
+            return None
+        try:
+            return offered.logos.content(name)
         except ValueError:
             return None
 

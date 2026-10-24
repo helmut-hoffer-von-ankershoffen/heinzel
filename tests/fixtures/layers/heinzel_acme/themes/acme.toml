@@ -14,6 +14,14 @@ family = "Acme Sans"
 file = "fonts/acme-sans.woff2"
 weight = "100 900"
 
+# A made-up logo: an anvil-shaped peak and the name, in the theme's teal.
+[logo]
+light = "logo/acme-light.svg"
+dark = "logo/acme-dark.svg"
+mark = "logo/acme-mark.svg"
+alt = "Acme"
+height = "28px"
+
 [light]
 background = "#fdfcf9"
 foreground = "#221811"
@@ -31,6 +39,7 @@ ring = "#0f766e"
 sidebar = "#f3f0ea"
 input = "#e1ddd7"
 popover = "#ffffff"
+main_tint = "#f7f4ee"
 
 [dark]
 background = "#16100c"
