@@ -19,6 +19,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "ci.yml": {
         "uv run --script scripts/check_confidentiality.py --require": "the secret must be configured in this repo",
         "unzip -l ": "asserts what the built wheel contains",
+        'if [ "$EVENT" != pull_request ]': "decides from the changed paths whether a pull request builds the macOS app",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",

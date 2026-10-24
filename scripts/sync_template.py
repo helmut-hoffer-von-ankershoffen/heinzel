@@ -74,19 +74,26 @@ def ci_workflow() -> str:
     text = text.replace("      - run: uv build --all-packages\n", "      - run: uv build\n")
     # Heinzel Notifier (ADR 0043): only the core builds and ships it.
     text = re.sub(r"\n  notifier:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
+    text = re.sub(r"\n  changes:\n.*?(?=\n  dependency-review:)", "", text, flags=re.DOTALL)
     text = text.replace("    needs: notifier\n", "")
+    text = re.sub(r"    if: \$\{\{ !cancelled\(\) && needs\.notifier\.result[^\n]*\n", "", text)
     text = re.sub(
-        r"\n      - uses: actions/download-artifact@[^\n]*\n        with:\n          name: notifier", "", text
+        r"\n      - if: needs\.notifier[^\n]*\n        uses: actions/download-artifact@[^\n]*"
+        r"\n        with:\n          name: notifier",
+        "",
+        text,
     )
-    text = re.sub(r"\n      - name: Unpack Heinzel Notifier into the package\n[^\n]*", "", text)
-    text = re.sub(r"\n      - name: Check the wheel ships Heinzel Notifier\n[^\n]*", "", text)
+    text = re.sub(r"\n      - name: Unpack Heinzel Notifier into the package\n[^\n]*\n[^\n]*", "", text)
+    text = re.sub(r"\n      - name: Check the wheel ships Heinzel Notifier\n[^\n]*\n[^\n]*", "", text)
     text = text.replace(", notifier, build]", ", build]")
     # The core's CI covers every platform of the shared scripts/tools.toml; a plugin, possibly private and paying for
     # its minutes, sets up on the two most contributors use.
-    text = text.replace(
-        "os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]", "os: [ubuntu-latest, macos-latest]"
+    text = re.sub(
+        r"(    name: make setup[^\n]*\n(?:[^\n]*\n)*?        os: )\$\{\{ fromJSON[^\n]*",
+        r"\1[ubuntu-latest, macos-latest]",
+        text,
     )
-    return text.replace(", template, build]", ", build]")
+    return text.replace(", template, build]", ", build]").replace(", changes,", ",")
 
 
 def pyproject() -> str:

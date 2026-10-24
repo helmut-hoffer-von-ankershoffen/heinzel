@@ -2,7 +2,7 @@
 
 | Workflow | Runs on | Does |
 | --- | --- | --- |
-| `ci.yml` | pull requests, `main`, daily, dispatch | lint, types, audit, secret scan, tests (macOS/Linux × 3.12–3.15), e2e, template render, build, `make setup` + `make doctor` on Linux and macOS × x86_64/arm64 (and `make tools-verify`); `CI OK` gates merging |
+| `ci.yml` | pull requests, `main`, daily, dispatch | lint, types, audit, secret scan, tests (Linux × 3.12–3.15; macOS × 3.12–3.15 off pull requests, where it is 3.15 only), e2e (macOS off pull requests), template render, build, `make setup` + `make doctor` on Linux and macOS × x86_64/arm64 (macOS Intel off pull requests; and `make tools-verify`), the notifier app (on pull requests only when its sources change); `CI OK` gates merging |
 | `update-prs.yml` | push to `main`, dispatch | merges `main` into open auto-merging PRs that fell behind and approves the CI runs that triggers, and resolves their review threads of fixed or dismissed code-scanning alerts, so neither the up-to-date rule nor the resolved-threads rule stalls auto-merge |
 | `release.yml` | dispatch | opens the release PR `chore(release): vX.Y.Z` and dispatches CI on it |
 | `release-tag.yml` | push to `main` of a release commit | tags it and calls `publish.yml` |
