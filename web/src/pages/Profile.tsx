@@ -29,7 +29,7 @@ export function Profile() {
                     <dt className="text-muted-foreground">{t(label)}</dt>
                     <dd>
                       {value ?? (
-                        <Link to={`/settings?q=${key}`} className="text-muted-foreground underline">
+                        <Link to={`?settings=&q=${key}`} className="text-muted-foreground underline">
                           {t("settings.notSet")}
                         </Link>
                       )}

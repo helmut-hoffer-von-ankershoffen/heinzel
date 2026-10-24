@@ -41,6 +41,7 @@ from pydantic import BaseModel, Field
 
 from heinzel.heads import api
 from heinzel.heads._stream import StreamProgress
+from heinzel.heads.web import _terminal
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._stream import add_stream
@@ -52,11 +53,12 @@ STATIC = Path(__file__).parent / "static"
 HOST = "127.0.0.1"
 OK = 200
 CSP = (
-    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
+    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; "
     "connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; "
     "frame-ancestors 'none'"
 )
-"""Only this origin, for everything; no inline scripts or styles, no frames, no forms posting elsewhere."""
+"""Only this origin, for everything; no inline scripts, no frames, no forms posting elsewhere. Inline styles are allowed
+because the terminal (xterm.js) writes its measurements into `<style>` elements; scripts stay this origin's only."""
 SECURITY_HEADERS = {
     "Content-Security-Policy": CSP,
     "X-Content-Type-Options": "nosniff",
@@ -186,6 +188,8 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         return response
 
     paired = devices or devices_for_user()
+    _terminal.add_route(app, token=token, port=port, accept=paired.check)  # before the mount, which takes /api
+
     endpoints = api_app(
         kernel,
         port=port,

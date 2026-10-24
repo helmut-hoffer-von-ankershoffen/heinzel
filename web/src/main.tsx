@@ -14,6 +14,13 @@ const session = adoptToken();
 // With the link `hz ui` opened, pair this browser once, so the app reopens from the Dock without one (ADR 0046).
 void pairDevice();
 window.addEventListener("load", () => void registerServiceWorker());
+// A new `#token=…` (e.g. after `hz ui` restarted) replaces the stored one and starts the app afresh.
+window.addEventListener("hashchange", () => {
+  if (new URLSearchParams(window.location.hash.replace(/^#/, "")).has("token")) {
+    adoptToken();
+    window.location.reload();
+  }
+});
 const root = document.getElementById("root");
 if (root) {
   createRoot(root).render(
