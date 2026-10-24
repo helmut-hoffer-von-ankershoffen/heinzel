@@ -54,9 +54,9 @@ the kinds it understands.
 
 New kinds of lets (watchers) extend Heinzelmännchen without changing existing heads; see
 [ADR 0010](adr/0010-towards-a-reactive-workflow-engine.md). Workflow contracts are data, not lets: the `workflow`
-module reads them at boot and provides `CompiledJobs`, which the daemon runs beside the declared `JobLet`s; each
-compiled job reads through `Kernel.handle_for` as the requester its contract declares
-([ADR 0021](adr/0021-workflow-contracts.md)).
+module reads them and provides `CompiledJobs`, which the kernel compiles afresh whenever the daemon lists its jobs and
+runs beside the declared `JobLet`s; each compiled job reads through `Kernel.handle_for` as the requester its contract
+declares ([ADR 0021](adr/0021-workflow-contracts.md)).
 
 **Kernel.** Discovers modules, registers them with a pluggy plugin manager (blocking disabled ones), hands out lets
 by kind with their owning module, and injects dependencies by type: `Kernel`, `Settings`, `Config`, every type a

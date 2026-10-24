@@ -64,7 +64,7 @@ receipts and named a daemon head.
 
 Chosen option (proposed): **the OS supervises, the daemon ticks; GitHub holds shared state, leases and approvals**,
 because one short-lived `tick()` survives updates, crashes and sleep, and many daemons cooperate without a server of
-our own.
+our own. Points are marked where 0.2 builds part of them and the rest comes later.
 
 1. **Process model: the OS supervises, the daemon ticks.**
    - `hz system daemon install` writes a launchd LaunchAgent (`~/Library/LaunchAgents`, `StartCalendarInterval`,
@@ -72,30 +72,35 @@ our own.
      (`~/.config/systemd/user`, `OnCalendar=`, `Persistent=true`, `RandomizedDelaySec=`). It points at the stable
      uv tool shim (`uv tool dir --bin`), never at the environment's interpreter. The default interval is 5 minutes.
    - Each firing runs `hz system daemon tick`, a short-lived process: boot, reconcile, write receipts, exit.
-   - `hz system serve daemon` runs the same `tick()` in a foreground loop. An opt-in `--resident` mode
-     (`KeepAlive` / `Restart=always`) for file watching comes later.
+   - `hz system serve daemon` runs the same `tick()` in a foreground loop. It doesn't re-read declared jobs while it
+     runs; compiled jobs are compiled afresh on every tick. An opt-in `--resident` mode (`KeepAlive` /
+     `Restart=always`) for file watching comes later.
    - Commands live under `hz system daemon` (ADR 0018) as ordinary operations: `install`, `uninstall`, `status`,
      `logs`, `tick`, `pause`, `resume`, `jobs`. `status` is also a `HealthLet`. `install` and `uninstall` are
      CLI-only: installing something that runs at every login is a deliberate human act, not an MCP or REST call.
    - Jobs run unattended with the user's rights. `pause`, `uninstall` and `disabled_modules` stop them.
-   - `hz system update` takes the local tick lock and restarts resident mode.
-2. **Two new let kinds; contracts compile to them.**
-   - `WatchLet`: name, provider (injected), period, scope, source id, canonicalizer. It returns facets that the kernel
-     fingerprints (SHA-256 of canonical JSON) and gets an injected `Cursor` (ETag or page token).
-   - `JobLet`: name, func (injected like an operation, never prints), summary, `schedule` (cron), `on` (watch facets),
-     `scope` (`personal` | `team`), `publishes` (action types that need approval), `timeout`, `retries`,
-     `concurrency`, `catch_up` (`latest` | `all` | `skip`), `idempotency` (defaults to the memo key), owner.
-   - `ContractLet` (ADR 0010) is compiled at boot into a `JobLet` whose func runs an agent session.
+   - `hz system update` takes the local tick lock and restarts resident mode (later).
+2. **Two new let kinds, and jobs compiled from data.**
+   - `JobLet`: name, func (injected like an operation, never prints), summary, `schedule` (cron), `scope`, `timeout`,
+     `retries`, `catch_up` (`latest` | `all` | `skip`), `idempotency`, `requires`. 0.2: `scope="personal"` only and
+     `idempotency` defaulting to `<job>@<slot>`. Later: `on` (watch facets), `scope="team"`, `publishes`,
+     `concurrency`, owner, and the memo key as the default idempotency.
+   - `WatchLet` (later): name, provider (injected), period, scope, source id, canonicalizer. It returns facets that
+     the kernel fingerprints (SHA-256 of canonical JSON) and gets an injected `Cursor` (ETag or page token).
+   - Contracts are data, not lets, so there is no `ContractLet` (ADR 0010): the module that compiles them (`workflow`,
+     [ADR 0021](0021-workflow-contracts.md)) provides the kernel's `CompiledJobs` service, and the daemon runs those
+     jobs beside the declared ones as `<providing module>:<job>`, with the same slots, receipts and timeouts.
    - Publishing is an ordinary `OperationLet` with `read_only=False`, so every head exposes it.
 3. **Reconciliation lives in `system.daemon`; the daemon head invokes it.** `tick` is an ordinary operation, so it
    must exist in every head, and modules can't import heads. The `system.daemon` service therefore reads
-   `kernel.lets(JobLet)` (later `kernel.lets(WatchLet)`), respects `kernel.available()` and invokes jobs through
-   kernel injection. `heinzel.heads.daemon`, imported only when served, finds the `tick` operation through the kernel
+   `kernel.lets(JobLet)` and `kernel.compiled_jobs()` (later `kernel.lets(WatchLet)`), respects `kernel.available()`
+   and invokes jobs through kernel injection. A failing compiler is logged and reported by doctor; the declared jobs
+   still run. `heinzel.heads.daemon`, imported only when served, finds the `tick` operation through the kernel
    and calls it in a loop, so heads still import no module. Shared state is reached only **by type**: the kernel
    will define `Ledger`, `Leases` and `Inbox` protocols and a `state` module provide them; until then, and whenever
    `state` is disabled, a local ledger under platformdirs applies.
 4. **Reconciliation follows Reactor.**
-   - Clocks only wake jobs. A job runs when its memo key `(contract fingerprint, input facet fingerprints[, freshness
+   - Clocks only wake jobs (later; 0.2 runs a job once per due slot, keyed by its idempotency key). A job runs when its memo key `(contract fingerprint, input facet fingerprints[, freshness
      epoch])` differs from the last rendered receipt; otherwise the disposition is `skipped`.
    - Missed schedule slots are computed from the ledger (the local one now, the **shared** one with `state`), not
      process memory. A job without a scheduled receipt starts at the later of the previous tick and one interval ago,
@@ -110,8 +115,9 @@ our own.
      the tick up to `retries`.
    - Each job is contained: its failure, a damaged receipt chain or a raising idempotency function included, fails
      that job only; the other jobs run.
-   - Only the leaseholder of a source polls it, with conditional requests, `retry-after` and exponential backoff.
-5. **Team state lives in a GitHub state repository.**
+   - Only the leaseholder of a source polls it, with conditional requests, `retry-after` and exponential backoff
+     (later).
+5. **Team state lives in a GitHub state repository** (later; 0.2 keeps a local ledger).
    - Receipts are append-only, one file per receipt, never edited; one commit per tick, rebased and retried on
      rejection.
    - Leases are refs `refs/heads/hz/lease/<job-or-source>` whose acquire, renew and release commits form a
@@ -119,10 +125,10 @@ our own.
      receipts record.
    - The repository also holds `control.toml` (kill switch, disabled jobs, cost ceilings),
      `policies/auto-approve.toml` (owned) and `workflows/registry.toml`.
-6. **Two runners, one ledger.** `scope=personal` jobs run only on their owner's daemon. `scope=team` jobs run in a
+6. **Two runners, one ledger** (later; 0.2 runs personal jobs on your daemon). `scope=personal` jobs run only on their owner's daemon. `scope=team` jobs run in a
    scheduled GitHub Actions workflow (`hz system daemon tick --scope team`, one `concurrency` group) when the team
    configures one; otherwise they are leased among daemons.
-7. **Approvals live in GitHub.**
+7. **Approvals live in GitHub** (later; 0.2 publishes nothing unattended).
    - Every proposal becomes an issue in the state repository, or a pull request for file-like drafts.
    - `hz inbox list|show|approve|reject` are operations, so CLI, MCP and REST share one inbox.
    - Auto-approval is a policy entry with an owner, an action type, a scope and an expiry, changed by pull request;
@@ -130,7 +136,9 @@ our own.
 8. **Receipts** are JSON, content-addressed and hash-chained per job. The id is the SHA-256 of the stored JSON
    without the id, so fields added later don't invalidate older receipts. The hash is unkeyed: it detects accidents
    (truncation, hand edits, lost files), not tampering by the user's own processes; signed receipts come later.
-   Receipts, state and logs are private (directories 0700, files 0600) and written atomically with fsync. Fields:
+   Receipts, state and logs are private (directories 0700, files 0600) and written atomically with fsync. 0.2 writes
+   `job`, `wake`, `disposition` (`rendered|skipped|failed`), `as_of`, `idempotency_key`, `error` and `result`; the
+   other fields come with what produces them. Fields:
    - job, contract and input fingerprints, memo key;
    - wake cause; disposition (`rendered|skipped|failed|awaiting_approval|approved|rejected|published`);
    - runner (person, host, versions, laptop or actions), lease token, idempotency key;
@@ -138,13 +146,15 @@ our own.
 
    `skipped` receipts stay local by default.
 9. **Untrusted input is data until registered.** Workflows found in artefacts (a "🧝 Heinzel" tab) only produce a
-   registration proposal. They run once registered with an owner and a pinned fingerprint, and pause for approval
+   registration proposal (later). They run once registered with an owner and a pinned fingerprint, and pause for approval
    when the text changes. Renders get read-only tools; writes happen only through approved publish operations.
-   Unattended runs are limited to an allowlist of modules.
+   Unattended runs are limited to an allowlist of modules (later). 0.2: compiled contracts render with read-only
+   tools and publish nothing; a project's `hz.toml` can't configure what the daemon runs.
 10. **Operations hygiene.**
     - Logs are rotated JSON lines in `platformdirs.user_log_dir`.
     - Secrets come from the OS keychain through `keyring`, never from unit files.
-    - Kill switches (local flag, team `control.toml`, per job) are checked before every tick and every publish.
+    - Kill switches (local flag, team `control.toml`, per job) are checked before every tick and every publish
+      (0.2: the local pause flag).
     - `--dry-run` on `install` and `tick`.
 
 ### Consequences
@@ -212,11 +222,6 @@ personal part.
   (`types-croniter`). APScheduler's 3.x line gets maintenance releases (3.11.3 on 2026-06-28) while 4.0 has been
   an alpha since 2025-04 (4.0.0a6), its repository has 74 open issues, and it brings tzlocal and a scheduler we don't
   use. croniter's `get_next` and `get_prev` are exactly the "slots since the last receipt" question.
-
-**Compiled jobs (added with the workflow module, 2026-10-24).** Workflow contracts are data, so the `ContractLet` of
-decision 2 isn't a let: a module provides the kernel's `CompiledJobs` service, and the daemon runs its jobs beside
-the declared `JobLet`s under `<module>:<job>`, with the same slots, receipts and timeouts. Details:
-[ADR 0021](0021-workflow-contracts.md).
 
 **Remaining:** the `state` module with `Ledger`, `Leases` and `Inbox` protocols and the shared ledger in a GitHub
 state repository; lease refs; `WatchLet` and conditional polling; `scope="team"`, `publishes`, `concurrency`,

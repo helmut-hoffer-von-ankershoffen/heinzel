@@ -9,12 +9,13 @@ change like a library release: an ADR for a new concept, unit tests for every br
   `_agents.py` — the `AgentRunner` protocol and `AgentResult` (ADR 0029; adapters live in `system.runner`);
   `_capabilities.py` — the capability registry with each method's mode and requirement strings;
   `_bindings.py` — `[capabilities]` bindings; `Capabilities` (kernel-internal) hands requesters mode-gated
-  handles, modules get the read-only `CapabilityView` (ADR 0028); `Kernel.handle_for` gives code acting for a
-  `Requester` it built (compiled workflow jobs) read handles only.
+  handles, modules get the read-only `CapabilityView` (ADR 0028); `Kernel.handle_for` gives the compiling module's
+  jobs read handles only.
 - `_credentials.py` — `Credentials`, the only way to secrets (ADR 0030), and the environment backend.
 - `_lets.py` — let types, `Check`/`Status` and `CatchUp`. A new let kind needs a head, the kernel or a `system`
-  submodule that consumes it (`JobLet`: `system.daemon`). `CompiledJobs` is a service, not a let: jobs compiled
-  from data at boot (workflow contracts, ADR 0021), which `system.daemon` runs too.
+  submodule that consumes it (`JobLet`: `system.daemon`).
+- `_jobs.py` — `CompiledJobs`, a service, not a let: jobs compiled from data (workflow contracts, ADR 0021);
+  `Kernel.compiled_jobs()` compiles them afresh on every call, and `system.daemon` runs them too.
 - `_discovery.py` — package walk + `heinzel.modules` entry points; plugin failures are collected, built-in ones raise.
 - `_kernel.py` — registration (pluggy), disabled modules, `lets()`, injection (`call`, `resolve`, `bind`, `available`).
 - `_boot.py` — `boot()`, the only place that ties configuration, discovery and the kernel together.
