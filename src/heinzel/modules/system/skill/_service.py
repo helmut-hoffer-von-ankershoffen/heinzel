@@ -6,6 +6,7 @@ from pathlib import Path
 
 from heinzel import HeinzelError, Kernel, LayerStack, ModuleRecord, Skill, SkillEntry, SkillLet, Skills
 from heinzel.kernel import (
+    MAX_SKILL_LOAD,
     LoadedSkill,
     SkillSource,
     read_skill,
@@ -22,7 +23,6 @@ from heinzel.modules.system.skill._models import (
     SkillView,
 )
 
-MAX_LOAD = 24_000
 PERSONAL = "personal"
 
 
@@ -134,7 +134,11 @@ class SkillService(Skills):
                 return [], [f"{root} is inside {target}, where exports go; keep your own skills elsewhere"]
         offered: list[Offered] = []
         problems: list[str] = []
-        for directory in sorted(root.iterdir()):
+        try:
+            directories = sorted(root.iterdir())
+        except OSError as exc:
+            return [], [f"{root} can't be listed ({exc.strerror or type(exc).__name__})"]
+        for directory in directories:
             if directory.name.startswith(".") or not directory.is_dir():
                 continue
             try:
@@ -172,7 +176,7 @@ class SkillService(Skills):
             source=offered.source,
             module=offered.module,
             fingerprint=offered.skill.fingerprint,
-            body=body[:MAX_LOAD] + ("\n…(cut)" if len(body) > MAX_LOAD else ""),
+            body=body[:MAX_SKILL_LOAD] + ("\n…(cut)" if len(body) > MAX_SKILL_LOAD else ""),
             files=[file.path for file in offered.skill.files],
         )
 

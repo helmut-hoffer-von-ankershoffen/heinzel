@@ -4,7 +4,7 @@ import anyio
 import pytest
 from mcp import Client
 
-from heinzel import Module
+from heinzel import HeinzelError, Module, Skills
 from heinzel.heads import mcp
 
 pytestmark = pytest.mark.unit
@@ -62,3 +62,30 @@ def test_a_file_changed_since_import_is_a_resource_error(make_kernel, tmp_path):
             return "read"
 
     assert "changed since hz started" in anyio.run(read)
+
+
+@pytest.mark.parametrize("chat", [None, "0123456789abcdef"])
+def test_no_mcp_tool_lists_or_shows_skills_so_a_chat_reads_only_its_own(make_kernel, tmp_path, chat):
+    kernel = make_kernel(builtins=True, notes=notes(tmp_path))
+
+    async def tools() -> set[str]:
+        async with Client(mcp.build(kernel, chat=chat)) as client:
+            return {tool.name for tool in (await client.list_tools()).tools}
+
+    assert not {name for name in anyio.run(tools) if name.startswith("system_skill")}
+
+
+def test_a_skill_gone_after_start_is_a_prompt_error(make_kernel, tmp_path):
+    kernel = make_kernel(builtins=True, notes=notes(tmp_path))
+    server = mcp.build(kernel)
+    kernel.resolve(Skills).load = lambda *a, **k: (_ for _ in ()).throw(HeinzelError("gone"))  # type: ignore[method-assign]
+
+    async def get() -> str:
+        async with Client(server) as client:
+            try:
+                await client.get_prompt("skill_review_notes")
+            except Exception as exc:  # noqa: BLE001 - whatever the client raises for an error result
+                return str(exc)
+            return "read"
+
+    assert anyio.run(get) != "read"  # an error result, never a body

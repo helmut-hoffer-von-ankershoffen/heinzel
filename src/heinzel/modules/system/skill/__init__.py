@@ -31,9 +31,10 @@ module.service(SkillService)
 module.service(Skills, SkillService)  # turns and the MCP head read skills through it (ADR 0060)
 module.skill(Path(__file__).parent / "skills")
 
-LOCAL = {"cli", "mcp-stdio", "web"}
-"""Heads that may see skills: a company plugin's skill can be internal, and neither the REST head nor MCP over HTTP
-asks who is calling."""
+LOCAL = {"cli", "web"}
+"""Heads that may list skills: a company plugin's skill can be internal, and neither the REST head nor MCP over HTTP
+asks who is calling. MCP clients get skills as prompts and resources instead, on stdio and outside a chat only, so a
+chat's agent reads no skill beyond `[system.skill] chat` (ADR 0060)."""
 
 
 def render_list(result: SkillList) -> RenderableType:
@@ -115,7 +116,7 @@ def export(
         bool, Field(description="Only remove exports whose skill is gone or changed; never add one.")
     ] = False,
 ) -> ExportResult:
-    """Export skills you name for Claude Code, as `heinzel-<name>` in each `[system.skill] export_dirs`."""
+    """Export the skills you name for Claude Code, as `heinzel-<name>` in each export directory."""
     return service.export(name or (), everything=all_skills, sync=sync)
 
 

@@ -109,6 +109,9 @@ from heinzel.kernel._protocols import (
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._skills import (
+    MAX_LOAD as MAX_SKILL_LOAD,
+)
+from heinzel.kernel._skills import (
     LoadedSkill,
     Skill,
     SkillEntry,
@@ -123,6 +126,9 @@ from heinzel.kernel._skills import (
     skill_text,
     skill_tools,
     skills_in,
+)
+from heinzel.kernel._skills import (
+    name_problem as skill_name_problem,
 )
 from heinzel.kernel._telemetry import (
     HEINZEL_ID,
@@ -165,6 +171,7 @@ __all__ = [
     "KERNEL_SECTION",
     "LOGO_CSP",
     "LOGO_ROUTE",
+    "MAX_SKILL_LOAD",
     "MAX_WINDOW",
     "MODES",
     "NO_ADAPTER",
@@ -319,6 +326,7 @@ __all__ = [
     "schedule_problem",
     "skill_frame",
     "skill_instructions",
+    "skill_name_problem",
     "skill_text",
     "skill_tools",
     "skills_in",

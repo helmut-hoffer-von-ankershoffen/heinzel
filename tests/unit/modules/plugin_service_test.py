@@ -522,6 +522,7 @@ def test_remove_records_what_was_removed(make_kernel, tool_env, monkeypatch):
     service, runs = installing(make_kernel, tool_env, monkeypatch)
     change = service.remove("heinzel-old")
     assert (change.action, change.done, change.restart_required, len(runs)) == ("remove", True, True, 1)
+    assert change.next == []  # the skill sync of the fresh hz succeeded: nothing to do
     assert [(e.action, e.distribution, e.version) for e in service.history()] == [("remove", "heinzel-old", "1.0.0")]
 
 

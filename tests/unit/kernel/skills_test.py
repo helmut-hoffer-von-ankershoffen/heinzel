@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+import anyio
 import pytest
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel
@@ -16,11 +17,9 @@ from heinzel import (
     SkillEntry,
     SkillLet,
     Skills,
-    skill_instructions,
-    skill_tools,
 )
 from heinzel.kernel import _skills as skills
-from heinzel.kernel import read_skill, read_skill_file, skill_frame, skills_in
+from heinzel.kernel import read_skill, read_skill_file, skill_frame, skill_instructions, skill_tools, skills_in
 
 pytestmark = pytest.mark.unit
 
@@ -171,7 +170,7 @@ def test_a_file_is_read_again_only_when_listed_and_unchanged(tmp_path):
     assert read_skill_file(directory, skill, "references/checklist") == b"- intent\n"
     assert read_skill_file(directory, skill, "SKILL.md").startswith(b"---")
     for path in ("../outside", "/etc/passwd", "references/../SKILL.md", "missing.md"):
-        with pytest.raises(ValueError, match=r"ships no file|isn't a path"):
+        with pytest.raises(ValueError, match="ships no file"):
             read_skill_file(directory, skill, path)
     (directory / "references" / "checklist").write_text("- changed\n", encoding="utf-8")
     with pytest.raises(ValueError, match="changed since hz started"):
@@ -283,7 +282,7 @@ def test_the_tools_frame_a_skill_as_advice_and_refuse_what_is_not_allowed():
 def test_a_pydantic_ai_turn_can_attach_the_tools_as_a_toolset():
     fake = FakeSkills()
     agent = Agent(TestModel(), toolsets=[FunctionToolset(skill_tools(fake, ["notes"]))])
-    result = agent.run_sync("Review the notes.")
+    result = anyio.run(agent.run, "Review the notes.")  # not run_sync: it leaves its event loop's socket open
     assert any(call[0] == "load" for call in fake.calls)
     assert any(call[0] == "read" for call in fake.calls)
     assert "load_skill" in result.output
@@ -304,3 +303,51 @@ def test_the_abstract_service_says_it_is_abstract():
     ):
         with pytest.raises(NotImplementedError):
             call(Skills())
+
+
+def test_read_beneath_refuses_paths_that_leave_the_directory(tmp_path):
+    directory = write_skill(tmp_path)
+    for path in ("../x", "/etc/passwd", "a/../SKILL.md", "", "./SKILL.md"):
+        with pytest.raises(ValueError, match="isn't a path below the skill's directory"):
+            skills.read_beneath(directory, path, 10, "Skill")
+
+
+def test_a_skill_md_changed_since_import_is_refused(tmp_path):
+    directory = write_skill(tmp_path)
+    skill = read_skill(directory)
+    (directory / "SKILL.md").write_text(
+        "---\nname: review-notes\ndescription: d\nhz-grant: all\n---\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match=r"SKILL\.md changed since hz started"):
+        read_skill_file(directory, skill, "SKILL.md")
+
+
+@pytest.mark.parametrize("hidden", ["\U000e0049\U000e0067nore", "a" + chr(0x202E) + "b", "zero\u200bwidth", "bell\x07"])
+def test_invisible_or_control_characters_refuse_the_skill(tmp_path, hidden):
+    directory = write_skill(tmp_path, references__notes=f"fine\n{hidden}\n")
+    with pytest.raises(ValueError, match=r"references/notes, line 2, holds invisible or control characters"):
+        read_skill(directory)
+    crlf = write_skill(tmp_path, name="crlf", references__notes="one\r\ntwo\r\n")
+    assert read_skill(crlf).files[0].path == "references/notes"
+
+
+def test_a_linked_or_missing_source_and_a_plain_file_are_no_skill(tmp_path):
+    real = write_skill(tmp_path / "real")
+    (tmp_path / "linked").symlink_to(real)
+    with pytest.raises(ValueError, match="symbolic link"):
+        skills_in(tmp_path / "linked")
+    (tmp_path / "file").write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError, match="isn't a skill's directory"):
+        read_skill(tmp_path / "file")
+
+
+def test_frontmatter_over_4_kb_and_special_files_are_refused(tmp_path):
+    big = write_skill(
+        tmp_path, frontmatter=f"name: review-notes\ndescription: d\nlicense: {'x' * 1000}\n" + "# c\n" * 1100
+    )
+    with pytest.raises(ValueError, match="frontmatter is larger than 4 KB"):
+        read_skill(big)
+    fifo = write_skill(tmp_path, name="fifo")
+    os.mkfifo(fifo / "pipe")
+    with pytest.raises(ValueError, match="neither a file nor a directory"):
+        read_skill(fifo)

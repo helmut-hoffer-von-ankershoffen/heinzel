@@ -125,7 +125,7 @@ def test_a_personal_dir_inside_an_export_dir_is_refused(service, tmp_path):
 
 
 def test_index_load_and_read_enforce_the_allowlist_in_code(service, tmp_path):
-    svc = service(plugin(tmp_path, "notes", "review-notes", references__list="- a@example.com\u200b\n"))
+    svc = service(plugin(tmp_path, "notes", "review-notes", references__list="- a@example.com\n"))
     assert [e.name for e in svc.index(["review-notes"])] == ["review-notes"]
     assert {e.name for e in svc.index()} >= {"review-notes", "explain-heinzel"}
     loaded = svc.load("review-notes", ["review-notes"])
@@ -145,7 +145,7 @@ def test_show_returns_the_body_cut_and_clean(service, tmp_path, monkeypatch):
     svc = service(plugin(tmp_path, "notes", "review-notes", scripts__run="echo\n"))
     detail = svc.show("review-notes")
     assert (detail.body, detail.skill.scripts) == ("# review-notes\n", 1)
-    monkeypatch.setattr("heinzel.modules.system.skill._service.MAX_LOAD", 5)
+    monkeypatch.setattr("heinzel.modules.system.skill._service.MAX_SKILL_LOAD", 5)
     assert svc.load("review-notes").body == "# rev\n…(cut)"
 
 
@@ -223,9 +223,7 @@ def test_sync_removes_gone_and_changed_exports_and_never_adds(service, tmp_path)
     assert [(i.name, i.action) for i in result.items] == [("review-notes", "changed")]
     assert "export --name review-notes" in result.items[0].detail
     assert sorted(p.name for p in claude.iterdir()) == ["heinzel-explain-heinzel"]
-    gone = service()
-    svc_without_core = gone.export([], sync=True)
-    assert svc_without_core.items == []
+    assert service().export([], sync=True).items == []  # the core skill's export is unchanged: kept
     (tmp_path / "x").mkdir()
     lost = service(plugin(tmp_path / "x", "other", "other-notes"))
     lost.export(["other-notes"])
@@ -255,3 +253,36 @@ def test_a_broken_manifest_is_an_empty_one(service, tmp_path):
     for content in ("not json", "[1]", '{"a": 1}'):
         path.write_text(content, encoding="utf-8")
         assert svc.unexport([], everything=True).items == []
+
+
+def test_an_export_directory_that_cannot_be_created_is_a_conflict(service, tmp_path):
+    (tmp_path / "afile").write_text("x", encoding="utf-8")
+    svc = service(plugin(tmp_path, "notes", "review-notes"), export_dirs=[tmp_path / "afile"])
+    item = svc.export(["review-notes"]).items[0]
+    assert (item.action, "can't be created" in item.detail) == ("conflict", True)
+
+
+def test_a_manifest_entry_outside_the_export_dirs_or_badly_named_is_never_acted_on(service, tmp_path):
+    svc = service()
+    elsewhere = tmp_path / "elsewhere" / "heinzel-x"
+    elsewhere.mkdir(parents=True)
+    (elsewhere / MARKER).write_text("{}", encoding="utf-8")
+    path = svc._kernel.settings.state_dir / MANIFEST
+    path.parent.mkdir(parents=True, exist_ok=True)
+    manifest = {str(tmp_path / "elsewhere"): {"x": "f"}, str(tmp_path / "claude"): {"../../etc": "f"}}
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert svc.unexport([], everything=True).items == []
+    assert elsewhere.is_dir()
+    assert str(tmp_path / "elsewhere") in json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_health_names_problems_without_skill_text(service, tmp_path):
+    from heinzel import Status
+    from heinzel.modules.system.skill import health
+
+    assert health(service())[0].status == Status.UP
+    write_skill(tmp_path / "mine", "notes", hints="model: [a, {b: c}]\n")
+    check = health(service())[0]
+    assert (check.status, check.fix) == (Status.DEGRADED, "hz system skill list")
+    assert "notes" in check.detail
+    assert "# notes" not in check.detail

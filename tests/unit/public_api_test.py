@@ -88,7 +88,6 @@ HEINZEL = [
     "SetupLet",
     "Skill",
     "SkillEntry",
-    "SkillFile",
     "SkillLet",
     "Skills",
     "Status",
@@ -114,8 +113,6 @@ HEINZEL = [
     "clean_text",
     "draft_reporting_lines",
     "redact_emails",
-    "skill_instructions",
-    "skill_tools",
 ]
 KERNEL = [
     "AccessStatus",
@@ -187,6 +184,7 @@ KERNEL = [
     "Let",
     "LoadedSkill",
     "Login",
+    "MAX_SKILL_LOAD",
     "MAX_WINDOW",
     "MODES",
     "Mail",
@@ -286,6 +284,7 @@ KERNEL = [
     "schedule_problem",
     "skill_frame",
     "skill_instructions",
+    "skill_name_problem",
     "skill_text",
     "skill_tools",
     "skills_in",

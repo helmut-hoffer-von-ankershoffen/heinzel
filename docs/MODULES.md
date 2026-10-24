@@ -363,9 +363,9 @@ List the skills plugins ship for AI, and hand chosen ones to Claude Code.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| List the skills in effect: which module offers each, what it hides, and where it is exported. | `hz system skill list` | `system_skill_list` | — | `GET /api/system/skill/list` |  | expert |
-| Show a skill: where it comes from, its files and hints, and its body. | `hz system skill show` | `system_skill_show` | — | `GET /api/system/skill/show` |  | expert |
-| Export skills you name for Claude Code, as `heinzel-<name>` in each `[system.skill] export_dirs`. | `hz system skill export` | — | — | — | yes | expert |
+| List the skills in effect: which module offers each, what it hides, and where it is exported. | `hz system skill list` | — | — | `GET /api/system/skill/list` |  | expert |
+| Show a skill: where it comes from, its files and hints, and its body. | `hz system skill show` | — | — | `GET /api/system/skill/show` |  | expert |
+| Export the skills you name for Claude Code, as `heinzel-<name>` in each export directory. | `hz system skill export` | — | — | — | yes | expert |
 | Remove skills hz exported for Claude Code; directories hz didn't write are left alone. | `hz system skill unexport` | — | — | — | yes | expert |
 
 Settings: [`[system.skill]`](CONFIGURATION.md#systemskill).

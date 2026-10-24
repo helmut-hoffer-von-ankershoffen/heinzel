@@ -14,11 +14,11 @@ import stat
 import tempfile
 from collections.abc import Collection, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import yaml
 
-from heinzel.kernel import read_skill_file
+from heinzel.kernel import read_skill_file, skill_name_problem
 from heinzel.modules.system.skill._models import ExportAction, ExportItem, ExportResult
 
 if TYPE_CHECKING:
@@ -65,19 +65,39 @@ class Exporter:
             return {}
         if not isinstance(data, dict):
             return {}
-        return {
-            str(base): {str(k): str(v) for k, v in entries.items()}
-            for base, entries in data.items()
-            if isinstance(entries, dict)
-        }
+        # Only directories exports go to now and names a skill can have: a manifest someone edited can't make hz
+        # remove anything else.
+        bases = {str(directory) for directory in self._directories}
+        manifest: dict[str, dict[str, str]] = {}
+        for base, entries in cast("dict[object, object]", data).items():
+            if str(base) in bases and isinstance(entries, dict):
+                pairs = cast("dict[object, object]", entries).items()
+                manifest[str(base)] = {str(k): str(v) for k, v in pairs if skill_name_problem(str(k)) is None}
+        return manifest
 
     def _save(self, manifest: Mapping[str, Mapping[str, str]]) -> None:
         self._manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        kept = {base: dict(entries) for base, entries in manifest.items() if entries}
+        kept = dict(self._stored()) | {base: dict(entries) for base, entries in manifest.items()}
+        kept = {base: entries for base, entries in kept.items() if entries}
         handle, temporary = tempfile.mkstemp(prefix=".skill-exports-", dir=self._manifest_path.parent)
         with os.fdopen(handle, "w", encoding="utf-8") as file:
             json.dump(kept, file, indent=2, sort_keys=True)
         Path(temporary).replace(self._manifest_path)
+
+    def _stored(self) -> dict[str, dict[str, str]]:
+        """Entries for directories no longer configured, kept as they are so a later configuration finds them."""
+        try:
+            data = json.loads(self._manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        bases = {str(directory) for directory in self._directories}
+        return {
+            str(base): {str(k): str(v) for k, v in cast("dict[object, object]", entries).items()}
+            for base, entries in cast("dict[object, object]", data).items()
+            if str(base) not in bases and isinstance(entries, dict)
+        }
 
     def exported(self) -> dict[str, list[Path]]:
         """Each exported skill's name with the directories it is exported to."""
@@ -106,7 +126,12 @@ class Exporter:
                     for o in skills
                 ]
                 continue
-            base.mkdir(parents=True, exist_ok=True, mode=0o700)
+            try:
+                base.mkdir(parents=True, exist_ok=True, mode=0o700)
+            except OSError as exc:
+                detail = f"{base} can't be created ({exc.strerror or type(exc).__name__})"
+                items += [ExportItem(name=o.skill.name, action="conflict", target=base, detail=detail) for o in skills]
+                continue
             for offered in skills:
                 item = self._write(base, offered, known=offered.skill.name in entries)
                 if item.action == "exported":
@@ -199,7 +224,8 @@ class Exporter:
     @staticmethod
     def _delete(base: Path, name: str, action: ExportAction, detail: str) -> ExportItem:
         target = base / f"{PREFIX}{name}"
-        if _is_link(target) or (target.exists() and not (target / MARKER).is_file()):
+        marker = target / MARKER
+        if _is_link(target) or (target.exists() and (_is_link(marker) or not marker.is_file())):
             return ExportItem(
                 name=name, action="conflict", target=target, detail=f"{target} isn't hz's export; left alone"
             )

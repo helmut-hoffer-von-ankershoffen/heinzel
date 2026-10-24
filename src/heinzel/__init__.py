@@ -84,7 +84,6 @@ from heinzel.kernel import (
     SetupLet,
     Skill,
     SkillEntry,
-    SkillFile,
     SkillLet,
     Skills,
     Status,
@@ -109,8 +108,6 @@ from heinzel.kernel import (
     clean_text,
     draft_reporting_lines,
     redact_emails,
-    skill_instructions,
-    skill_tools,
 )
 
 __all__ = [
@@ -187,7 +184,6 @@ __all__ = [
     "SetupLet",
     "Skill",
     "SkillEntry",
-    "SkillFile",
     "SkillLet",
     "Skills",
     "Status",
@@ -213,6 +209,4 @@ __all__ = [
     "clean_text",
     "draft_reporting_lines",
     "redact_emails",
-    "skill_instructions",
-    "skill_tools",
 ]

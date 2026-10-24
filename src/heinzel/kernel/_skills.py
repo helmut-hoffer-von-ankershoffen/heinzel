@@ -18,10 +18,10 @@ import stat
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from heinzel.kernel._lets import Let
 from heinzel.kernel._text import clean_text, redact_emails
@@ -80,6 +80,10 @@ _SECRETS = re.compile(
     r"|\bsk-ant-[A-Za-z0-9_-]{20,}"
     r"|\bglpat-[A-Za-z0-9_-]{20,}"
     r"|\bAIza[0-9A-Za-z_-]{35}"
+    r"|\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}"
+    r"|\b[rs]k_live_[A-Za-z0-9]{20,}"
+    r"|\bnpm_[A-Za-z0-9]{36}"
+    r"|\bpypi-[A-Za-z0-9_-]{50,}"
 )
 """What a secret looks like: a private key block or a common token prefix. A match refuses the skill."""
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
@@ -89,12 +93,27 @@ _NONBLOCK = getattr(os, "O_NONBLOCK", 0)
 SkillName = Annotated[str, StringConstraints(pattern=SKILL_NAME, max_length=MAX_NAME)]
 
 
+def _relative(path: str) -> str:
+    """`path` if it is a relative path with `/` that stays below its root.
+
+    Raises:
+        ValueError: If it is absolute, empty, holds NUL, or has a `.` or `..` part.
+    """
+    parts = PurePosixPath(path).parts
+    if not parts or path.startswith("/") or "\x00" in path or any(part in {".", ".."} for part in path.split("/")):
+        msg = f"{path!r} isn't a path below the skill's directory"
+        raise ValueError(msg)
+    return path
+
+
 class SkillFile(BaseModel):
     """A file a skill ships beside its `SKILL.md`, by its path below the skill's directory."""
 
     model_config = ConfigDict(frozen=True)
 
-    path: str = Field(description="Path below the skill's directory, with `/`, e.g. `references/checklist.md`.")
+    path: Annotated[str, AfterValidator(_relative)] = Field(
+        description="Path below the skill's directory, with `/`, e.g. `references/checklist.md`."
+    )
     kind: SkillKind = Field(description="What it is, from its top directory: `scripts/` holds `script`s, and so on.")
     size: int = Field(ge=0, description="Size in bytes.")
     sha256: str = Field(description="SHA-256 of its content, so a file changed since import is refused.")
@@ -109,13 +128,14 @@ class Skill(BaseModel):
     description: Annotated[str, StringConstraints(min_length=1, max_length=MAX_DESCRIPTION)] = Field(
         description="When to use it, in one line."
     )
-    body: str = Field(description="The Markdown after the frontmatter.")
+    body: str = Field(max_length=MAX_SKILL_FILE, description="The Markdown after the frontmatter.")
     hints: dict[str, str] = Field(
         default_factory=dict[str, str],
         description="Frontmatter keys of the spec and of Claude Code, such as `allowed-tools`: shown, never applied.",
     )
     files: tuple[SkillFile, ...] = Field(default=(), description="The files beside `SKILL.md`, by path.")
     fingerprint: str = Field(description="SHA-256 over every file's path and content, `SKILL.md` too.")
+    skill_sha256: str = Field(default="", description="SHA-256 of `SKILL.md`, so one changed since import is refused.")
 
     def file(self, path: str) -> SkillFile | None:
         """The file at `path`, or None if the skill ships none there."""
@@ -131,7 +151,10 @@ class SkillLet(Let):
     """The skill's directory, its files' root."""
 
     def __post_init__(self) -> None:
-        """Check the skill again, so one built with `model_construct` can't skip the rules.
+        """Check the skill's model again, so one built with `model_construct` can't skip its field rules.
+
+        The checks of its files (sizes, text, secrets, links) are `read_skill`'s, which `module.skill` runs; a let
+        built by hand from a `Skill` is the plugin's own responsibility, and every read checks its path again.
 
         Raises:
             ValueError: If the skill isn't valid or the let isn't named after it.
@@ -320,15 +343,13 @@ def read_skill(directory: Path) -> Skill:
         contents[path] = content
         top = path.split("/", 1)[0] if "/" in path else ""
         files.append(SkillFile(path=path, kind=_KINDS.get(top, "other"), size=len(content), sha256=_sha(content)))
-    if len(files) > MAX_FILES:
-        msg = f"{where} ships {len(files)} files; at most {MAX_FILES} beside {SKILL_FILE}"
-        raise ValueError(msg)
     if (total := sum(len(content) for content in contents.values())) > MAX_TOTAL:
         msg = f"{where} is {total // 1024} KB; at most {MAX_TOTAL // 1024} KB together"
         raise ValueError(msg)
     texts = {path: _text(content, f"{where}: {path}") for path, content in contents.items()}
     for path, text in texts.items():
         _no_secret(text, f"{where}: {path}")
+        _visible(text, f"{where}: {path}")
     meta, body = _frontmatter(texts[SKILL_FILE], where)
     name, description = meta.pop("name", None), meta.pop("description", None)
     if name != directory.name:
@@ -348,6 +369,7 @@ def read_skill(directory: Path) -> Skill:
             hints=_hints(meta, where),
             files=tuple(files),
             fingerprint=fingerprint(contents),
+            skill_sha256=_sha(raw),
         )
     except ValidationError as exc:
         msg = f"{where} isn't valid: {_problems(exc)}"
@@ -374,7 +396,11 @@ def read_skill_file(directory: Path, skill: Skill, path: str) -> bytes:
     """
     where = f"Skill {skill.name!r}"
     if path == SKILL_FILE:
-        return read_beneath(directory, SKILL_FILE, MAX_SKILL_FILE, where)
+        content = read_beneath(directory, SKILL_FILE, MAX_SKILL_FILE, where)
+        if _sha(content) != skill.skill_sha256:
+            msg = f"{where}: {SKILL_FILE} changed since hz started; restart hz to read the new version"
+            raise ValueError(msg)
+        return content
     file = skill.file(path)
     if file is None:
         msg = f"{where} ships no file {path!r}; it ships {', '.join(f.path for f in skill.files) or 'none'}"
@@ -396,7 +422,7 @@ def read_beneath(root: Path, path: str, limit: int, where: str) -> bytes:
         ValueError: If `path` leaves `root`, a component is a link or no directory, or the file is too large.
     """
     parts = PurePosixPath(path).parts
-    if not parts or PurePosixPath(path).is_absolute() or any(part in {"", ".", ".."} for part in parts):
+    if not parts or path.startswith("/") or any(part in {"", ".", ".."} for part in path.split("/")):
         msg = f"{where}: {path!r} isn't a path below the skill's directory"
         raise ValueError(msg)
     try:
@@ -446,29 +472,46 @@ def _walk(directory: Path, where: str) -> list[str]:
     pending: list[tuple[Path, tuple[str, ...]]] = [(directory, ())]
     while pending:
         current, prefix = pending.pop()
-        for child in sorted(current.iterdir()):
+        try:
+            children = sorted(current.iterdir())
+        except OSError as exc:
+            msg = (
+                f"{where}: {'/'.join(prefix) or 'its directory'} can't be listed ({exc.strerror or type(exc).__name__})"
+            )
+            raise ValueError(msg) from exc
+        for child in children:
             if child.name.startswith(".") or child.name in _IGNORED:
                 continue
             relative = (*prefix, child.name)
-            mode = child.lstat().st_mode
-            if stat.S_ISLNK(mode):
-                msg = f"{where}: {'/'.join(relative)} is a symbolic link; a skill ships its files themselves"
-                raise ValueError(msg)
-            if stat.S_ISDIR(mode):
-                if len(relative) >= MAX_DEPTH:
-                    msg = f"{where}: {'/'.join(relative)} is deeper than {MAX_DEPTH} directories"
-                    raise ValueError(msg)
+            if _entry_kind(child, relative, where) == "directory":
                 pending.append((child, relative))
-            elif stat.S_ISREG(mode):
-                if relative != (SKILL_FILE,):
-                    found.append("/".join(relative))
-            else:
-                msg = f"{where}: {'/'.join(relative)} is neither a file nor a directory"
-                raise ValueError(msg)
+            elif relative != (SKILL_FILE,):
+                found.append("/".join(relative))
             if len(found) > MAX_FILES:
                 msg = f"{where} ships more than {MAX_FILES} files beside {SKILL_FILE}"
                 raise ValueError(msg)
     return sorted(found)
+
+
+def _entry_kind(child: Path, relative: tuple[str, ...], where: str) -> Literal["file", "directory"]:
+    """Whether `child` is a file or a directory a skill may hold.
+
+    Raises:
+        ValueError: If it is a link, anything but a file or directory, or a directory nested too deep.
+    """
+    mode = child.lstat().st_mode
+    if stat.S_ISLNK(mode):
+        msg = f"{where}: {'/'.join(relative)} is a symbolic link; a skill ships its files themselves"
+        raise ValueError(msg)
+    if stat.S_ISDIR(mode):
+        if len(relative) >= MAX_DEPTH:
+            msg = f"{where}: {'/'.join(relative)} is deeper than {MAX_DEPTH} directories"
+            raise ValueError(msg)
+        return "directory"
+    if not stat.S_ISREG(mode):
+        msg = f"{where}: {'/'.join(relative)} is neither a file nor a directory"
+        raise ValueError(msg)
+    return "file"
 
 
 def _text(content: bytes, where: str) -> str:
@@ -481,6 +524,18 @@ def _text(content: bytes, where: str) -> str:
         msg = f"{where} holds a NUL byte; a skill ships text files only"
         raise ValueError(msg)
     return text
+
+
+def _visible(text: str, where: str) -> None:
+    """Refuse invisible, control and bidirectional characters: what `show` displays is what an export carries.
+
+    Raises:
+        ValueError: If a line holds a character `clean_text` would remove.
+    """
+    for number, line in enumerate(text.replace("\r\n", "\n").split("\n"), 1):
+        if clean_text(line) != line:
+            msg = f"{where}, line {number}, holds invisible or control characters; a skill shows all it says"
+            raise ValueError(msg)
 
 
 def _no_secret(text: str, where: str) -> None:
@@ -513,6 +568,7 @@ def _frontmatter(text: str, where: str) -> tuple[dict[str, object], str]:
     if not isinstance(meta, dict):
         msg = f"{where}: {SKILL_FILE}'s frontmatter is a mapping of keys to values"
         raise ValueError(msg)  # noqa: TRY004 - a declaration error, like the others raised here
+    meta = cast("dict[object, object]", meta)
     keys = [str(key) for key in meta]
     if granting := [key for key in keys if key.lower().startswith("hz")]:
         msg = f"{where}: frontmatter keys {', '.join(granting)} are refused (HZC051): a skill is advice, it can't grant"
@@ -544,10 +600,10 @@ def _hint(value: object) -> str | None:
     if isinstance(value, str | int | float):
         return str(value)
     if isinstance(value, list):
-        items = [_scalar(item) for item in value]
+        items = [_scalar(item) for item in cast("list[object]", value)]
         return None if None in items else ", ".join(item for item in items if item is not None)
     if isinstance(value, dict):
-        pairs = [(_scalar(key), _scalar(item)) for key, item in value.items()]
+        pairs = [(_scalar(key), _scalar(item)) for key, item in cast("dict[object, object]", value).items()]
         if any(key is None or item is None for key, item in pairs):
             return None
         return ", ".join(f"{key}={item}" for key, item in pairs)
