@@ -57,6 +57,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) | Pydantic AI runs a turn; a coding agent is a handoff | proposed | 2026-10-24 |
 | [0051](0051-the-workflow-module-becomes-the-heinzel-module.md) | The workflow module becomes the heinzel module | proposed | 2026-10-24 |
 | [0052](0052-the-graph-emerges-from-recorded-reads-and-writes.md) | The graph emerges from recorded reads and writes | proposed | 2026-10-24 |
+| [0053](0053-the-team-graph-is-drawn-with-react-flow-and-elk.md) | The team graph is drawn with React Flow and laid out by elk; Mermaid is only an export | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
