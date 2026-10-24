@@ -49,7 +49,12 @@ def command_config(tmp_path: Path, **runner: object) -> Config:
     script = tmp_path / "fake_agent.py"
     script.write_text(FAKE_AGENT, encoding="utf-8")
     command = [sys.executable, str(script), "{prompt_file}", "{contract_file}", "{output_file}"]
-    settings = {"command": command, "command_output": "file", "command_format": "json"} | runner
+    settings = {
+        "command": command,
+        "command_output": "file",
+        "command_format": "json",
+        "command_enforces_read_only": True,
+    } | runner
     return Config(files=(), data={"capabilities": {"agent_runner": "command"}, "system": {"runner": settings}})
 
 
@@ -62,7 +67,7 @@ def test_the_command_runner_runs_a_configured_agent_cli(make_kernel, tmp_path):
     assert result["status"] == "completed"
     assert result["draft"] == "Draft for: the week (be brief)"
     assert result["usage"]["input_tokens"] == 42
-    assert result["warnings"] == ["the command is not known to restrict its agent to read-only tools"]
+    assert result["warnings"] == []
 
 
 def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
@@ -73,7 +78,7 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
     assert info["sections"]["system.capability"] == {"digest → agent-runner:read": "claude-code → api.anthropic.com"}
     kernel = make_kernel(builtins=True, digest=digest(), config=command_config(tmp_path))
     assert hz(kernel, "system", "info")[1]["sections"]["system.capability"] == {  # type: ignore[index]
-        "digest → agent-runner:read": "command → hosts set by its configuration"
+        "digest → agent-runner:read": "command → unknown (configured)"
     }
 
 
@@ -84,12 +89,18 @@ def runner_checks(kernel: Kernel) -> list[dict[str, str]]:
     return report["checks"]["system.runner"]
 
 
-def test_doctor_says_when_the_command_runner_cannot_enforce_read_only(make_kernel, tmp_path):
-    [check] = runner_checks(make_kernel(builtins=True, digest=digest(), config=command_config(tmp_path)))
+def test_doctor_says_when_the_command_runner_refuses_to_run(make_kernel, tmp_path):
+    untrusted = command_config(tmp_path, command_enforces_read_only=False)
+    kernel = make_kernel(builtins=True, digest=digest(), config=untrusted)
+    [check] = runner_checks(kernel)
     assert check["status"] == "degraded"
-    assert check["detail"] == "the configured command is not known to restrict its agent to read-only tools"
-    trusted = command_config(tmp_path, command_enforces_read_only=True)
-    [check] = runner_checks(make_kernel(builtins=True, digest=digest(), config=trusted))
+    assert (
+        check["detail"] == "it refuses to run: nothing records that the command restricts its agent to read-only tools"
+    )
+    code, output = hz(kernel, "digest", "draft")
+    assert code != 0
+    assert "refuses to run" in str(output)
+    [check] = runner_checks(make_kernel(builtins=True, digest=digest(), config=command_config(tmp_path)))
     assert check["status"] == "up"
 
 

@@ -167,3 +167,6 @@ and `hz workflow validate` in CI.
   - **Runner enum.** `hz.agent.runner` as a fixed enum conflicts with [ADR 0029](0029-agent-runners-are-capability-adapters.md),
     under which the runner is configuration; and `inputs`, `outputs` and `publishes` should name capabilities, not
     vendors ([ADR 0028](0028-integrations-are-capability-adapters.md)).
+  - **Tools.** `hz.tools` lets a render call hz operations and MCP servers; [ADR 0029](0029-agent-runners-are-capability-adapters.md)
+    gives runners a tool profile in the runner's own naming. Decided for 0.2 (option a): render packets pre-fetch
+    inputs through capability handles and the agent gets no hz tools; `hz.tools` is deferred.
