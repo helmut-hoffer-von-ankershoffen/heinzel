@@ -25,10 +25,10 @@
 | src/heinzel/modules/workflow/\_contracts.py          |      340 |        2 |      132 |        1 |     99% |   462-463 |
 | src/heinzel/modules/workflow/\_models.py             |      317 |        2 |       62 |        2 |     99% |74, 94, 427-\>425 |
 | src/heinzel/modules/workflow/\_render.py             |      121 |        8 |       50 |        3 |     91% |94, 110, 181-191 |
-| src/heinzel/modules/workflow/\_service.py            |      431 |        5 |      122 |        2 |     99% |269, 336-339, 427-428 |
-| **TOTAL**                                            | **5271** |   **68** | **1200** |   **23** | **98%** |           |
+| src/heinzel/modules/workflow/\_service.py            |      452 |        5 |      136 |        2 |     99% |283, 350-353, 441-442 |
+| **TOTAL**                                            | **5381** |   **68** | **1226** |   **23** | **99%** |           |
 
-57 files skipped due to complete coverage.
+58 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
