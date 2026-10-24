@@ -289,13 +289,25 @@
             "title": "Name",
             "type": "string"
           },
+          "repository_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The repository `install_spec` installs from, as a browser opens it (`/tree/<ref>/<dir>` for a subdirectory); none when it names no https repository.",
+            "title": "Repository Url"
+          },
           "short_name": {
             "description": "The name without `heinzel-`: its command group (`hz <short_name>`); for first-party plugins also what `hz system plugin add` takes.",
             "title": "Short Name",
             "type": "string"
           },
           "source": {
-            "description": "Where it was found: `first-party` (ships with Heinzelmännchen) or `github` (a repository with the topic heinzel-plugin).",
+            "description": "Where it was found: `first-party` (maintained with Heinzelmännchen) or `github` (a repository with the topic heinzel-plugin).",
             "enum": [
               "first-party",
               "github"
@@ -329,6 +341,7 @@
           "community",
           "install_spec",
           "url",
+          "repository_url",
           "stars",
           "installed"
         ],
@@ -2672,21 +2685,448 @@
         "title": "PlaybookView",
         "type": "object"
       },
-      "PluginInfo": {
-        "description": "An installed plugin distribution and the modules it brings.",
+      "PluginCandidate": {
+        "description": "What `hz system plugin add` would install: the code, where it comes from and who publishes it.",
         "properties": {
+          "distribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Distribution name, when it could be read before installing.",
+            "title": "Distribution"
+          },
+          "first_party": {
+            "description": "Whether it is maintained and released with Heinzelmännchen.",
+            "title": "First Party",
+            "type": "boolean"
+          },
+          "installed_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The version installed now, when this replaces it.",
+            "title": "Installed Version"
+          },
+          "private": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the repository is private (read with your gh login); none when unknown.",
+            "title": "Private"
+          },
+          "publisher": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who publishes it: the repository owner or the package's author.",
+            "title": "Publisher"
+          },
+          "requirement": {
+            "description": "What is installed: pinned to the version or git commit read here wherever it could be. Pass it back as `spec` with `confirm` to install exactly what was shown.",
+            "title": "Requirement",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The git commit that would be installed, for a git source.",
+            "title": "Revision"
+          },
+          "source": {
+            "description": "`pypi` or `git`; `path` only for a first-party plugin in a checkout.",
+            "enum": [
+              "pypi",
+              "git",
+              "path",
+              "unknown"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "spec": {
+            "description": "What was asked for, as given.",
+            "title": "Spec",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What it does, in its authors' words; empty when unknown.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "url": {
+            "description": "Where to read about it: its repository or PyPI page.",
+            "title": "Url",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The version that would be installed, when known.",
+            "title": "Version"
+          },
+          "warnings": {
+            "description": "What could not be checked, e.g. metadata of a host other than GitHub.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "spec",
+          "requirement",
+          "distribution",
+          "version",
+          "summary",
+          "source",
+          "url",
+          "publisher",
+          "first_party",
+          "private",
+          "revision",
+          "installed_version",
+          "warnings"
+        ],
+        "title": "PluginCandidate",
+        "type": "object"
+      },
+      "PluginChange": {
+        "description": "What a plugin change would do or did, and whether running servers must restart to see it.",
+        "properties": {
+          "action": {
+            "description": "`add`, `develop`, `remove`, `enable` or `disable`.",
+            "enum": [
+              "add",
+              "develop",
+              "remove",
+              "enable",
+              "disable"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PluginCandidate"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For `add`: what is installed, to show before confirming."
+          },
+          "distribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin changed, when known.",
+            "title": "Distribution"
+          },
+          "done": {
+            "description": "Whether it was carried out; false for `add` without `confirm`, which only shows.",
+            "title": "Done",
+            "type": "boolean"
+          },
+          "next": {
+            "description": "Commands to run next, e.g. the one that confirms.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "plugins": {
+            "description": "The plugins installed afterwards (now, if not done).",
+            "items": {
+              "$ref": "#/components/schemas/PluginInfo"
+            },
+            "title": "Plugins",
+            "type": "array"
+          },
+          "restart_required": {
+            "description": "Whether a running `hz ui` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.",
+            "title": "Restart Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "action",
+          "done",
+          "distribution",
+          "candidate",
+          "plugins",
+          "restart_required",
+          "next"
+        ],
+        "title": "PluginChange",
+        "type": "object"
+      },
+      "PluginEvent": {
+        "description": "A plugin change as recorded in the history, one line of `plugins.jsonl` in the data directory.",
+        "properties": {
+          "action": {
+            "description": "`add`, `develop`, `remove`, `enable` or `disable`.",
+            "enum": [
+              "add",
+              "develop",
+              "remove",
+              "enable",
+              "disable"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "at": {
+            "description": "When it was carried out.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "distribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin changed, when known.",
+            "title": "Distribution"
+          },
+          "publisher": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who publishes it, as shown before confirming.",
+            "title": "Publisher"
+          },
+          "requirement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What was installed, exactly, for `add` and `develop`.",
+            "title": "Requirement"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pypi",
+                  "git",
+                  "path",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it came from, for `add` and `develop`.",
+            "title": "Source"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The version installed or removed, when known.",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "at",
+          "action",
+          "distribution",
+          "requirement",
+          "source",
+          "version",
+          "publisher"
+        ],
+        "title": "PluginEvent",
+        "type": "object"
+      },
+      "PluginInfo": {
+        "description": "An installed plugin, where it came from, and what it brings.",
+        "properties": {
+          "capabilities": {
+            "description": "Adapters it brings, as `<adapter>:<capability>`, e.g. `github:tracker`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
           "distribution": {
             "description": "Distribution name, e.g. heinzel-clock.",
             "title": "Distribution",
             "type": "string"
           },
+          "enabled": {
+            "default": true,
+            "description": "Whether its modules are loaded; `hz system plugin disable` switches it off.",
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it failed to load, if it did.",
+            "title": "Error"
+          },
+          "first_party": {
+            "default": false,
+            "description": "Whether it is maintained and released with Heinzelmännchen (ADR 0017).",
+            "title": "First Party",
+            "type": "boolean"
+          },
+          "homepage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its source repository, from its metadata.",
+            "title": "Homepage"
+          },
+          "layers": {
+            "description": "Layers its modules declare (ADR 0040).",
+            "items": {
+              "$ref": "#/components/schemas/PluginLayer"
+            },
+            "title": "Layers",
+            "type": "array"
+          },
           "modules": {
-            "description": "Qualified names of the modules the plugin provides.",
+            "description": "Qualified names of the modules the plugin provides, enabled or not.",
             "items": {
               "type": "string"
             },
             "title": "Modules",
             "type": "array"
+          },
+          "name": {
+            "description": "The name without `heinzel-`: its command group (`hz <name>`).",
+            "title": "Name",
+            "type": "string"
+          },
+          "playbooks": {
+            "description": "Modules that bring a playbook (ADR 0037); empty while it is disabled.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Playbooks",
+            "type": "array"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The git commit installed, for a git source.",
+            "title": "Revision"
+          },
+          "source_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pypi",
+                  "git",
+                  "path"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it was installed from: PyPI, a git repository, a directory; none if unknown.",
+            "title": "Source Kind"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where a browser shows its source: the git repository (with `/tree/<ref>/<subdirectory>` for a plugin in a subdirectory), or for PyPI its repository or PyPI page; https only, never with credentials; none for a directory or when unknown.",
+            "title": "Source Url"
+          },
+          "summary": {
+            "default": "",
+            "description": "What the plugin does, in its authors' words (its metadata).",
+            "title": "Summary",
+            "type": "string"
           },
           "version": {
             "description": "Installed version.",
@@ -2697,9 +3137,51 @@
         "required": [
           "distribution",
           "version",
-          "modules"
+          "modules",
+          "name"
         ],
         "title": "PluginInfo",
+        "type": "object"
+      },
+      "PluginLayer": {
+        "description": "A layer a plugin's module declares (ADR 0040).",
+        "properties": {
+          "module": {
+            "description": "The layer's module name, e.g. `acme-payments`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The layer above it; none for the root (the company).",
+            "title": "Parent"
+          },
+          "site": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The site layer it names, if any.",
+            "title": "Site"
+          }
+        },
+        "required": [
+          "module",
+          "parent",
+          "site"
+        ],
+        "title": "PluginLayer",
         "type": "object"
       },
       "PluginSearch": {
@@ -3102,6 +3584,27 @@
           "problem"
         ],
         "title": "RequirementStatus",
+        "type": "object"
+      },
+      "Restart": {
+        "description": "The answer to `POST /api/restart`: the server stops and starts again on the same port with the same token.",
+        "properties": {
+          "message": {
+            "description": "What happens, for the person waiting.",
+            "title": "Message",
+            "type": "string"
+          },
+          "restarting": {
+            "description": "Always true: poll any endpoint until it answers again.",
+            "title": "Restarting",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "restarting",
+          "message"
+        ],
+        "title": "Restart",
         "type": "object"
       },
       "RunMeasure": {
@@ -4209,6 +4712,28 @@
         ]
       }
     },
+    "/restart": {
+      "post": {
+        "description": "The process runs `hz` again with the same port and token, so the page keeps working: poll an endpoint until it answers. A server that isn't `hz ui` (`make web-dev`) answers 400.",
+        "operationId": "web_restart",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Restart"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Restart hz ui to load changes a running server can't, such as an added plugin.",
+        "tags": [
+          "web"
+        ]
+      }
+    },
     "/system/agent/install": {
       "post": {
         "description": "Copy Heinzelmännchen's skills into each configured agent skill directory.",
@@ -5182,18 +5707,30 @@
     },
     "/system/plugin/add": {
       "post": {
-        "description": "Add a plugin; adding one again replaces the installed version.",
+        "description": "Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.\n\nWithout `confirm` it only reads PyPI or GitHub and answers what `requirement` would be installed, pinned to the\nrelease or commit it read; with `confirm` it installs that and records it in the plugin history. Running servers\n(`hz ui`, MCP) see the plugin after a restart (`restart_required`).",
         "operationId": "system_plugin_add",
         "parameters": [
           {
-            "description": "A first-party plugin by name (`clock`), or anything uv installs: a git URL (git+https://github.com/org/heinzel-x@v1.0.0), a local path or a package name.",
+            "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. Pass `requirement` from an earlier answer to install exactly what it showed.",
             "in": "query",
             "name": "spec",
             "required": true,
             "schema": {
-              "description": "A first-party plugin by name (`clock`), or anything uv installs: a git URL (git+https://github.com/org/heinzel-x@v1.0.0), a local path or a package name.",
+              "description": "A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. Pass `requirement` from an earlier answer to install exactly what it showed.",
               "title": "Spec",
               "type": "string"
+            }
+          },
+          {
+            "description": "Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights.",
+            "in": "query",
+            "name": "confirm",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights.",
+              "title": "Confirm",
+              "type": "boolean"
             }
           }
         ],
@@ -5202,11 +5739,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PluginInfo"
-                  },
-                  "title": "Response System Plugin Add",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PluginChange"
                 }
               }
             },
@@ -5223,7 +5756,123 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Add a plugin; adding one again replaces the installed version.",
+        "summary": "Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/disable": {
+      "post": {
+        "description": "Switch a plugin off without removing it, in `[hz] disabled_modules` of your user file.",
+        "operationId": "system_plugin_disable",
+        "parameters": [
+          {
+            "description": "Distribution name, as `hz system plugin list` shows it.",
+            "in": "query",
+            "name": "distribution",
+            "required": true,
+            "schema": {
+              "description": "Distribution name, as `hz system plugin list` shows it.",
+              "title": "Distribution",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch a plugin off without removing it, in `[hz] disabled_modules` of your user file.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/enable": {
+      "post": {
+        "description": "Switch a disabled plugin on again.",
+        "operationId": "system_plugin_enable",
+        "parameters": [
+          {
+            "description": "Distribution name, as `hz system plugin list` shows it.",
+            "in": "query",
+            "name": "distribution",
+            "required": true,
+            "schema": {
+              "description": "Distribution name, as `hz system plugin list` shows it.",
+              "title": "Distribution",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PluginChange"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Switch a disabled plugin on again.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/plugin/history": {
+      "get": {
+        "description": "List plugin changes made on this machine, oldest first: what was installed, from where, by whom.",
+        "operationId": "system_plugin_history",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PluginEvent"
+                  },
+                  "title": "Response System Plugin History",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List plugin changes made on this machine, oldest first: what was installed, from where, by whom.",
         "tags": [
           "system"
         ]
@@ -5231,7 +5880,7 @@
     },
     "/system/plugin/list": {
       "get": {
-        "description": "List installed plugins and the modules they bring.",
+        "description": "List installed plugins, enabled or not, with their source and the modules and adapters they bring.",
         "operationId": "system_plugin_list",
         "responses": {
           "200": {
@@ -5249,7 +5898,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "List installed plugins and the modules they bring.",
+        "summary": "List installed plugins, enabled or not, with their source and the modules and adapters they bring.",
         "tags": [
           "system"
         ]
@@ -5277,11 +5926,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PluginInfo"
-                  },
-                  "title": "Response System Plugin Remove",
-                  "type": "array"
+                  "$ref": "#/components/schemas/PluginChange"
                 }
               }
             },

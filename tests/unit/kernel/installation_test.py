@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 
@@ -126,6 +127,21 @@ def test_uv_and_hz_run_without_credential_variables(tmp_path, monkeypatch):
     Installation(Progress(), prefix=tmp_path, uv="uv").hz("--version")
     assert len(environments) == 2
     assert all("HZ_CREDENTIAL_EXAMPLE_API_TOKEN" not in env and "PATH" in env for env in environments)
+
+
+def test_run_adds_variables_to_the_environment_when_asked(tmp_path, monkeypatch):
+    environments = []
+
+    def recording(command, **kwargs):
+        environments.append(kwargs["env"])
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", recording)
+    Installation(Progress(), prefix=tmp_path, uv="uv").run(["uv"], "Broke.", "Doing", {"GIT_CONFIG_COUNT": "1"})
+    Installation(Progress(), prefix=tmp_path, uv="uv").run(["uv"], "Broke.", "Doing")
+    assert environments[0]["GIT_CONFIG_COUNT"] == "1"
+    assert "PATH" in environments[0]
+    assert environments[1].get("GIT_CONFIG_COUNT") == os.environ.get("GIT_CONFIG_COUNT")
 
 
 def test_the_hz_probe_never_checks_for_updates(tmp_path, monkeypatch):

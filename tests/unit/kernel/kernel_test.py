@@ -74,6 +74,7 @@ def test_disabled_modules_and_their_submodules_are_blocked(make_kernel):
     settings = Settings(disabled_modules=frozenset({"a"}))
     kernel = make_kernel(settings_=settings, a=_module("a"), a__child=_module("child"), b=_module("b"))
     assert [r.qualname for r in kernel.modules] == ["b"]
+    assert [r.qualname for r in kernel.blocked] == ["a", "a.child"]  # known, so they can be switched on again
 
 
 class Clock:

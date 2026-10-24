@@ -6,7 +6,7 @@ Read Google Docs, Sheets, Drive, Calendar and Gmail, the `documents`, `calendar`
 default:
 
 ```bash
-hz system plugin add google             # the release matching your hz; run it again to upgrade
+hz system plugin add google --confirm             # the release matching your hz; run it again to upgrade
 hz system plugin remove heinzel-google
 ```
 

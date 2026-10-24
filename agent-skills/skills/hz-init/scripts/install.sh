@@ -33,7 +33,12 @@ fi
 
 for plugin in ${plugins[@]+"${plugins[@]}"}; do
   echo "==> Adding plugin $plugin"
-  "$hz" system plugin add "$plugin"
+  if [[ -d "$plugin" ]]; then
+    "$hz" system plugin develop "$plugin"
+  else
+    # The user named it when asking for the install, so it is confirmed here.
+    "$hz" system plugin add "$plugin" --confirm
+  fi
 done
 
 echo "==> Configuration"

@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit, urlunsplit
@@ -24,18 +24,21 @@ from heinzel.kernel._progress import Progress
 RECEIPT_FILENAME = "uv-receipt.toml"
 CORE_DISTRIBUTION = "heinzel"
 
-Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
+Runner = Callable[..., subprocess.CompletedProcess[str]]
+"""Runs a command and returns the completed process: `runner(command)`, or `runner(command, environment)` with
+variables to add to the environment."""
 
 
 COMMAND_TIMEOUT = 900  # seconds; a uv tool install that downloads a lot is slow, one that hangs is broken
 HZ_TIMEOUT = 120
 
 
-def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+def _run(command: Sequence[str], environment: Mapping[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """Run a command; a timeout becomes exit code 124 (as with timeout(1)), so callers handle it like any failure."""
+    env = subprocess_environment() | dict(environment or {})
     try:
         return subprocess.run(  # noqa: S603 - trusted parts, no shell
-            command, capture_output=True, text=True, check=False, timeout=COMMAND_TIMEOUT, env=subprocess_environment()
+            command, capture_output=True, text=True, check=False, timeout=COMMAND_TIMEOUT, env=env
         )
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(command, 124, "", f"{command[0]} timed out after {COMMAND_TIMEOUT}s")
@@ -112,14 +115,16 @@ class Installation:
         """Upgrade Heinzelmännchen from where it was installed from, keeping plugins."""
         return [self.uv, "tool", "upgrade", CORE_DISTRIBUTION]
 
-    def run(self, command: list[str], failure: str, activity: str) -> None:
-        """Run a command with a progress indicator.
+    def run(
+        self, command: list[str], failure: str, activity: str, environment: Mapping[str, str] | None = None
+    ) -> None:
+        """Run a command with a progress indicator, with `environment` added to its environment if given.
 
         Raises:
             HeinzelError: With `failure` and the command's output, if it fails.
         """
         with self._progress.task(activity):
-            result = self._runner(command)
+            result = self._runner(command, environment) if environment else self._runner(command)
         if result.returncode != 0:
             msg = f"{failure}\n{result.stderr.strip() or result.stdout.strip()}"
             raise HeinzelError(msg)

@@ -130,7 +130,7 @@ A built-in module or a first-party plugin adds its part as a `demo.tape` next to
 # The clock plugin in the README demo: add it, show the clocks, then the same as JSON into jq.
 Require jq
 
-Type "hz system plugin add clock"
+Type "hz system plugin add clock --confirm"
 Enter
 Wait@60s
 Sleep 1.5s

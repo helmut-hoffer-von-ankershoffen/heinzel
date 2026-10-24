@@ -24,7 +24,8 @@ product development teams.
 With Heinzelmännchen installed (`uv tool install git+https://github.com/[[ heinzel_owner ]]/heinzel`):
 
 ```bash
-hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]]
+hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]]             # shows what it installs
+hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]] --confirm   # installs it
 ```
 
 Pin a version with `@vX.Y.Z`. Running `hz system plugin add` again upgrades; `hz system plugin remove [[ project_name ]]` removes it.

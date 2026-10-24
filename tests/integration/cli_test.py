@@ -317,9 +317,11 @@ def test_a_collapsed_module_with_a_setup_step_keeps_its_exit_codes(make_kernel):
 
 def test_plugin_list_shows_plugin_modules(app):
     result = runner.invoke(app, ["system", "plugin", "list", "--json"])
-    assert json.loads(result.output) == [
-        {"distribution": "heinzel-test", "version": "9.9.9", "modules": ["example", "example.ping"]}
-    ]
+    [plugin] = json.loads(result.output)
+    assert (plugin["distribution"], plugin["version"], plugin["modules"]) == (
+        "heinzel-test", "9.9.9", ["example", "example.ping"]
+    )  # fmt: skip
+    assert (plugin["name"], plugin["enabled"], plugin["first_party"]) == ("test", True, False)
 
 
 def fake_github(monkeypatch, answer):
@@ -352,6 +354,7 @@ def test_plugin_search_lists_first_party_and_community_plugins(app, monkeypatch)
     assert result.exit_code == 0, result.output
     found = json.loads(result.output)
     assert [(p["name"], p["source"], p["community"], p["install_spec"]) for p in found["plugins"]] == [
+        ("heinzel-acme", "first-party", False, "acme"),
         ("heinzel-atlassian", "first-party", False, "atlassian"),
         ("heinzel-clock", "first-party", False, "clock"),
         ("heinzel-github", "first-party", False, "github"),
@@ -378,6 +381,7 @@ def test_plugin_search_offline_shows_first_party_plugins_and_a_warning(app, monk
     assert result.exit_code == 0, result.output
     found = json.loads(result.output)
     assert [p["name"] for p in found["plugins"]] == [
+        "heinzel-acme",
         "heinzel-atlassian",
         "heinzel-clock",
         "heinzel-github",

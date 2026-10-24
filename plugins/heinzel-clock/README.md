@@ -4,7 +4,7 @@ What time it is for everyone on the team — a first-party [Heinzelmännchen](..
 complete example of one: [`src/heinzel_clock/__init__.py`](src/heinzel_clock/__init__.py) is the whole plugin.
 
 ```bash
-hz system plugin add clock
+hz system plugin add clock --confirm
 hz setup clock                            # pick the team's time zones and the working hours in each
 hz clock                                  # the team's local times; --json for agents
 hz system config set clock.zones '[{ name = "Europe/Berlin", hours = [9, 18] }, "America/New_York"]'

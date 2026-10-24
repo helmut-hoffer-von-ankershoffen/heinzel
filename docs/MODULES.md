@@ -25,7 +25,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.expert`](#systemexpert) | Expert mode: list every command, or just the everyday ones. |
 | [`system.layer`](#systemlayer) | Show the layer plugins installed and the stack you are in, general to specific. |
 | [`system.notify`](#systemnotify) | Pop up what deserves your attention: in the web app while it is open, else natively. |
-| [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
+| [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
@@ -36,7 +36,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 
 Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.
 
-First-party plugin `heinzel-atlassian`: `hz system plugin add atlassian`.
+First-party plugin `heinzel-atlassian`: `hz system plugin add atlassian --confirm`.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -50,7 +50,7 @@ Health checks: reported by `hz system doctor`.
 
 What time it is for everyone on the team.
 
-First-party plugin `heinzel-clock`: `hz system plugin add clock`.
+First-party plugin `heinzel-clock`: `hz system plugin add clock --confirm`.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -66,7 +66,7 @@ Setup: `hz setup clock` (optional), also part of `hz setup`.
 
 Read pull requests and issues from GitHub: the code-host and tracker capabilities.
 
-First-party plugin `heinzel-github`: `hz system plugin add github`.
+First-party plugin `heinzel-github`: `hz system plugin add github --confirm`.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -80,7 +80,7 @@ Health checks: reported by `hz system doctor`.
 
 Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
 
-First-party plugin `heinzel-google`: `hz system plugin add google`.
+First-party plugin `heinzel-google`: `hz system plugin add google --confirm`.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -251,13 +251,17 @@ Health checks: reported by `hz system doctor`.
 
 ## `system.plugin`
 
-Find, add, remove, list and scaffold plugins.
+Find, add, remove, enable, disable, list and scaffold plugins.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| List installed plugins and the modules they bring. | `hz system plugin list` | `system_plugin_list` | `GET /system/plugin/list` | `GET /api/system/plugin/list` |  | expert |
-| Add a plugin; adding one again replaces the installed version. | `hz system plugin add` | `system_plugin_add` | `POST /system/plugin/add` | `POST /api/system/plugin/add` | yes | expert |
-| Remove a plugin. | `hz system plugin remove` | `system_plugin_remove` | `POST /system/plugin/remove` | `POST /api/system/plugin/remove` | yes | expert |
+| List installed plugins, enabled or not, with their source and the modules and adapters they bring. | `hz system plugin list` | `system_plugin_list` | `GET /system/plugin/list` | `GET /api/system/plugin/list` |  | expert |
+| Show what a plugin would install, then add it with `--confirm`; adding it again replaces it. | `hz system plugin add` | `system_plugin_add` | — | `POST /api/system/plugin/add` | yes | expert |
+| Add the plugin in a directory on this machine, to try a plugin you are writing. | `hz system plugin develop` | — | — | — | yes | expert |
+| Remove a plugin. | `hz system plugin remove` | `system_plugin_remove` | — | `POST /api/system/plugin/remove` | yes | expert |
+| Switch a plugin off without removing it, in `[hz] disabled_modules` of your user file. | `hz system plugin disable` | `system_plugin_disable` | — | `POST /api/system/plugin/disable` | yes | expert |
+| Switch a disabled plugin on again. | `hz system plugin enable` | `system_plugin_enable` | — | `POST /api/system/plugin/enable` | yes | expert |
+| List plugin changes made on this machine, oldest first: what was installed, from where, by whom. | `hz system plugin history` | `system_plugin_history` | — | `GET /api/system/plugin/history` |  | expert |
 | Scaffold a plugin repository from the Heinzelmännchen template, asking for answers not given. | `hz system plugin new` | — | — | — | yes | expert |
 | Find plugins to install: first-party ones, and community ones by querying the GitHub API. | `hz system plugin search` | `system_plugin_search` | `GET /system/plugin/search` | `GET /api/system/plugin/search` |  | expert |
 
@@ -328,7 +332,7 @@ Health checks: reported by `hz system doctor`.
 
 Read meetings from Zoom's meeting-summary emails: the meetings capability.
 
-First-party plugin `heinzel-zoom`: `hz system plugin add zoom`.
+First-party plugin `heinzel-zoom`: `hz system plugin add zoom --confirm`.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |

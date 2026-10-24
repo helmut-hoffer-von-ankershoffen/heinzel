@@ -154,8 +154,11 @@ settings and its health checks.
 
 A plugin is a Python distribution with `[project.entry-points."heinzel.modules"]` pointing at its root package. It
 depends on `hz` and imports only its public API (`from heinzel import Module, HeinzelError, ...`). `hz system plugin add <spec>`
-reinstalls the `uv tool` environment with `--with <spec>`, so plugins survive `uv tool upgrade heinzel`
-([ADR 0006](adr/0006-plugins-installed-through-the-uv-tool-receipt.md)). New plugins are scaffolded with
+shows what it would install, pinned to a release or commit, and with `--confirm` reinstalls the `uv tool` environment
+with `--with <requirement>`, so plugins survive `uv tool upgrade heinzel`
+([ADR 0006](adr/0006-plugins-installed-through-the-uv-tool-receipt.md),
+[ADR 0047](adr/0047-plugins-are-managed-from-the-web-app-after-a-confirmation.md)); it takes PyPI and https git
+sources only, and `hz system plugin develop <path>` adds a local checkout. New plugins are scaffolded with
 `hz system plugin new`, from the copier template in this repository
 ([ADR 0007](adr/0007-plugins-scaffolded-with-copier.md)).
 

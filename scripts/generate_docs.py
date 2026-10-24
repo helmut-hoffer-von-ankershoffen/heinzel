@@ -127,7 +127,10 @@ def module_catalog() -> str:
         lines += [f"## `{record.qualname}`", "", record.module.summary, ""]
         if not record.origin.builtin and record.parent is None:
             lines += [
-                f"First-party plugin `{record.origin.distribution}`: `hz system plugin add {record.qualname}`.",
+                (
+                    f"First-party plugin `{record.origin.distribution}`: "
+                    f"`hz system plugin add {record.qualname} --confirm`."
+                ),
                 "",
             ]
         operations = [item for item in surfaces["cli"] if item.record.qualname == record.qualname]
@@ -174,7 +177,7 @@ def readme_with_module_list(readme: str) -> str:
     k = kernel()
     items = [
         f"- [`{r.qualname}`](docs/MODULES.md#{_anchor(r.qualname)}) — {r.module.summary}"
-        + ("" if r.origin.builtin else f" *First-party plugin: `hz system plugin add {r.path[0]}`.*")
+        + ("" if r.origin.builtin else f" *First-party plugin: `hz system plugin add {r.path[0]} --confirm`.*")
         for r in k.modules
     ]
     return with_block(readme, README_START, README_END, "\n".join(items))
