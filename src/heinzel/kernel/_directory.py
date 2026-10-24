@@ -119,7 +119,7 @@ def _same(lines: list[Relation], idents: list[str]) -> bool:
 
 
 def _label(line: Relation) -> str:
-    return line.who.name or line.login or line.who.email or "someone"
+    return line.who.name or line.login or "someone without a display name"
 
 
 def _confirmed(directory: Directory | None, known: Iterable[Relation], ident: str) -> Relation:

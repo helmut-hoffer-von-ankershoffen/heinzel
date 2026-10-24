@@ -915,3 +915,16 @@ def test_needs_of_a_chain_of_unused_adapter_modules_all_drop_out(make_kernel):
     reader = Module("reader", "Reads chat.", requires=["chat:read"])
     kernel = make_kernel(layer=layered(), top=top, reader=reader, config=bind(tracker="layer", chat="top"))
     assert needs(kernel) == {"reader chat:read", "top tracker:read", "layer documents:read"}
+
+
+def test_a_binding_is_defaulted_only_while_no_file_or_variable_sets_it(make_kernel, monkeypatch):
+    view = make_kernel(config=bind(documents="notes")).resolve(CapabilityView)
+    assert view.defaulted("directory")
+    assert view.defaulted("agent-runner")
+    assert not view.defaulted("documents")  # no default at all
+    assert not view.defaulted("tracker")
+    explicit = make_kernel(config=bind(directory="one-on-ones", agent_runner="claude-code")).resolve(CapabilityView)
+    assert not explicit.defaulted("directory")
+    assert not explicit.defaulted("agent-runner")
+    monkeypatch.setenv("HZ_CAPABILITIES__DIRECTORY", "one-on-ones")
+    assert not make_kernel().resolve(CapabilityView).defaulted("directory")
