@@ -1,4 +1,4 @@
-"""`hz setup` and `hz <module> setup`: modules' interactive setup steps, wizard style (ADR 0032).
+"""`hz setup [MODULE]`: modules' interactive setup steps, wizard style (ADR 0032).
 
 Only the CLI runs setup steps: MCP and REST clients are not people at a keyboard. Steps run in a fixed order, built-in
 modules first, then the others alphabetically. Optional steps can be skipped, required ones can't; a module that is
@@ -9,10 +9,11 @@ import getpass
 import shlex
 import sys
 import warnings
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Annotated
 
 import typer
 from pydantic import ValidationError
@@ -21,6 +22,7 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
+from heinzel.heads.cli._update import print_notice
 from heinzel.kernel import (
     Config,
     CredentialLet,
@@ -38,11 +40,19 @@ from heinzel.kernel import (
 
 DOCTOR = ("system.doctor", "doctor")
 EX_INTERRUPTED = 130  # what shells report for a process stopped by Ctrl-C (128 + SIGINT)
+HELP = (
+    "Set up every module that has a setup step, wizard style; optional steps can be skipped. With MODULE, set up "
+    "only that module."
+)
+MODULE_HELP = "Set up only this module, by qualified name (`hz setup clock`); every module when left out."
 
 
-def stdin_is_terminal() -> bool:
-    """Whether a person can answer on standard input; the seam tests fake."""
-    return sys.stdin.isatty()
+def has_terminal() -> bool:
+    """Whether a person sees the questions on standard output and answers on standard input; the seam tests fake.
+
+    Both must be a terminal: `hz setup > out.txt` would otherwise wait for answers to questions nobody sees.
+    """
+    return sys.stdin.isatty() and sys.stdout.isatty()
 
 
 class ConsolePrompter(Prompter):
@@ -62,8 +72,7 @@ class ConsolePrompter(Prompter):
             HeinzelError: If the terminal can't hide a secret as it is typed.
         """
         try:
-            # getpass reads the terminal device, not stdin, so piped answers are read as plain lines.
-            if secret and sys.stdin.isatty():
+            if secret:
                 with warnings.catch_warnings():
                     warnings.simplefilter("error", getpass.GetPassWarning)  # it would echo the secret instead
                     return getpass.getpass(terminal_safe(prompt))
@@ -104,11 +113,6 @@ def steps(kernel: Kernel) -> list[tuple[ModuleRecord, SetupLet]]:
     """Every setup step that can run, in order: built-in modules first, then the others by qualified name."""
     found = [(record, let) for record, let in kernel.lets(SetupLet) if kernel.available(let.func)]
     return sorted(found, key=lambda pair: (not pair[0].origin.builtin, pair[0].path))
-
-
-def step_of(kernel: Kernel, record: ModuleRecord) -> SetupLet | None:
-    """The setup step of a module, if it has one that can run."""
-    return next((let for owner, let in steps(kernel) if owner.qualname == record.qualname), None)
 
 
 def is_configured(kernel: Kernel, record: ModuleRecord) -> bool:
@@ -234,25 +238,61 @@ def exit_code(results: list[StepResult]) -> int:
 
 @dataclass(frozen=True, slots=True)
 class SetupCommands:
-    """Builds the `setup` commands of the CLI head."""
+    """Builds `hz setup [MODULE]`, the one command that runs setup steps (ADR 0032)."""
 
     kernel: Kernel
     console: Console
     err_console: Console
 
-    def everything(self) -> None:
-        """Set up every module that has a setup step, one after the other; optional steps can be skipped.
+    def command(self) -> Callable[..., None]:
+        """The Typer callable of `hz setup [MODULE]`."""
+
+        def complete(incomplete: str) -> list[str]:
+            return [record.qualname for record, _ in steps(self.kernel) if record.qualname.startswith(incomplete)]
+
+        def setup(
+            module: Annotated[
+                str | None,
+                typer.Argument(help=MODULE_HELP, metavar="MODULE", show_default=False, autocompletion=complete),
+            ] = None,
+        ) -> None:
+            self.run(module)
+
+        setup.__doc__ = HELP
+        return setup
+
+    def run(self, name: str | None) -> None:
+        """Run every step, or only the step of the module `name`.
 
         Raises:
-            typer.Exit: With 1 when a step failed or there is no terminal, 130 after Ctrl-C.
+            typer.BadParameter: If no module named `name` has a step that can run.
+            typer.Exit: With 1 when a step failed, doctor reports a check down or there is no terminal, 130 after
+                Ctrl-C.
         """
-        with self._errors():
-            self._everything()
-
-    def _everything(self) -> None:
         plan = steps(self.kernel)
+        if name is not None:
+            every, plan = plan, [(record, let) for record, let in plan if record.qualname == name]
+            if not plan:
+                raise typer.BadParameter(self._no_step(name, every), param_hint="MODULE")
+        with self._errors():
+            if name is None:
+                self._everything(plan)
+            else:
+                self._module(plan)
+
+    def _no_step(self, name: str, every: list[tuple[ModuleRecord, SetupLet]]) -> str:
+        """Why `hz setup <name>` has nothing to run, and which modules do have a step."""
+        having = f"Modules with one: {', '.join(record.qualname for record, _ in every) or 'none'}."
+        if not any(record.qualname == name for record in self.kernel.modules):
+            return f"No module is named {name!r}. {having}"
+        if any(owner.qualname == name for owner, _ in self.kernel.lets(SetupLet)):
+            return f"The setup step of {name!r} can't run: something it needs is missing (`hz system doctor`). {having}"
+        return f"Module {name!r} has no setup step. {having}"
+
+    def _everything(self, plan: list[tuple[ModuleRecord, SetupLet]]) -> None:
         if not plan:
             self.console.print("No module has a setup step.")
+            self._notice()
             return
         prompter = self._prompter(plan)
         names = ", ".join(f"{r.qualname} ({'required' if s.required else 'optional'})" for r, s in plan)
@@ -261,25 +301,31 @@ class SetupCommands:
         results = Runner(self.kernel, prompter).run(plan, offer_skip=True)
         self.console.print()
         self.console.print(TerminalSafe(summary(results)))
-        if not any(r.outcome is Outcome.INTERRUPTED for r in results):
-            self._doctor()
-        if code := exit_code(results):
+        code = exit_code(results)
+        doctor = None if code == EX_INTERRUPTED else self._doctor()
+        if doctor is None:
+            self._notice()  # doctor's release check says it otherwise (ADR 0031)
+        elif doctor:
+            self.err_console.print(
+                message("Error:", "hz system doctor reports a problem with the configuration; see its fixes above."),
+                highlight=False,
+                soft_wrap=True,
+            )
+            code = code or doctor
+        if code:
             raise typer.Exit(code=code)
 
-    def module(self, record: ModuleRecord, let: SetupLet) -> None:
-        """Run one module's setup step.
-
-        Raises:
-            typer.Exit: With 1 when the step failed or there is no terminal, 130 after Ctrl-C.
-        """
-        plan = [(record, let)]
-        with self._errors():
-            prompter = self._prompter(plan)
-        results = Runner(self.kernel, prompter).run(plan, offer_skip=False)
-        result = results[0]
-        self.console.print(Text(f"{record.qualname}: {result.outcome.value}"), highlight=False)
-        if code := exit_code(results):
+    def _module(self, plan: list[tuple[ModuleRecord, SetupLet]]) -> None:
+        prompter = self._prompter(plan)
+        [result] = Runner(self.kernel, prompter).run(plan, offer_skip=False)
+        self.console.print(Text(f"{result.module}: {result.outcome.value}"), highlight=False)
+        self._notice()
+        if code := exit_code([result]):
             raise typer.Exit(code=code)
+
+    def _notice(self) -> None:
+        """The update notice after human output, like every other command (ADR 0031)."""
+        print_notice(self.kernel, self.err_console)
 
     @contextmanager
     def _errors(self) -> Generator[None]:
@@ -306,11 +352,14 @@ class SetupCommands:
         bound = self.kernel.resolve(Prompter)
         if bound.interactive:
             return bound
-        if stdin_is_terminal():
+        if has_terminal():
             return ConsolePrompter(self.console)
         lines = [f"  {command}" for record, _ in plan for command in equivalent_commands(self.kernel, record)]
         self.err_console.print(
-            message("Error:", "setup asks questions and needs a terminal. Without one, configure with:"),
+            message(
+                "Error:",
+                "setup asks questions and needs a terminal on standard input and output. Without one, configure with:",
+            ),
             highlight=False,
             soft_wrap=True,
         )
@@ -318,15 +367,20 @@ class SetupCommands:
         self.err_console.print(Text(listing), highlight=False, soft_wrap=True)
         raise typer.Exit(code=1)
 
-    def _doctor(self) -> None:
-        """`hz system doctor` on the configuration as it is now on disk, not as it was when `hz` started."""
+    def _doctor(self) -> int | None:
+        """`hz system doctor` on the configuration as it is now on disk, not as it was when `hz` started.
+
+        Returns:
+            Doctor's exit code (non-zero when a check is down), or None when doctor is disabled.
+        """
         fresh = Kernel(records=self.kernel.modules, errors=self.kernel.errors, config=Config.load())
         doctor = next(
             (let for owner, let in fresh.lets(OperationLet) if (owner.qualname, let.name) == DOCTOR),
             None,
         )
         if doctor is None:
-            return
+            return None
         report = fresh.invoke(doctor)
         self.console.print()
         self.console.print(TerminalSafe(doctor.render(report)) if doctor.render else report)
+        return doctor.exit_code(report) if doctor.exit_code else 0

@@ -67,7 +67,7 @@ class ClockSettings(ModuleSettings):
         if not isinstance(data, dict) or data.get("working_hours") is None:
             return data
         warnings.warn(
-            f"clock.working_hours is deprecated: give each zone its hours, with `hz clock setup` or `{EXAMPLE}`",
+            f"clock.working_hours is deprecated: give each zone its hours, with `hz setup clock` or `{EXAMPLE}`",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -134,7 +134,7 @@ def zones(settings: ClockSettings) -> list[Check]:
                 name="working_hours",
                 status=Status.DEGRADED,
                 detail="clock.working_hours is deprecated; each zone has its own hours now",
-                fix="Run `hz clock setup`, or give clock.zones hours and `hz system config unset clock.working_hours`",
+                fix="Run `hz setup clock`, or give clock.zones hours and `hz system config unset clock.working_hours`",
             )
         )
     return checks

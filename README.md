@@ -195,7 +195,7 @@ disabled_modules = []
 greeting = "Moin"
 ```
 
-`hz setup` asks for every module's settings and credentials, wizard style, in a terminal (`hz clock setup` for
+`hz setup` asks for every module's settings and credentials, wizard style, in a terminal (`hz setup clock` for
 one module). `hz system config set example.greeting Moin` edits your user file (`--scope project` the project's `hz.toml`),
 `hz system config init` writes a commented starter file. Environment variables: `HZ_<SETTING>` for the kernel
 (`HZ_LOG_LEVEL=DEBUG`), `HZ_<MODULE>__<SETTING>` for modules (`HZ_EXAMPLE__GREETING=Hi`). Every setting:
@@ -228,7 +228,7 @@ def hello(settings: GreetSettings, name: Annotated[str, Field(description="Who t
 ```
 
 A module can also declare a setup step, `@module.setup`, that asks its questions through an injected `Prompter`
-and becomes `hz greet setup` and part of `hz setup`
+and runs as `hz setup greet` and as part of `hz setup`
 ([ADR 0032](docs/adr/0032-modules-declare-interactive-setup-steps.md)).
 
 That is `hz greet hello --name Ada` in the CLI, with `--json`, help text, argument validation and
