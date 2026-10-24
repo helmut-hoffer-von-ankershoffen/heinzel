@@ -35,6 +35,12 @@ This release is the foundation — kernel, heads, plugins and release automation
 You talk to them with **`hz`**, a small modulith: the kernel discovers *modules* and the *lets* they advertise — typed
 declarations of operations, services, settings and health checks — and *heads* expose them.
 
+## Get started
+
+Two task-first guides take you top to bottom: [Bootstrap your team](docs/guides/manager.md) for the manager who
+installs hz, creates the team repository, gets the first weekly report drafted and invites the team, and
+[Join your team](docs/guides/joining.md) for the engineer or product manager with the line from their manager.
+
 ## Install
 
 You need [uv](https://docs.astral.sh/uv/) (`brew install uv`). Then:
