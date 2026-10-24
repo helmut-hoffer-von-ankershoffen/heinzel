@@ -81,7 +81,7 @@ def test_a_tag_pinned_install_moves_to_the_latest_release_keeping_plugins(tmp_pa
     result = service.update(current="0.2.0")
     assert uv.commands == [install_command(f"heinzel @ git+{REPO}@v0.4.0", PLUGIN)]
     assert (result.before, result.after, result.latest, result.updated) == ("0.2.0", "0.4.0", "0.4.0", True)
-    assert result.message == "Updated hz 0.2.0 → 0.4.0"
+    assert result.message == "Updated hz 0.2.0 → 0.4.0."
 
 
 def test_the_latest_release_installed_changes_nothing(tmp_path):
@@ -89,13 +89,13 @@ def test_the_latest_release_installed_changes_nothing(tmp_path):
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv), FakeReleases("0.4.0"))
     result = service.update(current="0.4.0")
     assert uv.commands == []
-    assert (result.message, result.pinned_to, result.updated) == ("hz 0.4.0 is the latest release", "v0.4.0", False)
+    assert (result.message, result.pinned_to, result.updated) == ("hz 0.4.0 is up to date (releases).", "v0.4.0", False)
 
 
 def test_never_moves_back_to_a_lower_release(tmp_path):
     uv = FakeUv("0.5.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.5.0"', uv), FakeReleases("0.4.0"))
-    assert service.update(current="0.5.0").message == "hz 0.5.0 is newer than the latest release, 0.4.0"
+    assert service.update(current="0.5.0").message == "hz 0.5.0 is up to date (releases)."
     assert uv.commands == []
 
 
@@ -117,17 +117,19 @@ def test_an_unreachable_release_source_is_an_error_that_says_what_to_do(tmp_path
     assert uv.commands == []
 
 
+HINT = "A release newer than this build exists: run hz system update --source git+{repo}@v{tag} to switch to releases."
+
+
 @pytest.mark.parametrize(
     ("core", "pinned", "says"),
     [
-        (f'git = "{REPO}?rev=main"', "main", (f"Pinned to main; to update to the latest release (0.4.0) run: "
-         f"hz system update --source git+{REPO}@v0.4.0\nTo get the newest commit on main instead: "
-         f"hz system update --source git+{REPO}@main")),
-        (f'git = "{REPO}?rev=1a2b3c4"', "1a2b3c4", (f"Pinned to commit 1a2b3c4; to update to the latest release "
+        (f'git = "{REPO}?rev=feature"', "feature", (f"Pinned to feature; to get its newest commit run: "
+         f"hz system update --source git+{REPO}@feature\n" + HINT.format(repo=REPO, tag="0.4.0"))),
+        (f'git = "{REPO}?rev=1a2b3c4"', "1a2b3c4", (f"Pinned to commit 1a2b3c4. To update to the latest release "
          f"(0.4.0) run: hz system update --source git+{REPO}@v0.4.0")),
         ('directory = "/src/heinzel"', "/src/heinzel", ("Installed from /src/heinzel; to update, run hz system update "
-         "--source with a newer build, or move to the latest release (0.4.0): hz system update --source "
-         "git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel@v0.4.0")),
+         "--source with a newer build.\nA release newer than this build exists: run hz system update --source "
+         "git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel@v0.4.0 to switch to releases.")),
     ],
 )  # fmt: skip
 def test_a_branch_commit_or_local_install_is_left_alone_with_the_command_that_moves_it(tmp_path, core, pinned, says):
@@ -138,20 +140,72 @@ def test_a_branch_commit_or_local_install_is_left_alone_with_the_command_that_mo
     assert result.next[0] in says
 
 
-def test_without_the_latest_release_the_pinned_message_has_a_placeholder(tmp_path):
+def test_a_pinned_install_never_suggests_an_older_release(tmp_path):
+    uv = FakeUv("0.5.0.dev3")
+    result = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=feature"', uv), FakeReleases("0.4.0")).update(
+        current="0.5.0.dev3"
+    )
+    assert (
+        result.message
+        == f"Pinned to feature; to get its newest commit run: hz system update --source git+{REPO}@feature"
+    )
+    assert result.next == [f"hz system update --source git+{REPO}@feature"]
+
+
+def test_without_the_latest_release_a_pinned_install_suggests_no_release(tmp_path):
     uv = FakeUv("0.2.0")
-    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases(OSError("offline")))
+    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=feature"', uv), FakeReleases(OSError("offline")))
     result = service.update(current="0.2.0")
     assert result.latest is None
-    assert f"git+{REPO}@vX.Y.Z" in result.message
-    assert result.next == [f"hz system update --source git+{REPO}@main"]
+    assert "release" not in result.message
+    assert result.next == [f"hz system update --source git+{REPO}@feature"]
+
+
+def test_a_main_install_is_updated_in_place_keeping_plugins(tmp_path):
+    uv = FakeUv("0.5.0.dev3")
+    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases("0.4.0"))
+    uv.version = "0.5.0.dev7"  # what uv finds on main
+    result = service.update(current="0.5.0.dev3", channel="main")
+    assert uv.commands == [install_command(f"heinzel @ git+{REPO}@main", PLUGIN)]
+    assert (result.message, result.updated, result.after, result.next) == (
+        "Updated hz 0.5.0.dev3 → 0.5.0.dev7.",
+        True,
+        "0.5.0.dev7",
+        [],
+    )
+
+
+def test_a_main_install_on_the_newest_commit_is_up_to_date_without_a_release_hint_when_newer_than_the_release(tmp_path):
+    uv = FakeUv("0.5.0.dev3")
+    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases("0.4.0"))
+    result = service.update(current="0.5.0.dev3", channel="main")
+    assert (result.message, result.updated, result.next) == ("hz 0.5.0.dev3 is up to date (main).", False, [])
+
+
+def test_a_main_install_hints_at_a_release_newer_than_the_installed_version(tmp_path):
+    uv = FakeUv("0.4.0.dev3")
+    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases("0.4.0"))
+    result = service.update(current="0.4.0.dev3", channel="main")
+    command = f"hz system update --source git+{REPO}@v0.4.0"
+    assert (
+        result.message == "hz 0.4.0.dev3 is up to date (main).\nA release newer than this build exists: "
+        f"run {command} to switch to releases."
+    )
+    assert (result.next, result.updated) == ([command], False)
+
+
+def test_a_main_install_with_an_unreachable_release_source_still_updates(tmp_path):
+    uv = FakeUv("0.5.0.dev3")
+    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases(OSError("offline")))
+    result = service.update(current="0.5.0.dev3", channel="main")
+    assert (result.message, result.latest, result.next) == ("hz 0.5.0.dev3 is up to date (main).", None, [])
 
 
 @pytest.mark.parametrize(
     ("core", "after", "message"),
     [
-        (f'git = "{REPO}"', "0.2.0", f"hz 0.2.0 is the newest from {REPO}"),
-        ('specifier = ">=0.1"', "0.2.0", "hz 0.2.0 is the newest from the package index"),
+        (f'git = "{REPO}"', "0.2.0", "hz 0.2.0 is up to date."),
+        ('specifier = ">=0.1"', "0.2.0", "hz 0.2.0 is up to date."),
     ],
 )
 def test_a_default_branch_or_index_install_is_upgraded_by_uv(tmp_path, core, after, message):
@@ -165,7 +219,7 @@ def test_an_upgrade_that_brings_a_newer_version_says_so(tmp_path):
     uv = FakeUv("0.2.0")
     service = UpdateService(installation(tmp_path, f'git = "{REPO}"', uv), FakeReleases())
     uv.version = "0.3.0"  # what uv finds on the default branch
-    assert service.update(current="0.2.0").message == "Updated hz 0.2.0 → 0.3.0"
+    assert service.update(current="0.2.0").message == "Updated hz 0.2.0 → 0.3.0."
 
 
 def test_source_reinstalls_from_there_keeping_plugins(tmp_path):
@@ -245,3 +299,35 @@ def test_a_new_hz_that_does_not_start_is_restored(tmp_path):
 def test_two_blocking_plugins_are_both_named():
     uv_output = "heinzel-acme==1.0.0 and heinzel-zeta==2.0 depend on heinzel<0.3"
     assert blocking_plugins(["heinzel-zeta==2.0", PLUGIN], uv_output) == ["heinzel-zeta", "heinzel-acme"]
+
+
+def test_channel_release_moves_a_main_install_to_the_newest_release_and_stays_there(tmp_path):
+    uv = FakeUv("0.3.0.dev1")
+    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases("0.4.0"))
+    result = service.update(current="0.3.0.dev1")
+    assert uv.commands == [install_command(f"heinzel @ git+{REPO}@v0.4.0", PLUGIN)]
+    assert result.message == "Updated hz 0.3.0.dev1 → 0.4.0."
+
+
+def test_a_main_install_ahead_of_the_latest_release_stays_and_says_when_it_moves(tmp_path):
+    uv = FakeUv("0.5.0.dev3")
+    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=main"', uv), FakeReleases("0.4.0"))
+    result = service.update(current="0.5.0.dev3")
+    assert uv.commands == []
+    assert result.message == (
+        "hz 0.5.0.dev3 (main) is ahead of the latest release, 0.4.0; it moves to releases with the next release.\n"
+        "To stay on main: hz system update --channel main"
+    )
+
+
+def test_channel_main_moves_a_release_install_to_main(tmp_path):
+    uv = FakeUv("0.4.0")
+    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv), FakeReleases("0.4.0"))
+    service.update(current="0.4.0", channel="main")
+    assert uv.commands == [install_command(f"heinzel @ git+{REPO}@main", PLUGIN)]
+
+
+def test_channel_release_on_a_release_install_is_the_plain_update(tmp_path):
+    uv = FakeUv("0.4.0")
+    service = UpdateService(installation(tmp_path, f'git = "{REPO}?rev=v0.4.0"', uv), FakeReleases("0.4.0"))
+    assert service.update(current="0.4.0", channel="release").message == "hz 0.4.0 is up to date (releases)."
