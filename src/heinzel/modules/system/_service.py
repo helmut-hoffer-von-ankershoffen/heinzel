@@ -102,6 +102,33 @@ class GitHubReleases(ReleaseSource):
         """The version of the latest release, for the release cache."""
         return self.latest(timeout)[0]
 
+    @override
+    def highest_version(self, timeout: float, *, prereleases: bool = False) -> str:
+        """The highest version among the newest `PAGE_SIZE` releases, in SemVer order rather than by date.
+
+        GitHub's latest release is the one published last, so a fix for an older line published after a newer release
+        would be "latest"; `hz system update` must never move back to it. One unauthenticated GET, like the release
+        check (ADR 0031).
+
+        Raises:
+            OSError: If GitHub can't be reached or answers with an error, e.g. when rate-limited.
+            ValueError: If the answer is too large or not JSON, or names no published release.
+            TypeError: If the answer is no list.
+        """
+        answer: object = _github.get_json(self.releases_url(1), None, timeout)
+        if not isinstance(answer, list):
+            msg = "the answer is no list of releases"
+            raise TypeError(msg)
+        versions = [
+            version
+            for item in cast("list[object]", answer)
+            if (version := _published_version(item, prereleases=prereleases)) is not None
+        ]
+        if not versions:
+            msg = f"{self.repository} has no published release"
+            raise ValueError(msg)
+        return str(max(versions))
+
     def releases_url(self, page: int) -> str:
         """Where a page of releases, newest first, is asked for."""
         return f"{_github.GITHUB_API}/repos/{self.repository}/releases?per_page={PAGE_SIZE}&page={page}"
@@ -134,6 +161,22 @@ class GitHubReleases(ReleaseSource):
             if reached or len(items) < PAGE_SIZE:
                 break
         return [found[key] for key in sorted(found, reverse=True)]
+
+
+def _published_version(item: object, *, prereleases: bool) -> Version | None:
+    """A published release's version from GitHub's answer; None for drafts, unwanted pre-releases and non-releases."""
+    if not isinstance(item, dict):
+        return None
+    release = cast("dict[str, object]", item)
+    if release.get("draft"):
+        return None
+    try:
+        version = Version(clean(str(release.get("tag_name", ""))).removeprefix("v"))
+    except InvalidVersion:
+        return None
+    if (release.get("prerelease") or version.is_prerelease) and not prereleases:
+        return None
+    return version
 
 
 def _release_page(url: object, repository: str) -> str | None:

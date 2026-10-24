@@ -58,3 +58,21 @@ class ReleaseNotes(BaseModel):
         description="Its release notes as Markdown: third-party text, without control or bidirectional characters."
     )
     url: str | None = Field(description="Its release page, on github.com.")
+
+
+class UpdateResult(BaseModel):
+    """What `hz system update` did, or why it left the installation as it was."""
+
+    before: str = Field(description="Heinzelmännchen version installed before.")
+    after: str = Field(description="Heinzelmännchen version installed now; the same as `before` if nothing changed.")
+    latest: str | None = Field(
+        description="Highest published release in SemVer order, when it was asked for: for an installation pinned to "
+        "a release tag, a branch, a commit or a local source; none otherwise or if it couldn't be asked."
+    )
+    pinned_to: str | None = Field(
+        description="The release tag, branch, commit, path, URL or version specifier the installation is pinned to "
+        "now; none if it follows a git repository's default branch or the package index without a specifier."
+    )
+    updated: bool = Field(description="Whether Heinzelmännchen was reinstalled.")
+    message: str = Field(description="What happened, or what the installation is pinned to and how to move it.")
+    next: list[str] = Field(description="Commands that would move the installation, when it was left pinned.")
