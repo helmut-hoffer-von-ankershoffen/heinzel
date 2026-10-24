@@ -20,6 +20,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
+from urllib.parse import quote
 
 from pydantic import BaseModel, JsonValue
 from pydantic_core import to_jsonable_python
@@ -34,6 +35,8 @@ from heinzel import (
     HeinzelError,
     JobLet,
     Kernel,
+    NoticeKind,
+    Notifications,
     OperationLet,
     Participant,
     PlaybookLet,
@@ -552,12 +555,48 @@ class WorkflowService:
     def _job(self, contract: Contract) -> Callable[[], JsonValue]:
         def render() -> JsonValue:
             # The receipt outlives the draft (`[workflow] retention_days`), so it gets the draft's hash, not its text.
-            rendered = self.render(contract, scheduled=True)
+            try:
+                rendered = self.render(contract, scheduled=True)
+            except Exception as exc:
+                self._notify(contract, failed=exc)
+                raise
+            self._notify(contract, rendered=rendered)
             return cast("JsonValue", rendered.model_dump(mode="json", exclude={"agent": {"draft"}}))
 
         render.__qualname__ = f"workflow:{self.job_name(contract)}"
         render.__doc__ = f"Render the workflow contract {contract.qualified}."
         return render
+
+    def _notify(self, contract: Contract, *, rendered: Rendered | None = None, failed: Exception | None = None) -> None:
+        """Tell the person a scheduled render left a draft to read, or failed (ADR 0043); never fails the job."""
+        if not self._kernel.provides(Notifications):
+            return
+        title = contract.frontmatter.hz.title if contract.frontmatter is not None else contract.name
+        route = f"/contracts/{quote(contract.qualified, safe='')}"
+        try:
+            notifications = self._kernel.resolve(Notifications)
+            if rendered is not None:
+                notifications.emit(
+                    NoticeKind.DRAFT,
+                    f"Draft ready: {title}",
+                    "Read it, edit what is wrong, then send it.",
+                    route=route,
+                    command=shlex.join(["hz", "workflow", "drafts", "--name", contract.qualified, "--latest"]),
+                    key=f"draft:{contract.qualified}:{rendered.sha256}",
+                )
+            elif failed is not None:
+                text = str(failed) if isinstance(failed, HeinzelError) else ""
+                error = (text.strip() or type(failed).__name__).splitlines()[0]
+                notifications.emit(
+                    NoticeKind.FAILED,
+                    f"Run failed: {title}",
+                    error,
+                    route=route,
+                    command=shlex.join(["hz", "workflow", "show", contract.qualified]),
+                    key=f"failed:{contract.qualified}:{fingerprint(error)}",
+                )
+        except Exception:
+            logger.exception("notifying about %s failed", contract.qualified)
 
     def budget(self, contract: Contract, *, scheduled: bool) -> float:
         """What one attempt may cost: the lower of your cap and the contract's, split across a slot's retries.

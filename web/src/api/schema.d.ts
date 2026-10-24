@@ -511,6 +511,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/notify/ack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark notices as shown, so the daemon doesn't pop them up again.
+         * @description Mark notices as shown, so the daemon doesn't pop them up again.
+         *
+         *     The web app calls it for every notice it popped up.
+         */
+        post: operations["system_notify_ack"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/notify/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the latest notices, whether each popped up and who showed it, and how they reach you.
+         * @description Show the latest notices, whether each popped up and who showed it, and how they reach you.
+         */
+        get: operations["system_notify_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/notify/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record an urgent test notice, which the open web app or the next daemon tick pops up.
+         * @description Record an urgent test notice, which the open web app or the next daemon tick pops up.
+         *
+         *     `hz system notify install` pops one up at once, through the native notifier only.
+         *
+         *     Raises:
+         *         HeinzelError: If notifications are off, or quiet mode keeps it from popping up.
+         */
+        post: operations["system_notify_test"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/plugin/add": {
         parameters: {
             query?: never;
@@ -1578,6 +1645,23 @@ export interface components {
             value: components["schemas"]["JsonValue"];
         };
         /**
+         * Delivered
+         * @description What `ack` marked as shown.
+         */
+        Delivered: {
+            /**
+             * Delivered
+             * @description Ids of the notices that weren't marked as shown before.
+             */
+            delivered: string[];
+        };
+        /**
+         * Delivery
+         * @description Who showed a notice to the person.
+         * @enum {string}
+         */
+        Delivery: "web" | "daemon";
+        /**
          * Diagnostic
          * @description A problem in a contract file, with where it is and what to do.
          */
@@ -2154,6 +2238,106 @@ export interface components {
              * @description Version of that distribution.
              */
             version: string;
+        };
+        /**
+         * Notice
+         * @description One thing that deserves attention, as recorded: what it is, where to look, and whether it was shown.
+         */
+        Notice: {
+            /**
+             * At
+             * Format: date-time
+             * @description When it was recorded.
+             */
+            at: string;
+            /**
+             * Body
+             * @description A sentence more, in plain text; may be empty.
+             */
+            body: string;
+            /**
+             * Command
+             * @description The command that shows it in a terminal, such as `hz system doctor`.
+             */
+            command: string;
+            /**
+             * Delivered At
+             * @description When it was shown; none while it waits.
+             */
+            delivered_at?: string | null;
+            /** @description Who showed it; none while it waits. */
+            delivered_by?: components["schemas"]["Delivery"] | null;
+            /**
+             * Due
+             * Format: date-time
+             * @description When it may pop up: `at`, or the next start of your working hours.
+             */
+            due: string;
+            /**
+             * Held
+             * @description Why it isn't shown as a desktop notification; none if it is.
+             */
+            held?: string | null;
+            /**
+             * Id
+             * @description Identifier of the notice, unique on this machine; later notices sort after it.
+             */
+            id: string;
+            /**
+             * Key
+             * @description What makes two notices the same, so a repeat within the window is dropped.
+             */
+            key: string;
+            /** @description What it is about. */
+            kind: components["schemas"]["NoticeKind"];
+            /**
+             * Popup
+             * @description Whether it is shown as a desktop notification at all; false: in the list only.
+             */
+            popup: boolean;
+            /**
+             * Route
+             * @description Where the web app shows it, a path such as `/doctor`.
+             */
+            route: string;
+            /**
+             * Title
+             * @description One line: what happened.
+             */
+            title: string;
+            /**
+             * Urgent
+             * @description Whether it may interrupt outside working hours.
+             * @default false
+             */
+            urgent: boolean;
+        };
+        /**
+         * NoticeKind
+         * @description What a notice is about; each kind can be switched off in `[system.notify]`.
+         * @enum {string}
+         */
+        NoticeKind: "draft" | "failed" | "doctor" | "release" | "test";
+        /**
+         * NoticeList
+         * @description The latest notices, and how they reach you on this machine.
+         */
+        NoticeList: {
+            /**
+             * Native
+             * @description How the daemon pops them up when no web app is open, in words.
+             */
+            native: string;
+            /**
+             * Notices
+             * @description The latest notices, newest first.
+             */
+            notices: components["schemas"]["Notice"][];
+            /**
+             * Waiting
+             * @description How many of them wait to pop up: due, or held until your working hours.
+             */
+            waiting: number;
         };
         /**
          * OperationAudience
@@ -2896,6 +3080,8 @@ export type SchemaContractSummary = components['schemas']['ContractSummary'];
 export type SchemaCredentialInfo = components['schemas']['CredentialInfo'];
 export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
 export type SchemaDefaultView = components['schemas']['DefaultView'];
+export type SchemaDelivered = components['schemas']['Delivered'];
+export type SchemaDelivery = components['schemas']['Delivery'];
 export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
@@ -2917,6 +3103,9 @@ export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
+export type SchemaNotice = components['schemas']['Notice'];
+export type SchemaNoticeKind = components['schemas']['NoticeKind'];
+export type SchemaNoticeList = components['schemas']['NoticeList'];
 export type SchemaOperationAudience = components['schemas']['OperationAudience'];
 export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
@@ -3540,6 +3729,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModuleInfo"][];
+                };
+            };
+        };
+    };
+    system_notify_ack: {
+        parameters: {
+            query: {
+                /** @description Ids of the notices that were shown, from `list`, separated by commas. */
+                ids: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Delivered"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_notify_list: {
+        parameters: {
+            query?: {
+                /** @description How many of the latest notices to show. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoticeList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_notify_test: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoticeList"];
                 };
             };
         };

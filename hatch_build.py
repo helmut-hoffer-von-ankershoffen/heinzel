@@ -1,4 +1,4 @@
-"""Hatch build hook: ship the web head's built app (web/) inside the package, so `uv build` needs no extra step.
+"""Hatch build hook: ship the web head's built app (web/) and Heinzel Notifier inside the package.
 
 The app is built into src/heinzel/heads/web/static (not in git), stamped with the digest of its sources
 (scripts/web_build.py, ADR 0039). A build whose stamp matches reuses it, so a wheel built from the sdist, which
@@ -18,19 +18,24 @@ from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 ROOT = Path(__file__).resolve().parent
 
 
-def _web() -> ModuleType:
-    """scripts/web_build.py, which builds the app; standard library only until it runs Node.js.
+def _script(name: str) -> ModuleType:
+    """A build script from scripts/, loaded by path.
 
     Raises:
-        RuntimeError: If scripts/web_build.py isn't there.
+        RuntimeError: If the script isn't there.
     """
-    spec = importlib.util.spec_from_file_location("heinzel_web_build", ROOT / "scripts" / "web_build.py")
+    spec = importlib.util.spec_from_file_location(f"heinzel_{name}", ROOT / "scripts" / f"{name}.py")
     if spec is None or spec.loader is None:  # pragma: no cover - the file is in the repository and the sdist
-        msg = "scripts/web_build.py is missing; build from a checkout or an sdist of heinzel"
+        msg = f"scripts/{name}.py is missing; build from a checkout or an sdist of heinzel"
         raise RuntimeError(msg)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _web() -> ModuleType:
+    """scripts/web_build.py, which builds the app; standard library only until it runs Node.js."""
+    return _script("web_build")
 
 
 class WebAppHook(BuildHookInterface[Any]):
@@ -60,3 +65,9 @@ class WebAppHook(BuildHookInterface[Any]):
                 raise RuntimeError(msg) from error
         target = "heinzel/heads/web/static" if self.target_name == "wheel" else "src/heinzel/heads/web/static"
         build_data["force_include"][str(web.STATIC)] = target
+        # Heinzel Notifier (ADR 0043), built by `make notifier` on macOS: shipped when it matches its sources. A wheel
+        # without it still works; macOS then falls back to osascript. CI's release build checks that it is there.
+        notifier = _script("notifier")
+        if notifier.APP.is_dir() and notifier.current():
+            packaged = notifier.PACKAGED if self.target_name == "wheel" else f"src/{notifier.PACKAGED}"
+            build_data["force_include"][str(notifier.APP)] = packaged

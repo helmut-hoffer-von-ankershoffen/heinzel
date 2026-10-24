@@ -128,6 +128,7 @@ hz system plugin  list | add | remove | new
 hz system layer   list | show
 hz system agent   skills | install | uninstall
 hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
+hz system notify  list | ack | test | install
 hz system serve   mcp | api | daemon
 hz <module> …     work: plugin modules and built-in workflow modules
 ```

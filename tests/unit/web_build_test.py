@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tomllib
+import types
 from pathlib import Path
 from types import ModuleType
 
@@ -145,8 +146,25 @@ def test_the_build_hook_needs_node_only_when_it_has_to_build(hook_module, monkey
     assert hook.dependencies() == [build.NODE_REQUIREMENT]
 
 
+def without_notifier(hook_module, monkeypatch, app: Path | None = None, *, current: bool = True) -> None:
+    """The build hook sees Heinzel Notifier (ADR 0043) at `app`, built from the current sources or not; none if None."""
+    original = hook_module._script
+
+    def script(name: str):
+        if name != "notifier":
+            return original(name)
+        return types.SimpleNamespace(
+            APP=app or Path("/nonexistent/HeinzelNotifier.app"),
+            PACKAGED="heinzel/modules/system/notify/macos/HeinzelNotifier.app",
+            current=lambda: current,
+        )
+
+    monkeypatch.setattr(hook_module, "_script", script)
+
+
 def test_the_build_hook_includes_the_app_in_the_wheel_and_the_sdist(hook_module, monkeypatch):
     hook = hook_module.WebAppHook()
+    without_notifier(hook_module, monkeypatch)
     monkeypatch.setattr(build, "current", lambda: True)
     data: dict[str, dict[str, str]] = {"force_include": {}}
     hook.initialize("standard", data)
@@ -154,6 +172,24 @@ def test_the_build_hook_includes_the_app_in_the_wheel_and_the_sdist(hook_module,
     hook.target_name = "sdist"
     hook.initialize("standard", data)
     assert data["force_include"] == {str(build.STATIC): "src/heinzel/heads/web/static"}
+
+
+def test_the_build_hook_ships_heinzel_notifier_when_it_matches_its_sources(hook_module, monkeypatch, tmp_path):
+    hook = hook_module.WebAppHook()
+    monkeypatch.setattr(build, "current", lambda: True)
+    app = tmp_path / "HeinzelNotifier.app"
+    app.mkdir()
+    without_notifier(hook_module, monkeypatch, app)
+    data: dict[str, dict[str, str]] = {"force_include": {}}
+    hook.initialize("standard", data)
+    assert data["force_include"][str(app)] == "heinzel/modules/system/notify/macos/HeinzelNotifier.app"
+    hook.target_name = "sdist"
+    hook.initialize("standard", data)
+    assert data["force_include"][str(app)] == "src/heinzel/modules/system/notify/macos/HeinzelNotifier.app"
+    stale: dict[str, dict[str, str]] = {"force_include": {}}
+    without_notifier(hook_module, monkeypatch, app, current=False)
+    hook.initialize("standard", stale)
+    assert str(app) not in stale["force_include"]
 
 
 def test_the_build_hook_builds_a_stale_app_and_skips_editable_installs(hook_module, monkeypatch):

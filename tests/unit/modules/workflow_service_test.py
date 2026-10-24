@@ -20,6 +20,8 @@ from heinzel import (
     MailMessage,
     Meeting,
     Module,
+    NoticeKind,
+    Notifications,
     Participant,
     Person,
     PullRequest,
@@ -268,6 +270,30 @@ def test_a_compiled_job_renders_its_contract_and_its_result_holds_the_drafts_has
     assert runner.draft not in json.dumps(rendered)
     assert Path(rendered["draft"]).read_text() == runner.draft
     assert rendered["sha256"].startswith("sha256:")
+
+
+def test_a_scheduled_render_tells_you_a_draft_is_ready_and_a_failed_one_that_it_failed(make, dirs, runner):
+    put(dirs[0])
+    service = make()
+    service.compiled().jobs[0].func()
+    notifications = service._kernel.resolve(Notifications)
+    ready = notifications.recent()[0]
+    assert (ready.kind, ready.route) == (NoticeKind.DRAFT, "/contracts/me%3Aweekly-digest")
+    assert ready.command == "hz workflow drafts --name me:weekly-digest --latest"
+    runner.status = "budget"
+    with pytest.raises(HeinzelError):
+        service.compiled().jobs[0].func()
+    failed = notifications.recent()[0]
+    assert failed.kind is NoticeKind.FAILED
+    assert "the agent run ended budget" in failed.body
+    assert failed.route == ready.route
+
+
+def test_a_manual_run_notifies_nobody_you_are_there(make, dirs):
+    put(dirs[0])
+    service = make()
+    service.run("weekly-digest")
+    assert service._kernel.resolve(Notifications).recent() == []
 
 
 def test_find_takes_bare_and_qualified_names(make, dirs):

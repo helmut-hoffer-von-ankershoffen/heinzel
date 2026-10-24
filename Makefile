@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses secrets template-test template-sync docs fuzz demo web-build web-dev test-web build changelog ci-logs pr sync release clean
+.PHONY: help install setup doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses secrets template-test template-sync docs fuzz demo notifier web-build web-dev test-web build changelog ci-logs pr sync release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -162,6 +162,9 @@ web-dev: ## The web head with hot reload: its API on a free port, Vite in front 
 
 test-web: ## Run the web app's component tests (Vitest, with axe for accessibility)
 	$(STEPS) "web-tests=$(WEB) exec vitest run"
+
+notifier: ## Build Heinzel Notifier, the macOS notifier app the wheel ships (macOS with the Command Line Tools)
+	@uv run --quiet --script scripts/notifier.py
 
 build: web-build ## Build wheels and sdists into dist/ (the core and every first-party plugin; the web app first)
 	uv build --all-packages

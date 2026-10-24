@@ -24,6 +24,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.doctor`](#systemdoctor) | Check that Heinzelmännchen and its modules are healthy. |
 | [`system.expert`](#systemexpert) | Expert mode: list every command, or just the everyday ones. |
 | [`system.layer`](#systemlayer) | Show the layer plugins installed and the stack you are in, general to specific. |
+| [`system.notify`](#systemnotify) | Pop up what deserves your attention: in the web app while it is open, else natively. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
@@ -228,6 +229,21 @@ Show the layer plugins installed and the stack you are in, general to specific.
 | --- | --- | --- | --- | --- | --- | --- |
 | List the installed layer plugins: where each sits, what it brings and what is wrong with the tree. | `hz system layer list` | `system_layer_list` | `GET /system/layer/list` | `GET /api/system/layer/list` |  | expert |
 | Show your stack: company, org and site, team; what the layers bring and the settings they recommend. | `hz system layer show` | `system_layer_show` | `GET /system/layer/show` | `GET /api/system/layer/show` |  | expert |
+
+Health checks: reported by `hz system doctor`.
+
+## `system.notify`
+
+Pop up what deserves your attention: in the web app while it is open, else natively.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Show the latest notices, whether each popped up and who showed it, and how they reach you. | `hz system notify list` | `system_notify_list` | — | `GET /api/system/notify/list` |  | expert |
+| Mark notices as shown, so the daemon doesn't pop them up again. | `hz system notify ack` | `system_notify_ack` | — | `POST /api/system/notify/ack` | yes | expert |
+| Record an urgent test notice, which the open web app or the next daemon tick pops up. | `hz system notify test` | `system_notify_test` | — | `POST /api/system/notify/test` | yes | expert |
+| Install the native notifier (Heinzel Notifier on macOS) and pop up a test notification now. | `hz system notify install` | — | — | — | yes | expert |
+
+Settings: [`[system.notify]`](CONFIGURATION.md#systemnotify).
 
 Health checks: reported by `hz system doctor`.
 

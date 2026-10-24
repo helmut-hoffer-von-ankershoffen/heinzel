@@ -18,8 +18,33 @@ on:
 permissions: {}
 
 jobs:
+  # Heinzel Notifier, the core's macOS notifier app (ADR 0043), ships in the core's wheel only; plugins share this
+  # workflow and skip it.
+  notifier:
+    name: Build Heinzel Notifier (macOS app) for ${{ inputs.tag || github.ref_name }}
+    if: github.repository == 'helmut-hoffer-von-ankershoffen/heinzel'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - run: make notifier
+      - name: Pack the app, keeping its executable bit and signature
+        run: tar -czf notifier.tar.gz -C src/heinzel/modules/system/notify/macos HeinzelNotifier.app
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notifier
+          path: notifier.tar.gz
+
   publish:
     name: Build and publish ${{ inputs.tag || github.ref_name }}
+    needs: notifier
+    if: ${{ !cancelled() && needs.notifier.result != 'failure' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -43,7 +68,17 @@ jobs:
         run: uv run --script scripts/check_confidentiality.py
       - name: Check that runtime dependencies keep the release MIT-compatible
         run: make licenses
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.notifier.result == 'success'
+        with:
+          name: notifier
+      - name: Unpack Heinzel Notifier into the package
+        if: needs.notifier.result == 'success'
+        run: tar -xzf notifier.tar.gz -C src/heinzel/modules/system/notify/macos && rm notifier.tar.gz
       - run: make build # Heinzelmännchen builds the core and every first-party plugin, released together
+      - name: Check the wheel ships Heinzel Notifier
+        if: needs.notifier.result == 'success'
+        run: unzip -l dist/heinzel-[0-9]*.whl | grep -q 'HeinzelNotifier.app/Contents/MacOS/notifier'
       - name: Software bill of materials (CycloneDX) of the runtime dependencies
         # --all-packages: workspace members, such as Heinzelmännchen's first-party plugins, are listed too.
         run: |
