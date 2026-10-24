@@ -25,6 +25,8 @@ while read -r name; do unset "$name"; done < <(compgen -e | grep '^HZ_' || true)
 export UV_TOOL_DIR="$sandbox/tools" UV_TOOL_BIN_DIR="$sandbox/bin"
 export HZ_CONFIG_HOME="$sandbox/config" HZ_DATA_DIR="$sandbox/data" HZ_CACHE_DIR="$sandbox/cache" HZ_STATE_DIR="$sandbox/state" \
   HZ_LOG_DIR="$sandbox/log"
+# No update notice: it would depend on the latest release at recording time, and the check can add up to 2 seconds.
+export HZ_UPDATE_CHECK=false
 export PATH="$UV_TOOL_BIN_DIR:$PATH"
 uv tool install --quiet --editable .
 vhs docs/assets/demo.tape
