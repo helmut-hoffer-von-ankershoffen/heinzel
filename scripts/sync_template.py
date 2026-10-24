@@ -48,6 +48,9 @@ def makefile() -> str:
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
     text = re.sub(r"\nnotifier:.*?\n(?:\t.*\n)+", "\n", text)
+    # The terminal art is drawn from the web app's drawing: plugins have none.
+    text = re.sub(r"(?m)^(\.PHONY:.*?) terminal-art\b", r"\1", text)
+    text = re.sub(r"\nterminal-art:.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text + (
         "\nupdate-template: ## Update this plugin to the latest Heinzelmännchen template (needs a clean working tree)\n"

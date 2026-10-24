@@ -12,6 +12,7 @@ from pydantic.fields import FieldInfo
 from rich.console import Console
 from rich.text import Text
 
+from heinzel.heads.cli import _playful
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, show, to_json
 from heinzel.kernel import HeinzelError, Kernel, OperationLet
@@ -76,6 +77,8 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
         try:
             result = kernel.invoke(operation, **kwargs)
         except HeinzelError as exc:
+            if not as_json and _playful.allowed(kernel.settings, err_console):
+                err_console.print(_playful.glyph(), end=" ")
             err_console.print(message("Error:", str(exc)), highlight=False, soft_wrap=True)
             raise typer.Exit(code=1) from exc
         except OSError as exc:

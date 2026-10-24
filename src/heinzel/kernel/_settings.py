@@ -45,6 +45,12 @@ class Settings(ModuleSettings):
         "everyday ones. Hidden commands run all the same, and MCP and REST always list everything. Change it with "
         "`hz system expert on` or `off`; not settable in a project's hz.toml (ADR 0041).",
     )
+    playful: bool = Field(
+        default=True,
+        description="A small Heinzelmännchen in the terminal: in the start screen, `hz setup`, the spinner of long "
+        "work and the done and error lines. Only on a colour terminal, never in JSON, a pipe, CI, with NO_COLOR or "
+        "TERM=dumb. Set to false to turn all of it off (the web app's Settings has the same switch).",
+    )
     plugins_enabled: bool = Field(
         default=True,
         description="Discover modules from installed plugins. Disable to debug a broken plugin.",
