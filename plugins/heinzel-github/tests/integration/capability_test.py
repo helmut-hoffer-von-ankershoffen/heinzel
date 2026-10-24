@@ -15,6 +15,7 @@ pytestmark = pytest.mark.integration
 BOUND = Config(files=(), data={"capabilities": {"code-host": "github", "tracker": "github"}})
 SINCE, UNTIL = "2026-10-01T00:00:00+00:00", "2026-11-01T00:00:00+00:00"
 PULLS, ISSUES = "repos/acme/widgets/pulls", "repos/acme/widgets/issues"
+INSTALL_GH = "The GitHub CLI `gh` is not on PATH; install it from https://cli.github.com,"
 LEAKED = "ghp_" + "Q7w8E9r0" * 5  # made up, shaped like a classic token
 
 
@@ -108,7 +109,17 @@ def test_without_gh_the_command_and_doctor_say_how_to_install_it(github_kernel, 
     kernel = github_kernel(BOUND, digest=digest())
     code, output = hz(kernel, "digest", "merged", "acme/widgets", SINCE, UNTIL)
     assert code != 0
-    assert "https://cli.github.com" in str(output)
+    assert str(output).split() == [
+        "Error:",
+        *INSTALL_GH.split(),
+        "then",
+        "run",
+        "`gh",
+        "auth",
+        "login",
+        "--hostname",
+        "github.com`.",
+    ]
     code, report = hz(kernel, "system", "doctor")
     assert code == 0
     gh = {c["name"]: c for c in report["checks"]["github"]}["gh"]
