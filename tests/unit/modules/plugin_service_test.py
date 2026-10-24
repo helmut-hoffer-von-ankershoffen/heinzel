@@ -8,8 +8,8 @@ import urllib.error
 
 import pytest
 
-from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settings
-from heinzel.kernel import Installation, Origin
+from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settings, Theme
+from heinzel.kernel import DEFAULT_THEME, Installation, Origin
 from heinzel.modules.system.plugin import _service, _sources
 from heinzel.modules.system.plugin._models import PluginSettings
 from heinzel.modules.system.plugin._service import PluginService, distributions_in_spec
@@ -580,6 +580,7 @@ def test_installed_tells_what_each_plugin_brings_and_whether_it_is_enabled(make_
 
 
 VCS = '"vcs_info": {"vcs": "git", "commit_id": "abc"'
+URL_ABC = "https://github.com/o/heinzel-x/tree/abc"
 
 
 @pytest.mark.parametrize(
@@ -591,22 +592,39 @@ VCS = '"vcs_info": {"vcs": "git", "commit_id": "abc"'
         (
             f'{{"url": "https://github.com/o/heinzel-x.git", {VCS}}}}}',
             None,
-            ("git", "https://github.com/o/heinzel-x", "abc"),
+            ("git", "https://github.com/o/heinzel-x/tree/abc", "abc"),
         ),
         (
             (
                 f'{{"url": "https://ada:t0ken@github.com/o/mono", "subdirectory": "plugins/heinzel-x", '
-                f'{VCS}, "requested_revision": "v1"}}}}'
+                f'{VCS}, "requested_revision": "main"}}}}'
             ),
-            None,
-            ("git", "https://github.com/o/mono/tree/v1/plugins/heinzel-x", "abc"),
-        ),
-        (
-            f'{{"url": "https://github.com/o/mono", "subdirectory": "plugins/heinzel-x", {VCS}}}}}',
             None,
             ("git", "https://github.com/o/mono/tree/abc/plugins/heinzel-x", "abc"),
         ),
+        (
+            '{"url": "git+https://github.com/o/heinzel-x", "vcs_info": {"vcs": "git", "requested_revision": "v1"}}',
+            None,
+            ("git", "https://github.com/o/heinzel-x/tree/v1", None),
+        ),
+        (
+            '{"url": "https://github.com/o/heinzel-x", "vcs_info": {"vcs": "git"}}',
+            None,
+            ("git", "https://github.com/o/heinzel-x", None),
+        ),
+        (f'{{"url": "git+ssh://git@github.com/o/heinzel-x.git", {VCS}}}}}', None, ("git", URL_ABC, "abc")),
+        (f'{{"url": "git@github.com:o/heinzel-x.git", {VCS}}}}}', None, ("git", URL_ABC, "abc")),
+        (
+            f'{{"url": "https://ada:t0ken@git.example.org/o/heinzel-x.git", {VCS}}}}}',
+            None,
+            ("git", "https://git.example.org/o/heinzel-x", "abc"),
+        ),
         (f'{{"url": "ssh://git@example.org/o/x", {VCS}}}}}', None, ("git", None, "abc")),
+        (
+            f'{{"url": "https://gitlab.example.org/o/mono.git", "subdirectory": "heinzel-x", {VCS}}}}}',
+            None,
+            ("git", "https://gitlab.example.org/o/mono/tree/abc/heinzel-x", "abc"),
+        ),
         ('{"url": "file:///src/heinzel%20x", "dir_info": {}}', None, ("path", None, None)),
         ('{"url": "https://example.org/x.whl", "archive_info": {}}', None, (None, "https://example.org/x.whl", None)),
         ("not json", None, (None, None, None)),
@@ -658,22 +676,92 @@ def test_search_entries_carry_their_repository_url(make_kernel, tmp_path, github
 def test_installed_plugins_say_where_they_came_from(make_kernel, tmp_path):
     class Dist:
         name = "heinzel-crm"
+        version = "1.1.0"
         metadata = types.MappingProxyType({"Summary": "CRM notes."})
 
         def read_text(self, filename):
-            return '{"url": "https://github.com/acme-example/heinzel-crm", "vcs_info": {"commit_id": "abc"}}'
+            return '{"url": "git+ssh://git@github.com/acme-example/heinzel-crm.git", "vcs_info": {"commit_id": "abc"}}'
 
+    # The kernel read 1.0.0 when it started; 1.1.0 was installed since.
     record = ModuleRecord("crm", Module("crm", "CRM."), Origin("heinzel-crm", "1.0.0", builtin=False))
     service = service_for(make_kernel, tmp_path, kernel=Kernel(make_kernel().settings, [record]))
     service.distributions = {"heinzel-crm": Dist()}
     [plugin] = service.installed()
-    assert (plugin.source_kind, plugin.source_url, plugin.revision, plugin.summary) == (
+    assert (plugin.version, plugin.source_kind, plugin.source_url, plugin.revision, plugin.summary) == (
+        "1.1.0",
         "git",
-        "https://github.com/acme-example/heinzel-crm",
+        "https://github.com/acme-example/heinzel-crm/tree/abc",
         "abc",
         "CRM notes.",
     )
     assert not plugin.first_party
+
+
+def _listed(make_kernel, tmp_path, *modules):
+    """`installed()` for plugins of one module each, `heinzel-<module name>`."""
+    records = [ModuleRecord(m.name, m, Origin(f"heinzel-{m.name}", "1.0.0", builtin=False)) for m in modules]
+    service = service_for(make_kernel, tmp_path, kernel=Kernel(Settings(), records))
+    service.distributions = {}
+    return {p.name: p for p in service.installed()}
+
+
+def _theme(name):
+    return Theme.model_validate(DEFAULT_THEME.model_dump() | {"name": name, "title": name.title()})
+
+
+@pytest.mark.parametrize(
+    ("flags", "kinds"),
+    [
+        ({}, []),
+        ({"capabilities": True}, ["connector"]),
+        ({"themes": True, "playbooks": True}, ["theme", "playbook"]),
+        ({"playbooks": True, "features": True, "capabilities": True}, ["connector", "capability", "playbook"]),
+        (
+            {"playbooks": True, "features": True, "capabilities": True, "themes": True},
+            ["connector", "theme", "capability", "playbook"],
+        ),
+    ],
+)
+def test_kinds_come_in_one_order_whatever_a_plugin_brings(flags, kinds):
+    assert (
+        _service.plugin_kinds(
+            **({"capabilities": False, "themes": False, "features": False, "playbooks": False} | flags)
+        )
+        == kinds
+    )
+
+
+def test_what_kind_of_plugin_each_one_is(make_kernel, tmp_path):
+    clock = Module("clock", "Times.")
+
+    @clock.operation
+    def info() -> str:
+        """About the plugin."""
+        return "clock"
+
+    @clock.operation(name="clock")
+    def now() -> str:
+        """What time it is."""
+        return "now"
+
+    github = Module("github", "GitHub.")
+    github.provides("tracker", modes={"read"})(object)
+
+    @github.operation(name="info")
+    def about() -> str:
+        """About the plugin."""
+        return "github"
+
+    acme = Module("acme", "Acme.")
+    acme.theme(_theme("acme-night"))
+    acme.theme(_theme("acme"))
+    acme.playbook("How Acme works.", setup=False)
+    plugins = _listed(make_kernel, tmp_path, clock, github, acme)
+    assert {name: (p.kinds, p.themes) for name, p in plugins.items()} == {
+        "clock": (["capability"], []),
+        "github": (["connector"], []),
+        "acme": (["theme", "playbook"], ["acme", "acme-night"]),
+    }
 
 
 @pytest.mark.parametrize(

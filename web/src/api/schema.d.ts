@@ -231,6 +231,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/config/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.
+         * @description Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.
+         *
+         *     A file that doesn't exist yet is shown by its nearest existing folder. On Linux without a desktop session nothing
+         *     opens and the message names the file.
+         */
+        post: operations["system_config_reveal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/config/set": {
         parameters: {
             query?: never;
@@ -2026,6 +2049,18 @@ export interface components {
          */
         ConfigReport: {
             /**
+             * Can Reveal
+             * @description Whether `hz system config reveal` can open this machine's file manager here: false on Linux without a desktop session, or when the opener isn't installed.
+             * @default false
+             */
+            can_reveal: boolean;
+            /**
+             * File Manager
+             * @description What this machine's file manager is called, to label a reveal action: `Finder` on macOS, `Explorer` on Windows, `file manager` elsewhere.
+             * @default file manager
+             */
+            file_manager: string;
+            /**
              * Files
              * @description Lowest precedence first; environment variables override all.
              */
@@ -2035,6 +2070,38 @@ export interface components {
              * @description Every setting in effect.
              */
             settings: components["schemas"]["SettingInfo"][];
+        };
+        /**
+         * ConfigRevealed
+         * @description What `hz system config reveal` did.
+         */
+        ConfigRevealed: {
+            /**
+             * Message
+             * @description What happened, or why nothing did, with the file's path.
+             */
+            message: string;
+            /**
+             * Opened
+             * @description Whether the file manager was opened.
+             */
+            opened: boolean;
+            /**
+             * Path
+             * @description The file; none for project when there is no hz.toml here or above.
+             */
+            path: string | null;
+            /**
+             * Scope
+             * @description Which configuration file: site, user or project.
+             * @enum {string}
+             */
+            scope: "site" | "user" | "project";
+            /**
+             * Supported
+             * @description Whether this machine has a file manager hz can open.
+             */
+            supported: boolean;
         };
         /**
          * ConflictView
@@ -3528,6 +3595,11 @@ export interface components {
              */
             homepage?: string | null;
             /**
+             * Kinds
+             * @description What the plugin is, any of four, always in this order: `connector` when it brings adapters (`capabilities` isn't empty); `theme` when it offers themes; `capability` when it has an operation of its own besides the `info` every plugin from the template gets (e.g. `hz clock`); `playbook` when it ships one. In the web app `Capability` means such a feature of its own, while `capabilities` above, like ADR 0028, names the integration interfaces (tracker, calendar, ...) a connector implements.
+             */
+            kinds?: ("connector" | "theme" | "capability" | "playbook")[];
+            /**
              * Layers
              * @description Layers its modules declare (ADR 0040).
              */
@@ -3559,7 +3631,7 @@ export interface components {
             source_kind?: ("pypi" | "git" | "path") | null;
             /**
              * Source Url
-             * @description Where a browser shows its source: the git repository (with `/tree/<ref>/<subdirectory>` for a plugin in a subdirectory), or for PyPI its repository or PyPI page; https only, never with credentials; none for a directory or when unknown.
+             * @description Where a browser shows its source, from its `direct_url.json` (PEP 610): the git repository, on GitHub at `/tree/<commit>` (and `/<subdirectory>` for a plugin in one; an ssh remote becomes its https page), or for PyPI its repository or PyPI page; https only, never with credentials; none for a directory or when unknown.
              */
             source_url?: string | null;
             /**
@@ -3569,8 +3641,13 @@ export interface components {
              */
             summary: string;
             /**
+             * Themes
+             * @description Names of the themes its modules offer for the web app (`module.theme`, ADR 0044), sorted; `hz system theme use <name>` picks one.
+             */
+            themes?: string[];
+            /**
              * Version
-             * @description Installed version.
+             * @description Installed version, from the distribution's metadata as installed now; `0.0.0` only when the plugin says so itself (one not released yet).
              */
             version: string;
         };
@@ -3903,6 +3980,13 @@ export interface components {
              */
             env: string;
             /**
+             * Json Schema
+             * @description The setting's JSON Schema, self-contained (no `$ref`): its type, nested models, enums, bounds such as minimum and maximum, formats such as `iana-timezone`, descriptions and default; none when its type has no JSON Schema.
+             */
+            json_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /**
              * Key
              * @description Setting name within its section.
              */
@@ -4225,6 +4309,11 @@ export interface components {
              */
             input: string;
             /**
+             * Main Tint
+             * @description A tint behind the main content area (`--color-main-tint`); none when not given.
+             */
+            main_tint?: string | null;
+            /**
              * Muted
              * @description A hex colour, `#rgb` or `#rrggbb`.
              */
@@ -4328,6 +4417,37 @@ export interface components {
             themes: components["schemas"]["ThemeView"][];
         };
         /**
+         * ThemeLogoView
+         * @description A theme's logo, where the web head serves each file, for an `<img>` in the web app.
+         */
+        ThemeLogoView: {
+            /**
+             * Alt
+             * @description What the logo says, for screen readers, e.g. `Acme`.
+             */
+            alt: string;
+            /**
+             * Dark
+             * @description The logo on a dark background; the light one's URL when the theme has none.
+             */
+            dark: string;
+            /**
+             * Height
+             * @description How tall the logo is shown, a CSS length, e.g. `24px`.
+             */
+            height: string;
+            /**
+             * Light
+             * @description The logo on a light background, e.g. `/theme-assets/acme/light.svg?v=1a2b3c4d`.
+             */
+            light: string;
+            /**
+             * Mark
+             * @description A square logo for a collapsed sidebar; none when the theme has none.
+             */
+            mark: string | null;
+        };
+        /**
          * ThemeView
          * @description One available theme with every token value, ready to become the web app's CSS custom properties.
          */
@@ -4381,6 +4501,8 @@ export interface components {
             icon_size: string;
             /** @description Colours in light mode; each field is the token `--color-<field>`. */
             light: components["schemas"]["ThemeColours"];
+            /** @description The theme's logo; none if it ships none. */
+            logo?: components["schemas"]["ThemeLogoView"] | null;
             /**
              * Module
              * @description The qualified name of the module offering it; none for the built-in one.
@@ -4593,6 +4715,7 @@ export type SchemaCheckReport = components['schemas']['CheckReport'];
 export type SchemaCompiledContract = components['schemas']['CompiledContract'];
 export type SchemaConfigFileInfo = components['schemas']['ConfigFileInfo'];
 export type SchemaConfigReport = components['schemas']['ConfigReport'];
+export type SchemaConfigRevealed = components['schemas']['ConfigRevealed'];
 export type SchemaConflictView = components['schemas']['ConflictView'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
 export type SchemaContractList = components['schemas']['ContractList'];
@@ -4665,6 +4788,7 @@ export type SchemaTested = components['schemas']['Tested'];
 export type SchemaThemeColours = components['schemas']['ThemeColours'];
 export type SchemaThemeFontView = components['schemas']['ThemeFontView'];
 export type SchemaThemeList = components['schemas']['ThemeList'];
+export type SchemaThemeLogoView = components['schemas']['ThemeLogoView'];
 export type SchemaThemeView = components['schemas']['ThemeView'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
@@ -4937,6 +5061,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_config_reveal: {
+        parameters: {
+            query: {
+                /** @description Which configuration file: site, user or project. */
+                scope: "site" | "user" | "project";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigRevealed"];
                 };
             };
             /** @description Validation Error */

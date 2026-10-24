@@ -1309,6 +1309,18 @@
       "ConfigReport": {
         "description": "Where configuration comes from and what is in effect.",
         "properties": {
+          "can_reveal": {
+            "default": false,
+            "description": "Whether `hz system config reveal` can open this machine's file manager here: false on Linux without a desktop session, or when the opener isn't installed.",
+            "title": "Can Reveal",
+            "type": "boolean"
+          },
+          "file_manager": {
+            "default": "file manager",
+            "description": "What this machine's file manager is called, to label a reveal action: `Finder` on macOS, `Explorer` on Windows, `file manager` elsewhere.",
+            "title": "File Manager",
+            "type": "string"
+          },
           "files": {
             "description": "Lowest precedence first; environment variables override all.",
             "items": {
@@ -1331,6 +1343,58 @@
           "settings"
         ],
         "title": "ConfigReport",
+        "type": "object"
+      },
+      "ConfigRevealed": {
+        "description": "What `hz system config reveal` did.",
+        "properties": {
+          "message": {
+            "description": "What happened, or why nothing did, with the file's path.",
+            "title": "Message",
+            "type": "string"
+          },
+          "opened": {
+            "description": "Whether the file manager was opened.",
+            "title": "Opened",
+            "type": "boolean"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "format": "path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The file; none for project when there is no hz.toml here or above.",
+            "title": "Path"
+          },
+          "scope": {
+            "description": "Which configuration file: site, user or project.",
+            "enum": [
+              "site",
+              "user",
+              "project"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "supported": {
+            "description": "Whether this machine has a file manager hz can open.",
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "scope",
+          "path",
+          "supported",
+          "opened",
+          "message"
+        ],
+        "title": "ConfigRevealed",
         "type": "object"
       },
       "ConflictView": {
@@ -3857,6 +3921,20 @@
             "description": "Its source repository, from its metadata.",
             "title": "Homepage"
           },
+          "kinds": {
+            "description": "What the plugin is, any of four, always in this order: `connector` when it brings adapters (`capabilities` isn't empty); `theme` when it offers themes; `capability` when it has an operation of its own besides the `info` every plugin from the template gets (e.g. `hz clock`); `playbook` when it ships one. In the web app `Capability` means such a feature of its own, while `capabilities` above, like ADR 0028, names the integration interfaces (tracker, calendar, ...) a connector implements.",
+            "items": {
+              "enum": [
+                "connector",
+                "theme",
+                "capability",
+                "playbook"
+              ],
+              "type": "string"
+            },
+            "title": "Kinds",
+            "type": "array"
+          },
           "layers": {
             "description": "Layers its modules declare (ADR 0040).",
             "items": {
@@ -3924,7 +4002,7 @@
                 "type": "null"
               }
             ],
-            "description": "Where a browser shows its source: the git repository (with `/tree/<ref>/<subdirectory>` for a plugin in a subdirectory), or for PyPI its repository or PyPI page; https only, never with credentials; none for a directory or when unknown.",
+            "description": "Where a browser shows its source, from its `direct_url.json` (PEP 610): the git repository, on GitHub at `/tree/<commit>` (and `/<subdirectory>` for a plugin in one; an ssh remote becomes its https page), or for PyPI its repository or PyPI page; https only, never with credentials; none for a directory or when unknown.",
             "title": "Source Url"
           },
           "summary": {
@@ -3933,8 +4011,16 @@
             "title": "Summary",
             "type": "string"
           },
+          "themes": {
+            "description": "Names of the themes its modules offer for the web app (`module.theme`, ADR 0044), sorted; `hz system theme use <name>` picks one.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Themes",
+            "type": "array"
+          },
           "version": {
-            "description": "Installed version.",
+            "description": "Installed version, from the distribution's metadata as installed now; `0.0.0` only when the plugin says so itself (one not released yet).",
             "title": "Version",
             "type": "string"
           }
@@ -4513,6 +4599,19 @@
             "title": "Env",
             "type": "string"
           },
+          "json_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The setting's JSON Schema, self-contained (no `$ref`): its type, nested models, enums, bounds such as minimum and maximum, formats such as `iana-timezone`, descriptions and default; none when its type has no JSON Schema.",
+            "title": "Json Schema"
+          },
           "key": {
             "description": "Setting name within its section.",
             "title": "Key",
@@ -5011,6 +5110,20 @@
             "title": "Input",
             "type": "string"
           },
+          "main_tint": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A tint behind the main content area (`--color-main-tint`); none when not given.",
+            "title": "Main Tint"
+          },
           "muted": {
             "description": "A hex colour, `#rgb` or `#rrggbb`.",
             "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
@@ -5174,6 +5287,52 @@
         "title": "ThemeList",
         "type": "object"
       },
+      "ThemeLogoView": {
+        "description": "A theme's logo, where the web head serves each file, for an `<img>` in the web app.",
+        "properties": {
+          "alt": {
+            "description": "What the logo says, for screen readers, e.g. `Acme`.",
+            "title": "Alt",
+            "type": "string"
+          },
+          "dark": {
+            "description": "The logo on a dark background; the light one's URL when the theme has none.",
+            "title": "Dark",
+            "type": "string"
+          },
+          "height": {
+            "description": "How tall the logo is shown, a CSS length, e.g. `24px`.",
+            "title": "Height",
+            "type": "string"
+          },
+          "light": {
+            "description": "The logo on a light background, e.g. `/theme-assets/acme/light.svg?v=1a2b3c4d`.",
+            "title": "Light",
+            "type": "string"
+          },
+          "mark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A square logo for a collapsed sidebar; none when the theme has none.",
+            "title": "Mark"
+          }
+        },
+        "required": [
+          "light",
+          "dark",
+          "mark",
+          "alt",
+          "height"
+        ],
+        "title": "ThemeLogoView",
+        "type": "object"
+      },
       "ThemeView": {
         "description": "One available theme with every token value, ready to become the web app's CSS custom properties.",
         "properties": {
@@ -5232,6 +5391,17 @@
           "light": {
             "$ref": "#/components/schemas/ThemeColours",
             "description": "Colours in light mode; each field is the token `--color-<field>`."
+          },
+          "logo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeLogoView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The theme's logo; none if it ships none."
           },
           "module": {
             "anyOf": [
@@ -6003,6 +6173,56 @@
           }
         },
         "summary": "Write a configuration file with every setting commented out, ready to edit.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/config/reveal": {
+      "post": {
+        "description": "Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.\n\nA file that doesn't exist yet is shown by its nearest existing folder. On Linux without a desktop session nothing\nopens and the message names the file.",
+        "operationId": "system_config_reveal",
+        "parameters": [
+          {
+            "description": "Which configuration file: site, user or project.",
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "description": "Which configuration file: site, user or project.",
+              "enum": [
+                "site",
+                "user",
+                "project"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigRevealed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.",
         "tags": [
           "system"
         ]

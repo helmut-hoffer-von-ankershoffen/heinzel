@@ -1,8 +1,9 @@
 // The centre pane's header: the screen's title with a menu on the left, quick actions on the right.
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, Link2, PanelRightClose, PanelRightOpen, RefreshCw, SquareTerminal } from "lucide-react";
+import { Check, ChevronDown, Link2, RefreshCw, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { matchPath, useLocation } from "react-router";
+import { HeinzelIcon } from "@/components/HeinzelIcon";
 import { Button } from "@/components/ui/button";
 import type { MessageKey } from "@/i18n";
 import { t } from "@/i18n";
@@ -72,7 +73,8 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
     setMenu(false);
   };
   return (
-    <header className="flex h-12 shrink-0 items-center gap-1 px-3">
+    // The sidebar's top line has the same height and hairline, so both run across the window as one.
+    <header className="flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3">
       <div ref={menuRef} className="relative min-w-0">
         <button
           type="button"
@@ -82,7 +84,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           className="flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1 text-ui font-medium transition-colors hover:bg-accent/70"
         >
           <span className="truncate">{title}</span>
-          <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+          <ChevronDown aria-hidden className="size-4 shrink-0 text-icon" />
         </button>
         {menu && (
           <div
@@ -105,7 +107,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           </div>
         )}
       </div>
-      <div className="ml-auto flex items-center gap-0.5 text-muted-foreground">
+      <div className="ml-auto flex items-center gap-0.5 text-icon">
         <Button variant="ghost" size="icon" onClick={refresh} aria-label={t("top.refresh")} title={t("top.refresh")}>
           <RefreshCw aria-hidden />
         </Button>
@@ -116,19 +118,22 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           aria-pressed={terminalOpen}
           aria-label={terminalOpen ? t("terminal.close") : t("terminal.open")}
           title={terminalOpen ? t("terminal.close") : t("terminal.open")}
-          className={cn(terminalOpen && "bg-accent text-foreground")}
+          className={cn(terminalOpen && "bg-accent text-accent-foreground")}
         >
           <SquareTerminal aria-hidden />
         </Button>
+        {/* The chat is a conversation with your Heinzelmännchen, so its button is the Heinzel; open, a pill behind it. */}
         <Button
           variant="ghost"
           size="icon"
           onClick={onToggleChat}
           aria-expanded={chatOpen}
+          aria-pressed={chatOpen}
           aria-label={chatOpen ? t("chat.collapse") : t("chat.expand")}
           title={chatOpen ? t("chat.collapse") : t("chat.expand")}
+          className={cn(chatOpen && "bg-accent")}
         >
-          {chatOpen ? <PanelRightClose aria-hidden /> : <PanelRightOpen aria-hidden />}
+          <HeinzelIcon className="text-lg" />
         </Button>
       </div>
       <span className="sr-only" aria-live="polite">
@@ -152,7 +157,7 @@ function MenuItem({
       type="button"
       role="menuitem"
       onClick={onSelect}
-      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground"
+      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-icon"
     >
       {icon}
       {children}

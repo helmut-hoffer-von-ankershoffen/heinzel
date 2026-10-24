@@ -30,6 +30,12 @@ export default defineConfig({
             changeOrigin: true,
             headers: { origin: `http://127.0.0.1:${api}` },
           },
+          // Logos a theme ships, the same way.
+          "/theme-assets": {
+            target: `http://127.0.0.1:${api}`,
+            changeOrigin: true,
+            headers: { origin: `http://127.0.0.1:${api}` },
+          },
           "/api": {
             target: `http://127.0.0.1:${api}`,
             changeOrigin: true,

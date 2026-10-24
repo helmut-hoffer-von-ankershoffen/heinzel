@@ -131,7 +131,7 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
           onClick={onClose}
           aria-label={t("notify.close")}
           title={t("notify.close")}
-          className="text-muted-foreground"
+          className="text-icon"
         >
           <X aria-hidden />
         </Button>

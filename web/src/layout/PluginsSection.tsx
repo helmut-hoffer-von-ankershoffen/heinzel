@@ -2,9 +2,24 @@
 // and community plugins), "Add" installs from a name or a git URL. Installing runs code, so it takes two steps: the
 // backend first answers what a spec would install (source, version, publisher, pinned), and only the confirm sends
 // that pinned requirement with `confirm=true` (ADR 0047). A running `hz ui` loads a change after a restart.
-import { ExternalLink, Package, Plus, Power, PowerOff, Search, ShieldCheck, Trash2, Users } from "lucide-react";
+import {
+  BookOpen,
+  ExternalLink,
+  type LucideIcon,
+  Package,
+  Palette,
+  Plug,
+  Plus,
+  Power,
+  PowerOff,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { useState } from "react";
-import type { SchemaPluginCandidate } from "@/api/client";
+import type { SchemaPluginCandidate, SchemaPluginInfo } from "@/api/client";
 import {
   type PluginChangeRequest,
   useChangePlugin,
@@ -15,8 +30,57 @@ import {
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
-import { t } from "@/i18n";
+import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { displayName } from "./settingsSections";
+
+type PluginKind = NonNullable<SchemaPluginInfo["kinds"]>[number];
+
+/** Where a plugin comes from, as its badge says: first-party, community (the catalog knows) or private. */
+export function sourceLabel(plugin: SchemaPluginInfo, community?: boolean): string {
+  if (plugin.first_party) return t("plugins.firstParty");
+  return community ? t("plugins.community") : t("plugins.private");
+}
+
+/** Where a module's settings come from, as Settings heads them: the plugin with the same badges, version and
+ *  repository its row under Plugins shows, or hz itself for a built-in module. */
+export function Provenance({
+  plugin,
+  version,
+  onOpen,
+}: {
+  plugin: SchemaPluginInfo | undefined;
+  version: string | undefined;
+  onOpen: () => void;
+}) {
+  if (!plugin) {
+    return (
+      <p className="mb-3 text-ui-sm text-muted-foreground">
+        <a href={CORE} target="_blank" rel="noreferrer noopener" className="hover:text-foreground hover:underline">
+          {t("settings.builtIn", { version: version ? `v${version}` : "" }).trim()}
+        </a>
+      </p>
+    );
+  }
+  return (
+    <div className="mb-3">
+      <p className="flex flex-wrap items-center gap-2 text-ui-sm text-muted-foreground">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="rounded font-medium text-foreground hover:underline"
+          title={t("settings.openPlugin")}
+        >
+          {displayName(plugin.name, plugin.summary)}
+        </button>
+        <KindBadges plugin={plugin} />
+        <span className="rounded-md border border-border px-1.5 text-[11px]">{sourceLabel(plugin)}</span>
+        <span className="text-xs tabular-nums">v{plugin.version}</span>
+      </p>
+      <RepositoryLine url={plugin.source_url ?? plugin.homepage} />
+    </div>
+  );
+}
 
 /** The browsable repository of an install spec: `name @ git+https://host/o/r@ref#subdirectory=d` → its tree. */
 export function repositoryOf(spec: string): string | null {
@@ -59,24 +123,22 @@ function sourceLink(url: string | null | undefined, name: string) {
       rel="noreferrer"
       aria-label={t("plugins.source", { name })}
       title={url}
-      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+      className="flex size-8 shrink-0 items-center justify-center rounded-lg text-icon hover:bg-accent"
     >
       <ExternalLink aria-hidden className="size-4" />
     </a>
   );
 }
 
-/** "from github.com/owner/repo", linking to it; "source unknown" until the backend says. */
+/** "from github.com/owner/repo", the repository a link; "source unknown" until the backend says. */
 function RepositoryLine({ url }: { url: string | null | undefined }) {
   return url ? (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      className="block truncate text-xs text-muted-foreground/80 hover:text-foreground hover:underline"
-    >
-      {t("plugins.from", { repository: repositoryLabel(url) })}
-    </a>
+    <span className="block truncate text-xs text-muted-foreground/80">
+      {t("plugins.fromPrefix")}{" "}
+      <a href={url} target="_blank" rel="noreferrer" className="hover:text-foreground hover:underline">
+        {repositoryLabel(url)}
+      </a>
+    </span>
   ) : (
     <span className="block text-xs text-muted-foreground/60">{t("plugins.sourceUnknown")}</span>
   );
@@ -305,83 +367,178 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
 function Yours({ query, onChange }: { query: string; onChange: (pending: Pending) => void }) {
   const plugins = usePlugins();
   const catalog = usePluginSearch("");
+  const [kind, setKind] = useState<PluginKind | null>(null);
   const known = new Map((catalog.data?.plugins ?? []).map((plugin) => [plugin.name, plugin]));
   return (
     <Loaded query={plugins}>
       {(list) => {
-        const shown = list.filter((plugin) => plugin.distribution.toLowerCase().includes(query.toLowerCase()));
-        return shown.length === 0 ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">{t("plugins.none")}</p>
-        ) : (
-          <ul>
-            {shown.map((plugin) => {
-              const entry = known.get(plugin.distribution);
-              const source = plugin.first_party
-                ? t("plugins.firstParty")
-                : entry?.community
-                  ? t("plugins.community")
-                  : t("plugins.private");
-              const url = plugin.source_url ?? (entry ? repositoryOfEntry(entry) : null);
-              const enabled = plugin.enabled ?? true;
-              return (
-                <li
-                  key={plugin.distribution}
-                  className="flex items-center gap-3 border-b border-border/70 py-3 last:border-b-0"
-                >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                    <Package aria-hidden className="size-(--icon) text-foreground/70" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2 text-ui">
-                      {entry?.short_name ?? plugin.name ?? plugin.distribution.replace(/^heinzel-/, "")}
-                      <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
-                        {source}
+        const shown = list.filter(
+          (plugin) =>
+            plugin.distribution.toLowerCase().includes(query.toLowerCase()) &&
+            (kind === null || (plugin.kinds ?? []).includes(kind)),
+        );
+        return (
+          <>
+            <KindFilter kind={kind} onKind={setKind} />
+            {shown.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                {kind ? t("plugins.noneOfKind") : t("plugins.none")}
+              </p>
+            ) : (
+              <ul>
+                {shown.map((plugin) => {
+                  const entry = known.get(plugin.distribution);
+                  const source = sourceLabel(plugin, entry?.community);
+                  const url = plugin.source_url ?? (entry ? repositoryOfEntry(entry) : null);
+                  const enabled = plugin.enabled ?? true;
+                  return (
+                    <li
+                      key={plugin.distribution}
+                      className="flex items-center gap-3 border-b border-border/70 py-3 last:border-b-0"
+                    >
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                        <Package aria-hidden className="size-(--icon) text-icon" />
                       </span>
-                      {!enabled && (
-                        <span className="rounded-md border border-warn/50 px-1.5 text-[11px] text-muted-foreground">
-                          {t("plugins.disabled")}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-2 text-ui">
+                          {displayName(
+                            plugin.name ?? plugin.distribution.replace(/^heinzel-/, ""),
+                            plugin.summary || entry?.description,
+                          )}
+                          <KindBadges plugin={plugin} />
+                          {/* Where it comes from and its version, flush right and aligned across the rows. */}
+                          <span className="ml-auto flex shrink-0 items-center gap-2">
+                            {!enabled && (
+                              <span className="rounded-md border border-warn/50 px-1.5 text-[11px] text-muted-foreground">
+                                {t("plugins.disabled")}
+                              </span>
+                            )}
+                            <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
+                              {source}
+                            </span>
+                            <span className={VERSION}>v{plugin.version}</span>
+                          </span>
                         </span>
-                      )}
-                      <span className="text-xs text-muted-foreground">v{plugin.version}</span>
-                    </span>
-                    <span className="block truncate text-sm text-muted-foreground">
-                      {plugin.error ??
-                        (plugin.summary ||
-                          entry?.description ||
-                          t("plugins.modules", { modules: plugin.modules.join(", ") || "—" }))}
-                    </span>
-                    <RepositoryLine url={url} />
-                  </span>
-                  {sourceLink(url, plugin.distribution)}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onChange({ action: enabled ? "disable" : "enable", name: plugin.distribution })}
-                    aria-label={t(enabled ? "plugins.disableName" : "plugins.enableName", {
-                      name: plugin.distribution,
-                    })}
-                    title={enabled ? t("plugins.disable") : t("plugins.enable")}
-                    className="text-muted-foreground"
-                  >
-                    {enabled ? <PowerOff aria-hidden /> : <Power aria-hidden />}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onChange({ action: "remove", name: plugin.distribution })}
-                    aria-label={t("plugins.removeName", { name: plugin.distribution })}
-                    title={t("plugins.remove")}
-                    className="text-muted-foreground"
-                  >
-                    <Trash2 aria-hidden />
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
+                        <span className="block truncate text-sm text-muted-foreground">
+                          {plugin.error ??
+                            (plugin.summary ||
+                              entry?.description ||
+                              t("plugins.modules", { modules: plugin.modules.join(", ") || "—" }))}
+                        </span>
+                        <RepositoryLine url={url} />
+                      </span>
+                      {sourceLink(url, plugin.distribution)}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onChange({ action: enabled ? "disable" : "enable", name: plugin.distribution })}
+                        aria-label={t(enabled ? "plugins.disableName" : "plugins.enableName", {
+                          name: plugin.distribution,
+                        })}
+                        title={enabled ? t("plugins.disable") : t("plugins.enable")}
+                        className="text-icon"
+                      >
+                        {enabled ? <PowerOff aria-hidden /> : <Power aria-hidden />}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onChange({ action: "remove", name: plugin.distribution })}
+                        aria-label={t("plugins.removeName", { name: plugin.distribution })}
+                        title={t("plugins.remove")}
+                        className="text-icon"
+                      >
+                        <Trash2 aria-hidden />
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
         );
       }}
     </Loaded>
+  );
+}
+
+/** The version's column: as wide in every row (Discover's rows keep it empty), so the badges before it line up. */
+const VERSION = "w-14 shrink-0 text-right text-xs text-muted-foreground tabular-nums";
+
+const KINDS: { kind: PluginKind; icon: LucideIcon; label: MessageKey }[] = [
+  { kind: "connector", icon: Plug, label: "plugins.kind.connector" },
+  { kind: "theme", icon: Palette, label: "plugins.kind.theme" },
+  { kind: "capability", icon: Sparkles, label: "plugins.kind.capability" },
+  { kind: "playbook", icon: BookOpen, label: "plugins.kind.playbook" },
+];
+
+/** What exactly a plugin brings of `kind`, in words: "Connector: tracker, documents". */
+export function kindDetail(plugin: SchemaPluginInfo, kind: PluginKind): string {
+  const names = (values: string[]) => [...new Set(values)].join(", ");
+  const what =
+    kind === "connector"
+      ? names((plugin.capabilities ?? []).map((capability) => capability.split(":").at(-1) ?? capability))
+      : kind === "theme"
+        ? names(plugin.themes ?? [])
+        : kind === "playbook"
+          ? names(plugin.playbooks ?? [])
+          : names(plugin.modules.map((module) => `hz ${module.replaceAll(".", " ")}`));
+  const label = t(KINDS.find((entry) => entry.kind === kind)?.label ?? "plugins.kind.capability");
+  return what ? `${label}: ${what}` : label;
+}
+
+/** A small badge per kind the plugin is, its tooltip saying what exactly. */
+function KindBadges({ plugin }: { plugin: SchemaPluginInfo }) {
+  const kinds = plugin.kinds ?? [];
+  if (!kinds.length) return null;
+  return (
+    <span className="flex items-center gap-1">
+      {KINDS.filter((entry) => kinds.includes(entry.kind)).map(({ kind, icon: Icon }) => {
+        const detail = kindDetail(plugin, kind);
+        return (
+          <span
+            key={kind}
+            title={detail}
+            className="flex items-center gap-1 rounded-md border border-border px-1.5 py-px text-[11px] text-muted-foreground"
+          >
+            <Icon aria-hidden className="size-3 text-icon" />
+            <span className="sr-only">{detail}</span>
+            <span aria-hidden>{t(KINDS.find((entry) => entry.kind === kind)?.label ?? "plugins.kind.capability")}</span>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+/** All, or only the plugins of one kind. */
+function KindFilter({ kind, onKind }: { kind: PluginKind | null; onKind: (kind: PluginKind | null) => void }) {
+  const chip = (active: boolean) =>
+    cn(
+      "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-ui-sm transition-colors [&_svg]:size-3.5 [&_svg]:text-icon",
+      active
+        ? "border-transparent bg-accent text-accent-foreground"
+        : "border-border text-muted-foreground hover:bg-accent/60",
+    );
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a row of toggle buttons, not a form's fieldset
+    <div role="group" aria-label={t("plugins.kind.filter")} className="mb-2 flex flex-wrap gap-1.5">
+      <button type="button" aria-pressed={kind === null} onClick={() => onKind(null)} className={chip(kind === null)}>
+        {t("plugins.kind.all")}
+      </button>
+      {KINDS.map(({ kind: value, icon: Icon, label }) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={kind === value}
+          onClick={() => onKind(kind === value ? null : value)}
+          className={chip(kind === value)}
+        >
+          <Icon aria-hidden />
+          {t(label)}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -401,16 +558,19 @@ function Discover({ query, onInstall }: { query: string; onInstall: (spec: strin
               <li key={plugin.name} className="flex items-center gap-3 border-b border-border/70 py-3 last:border-b-0">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
                   {plugin.community ? (
-                    <Users aria-hidden className="size-(--icon) text-foreground/70" />
+                    <Users aria-hidden className="size-(--icon) text-icon" />
                   ) : (
-                    <ShieldCheck aria-hidden className="size-(--icon) text-foreground/70" />
+                    <ShieldCheck aria-hidden className="size-(--icon) text-icon" />
                   )}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2 text-ui">
-                    {plugin.short_name}
-                    <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
-                      {plugin.community ? t("plugins.community") : t("plugins.firstParty")}
+                    {displayName(plugin.short_name, plugin.description)}
+                    <span className="ml-auto flex shrink-0 items-center gap-2">
+                      <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
+                        {plugin.community ? t("plugins.community") : t("plugins.firstParty")}
+                      </span>
+                      <span aria-hidden className={VERSION} />
                     </span>
                   </span>
                   <span className="block truncate text-sm text-muted-foreground">{plugin.description}</span>

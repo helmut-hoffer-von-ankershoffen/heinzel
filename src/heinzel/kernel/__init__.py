@@ -112,13 +112,18 @@ from heinzel.kernel._telemetry import (
 )
 from heinzel.kernel._text import clean_text, redact_emails
 from heinzel.kernel._themes import (
+    DEFAULT_LOGO,
     DEFAULT_THEME,
     FONT_ROUTE,
+    LOGO_CSP,
+    LOGO_ROUTE,
     Theme,
     ThemeColours,
     ThemeFont,
     ThemeFonts,
     ThemeLet,
+    ThemeLogo,
+    ThemeLogoFiles,
     font_stack_problem,
 )
 
@@ -126,6 +131,7 @@ __all__ = [
     "BUILTIN_PACKAGE",
     "CAPABILITIES",
     "CORE_DISTRIBUTION",
+    "DEFAULT_LOGO",
     "DEFAULT_THEME",
     "ENTRY_POINT_GROUP",
     "FILENAME",
@@ -133,6 +139,8 @@ __all__ = [
     "HEINZEL_ID",
     "INTERRUPT",
     "KERNEL_SECTION",
+    "LOGO_CSP",
+    "LOGO_ROUTE",
     "MAX_WINDOW",
     "MODES",
     "PROJECT_FILENAME",
@@ -245,6 +253,8 @@ __all__ = [
     "ThemeFont",
     "ThemeFonts",
     "ThemeLet",
+    "ThemeLogo",
+    "ThemeLogoFiles",
     "TokenUsage",
     "ToolProfile",
     "Tracker",

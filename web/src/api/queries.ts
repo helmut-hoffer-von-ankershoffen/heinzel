@@ -76,6 +76,13 @@ export const useSetSetting = () => {
   });
 };
 
+/** `hz system config reveal <scope>`: the file manager on the hz machine opens at that configuration file. */
+export const useRevealConfig = () =>
+  useMutation({
+    mutationFn: (scope: "site" | "user" | "project") =>
+      unwrap(api.POST("/system/config/reveal", { params: { query: { scope } } })),
+  });
+
 /** `hz system changelog`: this version's changelog as Markdown, or with `newer` what newer releases bring. */
 export const useChangelog = (newer: boolean) =>
   useQuery({
@@ -116,6 +123,10 @@ export const useTestNotice = () => {
     onSettled: () => client.invalidateQueries({ queryKey: ["system", "notify", "list"] }),
   });
 };
+
+/** `hz system capability list`: which adapter serves which capability (`[capabilities]`), for the Connectors page. */
+export const useCapabilities = () =>
+  useQuery({ queryKey: ["system", "capability", "list"], queryFn: () => unwrap(api.GET("/system/capability/list")) });
 
 /** `hz system plugin list` and `search`: what's installed, and what can be. */
 export const usePlugins = () =>

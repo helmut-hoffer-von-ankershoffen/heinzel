@@ -286,7 +286,7 @@ function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch
   }, [open]);
   const row =
     "flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-sm text-foreground/90 hover:bg-accent [&_svg]:size-4";
-  const tick = <Check aria-hidden className="ml-auto text-[#2f7bf6]" />;
+  const tick = <Check aria-hidden className="ml-auto text-switch" />;
   return (
     <div ref={ref} className="relative">
       <Button
@@ -316,7 +316,7 @@ function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch
           >
             {t("terminal.cursorStyle")}
             <span className="ml-auto text-muted-foreground capitalize">{options.cursorStyle}</span>
-            <ChevronRight aria-hidden className="text-muted-foreground" />
+            <ChevronRight aria-hidden className="text-icon" />
           </button>
           {sub === "cursor" &&
             CURSORS.map((style) => (
@@ -362,7 +362,7 @@ function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch
             <span className="ml-auto text-muted-foreground">
               {t("terminal.lines", { lines: options.scrollback.toLocaleString() })}
             </span>
-            <ChevronRight aria-hidden className="text-muted-foreground" />
+            <ChevronRight aria-hidden className="text-icon" />
           </button>
           {sub === "scrollback" &&
             SCROLLBACK.map((lines) => (

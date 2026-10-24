@@ -72,7 +72,18 @@ export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenCha
       aria-label={t("search.label")}
       onClose={() => onOpenChange(false)}
       onCancel={() => onOpenChange(false)}
-      className="top-[15%] mx-auto w-[min(36rem,92vw)] rounded-lg border border-border bg-card text-foreground shadow-lg backdrop:bg-black/40"
+      // A click on the backdrop lands on the <dialog> itself, outside the box it draws: that closes it.
+      onMouseDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const box = event.currentTarget.getBoundingClientRect();
+        const inside =
+          event.clientX >= box.left &&
+          event.clientX <= box.right &&
+          event.clientY >= box.top &&
+          event.clientY <= box.bottom;
+        if (!inside || box.width === 0) onOpenChange(false);
+      }}
+      className="top-[15%] mx-auto w-[min(36rem,92vw)] overflow-hidden rounded-xl border border-border bg-popover p-0 text-foreground shadow-2xl backdrop:bg-black/40"
     >
       {open && (
         <>
@@ -84,7 +95,7 @@ export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenCha
             aria-activedescendant={matches[active] ? `search-${active}` : undefined}
             aria-label={t("search.label")}
             placeholder={t("search.placeholder")}
-            className="w-full rounded-t-lg border-b border-border bg-transparent px-4 py-3 outline-none"
+            className="w-full border-b border-border bg-transparent px-4 py-3 outline-none focus-visible:shadow-[inset_0_-2px_0_var(--color-ring)] focus-visible:outline-none"
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -100,7 +111,7 @@ export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenCha
             id="search-results"
             role="listbox"
             aria-label={t("search.label")}
-            className="max-h-80 overflow-y-auto p-1"
+            className="max-h-80 overflow-x-hidden overflow-y-auto p-1"
           >
             {matches.length === 0 && <p className="p-3 text-sm text-muted-foreground">{t("search.none")}</p>}
             {matches.map((entry, index) => (
@@ -110,13 +121,18 @@ export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenCha
                 role="option"
                 tabIndex={-1}
                 aria-selected={index === active}
-                className={cn("cursor-pointer rounded-md px-3 py-2 text-sm", index === active && "bg-accent")}
+                className={cn(
+                  "flex min-w-0 cursor-pointer items-baseline rounded-lg px-3 py-2 text-sm",
+                  index === active && "bg-accent",
+                )}
                 onMouseEnter={() => setActive(index)}
                 onClick={() => go(entry)}
                 onKeyDown={() => undefined}
               >
-                <span className="font-medium">{entry.label}</span>
-                {entry.hint && <span className="ml-2 truncate text-xs text-muted-foreground">{entry.hint}</span>}
+                <span className="shrink-0 font-medium">{entry.label}</span>
+                {entry.hint && (
+                  <span className="ml-2 min-w-0 truncate text-xs text-muted-foreground">{entry.hint}</span>
+                )}
               </div>
             ))}
           </div>

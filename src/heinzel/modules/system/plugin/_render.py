@@ -46,7 +46,12 @@ def render_list(plugins: list[PluginInfo]) -> RenderableType:
         if plugin.error:
             state = "[red]fails to load[/red]"
         origin = "first-party" if plugin.first_party else (plugin.source_kind or "unknown")
-        brings = [*plugin.modules, *plugin.capabilities, *(f"layer {layer.module}" for layer in plugin.layers)]
+        brings = [
+            *plugin.modules,
+            *plugin.capabilities,
+            *(f"layer {layer.module}" for layer in plugin.layers),
+            *(f"theme {theme}" for theme in plugin.themes),
+        ]
         table.add_row(
             f"{escape(plugin.distribution)}\n{state}",
             plugin.version,

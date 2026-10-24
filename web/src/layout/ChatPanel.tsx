@@ -1,36 +1,56 @@
-// The right sidebar of every screen but Home: the app's one chat (`hz chat`, ADR 0045, 0039), opened about the screen
+// The app's one chat (`hz chat`, ADR 0045, 0039), beside or below every screen, Home included: opened about the screen
 // it was started on. The session lives in hz, so it survives a reload and `hz chat --continue` picks it up in a
 // terminal. `?chat=<session>` opens a session (a notification's link); `?chat-context=<kind:ref>` opens one about it.
-import { MessageSquare, PanelRightClose, Plus } from "lucide-react";
+// The header's switcher picks another session, the Workshop or a new chat.
+import { PanelRightClose, Plus } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { useLocation } from "react-router";
+import { useSharedChat } from "@/chat/ChatContext";
 import { Composer, Conversation, Costs } from "@/chat/Conversation";
-import { useChat } from "@/chat/useChat";
+import { SessionSwitcher } from "@/chat/SessionSwitcher";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 
 export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   const location = useLocation();
-  const chat = useChat();
+  const { chat, inputRef, focus } = useSharedChat();
   const context = chat.session?.context;
+  const end = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const count = (chat.session?.messages?.length ?? 0) + (chat.live ? 1 : 0);
+  // Keep the newest message in view as the conversation grows or the answer streams.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scrolls when the conversation changes
+  useEffect(() => {
+    // Only while the person is at the end: someone scrolled up to read stays where they are.
+    const box = scroller.current;
+    if (box && box.scrollHeight - box.scrollTop - box.clientHeight > 120) return;
+    end.current?.scrollIntoView?.({ block: "end" });
+  }, [count, chat.live?.text]);
+  // An empty chat is already a new one: the button then just puts you in its composer.
+  const empty = !chat.session?.messages?.length && !chat.live;
+  const fresh = () => {
+    if (!empty) chat.fresh();
+    focus();
+  };
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-border p-3">
-        <MessageSquare aria-hidden className="size-4" />
-        <h2 className="text-sm font-semibold">{t("chat.title")}</h2>
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 pr-2 pl-3">
+        <h2 className="sr-only">{t("chat.title")}</h2>
+        <SessionSwitcher chat={chat} onNew={fresh} />
         <Button
           variant="ghost"
-          size="sm"
-          className="ml-auto"
-          onClick={chat.fresh}
-          disabled={chat.live != null || !chat.session}
-          title={t("chat.new")}
+          size="icon"
+          className="text-icon"
+          onClick={fresh}
+          aria-label={t("chat.new")}
+          title={empty ? t("chat.isNew") : t("chat.new")}
         >
           <Plus aria-hidden />
-          {t("chat.new")}
         </Button>
         <Button
           variant="ghost"
           size="icon"
+          className="text-icon"
           onClick={onCollapse}
           aria-label={t("chat.collapse")}
           title={t("chat.collapse")}
@@ -38,18 +58,19 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           <PanelRightClose aria-hidden />
         </Button>
       </div>
-      <div className="border-b border-border bg-muted px-3 py-2">
-        <Costs chat={chat} />
+      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto p-3">
         {context && (
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mb-3 text-xs text-muted-foreground">
             {t("chat.context", { about: `${context.kind} ${context.ref}`.trim() })}
           </p>
         )}
+        <Conversation chat={chat} empty={location.pathname === "/" ? t("today.empty") : undefined} />
+        <div ref={end} />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        <Conversation chat={chat} />
+      <div className="border-t border-border p-3">
+        <Composer chat={chat} context={`route:${location.pathname}`} inputRef={inputRef} />
+        <Costs chat={chat} className="mt-1.5" />
       </div>
-      <Composer chat={chat} context={`route:${location.pathname}`} className="border-t border-border p-3" />
     </div>
   );
 }

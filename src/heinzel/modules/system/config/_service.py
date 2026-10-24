@@ -3,6 +3,7 @@
 import os
 import shlex
 import shutil
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -15,7 +16,9 @@ from tomlkit.exceptions import ParseError
 
 from heinzel import Config, ConfigEditor, HeinzelError, Kernel, ModuleSettings
 from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, toml_value, user_config_dir
-from heinzel.modules.system.config._models import ConfigFileInfo, ConfigReport, SettingInfo
+from heinzel.modules.system.config._models import ConfigFileInfo, ConfigReport, ConfigRevealed, RevealScope, SettingInfo
+from heinzel.modules.system.config._reveal import Revealer
+from heinzel.modules.system.config._schema import setting_schemas
 
 HEADER = """\
 # Heinzelmännchen configuration.
@@ -42,11 +45,19 @@ class ConfigService(ConfigEditor):
     def __init__(self, kernel: Kernel) -> None:
         """Create the service; the kernel is injected."""
         self._kernel = kernel
+        self.revealer = Revealer(sys.platform, shutil.which, os.environ)
+        """This machine's file manager; tests replace it so nothing opens."""
 
     def report(self) -> ConfigReport:
-        """The files Heinzelmännchen reads and every setting in effect."""
+        """The files Heinzelmännchen reads, every setting in effect, and whether a file can be revealed here."""
+        # Read now, not as booted: `hz ui` keeps running while it and terminals change the files.
+        config = self._kernel.config.reread()
+        sections = [(section, _fresh(config, section, settings)) for section, settings in self._kernel.settings_of()]
+        schemas = {type(settings): setting_schemas(type(settings)) for _, settings in sections}
         return ConfigReport(
-            files=[self._file(file) for file in self._kernel.config.files],
+            files=[self._file(file) for file in config.files],
+            can_reveal=self.revealer.unsupported() is None,
+            file_manager=self.revealer.file_manager,
             settings=[
                 SettingInfo(
                     section=section,
@@ -55,25 +66,46 @@ class ConfigService(ConfigEditor):
                     env=f"{env_prefix(section)}{key.upper()}",
                     description=field.description or "",
                     default=_default(field),
-                    source=self._source(section, key, type(settings).ignored_in_project),
+                    source=self._source(config, section, key, type(settings).ignored_in_project),
+                    json_schema=schemas[type(settings)].get(key),
                 )
-                for section, settings in self._kernel.settings_of()
+                for section, settings in sections
                 for key, field in type(settings).model_fields.items()
             ],
         )
 
-    def _source(self, section: str, key: str, ignored_in_project: frozenset[str]) -> str:
+    @staticmethod
+    def _source(config: Config, section: str, key: str, ignored_in_project: frozenset[str]) -> str:
         """Which layer the value in effect comes from: the environment, the last file that sets it, or the default."""
         # pydantic-settings matches variable names regardless of case.
         if f"{env_prefix(section)}{key}".upper() in {name.upper() for name in os.environ}:
             return "env"
-        for file, content in reversed(self._kernel.config.layers):
+        for file, content in reversed(config.layers):
             if file.scope == "project" and key in ignored_in_project:
                 continue  # ignored there (ADR 0028), so another layer decides
             table = Config(files=(), data=content).section(section)
             if key in table or key.replace("_", "-") in table:
                 return str(file.scope)
         return "default"
+
+    def reveal(self, scope: RevealScope) -> ConfigRevealed:
+        """Show the site, user or project configuration file in this machine's file manager; nothing is created."""
+        path = next((f.path for f in self._kernel.config.files if f.scope == scope), None)
+        if path is None and scope == "user":
+            path = user_config_dir() / FILENAME
+        if path is None:
+            supported = self.revealer.unsupported() is None
+            message = (
+                f"There is no project {PROJECT_FILENAME} in {Path.cwd()} or above; "
+                "`hz system config set KEY VALUE --scope project` creates one here."
+                if scope == "project"
+                else f"Heinzelmännchen reads no {scope} configuration file here."
+            )
+            return ConfigRevealed(scope=scope, path=None, supported=supported, opened=False, message=message)
+        done = self.revealer.reveal(path)
+        return ConfigRevealed(
+            scope=scope, path=path, supported=done.supported, opened=done.opened, message=done.message
+        )
 
     def init(self, path: Path | None = None, *, force: bool = False) -> Path:
         """Write a configuration file listing every setting, commented out, with its description and default.
@@ -130,7 +162,7 @@ class ConfigService(ConfigEditor):
         if parsed is None:
             msg = f"TOML has no null; to let {key} take its default, run `hz system config unset {key}`."
             raise HeinzelError(msg)
-        table = {**self._kernel.config.section(section), name: parsed}
+        table = {**self._kernel.config.reread().section(section), name: parsed}
         try:
             Config(files=(), data=_nest(section, table)).settings(model, section)
         except ValidationError as exc:
@@ -200,6 +232,14 @@ class ConfigService(ConfigEditor):
     @staticmethod
     def _file(file: ConfigFile) -> ConfigFileInfo:
         return ConfigFileInfo(scope=file.scope, path=file.path, exists=file.exists)
+
+
+def _fresh(config: Config, section: str, booted: ModuleSettings) -> ModuleSettings:
+    """`section`'s settings as the files say now; as booted when a file now holds a value they don't accept."""
+    try:
+        return config.settings(type(booted), section)
+    except ValidationError:
+        return booted
 
 
 def _parse_value(value: str) -> Any:  # noqa: ANN401 - any TOML value

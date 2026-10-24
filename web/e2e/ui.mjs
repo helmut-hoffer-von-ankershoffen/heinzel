@@ -55,7 +55,9 @@ try {
 
   await page.goto(url);
   await page.getByRole("heading", { name: "Today" }).waitFor(); // Home is the chat, with Today on top (ADR 0045)
-  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Doctor" }).click();
+  // Doctor is hz itself, not work: it is in the account menu, not the navigation.
+  await page.getByRole("button", { name: /Mira/ }).click();
+  await page.getByRole("menuitem", { name: "Check this machine" }).click();
   await page.getByRole("heading", { name: "Doctor" }).waitFor();
   await page.getByText("Heinzelmännchen is").waitFor();
   await page.locator("tbody tr").first().waitFor();

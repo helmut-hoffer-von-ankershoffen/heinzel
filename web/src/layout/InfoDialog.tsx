@@ -1,9 +1,9 @@
 // Changelog and help inside the app, as dialogs over the screen (`?panel=changelog|help`), not pages on GitHub.
 import { X } from "lucide-react";
 import { useId, useState } from "react";
-import Markdown from "react-markdown";
 import { useChangelog, useExpert } from "@/api/queries";
 import { CopyCommand, Loaded } from "@/components/common";
+import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -41,17 +41,6 @@ export function InfoDialog({ panel, onClose }: { panel: Panel; onClose: () => vo
           {panel === "changelog" ? <Changelog /> : <Help />}
         </div>
       </div>
-    </div>
-  );
-}
-
-/** Markdown with the app's type: headings, lists, links in a new tab, code. No raw HTML is rendered. */
-function Prose({ children }: { children: string }) {
-  return (
-    <div className="prose-hz text-ui leading-relaxed [&_a]:text-primary [&_a]:underline [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:font-mono [&_code]:text-ui-sm [&_h1]:mt-2 [&_h1]:mb-3 [&_h1]:text-xl [&_h1]:font-semibold [&_h2]:mt-6 [&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:mt-4 [&_h3]:mb-1 [&_h3]:font-medium [&_li]:my-0.5 [&_p]:my-2 [&_ul]:list-disc [&_ul]:pl-5">
-      <Markdown components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}>
-        {children}
-      </Markdown>
     </div>
   );
 }

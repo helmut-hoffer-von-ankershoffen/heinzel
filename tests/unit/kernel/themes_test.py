@@ -1,19 +1,38 @@
 """Themes as data: every value is checked before it can become a CSS custom property (ADR 0044)."""
 
 import os
+import re
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from heinzel import Module, Theme, ThemeColours, ThemeFont, ThemeFonts, ThemeLet
-from heinzel.kernel import DEFAULT_THEME, FONT_ROUTE, font_stack_problem
+from heinzel import Module, Theme, ThemeColours, ThemeFont, ThemeFonts, ThemeLet, ThemeLogo
+from heinzel.kernel import (
+    DEFAULT_LOGO,
+    DEFAULT_THEME,
+    FONT_ROUTE,
+    LOGO_CSP,
+    LOGO_ROUTE,
+    ThemeLogoFiles,
+    font_stack_problem,
+)
 from heinzel.kernel import _themes as themes
-from heinzel.kernel._themes import MAX_FONT_BYTES, font_file, read_font, themes_in
+from heinzel.kernel._themes import (
+    LOGO_NAMES,
+    MAX_FONT_BYTES,
+    MAX_LOGO_BYTES,
+    font_file,
+    logo_file,
+    read_font,
+    read_logo,
+    svg_problem,
+    themes_in,
+)
 
 pytestmark = pytest.mark.unit
 
-COLOURS = DEFAULT_THEME.light.model_dump()
+COLOURS = DEFAULT_THEME.light.model_dump(exclude_none=True)
 
 
 def theme(**overrides: object) -> dict[str, object]:
@@ -58,6 +77,7 @@ def test_the_default_theme_is_valid_and_complete():
         "popover",
         "accent_foreground",
         "icon",
+        "main_tint",
     }
 
 
@@ -543,3 +563,343 @@ def test_a_theme_ships_at_most_sixteen_fonts():
 def test_theme_fonts_is_an_interface_the_theme_module_implements():
     with pytest.raises(NotImplementedError):
         ThemeFonts().font("acme", 0)
+
+
+# Logos and a main tint (ADR 0044, amended 2026-10-24).
+
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#0f766e"/></svg>'
+LOGO_TABLE = '[logo]\nlight = "logo/light.svg"\n{more}alt = "Acme"\n'
+NS = 'xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
+
+
+def a_logo_dir(tmp_path: Path, content: bytes = SVG, more: str = "", files: tuple[str, ...] = ("light",)) -> Path:
+    directory = tmp_path / "themes"
+    (directory / "logo").mkdir(parents=True, exist_ok=True)
+    for name in files:
+        (directory / "logo" / f"{name}.svg").write_bytes(content)
+    table = LOGO_TABLE.format(more=more)
+    (directory / "acme.toml").write_text(TOML.replace("[light]", table + "\n[light]"), encoding="utf-8")
+    return directory
+
+
+def logo(**overrides: object) -> dict[str, object]:
+    return {"light": "logo/light.svg", "alt": "Acme"} | overrides
+
+
+def logos_of(directory: Path) -> ThemeLogoFiles:
+    (let,) = Module("acme", "Acme.").theme(directory)
+    logos = let.logos()
+    assert logos is not None
+    return logos
+
+
+def test_a_logo_has_defaults_and_its_dark_falls_back_to_light(tmp_path):
+    logos = logos_of(a_logo_dir(tmp_path))
+    assert logos.logo == ThemeLogo(light="logo/light.svg", alt="Acme")
+    assert (logos.logo.dark, logos.logo.mark, logos.logo.height) == (None, None, "24px")
+    assert logos.content("light") == logos.content("dark") == SVG
+    assert logos.url("light").startswith(f"{LOGO_ROUTE}/acme/light.svg?v=")
+    assert logos.url("dark") == logos.url("light").replace("/light.svg", "/dark.svg")
+    with pytest.raises(ValueError, match="has no 'mark' logo"):
+        logos.url("mark")
+    assert logos.logo.file("other") is None
+
+
+def test_a_logo_with_every_file_serves_each(tmp_path):
+    more = 'dark = "logo/dark.svg"\nmark = "logo/mark.svg"\nheight = "2rem"\n'
+    directory = a_logo_dir(tmp_path, more=more, files=("light", "dark", "mark"))
+    (directory / "logo" / "dark.svg").write_bytes(SVG.replace(b"#0f766e", b"#2dd4bf"))
+    logos = logos_of(directory)
+    assert logos.content("dark") != logos.content("light")
+    assert logos.content("mark") == SVG
+    assert logos.logo.height == "2rem"
+    assert logos.logo.files() == ("logo/light.svg", "logo/dark.svg", "logo/mark.svg")
+
+
+def test_a_logo_url_changes_when_the_file_does(tmp_path):
+    directory = a_logo_dir(tmp_path)
+    logos = logos_of(directory)
+    before = logos.url("light")
+    (directory / "logo" / "light.svg").write_bytes(SVG.replace(b"#0f766e", b"#000000"))
+    assert logos.url("light") != before
+
+
+def test_a_theme_without_a_logo_has_none():
+    let = ThemeLet(name="acme", theme=Theme.model_validate(theme()))
+    assert (let.theme.logo, let.logos()) == (None, None)
+
+
+@pytest.mark.parametrize(
+    "file",
+    [
+        "../logo.svg",
+        "logo/../../x.svg",
+        "/etc/logo.svg",
+        ".hidden.svg",
+        "logo/.x.svg",
+        "logo\\x.svg",
+        "logo.png",
+        "logo.svg.png",
+        "logo",
+        "a/b/c/d/e/f/g/h/i.svg",
+        "logo .svg",
+    ],
+)
+def test_a_logo_path_must_be_plain_names_inside_the_theme_ending_in_svg(file):
+    with pytest.raises(ValidationError, match="light"):
+        ThemeLogo.model_validate(logo(light=file))
+    with pytest.raises(ValidationError, match="mark"):
+        ThemeLogo.model_validate(logo(mark=file))
+    with pytest.raises(ValidationError, match="dark"):
+        ThemeLogo.model_validate(logo(dark=file))
+
+
+def test_a_bad_logo_path_in_a_theme_file_says_the_rule(tmp_path):
+    directory = a_logo_dir(tmp_path)
+    toml = (directory / "acme.toml").read_text(encoding="utf-8").replace("logo/light.svg", "../light.svg")
+    (directory / "acme.toml").write_text(toml, encoding="utf-8")
+    with pytest.raises(ValueError, match=r"logo\.light: a path inside the theme's directory .* ending in \.svg"):
+        Module("acme", "Acme.").theme(directory)
+
+
+@pytest.mark.parametrize("alt", ["", "Acme\nCorp", "Acme\x00", "A" * 65])
+def test_a_logo_has_one_short_line_of_alt_text(alt):
+    with pytest.raises(ValidationError, match="alt"):
+        ThemeLogo.model_validate(logo(alt=alt))
+
+
+def test_a_logo_needs_alt_text_and_a_light_file():
+    with pytest.raises(ValidationError, match="alt"):
+        ThemeLogo.model_validate({"light": "logo/light.svg"})
+    with pytest.raises(ValidationError, match="light"):
+        ThemeLogo.model_validate({"alt": "Acme"})
+
+
+@pytest.mark.parametrize("height", INJECTIONS)
+def test_a_logo_height_is_a_css_length(height):
+    with pytest.raises(ValidationError, match="height"):
+        ThemeLogo.model_validate(logo(height=height))
+
+
+def test_a_logo_takes_no_other_keys():
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        ThemeLogo.model_validate(logo(src="https://logo.example.com/acme.svg"))
+
+
+def test_a_missing_logo_file_is_refused_at_import(tmp_path):
+    directory = a_logo_dir(tmp_path)
+    (directory / "logo" / "light.svg").unlink()
+    with pytest.raises(ValueError, match=r"Logo file 'logo/light.svg' of .* doesn't exist"):
+        Module("acme", "Acme.").theme(directory)
+
+
+def test_a_logo_path_that_is_a_directory_is_refused(tmp_path):
+    directory = a_logo_dir(tmp_path)
+    (directory / "logo" / "light.svg").unlink()
+    (directory / "logo" / "light.svg").mkdir()
+    with pytest.raises(ValueError, match="isn't a file"):
+        Module("acme", "Acme.").theme(directory)
+
+
+def test_a_logo_symlink_out_of_the_theme_directory_is_refused(tmp_path):
+    outside = tmp_path / "secret.svg"
+    outside.write_bytes(SVG)
+    directory = a_logo_dir(tmp_path)
+    link = directory / "logo" / "light.svg"
+    link.unlink()
+    link.symlink_to(outside)
+    with pytest.raises(ValueError, match="leads out of the theme's directory"):
+        Module("acme", "Acme.").theme(directory)
+
+
+def test_a_logo_symlink_inside_the_theme_directory_is_followed(tmp_path):
+    directory = a_logo_dir(tmp_path)
+    (directory / "logo" / "real.svg").write_bytes(SVG)
+    link = directory / "logo" / "light.svg"
+    link.unlink()
+    link.symlink_to(directory / "logo" / "real.svg")
+    assert logos_of(directory).content("light") == SVG
+
+
+def test_a_logo_larger_than_200_kb_is_refused(tmp_path):
+    padding = b"<!--" + b"x" * MAX_LOGO_BYTES + b"-->"
+    with pytest.raises(ValueError, match="larger than 200 KB"):
+        Module("acme", "Acme.").theme(a_logo_dir(tmp_path, SVG.replace(b"<rect", padding + b"<rect")))
+    assert svg_problem(SVG + b" " * (MAX_LOGO_BYTES - len(SVG))) is None
+    assert (
+        svg_problem(SVG + b" " * (MAX_LOGO_BYTES - len(SVG) + 1))
+        == "is larger than 200 KB; simplify it, e.g. with svgo"
+    )
+
+
+@pytest.mark.parametrize(
+    ("content", "problem"),
+    [
+        (b"<html><body>not an image</body></html>", "root element isn't <svg>"),
+        (b'<svg xmlns="http://www.example.com/not-svg"/>', "root element isn't <svg>"),
+        (b"<svg xmlns='http://www.w3.org/2000/svg'><rect></svg>", "isn't well-formed XML"),
+        (b"\x89PNG\r\n\x1a\n\x00\x00", "isn't UTF-8 text"),
+        (b"just text", "isn't well-formed XML"),
+    ],
+)
+def test_a_logo_that_is_no_svg_is_refused(tmp_path, content, problem):
+    with pytest.raises(ValueError, match=re.escape(problem)):
+        Module("acme", "Acme.").theme(a_logo_dir(tmp_path, content))
+
+
+@pytest.mark.parametrize(
+    ("body", "problem"),
+    [
+        ("<script>alert(1)</script>", "holds a <script>"),
+        ("<SCRIPT>alert(1)</SCRIPT>", "holds a <script>"),
+        ('<s:script xmlns:s="http://www.w3.org/2000/svg">alert(1)</s:script>', "holds a <script>"),
+        ('<rect width="1" height="1" onload="alert(1)"/>', "event handler (onload=)"),
+        ('<rect width="1" height="1" ONCLICK="alert(1)"/>', "event handler (onclick=)"),
+        ('<foreignObject><p xmlns="http://www.w3.org/1999/xhtml">hi</p></foreignObject>', "<foreignObject>"),
+        ('<s:foreignobject xmlns:s="http://www.w3.org/2000/svg"/>', "<foreignobject>"),
+        ('<image href="https://tracker.example.com/pixel.png"/>', "refers to something outside itself (href="),
+        ('<image xlink:href="data:image/png;base64,AAAA"/>', "refers to something outside itself (href="),
+        ('<use href="other.svg#a"/>', "refers to something outside itself (href="),
+        ('<a href="javascript:alert(1)"><rect width="1" height="1"/></a>', "outside itself (href="),
+        ('<image src="https://tracker.example.com/pixel.png"/>', "outside itself (src="),
+        ('<rect width="1" height="1" fill="url(https://tracker.example.com/x)"/>', "url(...)"),
+        ('<rect width="1" height="1" style="fill: url( \'data:image/png;base64,AAAA\' )"/>', "url(...)"),
+        ("<style>rect { fill: URL(x.svg#a) }</style>", "url(...)"),
+        ("<style>@import 'https://css.example.com/x.css';</style>", "imports a stylesheet"),
+        ("<style>rect { background: image-set('x.png' 1x) }</style>", "image-set"),
+        ('<set attributeName="href" to="https://example.com"/>', "animates href"),
+        ('<animate attributeName="xlink:href" values="#a;https://example.com"/>', "animates href"),
+        ('<set attributeName="onclick" to="alert(1)"/>', "animates onclick"),
+        ('<rect width="1" height="1" style="fill:&#117;rl(https://x.example.com)"/>', "url(...)"),
+        ("<style>rect { fill: &#x75;rl(https://x.example.com) }</style>", "url(...)"),
+        ('<rect width="1" height="1" style="fill: \\75rl(https://x.example.com)"/>', "escapes characters in a style"),
+        ("<style>@\\69mport 'https://css.example.com/x.css';</style>", "escapes characters in a <style>"),
+    ],
+)
+def test_a_logo_that_could_run_or_load_something_is_refused(tmp_path, body, problem):
+    content = f"<svg {NS}>{body}</svg>".encode()
+    with pytest.raises(ValueError, match=re.escape(problem)):
+        Module("acme", "Acme.").theme(a_logo_dir(tmp_path, content))
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        '<!DOCTYPE svg [<!ENTITY x "xxxxxxxx">]>',
+        '<!doctype svg SYSTEM "https://dtd.example.com/svg.dtd">',
+        '<!ENTITY x "x">',
+        '<?xml-stylesheet href="https://css.example.com/x.css"?>',
+    ],
+)
+def test_a_logo_with_a_doctype_an_entity_or_a_stylesheet_link_is_refused(tmp_path, prefix):
+    with pytest.raises(ValueError, match=r"DOCTYPE|entity|stylesheet"):
+        Module("acme", "Acme.").theme(a_logo_dir(tmp_path, prefix.encode() + SVG))
+
+
+def test_a_logo_may_refer_to_its_own_elements(tmp_path):
+    content = (
+        f'<?xml version="1.0" encoding="UTF-8"?><svg {NS} viewBox="0 0 10 10">'
+        '<defs><linearGradient id="g"><stop offset="0" stop-color="#0f766e"/></linearGradient>'
+        '<path id="p" d="M0 0h10v10z"/></defs><use href="#p"/><use xlink:href=" #p"/>'
+        '<rect width="10" height="10" fill="url(#g)" style="stroke: url( \'#g\' )"/>'
+        '<set attributeName="fill" to="#000"/>'
+        '<!-- a comment --><text font-family="system-ui, sans-serif">Acme ä</text></svg>'
+    ).encode()
+    assert logos_of(a_logo_dir(tmp_path, content)).content("light") == content
+    assert svg_problem(SVG.replace(b'xmlns="http://www.w3.org/2000/svg" ', b"")) is None  # no namespace: still <svg>
+
+
+def test_a_logo_swapped_after_import_is_refused_when_read(tmp_path):
+    directory = a_logo_dir(tmp_path)
+    logos = logos_of(directory)
+    (directory / "logo" / "light.svg").write_bytes(f"<svg {NS}><script>alert(1)</script></svg>".encode())
+    with pytest.raises(ValueError, match="holds a <script>"):
+        logos.content("light")
+    (directory / "logo" / "light.svg").unlink()
+    with pytest.raises(ValueError, match="doesn't exist"):
+        logos.url("dark")
+
+
+def test_read_logo_checks_the_bytes_it_read(tmp_path, monkeypatch):
+    directory = a_logo_dir(tmp_path)
+    path = logo_file(directory, "logo/light.svg")
+    assert path == (directory / "logo" / "light.svg").resolve()
+
+    def checked_then_swapped(*_: object) -> Path:  # the file changes between the check and the read
+        path.write_bytes(f'<svg {NS}><rect onclick="alert(1)"/></svg>'.encode())
+        return path
+
+    monkeypatch.setattr(themes, "logo_file", checked_then_swapped)
+    with pytest.raises(ValueError, match="changed and now has an event handler"):
+        read_logo(directory, "logo/light.svg")
+
+
+def test_a_logo_swapped_for_a_symlink_or_a_fifo_after_the_check_is_refused(tmp_path, monkeypatch):
+    directory = a_logo_dir(tmp_path)
+    fifo = tmp_path / "fifo.svg"
+    os.mkfifo(fifo)
+    link = tmp_path / "link.svg"
+    link.symlink_to(directory / "logo" / "light.svg")
+    monkeypatch.setattr(themes, "logo_file", lambda *_: fifo)
+    with pytest.raises(ValueError, match="isn't a file"):
+        read_logo(directory, "logo/light.svg")  # returns at once: a FIFO isn't waited on
+    monkeypatch.setattr(themes, "logo_file", lambda *_: link)
+    with pytest.raises(ValueError, match="can't be read"):
+        read_logo(directory, "logo/light.svg")
+
+
+def test_logo_file_checks_the_path_rule_itself(tmp_path):
+    with pytest.raises(ValueError, match=r"ending in \.svg"):
+        logo_file(a_logo_dir(tmp_path), "../light.svg")
+
+
+def test_a_theme_with_a_logo_must_come_from_a_file():
+    shipped = Theme.model_validate(theme(logo=logo()))
+    with pytest.raises(ValueError, match="ships a logo, so it comes from a theme file"):
+        Module("acme", "Acme.").theme(shipped)
+
+
+def test_a_logo_built_without_validation_is_checked_again(tmp_path):
+    directory = a_logo_dir(tmp_path)
+    evil = ThemeLogo.model_construct(light="../../secret.svg", dark=None, mark=None, alt="Acme", height="24px")
+    with pytest.raises(ValueError, match=r"logo\.light"):
+        ThemeLet(
+            name="acme",
+            theme=Theme.model_construct(**(dict(Theme.model_validate(theme())) | {"logo": evil})),
+            directory=directory,
+        )
+
+
+def test_the_built_in_logo_is_package_data_that_passes_every_check():
+    assert DEFAULT_THEME.logo is None  # so a plugin can copy the default theme without its files
+    assert (DEFAULT_LOGO.theme, DEFAULT_LOGO.logo.alt, DEFAULT_LOGO.logo.height) == (
+        "default",
+        "Heinzelmännchen",
+        "24px",
+    )
+    for name in LOGO_NAMES:
+        content = DEFAULT_LOGO.content(name)
+        assert svg_problem(content) is None
+        assert b"currentcolor" not in content.lower()
+        assert DEFAULT_LOGO.url(name).startswith(f"{LOGO_ROUTE}/default/{name}.svg?v=")
+    assert "Heinzelmännchen</text>" in DEFAULT_LOGO.content("light").decode()
+    assert DEFAULT_LOGO.content("light") != DEFAULT_LOGO.content("dark")
+
+
+def test_theme_fonts_declares_logos_too():
+    with pytest.raises(NotImplementedError):
+        ThemeFonts().logo("acme", "light")
+    assert LOGO_CSP == "default-src 'none'; style-src 'unsafe-inline'"
+
+
+def test_main_tint_is_optional_per_mode_and_a_hex_colour():
+    assert (DEFAULT_THEME.light.main_tint, DEFAULT_THEME.dark.main_tint) == (None, None)
+    tinted = Theme.model_validate(theme(light=COLOURS | {"main_tint": "#F7F4EE"}, dark=COLOURS | {"main_tint": "#123"}))
+    assert (tinted.light.main_tint, tinted.dark.main_tint) == ("#f7f4ee", "#123")
+    assert Theme.model_validate(theme(light=COLOURS | {"main_tint": None})).light.main_tint is None
+
+
+@pytest.mark.parametrize("tint", ["red", "#12;", "#1234", "url(x)", "var(--x)", "#fff;}", "#ffffff\n"])
+def test_main_tint_takes_the_colour_grammar(tint):
+    with pytest.raises(ValidationError, match="main_tint"):
+        ThemeColours.model_validate(COLOURS | {"main_tint": tint})

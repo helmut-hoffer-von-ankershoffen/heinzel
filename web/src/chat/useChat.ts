@@ -3,7 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
-import { chatKey, openChat, sendChat, useChatSession, useDecide } from "@/api/chat";
+import { chatKey, chatListKey, openChat, sendChat, useChatSession, useDecide } from "@/api/chat";
 import type { SchemaChatSession } from "@/api/client";
 
 const KEY = "hz.chat";
@@ -39,6 +39,8 @@ export function useChat() {
   const decide = useDecide();
   const client = useQueryClient();
   const opened = useRef<string | null>(null);
+  /** Which conversation is on screen, counted up whenever the person moves to another. */
+  const shown = useRef(0);
 
   const adopt = useCallback(
     (session: SchemaChatSession) => {
@@ -52,6 +54,8 @@ export function useChat() {
   /** A new session about `context` (`event:<id>`, `route:/doctor`), with what the opener knows in `detail`. */
   const openAbout = useCallback(
     async (context: string, detail?: string) => {
+      shown.current += 1; // another conversation from now on, as `leave` below
+      setLive(null);
       setError(null);
       try {
         adopt(await openChat(context, detail));
@@ -93,15 +97,19 @@ export function useChat() {
   /** Send `text`; without a session, open one about `context` first. False when it failed. */
   const send = async (text: string, context: string): Promise<boolean> => {
     if (!text.trim() || live || loading) return false;
+    // Moving to another chat while this turn runs leaves it to finish in its own session, out of view.
+    const view = shown.current;
+    const here = () => shown.current === view;
     setLive({ message: text, text: "", tools: [] });
     setError(null);
     let target: SchemaChatSession | undefined = chat.data;
     try {
       if (!target) {
         target = await openChat(context);
-        adopt(target);
+        if (here()) adopt(target);
       }
       const answered = await sendChat(target.id, text, ({ event, data }) => {
+        if (!here()) return;
         if (event === "text" && typeof data.text === "string") {
           const delta = data.text;
           setLive((current) => current && { ...current, text: current.text + delta });
@@ -111,22 +119,48 @@ export function useChat() {
           setLive((current) => current && { ...current, tools: [...current.tools, name] });
         }
       });
-      adopt(answered);
+      if (here()) adopt(answered);
+      else client.setQueryData(chatKey(answered.id), answered);
       return true;
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (here()) setError(reason instanceof Error ? reason.message : String(reason));
       // What hz kept of it (the message, or a stopped answer) shows; the session's own id, not this render's.
       if (target) await client.invalidateQueries({ queryKey: chatKey(target.id) });
       return false;
     } finally {
-      setLive(null);
+      if (here()) setLive(null);
+      void client.invalidateQueries({ queryKey: chatListKey });
     }
   };
 
+  /** Another conversation is shown from now on: a turn still running belongs to the one it was sent in. */
+  const leave = () => {
+    shown.current += 1;
+    setLive(null);
+    setError(null);
+  };
+
   const fresh = () => {
+    leave();
     setSessionId(null);
     remember(null);
-    setError(null);
+  };
+
+  /** The Workshop: a new session about nothing in particular. */
+  const openGeneral = async () => {
+    leave();
+    try {
+      adopt(await openChat(null));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  /** Continue a session hz keeps (from the switcher), as a `?chat=<id>` link would. */
+  const select = (id: string) => {
+    leave();
+    setSessionId(id);
+    remember(id);
   };
 
   const decideAction = (action: string, confirm: boolean) => {
@@ -141,6 +175,8 @@ export function useChat() {
     loading,
     send,
     fresh,
+    select,
+    openGeneral,
     openAbout,
     decide: decideAction,
   };

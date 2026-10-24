@@ -135,3 +135,17 @@ def test_a_bare_carriage_return_is_invalid_toml_not_a_newline(tmp_path):
 def test_crlf_line_endings_load(tmp_path):
     (tmp_path / "hz.toml").write_bytes(b"a = 1\r\nb = 2\r\n")
     assert Config.load(tmp_path).data == {"a": 1, "b": 2}
+
+
+def test_reread_reads_the_same_files_again(tmp_path):
+    (tmp_path / "hz.toml").write_text('[example]\ngreeting = "Hi"\n', encoding="utf-8")
+    booted = Config.load(tmp_path)
+    (tmp_path / "hz.toml").write_text('[example]\ngreeting = "Moin"\n', encoding="utf-8")
+    assert booted.settings(ExampleSettings, "example").greeting == "Hi"
+    assert booted.reread().settings(ExampleSettings, "example").greeting == "Moin"
+
+
+def test_reread_keeps_a_configuration_built_in_code():
+    built = Config(files=(ConfigFile("user", Path("/nowhere/hz.toml")),), data={"example": {"times": 3}})
+    assert built.reread() is built
+    assert config({"example": {"times": 2}}).reread().settings(ExampleSettings, "example").times == 2

@@ -174,3 +174,43 @@ consequence above, met by defaults rather than new required fields).
   signature checks, a file swapped after import) and `tests/integration/theme_test.py` (the list's shape, a font served
   with its type and cache headers and without the token, refused for an unknown index, theme or file name, for the
   theme a more specific layer hides, and for another Host, Origin or site).
+
+**Amendment 2026-10-24: logos and a main tint.** Requested by the maintainer the same day: a theme brings its logo,
+and the main content area can take a tint of its own. Additive like the amendment above: both are optional, so every
+theme written before stays valid.
+
+- **A logo.** A theme file may declare `[logo]` (`ThemeLogo`): `light` (the logo on a light background), `dark`
+  (`light` when not given), `mark` (a square one for narrow places such as a collapsed sidebar; none when not given),
+  `alt` (what it says, for screen readers: one printable line, at most 64 characters, required) and `height` (the
+  length grammar above, `24px` by default). The files follow the font files' path rules (relative, plain names, none
+  starting with a dot, inside the theme's directory after symlinks are resolved, a regular file), end in `.svg` and
+  are at most 200 KB. At import each must be UTF-8 XML whose root is `<svg>`, and is refused if it holds a DOCTYPE or
+  an entity (so nothing expands or loads before parsing), a `<script>` or `<foreignObject>` (case-insensitive), an
+  event-handler attribute (`on...=`), an `href`, `xlink:href` or `src` that isn't a same-document fragment (`#id`),
+  a `url(...)` other than `url(#id)`, `@import`, `image-set(`, an `xml-stylesheet` link, or a `<set>`/`<animate>` that
+  rewrites a reference or a handler: no external file, no `data:` URI. As with fonts, a `Theme` built in Python can't
+  ship one.
+- **Serving.** The web head serves them at `/theme-assets/<theme>/<light|dark|mark>.svg` (`LOGO_ROUTE`), outside
+  `/api` and without the token, because an `<img>` can't send the header, under every other check the font route has,
+  through `ThemeFonts.logo` (the same interface, so the head still knows no module), re-checked on read through the
+  same descriptor that follows no symlink and on the bytes read. Answers are `image/svg+xml`, `nosniff`, the font
+  route's immutable cache, and a CSP of their own, `default-src 'none'; style-src 'unsafe-inline'` (`LOGO_CSP`), so a
+  logo opened on its own loads and runs nothing even if a check missed something.
+- **The list** returns `logo: {light, dark, mark, alt, height} | null` per theme: relative URLs with `?v=` (a hash of
+  the content), `dark` the light one's URL when the theme declares none or its file is gone, `mark` null when there is
+  none; a logo whose light file is gone is null.
+- **The built-in theme's logo** is the Heinzelmännchen mark of `web/public/favicon.svg` and its name as a wordmark,
+  light and dark with explicit fills, and the mark alone: package data of the kernel (`heinzel/kernel/assets/theme`),
+  as `DEFAULT_LOGO` beside `DEFAULT_THEME`, served for the theme name `default`. `DEFAULT_THEME` itself names no logo,
+  so a plugin can still copy it into a theme of its own.
+- **A main tint.** `ThemeColours.main_tint` (both modes, optional, so light and dark can differ): a hex colour behind
+  the main content area, `--color-main-tint`, which the web app sets only when a theme gives one.
+- **Public API**, additive: `ThemeLogo` in `heinzel`; `ThemeLogo`, `ThemeLogoFiles`, `DEFAULT_LOGO`, `LOGO_ROUTE`
+  and `LOGO_CSP` in `heinzel.kernel`; `ThemeFonts.logo`.
+- **Confirmation**: `tests/unit/kernel/themes_test.py` (logo paths that leave the directory by `..`, absolute paths
+  and symlinks, the size limit, files that aren't SVG, scripts, handlers, `foreignObject`, external and `data:`
+  references, DOCTYPEs and entities, same-document references allowed, the defaults and the dark fallback, a file
+  swapped after import, the built-in logo's files, `main_tint`'s grammar) and `tests/integration/theme_test.py` (the
+  list's shape with the built-in and Acme logos, a logo served with exactly the headers above and without the token,
+  refused for an unknown name or theme and for the theme a more specific layer hides, and for another Host, Origin or
+  site).

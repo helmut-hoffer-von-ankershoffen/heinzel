@@ -1,8 +1,8 @@
 """The theme module of system: how the web app looks (ADR 0044).
 
-A theme is data a plugin offers with `module.theme(...)`: colours for light and dark, fonts and font files, type scale,
-density, corner radii and border width. `default` is built in. The web app reads `hz system theme list` and applies
-the selected theme's values as CSS custom properties; `hz system theme use <name>` picks one for the person.
+A theme is data a plugin offers with `module.theme(...)`: colours for light and dark, fonts and font files, a logo,
+type scale, density, corner radii and border width. `default` is built in. The web app reads `hz system theme list`
+and applies the selected theme's values as CSS custom properties; `hz system theme use <name>` picks one for the person.
 """
 
 from typing import Annotated
@@ -13,13 +13,19 @@ from rich.table import Table
 from rich.text import Text
 
 from heinzel import Module, ThemeFonts
-from heinzel.modules.system.theme._models import ThemeFontView, ThemeList, ThemeSettings, ThemeView
+from heinzel.modules.system.theme._models import (
+    ThemeFontView,
+    ThemeList,
+    ThemeLogoView,
+    ThemeSettings,
+    ThemeView,
+)
 from heinzel.modules.system.theme._service import ThemeService
 
 module = Module("theme", "Pick how the web app looks: the built-in theme or one a plugin offers.")
 module.settings(ThemeSettings)
 module.service(ThemeService)
-module.service(ThemeFonts, ThemeService)  # the web head serves the themes' font files through it (ADR 0044)
+module.service(ThemeFonts, ThemeService)  # the web head serves the themes' fonts and logos through it (ADR 0044)
 
 
 def _swatch(view: ThemeView) -> Text:
@@ -70,4 +76,4 @@ def use(
     return service.use(name)
 
 
-__all__ = ["ThemeFontView", "ThemeList", "ThemeService", "ThemeSettings", "ThemeView", "module"]
+__all__ = ["ThemeFontView", "ThemeList", "ThemeLogoView", "ThemeService", "ThemeSettings", "ThemeView", "module"]

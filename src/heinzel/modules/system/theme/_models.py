@@ -35,6 +35,16 @@ class ThemeFontView(BaseModel):
     style: str = Field(description="`normal` or `italic`.")
 
 
+class ThemeLogoView(BaseModel):
+    """A theme's logo, where the web head serves each file, for an `<img>` in the web app."""
+
+    light: str = Field(description="The logo on a light background, e.g. `/theme-assets/acme/light.svg?v=1a2b3c4d`.")
+    dark: str = Field(description="The logo on a dark background; the light one's URL when the theme has none.")
+    mark: str | None = Field(description="A square logo for a collapsed sidebar; none when the theme has none.")
+    alt: str = Field(description="What the logo says, for screen readers, e.g. `Acme`.")
+    height: str = Field(description="How tall the logo is shown, a CSS length, e.g. `24px`.")
+
+
 class ThemeView(BaseModel):
     """One available theme with every token value, ready to become the web app's CSS custom properties."""
 
@@ -62,6 +72,7 @@ class ThemeView(BaseModel):
     fonts: list[ThemeFontView] = Field(
         default_factory=list[ThemeFontView], description="Font files the theme ships, for the web app to load."
     )
+    logo: ThemeLogoView | None = Field(default=None, description="The theme's logo; none if it ships none.")
     shadows: list[str] = Field(
         default_factory=list[str],
         description="Modules that offer a theme of the same name, hidden by this one (layer order decides).",

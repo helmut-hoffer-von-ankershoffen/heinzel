@@ -468,6 +468,7 @@ class WorkflowSettings(ModuleSettings):
         default=None,
         description="Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A "
         "checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`.",
+        json_schema_extra={"deprecated": True},  # the web app's Settings leave it out
     )
     schedule_team: list[str] = Field(
         default_factory=list,

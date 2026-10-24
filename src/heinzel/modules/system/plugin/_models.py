@@ -12,6 +12,8 @@ Source = Literal["pypi", "git", "path", "unknown"]
 """Where a plugin's code comes from: a package index (PyPI), a git repository, a directory on this machine, or
 nothing recorded."""
 Action = Literal["add", "develop", "remove", "enable", "disable"]
+PluginKind = Literal["connector", "theme", "capability", "playbook"]
+"""What a plugin is (`PluginInfo.kinds`); a plugin can be several."""
 
 
 class PluginSettings(ModuleSettings):
@@ -41,7 +43,10 @@ class PluginInfo(BaseModel):
     """An installed plugin, where it came from, and what it brings."""
 
     distribution: str = Field(description="Distribution name, e.g. heinzel-clock.")
-    version: str = Field(description="Installed version.")
+    version: str = Field(
+        description="Installed version, from the distribution's metadata as installed now; `0.0.0` only when the "
+        "plugin says so itself (one not released yet)."
+    )
     modules: list[str] = Field(description="Qualified names of the modules the plugin provides, enabled or not.")
     name: str = Field(description="The name without `heinzel-`: its command group (`hz <name>`).")
     summary: str = Field(default="", description="What the plugin does, in its authors' words (its metadata).")
@@ -50,9 +55,10 @@ class PluginInfo(BaseModel):
     )
     source_url: str | None = Field(
         default=None,
-        description="Where a browser shows its source: the git repository (with `/tree/<ref>/<subdirectory>` for a "
-        "plugin in a subdirectory), or for PyPI its repository or PyPI page; https only, never with credentials; "
-        "none for a directory or when unknown.",
+        description="Where a browser shows its source, from its `direct_url.json` (PEP 610): the git repository, on "
+        "GitHub at `/tree/<commit>` (and `/<subdirectory>` for a plugin in one; an ssh remote becomes its https "
+        "page), or for PyPI its repository or PyPI page; https only, never with credentials; none for a directory "
+        "or when unknown.",
     )
     revision: str | None = Field(default=None, description="The git commit installed, for a git source.")
     homepage: str | None = Field(default=None, description="Its source repository, from its metadata.")
@@ -71,6 +77,19 @@ class PluginInfo(BaseModel):
     )
     playbooks: list[str] = Field(
         default_factory=list, description="Modules that bring a playbook (ADR 0037); empty while it is disabled."
+    )
+    themes: list[str] = Field(
+        default_factory=list,
+        description="Names of the themes its modules offer for the web app (`module.theme`, ADR 0044), sorted; "
+        "`hz system theme use <name>` picks one.",
+    )
+    kinds: list[PluginKind] = Field(
+        default_factory=list[PluginKind],
+        description="What the plugin is, any of four, always in this order: `connector` when it brings adapters "
+        "(`capabilities` isn't empty); `theme` when it offers themes; `capability` when it has an operation of its "
+        "own besides the `info` every plugin from the template gets (e.g. `hz clock`); `playbook` when it ships one. "
+        "In the web app `Capability` means such a feature of its own, while `capabilities` above, like ADR 0028, names "
+        "the integration interfaces (tracker, calendar, ...) a connector implements.",
     )
 
 

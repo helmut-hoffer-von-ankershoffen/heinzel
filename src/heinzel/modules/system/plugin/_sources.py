@@ -43,6 +43,8 @@ CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 """C0 and C1 control characters, ESC among them: metadata never redraws a terminal."""
 ARCHIVES = (".whl", ".zip", ".tar.gz", ".tgz", ".tar.bz2")
 PATH_LIKE = (".", "/", "~", "\\")
+SCP_GITHUB = re.compile(r"^[A-Za-z0-9._-]+@github\.com:(?P<path>[^:]+)$", re.IGNORECASE)
+"""An scp-like ssh remote on GitHub, `git@github.com:owner/repo.git`."""
 
 JsonGetter = Callable[[str], Any]
 """Reads a JSON document: from the GitHub API by path (`repos/o/r`), or from PyPI by URL."""
@@ -379,6 +381,29 @@ def browser_url(url: str | None, ref: str | None = None, subdirectory: str | Non
     if subdirectory:
         return f"{base}/tree/{ref or 'HEAD'}/{subdirectory.strip('/')}"
     return base
+
+
+def installed_repository_url(url: str | None, ref: str | None = None, subdirectory: str | None = None) -> str | None:
+    """Where a browser shows the repository a plugin was installed from, per its `direct_url.json` (PEP 610).
+
+    `url` is the `url` beside its `vcs_info`: `git+` and credentials are dropped, and a GitHub remote over ssh
+    (`ssh://git@github.com/o/r.git`, `git@github.com:o/r.git`) becomes its https page. A GitHub repository gets
+    `/tree/<ref>` (and `/<subdirectory>` for a plugin in one), so the link opens the code that is installed; another
+    host gets what `browser_url` makes of it. None when it can't be shown over https.
+    """
+    if not url:
+        return None
+    text = url.strip().removeprefix("git+")
+    if match := SCP_GITHUB.match(text):
+        text = f"https://github.com/{match['path'].lstrip('/')}"
+    parts = urlsplit(text)
+    if parts.scheme == "ssh" and parts.hostname == "github.com":
+        text = f"https://github.com{parts.path}"
+        parts = urlsplit(text)
+    base = browser_url(text)
+    if base is None or parts.hostname != "github.com" or not ref:
+        return browser_url(text, ref, subdirectory)
+    return f"{base}/tree/{ref}" + (f"/{subdirectory.strip('/')}" if subdirectory else "")
 
 
 def repository_url(spec: str) -> str | None:

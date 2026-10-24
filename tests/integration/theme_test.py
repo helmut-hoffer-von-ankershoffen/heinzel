@@ -212,6 +212,7 @@ def test_the_web_head_lists_the_themes_and_the_pick_round_trips(acme):
         "heading_tracking",
         "spacing",
         "fonts",
+        "logo",
         "shadows",
     }
     assert client.get("/api/system/theme/list").status_code == 401
@@ -344,3 +345,141 @@ def test_a_font_file_removed_after_import_is_left_out_and_not_served(acme, tmp_p
     client = web_client(kernel)
     assert client.get("/api/system/theme/list", headers=AUTH).json()["themes"][1]["fonts"] == []
     assert client.get("/theme-fonts/acme/0.woff2").status_code == 404
+
+
+# Logos and a main tint (ADR 0044, amended 2026-10-24).
+
+LOGOS = FIXTURES / "heinzel_acme" / "themes" / "logo"
+LOGO_HEADERS = {
+    "content-type": "image/svg+xml",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
+    "x-content-type-options": "nosniff",
+    "cache-control": "public, max-age=31536000, immutable",
+}
+
+
+def test_the_list_carries_each_themes_logo_and_main_tint(acme):
+    code, listed = hz(acme("heinzel_acme"), "system", "theme", "list")
+    assert code == 0, listed
+    default, company = listed["themes"]
+    assert set(default["logo"]) == {"light", "dark", "mark", "alt", "height"}
+    assert (default["logo"]["alt"], default["logo"]["height"]) == ("Heinzelmännchen", "24px")
+    for name in ("light", "dark", "mark"):
+        assert default["logo"][name].startswith(f"/theme-assets/default/{name}.svg?v=")
+    assert company["logo"]["light"].startswith("/theme-assets/acme/light.svg?v=")
+    assert company["logo"]["dark"].startswith("/theme-assets/acme/dark.svg?v=")
+    assert company["logo"]["mark"].startswith("/theme-assets/acme/mark.svg?v=")
+    assert (company["logo"]["alt"], company["logo"]["height"]) == ("Acme", "28px")
+    assert (company["light"]["main_tint"], company["dark"]["main_tint"]) == ("#f7f4ee", None)
+    assert default["light"]["main_tint"] is None
+
+
+def test_a_theme_without_a_logo_lists_none_and_one_without_dark_points_at_light(acme, tmp_path, monkeypatch):
+    copy = tmp_path / "layers"
+    shutil.copytree(FIXTURES, copy)
+    monkeypatch.syspath_prepend(str(copy))
+    theme_file = copy / "heinzel_acme" / "themes" / "acme.toml"
+    toml = theme_file.read_text(encoding="utf-8")
+    theme_file.write_text(toml.replace('dark = "logo/acme-dark.svg"\nmark = "logo/acme-mark.svg"\n', ""), "utf-8")
+    listed = web_client(acme()).get("/api/system/theme/list", headers=AUTH).json()
+    by_name = {theme["name"]: theme for theme in listed["themes"]}
+    assert by_name["acme"]["logo"] is None  # the team's `acme` wins its name and ships no logo
+    company = web_client(acme("heinzel_acme")).get("/api/system/theme/list", headers=AUTH).json()["themes"][1]
+    assert company["logo"]["dark"] == company["logo"]["light"]
+    assert company["logo"]["mark"] is None
+
+
+@pytest.mark.parametrize(
+    ("theme", "file"),
+    [("acme", "acme-light.svg"), ("acme", "acme-dark.svg"), ("acme", "acme-mark.svg"), ("default", None)],
+)
+def test_the_web_head_serves_a_themes_logo_without_the_token_with_its_own_csp(acme, theme, file):
+    client = web_client(acme("heinzel_acme"))
+    listed = {t["name"]: t for t in client.get("/api/system/theme/list", headers=AUTH).json()["themes"]}
+    name = file.removeprefix("acme-").removesuffix(".svg") if file else "mark"
+    served = client.get(listed[theme]["logo"][name])
+    assert served.status_code == 200, served.text
+    if file:
+        assert served.content == (LOGOS / file).read_bytes()
+    assert served.content.startswith(b"<svg")
+    assert {key: served.headers[key] for key in LOGO_HEADERS} == LOGO_HEADERS
+    assert served.headers["cross-origin-resource-policy"] == "same-origin"
+    assert client.get(listed[theme]["logo"][name], headers={"Sec-Fetch-Site": "same-origin"}).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/theme-assets/acme/other.svg",
+        "/theme-assets/acme/light.png",
+        "/theme-assets/acme/light",
+        "/theme-assets/acme/0.woff2",
+        "/theme-assets/acme/logo%2Facme-light.svg",
+        "/theme-assets/acme/..%2F..%2Fthemes%2Facme.toml",
+        "/theme-assets/acme/light.svg/x",
+        "/theme-assets/nope/light.svg",
+        "/theme-assets/Acme/light.svg",
+        "/theme-assets/..%2Facme/light.svg",
+        "/theme-assets/acme-warm/light.svg",
+    ],
+)
+def test_the_web_head_refuses_a_logo_no_theme_ships(acme, path):
+    refused = web_client(acme("heinzel_acme")).get(path)
+    assert refused.status_code == 404
+    assert refused.headers["content-type"].startswith("application/json")
+    assert "default-src 'none'; script-src 'self'" in refused.headers["content-security-policy"]
+
+
+def test_only_the_theme_that_wins_its_name_serves_a_logo(acme):
+    client = web_client(acme())  # the team's `acme` hides the company's and ships no logo
+    assert client.get("/theme-assets/acme/light.svg").status_code == 404
+    assert client.get("/theme-assets/default/light.svg").status_code == 200
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Host": "attacker.example.test:8000"},
+        {"Host": "127.0.0.1:9999"},
+        {"Origin": "http://attacker.example.test"},
+        {"Sec-Fetch-Site": "cross-site"},
+        {"Sec-Fetch-Site": "same-site"},
+    ],
+)
+def test_logos_are_refused_to_another_host_or_site(acme, headers):
+    refused = web_client(acme("heinzel_acme")).get("/theme-assets/acme/light.svg", headers=headers)
+    assert refused.status_code == 403
+    assert refused.content != (LOGOS / "acme-light.svg").read_bytes()
+
+
+def test_no_logos_are_served_when_the_theme_module_is_off_or_cannot_be_built(acme, monkeypatch):
+    kernel = acme("heinzel_acme")
+    client = web_client(kernel)
+    with monkeypatch.context() as patch:
+        patch.setattr(kernel, "provides", lambda kind: False)
+        assert client.get("/theme-assets/acme/light.svg").status_code == 404
+
+    def unbuildable(kind: type) -> object:
+        msg = f"No module provides {kind.__name__}"
+        raise HeinzelError(msg)
+
+    monkeypatch.setattr(kernel, "resolve", unbuildable)
+    assert client.get("/theme-assets/default/light.svg").status_code == 404
+
+
+def test_a_logo_file_changed_after_import_is_left_out_and_not_served(acme, tmp_path, monkeypatch):
+    copy = tmp_path / "layers"
+    shutil.copytree(FIXTURES, copy)
+    monkeypatch.syspath_prepend(str(copy))
+    kernel = acme("heinzel_acme")
+    logos = copy / "heinzel_acme" / "themes" / "logo"
+    (logos / "acme-dark.svg").unlink()
+    (logos / "acme-mark.svg").write_text('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>', "utf-8")
+    client = web_client(kernel)
+    logo = client.get("/api/system/theme/list", headers=AUTH).json()["themes"][1]["logo"]
+    assert (logo["dark"], logo["mark"]) == (logo["light"], None)
+    assert client.get("/theme-assets/acme/mark.svg").status_code == 404
+    assert client.get("/theme-assets/acme/dark.svg").status_code == 404
+    (logos / "acme-light.svg").unlink()
+    assert client.get("/api/system/theme/list", headers=AUTH).json()["themes"][1]["logo"] is None
+    assert client.get("/theme-assets/acme/light.svg").status_code == 404

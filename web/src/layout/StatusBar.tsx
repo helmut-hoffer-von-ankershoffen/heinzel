@@ -1,14 +1,16 @@
-// The status bar under the screen: Heinzelmännchen and its version on the left; the meeting running now or the next
+// The status bar under the screen: hz's version on the left; the meeting running now or the next
 // one, and a clock, on the right. The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, Video } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useInfo } from "@/api/queries";
 import { token } from "@/api/token";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { zoneHour, zoneTime } from "@/lib/zoneTime";
+import { CLOCK_SETTINGS } from "./settingsSections";
 
 type Meeting = { title: string; start: string; end: string; conference_url?: string | null };
 type Agenda = { current: Meeting | null; next: Meeting | null; problem: string | null; fix: string | null };
@@ -81,7 +83,7 @@ function partsIn(zone: string, now: Date): Parts {
 /** Whether they're reachable now, and if not, when they're back: what the hover answers. */
 function availability(zone: ZoneTime, at: Parts): string {
   const [start, end] = zone.hours;
-  const from = `${pad(start)}:00`;
+  const from = zoneHour(start, zone.zone);
   const weekend = at.weekday === 0 || at.weekday === 6;
   const minutes = at.hour * 60 + at.minute;
   if (weekend) return t("status.weekend", { from });
@@ -94,7 +96,7 @@ function availability(zone: ZoneTime, at: Parts): string {
         })
       : t("status.starts", { from });
   }
-  if (minutes < end * 60) return t("status.workingUntil", { until: `${pad(end)}:00` });
+  if (minutes < end * 60) return t("status.workingUntil", { until: zoneHour(end, zone.zone) });
   return at.weekday === 5 ? t("status.backMonday", { from }) : t("status.backTomorrow", { from });
 }
 
@@ -106,74 +108,146 @@ const offsetText = (minutes: number) => {
 
 /** `America/Los_Angeles` → `Los Angeles`. */
 const city = (zone: string) => (zone.split("/").at(-1) ?? zone).replaceAll("_", " ");
-const pad = (hour: number) => String(hour).padStart(2, "0");
 
-/** The clock, with the team's zones on hover or focus: each one's time and whether it's within working hours. */
+/** Whether this browser knows the IANA zone `zone`; formatting an unknown one throws. */
+function knownZone(zone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** How long the zones stay open after the pointer leaves, so it can cross to them. */
+const CLOSE_DELAY = 200;
+
+/** The clock, with the team's zones on hover, focus or a click (which pins them): each one's time in that place's
+ *  convention and whether it's within working hours, and a link to edit them. */
 function Clock({ now }: { now: Date }) {
   const zones = useZones();
-  const [open, setOpen] = useState(false);
-  const zonesId = useId();
-  const list = zones.data;
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  const wrapper = useRef<HTMLSpanElement>(null);
+  const panelId = useId();
+  const open = hovered || focused || pinned;
+  // The first zone is yours (`clock.zones` is ordered): the clock shows its time; the others are in the panel. Zones
+  // this browser doesn't know are left out rather than breaking the bar.
+  const known = (zones.data ?? []).filter((zone) => knownZone(zone.zone));
+  const primary = known[0]?.zone;
+  const list = known.slice(1);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const enter = () => {
+    window.clearTimeout(timer.current);
+    setHovered(true);
+  };
+  const leave = () => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => setHovered(false), CLOSE_DELAY);
+  };
+  const close = () => {
+    window.clearTimeout(timer.current);
+    setHovered(false);
+    setFocused(false);
+    setPinned(false);
+  };
+  useEffect(() => {
+    if (!pinned) return;
+    const outside = (event: MouseEvent) => {
+      if (!wrapper.current?.contains(event.target as Node)) setPinned(false);
+    };
+    window.addEventListener("mousedown", outside);
+    return () => window.removeEventListener("mousedown", outside);
+  }, [pinned]);
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: hover only previews what the focusable time button shows
-    <span className="relative shrink-0" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: hover and focus only show what the time button opens on click
+    <span
+      ref={wrapper}
+      className="relative shrink-0"
+      onMouseEnter={enter}
+      onMouseLeave={leave}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => {
+        if (!wrapper.current?.contains(event.relatedTarget as Node | null)) setFocused(false);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.stopPropagation();
+          close();
+        }
+      }}
+    >
       <button
         type="button"
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
+        onClick={() => setPinned((value) => !value)}
         aria-expanded={open}
-        aria-describedby={zonesId}
+        aria-controls={panelId}
+        aria-describedby={`${panelId}-hint`}
         className="rounded px-1 font-mono text-foreground/80 tabular-nums hover:bg-accent/60"
       >
         <time dateTime={now.toISOString()}>
-          {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: primary })}
         </time>
-        <span id={zonesId} className="sr-only">
+        <span id={`${panelId}-hint`} className="sr-only">
           {t("status.zones")}
         </span>
       </button>
       {open && (
-        <div
-          role="tooltip"
-          className="absolute right-0 bottom-full z-40 mb-2 w-80 rounded-xl border border-border bg-popover p-1.5 text-sm shadow-xl"
-        >
-          {list && list.length > 0 ? (
-            <ul>
-              {list.map((zone) => {
-                const at = partsIn(zone.zone, now);
-                const sameDay = at.weekday === now.getDay();
-                return (
-                  <li key={zone.zone} className="flex items-center gap-3 rounded-lg px-2.5 py-2">
-                    <span
-                      aria-hidden
-                      className={cn("size-2 shrink-0 rounded-full", zone.working ? "bg-ok" : "bg-muted-foreground/40")}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline gap-2">
-                        <span className="truncate text-foreground">{city(zone.zone)}</span>
-                        <span className="text-xs text-muted-foreground">{offsetText(at.offset)}</span>
-                      </span>
-                      <span className={cn("block text-xs", zone.working ? "text-ok" : "text-muted-foreground")}>
-                        {availability(zone, at)}
-                      </span>
-                    </span>
-                    <span className="shrink-0 font-mono text-foreground tabular-nums">
-                      {sameDay ? "" : `${at.day} `}
-                      {pad(at.hour)}:{pad(at.minute)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <p className="px-2.5 py-1.5 text-muted-foreground">{t("status.noZones")}</p>
-          )}
-          <a
-            href="?settings=clock"
-            className="mt-1 block rounded-lg border-t border-border px-2.5 pt-2 pb-1 text-xs text-muted-foreground hover:text-foreground"
+        // The spacing is padding inside this transparent box, so the pointer never leaves it on the way up.
+        <div id={panelId} className="absolute right-0 bottom-full z-40 pb-2">
+          <section
+            aria-label={t("status.zones")}
+            className="w-80 rounded-xl border border-border bg-popover p-1.5 text-sm shadow-xl"
           >
-            {t("status.editZones")}
-          </a>
+            {primary && (
+              <p className="px-2.5 pt-1.5 pb-1 text-xs text-muted-foreground">
+                {t("status.primary", { city: city(primary) })}
+              </p>
+            )}
+            {list.length > 0 ? (
+              <ul>
+                {list.map((zone) => {
+                  const at = partsIn(zone.zone, now);
+                  const sameDay = at.weekday === now.getDay();
+                  return (
+                    <li key={zone.zone} className="flex items-center gap-3 rounded-lg px-2.5 py-2">
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "size-2 shrink-0 rounded-full",
+                          zone.working ? "bg-ok" : "bg-muted-foreground/40",
+                        )}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-baseline gap-2">
+                          <span className="truncate text-foreground">{city(zone.zone)}</span>
+                          <span className="text-xs text-muted-foreground">{offsetText(at.offset)}</span>
+                        </span>
+                        <span className={cn("block text-xs", zone.working ? "text-ok" : "text-muted-foreground")}>
+                          {availability(zone, at)}
+                        </span>
+                      </span>
+                      <span className="shrink-0 font-mono text-foreground tabular-nums">
+                        {sameDay ? "" : `${at.day} `}
+                        {zoneTime(now, zone.zone)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="px-2.5 py-1.5 text-muted-foreground">{t("status.noZones")}</p>
+            )}
+            <Link
+              to={`?settings=${CLOCK_SETTINGS}`}
+              onClick={close}
+              className="mt-1 block rounded-lg border-t border-border px-2.5 pt-2 pb-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              {t("status.editZones")}
+            </Link>
+          </section>
         </div>
       )}
     </span>
@@ -209,15 +283,12 @@ export function StatusBar() {
   return (
     <footer className="flex h-[60px] min-w-0 shrink-0 items-center gap-3 border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
       <span className="flex min-w-0 items-center gap-2">
-        <span aria-hidden className="shrink-0 text-xl leading-none">
-          🧝
-        </span>
-        <span className="truncate text-foreground">Heinzelmännchen</span>
+        {/* The branding is the sidebar's; here only the version, which opens what changed. */}
         {info.data && (
           <Link
             to="?panel=changelog"
             title={t("account.changelog")}
-            className="shrink-0 rounded px-1 text-ui-sm hover:bg-accent/60 hover:text-foreground max-sm:hidden"
+            className="shrink-0 rounded px-1 text-ui-sm hover:bg-accent/60 hover:text-foreground"
           >
             v{info.data.version}
           </Link>

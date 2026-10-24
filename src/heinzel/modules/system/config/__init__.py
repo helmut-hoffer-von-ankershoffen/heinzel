@@ -6,7 +6,13 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import ConfigEditor, Module
-from heinzel.modules.system.config._models import ConfigFileInfo, ConfigReport, SettingInfo
+from heinzel.modules.system.config._models import (
+    ConfigFileInfo,
+    ConfigReport,
+    ConfigRevealed,
+    RevealScope,
+    SettingInfo,
+)
 from heinzel.modules.system.config._render import render_report
 from heinzel.modules.system.config._service import ConfigService, Scope
 
@@ -58,4 +64,19 @@ def unset(service: ConfigService, key: Key, scope: ScopeOption = "user") -> Path
     return service.unset(key, scope)
 
 
-__all__ = ["ConfigFileInfo", "ConfigReport", "ConfigService", "SettingInfo", "module"]
+# Opening a window is for the person at this machine: the CLI, or the web app behind its token. Not for the
+# unauthenticated REST head, which any web page can reach, nor for an agent over MCP.
+@module.operation(read_only=False, heads={"cli", "web"})
+def reveal(
+    service: ConfigService,
+    scope: Annotated[RevealScope, Field(description="Which configuration file: site, user or project.")],
+) -> ConfigRevealed:
+    """Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.
+
+    A file that doesn't exist yet is shown by its nearest existing folder. On Linux without a desktop session nothing
+    opens and the message names the file.
+    """
+    return service.reveal(scope)
+
+
+__all__ = ["ConfigFileInfo", "ConfigReport", "ConfigRevealed", "ConfigService", "SettingInfo", "module"]

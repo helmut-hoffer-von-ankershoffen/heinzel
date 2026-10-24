@@ -123,7 +123,7 @@ function TeamNodeView({ data }: NodeProps<TeamFlowNode>) {
           to={`?chat-context=${encodeURIComponent(`heinzel:${heinzelId(node.id)}`)}`}
           aria-label={t("teamGraph.ask", { label: node.label })}
           title={t("teamGraph.ask", { label: node.label })}
-          className="nodrag nopan mr-1.5 flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/50"
+          className="nodrag nopan mr-1.5 flex size-7 shrink-0 items-center justify-center rounded-md text-icon outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary/50"
         >
           <MessageSquare aria-hidden className="size-4" />
         </Link>

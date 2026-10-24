@@ -17,7 +17,7 @@ describe("Shell", () => {
     const { container } = renderAt("/doctor"); // Home is the chat itself, so it has no chat sidebar
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
     const navigation = screen.getByRole("navigation", { name: "Main" });
-    for (const name of ["Workflow", "Org chart", "Team roster", "Asset types", "Assets", "Doctor"]) {
+    for (const name of ["Workflow", "Org chart", "Team roster", "Asset types", "Assets"]) {
       expect(await within(navigation).findByRole("link", { name })).toBeInTheDocument();
     }
     expect(await within(navigation).findByRole("link", { name: "Weekly digest" })).toHaveAttribute(
@@ -36,7 +36,8 @@ describe("Shell", () => {
     const user = userEvent.setup();
     renderAt("/");
     const navigation = screen.getByRole("navigation", { name: "Main" });
-    expect(await within(navigation).findByRole("link", { name: "Doctor" })).toBeInTheDocument();
+    expect(await within(navigation).findByRole("link", { name: "Team roster" })).toBeInTheDocument();
+    expect(within(navigation).queryByRole("link", { name: "Doctor" })).not.toBeInTheDocument(); // hz itself: account menu
     expect(within(navigation).getByRole("link", { name: "Team roster" })).toBeInTheDocument();
     expect(await within(navigation).findByRole("link", { name: "Weekly digest" })).toBeInTheDocument();
     for (const name of ["Workflow", "Org chart", "Asset types", "Assets"]) {
@@ -75,9 +76,9 @@ describe("Shell", () => {
     mockApi(answers);
     const user = userEvent.setup();
     renderAt("/doctor");
-    await user.click(screen.getAllByRole("button", { name: "Collapse the chat" })[0] as HTMLElement);
+    await user.click(screen.getAllByRole("button", { name: "Close the chat" })[0] as HTMLElement);
     expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Open the chat" }));
+    await user.click(screen.getByRole("button", { name: "Chat with your Heinzelmännchen" }));
     expect(screen.getByRole("complementary", { name: "Chat" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
     expect(screen.getByRole("button", { name: "Expand navigation" })).toHaveAttribute("aria-expanded", "false");

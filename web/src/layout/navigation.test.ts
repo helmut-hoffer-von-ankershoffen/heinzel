@@ -33,7 +33,6 @@ describe("visibleSections", () => {
       "nav.teamGraph",
       "nav.organisation",
       "nav.team",
-      "nav.doctor",
     ]);
   });
 });

@@ -1,10 +1,11 @@
 // What a chat shows wherever it is (Home, the right sidebar): the messages, the answer as it streams with the tools
 // it calls, every proposed action as a card that runs only on Confirm, the costs, and the composer.
-import { Check, Send, X } from "lucide-react";
+import { Check, Info, Send, X } from "lucide-react";
 import { type FormEvent, type RefObject, useId, useState } from "react";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
 import { useConfig } from "@/api/queries";
 import { CopyCommand } from "@/components/common";
+import { Prose } from "@/components/Prose";
 import { Button } from "@/components/ui/button";
 import { format, t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -100,7 +101,7 @@ function MessageItem({ message }: { message: SchemaChatMessage }) {
           )}
         </>
       ) : (
-        <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
+        <Prose>{message.text}</Prose>
       )}
       {!user && (
         <>
@@ -121,13 +122,20 @@ export function Costs({ chat, className }: { chat: Chat; className?: string }) {
   };
   const message = chat.session?.costs.message_max_usd ?? value("system.runner", "ask_max_usd");
   const session = chat.session?.costs.session_max_usd ?? value("system.runner.chat", "session_max_usd");
+  const values = {
+    message: message == null ? "…" : format.usd(message),
+    session: session == null ? "…" : format.usd(session),
+    spent: format.usd(chat.session?.costs.spent_usd ?? 0),
+  };
+  const full = t("chat.cost", values);
+  // One short line; the whole explanation is the info icon's tooltip, and read out to screen readers.
   return (
-    <p className={cn("text-xs text-muted-foreground", className)}>
-      {t("chat.cost", {
-        message: message == null ? "…" : format.usd(message),
-        session: session == null ? "…" : format.usd(session),
-        spent: format.usd(chat.session?.costs.spent_usd ?? 0),
-      })}
+    <p className={cn("flex items-center gap-1 text-xs text-muted-foreground", className)}>
+      <span className="truncate">{t("chat.costShort", values)}</span>
+      <span title={full} className="inline-flex shrink-0 cursor-help text-icon">
+        <Info aria-hidden className="size-3.5" />
+        <span className="sr-only">{full}</span>
+      </span>
     </p>
   );
 }
@@ -158,11 +166,7 @@ export function Conversation({ chat, empty }: { chat: Chat; empty?: string }) {
             <p className="whitespace-pre-wrap">{chat.live.message}</p>
           </li>
           <li role="status" className="mr-4 py-1 text-sm">
-            {chat.live.text ? (
-              <p className="whitespace-pre-wrap leading-relaxed">{chat.live.text}</p>
-            ) : (
-              t("chat.thinking")
-            )}
+            {chat.live.text ? <Prose>{chat.live.text}</Prose> : t("chat.thinking")}
             {chat.live.tools.length > 0 && (
               <p className="mt-1 text-xs text-muted-foreground">
                 {t("chat.tools", { tools: chat.live.tools.map((name) => name.replace(/^mcp__hz__/, "")).join(", ") })}
@@ -216,7 +220,7 @@ export function Composer({
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) void submit(event);
         }}
         placeholder={t("chat.placeholder")}
-        className="min-h-9 flex-1 resize-none rounded-md border border-border bg-background px-2 py-1 text-sm"
+        className="min-h-9 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
       />
       <Button
         type="submit"

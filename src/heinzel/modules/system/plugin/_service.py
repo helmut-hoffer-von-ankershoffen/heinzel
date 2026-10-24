@@ -32,8 +32,10 @@ from heinzel.kernel import (
     Installation,
     LayerLet,
     ModuleRecord,
+    OperationLet,
     PlaybookLet,
     ProviderLet,
+    ThemeLet,
     subprocess_environment,
 )
 from heinzel.modules.system._github import get_json
@@ -44,6 +46,7 @@ from heinzel.modules.system.plugin._models import (
     PluginChange,
     PluginEvent,
     PluginInfo,
+    PluginKind,
     PluginLayer,
     PluginSearch,
     PluginSettings,
@@ -59,6 +62,7 @@ from heinzel.modules.system.plugin._sources import (
     from_pypi,
     git_credentials,
     github_getter,
+    installed_repository_url,
     parse,
     pypi_get,
     repository_url,
@@ -115,6 +119,21 @@ def distributions_in_spec(spec: str) -> set[str]:
     return names
 
 
+TEMPLATE_OPERATIONS = frozenset({"info"})
+"""Operations every plugin scaffolded from the template has (`hz <name> info`): no feature of its own."""
+
+
+def plugin_kinds(*, capabilities: bool, themes: bool, features: bool, playbooks: bool) -> list[PluginKind]:
+    """What a plugin is, in the order `PluginInfo.kinds` documents: connector, theme, capability, playbook."""
+    flags: dict[PluginKind, bool] = {
+        "connector": capabilities,
+        "theme": themes,
+        "capability": features,
+        "playbook": playbooks,
+    }
+    return [kind for kind, has in flags.items() if has]
+
+
 def short_name(distribution: str) -> str:
     """`heinzel-clock` → `clock`."""
     return canonicalize_name(distribution).removeprefix(PREFIX)
@@ -161,10 +180,16 @@ class PluginService:
             origin = mine[0].origin if mine else None
             homepage = origin.url if origin else None
             kind, url, revision = _source_of(dist, homepage)
+            lets = [let for record in mine for let in record.module.lets]
+            capabilities = sorted({f"{let.adapter}:{let.capability}" for let in lets if isinstance(let, ProviderLet)})
+            themes = sorted({let.name for let in lets if isinstance(let, ThemeLet)})
+            playbooks = [r.qualname for r in mine if any(isinstance(let, PlaybookLet) for let in r.module.lets)]
+            features = any(isinstance(let, OperationLet) and let.name not in TEMPLATE_OPERATIONS for let in lets)
             plugins.append(
                 PluginInfo(
                     distribution=origin.distribution if origin else (dist.name if dist else name),
-                    version=origin.version if origin else (dist.version if dist else "unknown"),
+                    # The metadata installed now: the kernel read its origin at start, before an upgrade replaced it.
+                    version=dist.version if dist else (origin.version if origin else "unknown"),
                     modules=[r.qualname for r in mine],
                     name=short_name(name),
                     summary=str(dist.metadata.get("Summary") or "") if dist else "",
@@ -181,15 +206,15 @@ class PluginService:
                         for let in record.module.lets
                         if isinstance(let, LayerLet)
                     ],
-                    capabilities=sorted(
-                        {
-                            f"{let.adapter}:{let.capability}"
-                            for record in mine
-                            for let in record.module.lets
-                            if isinstance(let, ProviderLet)
-                        }
+                    capabilities=capabilities,
+                    playbooks=playbooks,
+                    themes=themes,
+                    kinds=plugin_kinds(
+                        capabilities=bool(capabilities),
+                        themes=bool(themes),
+                        features=features,
+                        playbooks=bool(playbooks),
                     ),
-                    playbooks=[r.qualname for r in mine if any(isinstance(let, PlaybookLet) for let in r.module.lets)],
                 )
             )
         return plugins
@@ -733,8 +758,9 @@ def _source_of(
     subdirectory = str(data.get("subdirectory") or "") or None
     if vcs := cast("dict[str, Any] | None", data.get("vcs_info")):
         commit = str(vcs.get("commit_id") or "") or None
-        ref = str(vcs.get("requested_revision") or "") or commit
-        return "git", browser_url(url, ref, subdirectory), commit
+        # The commit before a requested branch, which may have moved since: the link opens the code installed.
+        ref = commit or str(vcs.get("requested_revision") or "") or None
+        return "git", installed_repository_url(url, ref, subdirectory), commit
     if url is not None and url.startswith("file:"):
         return "path", None, None
     return None, browser_url(url), None

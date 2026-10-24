@@ -31,9 +31,22 @@
   --row: 36px;
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
+  /* Every other corner follows the theme's two radii (`radius_control`, `radius`) by ratio, so `rounded`,
+     `rounded-sm`, `-md` and `-2xl` change with a theme too: 0.5rem gives Tailwind's 0.125, 0.25 and 0.375rem, 0.75rem
+     its 1rem and 1.5rem. `rounded-full` stays a pill. */
+  --radius-xs: calc(var(--radius-lg) * 0.25);
+  --radius: calc(var(--radius-lg) * 0.5);
+  --radius-sm: calc(var(--radius-lg) * 0.5);
+  --radius-md: calc(var(--radius-lg) * 0.75);
+  --radius-2xl: calc(var(--radius-xl) * 4 / 3);
+  --radius-3xl: calc(var(--radius-xl) * 2);
   --heading-tracking: 0;
   --color-accent-foreground: #1a1a1a;
   --color-icon: #5c5c5c;
+  /* A switch that is on; white knob on it in both modes. */
+  --color-switch: #2f7bf6;
+  /* A theme's soft tint at the top of the main area (`main_tint`, ADR 0044); none by default. */
+  --color-main-tint: transparent;
 }
 
 .dark {

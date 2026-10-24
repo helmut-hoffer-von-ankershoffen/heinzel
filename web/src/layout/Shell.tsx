@@ -1,6 +1,8 @@
-// Three panes at full height: navigation on the left, the screen in the middle, the chat on the right (ADR 0039).
-import { useCallback, useEffect, useState } from "react";
+// Navigation on the left, the screen in the middle, and one panel with the chat and the terminal (ADR 0039, 0045):
+// beside the screen when the window leaves it at least 30rem, below it otherwise; never both at once.
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useSearchParams } from "react-router";
+import { ChatProvider } from "@/chat/ChatContext";
 import { t } from "@/i18n";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
@@ -46,21 +48,55 @@ function useRemembered(
   return [open, update];
 }
 
+/** The panel's width beside the screen (`w-96`) and the least the screen keeps next to it, in rem. */
+const PANEL_REM = 24;
+const MAIN_REM = 30;
+
+/** Whether the panel fits beside the screen in `area`: the area leaves the screen at least 30rem next to it. */
+export function fitsBeside(areaPx: number, remPx: number): boolean {
+  return areaPx >= (PANEL_REM + MAIN_REM) * remPx;
+}
+
+/** The width of `ref`'s element as it changes; the window's until it is measured (and where nothing measures). */
+function useWidth(ref: RefObject<HTMLElement | null>): number {
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const element = ref.current;
+    const measure = () => setWidth(element?.getBoundingClientRect().width || window.innerWidth);
+    measure();
+    window.addEventListener("resize", measure);
+    const observer = typeof ResizeObserver === "undefined" || !element ? null : new ResizeObserver(measure);
+    if (element) observer?.observe(element);
+    return () => {
+      window.removeEventListener("resize", measure);
+      observer?.disconnect();
+    };
+  }, [ref]);
+  return width;
+}
+
 export function Shell() {
-  // Narrow windows start with the navigation as a rail and the chat closed, so the screen keeps its room.
+  return (
+    <ChatProvider>
+      <Layout />
+    </ChatProvider>
+  );
+}
+
+function Layout() {
+  // Narrow windows start with the navigation as a rail, so the screen keeps its room.
   const [navOpen, setNavOpen] = useRemembered("hz.nav.open", () => window.innerWidth >= 1024);
-  const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => window.innerWidth >= 768);
+  const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalFull, setTerminalFull] = useState(false);
-  // Getting narrower folds the panes; getting wider leaves them as the person set them.
+  // Getting narrower folds the navigation; getting wider leaves it as the person set it. The chat moves below instead.
   useEffect(() => {
     const fold = () => {
       if (window.innerWidth < 1024) setNavOpen(false);
-      if (window.innerWidth < 768) setChatOpen(false);
     };
     window.addEventListener("resize", fold);
     return () => window.removeEventListener("resize", fold);
-  }, [setNavOpen, setChatOpen]);
+  }, [setNavOpen]);
   // A command chip's "Run" opens the terminal under the chat.
   useEffect(() => {
     const open = () => {
@@ -72,8 +108,15 @@ export function Shell() {
   }, [setChatOpen]);
   const [searchOpen, setSearchOpen] = useState(false);
   useNoticeStream();
-  // Home is the chat itself (ADR 0045); every other screen has it in the right column.
+  // Home is where the chat is (ADR 0045): going there opens it, beside Today or below it.
   const home = useLocation().pathname === "/";
+  useEffect(() => {
+    if (home) setChatOpen(true);
+  }, [home, setChatOpen]);
+  const area = useRef<HTMLDivElement>(null);
+  const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const beside = fitsBeside(useWidth(area), rem);
+  const full = terminalOpen && terminalFull;
   // Settings is a dialog over the screen, open while the URL has `?settings=<section>`, so links can point into it.
   const [params, setParams] = useSearchParams();
   const settings = params.get("settings");
@@ -111,7 +154,7 @@ export function Shell() {
       <aside
         aria-label={t("nav.label")}
         className={cn(
-          "shrink-0 border-r border-border/60 bg-sidebar transition-[width] duration-200",
+          "shrink-0 border-r border-border bg-sidebar transition-[width] duration-200",
           navOpen ? "w-64" : "w-14",
         )}
       >
@@ -129,57 +172,59 @@ export function Shell() {
           }
         />
       </aside>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar
-          chatOpen={chatOpen}
-          onToggleChat={() => setChatOpen((open) => !open)}
-          terminalOpen={terminalOpen}
-          onToggleTerminal={() => {
-            // The terminal opens under the chat, each taking half of the right column.
-            if (!terminalOpen) setChatOpen(true);
-            setTerminalOpen((open) => !open);
-          }}
-        />
-        <main id="content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto">
-          <Outlet />
-        </main>
-        <StatusBar />
-      </div>
-      {((chatOpen && !home) || terminalOpen) && (
-        // The right column: the chat above, the terminal below, each alone when the other is closed. In full screen
-        // the terminal covers the screen and the chat, which stays mounted with its conversation.
-        <div
-          className={cn(
-            "flex flex-col border-l border-border bg-background",
-            terminalOpen && terminalFull
-              ? cn("absolute inset-y-0 right-0 z-30", navOpen ? "left-64" : "left-14")
-              : "w-96 shrink-0 max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:z-30 max-md:w-[min(24rem,100vw)] max-md:shadow-2xl",
-          )}
-        >
-          {chatOpen && !home && (
-            <aside
-              aria-label={t("chat.title")}
-              className={cn("min-h-0 flex-1", terminalOpen && terminalFull && "hidden")}
-            >
-              <ChatPanel onCollapse={() => setChatOpen(false)} />
-            </aside>
-          )}
-          {terminalOpen && (
-            <div
-              className={cn("min-h-0", chatOpen && !home && !terminalFull ? "h-1/2 border-t border-border" : "flex-1")}
-            >
-              <TerminalPanel
-                full={terminalFull}
-                onToggleFull={() => setTerminalFull((full) => !full)}
-                onClose={() => {
-                  setTerminalOpen(false);
-                  setTerminalFull(false);
-                }}
-              />
-            </div>
-          )}
+      <div ref={area} className={cn("relative flex min-w-0 flex-1", beside ? "flex-row" : "flex-col")}>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <TopBar
+            chatOpen={chatOpen}
+            onToggleChat={() => setChatOpen((open) => !open)}
+            terminalOpen={terminalOpen}
+            onToggleTerminal={() => setTerminalOpen((open) => !open)}
+          />
+          <main
+            id="content"
+            tabIndex={-1}
+            className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem)]"
+          >
+            <Outlet />
+          </main>
+          {beside && <StatusBar />}
         </div>
-      )}
+        {(chatOpen || terminalOpen) && (
+          // One panel: the chat on top, the terminal under it, each alone when the other is closed. Beside the screen
+          // it is a column; below it, the same stack across the width. In full screen the terminal covers the screen
+          // and the panel, and the chat stays mounted with its conversation.
+          <div
+            data-placement={beside ? "beside" : "below"}
+            className={cn(
+              "flex flex-col bg-background",
+              full
+                ? "absolute inset-0 z-30"
+                : beside
+                  ? "w-96 shrink-0 border-l border-border"
+                  : "h-[min(36rem,55%)] shrink-0 border-t border-border",
+            )}
+          >
+            {chatOpen && (
+              <aside aria-label={t("chat.title")} className={cn("min-h-0 flex-1", full && "hidden")}>
+                <ChatPanel onCollapse={() => setChatOpen(false)} />
+              </aside>
+            )}
+            {terminalOpen && (
+              <div className={cn("min-h-0", chatOpen && !full ? "h-1/2 border-t border-border" : "flex-1")}>
+                <TerminalPanel
+                  full={terminalFull}
+                  onToggleFull={() => setTerminalFull((value) => !value)}
+                  onClose={() => {
+                    setTerminalOpen(false);
+                    setTerminalFull(false);
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        )}
+        {!beside && <StatusBar />}
+      </div>
       {params.get("panel") === "notifications" && (
         <NotificationPanel
           navOpen={navOpen}

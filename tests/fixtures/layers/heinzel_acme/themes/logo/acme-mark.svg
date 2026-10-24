@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Acme">
+  <!-- A made-up company's square mark for tests: the anvil peak on a teal tile. -->
+  <rect width="120" height="120" rx="24" fill="#0f766e"/>
+  <path d="M24 94 L60 22 L96 94 L78 94 L60 58 L42 94 Z" fill="#fdfcf9"/>
+  <rect x="18" y="88" width="84" height="12" rx="3" fill="#fdfcf9"/>
+  <rect x="48" y="70" width="24" height="8" rx="2" fill="#fdfcf9"/>
+</svg>

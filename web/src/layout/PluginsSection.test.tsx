@@ -118,7 +118,7 @@ describe("PluginsSection", () => {
       expect(within(dialog).getByText(text)).toBeInTheDocument();
     }
     expect(within(dialog).getByText(/private repository/)).toBeInTheDocument();
-    expect(within(dialog).getByRole("link", { name: "from github.com/acme-example/heinzel-crm" })).toHaveAttribute(
+    expect(within(dialog).getByRole("link", { name: "github.com/acme-example/heinzel-crm" })).toHaveAttribute(
       "href",
       candidate.url,
     );
@@ -186,8 +186,9 @@ describe("PluginsSection", () => {
     show();
     expect(await screen.findByRole("button", { name: "Enable heinzel-clock" })).toBeInTheDocument();
     expect(screen.getByText("Disabled")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "from github.com/helmut-hoffer-von-ankershoffen/heinzel" }),
-    ).toHaveAttribute("href", installed.source_url);
+    expect(screen.getByRole("link", { name: "github.com/helmut-hoffer-von-ankershoffen/heinzel" })).toHaveAttribute(
+      "href",
+      installed.source_url,
+    );
   });
 });
