@@ -18,7 +18,7 @@ flowchart LR
     end
     subgraph Modules
         System["system (built-in)<br/>├ agent ├ changelog ├ config<br/>├ daemon └ doctor └ plugin"]
-        Workflow["workflow (built-in)<br/>contracts → daemon jobs"]
+        Heinzel["heinzel (built-in)<br/>your Heinzelmännchen: contracts → daemon jobs"]
         Clock["clock · github · atlassian · google · zoom<br/>(first-party plugins)"]
         Ext["heinzel-*<br/>(external plugins)"]
     end
@@ -51,14 +51,14 @@ the kinds it understands.
 | `HealthLet` | `@module.health` returning `Check`s | `hz system doctor` |
 | `CredentialLet` | `module.credential(name, purpose=...)` | `Credentials` (injected) and `hz system credential` with its doctor check ([ADR 0030](adr/0030-credentials-live-in-the-os-keychain.md)) |
 | `SetupLet` | `@module.setup(required=False)`, asking through an injected `Prompter` and writing through `ConfigEditor` and `Credentials` | the CLI head: `hz setup [MODULE]` ([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)) |
-| `PlaybookLet` | `module.playbook(summary, assets=..., templates=..., defaults=...)`: asset types with discovery hints, template contracts, recommended settings | `workflow`: `hz heinzel playbooks`, `discover`, `new --template`; the setup step it declares ([ADR 0037](adr/0037-plugins-bring-playbooks.md)) |
+| `PlaybookLet` | `module.playbook(summary, assets=..., templates=..., defaults=...)`: asset types with discovery hints, template contracts, recommended settings | `heinzel`: `hz heinzel playbooks`, `discover`, `new --template`; the setup step it declares ([ADR 0037](adr/0037-plugins-bring-playbooks.md)) |
 | `LayerLet` | `module.layer(parent=..., site=..., roles=...)`: the plugin sits in a company's tree, under its parent layer and at a site layer | the kernel: `Kernel.layers()` checks the tree, `Kernel.layer_stack()` stacks your layers general to specific, afresh on every call; `system.layer`: `hz system layer list`, `show`, doctor ([ADR 0040](adr/0040-layers-and-playbooks-are-plugins.md)) |
 | `JobLet` | `@module.job(schedule="0 9 * * MON")` | `hz system daemon tick`, run by launchd or systemd ([ADR 0020](adr/0020-daemon-head.md)) |
 | `ProviderLet` | `@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter class; `hosts=` takes a function of the module's settings when they decide the hosts | the kernel's capability bindings and `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
 | `RequirementLet` | `Module(..., requires=["tracker:read"])` (read only); operations and jobs take `requires=[...]`, and a read-only operation that degrades without its own takes `optional=True` | the kernel's capability handles and the doctor check of `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
 
 New kinds of lets (watchers) extend Heinzelmännchen without changing existing heads; see
-[ADR 0010](adr/0010-towards-a-reactive-workflow-engine.md). Workflow contracts are data, not lets: the `workflow`
+[ADR 0010](adr/0010-towards-a-reactive-workflow-engine.md). Contracts are data, not lets: the `heinzel`
 module reads them and provides `CompiledJobs`, which the kernel compiles afresh whenever the daemon lists its jobs and
 runs beside the declared `JobLet`s; each compiled job reads through `Kernel.handle_for` as the requester its contract
 declares ([ADR 0021](adr/0021-workflow-contracts.md)).
@@ -110,6 +110,12 @@ expert on`), in every head.
 shell completion and the web app's navigation and search list only everyday operations, and `hz --help` ends with how
 many are hidden. Hidden is never disabled: every command runs and answers `--help`, and MCP and REST list every
 operation ([ADR 0041](adr/0041-expert-mode-newcomers-see-the-everyday-commands.md)).
+
+**Renames.** A renamed module keeps its old name working for one minor release
+([ADR 0051](adr/0051-the-workflow-module-becomes-the-heinzel-module.md)): `Module(..., renamed_from="workflow")` reads
+the old settings table and `HZ_<OLD>__*` variables beneath the new ones and lets the daemon run a job asked for by its
+old id; `@module.operation(aliases=["workflow run"])` keeps an old command path as a hidden CLI command that names the
+new one on stderr, and as an MCP tool marked deprecated.
 
 **Configuration.** Layered TOML files (site, user, project `hz.toml`, `$HZ_CONFIG`) under environment variables;
 the `[hz]` table holds kernel settings, `[capabilities]` the capability bindings, `[<module>]` tables module settings

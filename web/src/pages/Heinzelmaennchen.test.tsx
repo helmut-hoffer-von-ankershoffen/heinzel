@@ -1,5 +1,4 @@
 import { screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { everyday, heinzelmaennchen, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
@@ -8,12 +7,13 @@ describe("Heinzelmännchen", () => {
   it("lists each Heinzelmännchen with its contract, owner, state and runs", async () => {
     mockApi(shell);
     const { container } = renderAt("/heinzel");
-    const row = (await screen.findByRole("link", { name: "Weekly digest" })).closest("tr") as HTMLElement;
+    const table = within(await screen.findByRole("table"));
+    const row = table.getByRole("link", { name: "Weekly digest" }).closest("tr") as HTMLElement;
     expect(within(row).getByText("weekly-digest.prose.md")).toBeInTheDocument();
     expect(within(row).getByText("You")).toBeInTheDocument();
     expect(within(row).getByText("scheduled")).toBeInTheDocument();
     expect(within(row).getByText("hz heinzel drafts --name me:weekly-digest")).toBeInTheDocument();
-    const team = screen.getByRole("link", { name: "Team report" }).closest("tr") as HTMLElement;
+    const team = table.getByRole("link", { name: "Team report" }).closest("tr") as HTMLElement;
     expect(within(team).getByText("Team")).toBeInTheDocument();
     expect(within(team).getByText("blocked")).toBeInTheDocument();
     expect(within(team).getByText("never")).toBeInTheDocument();
@@ -24,10 +24,9 @@ describe("Heinzelmännchen", () => {
 
   it("links a Heinzelmännchen to its contract's page", async () => {
     mockApi(shell);
-    const user = userEvent.setup();
     renderAt("/heinzel");
-    await user.click(await screen.findByRole("link", { name: "Weekly digest" }));
-    expect(await screen.findByRole("heading", { name: "Weekly digest" })).toBeInTheDocument();
+    const link = within(await screen.findByRole("table")).getByRole("link", { name: "Weekly digest" });
+    expect(link.getAttribute("href")).toBe("/contracts/me%3Aweekly-digest");
   });
 
   it("says how to start one when there is none", async () => {

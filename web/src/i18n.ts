@@ -218,7 +218,6 @@ const en = {
   "heinzel.byHand": "when you wake it",
   "heinzel.drafts": "Drafts",
   "heinzel.noDrafts": "none yet",
-  "heinzel.promise": "Promise: {state}",
   "contract.schedule": "Schedule",
   "contract.byHand": "by hand only",
   "contract.ready": "ready",

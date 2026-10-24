@@ -77,11 +77,6 @@ export function Heinzelmaennchen() {
                           <Link to={contractPath(qualified)} className="font-medium underline-offset-2 hover:underline">
                             {heinzel.title ?? heinzel.name}
                           </Link>
-                          {heinzel.promise && (
-                            <p className="text-xs text-muted-foreground">
-                              {t("heinzel.promise", { state: heinzel.promise })}
-                            </p>
-                          )}
                         </td>
                         <td className="p-2">
                           <code className="font-mono text-xs" title={heinzel.file}>

@@ -1,6 +1,7 @@
-# Workflows
+# Heinzelmännchen
 
-A **contract** keeps one thing true: "keep this asset true, given these inputs". It is a `<name>.prose.md` file whose
+Your **Heinzelmännchen** are what hz is: one for each contract you have, yours or your team's; `hz heinzel
+list` shows them, and the web app's Heinzelmännchen page too. A **contract** keeps one thing true: "keep this asset true, given these inputs". It is a `<name>.prose.md` file whose
 YAML frontmatter says what it reads and when it runs, and whose Markdown body says what the asset must be. You write
 it, `hz heinzel check` checks it, `hz heinzel wake` drafts it, and your daemon drafts it on its schedule. Drafts are
 saved locally; nothing is published by itself.
@@ -10,8 +11,8 @@ output depends on it, and `hz heinzel graph` draws the graph those inputs and ou
 contract. A contract runs on its schedule or when you run it; later, also when one of its inputs changes.
 
 This page is the journey from nothing to a scheduled contract, then the reference. The decisions behind it are in
-[ADR 0021](adr/0021-workflow-contracts.md); every command and option is in [CLI_REFERENCE.md](CLI_REFERENCE.md#hz-workflow),
-every setting in [CONFIGURATION.md](CONFIGURATION.md#workflow).
+[ADR 0021](adr/0021-workflow-contracts.md); every command and option is in [CLI_REFERENCE.md](CLI_REFERENCE.md#hz-heinzel),
+every setting in [CONFIGURATION.md](CONFIGURATION.md#heinzel).
 
 ## What happens to a contract
 

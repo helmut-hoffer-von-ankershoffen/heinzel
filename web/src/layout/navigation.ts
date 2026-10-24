@@ -1,11 +1,11 @@
 // The navigation tree: sections and their screens. Contracts add one entry each, from `hz heinzel list`.
 // A screen names the operation it shows; outside expert mode only screens of everyday operations are listed, the
 // same split `hz --help` makes (ADR 0041). A screen that isn't listed still opens by its URL.
-import { Boxes, type LucideIcon, Network, Shapes, Share2, Users, Workflow } from "lucide-react";
+import { Bot, Boxes, type LucideIcon, Network, Shapes, Share2, Users, Workflow } from "lucide-react";
 import type { SchemaExpertMode } from "@/api/client";
 import type { MessageKey } from "@/i18n";
 
-/** An operation as `hz system expert` names it: its module's qualified name and its own, e.g. `workflow:graph`. */
+/** An operation as `hz system expert` names it: its module's qualified name and its own, e.g. `heinzel:graph`. */
 export type OperationKey = `${string}:${string}`;
 export type NavItem = { to: string; label: MessageKey; icon: LucideIcon; operation?: OperationKey };
 export type NavSection = {
@@ -21,10 +21,11 @@ export const CONTRACTS_SECTION: MessageKey = "nav.contracts";
 // The navigation holds only what people work with to get their work done. hz itself (the doctor, daemon jobs,
 // plugins) lives in the account menu and in Settings; its screens still open by URL (`/doctor`).
 export const sections: NavSection[] = [
+  { label: "nav.heinzelmaennchen", to: "/heinzel", icon: Bot, operation: "heinzel:list", items: [] },
   {
     label: CONTRACTS_SECTION,
     items: [
-      { to: "/contracts", label: "nav.graph", icon: Workflow, operation: "workflow:graph" },
+      { to: "/contracts", label: "nav.graph", icon: Workflow, operation: "heinzel:graph" },
       { to: "/graph", label: "nav.teamGraph", icon: Share2, operation: "graph:graph" },
     ],
   },
@@ -39,8 +40,8 @@ export const sections: NavSection[] = [
   {
     label: "nav.inventory",
     items: [
-      { to: "/inventory/types", label: "nav.assetTypes", icon: Shapes, operation: "workflow:playbooks" },
-      { to: "/inventory/assets", label: "nav.assets", icon: Boxes, operation: "workflow:discover" },
+      { to: "/inventory/types", label: "nav.assetTypes", icon: Shapes, operation: "heinzel:playbooks" },
+      { to: "/inventory/assets", label: "nav.assets", icon: Boxes, operation: "heinzel:discover" },
     ],
   },
 ];

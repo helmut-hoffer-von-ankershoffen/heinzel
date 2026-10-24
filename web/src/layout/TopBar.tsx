@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 const screens: { path: string; title: MessageKey; command: string }[] = [
   { path: "/", title: "nav.home", command: "hz system info" },
   { path: "/settings", title: "nav.settings", command: "hz system config show" },
+  { path: "/heinzel", title: "nav.heinzelmaennchen", command: "hz heinzel list" },
   { path: "/contracts", title: "nav.graph", command: "hz heinzel graph" },
   { path: "/graph", title: "nav.teamGraph", command: "hz graph" },
   { path: "/org", title: "nav.orgChart", command: "hz org show" },

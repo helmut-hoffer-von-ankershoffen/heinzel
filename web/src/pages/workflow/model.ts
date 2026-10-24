@@ -5,8 +5,8 @@ import type {
   SchemaCandidate,
   SchemaCapabilityInfo,
   SchemaContractGraph,
-  SchemaContractSummary,
   SchemaDiscovery,
+  SchemaHeinzelSummary,
   SchemaPlaybookView,
   SchemaTemplateView,
 } from "@/api/client";
@@ -29,7 +29,7 @@ export type WorkflowNode =
       template: SchemaTemplateView;
       command: string;
     })
-  | (Base & { kind: "contract"; qualified: string; summary: SchemaContractSummary | null; errors: number })
+  | (Base & { kind: "contract"; qualified: string; summary: SchemaHeinzelSummary | null; errors: number })
   | (Base & { kind: "output"; ref: string; maintained: boolean; suggested: boolean; contract: string | null });
 
 export type WorkflowEdge = {
@@ -49,7 +49,7 @@ export type WorkflowInputs = {
   capabilities?: SchemaCapabilityInfo[];
   playbooks?: SchemaPlaybookView[];
   graph?: SchemaContractGraph;
-  contracts?: SchemaContractSummary[];
+  contracts?: SchemaHeinzelSummary[];
   discovery?: SchemaDiscovery;
 };
 
