@@ -478,7 +478,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `layer`: (expert) Show the layer plugins installed...
 * `modules`: (expert) List every module and the lets it...
 * `notify`: (expert) Pop up what deserves your...
-* `plugin`: (expert) Find, add, remove, list and...
+* `plugin`: (expert) Find, add, remove, enable,...
 * `release`: (expert) Ask where Heinzelmännchen was...
 * `runner`: Run bounded agent sessions with Claude...
 * `serve`: (expert) Serve every operation to coding...
@@ -1206,7 +1206,7 @@ $ hz system notify test [OPTIONS]
 
 ### `hz system plugin`
 
-(expert) Find, add, remove, list and scaffold plugins.
+(expert) Find, add, remove, enable, disable, list and scaffold plugins.
 
 **Usage**:
 
@@ -1220,15 +1220,19 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `add`: (expert) Add a plugin; adding one again...
-* `list`: (expert) List installed plugins and the...
+* `add`: (expert) Show what a plugin would install,...
+* `develop`: (expert) Add the plugin in a directory on...
+* `disable`: (expert) Switch a plugin off without...
+* `enable`: (expert) Switch a disabled plugin on again.
+* `history`: (expert) List plugin changes made on this...
+* `list`: (expert) List installed plugins, enabled...
 * `new`: (expert) Scaffold a plugin repository from...
 * `remove`: (expert) Remove a plugin.
 * `search`: (expert) Find plugins to install:...
 
 #### `hz system plugin add`
 
-(expert) Add a plugin; adding one again replaces the installed version.
+(expert) Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.
 
 **Usage**:
 
@@ -1238,7 +1242,84 @@ $ hz system plugin add [OPTIONS] {spec}
 
 **Arguments**:
 
-* `spec`: A first-party plugin by name (`clock`), or anything uv installs: a git URL (git+https://github.com/org/heinzel-x@v1.0.0), a local path or a package name.  [required]
+* `spec`: A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-&lt;name&gt; (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. Pass `requirement` from an earlier answer to install exactly what it showed.  [required]
+
+**Options**:
+
+* `--confirm / --no-confirm`: Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights.  [default: no-confirm]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin develop`
+
+(expert) Add the plugin in a directory on this machine, to try a plugin you are writing.
+
+**Usage**:
+
+```console
+$ hz system plugin develop [OPTIONS] {path}
+```
+
+**Arguments**:
+
+* `path`: The plugin&#x27;s checkout, e.g. `.` in a repository scaffolded by `new`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin disable`
+
+(expert) Switch a plugin off without removing it, in ` disabled_modules` of your user file.
+
+**Usage**:
+
+```console
+$ hz system plugin disable [OPTIONS] {distribution}
+```
+
+**Arguments**:
+
+* `distribution`: Distribution name, as `hz system plugin list` shows it.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin enable`
+
+(expert) Switch a disabled plugin on again.
+
+**Usage**:
+
+```console
+$ hz system plugin enable [OPTIONS] {distribution}
+```
+
+**Arguments**:
+
+* `distribution`: Distribution name, as `hz system plugin list` shows it.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin history`
+
+(expert) List plugin changes made on this machine, oldest first: what was installed, from where, by whom.
+
+**Usage**:
+
+```console
+$ hz system plugin history [OPTIONS]
+```
 
 **Options**:
 
@@ -1248,7 +1329,7 @@ $ hz system plugin add [OPTIONS] {spec}
 
 #### `hz system plugin list`
 
-(expert) List installed plugins and the modules they bring.
+(expert) List installed plugins, enabled or not, with their source and the modules and adapters they bring.
 
 **Usage**:
 

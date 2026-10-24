@@ -44,6 +44,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restart hz ui to load changes a running server can't, such as an added plugin.
+         * @description The process runs `hz` again with the same port and token, so the page keeps working: poll an endpoint until it answers. A server that isn't `hz ui` (`make web-dev`) answers 400.
+         */
+        post: operations["web_restart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/agent/install": {
         parameters: {
             query?: never;
@@ -608,10 +628,74 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Add a plugin; adding one again replaces the installed version.
-         * @description Add a plugin; adding one again replaces the installed version.
+         * Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.
+         * @description Show what a plugin would install, then add it with `--confirm`; adding it again replaces it.
+         *
+         *     Without `confirm` it only reads PyPI or GitHub and answers what `requirement` would be installed, pinned to the
+         *     release or commit it read; with `confirm` it installs that and records it in the plugin history. Running servers
+         *     (`hz ui`, MCP) see the plugin after a restart (`restart_required`).
          */
         post: operations["system_plugin_add"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/plugin/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch a plugin off without removing it, in `[hz] disabled_modules` of your user file.
+         * @description Switch a plugin off without removing it, in `[hz] disabled_modules` of your user file.
+         */
+        post: operations["system_plugin_disable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/plugin/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Switch a disabled plugin on again.
+         * @description Switch a disabled plugin on again.
+         */
+        post: operations["system_plugin_enable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/plugin/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List plugin changes made on this machine, oldest first: what was installed, from where, by whom.
+         * @description List plugin changes made on this machine, oldest first: what was installed, from where, by whom.
+         */
+        get: operations["system_plugin_history"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -626,8 +710,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List installed plugins and the modules they bring.
-         * @description List installed plugins and the modules they bring.
+         * List installed plugins, enabled or not, with their source and the modules and adapters they bring.
+         * @description List installed plugins, enabled or not, with their source and the modules and adapters they bring.
          */
         get: operations["system_plugin_list"];
         put?: never;
@@ -1285,13 +1369,18 @@ export interface components {
              */
             name: string;
             /**
+             * Repository Url
+             * @description The repository `install_spec` installs from, as a browser opens it (`/tree/<ref>/<dir>` for a subdirectory); none when it names no https repository.
+             */
+            repository_url: string | null;
+            /**
              * Short Name
              * @description The name without `heinzel-`: its command group (`hz <short_name>`); for first-party plugins also what `hz system plugin add` takes.
              */
             short_name: string;
             /**
              * Source
-             * @description Where it was found: `first-party` (ships with Heinzelmännchen) or `github` (a repository with the topic heinzel-plugin).
+             * @description Where it was found: `first-party` (maintained with Heinzelmännchen) or `github` (a repository with the topic heinzel-plugin).
              * @enum {string}
              */
             source: "first-party" | "github";
@@ -3008,25 +3097,263 @@ export interface components {
             templates: components["schemas"]["TemplateView"][];
         };
         /**
+         * PluginCandidate
+         * @description What `hz system plugin add` would install: the code, where it comes from and who publishes it.
+         */
+        PluginCandidate: {
+            /**
+             * Distribution
+             * @description Distribution name, when it could be read before installing.
+             */
+            distribution: string | null;
+            /**
+             * First Party
+             * @description Whether it is maintained and released with Heinzelmännchen.
+             */
+            first_party: boolean;
+            /**
+             * Installed Version
+             * @description The version installed now, when this replaces it.
+             */
+            installed_version: string | null;
+            /**
+             * Private
+             * @description Whether the repository is private (read with your gh login); none when unknown.
+             */
+            private: boolean | null;
+            /**
+             * Publisher
+             * @description Who publishes it: the repository owner or the package's author.
+             */
+            publisher: string | null;
+            /**
+             * Requirement
+             * @description What is installed: pinned to the version or git commit read here wherever it could be. Pass it back as `spec` with `confirm` to install exactly what was shown.
+             */
+            requirement: string;
+            /**
+             * Revision
+             * @description The git commit that would be installed, for a git source.
+             */
+            revision: string | null;
+            /**
+             * Source
+             * @description `pypi` or `git`; `path` only for a first-party plugin in a checkout.
+             * @enum {string}
+             */
+            source: "pypi" | "git" | "path" | "unknown";
+            /**
+             * Spec
+             * @description What was asked for, as given.
+             */
+            spec: string;
+            /**
+             * Summary
+             * @description What it does, in its authors' words; empty when unknown.
+             */
+            summary: string;
+            /**
+             * Url
+             * @description Where to read about it: its repository or PyPI page.
+             */
+            url: string;
+            /**
+             * Version
+             * @description The version that would be installed, when known.
+             */
+            version: string | null;
+            /**
+             * Warnings
+             * @description What could not be checked, e.g. metadata of a host other than GitHub.
+             */
+            warnings: string[];
+        };
+        /**
+         * PluginChange
+         * @description What a plugin change would do or did, and whether running servers must restart to see it.
+         */
+        PluginChange: {
+            /**
+             * Action
+             * @description `add`, `develop`, `remove`, `enable` or `disable`.
+             * @enum {string}
+             */
+            action: "add" | "develop" | "remove" | "enable" | "disable";
+            /** @description For `add`: what is installed, to show before confirming. */
+            candidate: components["schemas"]["PluginCandidate"] | null;
+            /**
+             * Distribution
+             * @description The plugin changed, when known.
+             */
+            distribution: string | null;
+            /**
+             * Done
+             * @description Whether it was carried out; false for `add` without `confirm`, which only shows.
+             */
+            done: boolean;
+            /**
+             * Next
+             * @description Commands to run next, e.g. the one that confirms.
+             */
+            next: string[];
+            /**
+             * Plugins
+             * @description The plugins installed afterwards (now, if not done).
+             */
+            plugins: components["schemas"]["PluginInfo"][];
+            /**
+             * Restart Required
+             * @description Whether a running `hz ui` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.
+             */
+            restart_required: boolean;
+        };
+        /**
+         * PluginEvent
+         * @description A plugin change as recorded in the history, one line of `plugins.jsonl` in the data directory.
+         */
+        PluginEvent: {
+            /**
+             * Action
+             * @description `add`, `develop`, `remove`, `enable` or `disable`.
+             * @enum {string}
+             */
+            action: "add" | "develop" | "remove" | "enable" | "disable";
+            /**
+             * At
+             * Format: date-time
+             * @description When it was carried out.
+             */
+            at: string;
+            /**
+             * Distribution
+             * @description The plugin changed, when known.
+             */
+            distribution: string | null;
+            /**
+             * Publisher
+             * @description Who publishes it, as shown before confirming.
+             */
+            publisher: string | null;
+            /**
+             * Requirement
+             * @description What was installed, exactly, for `add` and `develop`.
+             */
+            requirement: string | null;
+            /**
+             * Source
+             * @description Where it came from, for `add` and `develop`.
+             */
+            source: ("pypi" | "git" | "path" | "unknown") | null;
+            /**
+             * Version
+             * @description The version installed or removed, when known.
+             */
+            version: string | null;
+        };
+        /**
          * PluginInfo
-         * @description An installed plugin distribution and the modules it brings.
+         * @description An installed plugin, where it came from, and what it brings.
          */
         PluginInfo: {
+            /**
+             * Capabilities
+             * @description Adapters it brings, as `<adapter>:<capability>`, e.g. `github:tracker`.
+             */
+            capabilities?: string[];
             /**
              * Distribution
              * @description Distribution name, e.g. heinzel-clock.
              */
             distribution: string;
             /**
+             * Enabled
+             * @description Whether its modules are loaded; `hz system plugin disable` switches it off.
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Error
+             * @description Why it failed to load, if it did.
+             */
+            error?: string | null;
+            /**
+             * First Party
+             * @description Whether it is maintained and released with Heinzelmännchen (ADR 0017).
+             * @default false
+             */
+            first_party: boolean;
+            /**
+             * Homepage
+             * @description Its source repository, from its metadata.
+             */
+            homepage?: string | null;
+            /**
+             * Layers
+             * @description Layers its modules declare (ADR 0040).
+             */
+            layers?: components["schemas"]["PluginLayer"][];
+            /**
              * Modules
-             * @description Qualified names of the modules the plugin provides.
+             * @description Qualified names of the modules the plugin provides, enabled or not.
              */
             modules: string[];
+            /**
+             * Name
+             * @description The name without `heinzel-`: its command group (`hz <name>`).
+             */
+            name: string;
+            /**
+             * Playbooks
+             * @description Modules that bring a playbook (ADR 0037); empty while it is disabled.
+             */
+            playbooks?: string[];
+            /**
+             * Revision
+             * @description The git commit installed, for a git source.
+             */
+            revision?: string | null;
+            /**
+             * Source Kind
+             * @description Where it was installed from: PyPI, a git repository, a directory; none if unknown.
+             */
+            source_kind?: ("pypi" | "git" | "path") | null;
+            /**
+             * Source Url
+             * @description Where a browser shows its source: the git repository (with `/tree/<ref>/<subdirectory>` for a plugin in a subdirectory), or for PyPI its repository or PyPI page; https only, never with credentials; none for a directory or when unknown.
+             */
+            source_url?: string | null;
+            /**
+             * Summary
+             * @description What the plugin does, in its authors' words (its metadata).
+             * @default
+             */
+            summary: string;
             /**
              * Version
              * @description Installed version.
              */
             version: string;
+        };
+        /**
+         * PluginLayer
+         * @description A layer a plugin's module declares (ADR 0040).
+         */
+        PluginLayer: {
+            /**
+             * Module
+             * @description The layer's module name, e.g. `acme-payments`.
+             */
+            module: string;
+            /**
+             * Parent
+             * @description The layer above it; none for the root (the company).
+             */
+            parent: string | null;
+            /**
+             * Site
+             * @description The site layer it names, if any.
+             */
+            site: string | null;
         };
         /**
          * PluginSearch
@@ -3253,6 +3580,22 @@ export interface components {
              * @description As required, e.g. `tracker:read`.
              */
             requirement: string;
+        };
+        /**
+         * Restart
+         * @description The answer to `POST /api/restart`: the server stops and starts again on the same port with the same token.
+         */
+        Restart: {
+            /**
+             * Message
+             * @description What happens, for the person waiting.
+             */
+            message: string;
+            /**
+             * Restarting
+             * @description Always true: poll any endpoint until it answers again.
+             */
+            restarting: boolean;
         };
         /**
          * RunMeasure
@@ -3988,7 +4331,11 @@ export type SchemaOperationAudience = components['schemas']['OperationAudience']
 export type SchemaParticipant = components['schemas']['Participant'];
 export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
+export type SchemaPluginCandidate = components['schemas']['PluginCandidate'];
+export type SchemaPluginChange = components['schemas']['PluginChange'];
+export type SchemaPluginEvent = components['schemas']['PluginEvent'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
+export type SchemaPluginLayer = components['schemas']['PluginLayer'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaProfile = components['schemas']['Profile'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
@@ -3996,6 +4343,7 @@ export type SchemaRecommendationView = components['schemas']['RecommendationView
 export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
+export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSkill = components['schemas']['Skill'];
@@ -4052,6 +4400,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Profile"];
+                };
+            };
+        };
+    };
+    web_restart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Restart"];
                 };
             };
         };
@@ -4738,8 +5106,10 @@ export interface operations {
     system_plugin_add: {
         parameters: {
             query: {
-                /** @description A first-party plugin by name (`clock`), or anything uv installs: a git URL (git+https://github.com/org/heinzel-x@v1.0.0), a local path or a package name. */
+                /** @description A first-party plugin by name (`github`, `acme`), a PyPI package named heinzel-<name> (`heinzel-crm==1.2.0`), or a git repository over https (`git+https://github.com/acme-example/heinzel-crm@v1.0.0`); private GitHub repositories use your gh login. Pass `requirement` from an earlier answer to install exactly what it showed. */
                 spec: string;
+                /** @description Install it. Without it, nothing is installed: the answer shows the source, version and publisher to confirm first, because a plugin runs with your rights. */
+                confirm?: boolean;
             };
             header?: never;
             path?: never;
@@ -4753,7 +5123,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PluginInfo"][];
+                    "application/json": components["schemas"]["PluginChange"];
                 };
             };
             /** @description Validation Error */
@@ -4763,6 +5133,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_disable: {
+        parameters: {
+            query: {
+                /** @description Distribution name, as `hz system plugin list` shows it. */
+                distribution: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_enable: {
+        parameters: {
+            query: {
+                /** @description Distribution name, as `hz system plugin list` shows it. */
+                distribution: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PluginEvent"][];
                 };
             };
         };
@@ -4805,7 +5259,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PluginInfo"][];
+                    "application/json": components["schemas"]["PluginChange"];
                 };
             };
             /** @description Validation Error */

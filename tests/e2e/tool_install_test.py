@@ -143,14 +143,19 @@ def test_direct_lifecycle(sandbox, wheel):
     assert {skill["name"] for skill in installed} == {"hz", "hz-init", "hz-uninstall"}
     assert (sandbox.skills / "hz-init" / "scripts" / "install.sh").is_file()
 
-    sandbox.hz("system", "plugin", "add", DUMMY_PLUGIN)
+    sandbox.hz("system", "plugin", "develop", DUMMY_PLUGIN)
     assert sandbox.hz("dummy", "hello").strip() == "hello from dummy"
     # ADR 0006: plugins are recorded in the uv tool receipt, so upgrading Heinzelmännchen keeps them.
     sandbox.run("uv", "tool", "upgrade", "heinzel")
     assert sandbox.hz("dummy", "greet", "--name", "Ada").strip() == "Hello, Ada!"
-    assert json.loads(sandbox.hz("system", "plugin", "list", "--json")) == [
-        {"distribution": "heinzel-dummy", "version": "1.2.3", "modules": ["dummy", "dummy.greet"]}
-    ]
+    [dummy] = json.loads(sandbox.hz("system", "plugin", "list", "--json"))
+    assert (dummy["distribution"], dummy["version"], dummy["modules"]) == (
+        "heinzel-dummy",
+        "1.2.3",
+        ["dummy", "dummy.greet"],
+    )
+    assert (dummy["source_kind"], dummy["enabled"]) == ("path", True)
+    assert [e["action"] for e in json.loads(sandbox.hz("system", "plugin", "history", "--json"))] == ["develop"]
     sections = json.loads(sandbox.hz("system", "info", "--json"))["sections"]
     assert sections["dummy"] == {"greeting": "hello from dummy"}  # the core's own uses are tested in integration
 

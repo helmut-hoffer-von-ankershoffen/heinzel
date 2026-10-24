@@ -12,5 +12,5 @@ disable-model-invocation: true
    The optional **intro** input (`make release INTRO="..."`) becomes the introduction under the release's heading
    in CHANGELOG.md; earlier introductions are kept. It opens a pull request `chore(release): vX.Y.Z`; CI runs on it.
 4. Merge it. **Release tag** tags it and **Publish** builds, attests and creates the GitHub release (`gh run watch`).
-5. Verify: `hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]]@vX.Y.Z` and
+5. Verify: `hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]]@vX.Y.Z --confirm` and
    `hz [[ plugin_name ]] info`.

@@ -293,8 +293,8 @@ class ChatService:
     def _operation(self, action: ChatAction) -> OperationLet:
         for record, operation in self._kernel.lets(OperationLet):
             if record.qualname == action.module and operation.name == action.operation:
-                # Only what the chat's MCP server can offer: an agent never proposes a CLI-only operation.
-                if operation.heads is not None and "mcp" not in operation.heads:
+                # Only what the chat's MCP server (stdio) can offer: an agent never proposes a CLI-only operation.
+                if operation.heads is not None and not {"mcp", "mcp-stdio"} & operation.heads:
                     break
                 if not self._kernel.available(operation.func):
                     break

@@ -7,7 +7,7 @@ no Zoom API access and no Zoom credentials. It is released with the core, at the
 default:
 
 ```bash
-hz system plugin add zoom             # the release matching your hz; run it again to upgrade
+hz system plugin add zoom --confirm             # the release matching your hz; run it again to upgrade
 hz system plugin remove heinzel-zoom
 ```
 

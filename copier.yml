@@ -17,7 +17,7 @@ _envops:
 _message_after_copy: |
   Your Heinzelmännchen plugin is ready in [[ _copier_conf.dst_path ]]. Next:
     cd [[ _copier_conf.dst_path ]] && git init -b main && make setup && make check
-    hz system plugin add .
+    hz system plugin develop .
     hz [[ plugin_name ]] --help
 
 plugin_name:

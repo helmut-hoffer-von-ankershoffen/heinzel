@@ -52,6 +52,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0045](0045-a-chat-that-acts-through-hz-with-confirmation-in-code.md) | A chat that knows where you are and acts through hz, with every change confirmed in code | proposed | 2026-10-24 |
 | [0048](0048-a-terminal-in-the-web-head.md) | A terminal in the web head | proposed | 2026-10-24 |
 | [0046](0046-an-installable-web-app-with-paired-devices.md) | An installable web app on a fixed port, with paired devices and notifications from its service worker | proposed | 2026-10-24 |
+| [0047](0047-plugins-are-managed-from-the-web-app-after-a-confirmation.md) | Plugins are managed from the web app, and adding one shows what it installs before it is confirmed | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -75,7 +76,11 @@ web endpoints, not REST ones); [0045](0045-a-chat-that-acts-through-hz-with-conf
 [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) (a terminal over a WebSocket; inline styles allowed);
 [0046](0046-an-installable-web-app-with-paired-devices.md) amends
 [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) (a fixed port and paired devices) and
-[0043](0043-desktop-notifications-one-policy-shown-once.md) (notifications in the web app). ADRs 0021–0024 are
+[0043](0043-desktop-notifications-one-policy-shown-once.md) (notifications in the web app);
+[0047](0047-plugins-are-managed-from-the-web-app-after-a-confirmation.md) amends
+[0006](0006-plugins-installed-through-the-uv-tool-receipt.md) (`add` shows first and installs on `--confirm`, from PyPI
+or https git only) and [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) (plugin changes are web endpoints,
+not REST ones; `POST /api/restart`). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 

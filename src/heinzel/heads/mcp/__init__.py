@@ -23,7 +23,7 @@ from mcp.types import ToolAnnotations
 from pydantic_core import to_jsonable_python
 
 from heinzel import __version__
-from heinzel.heads._exposure import Exposed, exposed
+from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
 from heinzel.kernel import ActionGate, HeinzelError, Kernel, ProposedCall, boot, redact_emails
 
 HEAD = "mcp"
@@ -44,15 +44,19 @@ RESULT_LIMIT = 20000
 Transport = Literal["stdio", "streamable-http"]
 
 
-def build(kernel: Kernel, *, chat: str | None = None) -> MCPServer:
-    """An MCP server with one tool per exposed operation; for one chat session's agent when `chat` is given."""
+def build(kernel: Kernel, transport: Transport = "stdio", *, chat: str | None = None) -> MCPServer:
+    """An MCP server with one tool per exposed operation; for one chat session's agent when `chat` is given.
+
+    Over streamable HTTP, which has no authentication, the operations restricted to stdio (`mcp-stdio` in their
+    `heads`, such as installing plugins) are left out.
+    """
     server = MCPServer(
         name="heinzel",
         title="🧝 Heinzelmännchen",
         version=__version__,
         instructions=INSTRUCTIONS if chat is None else CHAT_INSTRUCTIONS,
     )
-    for item in exposed(kernel, HEAD):
+    for item in exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP):
         server.add_tool(
             tool(kernel, item) if chat is None else chat_tool(kernel, item, chat),
             name=item.name,
@@ -141,7 +145,7 @@ def serve(
     if chat is not None and transport != "stdio":
         msg = "A chat's tools are served over stdio only, never on a port."
         raise HeinzelError(msg)
-    server = build(boot(), chat=chat)
+    server = build(boot(), transport, chat=chat)
     if transport == "stdio":
         server.run("stdio")
     else:

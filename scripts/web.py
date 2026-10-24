@@ -21,7 +21,7 @@ from pathlib import Path
 from types import ModuleType
 
 from heinzel import Config, Kernel, Settings
-from heinzel.heads import api, web
+from heinzel.heads import web
 from heinzel.kernel import boot, discover
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,7 +47,7 @@ def openapi() -> str:
     """The OpenAPI document of the web head's API for the built-in modules; versionless, so releases don't drift."""
     config = Config.empty()
     kernel = Kernel(config.settings(Settings, "hz"), discover(plugins=False)[0], config=config)
-    document = api.build(kernel, head=web.HEAD, token="unused", docs=False).openapi()  # noqa: S106 - never served
+    document = web.api_app(kernel, port=None, token="unused").openapi()  # noqa: S106 - never served
     document["info"].pop("version", None)
     return json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
@@ -89,7 +89,7 @@ def dev() -> int:
 
     def serve() -> None:
         base = f"http://localhost:{VITE_PORT}"
-        web.serve(kernel, port=port, browser=False, announce=announce, static=None, base=base)
+        web.serve(kernel, port=port, browser=False, announce=announce, static=None, base=base, restartable=False)
 
     threading.Thread(target=serve, daemon=True).start()
     if not started.wait(30):

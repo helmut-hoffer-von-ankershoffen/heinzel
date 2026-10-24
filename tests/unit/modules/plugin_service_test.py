@@ -1,13 +1,16 @@
+import base64
+import io
 import os
 import subprocess
 import sys
+import types
 import urllib.error
 
 import pytest
 
-from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress
+from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settings
 from heinzel.kernel import Installation, Origin
-from heinzel.modules.system.plugin import _service
+from heinzel.modules.system.plugin import _service, _sources
 from heinzel.modules.system.plugin._models import PluginSettings
 from heinzel.modules.system.plugin._service import PluginService, distributions_in_spec
 
@@ -96,11 +99,14 @@ def test_refuses_to_remove_heinzel_itself(make_kernel, tool_env):
 
 
 def test_failed_add_reports_uv_output(make_kernel, tmp_path):
-    def runner(command):
+    def runner(command, environment=None):
         return subprocess.CompletedProcess(command, 1, stdout="", stderr="uv says no")
 
-    with pytest.raises(HeinzelError, match=r"Failed to add plugin 'x'\.\nuv says no"):
-        service_for(make_kernel, tmp_path, runner).add("x")
+    service = service_for(make_kernel, tmp_path, runner)
+    service.pypi = lambda url: pypi_project("heinzel-x", "1.0.0")
+    with pytest.raises(HeinzelError, match=r"Failed to add plugin 'heinzel-x'\.\nuv says no"):
+        service.add("heinzel-x", confirm=True)
+    assert service.history() == []  # nothing recorded that didn't happen
 
 
 def test_installed_groups_modules_by_distribution(make_kernel, tmp_path):
@@ -148,7 +154,7 @@ def test_first_party_plugins_resolve_by_distribution_name_too(make_kernel, tmp_p
     assert spec == service.first_party("github")
     assert spec is not None
     assert spec.endswith("/plugins/heinzel-github")
-    assert service.add_command("heinzel-atlassian")[-1] == service.first_party("atlassian")
+    assert service.candidate("heinzel-atlassian").requirement == service.first_party("atlassian")
 
 
 def test_first_party_names_follow_a_git_installed_core(make_kernel, tool_env, monkeypatch):
@@ -159,7 +165,8 @@ def test_first_party_names_follow_a_git_installed_core(make_kernel, tool_env, mo
     assert service.first_party("clock") == (
         "heinzel-clock @ git+https://github.com/org/heinzel@v0.1.0#subdirectory=plugins/heinzel-clock"
     )
-    assert service.add_command("clock")[-1] == service.first_party("clock")
+    assert service.candidate("clock").requirement == service.first_party("clock")
+    assert service.add_command(service.first_party("clock"))[-1] == service.first_party("clock")
 
 
 def test_first_party_names_default_to_the_release_tag(make_kernel, tmp_path, monkeypatch):
@@ -204,6 +211,7 @@ def test_search_lists_first_party_first_then_community_plugins_by_stars(make_ker
     github.answer = {"items": [repository("heinzel-few", 1), repository("heinzel-many", 50)]}
     result = service_for(make_kernel, tmp_path).search()
     assert [(p.name, p.source, p.community, p.stars) for p in result.plugins] == [
+        ("heinzel-acme", "first-party", False, None),
         ("heinzel-atlassian", "first-party", False, None),
         ("heinzel-clock", "first-party", False, None),
         ("heinzel-github", "first-party", False, None),
@@ -217,7 +225,8 @@ def test_search_lists_first_party_first_then_community_plugins_by_stars(make_ker
 
 def test_search_tells_how_to_install_each_plugin(make_kernel, tmp_path, github):
     github.answer = {"items": [repository("heinzel-crm", 3)]}
-    atlassian, clock, github_, google, zoom, crm = service_for(make_kernel, tmp_path).search().plugins
+    acme, atlassian, clock, github_, google, zoom, crm = service_for(make_kernel, tmp_path).search().plugins
+    assert (acme.short_name, acme.install_spec, acme.url) == ("acme", "acme", _service.REFERENCE["acme"][1])
     assert (atlassian.short_name, atlassian.install_spec) == ("atlassian", "atlassian")
     assert (github_.short_name, github_.install_spec) == ("github", "github")
     assert (google.short_name, google.install_spec) == ("google", "google")
@@ -230,6 +239,7 @@ def test_search_marks_installed_plugins(make_kernel, tmp_path, github):
     github.answer = {"items": [repository("heinzel-old", 3), repository("heinzel-new", 2)]}
     installed = {p.name: p.installed for p in service_for(make_kernel, tmp_path).search().plugins}
     assert installed == {
+        "heinzel-acme": False,
         "heinzel-atlassian": False,
         "heinzel-clock": False,
         "heinzel-github": False,
@@ -245,7 +255,14 @@ def test_search_prefers_first_party_plugins_and_skips_archived_repositories(make
     plugins = service_for(make_kernel, tmp_path).search().plugins
     assert [(p.name, p.source) for p in plugins] == [
         (name, "first-party")
-        for name in ["heinzel-atlassian", "heinzel-clock", "heinzel-github", "heinzel-google", "heinzel-zoom"]
+        for name in [
+            "heinzel-acme",
+            "heinzel-atlassian",
+            "heinzel-clock",
+            "heinzel-github",
+            "heinzel-google",
+            "heinzel-zoom",
+        ]
     ]
 
 
@@ -279,6 +296,7 @@ def test_search_falls_back_to_first_party_plugins_with_a_warning(make_kernel, tm
     github.answer = answer
     result = service_for(make_kernel, tmp_path).search()
     assert [p.name for p in result.plugins] == [
+        "heinzel-acme",
         "heinzel-atlassian",
         "heinzel-clock",
         "heinzel-github",
@@ -286,3 +304,419 @@ def test_search_falls_back_to_first_party_plugins_with_a_warning(make_kernel, tm
         "heinzel-zoom",
     ]
     assert result.warnings == [f"GitHub could not be searched ({reason}); showing first-party plugins only."]
+
+
+def test_a_ref_with_slashes_or_a_subdirectory_still_names_the_plugin_it_replaces(make_kernel, tool_env):
+    assert distributions_in_spec("git+https://github.com/org/heinzel-foo@feat/x") == {"heinzel-foo"}
+    monorepo = "git+https://github.com/org/mono@feat/x#subdirectory=plugins/heinzel-old"
+    assert distributions_in_spec(monorepo) == {"heinzel-old"}
+    command = service_for(make_kernel, tool_env).add_command(monorepo)
+    assert command.count("--with") == 1  # the older heinzel-old is replaced, not listed twice
+    assert command[-1] == monorepo
+
+
+# What `add` shows before installing, and what it installs once confirmed (ADR 0047).
+
+
+def pypi_project(name, *versions, author="Ada Example", yanked=()):
+    """PyPI's JSON API answer for a project with `versions`, the last one latest."""
+    return {
+        "info": {"name": name, "version": versions[-1], "summary": f"The {name} plugin.", "author": author},
+        "releases": {v: [{"yanked": v in yanked}] for v in versions},
+    }
+
+
+class FakeGitHubApi:
+    """The GitHub API as `gh api` would answer for one repository, by path."""
+
+    def __init__(self, *, private=False, name="heinzel-crm", version="1.2.0", subdirectory=None):
+        pyproject = f'[project]\nname = "{name}"\nversion = "{version}"\ndescription = "CRM notes."\n'
+        pyproject += 'authors = [{ name = "Ada Example" }]\n'
+        content = {"content": base64.b64encode(pyproject.encode()).decode()}
+        where = f"{subdirectory}/pyproject.toml" if subdirectory else "pyproject.toml"
+        base = "repos/acme-example/heinzel-crm"
+        self.answers = {
+            base: {
+                "default_branch": "main",
+                "private": private,
+                "owner": {"login": "acme-example"},
+                "html_url": "https://github.com/acme-example/heinzel-crm",
+                "description": "A CRM.",
+            },
+            f"{base}/commits/main": {"sha": "a" * 40},
+            f"{base}/commits/v1.2.0": {"sha": "b" * 40},
+            f"{base}/contents/{where}?ref={'a' * 40}": content,
+            f"{base}/contents/{where}?ref={'b' * 40}": content,
+        }
+        self.paths: list[str] = []
+
+    def __call__(self, path):
+        self.paths.append(path)
+        if path not in self.answers:
+            msg = f"HTTP 404: Not Found ({path})"
+            raise LookupError(msg)
+        return self.answers[path]
+
+
+def installing(make_kernel, prefix, monkeypatch, gh=None):
+    """A service whose uv runs are recorded and whose fresh `hz system plugin list` answers nothing new."""
+    runs = []
+
+    def runner(command, environment=None):
+        runs.append((command, environment))
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(_sources.shutil, "which", lambda name: gh if name == "gh" else None)
+    service = service_for(make_kernel, prefix, runner)
+    monkeypatch.setattr(service._installation, "hz", lambda *args: "[]")
+    return service, runs
+
+
+def raising(exc):
+    def get(url):
+        raise exc
+
+    return get
+
+
+def test_without_confirm_add_installs_nothing_and_shows_a_pinned_pypi_release(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.0.0", "1.1.0", "2.0.0", yanked={"2.0.0"})
+    change = service.add("heinzel-crm>=1,<3")
+    assert (change.done, change.restart_required, runs) == (False, False, [])
+    candidate = change.candidate
+    assert (candidate.requirement, candidate.version) == ("heinzel-crm==1.1.0", "1.1.0")
+    assert (candidate.publisher, candidate.source, candidate.first_party) == ("Ada Example", "pypi", False)
+    assert candidate.url == "https://pypi.org/project/heinzel-crm/"
+    assert change.next == ["hz system plugin add heinzel-crm==1.1.0 --confirm"]
+    assert service.history() == []
+
+
+def test_a_specifier_no_release_matches_is_refused(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.0.0")
+    with pytest.raises(HeinzelError, match="No release of heinzel-crm on PyPI matches >=2"):
+        service.candidate("heinzel-crm>=2")
+
+
+def test_confirmed_add_installs_exactly_what_was_shown_and_records_it(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    change = service.add("heinzel-crm", confirm=True)
+    assert (change.done, change.restart_required, change.action) == (True, True, "add")
+    [(command, environment)] = runs
+    assert command[-2:] == ["--with", "heinzel-crm==1.1.0"]
+    assert environment is None  # no gh: nothing to tell git
+    [event] = service.history()
+    assert (event.action, event.distribution, event.requirement, event.source, event.version, event.publisher) == (
+        "add",
+        "heinzel-crm",
+        "heinzel-crm==1.1.0",
+        "pypi",
+        "1.1.0",
+        "Ada Example",
+    )
+
+
+def test_a_github_repository_is_pinned_to_the_commit_its_ref_points_at(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.github_api = FakeGitHubApi(private=True)
+    candidate = service.candidate("git+https://github.com/acme-example/heinzel-crm@v1.2.0")
+    assert candidate.requirement == f"heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@{'b' * 40}"
+    assert (candidate.distribution, candidate.version, candidate.revision) == ("heinzel-crm", "1.2.0", "b" * 40)
+    assert (candidate.publisher, candidate.private, candidate.summary) == (
+        "acme-example (Ada Example)",
+        True,
+        "CRM notes.",
+    )
+    assert candidate.warnings == []
+
+
+def test_a_plain_https_url_and_a_subdirectory_work_too(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.github_api = FakeGitHubApi(subdirectory="plugins/heinzel-crm")
+    candidate = service.candidate("https://github.com/acme-example/heinzel-crm#subdirectory=plugins/heinzel-crm")
+    assert candidate.requirement == (
+        f"heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@{'a' * 40}#subdirectory=plugins/heinzel-crm"
+    )
+
+
+def test_a_missing_repository_ref_or_package_is_refused_before_anything_is_installed(
+    make_kernel, tool_env, monkeypatch
+):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.github_api = FakeGitHubApi()
+    with pytest.raises(HeinzelError, match="gh auth login"):
+        service.add("git+https://github.com/acme-example/heinzel-crm@v9", confirm=True)
+    service.pypi = raising(urllib.error.HTTPError("https://pypi.org", 404, "Not Found", {}, io.BytesIO()))  # type: ignore[arg-type]
+    with pytest.raises(HeinzelError, match="PyPI has no project 'heinzel-nope'"):
+        service.add("heinzel-nope", confirm=True)
+    assert runs == []
+
+
+def test_another_git_host_is_installed_as_given_with_a_warning(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    candidate = service.candidate("git+https://git.example.org/team/heinzel-notes@v1")
+    assert candidate.requirement == "git+https://git.example.org/team/heinzel-notes@v1"
+    assert (candidate.version, candidate.publisher) == (None, None)
+    assert "git.example.org isn't GitHub" in candidate.warnings[0]
+
+
+def test_unreachable_pypi_leaves_the_source_unverified_and_says_so(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = raising(urllib.error.URLError("offline"))
+    candidate = service.candidate("heinzel-crm")
+    assert (candidate.requirement, candidate.version) == ("heinzel-crm", None)
+    assert candidate.warnings == ["What it is couldn't be read (offline): only the source below is known."]
+
+
+def test_first_party_plugins_are_published_by_the_maintainers(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    candidate = service.candidate("github")
+    assert (candidate.distribution, candidate.first_party, candidate.publisher) == (
+        "heinzel-github",
+        True,
+        _service.MAINTAINERS,
+    )
+    assert candidate.source == "path"  # this checkout's plugins/ directory
+
+
+def test_the_reference_company_is_first_party_from_its_own_repository(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    calls = []
+
+    def offline(path):
+        calls.append(path)
+        msg = "offline"
+        raise OSError(msg)
+
+    service.github_api = offline
+    candidate = service.candidate("acme")
+    assert candidate.requirement == f"heinzel-acme @ git+{_service.REFERENCE['acme'][1]}"
+    assert (candidate.first_party, candidate.publisher) == (True, _service.MAINTAINERS)
+    assert calls == ["repos/helmut-hoffer-von-ankershoffen/heinzel-acme"]
+
+
+def test_with_gh_git_asks_gh_for_github_credentials_and_no_token_passes_through(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch, gh="/opt/bin/gh")
+    service.github_api = FakeGitHubApi(private=True)
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "2")
+    service.add("git+https://github.com/acme-example/heinzel-crm", confirm=True)
+    [(_, environment)] = runs
+    assert environment == {
+        "GIT_CONFIG_COUNT": "3",
+        "GIT_CONFIG_KEY_2": "credential.https://github.com.helper",
+        "GIT_CONFIG_VALUE_2": "!/opt/bin/gh auth git-credential",
+    }
+
+
+def test_one_change_at_a_time(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.0.0")
+    with service._exclusive(), pytest.raises(HeinzelError, match="Another plugin change is running"):
+        service.add("heinzel-crm", confirm=True)
+    assert runs == []
+
+
+def test_remove_records_what_was_removed(make_kernel, tool_env, monkeypatch):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    change = service.remove("heinzel-old")
+    assert (change.action, change.done, change.restart_required, len(runs)) == ("remove", True, True, 1)
+    assert [(e.action, e.distribution, e.version) for e in service.history()] == [("remove", "heinzel-old", "1.0.0")]
+
+
+def test_develop_installs_a_checkout_under_its_project_name(make_kernel, tool_env, monkeypatch, tmp_path):
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    checkout = tmp_path / "work"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text('[project]\nname = "heinzel_Crm"\nversion = "0.1.0"\n', encoding="utf-8")
+    change = service.develop(checkout)
+    assert (change.action, change.distribution) == ("develop", "heinzel-crm")
+    assert runs[0][0][-1] == f"heinzel-crm @ {checkout.resolve().as_uri()}"
+    assert [(e.action, e.source, e.version) for e in service.history()] == [("develop", "path", "0.1.0")]
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(HeinzelError, match=r"no pyproject\.toml"):
+        service.develop(empty)
+    (empty / "pyproject.toml").write_text("[tool.x]\n", encoding="utf-8")
+    with pytest.raises(HeinzelError, match="names no project"):
+        service.develop(empty)
+
+
+def test_history_skips_lines_it_cannot_read(make_kernel, tmp_path):
+    service = service_for(make_kernel, tmp_path)
+    path = service._history_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    good = '{"at": "2026-10-24T10:00:00Z", "action": "remove", "distribution": "heinzel-x", "requirement": null, '
+    good += '"source": null, "version": "1", "publisher": null}'
+    path.write_text(f"torn\n{good}\n", encoding="utf-8")
+    assert [e.distribution for e in service.history()] == ["heinzel-x"]
+
+
+# What `list` tells about each plugin.
+
+
+def test_installed_tells_what_each_plugin_brings_and_whether_it_is_enabled(make_kernel, tmp_path):
+    team = Module("acme-payments", "A team layer.")
+    team.layer(parent="acme")
+    origin = Origin("heinzel-acme-payments", "1.0.0", builtin=False, url="https://example.org/acme")
+    off = ModuleRecord("off", Module("off", "Switched off."), Origin("heinzel-off", "2.0.0", builtin=False))
+    kernel = Kernel(
+        Settings(disabled_modules=frozenset({"off"})),
+        [ModuleRecord("acme-payments", team, origin), off],
+        errors={"broken": "ImportError: nope"},
+    )
+    service = service_for(make_kernel, tmp_path, kernel=kernel)
+    service.distributions = {}
+    plugins = {p.distribution: p for p in service.installed()}
+    payments = plugins["heinzel-acme-payments"]
+    assert (payments.enabled, payments.layers[0].parent, payments.homepage) == (
+        True,
+        "acme",
+        "https://example.org/acme",
+    )
+    assert (plugins["heinzel-off"].enabled, plugins["heinzel-off"].modules) == (False, ["off"])
+    assert (plugins["broken"].enabled, plugins["broken"].error) == (False, "ImportError: nope")
+
+
+VCS = '"vcs_info": {"vcs": "git", "commit_id": "abc"'
+
+
+@pytest.mark.parametrize(
+    ("direct_url", "homepage", "expected"),
+    [
+        (None, None, ("pypi", "https://pypi.org/project/heinzel-x/", None)),
+        (None, "https://github.com/o/heinzel-x", ("pypi", "https://github.com/o/heinzel-x", None)),
+        (None, "http://insecure.example.org/x", ("pypi", "https://pypi.org/project/heinzel-x/", None)),
+        (
+            f'{{"url": "https://github.com/o/heinzel-x.git", {VCS}}}}}',
+            None,
+            ("git", "https://github.com/o/heinzel-x", "abc"),
+        ),
+        (
+            (
+                f'{{"url": "https://ada:t0ken@github.com/o/mono", "subdirectory": "plugins/heinzel-x", '
+                f'{VCS}, "requested_revision": "v1"}}}}'
+            ),
+            None,
+            ("git", "https://github.com/o/mono/tree/v1/plugins/heinzel-x", "abc"),
+        ),
+        (
+            f'{{"url": "https://github.com/o/mono", "subdirectory": "plugins/heinzel-x", {VCS}}}}}',
+            None,
+            ("git", "https://github.com/o/mono/tree/abc/plugins/heinzel-x", "abc"),
+        ),
+        (f'{{"url": "ssh://git@example.org/o/x", {VCS}}}}}', None, ("git", None, "abc")),
+        ('{"url": "file:///src/heinzel%20x", "dir_info": {}}', None, ("path", None, None)),
+        ('{"url": "https://example.org/x.whl", "archive_info": {}}', None, (None, "https://example.org/x.whl", None)),
+        ("not json", None, (None, None, None)),
+    ],
+)
+def test_where_a_plugin_came_from_is_read_from_its_direct_url(direct_url, homepage, expected):
+    class Dist:
+        name = "heinzel-x"
+
+        def read_text(self, filename):
+            assert filename == "direct_url.json"
+            return direct_url
+
+    assert _service._source_of(Dist(), homepage) == expected
+    assert _service._source_of(None) == (None, None, None)
+
+
+@pytest.mark.parametrize(
+    ("spec", "expected"),
+    [
+        ("git+https://github.com/o/heinzel-x", "https://github.com/o/heinzel-x"),
+        ("heinzel-x @ git+https://github.com/o/heinzel-x.git@v1", "https://github.com/o/heinzel-x"),
+        (
+            "git+https://github.com/o/mono@feat/x#subdirectory=plugins/heinzel-x",
+            "https://github.com/o/mono/tree/feat/x/plugins/heinzel-x",
+        ),
+        (
+            "git+https://github.com/o/mono#subdirectory=plugins/heinzel-x",
+            "https://github.com/o/mono/tree/HEAD/plugins/heinzel-x",
+        ),
+        ("git+https://ada:t0ken@git.example.org:8443/o/x", "https://git.example.org:8443/o/x"),
+        ("git+ssh://git@github.com/o/x", None),
+        ("heinzel-x==1.0", None),
+        ("clock", None),
+    ],
+)
+def test_the_repository_a_spec_names_as_a_browser_opens_it(spec, expected):
+    assert _sources.repository_url(spec) == expected
+
+
+def test_search_entries_carry_their_repository_url(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-crm", 3)]}
+    plugins = {p.name: p for p in service_for(make_kernel, tmp_path).search().plugins}
+    assert plugins["heinzel-crm"].repository_url == "https://github.com/someone/heinzel-crm"
+    assert plugins["heinzel-clock"].repository_url == f"{_service.REPOSITORY}/tree/main/plugins/heinzel-clock"
+    assert plugins["heinzel-acme"].repository_url == _service.REFERENCE["acme"][1]
+
+
+def test_installed_plugins_say_where_they_came_from(make_kernel, tmp_path):
+    class Dist:
+        name = "heinzel-crm"
+        metadata = types.MappingProxyType({"Summary": "CRM notes."})
+
+        def read_text(self, filename):
+            return '{"url": "https://github.com/acme-example/heinzel-crm", "vcs_info": {"commit_id": "abc"}}'
+
+    record = ModuleRecord("crm", Module("crm", "CRM."), Origin("heinzel-crm", "1.0.0", builtin=False))
+    service = service_for(make_kernel, tmp_path, kernel=Kernel(make_kernel().settings, [record]))
+    service.distributions = {"heinzel-crm": Dist()}
+    [plugin] = service.installed()
+    assert (plugin.source_kind, plugin.source_url, plugin.revision, plugin.summary) == (
+        "git",
+        "https://github.com/acme-example/heinzel-crm",
+        "abc",
+        "CRM notes.",
+    )
+    assert not plugin.first_party
+
+
+@pytest.mark.parametrize(
+    ("name", "spec", "problem"),
+    [
+        ("heinzel", "git+https://github.com/acme-example/heinzel-crm", "calls itself heinzel"),
+        ("heinzel-crm[all]", "git+https://github.com/acme-example/heinzel-crm", "no valid name"),
+        ("heinzel crm", "git+https://github.com/acme-example/heinzel-crm", "no valid name"),
+        ("heinzel-github", "git+https://github.com/acme-example/heinzel-crm", "name of a first-party plugin"),
+        ("heinzel-other", "heinzel-crm @ git+https://github.com/acme-example/heinzel-crm", "names heinzel-other"),
+    ],
+)
+def test_a_repository_naming_itself_wrongly_is_refused(make_kernel, tool_env, monkeypatch, name, spec, problem):  # noqa: PLR0913, PLR0917 - fixtures and columns
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.github_api = FakeGitHubApi(name=name)
+    with pytest.raises(HeinzelError, match=problem):
+        service.add(spec, confirm=True)
+    assert runs == []
+
+
+def test_a_pypi_package_with_a_first_party_name_or_extras_is_refused(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-github", "1.0.0")
+    with pytest.raises(HeinzelError, match="hz system plugin add github"):
+        service.candidate("heinzel-github==1.0.0")
+    service.pypi = raising(urllib.error.URLError("offline"))
+    with pytest.raises(HeinzelError, match="without extras or environment markers"):
+        service.candidate("heinzel-crm[all]")
+    with pytest.raises(HeinzelError, match="without extras or environment markers"):
+        service.candidate('heinzel-crm; python_version > "3"')
+
+
+def test_a_plugin_not_named_heinzel_something_comes_with_a_warning(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.github_api = FakeGitHubApi(name="crm-tools")
+    candidate = service.candidate("git+https://github.com/acme-example/heinzel-crm")
+    assert candidate.warnings == ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."]
+
+
+def test_metadata_never_carries_control_characters(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    project = pypi_project("heinzel-crm", "1.0.0", author="Ada\x1b[2K\x1b[1AExample")
+    project["info"]["summary"] = "CRM\x07 notes\x9b"
+    service.pypi = lambda url: project
+    candidate = service.candidate("heinzel-crm")
+    assert (candidate.publisher, candidate.summary) == ("Ada[2K[1AExample", "CRM notes")

@@ -116,12 +116,14 @@ class Kernel:
         self._manager.add_hookspecs(Spec)
         self._records: dict[str, ModuleRecord] = {}
         self._unavailable: set[type[Any]] = set()
+        self._blocked: dict[str, ModuleRecord] = {}
         for record in sorted(records, key=lambda r: (not r.origin.builtin, r.path)):
             if problem := self._collision(record):
                 self._reject(record, problem)
                 continue
             if self._is_disabled(record.qualname) and not record.module.essential:
                 self._manager.set_blocked(record.qualname)
+                self._blocked[record.qualname] = record
                 self._unavailable.update(_provided_types(record.module))
                 continue
             self._manager.register(record.module, name=record.qualname)
@@ -170,6 +172,11 @@ class Kernel:
     def modules(self) -> tuple[ModuleRecord, ...]:
         """Registered modules, parents before children."""
         return tuple(self._records.values())
+
+    @property
+    def blocked(self) -> tuple[ModuleRecord, ...]:
+        """Modules `[hz] disabled_modules` switched off, with their submodules: discovered but not registered."""
+        return tuple(sorted(self._blocked.values(), key=lambda record: record.path))
 
     def module(self, qualname: str) -> ModuleRecord:
         """Look up a registered module by qualified name."""

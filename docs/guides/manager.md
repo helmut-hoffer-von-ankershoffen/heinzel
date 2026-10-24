@@ -17,7 +17,7 @@ You need [uv](https://docs.astral.sh/uv/) (`brew install uv`), the [GitHub CLI](
 uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel
 gh auth login                                            # once; hz stores no token
 hz setup                                                 # who you are: found from gh, the rest asked once
-hz system plugin add github                              # pull requests and issues through gh
+hz system plugin add github --confirm                              # pull requests and issues through gh
 hz system config set capabilities.code_host github
 hz system config set capabilities.tracker github
 hz team new checkout --github acme-example/hz-team-checkout --roster github:acme-example/checkout --yes
@@ -95,11 +95,11 @@ None is installed by default, so you get only the integrations you use:
 
 ```bash
 hz system plugin search                      # first-party plugins first, then community ones from GitHub
-hz system plugin add github                  # pull requests and issues: code-host and tracker
-hz system plugin add atlassian               # Jira and Confluence: tracker and documents
-hz system plugin add google                  # Docs, Sheets, Drive, Calendar, Gmail: documents, calendar and mail
-hz system plugin add zoom                    # meetings, from Zoom's summary e-mails through the bound mail adapter
-hz system plugin add clock                   # the time for everyone on the team
+hz system plugin add github --confirm                  # pull requests and issues: code-host and tracker
+hz system plugin add atlassian --confirm               # Jira and Confluence: tracker and documents
+hz system plugin add google --confirm                  # Docs, Sheets, Drive, Calendar, Gmail: documents, calendar and mail
+hz system plugin add zoom --confirm                    # meetings, from Zoom's summary e-mails through the bound mail adapter
+hz system plugin add clock --confirm                   # the time for everyone on the team
 hz setup google                              # a plugin's own step; `hz setup` runs the ones still missing
 ```
 
@@ -126,7 +126,7 @@ this repository's [plugins/](../../plugins), and everyone installs from it:
 
 ```bash
 hz system plugin new ../heinzel-acme               # scaffold one: tests, CI, release automation, agent setup
-hz system plugin add git+https://github.com/acme-example/heinzel-acme@v1.0.0   # install a released one
+hz system plugin add git+https://github.com/acme-example/heinzel-acme@v1.0.0 --confirm   # install a released one
 ```
 
 A company's plugins are **layers** ([ADR 0040](../adr/0040-layers-and-playbooks-are-plugins.md),

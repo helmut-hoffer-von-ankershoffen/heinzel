@@ -4,7 +4,7 @@ Read pull requests and issues from GitHub, the `code-host` and `tracker` capabil
 [Heinzelmännchen](../../README.md) plugin. It is released with the core, at the same version, and not installed by default:
 
 ```bash
-hz system plugin add github             # the release matching your hz; run it again to upgrade
+hz system plugin add github --confirm             # the release matching your hz; run it again to upgrade
 hz system plugin remove heinzel-github
 ```
 

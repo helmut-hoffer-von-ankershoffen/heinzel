@@ -6,7 +6,7 @@ Read Jira issues and Confluence pages through Atlassian's CLI `acli`, the `track
 default:
 
 ```bash
-hz system plugin add atlassian             # the release matching your hz; run it again to upgrade
+hz system plugin add atlassian --confirm             # the release matching your hz; run it again to upgrade
 hz system plugin remove heinzel-atlassian
 ```
 
