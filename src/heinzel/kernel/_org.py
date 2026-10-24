@@ -65,3 +65,38 @@ class OrgContext:
             HeinzelError: If the team's declaration can't be read; the kernel reports it and stacks what is installed.
         """
         return None
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class TeamPromise:
+    """What one team contract promises the team: the artifact it keeps, what it reads, and when (ADR 0054).
+
+    The part of a team contract every member sees and holds it to; its body, its drafts and how its user runs it stay
+    with that user.
+    """
+
+    contract: str
+    """Its qualified name, `team:<name>`."""
+    title: str
+    version: str
+    """The author's `version` when it has one, else the file's `sha256:<hex>`."""
+    schedule: str | None
+    """Five cron fields in the runner's local time, or a shortcut such as `@daily`; None when it runs only by hand."""
+    writes: str
+    """The artifact it keeps true, as inputs name it: `contract:team/<name>#<output>`."""
+    reads: tuple[str, ...] = ()
+    """The team artifacts it reads, as `contract:team/<name>#<output>`; capability reads are not team artifacts."""
+    publishes: tuple[str, ...] = ()
+    """The publish operations its draft is meant for, `<module>.<operation>`."""
+
+
+class TeamPromises:
+    """The promises your team's contracts make: a module provides a subclass (`workflow` in the core)."""
+
+    def promises(self) -> tuple[TeamPromise, ...]:
+        """Every valid team contract's promise, by contract name; nothing without a team.
+
+        Raises:
+            NotImplementedError: Always; subclasses read the team's contracts.
+        """
+        raise NotImplementedError

@@ -43,7 +43,7 @@ export type TeamGraph = {
   edges: TeamEdge[];
 };
 
-/** The JSON Graph Format v2 document `GET /api/graph/graph` answers with (`type: "hz-team"`). */
+/** The JSON Graph Format v2 document `GET /api/graph` answers with (`type: "hz-team"`). */
 export type JgfDocument = {
   graph: {
     directed?: boolean;

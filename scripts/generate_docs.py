@@ -7,6 +7,8 @@
 - The badges between `<!-- badges:start -->` and `<!-- badges:end -->`: one set on every top-level page GitHub renders
   (BADGE_PAGES), and the same set for a plugin's own repository in the template's README.md and SECURITY.md.
 - docs/schemas/contract-frontmatter-1.json: the JSON Schema of workflow contract frontmatter (ADR 0021).
+- docs/schemas/team-graph-1.json and telemetry-entry-1.json: `hz graph --json` (JSON Graph Format v2, profile
+  `hz-team`) and one line of a Heinzelmännchen's telemetry log (ADR 0054).
 
 Usage: uv run python scripts/generate_docs.py [--check]
 """
@@ -25,11 +27,12 @@ from urllib.parse import quote
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined, to_jsonable_python
 
-from heinzel import Config, HealthLet, Kernel, Settings, SettingsLet, SetupLet, __version__
+from heinzel import Config, HealthLet, Kernel, Settings, SettingsLet, SetupLet, TelemetryEntry, __version__
 from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
 from heinzel.heads.cli._chat import command_words
 from heinzel.kernel import Origin, discover, env_prefix, walk
+from heinzel.modules.graph import TeamGraphDocument
 from heinzel.modules.system.plugin._service import FIRST_PARTY
 from heinzel.modules.workflow._models import SCHEMA_VERSION, Frontmatter
 
@@ -265,6 +268,17 @@ def contract_schema() -> str:
     return json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
 
 
+def model_schema(model: type[BaseModel], urn: str, title: str) -> str:
+    """The JSON Schema of a model that crosses a boundary, generated so it can't drift from the code."""
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": urn,
+        **model.model_json_schema(mode="serialization"),
+        "title": title,
+    }
+    return json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
+
+
 def main() -> int:
     """Write the references, or with --check only compare them."""
     outputs = {
@@ -272,6 +286,12 @@ def main() -> int:
         DOCS / "CLI_REFERENCE.md": cli_reference(),
         DOCS / "CONFIGURATION.md": configuration_reference(),
         DOCS / "schemas" / f"contract-frontmatter-{SCHEMA_VERSION}.json": contract_schema(),
+        DOCS / "schemas" / "team-graph-1.json": model_schema(
+            TeamGraphDocument, "urn:heinzel:team-graph:1", "hz-team: a team graph in JSON Graph Format v2"
+        ),
+        DOCS / "schemas" / "telemetry-entry-1.json": model_schema(
+            TelemetryEntry, "urn:heinzel:telemetry-entry:1", "One entry of a Heinzelmännchen's telemetry log"
+        ),
     }
     ours = badges(OWNER, REPOSITORY, BEST_PRACTICES)
     for page in BADGE_PAGES:

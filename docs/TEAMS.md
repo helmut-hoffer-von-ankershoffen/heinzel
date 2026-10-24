@@ -83,6 +83,31 @@ same capability ([Playbooks: layers](PLAYBOOKS.md#layers-company-org-site-team))
   the same.
 - To leave: `hz system config unset team.checkout && hz system config unset team.repository`.
 
+## Is the work flowing
+
+Each run of a scheduled team contract is a promise: its artifact, by the next run of a contract that reads it (or else
+its own next run). Your Heinzelmännchen report what they did, and `hz graph` says whether each promise is kept
+([ADR 0054](adr/0054-observability-is-whether-each-team-promise-is-kept.md)):
+
+```bash
+hz system config set report.user costas                          # once: your roster handle
+hz report drafted costas-tracker https://tracker.acme.example/boards/7#costas --contract team:tracker-update --part costas
+hz report approved costas-tracker https://tracker.acme.example/boards/7#costas costas --contract team:tracker-update --part costas
+hz report heartbeat costas-tracker                               # alive; silent for 2 days shows as offline
+hz report sync                                                   # copy your logs into the checkout, then commit and push
+hz graph                                                         # "Weekly report waiting on 2 updates", weeks, states
+hz graph --heinzel costas-tracker --json                         # JSON Graph Format, docs/schemas/team-graph-1.json
+```
+
+A promise is `on_time`, `waiting_for_approval`, `late`, `fell_back` (kept on a stale input) or `offline`. The graph is the
+team layer only: entries are metadata (who, when, which verb, on what), never content, descriptions reach no graph, and
+nothing is counted per person. Your sessions, drafts and edits stay yours. Logs live in your state directory, one per
+Heinzelmännchen, and in `telemetry/<handle>/<id>.jsonl` in the team repository, one writer each; `sync` refuses a copy
+your log doesn't extend. Pushing is still yours; automatic sync is the next step.
+
+The graph keeper watches it for you: `hz workflow new keeper --template graph:team-graph-keeper` writes a contract that
+reads the graph and drafts a morning note for you alone; uncomment its schedule when its drafts read right.
+
 ## What waits for your yes
 
 `new`, `join` and `add` show every step, with the command it runs, before it happens. Reading (a clone into hz's data

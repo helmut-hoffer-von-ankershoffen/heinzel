@@ -1,0 +1,520 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:heinzel:team-graph:1",
+  "$defs": {
+    "Edge": {
+      "additionalProperties": false,
+      "description": "A JGF edge from a Heinzelmännchen to an artifact: it reads it or writes it.",
+      "properties": {
+        "source": {
+          "description": "The Heinzelmännchen's node id, `heinzel:<id>`: who reads or writes.",
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "description": "The artifact's node id.",
+          "title": "Target",
+          "type": "string"
+        },
+        "relation": {
+          "description": "`reads` or `writes`.",
+          "enum": [
+            "reads",
+            "writes"
+          ],
+          "title": "Relation",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/EdgeMetadata",
+          "description": "How the promise behind it stands."
+        }
+      },
+      "required": [
+        "source",
+        "target",
+        "relation",
+        "metadata"
+      ],
+      "title": "Edge",
+      "type": "object"
+    },
+    "EdgeMetadata": {
+      "additionalProperties": false,
+      "description": "Whether a read or write is promised, happened, and how the promise behind it stands.",
+      "properties": {
+        "state": {
+          "anyOf": [
+            {
+              "enum": [
+                "on_time",
+                "waiting_for_approval",
+                "late",
+                "fell_back",
+                "offline"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For `writes`: the writer's current promise; for `reads`: the state of what is read.",
+          "title": "State"
+        },
+        "declared": {
+          "description": "A team contract says so.",
+          "title": "Declared",
+          "type": "boolean"
+        },
+        "observed": {
+          "description": "A Heinzelmännchen reported it.",
+          "title": "Observed",
+          "type": "boolean"
+        },
+        "last_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The artifact's version last read or published, as reported.",
+          "title": "Last Version"
+        },
+        "needed_by": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For `reads`: by when the reader said it needs it, as reported.",
+          "title": "Needed By"
+        }
+      },
+      "required": [
+        "state",
+        "declared",
+        "observed",
+        "last_version",
+        "needed_by"
+      ],
+      "title": "EdgeMetadata",
+      "type": "object"
+    },
+    "Filters": {
+      "additionalProperties": false,
+      "description": "The filters the graph was cut with; none means everything.",
+      "properties": {
+        "artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Only this artifact and what is around it.",
+          "title": "Artifact"
+        },
+        "heinzel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Only this Heinzelmännchen and what is around it.",
+          "title": "Heinzel"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "enum": [
+                "on_time",
+                "waiting_for_approval",
+                "late",
+                "fell_back",
+                "offline"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Only nodes in this state.",
+          "title": "State"
+        }
+      },
+      "required": [
+        "artifact",
+        "heinzel",
+        "state"
+      ],
+      "title": "Filters",
+      "type": "object"
+    },
+    "Graph": {
+      "additionalProperties": false,
+      "description": "A JGF v2 graph of profile `hz-team`.",
+      "properties": {
+        "directed": {
+          "const": true,
+          "default": true,
+          "description": "Edges go from a Heinzelmännchen to an artifact.",
+          "title": "Directed",
+          "type": "boolean"
+        },
+        "type": {
+          "const": "hz-team",
+          "default": "hz-team",
+          "description": "The JGF profile: `hz-team`.",
+          "title": "Type",
+          "type": "string"
+        },
+        "label": {
+          "default": "Team graph",
+          "description": "What the graph is.",
+          "title": "Label",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/GraphMetadata",
+          "description": "When, how it was cut, the weeks and where the flow waits."
+        },
+        "nodes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Node"
+          },
+          "description": "Every node by its id.",
+          "title": "Nodes",
+          "type": "object"
+        },
+        "edges": {
+          "description": "Every edge, sorted by source, target and relation.",
+          "items": {
+            "$ref": "#/$defs/Edge"
+          },
+          "title": "Edges",
+          "type": "array"
+        }
+      },
+      "required": [
+        "metadata",
+        "nodes",
+        "edges"
+      ],
+      "title": "Graph",
+      "type": "object"
+    },
+    "GraphMetadata": {
+      "additionalProperties": false,
+      "description": "When the graph is as of, how it was cut, the weeks, where the flow waits and what was skipped.",
+      "properties": {
+        "as_of": {
+          "description": "When the graph is as of, in UTC.",
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
+        "time_zone": {
+          "description": "The zone schedules were read in.",
+          "title": "Time Zone",
+          "type": "string"
+        },
+        "filters": {
+          "$ref": "#/$defs/Filters",
+          "description": "How the graph was cut."
+        },
+        "weeks": {
+          "description": "Promises kept per week, oldest first.",
+          "items": {
+            "$ref": "#/$defs/Week"
+          },
+          "title": "Weeks",
+          "type": "array"
+        },
+        "waiting": {
+          "description": "Where the flow waits now.",
+          "items": {
+            "$ref": "#/$defs/Waiting"
+          },
+          "title": "Waiting",
+          "type": "array"
+        },
+        "summary": {
+          "description": "The flow in one line, e.g. `Weekly report waiting on 2 updates`, or `Nothing waits`.",
+          "title": "Summary",
+          "type": "string"
+        },
+        "problems": {
+          "description": "Telemetry lines that were skipped, and why.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Problems",
+          "type": "array"
+        }
+      },
+      "required": [
+        "as_of",
+        "time_zone",
+        "filters",
+        "weeks",
+        "waiting",
+        "summary",
+        "problems"
+      ],
+      "title": "GraphMetadata",
+      "type": "object"
+    },
+    "Node": {
+      "additionalProperties": false,
+      "description": "A JGF node: an artifact or a Heinzelmännchen.",
+      "properties": {
+        "label": {
+          "description": "What to call it.",
+          "title": "Label",
+          "type": "string"
+        },
+        "metadata": {
+          "$ref": "#/$defs/NodeMetadata",
+          "description": "What the team sees of it."
+        }
+      },
+      "required": [
+        "label",
+        "metadata"
+      ],
+      "title": "Node",
+      "type": "object"
+    },
+    "NodeMetadata": {
+      "additionalProperties": false,
+      "description": "What the team sees of an artifact or a Heinzelmännchen: never content, descriptions or per-person counts.",
+      "properties": {
+        "kind": {
+          "description": "`artifact` (a thing the team keeps or reads) or `heinzel` (who keeps it).",
+          "enum": [
+            "artifact",
+            "heinzel"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The roster handle of the user whose Heinzelmännchen keeps it, or who it belongs to; none when several keep it or nobody does.",
+          "title": "Owner"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "enum": [
+                "on_time",
+                "waiting_for_approval",
+                "late",
+                "fell_back",
+                "offline"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The current promise's state: on_time, waiting_for_approval, late, fell_back or offline; none when nothing is promised (no schedule, or an artifact nobody on the team keeps).",
+          "title": "State"
+        },
+        "contract": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The team contract that keeps it, or that it keeps: `team:<name>`.",
+          "title": "Contract"
+        },
+        "contract_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "That contract's version: its `version`, else `sha256:<hex>`.",
+          "title": "Contract Version"
+        },
+        "deadline": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "When the current promise is due: the next run of a contract that reads it, else its own next run.",
+          "title": "Deadline"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where the artifact lives, as last reported; none if never reported.",
+          "title": "Url"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For a part of an artifact (a tracker's row): the containing artifact's node id.",
+          "title": "Parent"
+        },
+        "last_seen": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For a Heinzelmännchen: its newest entry, a heartbeat included.",
+          "title": "Last Seen"
+        }
+      },
+      "required": [
+        "kind",
+        "owner",
+        "state",
+        "contract",
+        "contract_version",
+        "deadline",
+        "url",
+        "parent",
+        "last_seen"
+      ],
+      "title": "NodeMetadata",
+      "type": "object"
+    },
+    "Waiting": {
+      "additionalProperties": false,
+      "description": "Where the flow waits now: an artifact whose current promise isn't kept yet, and what it waits on.",
+      "properties": {
+        "artifact": {
+          "description": "The artifact's node id.",
+          "title": "Artifact",
+          "type": "string"
+        },
+        "summary": {
+          "description": "One line, e.g. `Weekly report waiting on 2 updates`.",
+          "title": "Summary",
+          "type": "string"
+        },
+        "on": {
+          "description": "The node ids of the inputs (or their parts) not updated yet.",
+          "items": {
+            "type": "string"
+          },
+          "title": "On",
+          "type": "array"
+        }
+      },
+      "required": [
+        "artifact",
+        "summary",
+        "on"
+      ],
+      "title": "Waiting",
+      "type": "object"
+    },
+    "Week": {
+      "additionalProperties": false,
+      "description": "Promises due in one ISO week, by how they ended: the team's flow, never anyone's performance.",
+      "properties": {
+        "week": {
+          "description": "The ISO week, e.g. 2026-W43.",
+          "title": "Week",
+          "type": "string"
+        },
+        "due": {
+          "description": "Promises whose deadline fell in the week and has passed, or that were kept.",
+          "title": "Due",
+          "type": "integer"
+        },
+        "on_time": {
+          "description": "Kept by the deadline.",
+          "title": "On Time",
+          "type": "integer"
+        },
+        "fell_back": {
+          "description": "Kept by the deadline on a stale input.",
+          "title": "Fell Back",
+          "type": "integer"
+        },
+        "late": {
+          "description": "Kept after the deadline, or not at all.",
+          "title": "Late",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "week",
+        "due",
+        "on_time",
+        "fell_back",
+        "late"
+      ],
+      "title": "Week",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A JSON Graph Format v2 document holding one graph: `{\"graph\": {...}}`.",
+  "properties": {
+    "graph": {
+      "$ref": "#/$defs/Graph",
+      "description": "The team graph."
+    }
+  },
+  "required": [
+    "graph"
+  ],
+  "title": "hz-team: a team graph in JSON Graph Format v2",
+  "type": "object"
+}

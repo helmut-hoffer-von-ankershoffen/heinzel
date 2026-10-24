@@ -1,0 +1,3 @@
+{"v":1,"heinzel_id":"costas-tracker","user":"costas","time":"2026-10-14T11:30:00Z","verb":"drafted","target":"https://tracker.acme.example/boards/7#costas","contract":"team:tracker-update","part":"costas","contract_version":"1.0.0"}
+{"v":1,"heinzel_id":"costas-tracker","user":"costas","time":"2026-10-17T09:00:00Z","verb":"approved","target":"https://tracker.acme.example/boards/7#costas","contract":"team:tracker-update","part":"costas","by":"costas"}
+{"v":1,"heinzel_id":"costas-tracker","user":"costas","time":"2026-10-19T08:00:00Z","verb":"heartbeat","contract":"team:tracker-update"}

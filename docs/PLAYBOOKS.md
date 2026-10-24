@@ -17,8 +17,9 @@ hz system plugin search --text playbook     # find one; `hz system plugin add <n
 hz workflow playbooks                       # its asset types, templates and recommended settings
 ```
 
-No first-party plugin brings a playbook yet; to use one today, [write one](#writing-a-playbook) in your own plugin
-(`hz system plugin new`). Commands below name a playbook's templates as `<module>:<template>`, where `<module>` is
+The core brings one, the graph keeper (`graph:team-graph-keeper`, [Teams](TEAMS.md#is-the-work-flowing)); no
+first-party plugin brings a playbook yet. For your own kind of work, [write one](#writing-a-playbook) in your own
+plugin (`hz system plugin new`). Commands below name a playbook's templates as `<module>:<template>`, where `<module>` is
 the module `hz workflow playbooks` shows.
 
 The recommended settings are only proposals, each shown with the `hz system config set` command that applies it.

@@ -34,6 +34,7 @@ Plugins add their own tables.
 | `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | Adapter that serves `documents`. |
 | `mail` | `HZ_CAPABILITIES__MAIL` | `None` | Adapter that serves `mail`, e.g. `google`. |
 | `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | Adapter that serves `meetings`, e.g. `zoom`. |
+| `team_graph` | `HZ_CAPABILITIES__TEAM_GRAPH` | `'hz-graph'` | Adapter that serves `team-graph`: `hz-graph` (the default, the core's graph of your team's contracts and telemetry), or one from a plugin. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | Adapter that serves `tracker`, e.g. `github`. |
 
 ## `[atlassian]`
@@ -66,6 +67,14 @@ Plugins add their own tables.
 | `gws_path` | `HZ_GOOGLE__GWS_PATH` | `None` | Absolute path of the Google Workspace CLI (`gws`) executable; `gws` on PATH when not set. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml. |
 | `timeout` | `HZ_GOOGLE__TIMEOUT` | `60.0` | Seconds to wait for each `gws` run before stopping it. |
 
+## `[graph]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `time_zone` | `HZ_GRAPH__TIME_ZONE` | `None` | The IANA time zone team contracts' schedules are read in, e.g. Europe/Lisbon; your system's when unset. |
+| `offline_after` | `HZ_GRAPH__OFFLINE_AFTER` | `'2d'` | How long a Heinzelmännchen may be silent (no entry, not even a heartbeat) before it shows as offline, e.g. 36h. |
+| `weeks` | `HZ_GRAPH__WEEKS` | `4` | How many weeks of kept promises the graph counts. |
+
 ## `[org]`
 
 | Key | Environment variable | Default | Description |
@@ -78,6 +87,12 @@ Plugins add their own tables.
 | `coding_agent` | `HZ_ORG__CODING_AGENT` | `None` | The coding agent you draft with: claude-code, command (one of your own) or none. |
 | `name` | `HZ_ORG__NAME` | `None` | Your name, from your Google or GitHub login; stays on this machine, never in a repository. |
 | `email` | `HZ_ORG__EMAIL` | `None` | Your work email, from your Google login; stays on this machine, never in a repository. |
+
+## `[report]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `user` | `HZ_REPORT__USER` | `None` | Your handle in your team's roster, which every entry you report carries; e.g. costas. |
 
 ## `[system.agent]`
 

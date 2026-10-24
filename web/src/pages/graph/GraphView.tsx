@@ -18,7 +18,7 @@ import { TeamLegend } from "./Legend";
 import { layoutTeam, type TeamFlowNode } from "./layout";
 import { teamNodeTypes } from "./TeamNodes";
 
-/** `GET /api/graph/graph` (`hz graph`); null when there is none (404), so the screen says how to make one. */
+/** `GET /api/graph` (`hz graph`); null when there is none (404), so the screen says how to make one. */
 export function useTeamGraph() {
   // Without the graph module there is nothing to ask, and asking would log a 404.
   const info = useInfo();
@@ -28,7 +28,7 @@ export function useTeamGraph() {
     queryKey: ["graph", "graph", absent],
     queryFn: async (): Promise<TeamGraph | null> => {
       if (absent) return null;
-      const request = new Request(new URL("/api/graph/graph", window.location.origin), {
+      const request = new Request(new URL("/api/graph", window.location.origin), {
         headers: { Authorization: `Bearer ${token() ?? ""}` },
       });
       const response = await fetch(request);
