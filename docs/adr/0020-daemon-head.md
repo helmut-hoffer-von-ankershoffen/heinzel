@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-10-23
 amends: 0010
+amended-by: 0038
 ---
 
 # 0020: Add a daemon head for background and reactive operation
