@@ -97,6 +97,10 @@ class ConsolePrompter(Prompter):
             msg = "The terminal can't hide what you type, so the secret wasn't read; use `hz system credential set`."
             raise HeinzelError(msg) from exc
 
+    def show(self, renderable: object) -> None:
+        """Print a renderable (a table, a preview) as it is."""
+        self.console.print(renderable)
+
     def say(self, text: str) -> None:
         """Print a line as written, never as markup."""
         self.console.print(Text(terminal_safe(text)), highlight=False)
