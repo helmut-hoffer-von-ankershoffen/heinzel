@@ -354,35 +354,10 @@
         "title": "AvailablePlugin",
         "type": "object"
       },
-      "Candidate": {
-        "description": "Something a hint found that may be an asset of its type.",
+      "CapabilityChoice": {
+        "description": "A capability, the adapter serving it and how it was chosen, and every adapter that could.",
         "properties": {
-          "asset": {
-            "description": "The asset type, as `--asset <type>=<ref>` takes it.",
-            "title": "Asset",
-            "type": "string"
-          },
-          "hint": {
-            "description": "The read method that found it.",
-            "title": "Hint",
-            "type": "string"
-          },
-          "playbook": {
-            "description": "The module whose playbook's hint found it.",
-            "title": "Playbook",
-            "type": "string"
-          },
-          "ref": {
-            "description": "Its reference, in the adapter's notation: what `--asset <type>=<ref>` takes.",
-            "title": "Ref",
-            "type": "string"
-          },
-          "title": {
-            "description": "Its title.",
-            "title": "Title",
-            "type": "string"
-          },
-          "url": {
+          "bound": {
             "anyOf": [
               {
                 "type": "string"
@@ -391,18 +366,79 @@
                 "type": "null"
               }
             ],
-            "description": "Where people open it, if it has a web address.",
-            "title": "Url"
+            "description": "The adapter that serves it now; none.",
+            "title": "Bound"
+          },
+          "candidates": {
+            "description": "Every installed adapter that provides it.",
+            "items": {
+              "$ref": "#/components/schemas/heinzel__modules__system__connector___models__Candidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "capability": {
+            "description": "The capability, e.g. `code-host`.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "find": {
+            "description": "The command line that finds a plugin providing it.",
+            "title": "Find",
+            "type": "string"
+          },
+          "how": {
+            "description": "How that adapter was chosen.",
+            "enum": [
+              "configured",
+              "automatic",
+              "default",
+              "off",
+              "unbound"
+            ],
+            "title": "How",
+            "type": "string"
+          },
+          "key": {
+            "description": "Its configuration key, e.g. `capabilities.code_host`.",
+            "title": "Key",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the chosen adapter can't serve it, e.g. not installed; none if it can.",
+            "title": "Problem"
+          },
+          "purpose": {
+            "description": "What it is for, in a few plain words, e.g. `pull requests and reviews`.",
+            "title": "Purpose",
+            "type": "string"
+          },
+          "title": {
+            "description": "Its name for people, e.g. `Code host`.",
+            "title": "Title",
+            "type": "string"
           }
         },
         "required": [
-          "playbook",
-          "asset",
-          "ref",
+          "capability",
           "title",
-          "hint"
+          "purpose",
+          "key",
+          "bound",
+          "how",
+          "problem",
+          "candidates",
+          "find"
         ],
-        "title": "Candidate",
+        "title": "CapabilityChoice",
         "type": "object"
       },
       "CapabilityInfo": {
@@ -974,6 +1010,17 @@
             "title": "Fix",
             "type": "string"
           },
+          "login": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Login"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "For a check of a sign-in: whether there is one, as whom, and how to make one; left out if none."
+          },
           "name": {
             "description": "What was checked.",
             "title": "Name",
@@ -1425,6 +1472,268 @@
           "fix"
         ],
         "title": "ConflictView",
+        "type": "object"
+      },
+      "Connector": {
+        "description": "A module that provides adapters, with its state, sign-in, tools and the commands that connect it.",
+        "properties": {
+          "bind": {
+            "description": "Command lines that make it serve the capabilities it doesn't serve yet.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Bind",
+            "type": "array"
+          },
+          "builtin": {
+            "description": "Whether it is part of the core rather than a plugin.",
+            "title": "Builtin",
+            "type": "boolean"
+          },
+          "capabilities": {
+            "description": "The capabilities its adapters provide.",
+            "items": {
+              "$ref": "#/components/schemas/ConnectorCapability"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "checks": {
+            "description": "Its offline health checks, as doctor runs them.",
+            "items": {
+              "$ref": "#/components/schemas/Check"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "connect": {
+            "description": "Command lines that sign its tool in, run by the person in a terminal.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Connect",
+            "type": "array"
+          },
+          "distribution": {
+            "description": "The distribution that ships it.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "login": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Login"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What its checks found about its sign-in; none if its tool has none."
+          },
+          "name": {
+            "description": "Qualified name of the module, e.g. `github`; `hz system connector test` takes it.",
+            "title": "Name",
+            "type": "string"
+          },
+          "state": {
+            "description": "Connected, not signed in, not bound, needs attention, or unknown until tested.",
+            "enum": [
+              "connected",
+              "not-signed-in",
+              "not-bound",
+              "attention",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What it connects, the module's summary.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "testable": {
+            "description": "Whether it has a live test (`hz system connector test`).",
+            "title": "Testable",
+            "type": "boolean"
+          },
+          "title": {
+            "description": "Its name for people, e.g. `GitHub`.",
+            "title": "Title",
+            "type": "string"
+          },
+          "tools": {
+            "description": "The capability methods its adapters implement, with their modes.",
+            "items": {
+              "$ref": "#/components/schemas/Tool"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "summary",
+          "distribution",
+          "builtin",
+          "state",
+          "login",
+          "capabilities",
+          "tools",
+          "checks",
+          "connect",
+          "bind",
+          "testable"
+        ],
+        "title": "Connector",
+        "type": "object"
+      },
+      "ConnectorCapability": {
+        "description": "A capability one of the connector's adapters provides, and whether that adapter serves it.",
+        "properties": {
+          "adapter": {
+            "description": "The connector's adapter for it, the name bindings use, e.g. `github`.",
+            "title": "Adapter",
+            "type": "string"
+          },
+          "bound": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The adapter that serves the capability now, this one or another; none.",
+            "title": "Bound"
+          },
+          "capability": {
+            "description": "The capability, e.g. `tracker`.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "how": {
+            "description": "How that adapter was chosen.",
+            "enum": [
+              "configured",
+              "automatic",
+              "default",
+              "off",
+              "unbound"
+            ],
+            "title": "How",
+            "type": "string"
+          },
+          "modes": {
+            "description": "The modes the adapter serves.",
+            "items": {
+              "enum": [
+                "read",
+                "write"
+              ],
+              "type": "string"
+            },
+            "title": "Modes",
+            "type": "array"
+          },
+          "title": {
+            "description": "Its name for people, e.g. `Tracker`.",
+            "title": "Title",
+            "type": "string"
+          },
+          "used": {
+            "description": "Whether this adapter serves the capability now.",
+            "title": "Used",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "capability",
+          "title",
+          "adapter",
+          "modes",
+          "used",
+          "bound",
+          "how"
+        ],
+        "title": "ConnectorCapability",
+        "type": "object"
+      },
+      "ConnectorReport": {
+        "description": "Every connector, and for every capability who serves it and who could.",
+        "properties": {
+          "capabilities": {
+            "description": "Every capability the core defines, by title.",
+            "items": {
+              "$ref": "#/components/schemas/CapabilityChoice"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "connectors": {
+            "description": "Every module that provides adapters, by title.",
+            "items": {
+              "$ref": "#/components/schemas/Connector"
+            },
+            "title": "Connectors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "connectors",
+          "capabilities"
+        ],
+        "title": "ConnectorReport",
+        "type": "object"
+      },
+      "ConnectorTest": {
+        "description": "The outcome of a connector's live test: one cheap read-only call through its tool.",
+        "properties": {
+          "checks": {
+            "description": "The live checks: what was called and what came back.",
+            "items": {
+              "$ref": "#/components/schemas/Check"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "latency_ms": {
+            "description": "How long the test took, in milliseconds.",
+            "title": "Latency Ms",
+            "type": "integer"
+          },
+          "login": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Login"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who the tool says it is signed in as, if it says."
+          },
+          "name": {
+            "description": "Qualified name of the module tested.",
+            "title": "Name",
+            "type": "string"
+          },
+          "passed": {
+            "description": "Whether every live check is up.",
+            "title": "Passed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "passed",
+          "latency_ms",
+          "login",
+          "checks"
+        ],
+        "title": "ConnectorTest",
         "type": "object"
       },
       "ContractGraph": {
@@ -1891,7 +2200,7 @@
           "candidates": {
             "description": "What the hints found, by asset type.",
             "items": {
-              "$ref": "#/components/schemas/Candidate"
+              "$ref": "#/components/schemas/heinzel__modules__workflow___playbooks__Candidate"
             },
             "title": "Candidates",
             "type": "array"
@@ -2924,6 +3233,46 @@
           "message"
         ],
         "title": "LogLine",
+        "type": "object"
+      },
+      "Login": {
+        "description": "What a check found about the sign-in of the tool an adapter goes through, such as a vendor CLI (ADR 0055).\n\nThe tool owns the sign-in (ADR 0035): this says only whether there is one, as whom and where, and the command\nthat makes one, which the person runs in a terminal and where the tool itself asks for any secret.",
+        "properties": {
+          "account": {
+            "default": "",
+            "description": "Who it is signed in as, as the tool names them (a login or the person's own address); never a secret. Empty when the tool doesn't say.",
+            "title": "Account",
+            "type": "string"
+          },
+          "command": {
+            "default": "",
+            "description": "The command line that signs it in, run by the person in a terminal; empty when there is none.",
+            "title": "Command",
+            "type": "string"
+          },
+          "signed_in": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the tool has a sign-in; none when that can't be known without asking the service.",
+            "title": "Signed In"
+          },
+          "site": {
+            "default": "",
+            "description": "Where it is signed in: a host or site name; empty when it doesn't say.",
+            "title": "Site",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signed_in"
+        ],
+        "title": "Login",
         "type": "object"
       },
       "Measurements": {
@@ -5577,6 +5926,43 @@
         "title": "TokenUsage",
         "type": "object"
       },
+      "Tool": {
+        "description": "A capability method the connector implements: what hz can do through it.",
+        "properties": {
+          "capability": {
+            "description": "The capability, e.g. `code-host`.",
+            "title": "Capability",
+            "type": "string"
+          },
+          "method": {
+            "description": "The method, e.g. `merged_pull_requests`.",
+            "title": "Method",
+            "type": "string"
+          },
+          "mode": {
+            "description": "`read` or `write`; writes run only from publish operations.",
+            "enum": [
+              "read",
+              "write"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "summary": {
+            "description": "What the method does, the first line of its docstring.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "method",
+          "mode",
+          "summary"
+        ],
+        "title": "Tool",
+        "type": "object"
+      },
       "Unmaintained": {
         "description": "An input that reads a contract's output no contract maintains.",
         "properties": {
@@ -5719,6 +6105,97 @@
           "late"
         ],
         "title": "Week",
+        "type": "object"
+      },
+      "heinzel__modules__system__connector___models__Candidate": {
+        "description": "An adapter that can serve a capability, and the state of its connector.",
+        "properties": {
+          "adapter": {
+            "description": "The name bindings use, e.g. `github`.",
+            "title": "Adapter",
+            "type": "string"
+          },
+          "connector": {
+            "description": "Qualified name of the module that provides it.",
+            "title": "Connector",
+            "type": "string"
+          },
+          "state": {
+            "description": "Its connector's state.",
+            "enum": [
+              "connected",
+              "not-signed-in",
+              "not-bound",
+              "attention",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "description": "Its connector's name for people, e.g. `GitHub`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "adapter",
+          "connector",
+          "title",
+          "state"
+        ],
+        "title": "Candidate",
+        "type": "object"
+      },
+      "heinzel__modules__workflow___playbooks__Candidate": {
+        "description": "Something a hint found that may be an asset of its type.",
+        "properties": {
+          "asset": {
+            "description": "The asset type, as `--asset <type>=<ref>` takes it.",
+            "title": "Asset",
+            "type": "string"
+          },
+          "hint": {
+            "description": "The read method that found it.",
+            "title": "Hint",
+            "type": "string"
+          },
+          "playbook": {
+            "description": "The module whose playbook's hint found it.",
+            "title": "Playbook",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Its reference, in the adapter's notation: what `--asset <type>=<ref>` takes.",
+            "title": "Ref",
+            "type": "string"
+          },
+          "title": {
+            "description": "Its title.",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open it, if it has a web address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "playbook",
+          "asset",
+          "ref",
+          "title",
+          "hint"
+        ],
+        "title": "Candidate",
         "type": "object"
       }
     }
@@ -6382,6 +6859,73 @@
           }
         },
         "summary": "Remove a setting from the user or project configuration file, so its default applies again.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/list": {
+      "get": {
+        "description": "List connectors with their sign-in, what they serve and their tools; offline.",
+        "operationId": "system_connector_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List connectors with their sign-in, what they serve and their tools; offline.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/connector/test": {
+      "get": {
+        "description": "Test a connector live: one cheap read-only call through its tool, with a short timeout.",
+        "operationId": "system_connector_test",
+        "parameters": [
+          {
+            "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The connector, as `hz system connector list` names it, e.g. `github`.",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorTest"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test a connector live: one cheap read-only call through its tool, with a short timeout.",
         "tags": [
           "system"
         ]

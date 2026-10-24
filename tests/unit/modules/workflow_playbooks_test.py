@@ -139,7 +139,8 @@ def test_each_failing_hint_is_its_own_problem(make):
 
 
 def test_an_unbound_capability_is_one_problem_per_playbook_with_its_fix(make):
-    found = make(bindings={"agent_runner": "claude-code"}).discover("teamwork")
+    # `none`: the sole fake adapters would otherwise serve both automatically (ADR 0055).
+    found = make(bindings={"agent_runner": "claude-code", "documents": "none", "tracker": "none"}).discover("teamwork")
     assert found.candidates == []
     unbound = [p for p in found.problems if "fit" not in p.problem]
     assert len(unbound) == 2  # documents and tracker, once each, though documents has three hints

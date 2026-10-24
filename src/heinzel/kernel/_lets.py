@@ -229,7 +229,9 @@ class Check(BaseModel):
     detail: str = Field(default="", description="What was found; required unless UP.")
     fix: str = Field(default="", description="What to do about it, when not UP.")
     login: Login | None = Field(
-        default=None, description="For a check of a sign-in: whether there is one, as whom, and how to make one."
+        default=None,
+        description="For a check of a sign-in: whether there is one, as whom, and how to make one; left out if none.",
+        exclude_if=lambda login: login is None,  # most checks have none: their JSON stays as it was
     )
 
     @model_validator(mode="after")

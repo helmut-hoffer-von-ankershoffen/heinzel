@@ -155,7 +155,7 @@ def test_a_document_that_cant_be_read_records_nothing(service, ref, problem):
 
 
 def test_reading_a_document_needs_documents_bound(make_service):
-    service = make_service({"agent_runner": "fake"})
+    service = make_service({"agent_runner": "fake", "documents": "none"})
     service.run("plain")
     with pytest.raises(HeinzelError, match="documents"):
         service.sent("plain", ref="doc-1")

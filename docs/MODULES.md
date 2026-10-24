@@ -20,6 +20,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.capability`](#systemcapability) | Show which adapters serve which capabilities, and who reads and writes what. |
 | [`system.changelog`](#systemchangelog) | Release notes of the installed version and of newer releases. |
 | [`system.config`](#systemconfig) | Show, get, set and initialize configuration. |
+| [`system.connector`](#systemconnector) | Show whether each connector is signed in and serves something, and test one live. |
 | [`system.credential`](#systemcredential) | Store and check the credentials modules need, in the OS keychain. |
 | [`system.daemon`](#systemdaemon) | Run modules' jobs in the background, supervised by launchd or systemd. |
 | [`system.directory`](#systemdirectory) | Guess reporting lines from recurring 1:1s in your calendar, for setup to confirm. |
@@ -193,6 +194,15 @@ Show, get, set and initialize configuration.
 | Change a setting in the user or project configuration file, after validating it. | `hz system config set` | `system_config_set` | `POST /system/config/set` | `POST /api/system/config/set` | yes | expert |
 | Remove a setting from the user or project configuration file, so its default applies again. | `hz system config unset` | `system_config_unset` | `POST /system/config/unset` | `POST /api/system/config/unset` | yes | expert |
 | Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created. | `hz system config reveal` | — | — | `POST /api/system/config/reveal` | yes | expert |
+
+## `system.connector`
+
+Show whether each connector is signed in and serves something, and test one live.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List connectors with their sign-in, what they serve and their tools; offline. | `hz system connector list` | `system_connector_list` | — | `GET /api/system/connector/list` |  | expert |
+| Test a connector live: one cheap read-only call through its tool, with a short timeout. | `hz system connector test` | `system_connector_test` | — | `GET /api/system/connector/test` |  | expert |
 
 ## `system.credential`
 

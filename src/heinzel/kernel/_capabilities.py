@@ -127,6 +127,8 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
             ),
             Capability(
                 name="team-graph",
+                title="Team graph",
+                purpose="how your team's promises flow and where they wait",
                 protocol=TeamGraph,
                 summary="The team's graph of kept promises: artifacts, Heinzelmännchen and where the flow waits.",
                 methods=MappingProxyType({"snapshot": "read"}),

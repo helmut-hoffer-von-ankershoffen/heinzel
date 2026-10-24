@@ -28,7 +28,7 @@ Name = Annotated[str, Field(description="The connector, as `hz system connector 
 
 @module.operation(name="list", render=render_report, heads=HEADS)
 def list_(service: ConnectorService) -> ConnectorReport:
-    """List connectors with their sign-in, what they serve and their tools, and who serves each capability; offline."""
+    """List connectors with their sign-in, what they serve and their tools; offline."""
     return service.report()
 
 

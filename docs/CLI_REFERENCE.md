@@ -685,6 +685,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `capability`: (expert) Show which adapters serve which...
 * `changelog`: (expert) Show the installed version&#x27;s...
 * `config`: (expert) Show, get, set and initialize...
+* `connector`: (expert) Show whether each connector is...
 * `credential`: (expert) Store and check the credentials...
 * `daemon`: (expert) Run modules&#x27; jobs in the...
 * `doctor`: Run every module&#x27;s health checks; exits...
@@ -955,6 +956,61 @@ $ hz system config unset [OPTIONS] {key}
 **Options**:
 
 * `--scope <user|project>`: Which file to change: user, or the project&#x27;s hz.toml.  [default: user]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system connector`
+
+(expert) Show whether each connector is signed in and serves something, and test one live.
+
+**Usage**:
+
+```console
+$ hz system connector [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `list`: (expert) List connectors with their...
+* `test`: (expert) Test a connector live: one cheap...
+
+#### `hz system connector list`
+
+(expert) List connectors with their sign-in, what they serve and their tools; offline.
+
+**Usage**:
+
+```console
+$ hz system connector list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system connector test`
+
+(expert) Test a connector live: one cheap read-only call through its tool, with a short timeout.
+
+**Usage**:
+
+```console
+$ hz system connector test [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The connector, as `hz system connector list` names it, e.g. `github`.  [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

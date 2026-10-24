@@ -496,7 +496,9 @@ def test_the_daemon_runs_a_contract_and_writes_a_receipt_naming_the_draft(kernel
 
 
 def test_a_contract_whose_capability_is_unbound_fails_its_daemon_run(make_kernel, contracts):
-    config = Config(files=(), data={"capabilities": {"agent_runner": "fake"}, "workflow": {"user_dir": str(contracts)}})
+    # `none`: the sole fake adapter would serve it automatically (ADR 0055).
+    capabilities = {"agent_runner": "fake", "code_host": "none"}
+    config = Config(files=(), data={"capabilities": capabilities, "workflow": {"user_dir": str(contracts)}})
     kernel = make_kernel(builtins=True, fakes=fakes(), notes=notes(), config=config)
     code, report = hz(kernel, "system", "daemon", "tick", "--job", "workflow:me-weekly-digest")
     assert code == 1
