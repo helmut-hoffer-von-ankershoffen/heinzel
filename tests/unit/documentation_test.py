@@ -232,7 +232,7 @@ def test_finds_undescribed_result_fields():
 
 
 SUMMARY_LIMIT = 100
-PLURAL_MODULE_NAMES: set[str] = set()  # module names that are rightly plural; none yet
+PLURAL_MODULE_NAMES: set[str] = {"access"}  # names ending in s that are singular or rightly plural
 
 
 def summary_problems(summary: str) -> list[str]:

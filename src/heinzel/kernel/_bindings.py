@@ -12,7 +12,7 @@ visible in review, as `Credentials` does (ADR 0030); they don't stop a malicious
 """
 
 import logging
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, ClassVar, Literal, cast
@@ -59,6 +59,12 @@ class CapabilitySettings(ModuleSettings):
         "command line first), `command`, or one from a plugin.",
         json_schema_extra=_options("agent-runner"),
     )
+    ai_access: str | None = Field(
+        default="claude-code",
+        description="How hz reaches AI, the AI access in use: `claude-code` (the default), `gateway` (a company CLI "
+        "configured in `[ai.access]`), `pydantic-ai`, or one from a plugin; `hz ai access use` sets it (ADR 0057).",
+        json_schema_extra=_options("ai-access"),
+    )
     calendar: str | None = Field(
         default=None,
         description="Adapter that serves `calendar`, e.g. `google`.",
@@ -101,6 +107,7 @@ class CapabilitySettings(ModuleSettings):
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
         {
             "agent_runner",
+            "ai_access",
             "calendar",
             "chat",
             "code_host",
@@ -205,6 +212,39 @@ class CapabilityUse:
     """Why the requirement is unmet; None when it is met."""
     optional: bool = False
     """Whether the requester does without it when it is unmet, so that is no doctor finding."""
+
+
+class Adapters[P](Mapping[str, P]):
+    """Handles on every installed adapter of a capability, by adapter name; ask for `Adapters[AiAccess]` (ADR 0057).
+
+    For the module that owns choosing among a capability's adapters, which lists them all with their status, not just
+    the bound one. Injected only into a function whose operation or module declared the capability; read modes only.
+    """
+
+    __slots__ = ("_handles",)
+
+    def __init__(self, handles: Mapping[str, object]) -> None:
+        """Hold the handles, by adapter name."""
+        self._handles = dict(handles)
+
+    def __getitem__(self, name: str) -> P:
+        """The handle on the adapter called `name`.
+
+        Raises:
+            KeyError: If no installed adapter of the capability has that name.
+        """
+        return cast("P", self._handles[name])
+
+    def __iter__(self) -> Iterator[str]:
+        """The adapter names, sorted."""
+        return iter(self._handles)
+
+    def __len__(self) -> int:
+        """How many adapters there are."""
+        return len(self._handles)
+
+    def __repr__(self) -> str:
+        return f"<Adapters {', '.join(self._handles)}>"
 
 
 class _Handle:
@@ -475,6 +515,49 @@ class Capabilities:
             instance: Callable[[], object] = lambda: built  # noqa: E731 - one object, built once
         else:
             instance = partial(self._instance, adapter, capability)
+        return self._handle(requester, capability, requirement, modes, instance)
+
+    def handles(self, capability: Capability, func: Callable[..., Any]) -> "Adapters[Any]":
+        """Read handles on every installed adapter of `capability` for `func`, by adapter name (ADR 0057).
+
+        For the module that owns choosing among them, such as `ai.access`: it lists them all, not just the bound one.
+        Read modes only, whatever the requester publishes; each adapter is built on its first call. An adapter name two
+        modules provide is left out, as binding to it would be refused.
+
+        Raises:
+            HeinzelError: If `func` acts for no requester, or its requester didn't declare `capability` for reading.
+        """
+        requester = self._owners.get(func)
+        if requester is None:
+            name = getattr(func, "__qualname__", repr(func))
+            msg = f"{name} asks for every adapter of {capability.name}, but only a registered module's functions can."
+            raise HeinzelError(msg)
+        requirement, _ = requester.grant(capability.name)
+        modes = (requirement.modes if requirement else frozenset[Mode]()) - {"write"}
+        if requirement is None or not modes:
+            msg = (
+                f"{requester.label} asks for every adapter of {capability.name} without declaring it; add "
+                f'`requires=["{capability.name}:read"]` to its operation or module.'
+            )
+            raise HeinzelError(msg)
+        handles: dict[str, object] = {}
+        for name in self.installed(capability.name):
+            adapter, problem = self.adapter_for(Requirement(capability.name, modes, name))
+            if adapter is None or problem is not None:
+                continue
+            instance = partial(self._instance, adapter, capability)
+            handles[name] = self._handle(requester, capability, requirement, modes, instance)
+        return Adapters(handles)
+
+    @staticmethod
+    def _handle(
+        requester: Requester,
+        capability: Capability,
+        requirement: Requirement,
+        modes: frozenset[Mode],
+        instance: Callable[[], object],
+    ) -> "_Handle":
+        """A handle with the methods of `modes`; every other method raises why `requester` can't call it."""
         allowed: dict[str, Callable[..., Any]] = {}
         denied: dict[str, str] = {}
         for name, mode in capability.methods.items():
