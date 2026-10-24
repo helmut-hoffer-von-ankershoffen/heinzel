@@ -176,6 +176,27 @@ def test_contracts_are_found_in_the_team_repository_and_your_directory(make, dir
     assert make(team_repository=None).directories == {"me": me}
 
 
+def test_the_team_checkout_comes_from_the_org_context_before_the_deprecated_setting(make_kernel, dirs, tmp_path):
+    me, legacy = dirs
+    joined = tmp_path / "joined"
+    data = {"workflow": {"user_dir": str(me), "team_repository": str(legacy)}, "team": {"checkout": str(joined)}}
+    kernel = make_kernel(builtins=True, config=Config(files=(), data=data))
+    service = WorkflowService(
+        kernel, kernel.resolve(WorkflowSettings), Config(files=(), data={}).settings(Settings, "hz")
+    )
+    assert service.directories == {"team": joined / "workflows", "me": me}
+    fixes = {c.name: c.fix for c in service.health()}
+    assert fixes["workflow team_repository"].startswith("hz system config unset workflow.team_repository")
+
+
+def test_the_deprecated_team_repository_setting_is_reported_with_its_migration(make, dirs):
+    _, team = dirs
+    check = {c.name: c for c in make().health()}["workflow team_repository"]
+    assert check.status is Status.DEGRADED
+    assert check.fix == f"hz team adopt {team}"
+    assert "workflow team_repository" not in {c.name for c in make(team_repository=None).health()}
+
+
 def test_one_name_in_both_places_is_two_valid_contracts_that_need_their_prefix(make, dirs):
     me, team = dirs
     put(me)
@@ -753,7 +774,9 @@ def test_new_refuses_bad_names_existing_files_and_links_with_a_command_that_work
 
 def test_new_for_the_team_needs_a_repository_and_says_how_to_contribute(make, dirs):
     _, team = dirs
-    with pytest.raises(HeinzelError, match=r"hz system config set workflow\.team_repository /path/to/checkout"):
+    with pytest.raises(
+        HeinzelError, match=r"hz team join <url>, or record a checkout you have: hz team adopt /path/to/checkout"
+    ):
         make(team_repository=None).new("retro-agenda", team=True)
     result = make().new("retro-agenda", team=True)
     assert result.file == team / "workflows" / "retro-agenda.prose.md"
@@ -949,7 +972,7 @@ def test_a_team_directory_behind_a_link_names_the_repository(make, dirs, tmp_pat
     link.symlink_to(team)
     (team / "workflows").rmdir()
     (team / "workflows").symlink_to(tmp_path)
-    with pytest.raises(HeinzelError, match=f"hz system config set workflow.team_repository {team.resolve()}"):
+    with pytest.raises(HeinzelError, match=f"hz team adopt {team.resolve()}"):
         make(team_repository=str(link)).new("other", team=True)
 
 

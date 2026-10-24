@@ -20,6 +20,7 @@ modules; `hz system modules` lists what is installed.
 | [`system.doctor`](#systemdoctor) | Check that Heinzelmännchen and its modules are healthy. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
+| [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
 
 ## `atlassian`
@@ -195,6 +196,22 @@ Settings: [`[system.plugin]`](CONFIGURATION.md#systemplugin).
 Run bounded agent sessions with Claude Code or a configured command.
 
 Settings: [`[system.runner]`](CONFIGURATION.md#systemrunner).
+
+Health checks: reported by `hz system doctor`.
+
+## `team`
+
+Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| Create a team repository from the template: you its first owner, its roster drafted for review. | `hz team new` | `team_new` | — | yes |
+| Clone a team repository with your own access, find you in its roster, and make it your team. | `hz team join` | `team_join` | — | yes |
+| Add someone to your team's roster, as one of its owners: a pull request the other owners see. | `hz team add` | `team_add` | — | yes |
+| Show your team: its repository, checkout and members, and what is wrong with them. | `hz team show` | `team_show` | `GET /team/show` |  |
+| Make an existing checkout your team repository; replaces the deprecated `workflow.team_repository`. | `hz team adopt` | `team_adopt` | — | yes |
+
+Settings: [`[team]`](CONFIGURATION.md#team).
 
 Health checks: reported by `hz system doctor`.
 

@@ -126,6 +126,7 @@ KERNEL = [
     "ModuleRecord",
     "ModuleSettings",
     "OperationLet",
+    "OrgContext",
     "Origin",
     "PROJECT_FILENAME",
     "Participant",

@@ -141,9 +141,13 @@ change. It stays local and is about the draft, never about people.
 ### Contribute a contract to your team's repository
 
 ```bash
-hz system config set workflow.team_repository /path/to/your/teams/checkout
+hz team join https://github.com/acme-example/hz-team-payments.git --yes   # or: hz team adopt /path/to/checkout
 hz workflow new retro-agenda --team      # writes <checkout>/workflows/retro-agenda.prose.md
 ```
+
+`hz team join` clones your team's repository and makes it your team; `hz team new` creates one ([TEAMS](TEAMS.md)).
+`[workflow] team_repository` still works but is deprecated: `hz team adopt <its path>` moves it to `[team]`, and
+`hz system doctor` says so until you do.
 
 Commit it on a branch and open a pull request; the repository's CI can gate with `hz workflow check --path workflows`
 (it exits with 1 on errors). Once merged, everyone with the checkout sees it as `team:retro-agenda` and can run it by
@@ -238,7 +242,7 @@ inputs as data in `<input>` elements, framed as never being instructions.
 | What | Where | Setting |
 | --- | --- | --- |
 | Your contracts (`me`) | `<user config dir>/workflows/` (`hz workflow list` prints it) | `[workflow] user_dir` |
-| Team contracts (`team`) | `<team_repository>/workflows/` | `[workflow] team_repository`, `[workflow] schedule_team` |
+| Team contracts (`team`) | `<team checkout>/workflows/` | `[team] checkout` (`hz team join`), `[workflow] schedule_team` |
 | Drafts and records | `<data dir>/workflow/drafts/<namespace>-<name>/`, kept 90 days by default | `[hz] data_dir`, `[workflow] retention_days` |
 | Cost cap | 1 USD a run by default, in every head | `[workflow] max_usd` |
 
