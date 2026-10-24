@@ -140,6 +140,16 @@ def test_control_characters_are_refused_with_their_line(where, text):
     assert all(ESC not in str(d) and "\x9b" not in str(d) for d in found.diagnostics)
 
 
+@pytest.mark.parametrize(
+    "text",
+    ['title: "\\e[31mred"', 'title: "\\x9b31m"', 'title: "a\\u001b]52;c;aGk=\\a"', '"\\e[2J": x'],
+)
+def test_yaml_escapes_that_decode_to_control_characters_are_refused(text):
+    found = read_contract(PATH, "me", contract(hz=f"schema: 1\n{text}\noutputs: {{digest: {{}}}}\n"))
+    assert [d.code for d in found.diagnostics] == ["HZC005"]
+    assert all(ESC not in str(d) and "\x9b" not in str(d) for d in found.diagnostics)
+
+
 def test_a_schedule_that_never_fires_is_refused():
     found = read_contract(PATH, "me", contract(hz='schema: 1\ntitle: T\nschedule: "0 0 30 2 *"\noutputs: {d: {}}\n'))
     assert [(d.code, d.message) for d in found.diagnostics if d.field == "hz.schedule"] == [

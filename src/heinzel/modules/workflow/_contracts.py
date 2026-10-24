@@ -352,7 +352,7 @@ def _build(loader: _Loader, node: Node, path: KeyPath, lines: dict[KeyPath, int]
                 raise _YamlError(
                     key_node.start_mark.line, "HZC004", f"keys must be text, not {key_node.tag.rpartition(':')[2]}"
                 )
-            key = cast("str", key_node.value)
+            key = _plain(cast("str", key_node.value), key_node)
             if key in mapping:
                 raise _YamlError(key_node.start_mark.line, "HZC004", f"duplicate key {key!r}")
             lines[(*path, key)] = key_node.start_mark.line
@@ -360,7 +360,24 @@ def _build(loader: _Loader, node: Node, path: KeyPath, lines: dict[KeyPath, int]
         return mapping
     if isinstance(node, SequenceNode):
         return [_build(loader, item, (*path, index), lines) for index, item in enumerate(node.value)]
-    return loader.construct_object(node, deep=True)  # pyright: ignore[reportUnknownMemberType] - PyYAML stubs leave node untyped
+    value = loader.construct_object(node, deep=True)  # pyright: ignore[reportUnknownMemberType] - PyYAML stubs leave node untyped
+    return _plain(value, node) if isinstance(value, str) else value
+
+
+def _plain(text: str, node: Node) -> str:
+    r"""`text`, unless a YAML escape such as `\e` decoded into a control character the file scan can't see.
+
+    Raises:
+        _YamlError: HZC005 if `text` holds a control character other than a tab or line break.
+    """
+    if CONTROLS.search(text):
+        raise _YamlError(
+            node.start_mark.line,
+            "HZC005",
+            "control characters aren't allowed",
+            "remove the escape; only tabs and line breaks may appear in a contract",
+        )
+    return text
 
 
 def _line(lines: Mapping[KeyPath, int], path: KeyPath) -> int:
