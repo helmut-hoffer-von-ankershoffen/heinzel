@@ -10,6 +10,7 @@ from typing import Annotated, Any, get_args, get_origin
 import typer
 from pydantic.fields import FieldInfo
 from rich.console import Console
+from rich.markup import escape
 
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import show, to_json
@@ -74,16 +75,16 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional epil
         try:
             result = kernel.invoke(operation, **kwargs)
         except HeinzelError as exc:
-            err_console.print(f"[red]Error:[/red] {exc}", highlight=False, soft_wrap=True)
+            err_console.print(f"[red]Error:[/red] {escape(str(exc))}", highlight=False, soft_wrap=True)
             raise typer.Exit(code=1) from exc
         except OSError as exc:
-            err_console.print(f"[red]Error:[/red] {exc}", highlight=False, soft_wrap=True)
+            err_console.print(f"[red]Error:[/red] {escape(str(exc))}", highlight=False, soft_wrap=True)
             raise typer.Exit(code=1) from exc
         except Exception as exc:
             if kernel.settings.log_level == "DEBUG":
                 raise
             err_console.print(
-                f"[red]Unexpected error:[/red] {type(exc).__name__}: {exc}\n"
+                f"[red]Unexpected error:[/red] {type(exc).__name__}: {escape(str(exc))}\n"
                 "This is a bug. Rerun with HZ_LOG_LEVEL=DEBUG for the traceback and report it with "
                 "`hz system doctor --json`.",
                 highlight=False,

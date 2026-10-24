@@ -8,6 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from rich.console import RenderableType
 from rich.table import Table
+from rich.text import Text
 
 from heinzel import Check, HealthLet, Kernel, Module, Settings, Status
 
@@ -37,7 +38,8 @@ def _render(report: HealthReport) -> RenderableType:
         table.add_column(column, overflow="fold")
     for qualname, checks in report.checks.items():
         for check in checks:
-            table.add_row(qualname, check.name, marks[check.status], check.detail, check.fix)
+            # Text, not markup: details and fixes quote configuration, e.g. `[capabilities] code_host = ...`.
+            table.add_row(Text(qualname), Text(check.name), marks[check.status], Text(check.detail), Text(check.fix))
     return table
 
 

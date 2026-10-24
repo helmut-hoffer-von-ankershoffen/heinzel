@@ -23,7 +23,7 @@ def render_list(contracts: list[ContractSummary]) -> RenderableType:
         if contract.warnings:
             problems = ", ".join(filter(None, [problems, f"{contract.warnings} warning(s)"]))
         table.add_row(
-            f"{contract.namespace}:{contract.name}",
+            escape(f"{contract.namespace}:{contract.name}"),
             escape(contract.title or "-"),
             escape(contract.schedule or "by hand"),
             "scheduled" if contract.scheduled else "-",
@@ -61,7 +61,7 @@ def _requirements(contract: CompiledContract) -> Table:
         requirements.add_column(column, overflow="fold")
     for status in contract.requirements:
         problem = f"[yellow]{escape(status.problem)}[/yellow]. {escape(status.fix or '')}" if status.problem else ""
-        requirements.add_row(status.requirement, status.adapter or "-", problem)
+        requirements.add_row(escape(status.requirement), escape(status.adapter or "-"), problem)
     return requirements
 
 

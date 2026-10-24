@@ -19,6 +19,7 @@ import typer
 from pydantic import ValidationError
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.markup import escape
 from typer.core import TyperGroup
 
 from heinzel import __version__
@@ -111,7 +112,7 @@ def main() -> None:
     try:
         kernel = boot()
     except (HeinzelError, ValidationError) as exc:
-        err_console.print(f"[red]Configuration error:[/red] {exc}")
+        err_console.print(f"[red]Configuration error:[/red] {escape(str(exc))}")
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
     build(kernel)()
