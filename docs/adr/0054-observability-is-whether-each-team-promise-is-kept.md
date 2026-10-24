@@ -55,38 +55,46 @@ repository, JGF v2 out, and the keeper a playbook**, because it observes the tea
 team repository, the web head) and leaves storage to ADR 0049 without changing the shape anyone builds on.
 
 1. **A promise.** Each run of a scheduled, valid team contract (a slot of its `schedule` in `[graph] time_zone`, else
-   the system's) promises its artifact, `contract:team/<name>#<output>`, by a **deadline**: the next run of a team
+   the zone the daemon uses, with the daemon's daylight saving rules) promises its artifact, `contract:team/<name>#<output>`, by a **deadline**: the next run of a team
    contract that reads it, or else its own next run. The kernel's `TeamPromises` (provided by `workflow`) hands `graph`
    each contract's promise: contract, title, version, schedule, the artifact it writes, the team artifacts it reads and
    its publish operations, never its body. Unscheduled contracts promise nothing.
 2. **Its state**, one of five, from the entries its keeper reported between that slot and the next: kept (published, or
    approved when the contract publishes nothing) is `on_time` by the deadline, `late` after it, `fell_back` when it also
    used a stale input; not kept is `late` once the deadline passed, and before it `offline` when the keeper was silent
-   for `[graph] offline_after` (2 days), `waiting_for_approval` when it drafted and nobody approved, `fell_back` when it
-   reported a stale input, else `on_time`. Runs before a keeper's first entry aren't its promises. An artifact takes the
+   for `[graph] offline_after` (2 days), `fell_back` when it reported a stale input, `waiting_for_approval` when it
+   drafted and nobody approved, else `on_time`. An entry counts for the run whose slot it follows, so an update made
+   before its slot counts for the run before. Runs before a keeper's first entry aren't its promises. A
+   Heinzelmännchen has one user and keeps one team contract: entries of another user under its id, or for another
+   contract, are skipped and named in `problems`. An artifact takes the
    worst state of its keepers; a team contract nobody's Heinzelmännchen reports for gets a keeper named after it, which
    shows as `offline`.
 3. **Telemetry entries** (`heinzel.TelemetryEntry`, `docs/schemas/telemetry-entry-1.json`). Fixed fields: `heinzel_id`
    (a slug; it becomes ADR 0049's durable id), `user` (the roster handle), `time` (stored in UTC), `verb`, `target`,
    `description` (one line, at most 280 characters), and `contract` (`team:<name>`, never a personal one) and `part`
-   (a part of the target, such as a tracker row, which becomes a node whose `parent` is the artifact). The verbs are
+   (a part of the target, such as a tracker row, which becomes a node whose `parent` is the artifact). Versions are
+   plain tokens, checked for credentials like descriptions. The verbs are
    ADR 0052's: `read` (`version`, `needed_by`), `drafted` (`contract_version`), `approved` (`by`; the entry's time is
    when), `published` (`version`), `fell_back` (`input`), `heartbeat` (no target). A target is an https URL without
-   user, password or credential-like query parameters, an email address, `contract:team/<name>#<output>` or
-   `chat:<channel>`; a local path is refused (a draft on your disk is yours). Descriptions with an email address,
+   user, password, credential-like query or fragment parameters, never a webhook (whose URL is a credential), an email
+   address (only for `published`), `contract:team/<name>#<output>` or `chat:<channel>`; plain http and local paths
+   are refused (a draft on your disk is yours). Descriptions with an email address,
    control characters or anything that looks like a token are refused; unknown fields are refused. Email addresses
    are allowed only as publish targets: the team needs to know a report went to its list, never what it said.
-4. **The logs.** `hz report <verb> <heinzel> <target> ...` (one command per verb; CLI and MCP, never REST or the web
+4. **The logs.** The package `telemetry` is the module `report`: `hz report <verb> <heinzel> <target> ...` (one command per verb; CLI and MCP, never REST or the web
    head, since each writes) appends to `<state dir>/telemetry/<heinzel_id>.jsonl` under an exclusive lock, refusing a
-   symbolic link, a log of another user (one writer per log), a time in the future or older than 30 days, and a log
-   over 8 MiB. `[report] user` names you (a project `hz.toml` can't set it). `hz report sync` copies each log to
+   symbolic link, a log of another user (one writer per log) or for a second contract, a time in the future or older
+   than 30 days, and a log over 8 MiB. `[report] user` names you, and no option overrides it (a project `hz.toml`
+   can't set it), so nothing you run files entries under a teammate's handle. `hz report sync` copies each log to
    `telemetry/<user>/<heinzel_id>.jsonl` in the team repository's checkout (`OrgContext`) only when the copy there is a
-   prefix of it, so a team file has one writer, and says what to commit and push. Readers validate every line again
+   prefix of it, so a team file has one writer, through a fresh temporary file it alone named, never into a link, a
+   FIFO or anything but a regular file, and says what to commit and push. Readers validate every line again
    and skip, by file and line, a line filed under another user or Heinzelmännchen than its own.
 5. **`hz graph`** (module `graph`, one operation: `hz graph`, the MCP tool, and `GET /api/graph` on the web head;
    not on the unauthenticated REST head, since it reads team data) builds the graph afresh from `TeamPromises` and the
    kernel's `TelemetryLog` (provided by `telemetry`: the team's copies plus your own logs, yours winning). Filters:
-   `--artifact` (a node id, its parts and what touches them), `--heinzel`, `--state`; `--at` shows it as of a time.
+   `--artifact` (a node id, its parts and what touches them), `--heinzel` (both together select both), `--state`
+   (narrows that selection); `--at` shows it as of a time. A node's `url` is an https place only, never an address.
    `--json` is a JSON Graph Format v2 document, profile `hz-team`, generated as `docs/schemas/team-graph-1.json`:
 
    ```json

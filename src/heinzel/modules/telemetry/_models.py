@@ -27,14 +27,12 @@ class TelemetrySettings(ModuleSettings):
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"user"})
 
-    def handle(self, given: str | None) -> str:
-        """`given` when set, else your configured handle.
+    def handle(self) -> str:
+        """Your configured handle: entries are always yours, never filed under a teammate's.
 
         Raises:
-            HeinzelError: If neither names you, with the command that sets it.
+            HeinzelError: If it isn't set, with the command that sets it.
         """
-        if given is not None:
-            return given
         if self.user is None:
             msg = (
                 "hz doesn't know your handle in your team's roster yet, and every entry carries it; set it once: "

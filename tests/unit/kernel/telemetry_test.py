@@ -48,7 +48,10 @@ def test_targets_are_urls_addresses_contract_outputs_or_channels(target):
         ("file:///tmp/row.md", "must be an https URL"),
         ("contract:me/digest#digest", "must be an https URL"),  # personal contracts are the personal layer
         ("https://costas:hunter2@tracker.acme.example/", "must be an https URL"),
-        ("https://tracker.acme.example/?access_token=abc", "credential-like query parameter"),
+        ("https://tracker.acme.example/?access_token=abc", "credential-like parameter"),
+        ("https://docs.acme.example/d#access_token=abc", "credential-like parameter"),
+        ("https://hooks.slack.com/services/T000/B000/abc", "is a webhook"),
+        ("http://tracker.acme.example/7", "must be an https URL"),
         ("https://hooks.acme.example/xoxb-1234567890-abcdefghij", "credential"),
         ("https://tracker.acme.example/a b", "one line without spaces"),
         ("https://" + "a" * 2050 + ".example", "at most 2048"),
@@ -73,6 +76,10 @@ def test_other_targets_are_refused_with_what_a_target_is(target, why):
         ({"verb": "fell_back"}, "needs `input`"),
         ({"verb": "published", "by": "priya"}, "takes no by"),
         ({"verb": "drafted", "needed_by": WHEN}, "takes no needed_by"),
+        ({"verb": "read", "target": "mira@acme.example"}, "only where something was published"),
+        ({"verb": "fell_back", "input": "mira@acme.example"}, "never an email address"),
+        ({"version": "mira@acme.example"}, "should match pattern"),
+        ({"version": "AKIA" + "ABCDEFGHIJKLMNOP"}, "looks like it holds a credential"),  # split: not a real key
         ({"contract": "me:digest"}, "should match pattern"),
         ({"user": "Costas"}, "should match pattern"),
         ({"heinzel_id": "../costas"}, "should match pattern"),
@@ -83,6 +90,10 @@ def test_other_targets_are_refused_with_what_a_target_is(target, why):
 def test_what_isnt_metadata_is_refused(fields, why):
     with pytest.raises(ValidationError, match=why):
         entry(**fields)
+
+
+def test_an_address_is_a_publish_target():
+    assert entry(target="team-payments@acme.example").target == "team-payments@acme.example"
 
 
 def test_a_hex_hash_in_a_description_is_not_taken_for_a_key():

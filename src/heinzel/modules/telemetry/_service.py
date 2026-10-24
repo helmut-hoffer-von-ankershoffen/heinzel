@@ -11,6 +11,8 @@ another user or Heinzelmännchen than its own is skipped and named.
 import fcntl
 import os
 import re
+import stat
+import tempfile
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -68,7 +70,7 @@ class TelemetryService:
 
     # Writing ---------------------------------------------------------------------------------------------------------
 
-    def report(self, fields: dict[str, object], *, user: str | None, at: datetime | None) -> Reported:
+    def report(self, fields: dict[str, object], *, at: datetime | None) -> Reported:
         """Validate one entry and append it to its Heinzelmännchen's log.
 
         Raises:
@@ -83,7 +85,7 @@ class TelemetryService:
             msg = f"--at {when.isoformat()} must be within the last {MAX_AGE.days} days, never in the future"
             raise HeinzelError(msg)
         try:
-            entry = TelemetryEntry.model_validate({**fields, "user": self._settings.handle(user), "time": when})
+            entry = TelemetryEntry.model_validate({**fields, "user": self._settings.handle(), "time": when})
         except ValidationError as exc:
             problems = "; ".join(
                 f"{'.'.join(str(p) for p in e['loc']) or 'entry'}: {e['msg'].removeprefix('Value error, ')}"
@@ -124,12 +126,7 @@ class TelemetryService:
                 msg = f"{log} is over {MAX_LOG // 1024 // 1024} MiB; a log holds metadata, so something is wrong"
                 raise HeinzelError(msg)
             lines = existing.splitlines()
-            if lines and (owner := _user_of(lines[0])) not in {None, entry.user}:
-                msg = (
-                    f"{log} holds the entries of {owner}, not {entry.user}: one writer per log; "
-                    f"report as {owner}, or give this Heinzelmännchen another id"
-                )
-                raise HeinzelError(msg)
+            _belongs(log, entry, [e for line in lines if (e := _parsed(line)) is not None])
             handle.write(line)
             handle.flush()
             os.fsync(handle.fileno())
@@ -187,23 +184,7 @@ class TelemetryService:
         except OSError as exc:
             problems.append(f"{shown}: can't be read: {exc.strerror or exc}")
             return
-        first: str | None = user
-        for number, line in enumerate(raw.splitlines(), start=1):
-            if not line.strip():
-                continue
-            if len(line) > MAX_LINE:
-                problems.append(f"{shown}:{number}: longer than {MAX_LINE} bytes, skipped")
-                continue
-            try:
-                entry = TelemetryEntry.model_validate_json(line)
-            except ValidationError as exc:
-                problems.append(f"{shown}:{number}: {exc.errors()[0]['msg'].removeprefix('Value error, ')}, skipped")
-                continue
-            first = first or entry.user
-            if entry.heinzel_id != heinzel or entry.user != first:
-                problems.append(f"{shown}:{number}: an entry of {entry.user}/{entry.heinzel_id} filed here, skipped")
-                continue
-            yield entry
+        yield from _parse(raw, problems, user=user, heinzel=heinzel, shown=shown)
 
     # Syncing ---------------------------------------------------------------------------------------------------------
 
@@ -232,36 +213,134 @@ class TelemetryService:
         return synced
 
     def _sync_one(self, log: Path, checkout: Path) -> SyncedLog | str:
-        """Copy one log into the checkout; or why it can't be."""
-        found: list[str] = []
-        entries = list(self._entries(log, found, user=None, heinzel=log.stem, shown=log))
-        if found or not entries:
-            return found[0] if found else "empty"
-        folder = checkout / DIRECTORY / entries[0].user
-        target = folder / log.name
-        if link := next((p for p in (checkout / DIRECTORY, folder, target) if p.is_symlink()), None):
-            return f"{link} is a symbolic link; hz copies logs only into real directories"
+        """Copy one log into the checkout, the bytes it validated; or why it can't be."""
         try:
-            raw = log.read_bytes()
-            before = target.read_bytes() if target.exists() else b""
-            if not raw.startswith(before):
-                return (
-                    f"{target} has entries your log doesn't: each log has one writer; move that copy aside if it "
-                    "isn't yours, or keep reporting from the machine that wrote it"
-                )
-            folder.mkdir(parents=True, exist_ok=True)
-            temporary = target.with_suffix(".tmp")
-            temporary.write_bytes(raw)
-            temporary.replace(target)
+            raw = _locked_read(log)
+        except OSError as exc:
+            return f"can't be read: {exc.strerror or exc}"
+        found: list[str] = []
+        entries = list(_parse(raw, found, user=None, heinzel=log.stem, shown=log))
+        if found:
+            return f"{found[0]}; fix or remove that line in {log} to sync it again"
+        if not entries:
+            return "empty"
+        target = checkout / DIRECTORY / entries[0].user / log.name
+        try:
+            before = _copy(checkout, target, raw)
         except OSError as exc:
             return f"can't copy it to {target}: {exc.strerror or exc}"
+        if isinstance(before, str):
+            return before
         new = len(raw.splitlines()) - len(before.splitlines())
         return SyncedLog(heinzel_id=log.stem, path=target, entries=len(raw.splitlines()), new=new)
 
 
-def _user_of(line: bytes) -> str | None:
+def _copy(checkout: Path, target: Path, raw: bytes) -> bytes | str:
+    """Replace the team's copy at `target` with `raw` when `raw` extends it; the copy before, or why not.
+
+    Raises:
+        OSError: If the checkout can't be read or written.
+    """
+    if link := next((p for p in (checkout / DIRECTORY, target.parent, target) if p.is_symlink()), None):
+        return f"{link} is a symbolic link; hz copies logs only into real directories"
+    before = _regular_read(target)
+    if before is None:
+        return f"{target} isn't a regular file; move it aside"
+    if not raw.startswith(before):
+        return (
+            f"{target} has entries your log doesn't: each log has one writer; move that copy aside if it "
+            "isn't yours, or keep reporting from the machine that wrote it"
+        )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _replace(target, raw)
+    return before
+
+
+def _locked_read(log: Path) -> bytes:
+    """A local log's bytes, read under a shared lock so no append lands halfway."""
+    descriptor = os.open(log, _open_flags(os.O_RDONLY))
+    with os.fdopen(descriptor, "rb") as handle:
+        fcntl.flock(handle, fcntl.LOCK_SH)
+        return handle.read(MAX_LOG + 1)
+
+
+def _regular_read(target: Path) -> bytes | None:
+    """The copy's bytes, empty when there is none; None when something other than a regular file is in its place."""
     try:
-        return TelemetryEntry.model_validate_json(line).user
+        status = target.lstat()
+    except FileNotFoundError:
+        return b""
+    if not stat.S_ISREG(status.st_mode):
+        return None  # a FIFO would hang the read, a device or a link is someone else's trick
+    descriptor = os.open(target, _open_flags(os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)))
+    with os.fdopen(descriptor, "rb") as handle:
+        return handle.read()
+
+
+def _replace(target: Path, raw: bytes) -> None:
+    """Write `raw` to a fresh file beside `target` that nobody else can have named, then move it into place."""
+    descriptor, name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.stem}.", suffix=".tmp")
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(raw)
+            handle.flush()
+            os.fsync(handle.fileno())
+        Path(name).replace(target)
+    except BaseException:
+        Path(name).unlink(missing_ok=True)
+        raise
+
+
+def _parse(raw: bytes, problems: list[str], *, user: str | None, heinzel: str, shown: Path) -> Iterator[TelemetryEntry]:
+    """The valid entries of a log's bytes that belong to it; every other line named in `problems`.
+
+    Yields:
+        Each entry of `heinzel` by its log's one user, in the log's order.
+    """
+    first: str | None = user
+    for number, line in enumerate(raw.splitlines(), start=1):
+        if not line.strip():
+            continue
+        if len(line) > MAX_LINE:
+            problems.append(f"{shown}:{number}: longer than {MAX_LINE} bytes, skipped")
+            continue
+        try:
+            entry = TelemetryEntry.model_validate_json(line)
+        except ValidationError as exc:
+            problems.append(f"{shown}:{number}: {exc.errors()[0]['msg'].removeprefix('Value error, ')}, skipped")
+            continue
+        first = first or entry.user
+        if entry.heinzel_id != heinzel or entry.user != first:
+            problems.append(f"{shown}:{number}: an entry of {entry.user}/{entry.heinzel_id} filed here, skipped")
+            continue
+        yield entry
+
+
+def _belongs(log: Path, entry: TelemetryEntry, existing: list[TelemetryEntry]) -> None:
+    """Refuse an entry of another user, or for another team contract, than the log's.
+
+    Raises:
+        HeinzelError: Naming the log's user or contract.
+    """
+    if existing and existing[0].user != entry.user:
+        owner = existing[0].user
+        msg = (
+            f"{log} holds the entries of {owner}, not {entry.user}: one writer per log; "
+            f"report as {owner}, or give this Heinzelmännchen another id"
+        )
+        raise HeinzelError(msg)
+    kept = next((e.contract for e in existing if e.contract), None)
+    if entry.contract and kept and entry.contract != kept:
+        msg = (
+            f"{entry.heinzel_id} keeps {kept}, not {entry.contract}: a Heinzelmännchen keeps one contract; "
+            "report the other under its own Heinzelmännchen's id"
+        )
+        raise HeinzelError(msg)
+
+
+def _parsed(line: bytes) -> TelemetryEntry | None:
+    try:
+        return TelemetryEntry.model_validate_json(line)
     except ValidationError:
         return None
 

@@ -43,7 +43,6 @@ Description = Annotated[
 ]
 Contract = Annotated[str | None, Field(description="The team contract it keeps, team:<name>.")]
 Part = Annotated[str | None, Field(description="The part of the target it concerns, e.g. its row in a tracker.")]
-User = Annotated[str | None, Field(description="Your roster handle, when `[report] user` doesn't say.")]
 At = Annotated[
     datetime | None,
     Field(description="When it happened, ISO 8601 with offset, within the last 30 days; now by default."),
@@ -60,7 +59,6 @@ def _report(  # noqa: PLR0913 - one entry's fields
     description: str,
     contract: str | None,
     part: str | None,
-    user: str | None,
     at: datetime | None,
     **specific: object,
 ) -> Reported:
@@ -73,7 +71,7 @@ def _report(  # noqa: PLR0913 - one entry's fields
         "part": part,
         **specific,
     }
-    return service.report({k: v for k, v in fields.items() if v is not None}, user=user, at=at)
+    return service.report({k: v for k, v in fields.items() if v is not None}, at=at)
 
 
 @module.operation(read_only=False, render=render_reported, heads=HEADS, audience="everyday")
@@ -88,12 +86,11 @@ def read(  # noqa: PLR0913, PLR0917 - one entry's fields
     description: Description = "",
     contract: Contract = None,
     part: Part = None,
-    user: User = None,
     at: At = None,
 ) -> Reported:
     """Log that a Heinzelmännchen read an artifact, which version, and by when its contract needs it."""
     return _report(
-        service, "read", heinzel, target, description=description, contract=contract, part=part, user=user, at=at,
+        service, "read", heinzel, target, description=description, contract=contract, part=part, at=at,
         version=version, needed_by=needed_by,
     )  # fmt: skip
 
@@ -107,12 +104,11 @@ def drafted(  # noqa: PLR0913, PLR0917 - one entry's fields
     description: Description = "",
     contract: Contract = None,
     part: Part = None,
-    user: User = None,
     at: At = None,
 ) -> Reported:
     """Log that a Heinzelmännchen put a draft where it will be approved, and from which contract version."""
     return _report(
-        service, "drafted", heinzel, target, description=description, contract=contract, part=part, user=user, at=at,
+        service, "drafted", heinzel, target, description=description, contract=contract, part=part, at=at,
         contract_version=contract_version,
     )  # fmt: skip
 
@@ -126,12 +122,11 @@ def approved(  # noqa: PLR0913, PLR0917 - one entry's fields
     description: Description = "",
     contract: Contract = None,
     part: Part = None,
-    user: User = None,
     at: At = None,
 ) -> Reported:
     """Log that a Heinzelmännchen's draft was approved, by whom; the entry's time is when."""
     return _report(
-        service, "approved", heinzel, target, description=description, contract=contract, part=part, user=user, at=at,
+        service, "approved", heinzel, target, description=description, contract=contract, part=part, at=at,
         by=by,
     )  # fmt: skip
 
@@ -145,12 +140,11 @@ def published(  # noqa: PLR0913, PLR0917 - one entry's fields
     description: Description = "",
     contract: Contract = None,
     part: Part = None,
-    user: User = None,
     at: At = None,
 ) -> Reported:
     """Log where a Heinzelmännchen published: a document, an email address, a chat channel."""
     return _report(
-        service, "published", heinzel, target, description=description, contract=contract, part=part, user=user, at=at,
+        service, "published", heinzel, target, description=description, contract=contract, part=part, at=at,
         version=version,
     )  # fmt: skip
 
@@ -164,12 +158,11 @@ def fell_back(  # noqa: PLR0913, PLR0917 - one entry's fields
     description: Description = "",
     contract: Contract = None,
     part: Part = None,
-    user: User = None,
     at: At = None,
 ) -> Reported:
     """Log that a Heinzelmännchen used a stale version of an input to keep its deadline."""
     return _report(
-        service, "fell_back", heinzel, target, description=description, contract=contract, part=part, user=user, at=at,
+        service, "fell_back", heinzel, target, description=description, contract=contract, part=part, at=at,
         input=input,
     )  # fmt: skip
 
@@ -179,11 +172,10 @@ def heartbeat(
     service: TelemetryService,
     heinzel: Heinzel,
     contract: Contract = None,
-    user: User = None,
     at: At = None,
 ) -> Reported:
     """Log that a Heinzelmännchen is alive; one a day is enough for the team to see it isn't offline."""
-    return _report(service, "heartbeat", heinzel, None, description="", contract=contract, part=None, user=user, at=at)
+    return _report(service, "heartbeat", heinzel, None, description="", contract=contract, part=None, at=at)
 
 
 @module.operation(read_only=False, render=render_synced, heads=HEADS)

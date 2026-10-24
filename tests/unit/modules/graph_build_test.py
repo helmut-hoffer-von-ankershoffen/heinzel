@@ -10,7 +10,7 @@ from heinzel import HeinzelError, TeamPromise, TeamPromises, TelemetryEntry, Tel
 from heinzel.modules.graph import GraphService, GraphSettings, HzGraph
 from heinzel.modules.graph._build import Builder, Inputs, _label, _whole, cut, worst
 from heinzel.modules.graph._models import Filters
-from heinzel.modules.graph._service import system_zone
+from heinzel.modules.graph._schedule import local_zone, next_run, runs
 
 pytestmark = pytest.mark.unit
 
@@ -248,17 +248,61 @@ def test_the_service_refuses_an_unknown_zone_a_naive_time_and_unknown_filters():
     assert set(service().graph(heinzel="costas-row").graph.nodes) == {"heinzel:costas-row", "contract:team/row#row"}
 
 
-def test_the_system_zone_comes_from_the_zone_file_localtime_points_at(tmp_path: Path):
+def test_the_zone_is_tz_else_the_zone_file_localtime_points_at(tmp_path: Path, monkeypatch):
     zoneinfo = tmp_path / "zoneinfo" / "Europe"
     zoneinfo.mkdir(parents=True)
     (zoneinfo / "Lisbon").write_bytes(b"")
     (tmp_path / "localtime").symlink_to(zoneinfo / "Lisbon")
-    assert system_zone(tmp_path / "localtime") == (LISBON, "Europe/Lisbon")
-    (tmp_path / "plain").write_bytes(b"")
-    assert system_zone(tmp_path / "plain") == (UTC, "UTC")
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    assert local_zone(tmp_path / "localtime") == (ZoneInfo("Asia/Tokyo"), "Asia/Tokyo")
+    monkeypatch.setenv("TZ", "Not/AZone")
+    assert local_zone(tmp_path / "localtime") == (LISBON, "Europe/Lisbon")
+    monkeypatch.delenv("TZ")
     (zoneinfo / "Nowhere").write_bytes(b"")
     (tmp_path / "unknown").symlink_to(zoneinfo / "Nowhere")
-    assert system_zone(tmp_path / "unknown") == (UTC, "UTC")
+    copy = tmp_path / "copy"
+    copy.write_bytes(Path("/usr/share/zoneinfo/Europe/Lisbon").read_bytes())
+    zone, name = local_zone(copy)  # a copied zone file, as Linux images often have
+    assert name == "localtime"
+    assert zone.utcoffset(datetime(2026, 7, 1)) == timedelta(hours=1)  # noqa: DTZ001 - wall-clock arithmetic
+    _, name = local_zone(tmp_path / "unknown")  # a broken zone file: the current fixed offset
+    assert name
+
+
+def test_runs_follow_the_daemons_daylight_saving_rules():
+    berlin = ZoneInfo("Europe/Berlin")
+    spring = runs("30 2 * * *", datetime(2026, 3, 28, 12, tzinfo=UTC), datetime(2026, 3, 29, 12, tzinfo=UTC), berlin)
+    assert [r.isoformat() for r in spring] == ["2026-03-29T03:30:00+02:00"]  # shifted by the gap
+    autumn = runs("30 2 * * *", datetime(2026, 10, 24, 12, tzinfo=UTC), datetime(2026, 10, 25, 12, tzinfo=UTC), berlin)
+    assert [r.isoformat() for r in autumn] == ["2026-10-25T02:30:00+02:00"]  # once, at its first occurrence
+    assert (
+        next_run("30 2 * * *", datetime(2026, 3, 28, 12, tzinfo=UTC), berlin).isoformat() == "2026-03-29T03:30:00+02:00"
+    )
+
+
+def test_a_busy_schedule_reaches_now_and_keeps_its_newest_runs():
+    hourly = runs("0 * * * *", FRIDAY - timedelta(weeks=26), FRIDAY, UTC, limit=10)
+    assert hourly[-1] == FRIDAY
+    assert len(hourly) == 10
+    reported = [entry("approved", FRIDAY - timedelta(minutes=30), by="costas", contract="team:hourly")]
+    every_hour = TeamPromise(
+        contract="team:hourly", title="Hourly", version="1", schedule="0 * * * *", writes="contract:team/hourly#x"
+    )
+    document = graph(*reported, at=FRIDAY - timedelta(minutes=10), promises=(every_hour,), weeks=26)
+    assert document["nodes"]["heinzel:costas-row"]["metadata"]["state"] == "on_time"
+
+
+def test_an_id_two_users_report_and_a_second_contract_are_skipped_and_named():
+    reported = [
+        entry("heartbeat", WEDNESDAY),
+        entry("approved", WEDNESDAY + timedelta(minutes=5), heinzel="costas-row", user="priya", by="priya"),
+        entry("heartbeat", WEDNESDAY + timedelta(minutes=6), contract="team:report"),
+    ]
+    document = graph(*reported, at=WEDNESDAY + timedelta(hours=1))
+    assert document["nodes"]["heinzel:costas-row"]["metadata"]["owner"] == "costas"
+    assert document["nodes"]["heinzel:costas-row"]["metadata"]["state"] == "on_time"  # priya's approval didn't count
+    assert "costas-row: an entry of priya for costas's Heinzelmännchen, skipped" in document["metadata"]["problems"]
+    assert any("a Heinzelmännchen keeps one contract" in p for p in document["metadata"]["problems"])
 
 
 def test_offline_after_is_a_duration():

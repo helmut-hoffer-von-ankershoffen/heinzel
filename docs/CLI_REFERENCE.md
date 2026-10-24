@@ -350,7 +350,7 @@ $ hz graph [OPTIONS]
 **Options**:
 
 * `--artifact <str>`: Only this artifact, its parts and what reads or writes them, by node id.
-* `--heinzel <str>`: Only this Heinzelmännchen and what it reads and writes, by its id.
+* `--heinzel <str>`: Only this Heinzelmännchen and what it reads and writes, by its id; with --artifact, both.
 * `--state <on_time|waiting_for_approval|late|fell_back|offline>`: Only nodes in this state: on_time, waiting_for_approval, late, fell_back or offline.
 * `--at ISO-8601`: The graph as of this time, ISO 8601 with offset; now by default.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
@@ -495,7 +495,6 @@ $ hz report approved [OPTIONS] {heinzel} {target} {by}
 * `--description <str>`: One line a reader of the team&#x27;s graph should know; never content or addresses.
 * `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
 * `--part <str>`: The part of the target it concerns, e.g. its row in a tracker.
-* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
 * `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
@@ -522,7 +521,6 @@ $ hz report drafted [OPTIONS] {heinzel} {target}
 * `--description <str>`: One line a reader of the team&#x27;s graph should know; never content or addresses.
 * `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
 * `--part <str>`: The part of the target it concerns, e.g. its row in a tracker.
-* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
 * `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
@@ -549,7 +547,6 @@ $ hz report fell-back [OPTIONS] {heinzel} {target} {input}
 * `--description <str>`: One line a reader of the team&#x27;s graph should know; never content or addresses.
 * `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
 * `--part <str>`: The part of the target it concerns, e.g. its row in a tracker.
-* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
 * `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
@@ -572,7 +569,6 @@ $ hz report heartbeat [OPTIONS] {heinzel}
 **Options**:
 
 * `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
-* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
 * `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
@@ -599,7 +595,6 @@ $ hz report published [OPTIONS] {heinzel} {target}
 * `--description <str>`: One line a reader of the team&#x27;s graph should know; never content or addresses.
 * `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
 * `--part <str>`: The part of the target it concerns, e.g. its row in a tracker.
-* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
 * `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
@@ -627,7 +622,6 @@ $ hz report read [OPTIONS] {heinzel} {target}
 * `--description <str>`: One line a reader of the team&#x27;s graph should know; never content or addresses.
 * `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
 * `--part <str>`: The part of the target it concerns, e.g. its row in a tracker.
-* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
 * `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.

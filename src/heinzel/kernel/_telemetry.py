@@ -28,7 +28,7 @@ TEAM_CONTRACT = re.compile(r"^team:[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 _CONTRACT_REF = re.compile(r"^contract:team/[a-z][a-z0-9]*(?:-[a-z0-9]+)*#[a-z][a-z0-9_]*$")
 _EMAIL = re.compile(r"^[A-Za-z0-9._%+'-]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){0,8}\.[A-Za-z]{2,24}$")
 _CHANNEL = re.compile(r"^chat:[#@]?[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
-_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+@-]{0,127}$")
+_TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$")
 _SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 _CONTROLS = re.compile(r"[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]")
 _ADDRESS = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+")
@@ -40,10 +40,16 @@ _SECRETS = re.compile(
 _RUN = re.compile(r"[A-Za-z0-9+/_-]{32,}")
 """In free text, a long run of key alphabet mixing cases and digits is a key, not a word (a hex hash is fine)."""
 _SECRET_PARAMETERS = re.compile(r"(?i)token|key|secret|sig|signature|password|passwd|auth|code|credential|session")
+WEBHOOK_HOSTS = re.compile(
+    r"(?i)^(?:hooks\.slack\.com|discord(?:app)?\.com|[a-z0-9-]+\.webhook\.office\.com|outlook\.office\.com"
+    r"|chat\.googleapis\.com|hooks\.zapier\.com)$"
+)
+"""Hosts whose URLs are credentials themselves: whoever has one can post as you."""
 MAX_DESCRIPTION = 280
 MAX_TARGET = 2048
 TARGET_FORMS = (
-    "an https URL (no user name, password or credential in it), an email address, a team contract's output as "
+    "an https URL (no user name, password or credential in it), an email address published to, a team contract's "
+    "output as "
     "`contract:team/<name>#<output>`, or a chat channel as `chat:<channel>`"
 )
 
@@ -72,9 +78,13 @@ def check_target(target: str) -> str:
     if _EMAIL.fullmatch(target) or _CONTRACT_REF.fullmatch(target) or _CHANNEL.fullmatch(target):
         return target
     parts = urlsplit(target)
-    if parts.scheme in {"https", "http"} and parts.hostname and "@" not in parts.netloc:
-        if any(_SECRET_PARAMETERS.search(key) for key, _ in parse_qsl(parts.query, keep_blank_values=True)):
-            msg = f"target {target[:80]!r} carries a credential-like query parameter; report the URL without it"
+    if parts.scheme == "https" and parts.hostname and "@" not in parts.netloc:
+        if WEBHOOK_HOSTS.fullmatch(parts.hostname):
+            msg = f"target {parts.hostname} is a webhook: its URL is a credential; name the channel as chat:<channel>"
+            raise ValueError(msg)
+        parameters = [*parse_qsl(parts.query, keep_blank_values=True), *parse_qsl(parts.fragment)]
+        if any(_SECRET_PARAMETERS.search(key) for key, _ in parameters):
+            msg = f"target {target[:80]!r} carries a credential-like parameter; report the URL without it"
             raise ValueError(msg)
         _secret_problem(target, "target")
         return target
@@ -144,6 +154,13 @@ class TelemetryEntry(BaseModel):
     def _place(cls, value: str | None) -> str | None:
         return check_target(value) if value is not None else None
 
+    @field_validator("version", "contract_version")
+    @classmethod
+    def _plain_version(cls, value: str | None) -> str | None:
+        if value is not None:
+            _secret_problem(value, "version", free_text=True)
+        return value
+
     @field_validator("description")
     @classmethod
     def _metadata(cls, value: str) -> str:
@@ -176,6 +193,12 @@ class TelemetryEntry(BaseModel):
                 raise ValueError(msg)
         elif self.target is None:
             msg = f"`{self.verb}` needs a target: {TARGET_FORMS}"
+            raise ValueError(msg)
+        if self.target is not None and _EMAIL.fullmatch(self.target) and self.verb != "published":
+            msg = "an email address is a target only where something was published to it"
+            raise ValueError(msg)
+        if self.input is not None and _EMAIL.fullmatch(self.input):
+            msg = "an input is an artifact, never an email address"
             raise ValueError(msg)
         if self.verb == "approved" and self.by is None:
             msg = "`approved` needs `by`: the handle of who approved"

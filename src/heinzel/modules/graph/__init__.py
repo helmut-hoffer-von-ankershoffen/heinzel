@@ -42,7 +42,8 @@ def graph(
         str | None, Field(description="Only this artifact, its parts and what reads or writes them, by node id.")
     ] = None,
     heinzel: Annotated[
-        str | None, Field(description="Only this Heinzelmännchen and what it reads and writes, by its id.")
+        str | None,
+        Field(description="Only this Heinzelmännchen and what it reads and writes, by its id; with --artifact, both."),
     ] = None,
     state: Annotated[
         State | None,

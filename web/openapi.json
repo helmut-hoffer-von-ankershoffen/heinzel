@@ -5583,7 +5583,7 @@
             }
           },
           {
-            "description": "Only this Heinzelmännchen and what it reads and writes, by its id.",
+            "description": "Only this Heinzelmännchen and what it reads and writes, by its id; with --artifact, both.",
             "in": "query",
             "name": "heinzel",
             "required": false,
@@ -5596,7 +5596,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Only this Heinzelmännchen and what it reads and writes, by its id.",
+              "description": "Only this Heinzelmännchen and what it reads and writes, by its id; with --artifact, both.",
               "title": "Heinzel"
             }
           },

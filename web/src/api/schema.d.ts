@@ -4679,7 +4679,7 @@ export interface operations {
             query?: {
                 /** @description Only this artifact, its parts and what reads or writes them, by node id. */
                 artifact?: string | null;
-                /** @description Only this Heinzelmännchen and what it reads and writes, by its id. */
+                /** @description Only this Heinzelmännchen and what it reads and writes, by its id; with --artifact, both. */
                 heinzel?: string | null;
                 /** @description Only nodes in this state: on_time, waiting_for_approval, late, fell_back or offline. */
                 state?: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;

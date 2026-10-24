@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime, tzinfo
-from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -10,20 +9,7 @@ from heinzel import HeinzelError, TeamPromises, TelemetryLog
 from heinzel.kernel import Kernel, parse_duration
 from heinzel.modules.graph._build import HEINZEL, Builder, Inputs, cut
 from heinzel.modules.graph._models import Filters, GraphSettings, State, TeamGraphDocument
-
-LOCALTIME = Path("/etc/localtime")
-
-
-def system_zone(localtime: Path = LOCALTIME) -> tuple[tzinfo, str]:
-    """The system's time zone with its rules, by the zone file /etc/localtime points at; UTC when it names none."""
-    resolved = localtime.resolve()
-    if "zoneinfo" in resolved.parts:
-        key = "/".join(resolved.parts[resolved.parts.index("zoneinfo") + 1 :])
-        try:
-            return ZoneInfo(key), key
-        except (ValueError, ZoneInfoNotFoundError):
-            pass
-    return UTC, "UTC"
+from heinzel.modules.graph._schedule import local_zone
 
 
 class GraphService:
@@ -34,7 +20,7 @@ class GraphService:
         kernel: Kernel,
         settings: GraphSettings,
         clock: Callable[[], datetime] | None = None,
-        zone: Callable[[], tuple[tzinfo, str]] = system_zone,
+        zone: Callable[[], tuple[tzinfo, str]] = local_zone,
     ) -> None:
         """Read through `kernel`; tests pass the clock and the zone."""
         self._kernel = kernel

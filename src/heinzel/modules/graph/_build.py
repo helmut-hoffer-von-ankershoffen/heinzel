@@ -17,8 +17,8 @@ next one count for it, and its state is one of five:
 - kept (published, or approved when the contract publishes nothing): `on_time` by the deadline, `late` after it, and
   `fell_back` when the keeper also reported using a stale input;
 - not kept yet: `late` once the deadline has passed; before it, `offline` when the keeper has been silent longer than
-  `[graph] offline_after`, `waiting_for_approval` when it drafted but nobody approved yet, `fell_back` when it
-  reported a stale input, else `on_time`, on track.
+  `[graph] offline_after`, `fell_back` when it reported a stale input, `waiting_for_approval` when it drafted but
+  nobody approved yet, else `on_time`, on track.
 
 The state of an artifact is the worst of its keepers'; weeks count promises by their deadline's ISO week; the flow
 waits where a contract's current promise isn't kept and some of what it reads isn't updated yet. Nothing here counts
@@ -31,8 +31,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta, tzinfo
 from itertools import pairwise
 from urllib.parse import urlsplit
-
-from croniter import croniter
 
 from heinzel import TeamPromise, TelemetryEntry
 from heinzel.modules.graph._models import (
@@ -49,14 +47,13 @@ from heinzel.modules.graph._models import (
     Waiting,
     Week,
 )
+from heinzel.modules.graph._schedule import next_run, runs
 
 WRITES = frozenset({"drafted", "approved", "published"})
 HEINZEL = "heinzel:"
 """What a Heinzelmännchen's node id starts with, before its id: `heinzel:costas-tracker`."""
 type Found = tuple[dict[str, "Node"], dict[tuple[str, str, str], "Edge"], dict[str, str]]
 """The nodes and edges found so far, and each team artifact's place."""
-MAX_SLOTS = 400
-"""Slots of one schedule looked at; enough for a few weeks of an hourly contract."""
 
 
 def worst(states: Iterable[State | None]) -> State | None:
@@ -106,18 +103,6 @@ class Inputs:
     problems: Sequence[str] = ()
 
 
-def _slots(schedule: str, since: datetime, until: datetime, zone: tzinfo) -> list[datetime]:
-    """The schedule's runs after `since` up to `until`, and the first one after `until`."""
-    found: list[datetime] = []
-    iterator = croniter(schedule, since.astimezone(zone))
-    for _ in range(MAX_SLOTS):
-        slot = iterator.get_next(datetime)
-        found.append(slot)
-        if slot > until:
-            break
-    return found
-
-
 class Builder:
     """Builds one graph; a fresh one per call."""
 
@@ -127,15 +112,10 @@ class Builder:
         self.promises = {p.contract: p for p in inputs.promises}
         self.by_artifact = {p.writes: p for p in inputs.promises}
         self.keepers: dict[str, Keeper] = {}
+        self.problems = list(inputs.problems)
         for entry in sorted(inputs.entries, key=lambda e: (e.time, e.heinzel_id)):
-            if entry.time > inputs.as_of:
-                continue
-            node = f"{HEINZEL}{entry.heinzel_id}"
-            keeper = self.keepers.setdefault(node, Keeper(node, entry.user))
-            keeper.entries.append(entry)
-            keeper.last_seen = entry.time
-            if entry.contract in self.promises:
-                keeper.contract = entry.contract
+            if entry.time <= inputs.as_of:
+                self._add(entry)
         for promise in inputs.promises:
             if not any(k.contract == promise.contract for k in self.keepers.values()):
                 node = f"{HEINZEL}{promise.contract}"
@@ -146,27 +126,50 @@ class Builder:
                 self.readers[read].append(promise)
         self.since = inputs.as_of - timedelta(weeks=inputs.weeks)
 
+    def _add(self, entry: TelemetryEntry) -> None:
+        """Count an entry for its Heinzelmännchen: one user and one team contract each, the first ones reported."""
+        node = f"{HEINZEL}{entry.heinzel_id}"
+        keeper = self.keepers.setdefault(node, Keeper(node, entry.user))
+        if entry.user != keeper.user:
+            self.problems.append(
+                f"{entry.heinzel_id}: an entry of {entry.user} for {keeper.user}'s Heinzelmännchen, skipped"
+            )
+            return
+        if entry.contract in self.promises:
+            if keeper.contract not in {None, entry.contract}:
+                self.problems.append(
+                    f"{entry.heinzel_id}: keeps {keeper.contract}, so its entry for {entry.contract} is skipped; "
+                    "a Heinzelmännchen keeps one contract"
+                )
+                return
+            keeper.contract = entry.contract
+        keeper.entries.append(entry)
+        keeper.last_seen = entry.time
+
     # Promises --------------------------------------------------------------------------------------------------------
 
     def deadline(self, promise: TeamPromise, slot: datetime, following: datetime) -> datetime:
         """The next run of a contract that reads the promise's artifact, else the promise's own next run."""
-        runs = [
-            _slots(reader.schedule, slot, slot, self.inputs.zone)[0]
+        reads = [
+            next_run(reader.schedule, slot, self.inputs.zone)
             for reader in self.readers.get(promise.writes, [])
             if reader.schedule
         ]
-        return min(runs) if runs else following
+        return min(reads) if reads else following
 
     def occurrences(self, keeper: Keeper) -> list[Occurrence]:
         """The keeper's promises from `weeks` ago (or its first entry) until now, oldest first; none unscheduled."""
         promise = self.promises.get(keeper.contract or "")
         if promise is None or promise.schedule is None:
             return []
-        slots = _slots(promise.schedule, self.since - timedelta(weeks=1), self.inputs.as_of, self.inputs.zone)
-        runs = [(s, f) for s, f in pairwise(slots) if s <= self.inputs.as_of]
+        zone = self.inputs.zone
+        slots = runs(promise.schedule, self.since - timedelta(weeks=1), self.inputs.as_of, zone)
+        if not slots:
+            return []
+        runs_ = list(pairwise([*slots, next_run(promise.schedule, slots[-1], zone)]))
         first = keeper.entries[0].time if keeper.entries else None
         # Runs before a Heinzelmännchen's first entry weren't its promises yet: it can't be late for them.
-        kept_since = [(s, f) for s, f in runs if first is not None and f > first] or runs[-1:]
+        kept_since = [(s, f) for s, f in runs_ if first is not None and f > first] or runs_[-1:]
         return [self.occurrence(keeper, promise, slot, following) for slot, following in kept_since]
 
     def occurrence(self, keeper: Keeper, promise: TeamPromise, slot: datetime, following: datetime) -> Occurrence:
@@ -222,7 +225,7 @@ class Builder:
                     weeks=self._weeks(history),
                     waiting=(waiting := self._waiting(nodes, current)),
                     summary="; ".join(w.summary for w in waiting) or "Nothing waits",
-                    problems=list(self.inputs.problems),
+                    problems=self.problems,
                 ),
                 nodes=dict(sorted(nodes.items())),
                 edges=sorted(edges.values(), key=lambda e: (e.source, e.target, e.relation)),
@@ -237,10 +240,9 @@ class Builder:
             if promise is None:
                 continue
             for entry in keeper.entries:
-                if entry.verb in WRITES and entry.target and not entry.target.startswith("contract:"):
+                if entry.verb in WRITES and entry.target and entry.target.startswith("https://"):
                     node = f"{promise.writes}/{entry.part}" if entry.part else promise.writes
-                    if entry.target.startswith(("https://", "http://")) or node not in found:
-                        found[node] = entry.target  # a document over the address it was sent to
+                    found[node] = entry.target  # a place to open: never an address or a channel
         return found
 
     @staticmethod
@@ -271,7 +273,7 @@ class Builder:
                 contract=promise.contract if promise else None,
                 contract_version=promise.version if promise else None,
                 deadline=None,
-                url=urls.get(node) or (node if node.startswith(("https://", "http://")) else None),
+                url=urls.get(node) or (node if node.startswith("https://") else None),
                 parent=parent,
                 last_seen=None,
             ),
@@ -382,7 +384,7 @@ class Builder:
                 update={
                     "metadata": meta.model_copy(
                         update={
-                            "state": worst(nodes[c].metadata.state for c in children),
+                            "state": worst([meta.state, *(nodes[c].metadata.state for c in children)]),
                             "deadline": min(deadlines) if deadlines else meta.deadline,
                         }
                     )
@@ -439,7 +441,7 @@ class Builder:
         for promise in self.inputs.promises:
             if not promise.reads or promise.schedule is None:
                 continue
-            next_run = _slots(promise.schedule, self.inputs.as_of, self.inputs.as_of, self.inputs.zone)[0]
+            upcoming = next_run(promise.schedule, self.inputs.as_of, self.inputs.zone)
             on: list[str] = []
             for read in promise.reads:
                 upstream = self.by_artifact.get(read)
@@ -447,7 +449,7 @@ class Builder:
                     continue
                 for keeper in (k for k in self.keepers.values() if k.contract == upstream.contract):
                     occurrence = current.get(keeper.id)
-                    if occurrence is not None and occurrence.deadline <= next_run and not occurrence.kept:
+                    if occurrence is not None and occurrence.deadline <= upcoming and not occurrence.kept:
                         on.append(f"{read}/{keeper.part}" if keeper.part else read)
             if on:
                 noun = "update" if len(on) == 1 else "updates"
@@ -476,7 +478,7 @@ def _label(node: str) -> str:
     if node.startswith("contract:"):
         name, _, output = node.removeprefix("contract:").partition("#")
         return f"{name.partition('/')[2]} {output}"
-    if node.startswith(("https://", "http://")):
+    if node.startswith("https://"):
         parts = urlsplit(node)
         return f"{parts.hostname}{parts.path}".rstrip("/")
     return node
