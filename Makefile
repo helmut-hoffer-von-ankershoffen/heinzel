@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses secrets template-test template-sync docs fuzz demo build changelog ci-logs pr sync release clean
+.PHONY: help install setup doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses secrets template-test template-sync docs fuzz demo web-build web-dev test-web build changelog ci-logs pr sync release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -29,13 +29,23 @@ TESTS := "&tests=uv run pytest -m 'unit or integration' -n 4 -x -q --session-tim
 # The same suite measured, on the same 4 workers: each xdist worker is a Python subprocess, which coverage measures
 # ([tool.coverage.run] patch = ["subprocess"]) into its own data file; `coverage combine` merges them afterwards.
 COVERED := uv run coverage erase && uv run coverage run -m pytest -m 'unit or integration' -n 4 -q --session-timeout=300
+# The web head's app in web/ (ADR 0039): pnpm from scripts/tools.toml on the Node.js of uv.lock, through scripts/web_build.py,
+# which installs web/'s dependencies first when they are stale. Plugins have no web/; the template leaves these out.
+WEB := uv run --quiet --script scripts/web_build.py
+WEB_PROJECT := uv run --quiet python scripts/web.py
+# The client is generated from built-in modules and default settings, like the docs, whatever HZ_* are set.
+WEB_PROJECT_CLEAN := env -u HZ_SYSTEM_AGENT__SKILL_DIRS $(WEB_PROJECT)
+WEB_LINT := "&web-lint=$(WEB) exec biome ci ." "&web-client=$(WEB_PROJECT_CLEAN) client --check"
+WEB_TYPES := "&web-types=$(WEB) exec tsc --noEmit -p ."
+WEB_TESTS := "&web-tests=$(WEB) exec vitest run"
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
 install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
 	@uv sync --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
-	@$(TOOLS) install
+	@$(TOOLS) install build web
+	@$(WEB) install
 
 setup: install ## Install what the build needs, and the git hooks (prek: lint on commit, conventional commits)
 	@uv run --quiet prek install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push >/dev/null
@@ -48,7 +58,7 @@ tools-verify: ## Download every pinned tool for every platform and check its che
 	@$(TOOLS) verify
 
 check: ## Everything CI checks that runs offline, in parallel: lint, import contracts, types, tests
-	$(STEPS) $(GATE) $(LINT) $(TYPES) $(TESTS)
+	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(TESTS) $(WEB_TESTS)
 
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts, generated files, unit tests
 	$(STEPS) \
@@ -58,10 +68,11 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
-		"unit=uv run pytest -m unit -n auto -x -q --session-timeout=60"
+		$(WEB_LINT) $(WEB_TYPES) \
+		"unit=uv run pytest -m unit -n auto -x -q --session-timeout=60" $(WEB_TESTS)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
-	$(STEPS) $(GATE) $(LINT) $(TYPES) \
+	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(WEB_TESTS) \
 		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
 		"&template=TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" \
 		"&build=uv build --all-packages --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
@@ -73,20 +84,21 @@ fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated 
 		"lock=uv lock --quiet" \
 		"template=uv run --script scripts/sync_template.py" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py" \
+		"&web-client=$(WEB_PROJECT_CLEAN) client" \
 		"&demo=uv run --script scripts/demo_tape.py" \
 		"format=uv run ruff format --quiet ." \
 		"ruff=uv run ruff check --fix --quiet --exit-zero ."
 	@git status --short
 
 lint: ## Check formatting, lint, architecture contracts and workflows
-	$(STEPS) $(GATE) $(LINT)
+	$(STEPS) $(GATE) $(LINT) $(WEB_LINT)
 
 format: ## Format and autofix
 	uv run ruff format .
 	uv run ruff check --fix .
 
 typecheck: ## Type-check with mypy and pyright (both strict)
-	$(STEPS) "mypy=uv run mypy" "&pyright=uv run pyright"
+	$(STEPS) "mypy=uv run mypy" "&pyright=uv run pyright" $(WEB_TYPES)
 
 test: ## Run unit and integration tests with coverage on 4 workers (offline; what the CI Coverage job runs)
 	$(STEPS) \
@@ -118,13 +130,14 @@ test-e2e: ## Run end-to-end tests (needs network), on 3 workers
 	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600"
 
 audit: ## Audit runtime dependencies: known vulnerabilities (pip-audit) and licenses (.license-allowlist)
-	$(STEPS) "licenses=$(MAKE) --no-print-directory licenses" "&vulnerabilities=uv export --quiet --no-dev --no-emit-project --no-emit-package heinzel --format requirements-txt --output-file .audit-requirements.txt && uv run pip-audit --strict --disable-pip -r .audit-requirements.txt; status=\$$?; rm -f .audit-requirements.txt; exit \$$status"
+	$(STEPS) "licenses=$(MAKE) --no-print-directory licenses" "&vulnerabilities=uv export --quiet --no-dev --no-emit-project --no-emit-package heinzel --format requirements-txt --output-file .audit-requirements.txt && uv run pip-audit --strict --disable-pip -r .audit-requirements.txt; status=\$$?; rm -f .audit-requirements.txt; exit \$$status" "&web-vulnerabilities=$(WEB) pnpm audit --prod"
 
 secrets: ## Scan the whole git history for credentials with gitleaks (the pre-commit hook scans each commit)
 	@$(TOOLS) run gitleaks git --redact --verbose --exit-code 1 .
 
 licenses: ## Check that runtime dependencies' licenses are on .license-allowlist, so releases stay MIT-compatible
 	bash scripts/check_licenses.sh
+	@$(WEB) licenses
 
 template-test: ## Render the plugin template, run its checks and audit against this checkout (KEEP=dir keeps it; AUDIT=0 skips the audit, which needs network)
 	TEMPLATE_AUDIT=$(if $(filter 0,$(AUDIT)),,1) bash scripts/template-test.sh $(KEEP)
@@ -141,7 +154,16 @@ demo: ## Assemble docs/assets/demo.tape from the intro and the modules' demo.tap
 template-sync: ## Regenerate the template's Makefile, CI workflow and pyproject from Heinzelmännchen's
 	uv run --script scripts/sync_template.py
 
-build: ## Build wheels and sdists into dist/ (the core and every first-party plugin)
+web-build: ## Build the web head's app into src/heinzel/heads/web/static, which hz ui serves and the wheel ships
+	@$(WEB) build
+
+web-dev: ## The web head with hot reload: its API on a free port, Vite in front of it at the URL printed
+	@$(WEB_PROJECT) dev
+
+test-web: ## Run the web app's component tests (Vitest, with axe for accessibility)
+	$(STEPS) "web-tests=$(WEB) exec vitest run"
+
+build: web-build ## Build wheels and sdists into dist/ (the core and every first-party plugin; the web app first)
 	uv build --all-packages
 
 changelog: ## Preview the changelog for unreleased commits
@@ -150,7 +172,7 @@ changelog: ## Preview the changelog for unreleased commits
 ci-logs: ## The failing steps of the latest CI run of this branch (waits for a running one); JSON=1 for machines
 	@uv run --quiet --script scripts/ci_logs.py $(if $(JSON),--json)
 
-pr: ## Push this branch and open a squash-merged, auto-merging pull request to main: make pr TITLE="feat: ..." (DRAFT=1: draft, no auto-merge; BODY=... or BODY_FILE=path: a new PR's description)
+pr: ## Push this branch and open a squash-merged, auto-merging pull request to main: make pr TITLE="feat: ..." (DRAFT=1: draft, no auto-merge)
 	@bash scripts/pr.sh "$(TITLE)"
 
 sync: ## Rebase this branch onto the latest main (upstream's, in a fork)
@@ -160,4 +182,4 @@ release: ## Open a release pull request from main: BUMP=auto|patch|minor|major (
 	bash scripts/release.sh $(or $(BUMP),auto) --open-pr
 
 clean: ## Remove build and test artifacts
-	rm -rf dist build .coverage* coverage.xml htmlcov reports .pytest_cache .mypy_cache .ruff_cache
+	rm -rf dist build .coverage* coverage.xml htmlcov reports .pytest_cache .mypy_cache .ruff_cache src/heinzel/heads/web/static

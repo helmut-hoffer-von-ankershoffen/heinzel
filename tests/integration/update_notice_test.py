@@ -2,23 +2,20 @@
 
 import json
 import sys
-import urllib.error
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from typer.testing import CliRunner
 
-from heinzel import Module, Prompter, Settings, __version__
+from heinzel import Module, Settings, __version__
 from heinzel.heads import cli
-from heinzel.heads.cli import _setup, _update, build
+from heinzel.heads.cli import _update, build
 from heinzel.kernel import Kernel, ModuleRecord, Origin, ReleaseCache, ReleaseSource, discover
-from heinzel.modules.system import _github
-from heinzel.modules.system import _service as system_service
 
 pytestmark = pytest.mark.integration
 
 runner = CliRunner()
-NOTICE = f"hz 9.0.0 is available (installed {__version__}): hz system update\n{_update.WHATS_NEW}"
+NOTICE = f"hz 9.0.0 is available (installed {__version__}): hz system update"
 CLOCK = Origin("heinzel-clockwork", "1.2.3", builtin=False, url="https://github.com/someone/heinzel-clockwork")
 
 
@@ -47,30 +44,9 @@ def plugin_module() -> Module:
     return module
 
 
-def echo_module() -> Module:
-    """A module that collapses into one command taking an argument, with a setup step (ADR 0032)."""
-    module = Module("echo", "Echoes.")
-
-    @module.operation
-    def echo(text: str) -> str:
-        """Echo the text."""
-        return text
-
-    @module.setup
-    def setup(prompter: Prompter) -> None:
-        """Say hi."""
-        prompter.say("hi")
-
-    return module
-
-
-def make_kernel(*, update_check: bool = True, disabled: frozenset[str] = frozenset()) -> Kernel:
-    records = [
-        *discover(plugins=False)[0],
-        ModuleRecord("clockwork", plugin_module(), CLOCK),
-        ModuleRecord("echo", echo_module(), CLOCK),
-    ]
-    return Kernel(Settings(update_check=update_check, disabled_modules=disabled), records)
+def make_kernel(*, update_check: bool = True) -> Kernel:
+    records = [*discover(plugins=False)[0], ModuleRecord("clockwork", plugin_module(), CLOCK)]
+    return Kernel(Settings(update_check=update_check), records)
 
 
 @pytest.fixture
@@ -100,38 +76,11 @@ def test_text_output_is_followed_by_the_notice_on_stderr(app):
     assert result.stderr.strip() == NOTICE
 
 
-def test_a_collapsed_module_with_a_setup_step_gets_exactly_one_notice(app):
-    result = runner.invoke(app, ["echo", "hi"])
-    assert result.stdout.strip() == "hi"
-    assert result.stderr.strip() == NOTICE
-
-
 @pytest.mark.parametrize("options", [["--json"], ["--format", "json"]])
-@pytest.mark.parametrize(("command", "answer"), [(["clockwork", "wind"], "wound"), (["echo", "hi"], "hi")])
-def test_json_never_gets_the_notice(app, options, command, answer):
-    result = runner.invoke(app, [*command, *options])
-    assert json.loads(result.stdout) == answer
+def test_json_never_gets_the_notice(app, options):
+    result = runner.invoke(app, ["clockwork", "wind", *options])
+    assert json.loads(result.stdout) == "wound"
     assert NOTICE not in result.output
-
-
-def test_setup_of_one_module_is_followed_by_the_notice(app, monkeypatch):
-    monkeypatch.setattr(_setup, "has_terminal", lambda: True)
-    result = runner.invoke(app, ["setup", "echo"])
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip().endswith("echo: done")
-    assert result.stderr.strip() == NOTICE
-
-
-@pytest.mark.usefixtures("human")
-def test_setup_of_every_module_leaves_the_news_to_doctor(monkeypatch, tmp_path):
-    monkeypatch.setattr(_setup, "has_terminal", lambda: True)
-    monkeypatch.chdir(tmp_path)
-    kernel = make_kernel(disabled=frozenset({"org"}))  # only echo's optional step, not org's questions
-    result = runner.invoke(build(kernel), ["setup"], input="\n", env={"COLUMNS": "200"})
-    assert result.exit_code == 0, result.output
-    doctor = " ".join(result.stdout[result.stdout.index("Heinzelmännchen is") :].replace("│", " ").split())
-    assert "release ✔ up hz 9.0.0 is" in doctor  # its release check names the newer release
-    assert NOTICE not in result.stderr
 
 
 @pytest.mark.usefixtures("human")
@@ -154,7 +103,7 @@ def test_the_start_screen_shows_plugins_with_versions_and_links_and_the_notice(a
     plugins = screen[screen.index("Plugins") : screen.index("Core")]
     assert "heinzel-clockwork 1.2.3" in plugins
     assert "https://github.com/someone/heinzel-clockwork" in plugins
-    assert " ".join(NOTICE.split()) in " ".join(screen.split())
+    assert NOTICE in " ".join(screen.split())
     footer = screen[screen.index("Heinzelmännchen hz") :]
     assert "https://" not in footer  # the footer names, versions and describes; no link
 
@@ -191,78 +140,14 @@ def test_doctor_reports_the_newer_release_instead_of_the_notice(app):
 def test_changelog_starts_with_a_header_naming_the_newer_release_and_its_notes(app):
     result = runner.invoke(app, ["system", "changelog"])
     text = " ".join(result.stdout.split())
-    assert text.startswith(f"You're on hz {__version__}; hz 9.0.0 is available: hz system update. {_update.WHATS_NEW}")
+    assert text.startswith(
+        f"You're on hz {__version__}; hz 9.0.0 is available: hz system update. What's new: "
+        "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases"
+    )
     assert "Changelog" in text
     assert NOTICE not in result.stderr
     as_json = json.loads(runner.invoke(app, ["system", "changelog", "--json"]).stdout)
     assert as_json.startswith("# Changelog")  # unchanged: the header is for people only
-
-
-def fake_releases(monkeypatch, answer: object) -> list[str]:
-    """The GitHub releases API answering `answer` (raising it if it is an exception); the suite stays offline."""
-    asked: list[str] = []
-
-    def get_json(url, token, timeout):
-        assert (token, timeout) == (None, system_service.RELEASE_TIMEOUT)  # never a token (ADR 0031)
-        asked.append(url)
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
-
-    monkeypatch.setattr(_github, "get_json", get_json)
-    return asked
-
-
-NEWER = [
-    {
-        "tag_name": "v9.0.0",
-        "published_at": "2026-10-20T08:00:00Z",
-        "html_url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v9.0.0",
-        "body": "### Features\n\n- \u202ebrand new\u202c things",
-    },
-    {"tag_name": f"v{__version__}", "body": "what you have"},
-]
-
-
-def test_changelog_newer_shows_what_newer_releases_bring(app, monkeypatch):
-    asked = fake_releases(monkeypatch, NEWER)
-    result = runner.invoke(app, ["system", "changelog", "--newer"], env={"COLUMNS": "200"})
-    assert result.exit_code == 0
-    assert "You're on hz" not in result.stdout  # the header is for the installed changelog
-    assert "hz 9.0.0 (2026-10-20)" in result.stdout
-    assert "brand new things" in result.stdout
-    assert "\u202e" not in result.stdout
-    assert "what you have" not in result.stdout
-    assert NOTICE not in result.stderr
-    assert asked == [f"{_github.GITHUB_API}/repos/helmut-hoffer-von-ankershoffen/heinzel/releases?per_page=30&page=1"]
-    as_json = json.loads(runner.invoke(app, ["system", "changelog", "--newer", "--json"]).stdout)
-    assert as_json == [
-        {
-            "version": "9.0.0",
-            "date": "2026-10-20",
-            "notes": "### Features\n\n- brand new things",
-            "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v9.0.0",
-        }
-    ]
-
-
-def test_changelog_newer_says_when_nothing_is_newer(app, monkeypatch):
-    fake_releases(monkeypatch, NEWER[1:])
-    result = runner.invoke(app, ["system", "changelog", "--newer"], env={"COLUMNS": "200"})
-    assert (result.exit_code, result.stdout.strip()) == (
-        0,
-        f"hz {__version__} is the latest release; nothing newer to show.",
-    )
-    assert json.loads(runner.invoke(app, ["system", "changelog", "--newer", "--json"]).stdout) == []
-
-
-def test_changelog_newer_offline_says_so_and_fails(app, monkeypatch):
-    fake_releases(monkeypatch, urllib.error.URLError("nodename nor servname provided"))
-    result = runner.invoke(app, ["system", "changelog", "--newer"], env={"COLUMNS": "300"})
-    assert result.exit_code == 1
-    assert "Could not ask GitHub for the releases newer than" in result.stderr
-    assert "nodename nor servname provided" in result.stderr
-    assert result.stdout == ""
 
 
 @pytest.mark.usefixtures("human")

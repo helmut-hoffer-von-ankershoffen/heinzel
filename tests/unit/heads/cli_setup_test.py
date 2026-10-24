@@ -26,6 +26,7 @@ from heinzel.heads.cli._setup import (
     equivalent_commands,
     exit_code,
     is_configured,
+    step_of,
     steps,
     summary,
 )
@@ -107,7 +108,8 @@ def kernel(make_kernel, monkeypatch, tmp_path) -> Kernel:
 
 def test_builtins_come_first_then_the_others_by_name(kernel):
     assert [record.qualname for record, _ in steps(kernel)] == ["core", "greet", "vault"]
-    assert {record.qualname: let for record, let in steps(kernel)}["vault"].required
+    assert step_of(kernel, kernel.module("plain")) is None
+    assert step_of(kernel, kernel.module("vault")).required
 
 
 def test_a_step_needing_a_disabled_module_is_left_out(make_kernel, settings):
@@ -188,7 +190,7 @@ def test_a_configured_module_is_offered_a_change():
 
 def test_one_module_runs_without_the_skip_question(kernel):
     prompter = ScriptedPrompter(["Hi"])
-    plan = [(record, let) for record, let in steps(kernel) if record.qualname == "greet"]
+    plan = [(kernel.module("greet"), step_of(kernel, kernel.module("greet")))]
     assert Runner(kernel, prompter).run(plan, offer_skip=False)[0].outcome is Outcome.DONE
     assert prompter.transcript[-1] == "Greeting [Hello]: Hi"
 
@@ -249,9 +251,10 @@ def test_summary_lists_every_step():
 def test_the_console_prompter_reads_lines_and_says_text_as_written(monkeypatch):
     out = io.StringIO()
     prompter = ConsolePrompter(Console(file=out, width=80))
-    monkeypatch.setattr("sys.stdin", io.StringIO("Ada\n"))
+    monkeypatch.setattr("sys.stdin", io.StringIO("Ada\ns3cret\n"))
     assert prompter.interactive
     assert prompter.read("Name [x]: ") == "Ada"
+    assert prompter.read("Token: ", secret=True) == "s3cret"
     prompter.say("[bold]as written[/bold]\x1b[31m")
     assert "[bold]as written[/bold]" in out.getvalue()
     assert "\x1b" not in out.getvalue()
@@ -259,26 +262,20 @@ def test_the_console_prompter_reads_lines_and_says_text_as_written(monkeypatch):
         prompter.read("More: ")
 
 
-def test_the_console_prompter_hides_secrets(monkeypatch):
+def test_the_console_prompter_hides_secrets_on_a_terminal(monkeypatch):
+    class Terminal(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
     prompter = ConsolePrompter(Console(file=io.StringIO()))
+    monkeypatch.setattr("sys.stdin", Terminal())
     monkeypatch.setattr(_setup.getpass, "getpass", lambda prompt: f"hidden for {prompt}")
     assert prompter.read("Token: ", secret=True) == "hidden for Token: "
 
 
-class Terminal(io.StringIO):
-    def isatty(self) -> bool:
-        return True
-
-
-@pytest.mark.parametrize(
-    ("stdin", "stdout", "expected"),
-    [(Terminal, Terminal, True), (Terminal, io.StringIO, False), (io.StringIO, Terminal, False)],
-)
-def test_setup_needs_a_terminal_on_stdin_and_stdout(monkeypatch, stdin, stdout, expected):
-    """`hz setup > out.txt` would wait for answers to questions nobody sees, so it refuses like a pipe on stdin."""
-    monkeypatch.setattr("sys.stdin", stdin())
-    monkeypatch.setattr("sys.stdout", stdout())
-    assert _setup.has_terminal() is expected
+def test_stdin_is_terminal_asks_stdin(monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    assert _setup.stdin_is_terminal() is False
 
 
 @pytest.mark.parametrize(
@@ -328,12 +325,17 @@ def test_invalid_settings_of_another_module_name_no_reset_command(make_kernel):
 
 
 def test_the_console_prompter_refuses_a_secret_it_would_echo(monkeypatch):
+    class Terminal(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
     def echoing(prompt: str) -> str:
         import warnings
 
         warnings.warn("Can not control echo on the terminal.", _setup.getpass.GetPassWarning, stacklevel=1)
         return "visible"
 
+    monkeypatch.setattr("sys.stdin", Terminal())
     monkeypatch.setattr(_setup.getpass, "getpass", echoing)
     with pytest.raises(HeinzelError, match="can't hide what you type"):
         ConsolePrompter(Console(file=io.StringIO())).read("Token: ", secret=True)

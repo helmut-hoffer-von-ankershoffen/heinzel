@@ -77,7 +77,6 @@ hz system info                 # versions, settings, modules, what plugins repor
 hz system doctor               # every module's health checks; exits 1 if anything is down
 hz system modules              # every module and submodule with the lets it advertises
 hz system changelog            # release notes of the installed version
-hz system changelog --newer    # what the releases newer than yours bring, before you update
 hz system config show          # configuration files, settings in effect, their environment variables
 hz system config set hz.log_level INFO
 hz system release              # is there a newer release? (asks GitHub now; hz checks hourly on its own)
@@ -103,6 +102,7 @@ flowchart TB
         CLI["CLI<br/>hz …"]
         MCP["MCP server"]
         REST["REST API"]
+        Web["Web app<br/>hz ui"]
         Daemon["Daemon<br/>local jobs"]
     end
     subgraph Kernel["Kernel"]
@@ -113,7 +113,7 @@ flowchart TB
         Clock["clock · github · atlassian<br/>(first-party)"]
         Ext["heinzel-*<br/>(external)"]
     end
-    CLI & MCP & REST & Daemon --> Core
+    CLI & MCP & REST & Web & Daemon --> Core
     System & Clock & Ext -- "advertise lets" --> Core
 ```
 
@@ -121,7 +121,9 @@ flowchart TB
 
 Every module is a set of operations, and every operation is a `hz` command, an MCP tool (`hz system serve mcp`)
 and a REST endpoint (`hz system serve api`) at once. Coding agents use whichever suits them: the CLI with `--json`,
-or the MCP tools. Modules can also advertise jobs that
+or the MCP tools. People who'd rather click run `hz ui`: a web app on localhost, for this session only, with a
+navigation tree of settings, contracts, your team, inventory and the doctor's fixes, and a chat with your agent runner
+that says what it may cost before it runs. Modules can also advertise jobs that
 `hz system daemon install` runs in the background on a schedule, under launchd or systemd, unattended and with your
 rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)). Built in today:
 
@@ -133,7 +135,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
 - [`system.capability`](docs/MODULES.md#systemcapability) — Show which adapters serve which capabilities, and who reads and writes what.
-- [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version and of newer releases.
+- [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version.
 - [`system.config`](docs/MODULES.md#systemconfig) — Show, get, set and initialize configuration.
 - [`system.credential`](docs/MODULES.md#systemcredential) — Store and check the credentials modules need, in the OS keychain.
 - [`system.daemon`](docs/MODULES.md#systemdaemon) — Run modules' jobs in the background, supervised by launchd or systemd.
@@ -195,7 +197,7 @@ disabled_modules = []
 greeting = "Moin"
 ```
 
-`hz setup` asks for every module's settings and credentials, wizard style, in a terminal (`hz setup clock` for
+`hz setup` asks for every module's settings and credentials, wizard style, in a terminal (`hz clock setup` for
 one module). `hz system config set example.greeting Moin` edits your user file (`--scope project` the project's `hz.toml`),
 `hz system config init` writes a commented starter file. Environment variables: `HZ_<SETTING>` for the kernel
 (`HZ_LOG_LEVEL=DEBUG`), `HZ_<MODULE>__<SETTING>` for modules (`HZ_EXAMPLE__GREETING=Hi`). Every setting:
@@ -228,7 +230,7 @@ def hello(settings: GreetSettings, name: Annotated[str, Field(description="Who t
 ```
 
 A module can also declare a setup step, `@module.setup`, that asks its questions through an injected `Prompter`
-and runs as `hz setup greet` and as part of `hz setup`
+and becomes `hz greet setup` and part of `hz setup`
 ([ADR 0032](docs/adr/0032-modules-declare-interactive-setup-steps.md)).
 
 That is `hz greet hello --name Ada` in the CLI, with `--json`, help text, argument validation and

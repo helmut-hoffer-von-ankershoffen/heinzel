@@ -12,6 +12,7 @@ program on PATH and prints how to install it. Runs on the standard library only,
 
 Usage: uv run --script scripts/tools.py COMMAND
     install [GROUP|NAME ...]   install a group's tools or single tools (default: the build group); one line each
+                               (group web: the web head's, where web/ exists)
     run NAME [ARG ...]         install NAME if needed, then run it with the arguments (git hooks, make targets)
     doctor                     what the build needs, what is missing, and the command that fixes it
     verify                     download every pinned file for every platform and check its checksum and binary
@@ -45,7 +46,10 @@ MANIFEST = HERE / "tools.toml"
 TOOLS_DIR = ROOT / ".tools"
 CACHE = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "heinzel-dev" / "downloads"
 PLATFORMS = ("darwin-arm64", "darwin-x86_64", "linux-x86_64", "linux-arm64")
-GROUPS = {"build": "make install", "demo": "make demo"}  # group: what installs it
+GROUPS = {"build": "make install", "web": "make install", "demo": "make demo"}  # group: what installs it
+REQUIRED = frozenset({"build", "web"})
+"""Groups whose missing tools fail `make doctor`; `web` only where there is a web/ app (not in plugins)."""
+WEB_APP = ROOT / "web" / "package.json"
 TIMEOUT = 120
 SHA256 = re.compile(r"[0-9a-f]{64}")
 # CA bundles of common Linux distributions, for Pythons whose OpenSSL looks elsewhere.
@@ -425,8 +429,8 @@ def _version(text: str) -> tuple[int, ...]:
 
 
 def tool_check(tool: Tool, platform_: str, tools_dir: Path = TOOLS_DIR) -> Check:
-    """Whether a tool is installed; only a missing `build` tool fails."""
-    installer, required = GROUPS[tool.group], tool.group == "build"
+    """Whether a tool is installed; only a missing `build` or `web` tool fails."""
+    installer, required = GROUPS[tool.group], tool.group in REQUIRED
     section = f"Tools: {tool.group}" + ("" if required else f" (optional; {installer})")
     if installed(tool, platform_, tools_dir):
         return Check(section, state=True, text=f"{tool.name} {tool.version}")
@@ -439,12 +443,14 @@ def tool_check(tool: Tool, platform_: str, tools_dir: Path = TOOLS_DIR) -> Check
     return Check(section, False if required else None, f"{tool.name} {tool.version}: not installed", installer)
 
 
-def checks(
+def checks(  # noqa: PLR0913 - what it looks at, injectable for tests
     platform_: str,
     tools: dict[str, Tool],
     tools_dir: Path = TOOLS_DIR,
     which: Callable[[str], str | None] = shutil.which,
     output: Callable[..., tuple[int, str]] = _output,
+    *,
+    web_app: Path = WEB_APP,
 ) -> list[Check]:
     """Everything `make doctor` reports, in order."""
     darwin = platform_.startswith("darwin")
@@ -479,8 +485,17 @@ def checks(
     makefile = ROOT / "Makefile"
     targets = re.findall(r"(?m)^([\w-]+):", makefile.read_text(encoding="utf-8")) if makefile.is_file() else []
     for group, installer in GROUPS.items():
-        if group == "build" or installer.removeprefix("make ") in targets:  # a plugin has no `make demo`
+        # A plugin has no `make demo` and no web/ app.
+        if (
+            group == "build"
+            or (group == "web" and web_app.is_file())
+            or (group not in REQUIRED and installer.removeprefix("make ") in targets)
+        ):
             found += [tool_check(tool, platform_, tools_dir) for tool in tools.values() if tool.group == group]
+    if web_app.is_file():
+        modules = web_app.parent / "node_modules" / ".modules.yaml"
+        text = "web/node_modules, as locked in web/pnpm-lock.yaml (Node.js from uv.lock)"
+        found.append(Check("Tools: web", modules.is_file(), text, "make install"))
 
     section = "Accounts"
     gh = (installed(tools["gh"], platform_, tools_dir) if "gh" in tools else None) or on_path("gh", tools_dir)

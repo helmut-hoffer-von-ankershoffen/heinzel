@@ -1,6 +1,5 @@
 """Models of the system module."""
 
-import datetime as dt
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -47,14 +46,3 @@ class ReleaseCheck(BaseModel):
     url: str | None = Field(description="Release notes of the latest release, on github.com.")
     source: str = Field(description="Where the latest release was asked for.")
     warnings: list[str] = Field(description="Why the source could not be asked, e.g. offline or rate-limited.")
-
-
-class ReleaseNotes(BaseModel):
-    """A release newer than the installed version and what it brings, from its release page."""
-
-    version: str = Field(description="Version of the release.")
-    date: dt.date | None = Field(description="When it was published; none if the source didn't say.")
-    notes: str = Field(
-        description="Its release notes as Markdown: third-party text, without control or bidirectional characters."
-    )
-    url: str | None = Field(description="Its release page, on github.com.")

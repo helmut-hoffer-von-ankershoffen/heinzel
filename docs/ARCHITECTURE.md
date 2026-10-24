@@ -8,6 +8,7 @@ flowchart LR
         CLI["CLI head<br/>hz ..."]
         MCP["MCP head<br/>hz system serve mcp"]
         REST["REST head<br/>hz system serve api"]
+        Web["Web head<br/>hz ui"]
         Daemon["Daemon head<br/>hz system serve daemon"]
     end
     subgraph Kernel
@@ -26,6 +27,7 @@ flowchart LR
     CLI -- "OperationLets" --> Registry
     MCP -.-> Registry
     REST -.-> Registry
+    Web -.-> Registry
     Daemon -.-> Registry
     CLI -- "call" --> Injector
 ```
@@ -48,7 +50,7 @@ the kinds it understands.
 | `InfoLet` | `@module.info` | `hz system info` |
 | `HealthLet` | `@module.health` returning `Check`s | `hz system doctor` |
 | `CredentialLet` | `module.credential(name, purpose=...)` | `Credentials` (injected) and `hz system credential` with its doctor check ([ADR 0030](adr/0030-credentials-live-in-the-os-keychain.md)) |
-| `SetupLet` | `@module.setup(required=False)`, asking through an injected `Prompter` and writing through `ConfigEditor` and `Credentials` | the CLI head: `hz setup [MODULE]` ([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)) |
+| `SetupLet` | `@module.setup(required=False)`, asking through an injected `Prompter` and writing through `ConfigEditor` and `Credentials` | the CLI head: `hz <module> setup` and `hz setup` ([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)) |
 | `PlaybookLet` | `module.playbook(summary, assets=..., templates=..., defaults=...)`: asset types with discovery hints, template contracts, recommended settings | `workflow`: `hz workflow playbooks`, `discover`, `new --template`; the setup step it declares ([ADR 0037](adr/0037-plugins-bring-playbooks.md)) |
 | `JobLet` | `@module.job(schedule="0 9 * * MON")` | `hz system daemon tick`, run by launchd or systemd ([ADR 0020](adr/0020-daemon-head.md)) |
 | `ProviderLet` | `@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter class; `hosts=` takes a function of the module's settings when they decide the hosts | the kernel's capability bindings and `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
@@ -79,7 +81,13 @@ capability `agent-runner`; core ships its Claude Code and generic command adapte
 **Head.** A view that boots the kernel and exposes operations ([ADR 0019](adr/0019-mcp-and-rest-heads.md)). All heads
 share one exposure rule (`heinzel.heads._exposure`): the same path, public parameters and `heads=` restrictions. The
 **MCP head** makes each operation a tool (`system_doctor`), the **REST head** an endpoint (`GET /system/doctor`,
-OpenAPI at `/docs`). The **daemon head** (`hz system serve daemon`) calls the `hz system daemon tick` operation in
+OpenAPI at `/docs`). The **web head** (`hz ui`, `heinzel.heads.web`) serves a
+React app (`web/`, built into the package) at `/` and the API head's endpoints for head `web` under `/api`, on
+localhost only, behind a token made per process and sent as `Authorization: Bearer`; every response carries a strict
+CSP. Operations hidden from the unauthenticated REST head because they read your profile or your systems list `web`
+in `heads=`; nothing that spends money is exposed but `hz system runner ask`, the app's chat, which has its own cap
+(ADR 0039, "a web head: a React app served by the API head", proposed). The typed client in `web/src/api/` is
+generated from the OpenAPI document by `make fix` and checked by `make check`. The **daemon head** (`hz system serve daemon`) calls the `hz system daemon tick` operation in
 a foreground loop; installed, launchd or systemd start that tick every few minutes instead
 ([ADR 0020](adr/0020-daemon-head.md)). The CLI head turns a module into a command group and
 an operation into a command; parameters without defaults become arguments, others options, and
@@ -101,7 +109,8 @@ there. Everything about Heinzelmännchen itself lives under one administrative n
 
 ```
 hz --version
-hz setup [MODULE]                          every module's setup step, or one module's, wizard style (CLI only)
+hz setup                                   every module's setup step, wizard style (CLI only)
+hz ui                                      the web app on localhost, opened in your browser
 hz system info | modules | doctor | changelog | release | update
 hz system config  show | get | set | unset | init
 hz system plugin  list | add | remove | new
@@ -109,6 +118,7 @@ hz system agent   skills | install | uninstall
 hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
 hz system serve   mcp | api | daemon
 hz <module> …     work: plugin modules and built-in workflow modules
+hz <module> setup  a module's setup step, when it declares one
 ```
 
 The **kernel** is the core: a library without commands. **system** is the one module that ships with the core

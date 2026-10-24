@@ -1,6 +1,6 @@
 """Generate every document that can be derived from the code. `--check` fails if any of them is out of date.
 
-- docs/MODULES.md: every module with its operations in every head (CLI, MCP, REST), settings and health checks.
+- docs/MODULES.md: every module with its operations in every head (CLI, MCP, REST, web), settings and health checks.
 - docs/CLI_REFERENCE.md: Typer's own `utils docs` output for the CLI built from the built-in modules.
 - docs/CONFIGURATION.md: every setting of the kernel and the built-in modules, with environment variable and default.
 - README.md: the module list between `<!-- modules:start -->` and `<!-- modules:end -->`.
@@ -47,8 +47,9 @@ MODULES_HEADER = """\
 # Modules
 
 Generated from the code by `make docs`; CI fails when it is out of date. Every operation is the same in every head:
-a `hz` command, an MCP tool (`hz system serve mcp`) and a REST endpoint (`hz system serve api`). Plugins add their own
-modules; `hz system modules` lists what is installed.
+a `hz` command, an MCP tool (`hz system serve mcp`), a REST endpoint (`hz system serve api`) and an endpoint of the web
+app's API (`hz ui`, under `/api`, behind its session token). Plugins add their own modules; `hz system modules` lists
+what is installed.
 """
 
 CONFIGURATION_HEADER = """\
@@ -117,7 +118,7 @@ def _anchor(qualname: str) -> str:
 def module_catalog() -> str:
     """A section per module: summary, operations in every head, settings and health checks."""
     k = kernel()
-    surfaces = {"cli": exposed(k, "cli"), "mcp": exposed(k, "mcp"), "api": exposed(k, "api")}
+    surfaces = {head: exposed(k, head) for head in ("cli", "mcp", "api", "web")}
     lines = [MODULES_HEADER, "| Module | What it does |", "| --- | --- |"]
     lines += [f"| [`{r.qualname}`](#{_anchor(r.qualname)}) | {r.module.summary} |" for r in k.modules]
     lines.append("")
@@ -130,15 +131,21 @@ def module_catalog() -> str:
             ]
         operations = [item for item in surfaces["cli"] if item.record.qualname == record.qualname]
         if operations:
-            lines += ["| Operation | CLI | MCP tool | REST | Changes state |", "| --- | --- | --- | --- | --- |"]
+            lines += [
+                "| Operation | CLI | MCP tool | REST | Web | Changes state |",
+                "| --- | --- | --- | --- | --- | --- |",
+            ]
             for item in operations:
                 in_mcp = any(o.operation is item.operation for o in surfaces["mcp"])
                 in_api = any(o.operation is item.operation for o in surfaces["api"])
+                in_web = any(o.operation is item.operation for o in surfaces["web"])
                 verb = "GET" if item.operation.read_only else "POST"
+                path = "/".join(item.path)
                 lines.append(
                     f"| {item.operation.summary} | `hz {' '.join(item.path)}` | "
                     f"{f'`{item.name}`' if in_mcp else '—'} | "
-                    f"{f'`{verb} /' + '/'.join(item.path) + '`' if in_api else '—'} | "
+                    f"{f'`{verb} /{path}`' if in_api else '—'} | "
+                    f"{f'`{verb} /api/{path}`' if in_web else '—'} | "
                     f"{'' if item.operation.read_only else 'yes'} |"
                 )
             lines.append("")
@@ -150,7 +157,7 @@ def module_catalog() -> str:
         step = next((let for owner, let in k.lets(SetupLet) if owner.qualname == record.qualname), None)
         if step is not None:
             kind = "required" if step.required else "optional"
-            lines += [f"Setup: `hz setup {record.qualname}` ({kind}), also part of `hz setup`.", ""]
+            lines += [f"Setup: `hz {' '.join(record.path)} setup` ({kind}), also part of `hz setup`.", ""]
     return "\n".join(lines).rstrip() + "\n"
 
 

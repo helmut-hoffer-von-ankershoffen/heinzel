@@ -6,7 +6,7 @@ from pydantic import Field
 
 from heinzel import HeinzelError, Module
 from heinzel.kernel import Installation, ReleaseSource
-from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
+from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, SystemInfo
 from heinzel.modules.system._render import render_info, render_modules, render_release
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
 
@@ -48,9 +48,7 @@ def update(
         Field(description="Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel."),
     ] = None,
 ) -> str:
-    """Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
-
-    Shows the version now installed.
+    """Update Heinzelmännchen, keeping installed plugins, and show the version now installed.
 
     Raises:
         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
@@ -72,7 +70,6 @@ __all__ = [
     "GitHubReleases",
     "ModuleInfo",
     "ReleaseCheck",
-    "ReleaseNotes",
     "SystemInfo",
     "SystemService",
     "github_releases",

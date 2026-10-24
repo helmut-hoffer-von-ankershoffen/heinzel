@@ -5,34 +5,28 @@ in your user configuration, `[org]`; nothing about you is written to a repositor
 for `ProfileService` by type to learn who is acting.
 """
 
-from typing import Annotated
-
-from pydantic import Field
-
 from heinzel import Check, ConfigEditor, Module, Prompter, Status
 from heinzel.modules.org._models import ROLES, OrgSettings, Profile
 from heinzel.modules.org._profile import ProfileService, ask_profile
 from heinzel.modules.org._render import render_profile
-from heinzel.modules.org._sync import SyncItem, SyncReport, SyncService, render_sync
 
 module = Module("org", "Your profile, and the team, org and company you work with.")
 module.settings(OrgSettings)
 module.service(ProfileService)
-module.service(SyncService)
 
 
-# Your name and email are in it; a web page can reach a local REST server, so the CLI and MCP get it, like drafts.
-@module.operation(render=render_profile, heads={"cli", "mcp"})
+# Your name and email are in it; a web page can reach a local REST server, so the CLI, MCP and the web head (which
+# needs its session token) get it, like drafts.
+@module.operation(render=render_profile, heads={"cli", "mcp", "web"})
 def show(service: ProfileService) -> Profile:
     """Show your profile: who you are, your role, time zone and working hours, and what is still missing."""
     return service.profile()
 
 
 @module.health
-def profile(service: ProfileService, recommendations: SyncService) -> list[Check]:
-    """Your profile names your handle, role and time zone; and drift from what your team recommends."""
+def profile(service: ProfileService) -> list[Check]:
+    """Your profile names your handle, role and time zone, which teams and contracts need."""
     found = service.profile()
-    drift = recommendations.health()
     if not found.complete:
         return [
             Check(
@@ -40,24 +34,10 @@ def profile(service: ProfileService, recommendations: SyncService) -> list[Check
                 status=Status.DEGRADED,
                 detail=f"missing {', '.join(found.missing)}",
                 fix=f"Run `{found.fix}`",
-            ),
-            *drift,
+            )
         ]
     detail = f"{found.handle}, {found.role}, {found.timezone} {found.working_hours}"
-    return [Check(name="profile", status=Status.UP, detail=detail), *drift]
-
-
-# It writes your configuration on your say-so; a web page can reach a local REST server, so the CLI and MCP get it.
-@module.operation(read_only=False, render=render_sync, heads={"cli", "mcp"})
-def sync(
-    service: SyncService,
-    accept: Annotated[
-        str | None,
-        Field(description="Recommendations to apply, by id and comma-separated (binding:documents), or all."),
-    ] = None,
-) -> SyncReport:
-    """Show what your team recommends beside what you have; apply only what you accept, to your user file."""
-    return service.sync(accept)
+    return [Check(name="profile", status=Status.UP, detail=detail)]
 
 
 @module.setup(required=True)
@@ -70,4 +50,4 @@ def setup(settings: OrgSettings, prompter: Prompter, editor: ConfigEditor) -> No
     )
 
 
-__all__ = ["ROLES", "OrgSettings", "Profile", "ProfileService", "SyncItem", "SyncReport", "SyncService", "module"]
+__all__ = ["ROLES", "OrgSettings", "Profile", "ProfileService", "module"]

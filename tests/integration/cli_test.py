@@ -17,7 +17,7 @@ import typer
 from pydantic import BaseModel, Field
 from typer.testing import CliRunner
 
-from heinzel import Config, HeinzelError, Module, Prompter, Settings, __version__
+from heinzel import Config, HeinzelError, Module, Settings, __version__
 from heinzel.heads.cli import build
 from heinzel.kernel import ReleaseCache
 from heinzel.modules.system import _github
@@ -101,10 +101,7 @@ def test_system_release_reports_a_newer_release_and_caches_it(app, monkeypatch):
     check = json.loads(runner.invoke(app, ["system", "release", "--json"]).output)
     assert (check["current"], check["latest"], check["update_available"]) == (__version__, "9.0.0", True)
     text = runner.invoke(app, ["system", "release"], env={"COLUMNS": "200"}).output
-    assert (
-        f"hz 9.0.0 is available (installed {__version__}): hz system update\nWhat's new: hz system changelog --newer"
-        in text
-    )
+    assert f"hz 9.0.0 is available (installed {__version__}): hz system update" in text
     assert ReleaseCache(Settings().cache_dir).latest == "9.0.0"
 
 
@@ -134,7 +131,10 @@ def test_system_info_json(app):
     assert result.exit_code == 0, result.output
     info = json.loads(result.output)
     assert info["version"] == __version__
-    assert info["sections"] == {"example": {"greeting": "hi"}}  # an empty section (no capabilities in use) is left out
+    assert info["sections"] == {  # an empty section is left out
+        "example": {"greeting": "hi"},
+        "system.capability": {"system.runner ask → agent-runner:read": "claude-code → api.anthropic.com"},
+    }
     assert {m["qualname"] for m in info["modules"]} >= {"system", "system.changelog", "system.plugin", "example.ping"}
 
 
@@ -172,31 +172,6 @@ def test_heinzel_errors_exit_with_code_1(app):
     result = runner.invoke(app, ["example", "fail"])
     assert result.exit_code == 1
     assert "this went wrong" in result.output
-
-
-def test_a_collapsed_module_with_a_setup_step_keeps_its_exit_codes(make_kernel):
-    """A setup step leaves the module's command as it is: `hz gauge VALUE`, with its own exit codes (ADR 0032)."""
-    gauge = Module("gauge", "Gauges.")
-
-    @gauge.operation(exit_code=lambda ok: 0 if ok else 3)
-    def gauge_(value: int) -> bool:
-        """Whether the value is in range."""
-        if value < 0:
-            msg = "negative"
-            raise HeinzelError(msg)
-        return value < 10
-
-    @gauge.setup
-    def setup(prompter: Prompter) -> None:
-        """Say hi."""
-        prompter.say("hi")
-
-    app = build(make_kernel(builtins=True, gauge=gauge))
-    assert runner.invoke(app, ["gauge", "1"]).exit_code == 0
-    assert runner.invoke(app, ["gauge", "12"]).exit_code == 3
-    assert runner.invoke(app, ["gauge", "12", "--json"]).exit_code == 3
-    assert runner.invoke(app, ["gauge", "--", "-1"]).exit_code == 1
-    assert runner.invoke(app, ["gauge", "many"]).exit_code == 2
 
 
 def test_plugin_list_shows_plugin_modules(app):
@@ -451,6 +426,7 @@ def test_commands_are_sorted(app):
         "modules",
         "plugin",
         "release",
+        "runner",
         "serve",
         "update",
     ]
@@ -504,20 +480,17 @@ def test_invalid_arguments_are_rejected_before_running(make_kernel):
 
 # Agent-ready: every operation's command takes --json. The servers are commands but no operations: they run until
 # stopped and print no result to format.
-SERVERS = {"hz system serve api", "hz system serve daemon", "hz system serve mcp"}
-SETUP = {"hz setup"}  # setup steps are interactive, not operations (ADR 0032)
+SERVERS = {"hz system serve api", "hz system serve daemon", "hz system serve mcp", "hz ui"}
+SETUP = {"hz setup", "hz clock setup", "hz org setup"}  # setup steps are interactive, not operations (ADR 0032)
 
 
 def leaves_without_json(command, path: str = "hz") -> list[str]:
-    """Paths of commands in a click tree that run something without a --json option: leaves, and groups that run a
-    callback of their own when invoked without a subcommand."""
+    """Paths of leaf commands in a click tree that have no --json option."""
+    if isinstance(command, typer.core.TyperGroup):
+        return [leaf for name, sub in command.commands.items() for leaf in leaves_without_json(sub, f"{path} {name}")]
     has_json = any(
         "--json" in parameter.opts for parameter in command.params if isinstance(parameter, typer.core.TyperOption)
     )
-    if isinstance(command, typer.core.TyperGroup):
-        own = [] if has_json or not command.invoke_without_command or command.no_args_is_help else [path]
-        subs = [leaf for name, sub in command.commands.items() for leaf in leaves_without_json(sub, f"{path} {name}")]
-        return own + subs
     return [] if has_json else [path]
 
 
@@ -533,27 +506,6 @@ def test_finds_commands_without_json():
         """Another command without --json."""
 
     assert sorted(leaves_without_json(typer.main.get_command(app))) == ["hz other", "hz plain"]
-
-
-def test_finds_groups_that_run_without_json():
-    app = typer.Typer()
-    running = typer.Typer(invoke_without_command=True)
-
-    @running.callback()
-    def run() -> None:
-        """A group that runs something itself, without --json."""
-
-    @running.command()
-    def sub(json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
-        """A subcommand with --json."""
-
-    app.add_typer(running, name="running")
-
-    @app.command()
-    def other(json_output: Annotated[bool, typer.Option("--json")] = False) -> None:
-        """Keeps the root a group."""
-
-    assert leaves_without_json(typer.main.get_command(app)) == ["hz running"]
 
 
 def test_every_operation_accepts_json(make_kernel):

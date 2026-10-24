@@ -147,8 +147,6 @@ KERNEL = [
     "Prompter",
     "ProviderLet",
     "PullRequest",
-    "Recommendation",
-    "RecommendationKind",
     "Relation",
     "ReleaseCache",
     "ReleaseSource",

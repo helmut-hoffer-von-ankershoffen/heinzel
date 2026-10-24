@@ -62,8 +62,5 @@ def render_release(check: ReleaseCheck) -> RenderableType:
         return Text("\n".join(f"Warning: {warning}" for warning in check.warnings), style="yellow")
     if check.update_available:
         notes = f"\n{check.url}" if check.url else ""
-        return Text(
-            f"hz {check.latest} is available (installed {check.current}): hz system update\n"
-            f"What's new: hz system changelog --newer{notes}"
-        )
+        return Text(f"hz {check.latest} is available (installed {check.current}): hz system update{notes}")
     return Text(f"hz {check.current} is up to date; the latest release is {check.latest}.")

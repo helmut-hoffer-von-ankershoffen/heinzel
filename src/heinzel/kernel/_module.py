@@ -41,7 +41,7 @@ from heinzel.kernel._spec import hookimpl
 RESERVED_NAMES = frozenset({"hz", "capabilities", "setup"})
 """Names a module can't take: the kernel's and the capability bindings' configuration tables, and `hz setup`."""
 SETUP = "setup"
-"""The top-level command that runs modules' setup steps (ADR 0032), so no module may take its name."""
+"""The command of a module's setup step (ADR 0032): no operation of a module with a step may take it."""
 SERVICE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$")
 
 
@@ -107,6 +107,9 @@ class Module:
         """
         if any(type(existing) is type(let) and existing.name == let.name for existing in self._lets):
             msg = f"Module {self.name!r} already has a {type(let).__name__} named {let.name!r}"
+            raise ValueError(msg)
+        if _setup_clash(let, self._lets):
+            msg = f"Module {self.name!r} can't have both a setup step and an operation named {SETUP!r}"
             raise ValueError(msg)
         self._lets.append(let)
 
@@ -370,7 +373,7 @@ class Module:
     def setup[F: Callable[..., Any]](self, /, *, required: bool = False) -> Callable[[F], F]: ...
 
     def setup[F: Callable[..., Any]](self, func: F | None = None, /, *, required: bool = False) -> F | Callable[[F], F]:
-        """Advertise the module's interactive setup step (ADR 0032): `hz setup <module>`, and part of `hz setup`.
+        """Advertise the module's interactive setup step (ADR 0032): `hz <module> setup`, and part of `hz setup`.
 
         The function asks for `Prompter` and whatever else it needs by type, like an operation, and writes through
         `ConfigEditor` and `Credentials`. Its docstring is required: the first line introduces the step.
@@ -380,7 +383,7 @@ class Module:
             required: `hz setup` runs it without offering to skip it; optional steps can be skipped.
 
         Raises:
-            ValueError: If the docstring is missing or the module already has a step.
+            ValueError: If the docstring is missing, the module already has a step, or an operation named `setup`.
         """
 
         def decorate(target: F) -> F:
@@ -406,7 +409,7 @@ class Module:
 
         Data only, one per module: `hz workflow playbooks` lists it, `hz workflow discover` evaluates its hints
         through read-only capability handles, and `hz workflow new --template <module>:<name>` writes its templates.
-        Unless `setup` is False, it also declares the module's setup step (ADR 0032): `hz setup <module>` and
+        Unless `setup` is False, it also declares the module's setup step (ADR 0032): `hz <module> setup` and
         `hz setup` propose the recommended settings, the assets the hints find and the templates, and apply only what
         the person accepts. A module with its own setup step passes `setup=False` and asks for `PlaybookSetup` in it.
 
@@ -454,3 +457,14 @@ class Module:
     def __repr__(self) -> str:
         """Show the name and what the module advertises."""
         return f"Module({self.name!r}, lets={[let.name for let in self._lets]})"
+
+
+def _setup_clash(let: Let, lets: Iterable[Let]) -> bool:
+    """Whether `let` and one of `lets` are a setup step and an operation named `setup`: both would be the command."""
+
+    def setup_operation(candidate: Let) -> bool:
+        return isinstance(candidate, OperationLet) and candidate.name == SETUP
+
+    if isinstance(let, SetupLet):
+        return any(map(setup_operation, lets))
+    return setup_operation(let) and any(isinstance(existing, SetupLet) for existing in lets)

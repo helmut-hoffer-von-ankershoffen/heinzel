@@ -2,6 +2,7 @@
 # in uv.lock; everything here is a binary pinned to a version and, per platform, a download and its sha256.
 # scripts/tools.py installs them into .tools/bin (gitignored), which make puts first on PATH:
 #   group "build": `make install` (and `make setup`) installs them; the git hooks and CI use the same copies.
+#   group "web":   `make install` installs them where there is a web/ app (the core; plugins have none).
 #   group "demo":  `make demo` installs them when it needs them.
 # A platform without a pinned file uses the program on PATH, and `hint` says how to install it there.
 # Platforms: darwin-arm64, darwin-x86_64, linux-x86_64, linux-arm64. `url` may use {version} and {file}; a file
@@ -39,6 +40,21 @@ darwin-arm64 = { file = "gh_{version}_macOS_arm64.zip", sha256 = "5416000f5d1758
 darwin-x86_64 = { file = "gh_{version}_macOS_amd64.zip", sha256 = "2dc7f1fc4761f96732995f6e4f4c6b4d705f2635da4126620c8b30eaa67b9c98" }
 linux-x86_64 = { file = "gh_{version}_linux_amd64.tar.gz", sha256 = "62ccf747115ddc61237efffdde66a3c8f70ba249433dc64f70801089b59c59c8" }
 linux-arm64 = { file = "gh_{version}_linux_arm64.tar.gz", sha256 = "4c3e99a50bd8b181a3fe9d69b25dd978bac768148d88f01507c6b4d1ef61a443" }
+
+[pnpm]
+version = "12.15.0"
+group = "web"
+why = "the web head's package manager (web/): `make install`, `make check`, the wheel's build hook; runs on the Node.js of uv.lock"
+home = "https://pnpm.io"
+url = "https://github.com/pnpm/pnpm/releases/download/v{version}/{file}"
+member = "pnpm"
+hint = { darwin = "brew install pnpm", linux = "see https://pnpm.io/installation" }
+
+[pnpm.files]
+darwin-arm64 = { file = "pnpm-darwin-arm64.tar.gz", sha256 = "6a41a2877773e97f19832067187cc6fc82e186d8a2cf91fec4b4c1a5fbd6ef27" }
+darwin-x86_64 = { file = "pnpm-darwin-x64.tar.gz", sha256 = "2d7b336884574aee8a765bee48591212e9caf4fcf985fb3279588c1fb73fb47f" }
+linux-x86_64 = { file = "pnpm-linux-x64.tar.gz", sha256 = "55b5ed0092bd11176c1669598e231ae52e7cedac59de6efd0d415730f37d0598" }
+linux-arm64 = { file = "pnpm-linux-arm64.tar.gz", sha256 = "d7ce93a2c7d847d3a34bd3f559b60c14f578b1320c17cc352a2c5c5fdf956117" }
 
 [vhs]
 version = "0.12.1"

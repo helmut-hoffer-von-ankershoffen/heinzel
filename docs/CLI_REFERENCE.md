@@ -24,6 +24,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `setup`: Set up every module that has a setup step,...
 * `system`: Inspect, configure, diagnose and update...
 * `team`: Your team&#x27;s repository: create one (`hz...
+* `ui`: Open the web app in your browser, served...
 * `workflow`: Workflow contracts: Markdown files an...
 * `zoom`: Read meetings from Zoom&#x27;s meeting-summary...
 
@@ -68,7 +69,7 @@ Show the time in each of the team&#x27;s time zones.
 **Usage**:
 
 ```console
-$ hz clock [OPTIONS]
+$ hz clock [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Options**:
@@ -76,6 +77,24 @@ $ hz clock [OPTIONS]
 * `--at ISO-8601`: Moment to show instead of now (ISO 8601).
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `setup`: Pick the team&#x27;s time zones and the working...
+
+### `hz clock setup`
+
+Pick the team&#x27;s time zones and the working hours in each.
+
+**Usage**:
+
+```console
+$ hz clock setup [OPTIONS]
+```
+
+**Options**:
+
 * `--help`: Show this message and exit.
 
 ## `hz github`
@@ -128,8 +147,22 @@ $ hz org [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `setup`: Tell hz who you are; what your gh and gws...
 * `show`: Show your profile: who you are, your role,...
-* `sync`: Show what your team recommends beside what...
+
+### `hz org setup`
+
+Tell hz who you are; what your gh and gws logins and this machine say is found, the rest is asked once.
+
+**Usage**:
+
+```console
+$ hz org setup [OPTIONS]
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
 
 ### `hz org show`
 
@@ -147,36 +180,15 @@ $ hz org show [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz org sync`
-
-Show what your team recommends beside what you have; apply only what you accept, to your user file.
-
-**Usage**:
-
-```console
-$ hz org sync [OPTIONS]
-```
-
-**Options**:
-
-* `--accept <str>`: Recommendations to apply, by id and comma-separated (binding:documents), or all.
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
 ## `hz setup`
 
-Set up every module that has a setup step, wizard style; optional steps can be skipped. With MODULE, set up only that module.
+Set up every module that has a setup step, wizard style; optional steps can be skipped.
 
 **Usage**:
 
 ```console
-$ hz setup [OPTIONS] [MODULE]
+$ hz setup [OPTIONS]
 ```
-
-**Arguments**:
-
-* `MODULE`: Set up only this module, by qualified name (`hz setup clock`); every module when left out.
 
 **Options**:
 
@@ -200,7 +212,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 
 * `agent`: Install the Heinzelmännchen skills for...
 * `capability`: Show which adapters serve which...
-* `changelog`: Show the installed version&#x27;s changelog as...
+* `changelog`: Show the changelog of the installed...
 * `config`: Show, get, set and initialize configuration.
 * `credential`: Store and check the credentials modules...
 * `daemon`: Run modules&#x27; jobs in the background,...
@@ -209,8 +221,9 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `modules`: List every module and the lets it advertises.
 * `plugin`: Find, add, remove, list and scaffold plugins.
 * `release`: Ask where Heinzelmännchen was installed...
+* `runner`: Run bounded agent sessions with Claude...
 * `serve`: Serve every operation to coding agents...
-* `update`: Update Heinzelmännchen, keeping plugins;...
+* `update`: Update Heinzelmännchen, keeping installed...
 
 ### `hz system agent`
 
@@ -316,7 +329,7 @@ $ hz system capability list [OPTIONS]
 
 ### `hz system changelog`
 
-Show the installed version&#x27;s changelog as Markdown, or with `--newer` what newer releases bring.
+Show the changelog of the installed version, as Markdown.
 
 **Usage**:
 
@@ -326,7 +339,6 @@ $ hz system changelog [OPTIONS]
 
 **Options**:
 
-* `--newer / --no-newer`: Show what the releases newer than the installed version bring instead, newest first; asks GitHub, anonymously. As JSON: a list of {version, date, notes, url}.  [default: no-newer]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -868,6 +880,45 @@ $ hz system release [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz system runner`
+
+Run bounded agent sessions with Claude Code or a configured command.
+
+**Usage**:
+
+```console
+$ hz system runner [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `ask`: Ask the bound agent runner, read-only and...
+
+#### `hz system runner ask`
+
+Ask the bound agent runner, read-only and within a cost cap; this may cost money.
+
+**Usage**:
+
+```console
+$ hz system runner ask [OPTIONS] {prompt}
+```
+
+**Arguments**:
+
+* `prompt`: What to ask: a question, or the conversation so far ending with one; nothing is kept between calls.  [required]
+
+**Options**:
+
+* `--budget-usd <float>`: Most this answer may cost in US dollars, at most the setting system.runner.ask_max_usd.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz system serve`
 
 Serve every operation to coding agents (MCP) or over HTTP (REST), or run the daemon in the foreground.
@@ -938,7 +989,7 @@ $ hz system serve mcp [OPTIONS]
 
 ### `hz system update`
 
-Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
+Update Heinzelmännchen, keeping installed plugins, and show the version now installed.
 
 **Usage**:
 
@@ -1085,6 +1136,22 @@ $ hz team show [OPTIONS]
 
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz ui`
+
+Open the web app in your browser, served on localhost for this session only; Ctrl-C stops it.
+
+**Usage**:
+
+```console
+$ hz ui [OPTIONS]
+```
+
+**Options**:
+
+* `--port <int>`: Port on 127.0.0.1; 0 picks a free one.  [default: 0]
+* `--browser / --no-browser`: Open the default browser at the app; --no-browser prints only its URL.  [default: browser]
 * `--help`: Show this message and exit.
 
 ## `hz workflow`

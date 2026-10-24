@@ -53,28 +53,15 @@ waits and nothing about the user is sent.
   connecting and to each read, not in total), and after its own work a command waits at most 2 seconds in total for a
   check still running, then exits and drops it. JSON invocations and the servers start the check too; it writes only
   the cache.
-- Who tells: the notice "hz X.Y.Z is available (installed A.B.C): hz system update", with "What's new: hz system
-  changelog --newer" on a second line, comes from the cache only. The CLI prints it on stderr after the text output
-  of every command, after `hz --version`, and in the footer of `hz` and `hz --help` (the start screen), only when the
-  setting is on, the stream is a terminal and no CI variable is set.
+- Who tells: the notice "hz X.Y.Z is available (installed A.B.C): hz system update" comes from the cache only. The
+  CLI prints it on stderr after the text output of every command, after `hz --version`, and in the footer of `hz` and
+  `hz --help` (the start screen), only when the setting is on, the stream is a terminal and no CI variable is set.
   Commands that say it themselves print no notice: `hz system release`, `hz system update`, `hz system doctor` (an
   informational `release` check, which also says why the last check failed) and `hz system changelog` (a header,
-  "You're on X; Y is available: hz system update. What's new: hz system changelog --newer", above the installed
+  "You're on X; Y is available: hz system update. What's new: <the repository's releases page>", above the installed
   version's notes; the changelog itself asks nothing, and its JSON stays the installed changelog). Never in JSON, MCP
   or REST output; there the version is data: `latest_release` in `hz system info` and the doctor's `release` check.
 - `hz system release` always asks, because someone asked, and caches the answer or the failure like the check.
-- What a newer release brings: `hz system changelog --newer` shows the release notes of every release newer than the
-  installed version, newest first (`--json`: a list of `{version, date, notes, url}`), so people see what they get
-  before they update; the notice, the changelog header, `hz system release` and `hz system update` point to it. It
-  uses the network only when asked, with the same request rules as the check: unauthenticated GETs to the releases API
-  of the same repository through `heinzel.modules.system._github`, only the `heinzel/<version>` User-Agent, no token,
-  answers of at most 1 MB, at most 4 pages of 30 releases, 5 seconds per network operation. Drafts and pre-releases
-  are skipped. Release notes are third-party text: the module removes control characters and invisible format
-  characters (bidirectional controls, zero-width and tag characters; the zero-width joiner of emoji stays), so every
-  head, MCP and REST included, gets them clean; a release's `url` is kept only if it is a plain release page of that
-  repository; each release's notes are cut at 20,000 characters; and in the terminal links show their target.
-  Offline or rate-limited, it fails with one error naming the reason and the releases page, exit code 1. Without
-  `--newer` the changelog and its JSON are unchanged.
 - Opt-out: the setting `update_check` (`[hz] update_check` in the user, site or `HZ_CONFIG` file, `HZ_UPDATE_CHECK`;
   a project's `hz.toml` cannot set it, so a repository can't switch it on or off for the people who clone it),
   default on; `false` turns both the check and the notice off. Any CI variable (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`,
@@ -102,9 +89,6 @@ This is consistent with ADR 0027: the request carries nothing about the user, an
 an hour, negative cache, the budget with a slow source, CI and the setting), `tests/integration/update_notice_test.py`
 (the notice on stderr only, never with `--json`, `--format json` or `output_format = "json"`, the start screen,
 `--version`, doctor, the changelog header, and the entry point checking once an hour with a fake source),
-`tests/unit/modules/changelog_test.py` (`--newer`: newest first, drafts and pre-releases skipped, bounded pages,
-cleaned and cut notes, no token, offline), `tests/integration/update_notice_test.py::test_changelog_newer_*` (text,
-JSON and offline through the CLI with a fake GitHub),
 `tests/unit/kernel/installation_test.py::test_the_hz_probe_never_checks_for_updates`,
 `tests/unit/modules/system_service_test.py::test_release_never_sends_a_token`; the import-linter contract "Heads only
 know what the kernel discovered" keeps GitHub out of the heads. The security-reviewer checks changes to the request
@@ -116,7 +100,4 @@ against this ADR.
 - Amended on 2026-10-24: the maintainer decided the check is automatic, cached for an hour (failures included), with a
   short timeout, shown always but never in JSON, and switched off by the `update_check` setting and in CI. The first
   version asked only on demand.
-- Amended on 2026-10-24: the maintainer decided "users should see what they get before installing a new release",
-  so `hz system changelog --newer` shows the notes of every newer release, and the notice and `hz system update` point
-  to it.
 - `hz system plugin search` is a different, user-initiated search and may send the user's configured GitHub token.

@@ -29,6 +29,6 @@ change like a library release: an ADR for a new concept, unit tests for every br
   `hz.toml` can't set); `_installation.py` — the uv tool environment;
   `_progress.py` — head-agnostic progress; `_duration.py` — `parse_duration` (`5m`); `_release.py` —
   `ReleaseCache` and `ReleaseSource`, the latest release last seen and who asks for it (ADR 0031); `_org.py` —
-  `OrgContext`, where the person's team repository is checked out and what it recommends (provided by `team`);
+  `OrgContext`, where the person's team repository is checked out (provided by `team`);
   `_prompter.py` — `Prompter`, head-agnostic questions for setup steps, and `ScriptedPrompter` (ADR 0032;
   the CLI head runs the steps); `ConfigEditor` in `_config.py` is implemented by `system.config`.

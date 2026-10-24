@@ -315,7 +315,7 @@ class RequirementLet(Let):
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class SetupLet(Let):
-    """An interactive setup step (ADR 0032), named after its module: `hz setup <module>`, and part of `hz setup`.
+    """An interactive setup step (ADR 0032), named after its module: `hz <module> setup`, and part of `hz setup`.
 
     `func` is injected like an operation and asks its questions through `Prompter`; it writes settings through
     `ConfigEditor` and secrets through `Credentials`. Only interactive heads run it.

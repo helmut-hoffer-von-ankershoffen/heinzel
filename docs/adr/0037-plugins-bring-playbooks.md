@@ -74,7 +74,7 @@ them without the core knowing what they are about.
   settings: a playbook is data and can't recommend what runs code, what the agent may do, what it costs or where
   contracts come from. Each is applied only on its own yes, through `ConfigEditor`; one that is refused is reported
   and the others are still offered.
-- **Setup.** Unless `setup=False`, `module.playbook` declares the module's setup step: `hz setup <module>` and
+- **Setup.** Unless `setup=False`, `module.playbook` declares the module's setup step: `hz <module> setup` and
   `hz setup` offer each recommended setting, the candidates for each asset type (or "fill it in later"), and each
   template, written only when confirmed under a name the person may change; an existing contract is left alone. A
   module with its own step passes `setup=False` and asks for `PlaybookSetup` in it.

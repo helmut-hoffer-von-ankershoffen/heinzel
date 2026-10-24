@@ -86,7 +86,7 @@ def test_a_project_file_cant_say_who_you_are(hz, monkeypatch, tmp_path):
 
 
 def test_setup_finds_your_identity_and_asks_role_and_hours_once(make_kernel, monkeypatch, tmp_path):
-    monkeypatch.setattr(_setup, "has_terminal", lambda: True)
+    monkeypatch.setattr(_setup, "stdin_is_terminal", lambda: True)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         discovery,
@@ -120,7 +120,7 @@ def test_setup_finds_your_identity_and_asks_role_and_hours_once(make_kernel, mon
 
 
 def test_setup_with_an_invalid_role_says_how_to_reset_it(make_kernel, monkeypatch, tmp_path):
-    monkeypatch.setattr(_setup, "has_terminal", lambda: True)
+    monkeypatch.setattr(_setup, "stdin_is_terminal", lambda: True)
     monkeypatch.chdir(tmp_path)
     kernel = make_kernel(builtins=True, config=Config(files=(), data={"org": {"role": "ceo"}}))
     prompter = ScriptedPrompter([])

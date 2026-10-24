@@ -47,26 +47,6 @@ The repository holds:
 CODEOWNERS says who approves what. GitHub enforces it only when the default branch requires a pull request reviewed
 by code owners; set that rule in the repository's settings.
 
-## What your team recommends
-
-A team's `hz.yaml` may recommend what its members use. It only recommends: nothing in it binds, installs, stores or
-schedules anything on your machine.
-
-```yaml
-recommend:
-  plugins: [heinzel-google]
-  bindings: {documents: google, tracker: github}
-  credentials: [google/oauth-client]   # names only, never values
-  contracts: [weekly-status]           # team contracts in workflows/
-```
-
-`hz org sync` shows each recommendation beside what you have, and where it comes from. `--accept <ids>` (or `all`)
-writes what you accept to your user file: a binding to `[capabilities]`, a contract to `[workflow] schedule_team`,
-pinned to the content you read with `hz workflow show team:<name>`. `all` takes only what you have no choice for yet;
-what you chose otherwise switches only when you name it. Plugins and credentials stay commands you run yourself, which
-`sync` names. `hz system doctor` says when recommendations wait for you. An entry hz can't check is dropped, and
-`hz team show` says which.
-
 ## Add someone, show, leave
 
 - `hz team add theo --login theo-example --role engineer` adds someone to the roster, as an owner: a pull request, or a

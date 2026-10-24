@@ -1,37 +1,11 @@
-"""Where the person's team repository is checked out, and what it recommends: what modules ask for by type.
+"""Where the person's team repository is checked out: what modules ask for by type (proposed onboarding ADR).
 
 A team keeps its shared state in a Git repository: roster, people files, team contracts, policies. One module knows
 which team a person joined and where its checkout is, and provides it as an `OrgContext`; others read it, so that
 `workflow` finds `team:` contracts without knowing how a person joined. The kernel knows neither Git nor joining.
-
-A team repository may recommend plugins, capability bindings, credential names and contracts (proposed onboarding
-ADR). A recommendation is shown with its origin and applied only when the person accepts it, to their own user
-configuration (`hz org sync`): nothing in a repository binds, installs, stores or schedules anything by itself.
 """
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
-
-RecommendationKind = Literal["plugin", "binding", "credential", "contract"]
-
-
-@dataclass(frozen=True, kw_only=True, slots=True)
-class Recommendation:
-    """One thing a team repository recommends to its members."""
-
-    kind: RecommendationKind
-    name: str
-    """A plugin distribution, a capability, a credential as `service/name`, or a team contract's name."""
-    value: str | None = None
-    """The adapter a binding names, or the `sha256:<hex>` of a contract's file; None for the other kinds."""
-    origin: str
-    """Where it comes from, for the person to judge, e.g. `team payments (https://...), hz.yaml`."""
-
-    @property
-    def id(self) -> str:
-        """How the person accepts it: `<kind>:<name>`, e.g. `binding:documents`."""
-        return f"{self.kind}:{self.name}"
 
 
 class OrgContext:
@@ -49,7 +23,3 @@ class OrgContext:
             NotImplementedError: Always; subclasses read the person's configuration.
         """
         raise NotImplementedError
-
-    def recommendations(self) -> tuple[Recommendation, ...]:
-        """What the person's team repository recommends; nothing by default."""
-        return ()

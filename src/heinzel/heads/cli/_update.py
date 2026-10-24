@@ -25,8 +25,6 @@ TIMEOUT = 2.0
 """Seconds the package source may take per network operation (connecting, reading)."""
 BUDGET = 2.0
 """Seconds a command waits, at most, after its own work for a check still running; then the check is dropped."""
-WHATS_NEW = "What's new: hz system changelog --newer"
-"""Where the notice and the changelog header point people before they update."""
 CI_VARIABLES = ("CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GITHUB_ACTIONS", "GITLAB_CI", "TF_BUILD")
 """Environment variables CI systems set; no check and no notice when one of them is."""
 
@@ -46,7 +44,7 @@ def notice(kernel: Kernel) -> str | None:
     if not enabled(kernel):
         return None
     latest = ReleaseCache(kernel.settings.cache_dir).newer_than(__version__)
-    return f"hz {latest} is available (installed {__version__}): hz system update\n{WHATS_NEW}" if latest else None
+    return f"hz {latest} is available (installed {__version__}): hz system update" if latest else None
 
 
 def print_notice(kernel: Kernel, console: Console) -> None:
@@ -56,18 +54,17 @@ def print_notice(kernel: Kernel, console: Console) -> None:
 
 
 def changelog_header(kernel: Kernel) -> str | None:
-    """The header of `hz system changelog` when a newer release is cached: installed, available, how to see more."""
+    """The header of `hz system changelog` when a newer release is cached: installed, available, where to read more."""
     if not enabled(kernel) or not (latest := ReleaseCache(kernel.settings.cache_dir).newer_than(__version__)):
         return None
-    return f"You're on hz {__version__}; hz {latest} is available: hz system update. {WHATS_NEW}"
+    core = next((record.origin.url for record in kernel.modules if record.origin.builtin and record.origin.url), None)
+    notes = f" What's new: {core.rstrip('/')}/releases" if core else ""
+    return f"You're on hz {__version__}; hz {latest} is available: hz system update.{notes}"
 
 
-def print_changelog_header(kernel: Kernel, console: Console, result: object) -> None:
-    """Print the changelog header on `console` (the CLI's stdout), if it writes to a terminal and there is one.
-
-    Only above the installed changelog: `--newer` shows the newer releases themselves.
-    """
-    if isinstance(result, str) and is_terminal(console) and (text := changelog_header(kernel)):
+def print_changelog_header(kernel: Kernel, console: Console) -> None:
+    """Print the changelog header on `console` (the CLI's stdout), if it writes to a terminal and there is one."""
+    if is_terminal(console) and (text := changelog_header(kernel)):
         console.print(TerminalSafe(Text(text, style="yellow")), highlight=False)
 
 
