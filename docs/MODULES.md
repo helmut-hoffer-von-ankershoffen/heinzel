@@ -76,6 +76,7 @@ Your profile, and the team, org and company you work with.
 | Operation | CLI | MCP tool | REST | Changes state |
 | --- | --- | --- | --- | --- |
 | Show your profile: who you are, your role, time zone and working hours, and what is still missing. | `hz org show` | `org_show` | — |  |
+| Show what your team recommends beside what you have; apply only what you accept, to your user file. | `hz org sync` | `org_sync` | — | yes |
 
 Settings: [`[org]`](CONFIGURATION.md#org).
 

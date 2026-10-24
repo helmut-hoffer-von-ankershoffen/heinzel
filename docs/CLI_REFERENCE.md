@@ -129,6 +129,7 @@ $ hz org [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `show`: Show your profile: who you are, your role,...
+* `sync`: Show what your team recommends beside what...
 
 ### `hz org show`
 
@@ -142,6 +143,23 @@ $ hz org show [OPTIONS]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz org sync`
+
+Show what your team recommends beside what you have; apply only what you accept, to your user file.
+
+**Usage**:
+
+```console
+$ hz org sync [OPTIONS]
+```
+
+**Options**:
+
+* `--accept <str>`: Recommendations to apply, by id and comma-separated (binding:documents), or all.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

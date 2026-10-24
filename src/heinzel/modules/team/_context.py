@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import override
 
-from heinzel.kernel import OrgContext
+from heinzel.kernel import OrgContext, Recommendation
 from heinzel.modules.team._service import TeamService
 
 
@@ -18,3 +18,8 @@ class TeamContext(OrgContext):
     def team_checkout(self) -> Path | None:
         """The checkout `[team]` names, or where `join` puts the configured repository; None without a team."""
         return self._service.checkout
+
+    @override
+    def recommendations(self) -> tuple[Recommendation, ...]:
+        """What your team's `hz.yaml` recommends; nothing without a team or with an invalid manifest."""
+        return self._service.recommendations()

@@ -3,12 +3,15 @@
 import re
 from datetime import date
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from heinzel.kernel import ModuleSettings
+from heinzel.kernel import CAPABILITIES, ModuleSettings, RecommendationKind
 from heinzel.modules.team._repo import check_url
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 ROLES = (
     "engineer",
@@ -32,6 +35,9 @@ NAME = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 DISTRIBUTION = re.compile(r"^heinzel-[a-z0-9]+(?:-[a-z0-9]+)*$")
 """A plugin distribution's name (ADR 0025)."""
 EMAIL = re.compile(r"^[^@\s]{1,64}@[A-Za-z0-9.-]{1,253}$")
+RECOMMEND_KEYS = frozenset({"plugins", "bindings", "credentials", "contracts"})
+CREDENTIAL = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+"""A credential as `service/name`, the way doctor names it; only names, never values."""
 MAX_NAME = 64
 MANIFEST = "hz.yaml"
 ROSTER = "team/roster.yaml"
@@ -131,6 +137,94 @@ class Plugin(_Strict):
         return name
 
 
+class Recommend(BaseModel):
+    """What a team recommends its members use: shown with its origin, applied only when a member accepts it.
+
+    Read leniently: an entry hz can't check (a capability a later version added, a misspelt name) is dropped with a
+    problem `hz team show` reports, and never invalidates the manifest the rest of the team depends on.
+    """
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    unreadable: list[str] = Field(
+        default_factory=list[str], exclude=True, description="Problems with the block's shape, for `hz team show`."
+    )
+    plugins: object = Field(default_factory=list[object], description="Plugin distributions, `heinzel-<name>`.")
+    bindings: object = Field(
+        default_factory=dict[str, object], description="Capability to adapter, e.g. `documents: google`."
+    )
+    credentials: object = Field(
+        default_factory=list[object],
+        description="Credentials members store themselves, as `service/name`; never values.",
+    )
+    contracts: object = Field(
+        default_factory=list[object], description="Team contracts in workflows/ members may let their daemon run."
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _shape(cls, value: object) -> object:
+        """Anything but a mapping is no recommendation; unknown keys are reported, not fatal."""
+        if value is None:
+            return {}
+        mapping = _mapping(value)
+        if mapping is None:
+            return {"unreadable": ["recommend: must map plugins, bindings, credentials and contracts to their entries"]}
+        unknown = sorted(str(key) for key in mapping if key not in RECOMMEND_KEYS)
+        return {
+            **{str(k): v for k, v in mapping.items()},
+            "unreadable": [f"recommend: unknown key {k!r}" for k in unknown],
+        }
+
+    def entries(self) -> tuple[list[tuple[RecommendationKind, str, str | None]], list[str]]:
+        """The entries hz can check, as (kind, name, value), and a problem for each it can't."""
+        found: list[tuple[RecommendationKind, str, str | None]] = []
+        problems: list[str] = list(self.unreadable)
+        named: tuple[tuple[RecommendationKind, object, Callable[[str], str | None]], ...] = (
+            ("plugin", self.plugins, _distribution_problem),
+            ("credential", self.credentials, _credential_problem),
+            ("contract", self.contracts, _contract_problem),
+        )
+        for kind, values, check in named:
+            for value in cast("list[object]", values) if isinstance(values, list) else [values]:
+                if not isinstance(value, str):
+                    problems.append(f"recommend: {value!r} isn't a name")
+                elif (problem := check(value)) is not None:
+                    problems.append(f"recommend: {problem}")
+                else:
+                    found.append((kind, value, None))
+        bindings = _mapping(self.bindings)
+        if bindings is None:
+            bindings = {}
+            problems.append("recommend: bindings must map capabilities to adapters, e.g. documents: google")
+        for capability, adapter in bindings.items():
+            if not isinstance(capability, str) or capability not in CAPABILITIES:
+                problems.append(f"recommend: {capability!r} isn't a capability this hz knows")
+            elif not isinstance(adapter, str) or not NAME.fullmatch(adapter):
+                problems.append(f"recommend: {adapter!r} isn't the name of an adapter")
+            else:
+                found.append(("binding", capability, adapter))
+        order = {"plugin": 0, "binding": 1, "credential": 2, "contract": 3}
+        return sorted(found, key=lambda entry: order[entry[0]]), problems
+
+
+def _mapping(value: object) -> dict[object, object] | None:
+    """`value` as a mapping of anything, when YAML gave one."""
+    return cast("dict[object, object]", value) if isinstance(value, dict) else None
+
+
+def _distribution_problem(name: str) -> str | None:
+    return None if DISTRIBUTION.fullmatch(name) else f"{name!r} isn't a plugin distribution (heinzel-<name>)"
+
+
+def _credential_problem(name: str) -> str | None:
+    return None if CREDENTIAL.fullmatch(name) else f"{name!r} isn't a credential name (service/name)"
+
+
+def _contract_problem(name: str) -> str | None:
+    return None if len(name) <= MAX_NAME and NAME.fullmatch(name) else f"{name!r} isn't a contract name"
+
+
 class Manifest(_Strict):
     """`hz.yaml` at the root of a team repository: what the team is. It configures nobody's machine."""
 
@@ -140,6 +234,9 @@ class Manifest(_Strict):
         default_factory=lambda: list(OWNER_ROLES), description="Roles that own the roster (CODEOWNERS of team/)."
     )
     plugin: Plugin | None = Field(default=None, description="The team's plugin, if it has one.")
+    recommend: Recommend = Field(
+        default_factory=Recommend, description="What the team recommends its members use; nothing is applied by it."
+    )
 
     @field_validator("name")
     @classmethod
