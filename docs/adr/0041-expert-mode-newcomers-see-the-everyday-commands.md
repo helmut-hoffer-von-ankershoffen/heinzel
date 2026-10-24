@@ -4,6 +4,7 @@ date: 2026-10-24
 decision-makers: maintainer
 amends: 0018, 0039
 related: 0003, 0012, 0019, 0028, 0032
+amended-by: 0051
 ---
 
 # 0041: Expert mode: newcomers see the everyday commands, `hz system expert on` shows all
