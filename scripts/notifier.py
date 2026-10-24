@@ -5,17 +5,19 @@
 """Build Heinzel Notifier, hz's macOS notifier app, into the package: `make notifier` (ADR 0043).
 
 Compiles src/heinzel/modules/system/notify/macos/main.swift for arm64 and x86_64 (macOS 13+), joins them with lipo,
-draws the icon from heinzel.svg with icon.swift and iconutil, writes Info.plist with the sources' digest as
+draws the icon from heinzel*.svg with icon.swift and iconutil, writes Info.plist with the sources' digest as
 CFBundleVersion and signs the bundle ad hoc (`codesign --sign -`). The result, HeinzelNotifier.app beside the
 sources, is not in git; the wheel ships it. The app runs on macOS 13 or later; building it needs macOS 14 or later
 (AppKit reads SVG from 14 on) with the Xcode Command Line Tools (`xcode-select --install`); elsewhere it says so and
 exits 1.
 
-`icons` (`make icons`) makes everything else that shows Heinzelmännchen from that one heinzel.svg, an original
-drawing and never an emoji font's artwork: web/public/favicon.svg (a copy), favicon.ico, the images the web app's
-manifest names and the built-in theme's logo (ADR 0044). They are committed, because the Linux build has nothing
-to draw them with; a test checks the SVGs. The PNG files' bytes depend on the macOS that drew them, so redraw them
-only when heinzel.svg changes.
+`icons` (`make icons`) draws Heinzelmännchen from web/src/components/heinzel.ts, the shapes the web app's avatars
+are drawn from too, an original drawing and never an emoji font's artwork: heinzel.svg (the classic one alone) and
+heinzel-group.svg (three together, the product's logo). From those it makes everything else that shows them:
+web/public/favicon.svg, favicon.ico, the images the web app's manifest names and the built-in theme's logo (ADR
+0044); an icon shows the group from GROUP_FROM pixels on, one Heinzelmännchen below. They are committed, because
+the Linux build has nothing to draw them with; tests check the SVGs. The PNG files' bytes depend on the macOS that
+drew them, so redraw them only when the drawing changes.
 """
 
 import hashlib
@@ -43,17 +45,23 @@ WEB_ICONS = {
     "icons/maskable-512.png": (512, "maskable"),
     "icons/apple-touch-icon.png": (180, "maskable"),  # iOS and macOS round it themselves
 }
-"""The web app's icons by path under web/public: their size and icon.swift's style."""
+"""The web app's icons by path under web/public: their size and icon.swift's style; all large enough for the group."""
 FAVICON_SIZES = (16, 32)
+DRAWING = ROOT / "web" / "src" / "components" / "heinzel.ts"
+"""Where Heinzelmännchen is drawn, as shapes the web app also draws its avatars from."""
 ARTWORK = SOURCES / "heinzel.svg"
-"""Heinzelmännchen's one icon; everything else that shows it is made from this file."""
+"""One Heinzelmännchen, the classic one: what the icons show below GROUP_FROM pixels."""
+GROUP = SOURCES / "heinzel-group.svg"
+"""Three of them together, the product's logo: what the icons show from GROUP_FROM pixels on."""
+GROUP_FROM = 48
+"""Below this many pixels the group doesn't read, and one Heinzelmännchen stands for it."""
 THEME_LOGO = ROOT / "src" / "heinzel" / "kernel" / "assets" / "theme" / "logo"
-"""The built-in theme's logo (ADR 0044): the artwork as its mark, and wordmarks made from it."""
-COPIES = (PUBLIC / "favicon.svg", THEME_LOGO / "mark.svg")
+"""The built-in theme's logo (ADR 0044): the group as its mark, and wordmarks made from it."""
+COPIES = {PUBLIC / "favicon.svg": ARTWORK, THEME_LOGO / "mark.svg": GROUP}
 """Byte-for-byte copies of the artwork, for what can't reach it where it is."""
 WORDMARKS = {"wordmark-light.svg": ("light", "#1a1a1a"), "wordmark-dark.svg": ("dark", "#ececec")}
 """The built-in theme's wordmarks: the background each is for, and the name's colour on it."""
-SOURCE_NAMES = ("Info.plist", "heinzel.svg", "icon.swift", "main.swift")
+SOURCE_NAMES = ("Info.plist", "heinzel-group.svg", "heinzel.svg", "icon.swift", "main.swift")
 """The app's sources, in the order its version digests them."""
 
 
@@ -88,16 +96,16 @@ def wordmark(background: str, fill: str) -> str:
     Raises:
         ValueError: heinzel.svg isn't one <svg> element with shapes in it.
     """
-    without_comments = re.sub(r"<!--.*?-->", "", ARTWORK.read_text(encoding="utf-8"), flags=re.DOTALL)
+    without_comments = re.sub(r"<!--.*?-->", "", GROUP.read_text(encoding="utf-8"), flags=re.DOTALL)
     match = re.fullmatch(r"\s*<svg\b[^>]*>(.*)</svg>\s*", without_comments, re.DOTALL)
     if match is None or not match.group(1).strip():
-        msg = f"{ARTWORK.name} isn't one <svg> element with shapes in it"
+        msg = f"{GROUP.name} isn't one <svg> element with shapes in it"
         raise ValueError(msg)
     shapes = "".join(f"    {line.strip()}\n" for line in match.group(1).splitlines() if line.strip())
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 200" role="img" aria-label="Heinzelmännchen">\n'
         f"  <!-- The built-in theme's wordmark on a {background} background,"
-        " made from heinzel.svg by `make icons`. -->\n"
+        " made from heinzel-group.svg by `make icons`. -->\n"
         '  <g transform="scale(0.390625)">\n'
         f"{shapes}"
         "  </g>\n"
@@ -127,15 +135,41 @@ def _svg_ready() -> bool:
     return release >= MACOS_FOR_SVG
 
 
-def icons() -> None:
-    """Draw the web app's icons into web/public.
+def artwork_for(pixels: int) -> Path:
+    """The drawing an icon of this many pixels shows: the group where it reads, else one Heinzelmännchen."""
+    return GROUP if pixels >= GROUP_FROM else ARTWORK
+
+
+DRAW = (
+    "const m = await import(process.argv[1]); const fs = await import('node:fs');"
+    " fs.writeFileSync(process.argv[2], m.heinzelSvg()); fs.writeFileSync(process.argv[3], m.heinzelGroupSvg());"
+)
+"""Writes heinzel.svg and heinzel-group.svg from the drawing (node runs TypeScript without imports as it is)."""
+
+
+def draw() -> None:
+    """Write heinzel.svg and heinzel-group.svg from web/src/components/heinzel.ts.
 
     Raises:
-        SystemExit: Off macOS 14 or later, or without the Command Line Tools.
+        SystemExit: Without node.
+    """
+    node = shutil.which("node")
+    if node is None:
+        msg = "node not found: make setup installs what the web app needs"
+        raise SystemExit(msg)
+    _run(node, "--input-type=module", "-e", DRAW, DRAWING.as_uri(), str(ARTWORK), str(GROUP))
+
+
+def icons() -> None:
+    """Draw Heinzelmännchen from heinzel.ts, then every icon and logo from the two SVGs that gives.
+
+    Raises:
+        SystemExit: Off macOS 14 or later, or without the Command Line Tools or node.
     """
     if sys.platform != "darwin" or shutil.which("swiftc") is None or not _svg_ready():
         msg = "The icons are drawn on macOS 14 or later with the Xcode Command Line Tools (xcode-select --install)."
         raise SystemExit(msg)
+    draw()
     with tempfile.TemporaryDirectory(prefix="hz-icons-") as directory:
         work = Path(directory)
         icon = work / "icon"
@@ -143,20 +177,20 @@ def icons() -> None:
         for name, (size, style) in WEB_ICONS.items():
             target = PUBLIC / name
             target.parent.mkdir(parents=True, exist_ok=True)
-            _run(str(icon), str(ARTWORK), str(target), str(size), style)
+            _run(str(icon), str(artwork_for(size)), str(target), str(size), style)
         favicons = []
         for size in FAVICON_SIZES:
             out = work / f"favicon-{size}.png"
-            _run(str(icon), str(ARTWORK), str(out), str(size))
+            _run(str(icon), str(artwork_for(size)), str(out), str(size))
             favicons.append((size, out.read_bytes()))
         (PUBLIC / "favicon.ico").write_bytes(_ico(favicons))
-    for copy in COPIES:
-        copy.write_bytes(ARTWORK.read_bytes())
+    for copy, source in COPIES.items():
+        copy.write_bytes(source.read_bytes())
     for name, (background, fill) in WORDMARKS.items():
         (THEME_LOGO / name).write_text(wordmark(background, fill), encoding="utf-8")
     print(
         f"Drew {len(WEB_ICONS)} icons and favicon.ico into {PUBLIC.relative_to(ROOT)}, "
-        f"and the theme's logo, from {ARTWORK.name}"
+        f"and the theme's logo, from {DRAWING.name}"
     )
 
 
@@ -193,8 +227,8 @@ def build() -> None:
         iconset = work / "heinzel.iconset"
         iconset.mkdir()
         for size in ICON_SIZES:
-            _run(str(icon), str(ARTWORK), str(iconset / f"icon_{size}x{size}.png"), str(size), "tile")
-            _run(str(icon), str(ARTWORK), str(iconset / f"icon_{size}x{size}@2x.png"), str(size * 2), "tile")
+            for name, pixels in ((f"icon_{size}x{size}.png", size), (f"icon_{size}x{size}@2x.png", size * 2)):
+                _run(str(icon), str(artwork_for(pixels)), str(iconset / name), str(pixels), "tile")
         _run("iconutil", "-c", "icns", "-o", str(app / "Contents" / "Resources" / "heinzel.icns"), str(iconset))
         plist = (SOURCES / "Info.plist").read_text(encoding="utf-8").replace("@VERSION@", version)
         (app / "Contents" / "Info.plist").write_text(plist, encoding="utf-8")

@@ -1,17 +1,53 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 200" role="img" aria-label="Heinzelmännchen">
-  <!-- The built-in theme's wordmark on a light background, made from heinzel.svg by `make icons`. -->
+  <!-- The built-in theme's wordmark on a light background, made from heinzel-group.svg by `make icons`. -->
   <g transform="scale(0.390625)">
-    <path d="M88 512 C88 418 162 382 256 382 C350 382 424 418 424 512 Z" fill="#43A047"/>
-    <path d="M212 386 L256 446 L300 386 Z" fill="#FFD45E"/>
-    <path d="M132 214 C96 196 60 168 30 132 C40 196 70 262 132 290 Z" fill="#FFD45E"/>
-    <path d="M380 214 C416 196 452 168 482 132 C472 196 442 262 380 290 Z" fill="#FFD45E"/>
-    <path d="M120 230 C92 216 72 198 58 180 C70 222 92 254 122 268 Z" fill="#F2B547"/>
-    <path d="M392 230 C420 216 440 198 454 180 C442 222 420 254 390 268 Z" fill="#F2B547"/>
-    <circle cx="256" cy="246" r="142" fill="#FFD45E"/>
-    <path d="M100 266 C86 128 166 54 256 54 C346 54 426 128 412 266 C402 234 388 214 372 202 L358 234 L334 190 L306 228 L282 182 L256 224 L230 182 L206 228 L178 190 L154 234 L140 202 C124 214 110 234 100 266 Z" fill="#EDB22F"/>
-    <ellipse cx="206" cy="266" rx="17" ry="25" fill="#3D2A16"/>
-    <ellipse cx="306" cy="266" rx="17" ry="25" fill="#3D2A16"/>
-    <path d="M204 322 Q256 370 308 322" fill="none" stroke="#3D2A16" stroke-width="16" stroke-linecap="round"/>
+    <g transform="translate(-72 133) scale(0.74)">
+    <path d="M92 512 C92 436 164 400 256 400 C348 400 420 436 420 512 Z" fill="#1E88E5"/>
+    <path d="M118 276 C108 312 116 346 140 362 C150 330 156 300 160 280 Z" fill="#A3A6AB"/>
+    <path d="M394 276 C404 312 396 346 372 362 C362 330 356 300 352 280 Z" fill="#A3A6AB"/>
+    <circle cx="256" cy="292" r="114" fill="#F6C9A0"/>
+    <path d="M140 296 C132 378.5 192.2 432 256 446 C319.8 432 380 378.5 372 296 C340 340 302 354 256 354 C210 354 172 340 140 296 Z" fill="#A3A6AB" stroke="#767A81" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M116 268 C126 208 186 118 266 78 C300 62 338 72 356 102 C330 94 306 102 298 120 C336 182 384 238 396 268 Z" fill="#E8572A"/>
+    <path d="M298 120 C336 182 384 238 396 268 L356 268 C344 238 316 172 288 136 Z" fill="#C9431F"/>
+    <path d="M104 270 C160 234 352 234 408 270 C412 288 400 298 386 294 C330 270 182 270 126 294 C112 298 100 288 104 270 Z" fill="#D24B23"/>
+    <circle cx="186" cy="324" r="22" fill="#F4A08A"/>
+    <circle cx="326" cy="324" r="22" fill="#F4A08A"/>
+    <path d="M196 300 Q214 282 232 300" fill="none" stroke="#3D2A16" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M280 300 Q298 282 316 300" fill="none" stroke="#3D2A16" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M256 342 C232 332 192 338 180 362 C204 376 238 368 256 352 C274 368 308 376 332 362 C320 338 280 332 256 342 Z" fill="#C4C7CB" stroke="#767A81" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="256" cy="326" r="26" fill="#E9806A"/>
+    </g>
+    <g transform="translate(205 133) scale(0.74)">
+    <path d="M92 512 C92 436 164 400 256 400 C348 400 420 436 420 512 Z" fill="#8E5BD8"/>
+    <path d="M118 276 C108 312 116 346 140 362 C150 330 156 300 160 280 Z" fill="#C98A3A"/>
+    <path d="M394 276 C404 312 396 346 372 362 C362 330 356 300 352 280 Z" fill="#C98A3A"/>
+    <circle cx="256" cy="292" r="120" fill="#F6C9A0"/>
+    <path d="M116 268 C126 242 186 152 266 112 C300 96 338 106 356 136 C330 128 306 136 298 154 C336 216 384 272 396 268 Z" fill="#E8572A"/>
+    <path d="M298 154 C336 216 384 272 396 268 L356 268 C344 272 316 206 288 170 Z" fill="#C9431F"/>
+    <path d="M104 270 C160 234 352 234 408 270 C412 288 400 298 386 294 C330 270 182 270 126 294 C112 298 100 288 104 270 Z" fill="#D24B23"/>
+    <circle cx="186" cy="324" r="22" fill="#F4A08A"/>
+    <circle cx="326" cy="324" r="22" fill="#F4A08A"/>
+    <path d="M196 300 Q214 282 232 300" fill="none" stroke="#3D2A16" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M280 300 Q298 282 316 300" fill="none" stroke="#3D2A16" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M222 360 C230 390 282 390 290 360 Z" fill="#8B3A2A"/>
+    <circle cx="256" cy="326" r="26" fill="#E9806A"/>
+    </g>
+    <g transform="translate(20.5 41) scale(0.92)">
+    <path d="M92 512 C92 436 164 400 256 400 C348 400 420 436 420 512 Z" fill="#43A047"/>
+    <path d="M118 276 C108 312 116 346 140 362 C150 330 156 300 160 280 Z" fill="#ECEAE3"/>
+    <path d="M394 276 C404 312 396 346 372 362 C362 330 356 300 352 280 Z" fill="#ECEAE3"/>
+    <circle cx="256" cy="292" r="112" fill="#F6C9A0"/>
+    <path d="M134 296 C126 401.6 188.89999999999998 474 256 488 C323.1 474 386 401.6 378 296 C346 340 302 354 256 354 C210 354 166 340 134 296 Z" fill="#ECEAE3" stroke="#B5AE9E" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M116 268 C126 176 186 86 266 46 C300 30 338 40 356 70 C330 62 306 70 298 88 C336 150 384 206 396 268 Z" fill="#E8572A"/>
+    <path d="M298 88 C336 150 384 206 396 268 L356 268 C344 206 316 140 288 104 Z" fill="#C9431F"/>
+    <path d="M104 270 C160 234 352 234 408 270 C412 288 400 298 386 294 C330 270 182 270 126 294 C112 298 100 288 104 270 Z" fill="#D24B23"/>
+    <circle cx="186" cy="324" r="22" fill="#F4A08A"/>
+    <circle cx="326" cy="324" r="22" fill="#F4A08A"/>
+    <path d="M196 300 Q214 282 232 300" fill="none" stroke="#3D2A16" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M280 300 Q298 282 316 300" fill="none" stroke="#3D2A16" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M256 342 C232 332 192 338 180 362 C204 376 238 368 256 352 C274 368 308 376 332 362 C320 338 280 332 256 342 Z" fill="#FFFFFF" stroke="#B5AE9E" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="256" cy="326" r="26" fill="#E9806A"/>
+    </g>
   </g>
   <text x="228" y="138" font-family="ui-sans-serif, system-ui, -apple-system, sans-serif" font-size="104"
         font-weight="600" fill="#1a1a1a">Heinzelmännchen</text>

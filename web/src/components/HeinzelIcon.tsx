@@ -1,7 +1,8 @@
 // The colourful Heinzel the app greets you with, wherever the app means "your Heinzelmännchen" (the chat button, the
-// chat's header, the fallback logo): Heinzelmännchen's one icon, the favicon, so it looks the same on every system
-// rather than like each one's emoji font. Sized by the font size it sits in, like the emoji it replaced.
+// fallback logo): the classic one, as the app's icon shows it, the same on every system rather than each one's emoji.
+// Sized by the font size it sits in, like the emoji it replaced.
 import { cn } from "@/lib/utils";
+import { HeinzelAvatar } from "./HeinzelAvatar";
 
 export function HeinzelIcon({ className }: { className?: string }) {
   return (
@@ -10,7 +11,7 @@ export function HeinzelIcon({ className }: { className?: string }) {
       data-testid="heinzel-icon"
       className={cn("inline-flex shrink-0 items-center justify-center leading-none", className)}
     >
-      <img src="/favicon.svg" alt="" draggable={false} className="size-[1.25em]" />
+      <HeinzelAvatar />
     </span>
   );
 }

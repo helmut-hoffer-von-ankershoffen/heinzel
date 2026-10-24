@@ -63,7 +63,7 @@ describe("Themes", () => {
     const acme = await screen.findByTestId("theme-preview-acme");
     expect(acme.querySelector("img")).toHaveAttribute("src", "/theme-assets/acme/light.svg?v=1");
     const builtIn = screen.getByTestId("theme-preview-default");
-    expect(builtIn.querySelector("img")).toHaveAttribute("src", "/favicon.svg");
+    expect(builtIn.querySelector("img")).toBeNull();
     expect(within(builtIn).getByTestId("heinzel-icon")).toBeInTheDocument();
     expect(builtIn).toHaveTextContent("Heinzelmännchen");
   });
@@ -105,7 +105,7 @@ describe("Themes", () => {
     renderAt("/doctor");
     const navigation = screen.getByRole("complementary", { name: "Main" });
     expect(await within(navigation).findByText("Heinzelmännchen")).toBeInTheDocument();
-    expect(within(navigation).getByTestId("heinzel-icon").querySelector("img")).toHaveAttribute("src", "/favicon.svg");
+    expect(within(navigation).getByTestId("heinzel-icon").querySelector("svg")).toBeInTheDocument();
     expect(within(navigation).queryByRole("img")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
     expect(within(navigation).getByTestId("heinzel-icon")).toBeInTheDocument();
