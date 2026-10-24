@@ -8,8 +8,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from heinzel.kernel import ReleaseCheck
-from heinzel.modules.system._models import ModuleInfo, SystemInfo
+from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, SystemInfo
 
 
 def render_modules(modules: list[ModuleInfo]) -> RenderableType:
@@ -47,8 +46,6 @@ def render_info(info: SystemInfo) -> RenderableType:
         for key, value in rows.items():
             table.add_row(str(key), value if isinstance(value, str) else json.dumps(value))
         parts.append(Panel(table, title=qualname, expand=False))
-    if info.update_hint:
-        parts.append(f"[yellow]{info.update_hint}[/yellow]")
     return Group(*parts)
 
 

@@ -21,7 +21,7 @@ from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._lets import Check, HealthLet, InfoLet, Let, OperationLet, ServiceLet, SettingsLet, Status
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
-from heinzel.kernel._release import ReleaseCheck, check_for_update, github_get_json, update_hint
+from heinzel.kernel._release import ReleaseCache
 from heinzel.kernel._settings import Settings
 
 __all__ = [
@@ -46,18 +46,15 @@ __all__ = [
     "OperationLet",
     "Origin",
     "Progress",
-    "ReleaseCheck",
+    "ReleaseCache",
     "ServiceLet",
     "Settings",
     "SettingsLet",
     "Status",
     "boot",
-    "check_for_update",
     "discover",
     "env_prefix",
-    "github_get_json",
     "requirement_from_receipt",
-    "update_hint",
     "user_config_dir",
     "walk",
 ]

@@ -5,8 +5,8 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import HeinzelError, Module
-from heinzel.kernel import Installation, ReleaseCheck, Settings, check_for_update
-from heinzel.modules.system._models import ModuleInfo, SystemInfo
+from heinzel.kernel import Installation
+from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, SystemInfo
 from heinzel.modules.system._render import render_info, render_modules, render_release
 from heinzel.modules.system._service import SystemService
 
@@ -27,16 +27,15 @@ def modules(service: SystemService) -> list[ModuleInfo]:
 
 
 @module.operation(render=render_release)
-def release(installation: Installation, settings: Settings) -> ReleaseCheck:
+def release(service: SystemService, installation: Installation) -> ReleaseCheck:
     """Ask where Heinzelmännchen was installed from for its latest release, and whether to update.
 
-    Asks the GitHub releases API of the repository in the uv tool receipt (or the default repository), sending only
-    a `heinzel/<version>` User-Agent and, if one is configured (also from GH_TOKEN or GITHUB_TOKEN), your GitHub
-    token; offline or rate-limited, the result carries a warning. The answer is cached for the hint in
-    `hz --version` and `hz system info` (setting `update_check`).
+    One unauthenticated GET to the GitHub releases API of the repository in the uv tool receipt (or the default
+    repository) with only a `heinzel/<version>` User-Agent (ADR 0031); offline or rate-limited, the result carries a
+    warning. The answer is cached for the hint in `hz --version` and `hz system info` (setting `update_check`).
     """
     requirements = installation.requirements()
-    return check_for_update(settings, requirements[0] if requirements else None)
+    return service.release(requirements[0] if requirements else None)
 
 
 @module.operation(read_only=False)
@@ -65,4 +64,4 @@ def update(
     return installation.hz("--version").splitlines()[0]
 
 
-__all__ = ["ModuleInfo", "SystemInfo", "SystemService", "module"]
+__all__ = ["ModuleInfo", "ReleaseCheck", "SystemInfo", "SystemService", "module"]

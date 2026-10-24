@@ -4,7 +4,7 @@ import urllib.error
 
 import pytest
 
-from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress, Settings
+from heinzel import HeinzelError, Kernel, Module, ModuleRecord, Progress
 from heinzel.kernel import Installation, Origin
 from heinzel.modules.system.plugin import _service
 from heinzel.modules.system.plugin._models import PluginSettings
@@ -179,7 +179,7 @@ class FakeGitHub:
 @pytest.fixture
 def github(monkeypatch):
     fake = FakeGitHub()
-    monkeypatch.setattr(_service, "github_get_json", fake.get_json)
+    monkeypatch.setattr(_service, "get_json", fake.get_json)
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     return fake
@@ -230,20 +230,6 @@ def test_search_sends_a_github_token_from_the_environment(make_kernel, tmp_path,
     settings = make_kernel(builtins=True).resolve(PluginSettings)
     service_for(make_kernel, tmp_path, settings=settings).search()
     assert github.requests[-1][1] == "t0ken"
-
-
-def test_search_prefers_the_plugin_token_over_the_kernel_token(make_kernel, tmp_path, github, monkeypatch):
-    monkeypatch.setenv("HZ_GITHUB_TOKEN", "kernel-t0ken")
-    monkeypatch.setenv("HZ_SYSTEM_PLUGIN__GITHUB_TOKEN", "plugin-t0ken")
-    kernel = make_kernel(builtins=True, settings_=Settings())
-    service_for(make_kernel, tmp_path, kernel=kernel, settings=kernel.resolve(PluginSettings)).search()
-    assert github.requests[-1][1] == "plugin-t0ken"
-
-
-def test_search_falls_back_to_the_kernel_github_token(make_kernel, tmp_path, github, monkeypatch):
-    monkeypatch.setenv("HZ_GITHUB_TOKEN", "kernel-t0ken")
-    service_for(make_kernel, tmp_path, kernel=make_kernel(builtins=True, settings_=Settings())).search()
-    assert github.requests[-1][1] == "kernel-t0ken"
 
 
 @pytest.mark.parametrize(

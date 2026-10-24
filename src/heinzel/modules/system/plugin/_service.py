@@ -14,7 +14,8 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
 from heinzel import HeinzelError, Kernel, __version__
-from heinzel.kernel import CORE_DISTRIBUTION, Installation, github_get_json
+from heinzel.kernel import CORE_DISTRIBUTION, Installation
+from heinzel.modules.system._github import get_json
 from heinzel.modules.system.plugin._models import AvailablePlugin, PluginInfo, PluginSearch, PluginSettings
 
 TEMPLATE = "gh:helmut-hoffer-von-ankershoffen/heinzel"
@@ -209,8 +210,7 @@ class PluginService:
             TypeError: If the answer has an unexpected shape.
         """
         query = urlencode({"q": f"topic:{TOPIC} {text}".strip(), "sort": "stars", "per_page": 100})
-        token = self._settings.github_token or self._kernel.settings.github_token
-        items = github_get_json(f"{GITHUB_SEARCH}?{query}", token, TIMEOUT)["items"]
+        items = get_json(f"{GITHUB_SEARCH}?{query}", self._settings.github_token, TIMEOUT)["items"]
         if not isinstance(items, list):
             msg = f"expected a list of repositories, got {type(items).__name__}"
             raise TypeError(msg)

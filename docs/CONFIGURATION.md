@@ -14,8 +14,7 @@ Plugins add their own tables.
 | `log_level` | `HZ_LOG_LEVEL` | `'WARNING'` | Log level for Heinzelmännchen and its modules. |
 | `output_format` | `HZ_OUTPUT_FORMAT` | `'text'` | Default output of every operation; `json` suits scripts and agents. `--format` overrides it. |
 | `plugins_enabled` | `HZ_PLUGINS_ENABLED` | `True` | Discover modules from installed plugins. Disable to debug a broken plugin. |
-| `update_check` | `HZ_UPDATE_CHECK` | `True` | Say in `hz --version` and `hz system info` when a newer release is available, from what `hz system release` last found; never in JSON output, when output is not a terminal or in CI. Ordinary commands never ask the network. |
-| `github_token` | `HZ_GITHUB_TOKEN` | `None` | GitHub token for `hz system release` and `hz system plugin search`, which work without one at a lower rate limit; also read from GH_TOKEN or GITHUB_TOKEN. Sent to api.github.com only. |
+| `update_check` | `HZ_UPDATE_CHECK` | `True` | Say in `hz --version` and `hz system info` when a newer release is available, from what `hz system release` last found (ADR 0031); only in text output on a terminal, never in CI. Ordinary commands never ask the network. Set to false to turn the hint off. |
 | `disabled_modules` | `HZ_DISABLED_MODULES` | `frozenset()` | Qualified names of modules to switch off, with their submodules. Comma-separated in the environment, a list in TOML. |
 
 ## `[clock]`
@@ -35,4 +34,4 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `github_token` | `HZ_SYSTEM_PLUGIN__GITHUB_TOKEN` | `None` | GitHub token for `hz system plugin search`, which works without one at a lower rate limit; also read from GH_TOKEN or GITHUB_TOKEN; falls back to the kernel's `github_token` (HZ_GITHUB_TOKEN). Sent to api.github.com only. |
+| `github_token` | `HZ_SYSTEM_PLUGIN__GITHUB_TOKEN` | `None` | GitHub token for `hz system plugin search`, which works without one at a lower rate limit; also read from GH_TOKEN or GITHUB_TOKEN. Sent to api.github.com only. |

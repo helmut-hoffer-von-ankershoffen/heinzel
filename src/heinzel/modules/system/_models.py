@@ -3,7 +3,6 @@
 from typing import Any
 
 from pydantic import BaseModel, Field
-from pydantic.json_schema import SkipJsonSchema
 
 
 class ModuleInfo(BaseModel):
@@ -28,8 +27,17 @@ class SystemInfo(BaseModel):
     modules: list[ModuleInfo] = Field(description="Every registered module.")
     plugin_errors: dict[str, str] = Field(description="Plugins that failed to load, by entry point name.")
     sections: dict[str, Any] = Field(description="Sections contributed by modules, by qualified module name.")
-    update_hint: SkipJsonSchema[str | None] = Field(
-        default=None,
-        exclude=True,  # for people at a terminal only: not in JSON, MCP or REST output, nor their schemas
-        description="That a newer release is available, from the cache `hz system release` fills.",
+    latest_release: str | None = Field(
+        description="Latest release last seen by `hz system release`, from its cache; none if never asked."
     )
+
+
+class ReleaseCheck(BaseModel):
+    """The installed version, the latest release and whether updating would bring something new."""
+
+    current: str = Field(description="Installed Heinzelmännchen version.")
+    latest: str | None = Field(description="Version of the latest release; none if the source couldn't be asked.")
+    update_available: bool = Field(description="Whether the latest release is newer than the installed version.")
+    url: str | None = Field(description="Release notes of the latest release, on github.com.")
+    source: str = Field(description="Where the latest release was asked for.")
+    warnings: list[str] = Field(description="Why the source could not be asked, e.g. offline or rate-limited.")

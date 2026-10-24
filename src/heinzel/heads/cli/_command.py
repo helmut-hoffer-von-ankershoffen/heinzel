@@ -26,14 +26,21 @@ class Format(StrEnum):
     JSON = "json"
 
 
-def command(
-    kernel: Kernel, operation: OperationLet, console: Console, err_console: Console, progress: ConsoleProgress
+def command(  # noqa: PLR0913 - the head's collaborators, plus the optional epilogue
+    kernel: Kernel,
+    operation: OperationLet,
+    console: Console,
+    err_console: Console,
+    progress: ConsoleProgress,
+    *,
+    epilogue: Callable[[], None] | None = None,
 ) -> Callable[..., None]:
     """A Typer-compatible callable that runs the operation through the kernel and presents its result.
 
     The command's signature is the operation's, minus injected parameters, plus `--format` and its shorthand `--json`.
     Parameters without a default become arguments, the others options; `Field(description=...)` becomes their help
     text. Progress goes to stderr and is silent for JSON output, so stdout always holds just the result.
+    `epilogue` runs after text output only, never after JSON.
     """
     parameters = [
         _cli_parameter(parameter)
@@ -88,6 +95,8 @@ def command(
             console.print(operation.render(result))
         else:
             show(console, result)
+        if not as_json and epilogue is not None:
+            epilogue()
         if operation.exit_code is not None and (code := operation.exit_code(result)):
             raise typer.Exit(code=code)
 
