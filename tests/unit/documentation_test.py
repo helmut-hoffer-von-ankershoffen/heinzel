@@ -10,6 +10,7 @@ from urllib.parse import quote
 import heinzel_atlassian
 import heinzel_clock
 import heinzel_github
+import heinzel_zoom
 import pytest
 from pydantic import BaseModel, Field
 from pydantic.fields import FieldInfo
@@ -176,7 +177,11 @@ def test_adr_index_and_links_match_the_records(directory):
 
 def test_every_parameter_setting_and_module_is_described(make_kernel):
     kernel = make_kernel(
-        builtins=True, atlassian=heinzel_atlassian.module, clock=heinzel_clock.module, github=heinzel_github.module
+        builtins=True,
+        atlassian=heinzel_atlassian.module,
+        clock=heinzel_clock.module,
+        github=heinzel_github.module,
+        zoom=heinzel_zoom.module,
     )  # first-party plugins too
     missing = [r.qualname for r in kernel.modules if not r.module.summary]
     for item in exposed(kernel, "cli"):
@@ -245,7 +250,11 @@ def test_finds_bad_summaries():
 def test_operation_summaries_are_one_short_sentence_and_module_names_singular(make_kernel):
     """Summaries are the help line, the MCP tool description and the OpenAPI summary; they must read well in all."""
     kernel = make_kernel(
-        builtins=True, atlassian=heinzel_atlassian.module, clock=heinzel_clock.module, github=heinzel_github.module
+        builtins=True,
+        atlassian=heinzel_atlassian.module,
+        clock=heinzel_clock.module,
+        github=heinzel_github.module,
+        zoom=heinzel_zoom.module,
     )  # first-party plugins too
     problems = [
         f"{record.qualname} {operation.name}: {problem}"

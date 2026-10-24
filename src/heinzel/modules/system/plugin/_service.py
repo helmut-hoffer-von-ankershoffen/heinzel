@@ -25,6 +25,7 @@ FIRST_PARTY: Mapping[str, str] = MappingProxyType(
         "atlassian": "Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.",
         "clock": "What time it is for everyone on the team.",
         "github": "Read pull requests and issues from GitHub: the code-host and tracker capabilities.",
+        "zoom": "Read meetings from Zoom's meeting-summary emails: the meetings capability.",
     }
 )
 """First-party plugins in `plugins/heinzel-<name>/` (ADR 0017) by name, with their descriptions; found by
