@@ -5,7 +5,7 @@
 """Assemble the README demo's VHS tape from the core intro and the snippets modules contribute.
 
 docs/assets/demo-intro.tape holds the settings and the core's part. A module (built-in, or a first-party plugin under
-packages/ or plugins/) adds its part as a `demo.tape` next to its `__init__.py`: a few real `hz` commands with
+plugins/) adds its part as a `demo.tape` next to its `__init__.py`: a few real `hz` commands with
 `Type`, `Enter`, `Wait`, `Sleep`, `Hide` and `Show`, plus `Require` for any other program it pipes into, which moves
 to the header. Settings and `Output` belong to the intro only. The order is stable: the intro, then first-party plugins,
 then built-in modules, each sorted by path; built-in commands such as `hz system doctor` come last because they report
@@ -33,7 +33,7 @@ HOLD = "Sleep 2s"
 
 def snippets(root: Path = ROOT) -> list[Path]:
     """The modules' demo snippets in demo order: first-party plugins, then built-in modules, each sorted by path."""
-    plugins = sorted(path for folder in ("packages", "plugins") for path in root.glob(f"{folder}/*/src/**/{SNIPPET}"))
+    plugins = sorted(root.glob(f"plugins/*/src/**/{SNIPPET}"))
     builtins = sorted((root / "src" / "heinzel" / "modules").rglob(SNIPPET))
     return plugins + builtins
 

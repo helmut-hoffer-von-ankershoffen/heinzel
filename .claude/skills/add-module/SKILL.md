@@ -27,7 +27,7 @@ is no registry to edit. A package nested in a module's package that declares its
 5. Regenerate the references with `make docs` (`make lint` fails until you do).
 6. Check it shows up: `uv run hz system modules`, `uv run hz <name> --help`.
 7. Update README (usage) and ARCHITECTURE.md if the module is part of the core story.
-8. Optional, for a built-in module or a first-party plugin under packages/ worth showing in the README demo: add a
+8. Optional, for a built-in module or a first-party plugin under plugins/ worth showing in the README demo: add a
    `demo.tape` next to its `__init__.py` with a few real `hz` commands (`Type`, `Enter`, `Wait`, `Sleep`, `Hide`,
    `Show`; `Require` for other programs it pipes into), run `make fix` to regenerate docs/assets/demo.tape and
    `make demo` to render the GIF; look at its last frames before committing it. Rules and an example:
