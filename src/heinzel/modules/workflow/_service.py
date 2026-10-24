@@ -320,9 +320,10 @@ class WorkflowService:
         directory = self.directories[namespace]
         # Contracts are read from real directories only (`collect`), so one written through a link would never be found.
         if directory.is_symlink():
+            key, real = ("team_repository", directory.parent.resolve()) if team else ("user_dir", directory.resolve())
             msg = (
                 f"{directory} is a symbolic link; contracts are read from real directories only. Point at the real "
-                f"one: hz system config set workflow.user_dir {directory.resolve()}"
+                f"one: hz system config set workflow.{key} {real}"
             )
             raise HeinzelError(msg)
         path = directory / f"{name}{SUFFIX}"
