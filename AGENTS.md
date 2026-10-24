@@ -26,7 +26,8 @@ Heinzelmännchen (`hz`): a kernel plus modules, each operation exposed as a CLI 
 
 | Task | Command |
 | --- | --- |
-| Set up (deps + git hooks) | `make setup` |
+| Set up everything the build needs: deps, pinned tools in `.tools/bin` (`scripts/tools.toml`), git hooks | `make setup` |
+| What is missing, and the command that fixes it | `make doctor` |
 | Fix what tools can: lockfile, format, lint autofixes, generated docs and template files | `make fix` |
 | Edit loop, seconds | `make check-fast` |
 | Everything CI checks offline | `make check` |
