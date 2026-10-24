@@ -572,6 +572,7 @@ class TeamService:
         show.name = manifest.name
         show.plugin = manifest.plugin.name if manifest.plugin else None
         show.members = [_view(m, manifest) for m in roster.members if m.active(today)]
+        show.problems += manifest.recommend.entries()[1]
         return show
 
     def recommendations(self) -> tuple[Recommendation, ...]:
@@ -587,11 +588,11 @@ class TeamService:
         except HeinzelError:
             return ()
         origin = f"team {manifest.name} ({self._settings.repository or checkout}), {MANIFEST}"
-        wanted = manifest.recommend
-        found: list[Recommendation] = [Recommendation(kind="plugin", name=n, origin=origin) for n in wanted.plugins]
-        found += [Recommendation(kind="binding", name=c, value=a, origin=origin) for c, a in wanted.bindings.items()]
-        found += [Recommendation(kind="credential", name=n, origin=origin) for n in wanted.credentials]
-        for name in wanted.contracts:
+        found: list[Recommendation] = []
+        for kind, name, value in manifest.recommend.entries()[0]:
+            if kind != "contract":
+                found.append(Recommendation(kind=kind, name=name, value=value, origin=origin))
+                continue
             relative = f"workflows/{name}.prose.md"
             try:
                 digest = "sha256:" + hashlib.sha256(_read(checkout, relative).encode()).hexdigest()

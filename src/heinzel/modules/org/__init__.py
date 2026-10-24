@@ -56,7 +56,7 @@ def sync(
         Field(description="Recommendations to apply, by id and comma-separated (binding:documents), or all."),
     ] = None,
 ) -> SyncReport:
-    """Show what your team recommends beside what you have, and apply to your user file only what you accept."""
+    """Show what your team recommends beside what you have; apply only what you accept, to your user file."""
     return service.sync(accept)
 
 

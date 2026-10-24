@@ -212,14 +212,38 @@ def test_adopt_says_what_it_did_and_what_is_left():
     ("recommend", "problem"),
     [
         ({"plugins": ["evil"]}, "isn't a plugin distribution"),
-        ({"bindings": {"telepathy": "x"}}, "isn't a capability"),
-        ({"bindings": {"tracker": "Evil Adapter"}}, "isn't a name of an adapter"),
+        ({"plugins": "heinzel-x"}, None),
+        ({"plugins": [3]}, "3 isn't a name"),
+        ({"bindings": {"telepathy": "x"}}, "isn't a capability this hz knows"),
+        ({"bindings": {"tracker": "Evil Adapter"}}, "isn't the name of an adapter"),
+        ({"bindings": ["tracker"]}, "bindings must map capabilities"),
         ({"credentials": ["token"]}, "isn't a credential name"),
         ({"credentials": ["github/token=ghp_x"]}, "isn't a credential name"),
         ({"contracts": ["../x"]}, "isn't a contract name"),
-        ({"schedule": ["x"]}, "Extra inputs"),
+        ({"schedule": ["x"]}, None),
     ],
 )
-def test_a_manifest_recommends_only_names_it_can_check(recommend, problem):
-    with pytest.raises(ValueError, match=problem):
-        Manifest.model_validate({"name": "payments", "recommend": recommend})
+def test_a_manifest_keeps_the_recommendations_it_can_check_and_reports_the_rest(recommend, problem):
+    manifest = Manifest.model_validate({"name": "payments", "recommend": recommend})
+    found, problems = manifest.recommend.entries()
+    if problem is None:
+        assert problems == []
+    else:
+        assert found == []
+        assert [problem in p for p in problems] == [True]
+
+
+def test_recommendations_come_in_kind_order():
+    recommend = {
+        "contracts": ["c"],
+        "bindings": {"tracker": "github"},
+        "plugins": ["heinzel-x"],
+        "credentials": ["a/b"],
+    }
+    found, _ = Manifest.model_validate({"name": "payments", "recommend": recommend}).recommend.entries()
+    assert found == [
+        ("plugin", "heinzel-x", None),
+        ("binding", "tracker", "github"),
+        ("credential", "a/b", None),
+        ("contract", "c", None),
+    ]

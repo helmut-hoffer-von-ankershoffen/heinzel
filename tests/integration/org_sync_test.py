@@ -1,4 +1,4 @@
-"""`hz org sync` and doctor's drift checks through the CLI head, with a team checkout on disk. Offline."""
+"""`hz org sync` and doctor's drift check through the CLI head, with a team checkout on disk. Offline."""
 
 import json
 import tomllib
@@ -11,7 +11,7 @@ from heinzel.kernel import boot, user_config_dir
 
 pytestmark = pytest.mark.integration
 
-MANIFEST = "name: payments\nrecommend:\n  bindings: {documents: google}\n  plugins: [heinzel-google]\n"
+MANIFEST = "name: payments\nrecommend:\n  bindings: {agent-runner: command}\n  plugins: [heinzel-google]\n"
 
 
 @pytest.fixture
@@ -26,9 +26,13 @@ def team(tmp_path, monkeypatch):
     return checkout
 
 
-def hz(*args: str) -> tuple[int, object]:
+def hz(*args: str) -> tuple[int, dict]:
     result = CliRunner().invoke(build(boot()), [*args, "--json"])
     return result.exit_code, json.loads(result.output)
+
+
+def user_file() -> dict:
+    return tomllib.loads((user_config_dir() / "config.toml").read_text())
 
 
 def test_sync_shows_recommendations_and_writes_only_what_you_accept(team):
@@ -36,18 +40,20 @@ def test_sync_shows_recommendations_and_writes_only_what_you_accept(team):
     assert code == 0
     assert [(i["id"], i["state"]) for i in report["items"]] == [
         ("plugin:heinzel-google", "by-hand"),
-        ("binding:documents", "pending"),
+        ("binding:agent-runner", "differs"),
     ]
-    assert "capabilities" not in tomllib.loads((user_config_dir() / "config.toml").read_text())
-    code, report = hz("org", "sync", "--accept", "binding:documents")
+    code, report = hz("org", "sync", "--accept", "all")
     assert code == 0
-    assert tomllib.loads((user_config_dir() / "config.toml").read_text())["capabilities"] == {"documents": "google"}
+    assert "capabilities" not in user_file()  # a choice you made (here the default) switches only by its id
+    code, report = hz("org", "sync", "--accept", "binding:agent-runner")
+    assert code == 0
+    assert user_file()["capabilities"] == {"agent_runner": "command"}
     code, report = hz("org", "sync")
-    assert [(i["id"], i["state"]) for i in report["items"]][1] == ("binding:documents", "applied")
+    assert report["items"][1]["state"] == "applied"
 
 
 def test_doctor_reports_drift_from_the_team(team):
     _, doctor = hz("system", "doctor")
-    names = json.dumps(doctor)
-    assert "recommendation binding:documents" in names
-    assert "hz org sync --accept binding:documents" in names
+    [check] = [c for c in doctor["checks"]["org"] if c["name"] == "recommendations"]
+    assert (check["status"], check["fix"]) == ("degraded", "hz org sync")
+    assert "plugin:heinzel-google" in check["detail"]

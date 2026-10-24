@@ -3,12 +3,15 @@
 import re
 from datetime import date
 from pathlib import Path
-from typing import ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from heinzel.kernel import CAPABILITIES, ModuleSettings
+from heinzel.kernel import CAPABILITIES, ModuleSettings, RecommendationKind
 from heinzel.modules.team._repo import check_url
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 ROLES = (
     "engineer",
@@ -133,52 +136,74 @@ class Plugin(_Strict):
         return name
 
 
-class Recommend(_Strict):
-    """What a team recommends its members use: shown with its origin, applied only when a member accepts it."""
+class Recommend(BaseModel):
+    """What a team recommends its members use: shown with its origin, applied only when a member accepts it.
 
-    plugins: list[str] = Field(default_factory=list[str], description="Plugin distributions, `heinzel-<name>`.")
-    bindings: dict[str, str] = Field(
-        default_factory=dict[str, str], description="Capability to adapter, e.g. `documents: google`."
+    Read leniently: an entry hz can't check (a capability a later version added, a misspelt name) is dropped with a
+    problem `hz team show` reports, and never invalidates the manifest the rest of the team depends on.
+    """
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    plugins: object = Field(default_factory=list[object], description="Plugin distributions, `heinzel-<name>`.")
+    bindings: object = Field(
+        default_factory=dict[str, object], description="Capability to adapter, e.g. `documents: google`."
     )
-    credentials: list[str] = Field(
-        default_factory=list[str], description="Credentials members store themselves, as `service/name`; never values."
+    credentials: object = Field(
+        default_factory=list[object],
+        description="Credentials members store themselves, as `service/name`; never values.",
     )
-    contracts: list[str] = Field(
-        default_factory=list[str], description="Team contracts in workflows/ members may let their daemon run."
+    contracts: object = Field(
+        default_factory=list[object], description="Team contracts in workflows/ members may let their daemon run."
     )
 
-    @field_validator("plugins")
-    @classmethod
-    def _plugins(cls, names: list[str]) -> list[str]:
-        for name in names:
-            if not DISTRIBUTION.fullmatch(name):
-                msg = f"{name!r} isn't a plugin distribution; plugins are named heinzel-<name>"
-                raise ValueError(msg)
-        return names
-
-    @field_validator("bindings")
-    @classmethod
-    def _bindings(cls, bindings: dict[str, str]) -> dict[str, str]:
+    def entries(self) -> tuple[list[tuple[RecommendationKind, str, str | None]], list[str]]:
+        """The entries hz can check, as (kind, name, value), and a problem for each it can't."""
+        found: list[tuple[RecommendationKind, str, str | None]] = []
+        problems: list[str] = []
+        named: tuple[tuple[RecommendationKind, object, Callable[[str], str | None]], ...] = (
+            ("plugin", self.plugins, _distribution_problem),
+            ("credential", self.credentials, _credential_problem),
+            ("contract", self.contracts, _contract_problem),
+        )
+        for kind, values, check in named:
+            for value in cast("list[object]", values) if isinstance(values, list) else [values]:
+                if not isinstance(value, str):
+                    problems.append(f"recommend: {value!r} isn't a name")
+                elif (problem := check(value)) is not None:
+                    problems.append(f"recommend: {problem}")
+                else:
+                    found.append((kind, value, None))
+        bindings = _mapping(self.bindings)
+        if bindings is None:
+            bindings = {}
+            problems.append("recommend: bindings must map capabilities to adapters, e.g. documents: google")
         for capability, adapter in bindings.items():
-            if capability not in CAPABILITIES:
-                msg = f"{capability!r} isn't a capability; the capabilities are {', '.join(sorted(CAPABILITIES))}"
-                raise ValueError(msg)
-            check_name(adapter, "name of an adapter")
-        return bindings
+            if not isinstance(capability, str) or capability not in CAPABILITIES:
+                problems.append(f"recommend: {capability!r} isn't a capability this hz knows")
+            elif not isinstance(adapter, str) or not NAME.fullmatch(adapter):
+                problems.append(f"recommend: {adapter!r} isn't the name of an adapter")
+            else:
+                found.append(("binding", capability, adapter))
+        order = {"plugin": 0, "binding": 1, "credential": 2, "contract": 3}
+        return sorted(found, key=lambda entry: order[entry[0]]), problems
 
-    @field_validator("credentials")
-    @classmethod
-    def _credentials(cls, names: list[str]) -> list[str]:
-        for name in names:
-            if not CREDENTIAL.fullmatch(name):
-                msg = f"{name!r} isn't a credential name; name it service/name, e.g. github/token"
-                raise ValueError(msg)
-        return names
 
-    @field_validator("contracts")
-    @classmethod
-    def _contracts(cls, names: list[str]) -> list[str]:
-        return [check_name(name, "contract name") for name in names]
+def _mapping(value: object) -> dict[object, object] | None:
+    """`value` as a mapping of anything, when YAML gave one."""
+    return cast("dict[object, object]", value) if isinstance(value, dict) else None
+
+
+def _distribution_problem(name: str) -> str | None:
+    return None if DISTRIBUTION.fullmatch(name) else f"{name!r} isn't a plugin distribution (heinzel-<name>)"
+
+
+def _credential_problem(name: str) -> str | None:
+    return None if CREDENTIAL.fullmatch(name) else f"{name!r} isn't a credential name (service/name)"
+
+
+def _contract_problem(name: str) -> str | None:
+    return None if len(name) <= MAX_NAME and NAME.fullmatch(name) else f"{name!r} isn't a contract name"
 
 
 class Manifest(_Strict):

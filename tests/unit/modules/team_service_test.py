@@ -817,5 +817,12 @@ def test_recommendations_carry_their_origin_and_a_contract_its_files_digest(tmp_
 def test_no_team_or_an_invalid_manifest_recommends_nothing(tmp_path, remote):
     assert service(tmp_path, Fake(remote)).recommendations() == ()
     team, _, checkout = joined(tmp_path, remote)
-    (checkout / "hz.yaml").write_text("name: payments\nrecommend: {bindings: {telepathy: x}}\n")
+    (checkout / "hz.yaml").write_text("name: [")
     assert team.recommendations() == ()
+
+
+def test_an_entry_hz_cannot_check_is_dropped_and_shown_not_fatal(tmp_path, remote):
+    team, _, checkout = joined(tmp_path, remote)
+    (checkout / "hz.yaml").write_text("name: payments\nrecommend: {bindings: {telepathy: x, tracker: github}}\n")
+    assert [r.id for r in team.recommendations()] == ["binding:tracker"]
+    assert team.show().problems == ["recommend: 'telepathy' isn't a capability this hz knows"]
