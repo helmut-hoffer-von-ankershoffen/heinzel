@@ -101,7 +101,10 @@ def test_system_release_reports_a_newer_release_and_caches_it(app, monkeypatch):
     check = json.loads(runner.invoke(app, ["system", "release", "--json"]).output)
     assert (check["current"], check["latest"], check["update_available"]) == (__version__, "9.0.0", True)
     text = runner.invoke(app, ["system", "release"], env={"COLUMNS": "200"}).output
-    assert f"hz 9.0.0 is available (installed {__version__}): hz system update" in text
+    assert (
+        f"hz 9.0.0 is available (installed {__version__}): hz system update\nWhat's new: hz system changelog --newer"
+        in text
+    )
     assert ReleaseCache(Settings().cache_dir).latest == "9.0.0"
 
 
