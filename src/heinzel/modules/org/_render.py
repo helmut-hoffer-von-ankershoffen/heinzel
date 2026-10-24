@@ -1,5 +1,7 @@
 """How `hz org show` and `hz org agenda` look in a terminal."""
 
+from datetime import datetime
+
 from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
@@ -37,14 +39,16 @@ def render_agenda(agenda: Agenda) -> RenderableType:
         fix = f" Run `{agenda.fix}`." if agenda.fix else ""
         return Text(f"{agenda.problem}{fix}")
     now = Text("Now:  ")
-    now.append(_event(agenda.current, agenda, "until") if agenda.current else "free")
-    upcoming = Text("Next: ")
-    upcoming.append(_event(agenda.next, agenda, "at") if agenda.next else "nothing until the end of tomorrow")
-    return Group(now, upcoming)
+    current, upcoming = agenda.current, agenda.next
+    now = Text("Now:  ")
+    now.append(_event(current, "until", current.end, agenda.now) if current else "free")
+    then = Text("Next: ")
+    then.append(_event(upcoming, "at", upcoming.start, agenda.now) if upcoming else "nothing until the end of tomorrow")
+    return Group(now, then)
 
 
-def _event(event: Event, agenda: Agenda, word: str) -> str:
-    when = (event.end if word == "until" else event.start).astimezone(agenda.now.tzinfo)
-    day = "" if when.date() == agenda.now.date() else f"{when:%a} "
+def _event(event: Event, word: str, at: datetime, now: datetime) -> str:
+    when = at.astimezone(now.tzinfo)
+    day = "" if when.date() == now.date() else f"{when:%a} "
     join = f" ({event.conference_url})" if event.conference_url else ""
     return f"{event.title}, {word} {day}{when:%H:%M}{join}"

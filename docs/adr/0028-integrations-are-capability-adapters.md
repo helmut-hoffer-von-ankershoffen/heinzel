@@ -268,7 +268,8 @@ request (director's decisions, 2026-10-24):
       (2026-10-24): `@module.operation(requires=[...], optional=True)` does without its own requirements when
       nothing serves them. It asks `CapabilityView.serves` first and degrades, as `hz org agenda` does for the web
       app's footer, so its handle for an unserved requirement is made anyway and every method raises why, with the
-      fix; an unmet one stays in the matrix but is no doctor finding (an `up` check saying how to use it). Only
+      fix. While nothing is bound, an unmet one stays in the matrix but is no doctor finding (an `up` check saying
+      how to use it); a binding that can't be used (not installed, ambiguous, lacking the mode) still is one. Only
       read-only operations can be optional. A publish operation's adapters are still built when it is injected, so
       one whose factory fails stops it before anything is written. The wrappers' closures
       reach the kernel's `Capabilities` through that lazy build, which, like the rest of this design, is no

@@ -7,6 +7,7 @@ import pytest
 
 from heinzel import Event, HeinzelError, Window
 from heinzel.kernel import Requirement
+from heinzel.modules.org import _agenda as agenda_module
 from heinzel.modules.org._agenda import Agenda, local_now, read_agenda
 from heinzel.modules.org._render import render_agenda
 
@@ -41,9 +42,17 @@ class FakeCalendar:
 class FakeBindings:
     """Bindings for tests: a calendar adapter is bound, or not."""
 
-    def __init__(self, adapter: str | None = "google", problem: str | None = None) -> None:
+    def __init__(self, adapter: str | None = "google", problem: str | None = None, bound: str | None = None) -> None:
         self.adapter = adapter
         self.problem = problem
+        self.bound_to = bound if bound is not None else adapter
+
+    def bound(self, capability: str) -> str | None:
+        assert capability == "calendar"
+        return self.bound_to
+
+    def fix(self, capability: str) -> str:
+        return f"Bind an installed adapter (google): {self.command(capability)}"
 
     def serves(self, requirement: Requirement) -> tuple[str | None, str | None]:
         assert str(requirement) == "calendar:read"
@@ -69,6 +78,19 @@ def test_no_calendar_bound_says_so_with_the_command_and_reads_nothing():
     assert agenda.fix == "hz system config set capabilities.calendar google"
     assert calendar.windows == []
     assert text(agenda).endswith("Run `hz system config set capabilities.calendar google`.")
+
+
+def test_a_broken_binding_says_so_without_a_connect_command():
+    calendar = FakeCalendar()
+    bindings = FakeBindings(None, "no installed module provides calendar as 'gogle'", bound="gogle")
+    agenda = read_agenda(calendar, bindings, NOW)
+    assert agenda.calendar == "gogle"
+    assert agenda.fix is None
+    assert agenda.problem == (
+        "Your calendar binding 'gogle' can't be used: no installed module provides calendar as 'gogle'. "
+        "Bind an installed adapter (google): hz system config set capabilities.calendar google"
+    )
+    assert calendar.windows == []
 
 
 def test_the_meeting_in_progress_is_current_and_the_one_started_last_wins():
@@ -119,6 +141,9 @@ def test_an_adapter_crash_degrades_without_its_message():
     assert agenda.problem == "Reading your google calendar failed: RuntimeError"
 
 
-def test_now_is_in_your_time_zone_or_this_machines():
+def test_now_is_in_your_time_zone_or_this_machines_by_name(monkeypatch):
     assert local_now("Asia/Tokyo").tzinfo == ZoneInfo("Asia/Tokyo")
+    monkeypatch.setattr(agenda_module, "local_timezone", lambda: "America/New_York")
+    assert local_now(None).tzinfo == ZoneInfo("America/New_York")
+    monkeypatch.setattr(agenda_module, "local_timezone", lambda: None)
     assert local_now(None).utcoffset() is not None

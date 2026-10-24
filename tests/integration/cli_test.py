@@ -247,7 +247,7 @@ def test_system_info_json(app):
     assert info["sections"] == {  # an empty section is left out
         "example": {"greeting": "hi"},
         "system.capability": {
-            "org agenda → calendar:read": "optional, unmet: no adapter bound",
+            "org agenda → calendar:read": "optional: not connected: no adapter bound",
             "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
         },
     }

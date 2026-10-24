@@ -982,14 +982,14 @@ export interface components {
         Agenda: {
             /**
              * Calendar
-             * @description The adapter bound to `calendar`, e.g. google; none when no calendar is connected.
+             * @description The adapter bound to `calendar`, e.g. google, also when that binding can't be used; none when no calendar is connected.
              */
             calendar?: string | null;
             /** @description The event in progress now, not all-day and not cancelled; the one that started last if several overlap; none if you are free. */
             current?: components["schemas"]["Event"] | null;
             /**
              * Fix
-             * @description The command that connects a calendar when none is; none otherwise.
+             * @description The command that connects a calendar when none is; none otherwise (`problem` says what to do).
              */
             fix?: string | null;
             /** @description The first event starting after now, not all-day and not cancelled, until the end of tomorrow; none if there is none. */
@@ -1002,7 +1002,7 @@ export interface components {
             now: string;
             /**
              * Problem
-             * @description Why there is no agenda: no calendar is connected, or reading it failed (e.g. an expired sign-in); none when it was read.
+             * @description Why there is no agenda: no calendar is connected, its binding can't be used, or reading it failed (e.g. an expired sign-in); none when it was read.
              */
             problem?: string | null;
         };

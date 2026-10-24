@@ -229,7 +229,7 @@ def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_o
         {
             "name": "calendar:read for org agenda",
             "status": "up",
-            "detail": "optional, unmet: no adapter bound; to use it: hz system plugin search --text calendar",
+            "detail": "optional: not connected; to use it: hz system plugin search --text calendar",
             "fix": "",
         },
         {
@@ -239,6 +239,24 @@ def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_o
             "fix": "",
         },
     ]
+
+
+def test_an_optional_need_with_a_broken_binding_is_a_doctor_finding(make_kernel):
+    """Optional means doing without a calendar nobody connected, not hiding a binding that can't be used."""
+    first, second = Module("first", "A calendar named g."), Module("second", "Another calendar named g.")
+    first.provides("calendar", modes={"read"}, name="g")(Agenda)
+    second.provides("calendar", modes={"read"}, name="g")(Agenda)
+    config = Config(files=(), data={"capabilities": {"calendar": "g"}})
+    kernel = make_kernel(builtins=True, first=first, second=second, config=config)
+    _, report = hz(kernel, "system", "doctor")
+    [check] = [c for c in report["checks"]["system.capability"] if c["name"] == "calendar:read for org agenda"]
+    assert check["status"] == "degraded"
+    assert "ambiguous" in check["detail"]
+    assert check["fix"].startswith("Bind an installed adapter")
+    _, agenda = hz(kernel, "org", "agenda")
+    assert agenda["calendar"] == "g"
+    assert agenda["problem"].startswith("Your calendar binding 'g' can't be used: the adapter name 'g' is ambiguous")
+    assert agenda["fix"] is None
 
 
 WINDOW = Window(since=datetime(2026, 10, 12, tzinfo=UTC), until=datetime(2026, 10, 19, tzinfo=UTC))

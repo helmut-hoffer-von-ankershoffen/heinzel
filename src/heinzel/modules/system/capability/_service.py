@@ -58,11 +58,15 @@ class CapabilityService:
             uses=self.uses(),
         )
 
+    def unconnected(self, use: CapabilityUse) -> bool:
+        """Whether `use` is optional and unmet only because nothing is bound: no finding, unlike a broken binding."""
+        return use.optional and use.problem is not None and self.capabilities.bound(use.capability) is None
+
     def matrix(self) -> dict[str, str]:
         """Where data can go, one entry per requirement: `requester → need` to `adapter → hosts`, or the problem."""
         return {
             f"{use.requester} → {use.requirement}": (
-                f"{'optional, ' if use.optional else ''}unmet: {use.problem}"
+                f"{'optional: not connected' if self.unconnected(use) else 'unmet'}: {use.problem}"
                 if use.problem
                 else f"{use.adapter} → {', '.join(use.hosts)}"
             )
@@ -96,8 +100,8 @@ class CapabilityService:
             name = f"{use.requirement} for {use.requester}"
             if use.problem is None:
                 checks.append(Check(name=name, status=Status.UP, detail=f"served by {use.adapter}"))
-            elif use.optional:
-                detail = f"optional, unmet: {use.problem}; to use it: {self.capabilities.command(use.capability)}"
+            elif self.unconnected(use):
+                detail = f"optional: not connected; to use it: {self.capabilities.command(use.capability)}"
                 checks.append(Check(name=name, status=Status.UP, detail=detail))
             else:
                 checks.append(
