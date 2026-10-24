@@ -754,7 +754,8 @@ def _write_files(checkout: Path, files: dict[str, str]) -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
             _inside(checkout, relative)  # again: a directory created above can't be a link, one found can
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-            descriptor = os.open(path, flags, 0o644)
+            # Owner-only: the roster names people, and git records no permission but the executable bit anyway.
+            descriptor = os.open(path, flags, 0o600)
             with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as file:
                 file.write(text)
         except OSError as exc:
