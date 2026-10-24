@@ -865,7 +865,7 @@ wheels = [
 
 [[package]]
 name = "heinzel"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -968,7 +968,7 @@ test = [
 
 [[package]]
 name = "heinzel-clock"
-version = "0.0.0"
+version = "0.1.0"
 source = { editable = "packages/heinzel-clock" }
 dependencies = [
     { name = "heinzel" },
