@@ -24,7 +24,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 SOURCES = Path(__file__).parent / "macos"
-"""The app's sources: main.swift, icon.swift and the Info.plist template."""
+"""The app's sources: main.swift, icon.swift, its artwork (heinzel*.svg) and the Info.plist template."""
 BUNDLED = SOURCES / "HeinzelNotifier.app"
 """Where `make notifier` puts the built app, and where the wheel ships it."""
 INSTALLED_NAME = "Heinzel Notifier.app"
@@ -43,7 +43,13 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 def source_version(sources: Path = SOURCES) -> str:
     """The app's version: a digest of its sources, so a changed source means a new app."""
     digest = hashlib.sha256()
-    for name in ("Info.plist", "icon.swift", "main.swift"):
+    for name in (
+        "Info.plist",
+        "heinzel-swarm.svg",
+        "heinzel.svg",
+        "icon.swift",
+        "main.swift",
+    ):  # scripts/notifier.py SOURCE_NAMES
         digest.update(name.encode() + b"\0" + (sources / name).read_bytes() + b"\0")
     return digest.hexdigest()[:16]
 
