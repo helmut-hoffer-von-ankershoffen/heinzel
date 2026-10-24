@@ -284,10 +284,14 @@ def test_pushing_runs_check_fast_through_a_hook():
     assert (REPO / "template" / ".pre-commit-config.yaml").resolve() == REPO / ".pre-commit-config.yaml"
 
 
-def test_the_template_audit_runs_in_ci_and_in_full_preflight():
-    """pip-audit needs network, so the rendered plugin's audit is not part of the offline `make check`."""
+def test_the_template_audit_runs_in_template_test_ci_and_full_preflight():
+    """The rendered plugin's audit takes seconds, so `make template-test` runs it unless `AUDIT=0` (offline).
+
+    `make preflight` stays offline unless `PREFLIGHT=full`, like the audit of Heinzelmännchen's own dependencies.
+    """
     makefile = (REPO / "Makefile").read_text(encoding="utf-8")
-    assert "\tTEMPLATE_AUDIT=$(AUDIT) bash scripts/template-test.sh" in makefile
+    assert "\tTEMPLATE_AUDIT=$(if $(filter 0,$(AUDIT)),,1) bash scripts/template-test.sh" in makefile
+    assert "template-test" not in (REPO / "template" / "Makefile").read_text(encoding="utf-8")
     assert "TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" in makefile
     assert "make audit" in (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
     ci = "\n".join(commands(REPO / ".github" / "workflows" / "ci.yml"))

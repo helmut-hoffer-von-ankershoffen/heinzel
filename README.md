@@ -140,6 +140,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.doctor`](docs/MODULES.md#systemdoctor) — Check that Heinzelmännchen and its modules are healthy.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, list and scaffold plugins.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
+- [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
 - [`workflow`](docs/MODULES.md#workflow) — Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one).
 - [`zoom`](docs/MODULES.md#zoom) — Read meetings from Zoom's meeting-summary emails: the meetings capability. *First-party plugin: `hz system plugin add zoom`.*
 <!-- modules:end -->

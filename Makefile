@@ -126,8 +126,8 @@ secrets: ## Scan the whole git history for credentials with gitleaks (the pre-co
 licenses: ## Check that runtime dependencies' licenses are on .license-allowlist, so releases stay MIT-compatible
 	bash scripts/check_licenses.sh
 
-template-test: ## Render the plugin template and run its checks against this checkout (KEEP=dir keeps it; AUDIT=1 adds make audit, which needs network)
-	TEMPLATE_AUDIT=$(AUDIT) bash scripts/template-test.sh $(KEEP)
+template-test: ## Render the plugin template, run its checks and audit against this checkout (KEEP=dir keeps it; AUDIT=0 skips the audit, which needs network)
+	TEMPLATE_AUDIT=$(if $(filter 0,$(AUDIT)),,1) bash scripts/template-test.sh $(KEEP)
 
 docs: ## Regenerate docs/CLI_REFERENCE.md from the code
 	uv run python scripts/generate_docs.py
