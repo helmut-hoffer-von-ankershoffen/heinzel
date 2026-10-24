@@ -24,13 +24,14 @@
 | src/heinzel/modules/system/daemon/\_schedule.py               |       65 |        3 |       20 |        1 |     95% |43-44, 102 |
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py             |       26 |        2 |        0 |        0 |     92% |    36, 64 |
 | src/heinzel/modules/system/plugin/\_service.py                |      125 |        5 |       28 |        2 |     95% |44-\>46, 123-124, 130, 137, 230 |
+| src/heinzel/modules/workflow/\_\_init\_\_.py                  |       68 |        2 |        6 |        1 |     96% |   122-123 |
 | src/heinzel/modules/workflow/\_contracts.py                   |      340 |        2 |      132 |        1 |     99% |   462-463 |
-| src/heinzel/modules/workflow/\_models.py                      |      317 |        2 |       62 |        2 |     99% |74, 94, 427-\>425 |
-| src/heinzel/modules/workflow/\_render.py                      |      121 |        8 |       50 |        3 |     91% |94, 110, 181-191 |
-| src/heinzel/modules/workflow/\_service.py                     |      446 |        5 |      134 |        2 |     99% |283, 350-353, 441-442 |
-| **TOTAL**                                                     | **7217** |   **61** | **1740** |   **31** | **99%** |           |
+| src/heinzel/modules/workflow/\_models.py                      |      322 |        2 |       62 |        2 |     99% |75, 95, 428-\>426 |
+| src/heinzel/modules/workflow/\_render.py                      |      186 |       14 |       90 |        9 |     89% |96, 114, 157-\>159, 162, 163-\>165, 195-201, 227, 261, 282-292 |
+| src/heinzel/modules/workflow/\_service.py                     |      589 |       10 |      190 |        3 |     98% |310, 400-401, 506-507, 864-865, 881-883 |
+| **TOTAL**                                                     | **7878** |   **74** | **1938** |   **39** | **99%** |           |
 
-75 files skipped due to complete coverage.
+77 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
