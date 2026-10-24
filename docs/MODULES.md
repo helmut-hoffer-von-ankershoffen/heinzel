@@ -9,6 +9,7 @@ modules; `hz system modules` lists what is installed.
 | [`clock`](#clock) | What time it is for everyone on the team. |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
+| [`system.capability`](#systemcapability) | Show which adapters serve which capabilities, and who reads and writes what. |
 | [`system.changelog`](#systemchangelog) | Release notes of the installed version. |
 | [`system.config`](#systemconfig) | Show, get, set and initialize configuration. |
 | [`system.credential`](#systemcredential) | Store and check the credentials modules need, in the OS keychain. |
@@ -52,6 +53,16 @@ Install the Heinzelmännchen skills for coding agents.
 | Remove Heinzelmännchen's skills from each configured agent skill directory. | `hz system agent uninstall` | `system_agent_uninstall` | `POST /system/agent/uninstall` | yes |
 
 Settings: [`[system.agent]`](CONFIGURATION.md#systemagent).
+
+## `system.capability`
+
+Show which adapters serve which capabilities, and who reads and writes what.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| List capabilities, their bindings and adapters, and every requirement with its adapter and hosts. | `hz system capability list` | `system_capability_list` | `GET /system/capability/list` |  |
+
+Health checks: reported by `hz system doctor`.
 
 ## `system.changelog`
 

@@ -19,6 +19,14 @@ Plugins add their own tables.
 | `update_check` | `HZ_UPDATE_CHECK` | `True` | Say in `hz --version` and `hz system info` when a newer release is available, from what `hz system release` last found (ADR 0031); only in text output on a terminal, never in CI. Ordinary commands never ask the network. Set to false to turn the hint off. |
 | `disabled_modules` | `HZ_DISABLED_MODULES` | `frozenset()` | Qualified names of modules to switch off, with their submodules. Comma-separated in the environment, a list in TOML. |
 
+## `[capabilities]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `code_host` | `HZ_CAPABILITIES__CODE_HOST` | `None` | Adapter that serves `code-host`, e.g. `github`. |
+| `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | Adapter that serves `documents`. |
+| `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | Adapter that serves `tracker`, e.g. `github`. |
+
 ## `[clock]`
 
 | Key | Environment variable | Default | Description |

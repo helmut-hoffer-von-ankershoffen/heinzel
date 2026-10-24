@@ -82,6 +82,51 @@ binding and every declared dependency, and a test that a plugin cannot use a cap
 
 - The dependency model with read and write modes was proposed by the maintainer on 2026-10-23.
 
+**What 0.2 implements.**
+
+The status stays proposed: the generic MCP adapter, the first vendor adapters, approvals and the shared adapter
+contract-test suite are not built yet. Built, with the choices made while building it (director's decisions,
+2026-10-24):
+
+- **Protocols** (`heinzel.kernel._protocols`, public in `heinzel`): only what the first workflows need. `CodeHost`
+  (`merged_pull_requests`, `issues` in a `Window`), `Tracker` (`issues_updated`), `Documents` (`read`;
+  `replace_section` as the only write). Results are pydantic models with described fields. No separate protocol
+  version number: the protocols are public API and follow the core's SemVer ([ADR 0026](0026-plugin-api-versioned-with-semver.md)),
+  which rejected a second API level number for the same reason.
+- **Each method has a mode** in the capability registry (`CAPABILITIES`); a unit test keeps the registry and the
+  protocols in step. Capability names in requirements and bindings are `code-host`, `tracker` and `documents`; the
+  set is closed in 0.2 (plugins cannot add capabilities yet).
+- **Two new let kinds.** `ProviderLet` (`@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter
+  class, named `<adapter>:<capability>`) can't be a `ServiceLet`: several adapters provide the same protocol and
+  configuration picks one, while a service type has exactly one provider. `RequirementLet`
+  (`Module(..., requires=[...])`, one per capability) makes a module's needs visible before any code runs, like
+  `CredentialLet` ([ADR 0030](0030-credentials-live-in-the-os-keychain.md)). Both are consumed by the kernel (binding,
+  injection) and by `system.capability` (`hz system capability list`, the `hz system info` section and the doctor
+  check). Operations and jobs declare their own needs with `requires=[...]`, stored on the `OperationLet` and
+  `JobLet`; they are not lets of their own because they belong to one function.
+- **Injection by type, per requester.** An operation asks for `documents: Documents` like for a service
+  ([ADR 0005](0005-dependency-injection-by-type.md)); heads hide the parameter. The kernel maps every operation, job,
+  service factory, adapter factory, info and health provider to the requester it acts for, and hands out a handle on
+  the bound adapter that exposes only the protocol's methods, in the modes granted. Asking for an undeclared
+  capability, or from a function no module declared, fails with a `HeinzelError` that says what to declare.
+- **Write only through publish operations.** Until approvals exist, "approved publish operation" is enforced
+  structurally: `write` is granted only to operations with `read_only=False` that declared it, themselves or through
+  their module. Declaring `write` on a read-only operation or a job is refused when the module is imported; services,
+  info and health providers only ever get read handles, so a write can't hide behind a shared service. Approval gating
+  of those operations comes with `hz inbox` ([ADR 0020](0020-daemon-head.md)).
+- **Binding is configuration, never discovery.** `[capabilities] tracker = "github"` in the user or team (`hz.toml`)
+  file, or `HZ_CAPABILITIES__TRACKER`; keys take `_` or `-`. A sole installed adapter is not bound automatically
+  (principle 1: declared beats discovered); doctor names the binding to write and the installed candidates. A pin
+  (`acme:documents:read`) uses that adapter whatever is bound, and the matrix shows it.
+- **Doctor and info.** `hz system doctor` reports each unmet requirement as degraded (`tracker:read: no adapter
+  bound`, an adapter that is not installed, or one that lacks a mode) and each binding to an adapter nobody provides.
+  `hz system info` shows requester → capability:modes → adapter → hosts; hosts are what the adapter declares.
+- **Not yet:** per-person and per-job binding overrides beyond the layered files, OAuth scopes and credentials per
+  mode (adapters use `Credentials` as any module does), doctor checks that call adapters, plugin-defined
+  capabilities, the generic MCP adapter, and contract tests for adapters. No vendor adapter ships in core; the tests
+  use test-only adapters.
+- Import-linter: "The core imports no vendor client or agent SDK".
+
 - [ADR 0022](0022-embedded-workflows.md) describes `DocumentConnector` plugins (`heinzel-google`,
   `heinzel-atlassian`); under this ADR they are adapters of the documents and spreadsheets capabilities, and
   `DocumentConnector` becomes part of the documents capability protocol. This answers ADR 0022's open question

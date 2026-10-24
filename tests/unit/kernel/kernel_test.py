@@ -163,7 +163,7 @@ def test_injects_module_settings_from_the_module_section(make_kernel, monkeypatc
 
     assert kernel.resolve(GreeterSettings).greeting == "Hi"
     assert kernel.resolve(Clock2Settings).x == 3
-    assert [section for section, _ in kernel.settings_of()] == ["hz", "a", "a.b"]
+    assert [section for section, _ in kernel.settings_of()] == ["hz", "capabilities", "a", "a.b"]
     assert kernel.resolve(Config) is kernel.config
 
 

@@ -10,10 +10,22 @@ from typing import Any, cast, get_origin
 import pluggy
 from pydantic import ConfigDict, ValidationError, validate_call
 
+from heinzel.kernel._bindings import CAPABILITIES_SECTION, Adapter, Capabilities, CapabilitySettings, Requester
+from heinzel.kernel._capabilities import CAPABILITIES, capability_of
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import Installation
-from heinzel.kernel._lets import Let, OperationLet, ServiceLet, SettingsLet
+from heinzel.kernel._lets import (
+    HealthLet,
+    InfoLet,
+    JobLet,
+    Let,
+    OperationLet,
+    ProviderLet,
+    RequirementLet,
+    ServiceLet,
+    SettingsLet,
+)
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._settings import Settings
@@ -107,6 +119,10 @@ class Kernel:
         for record, declared in sorted(self.lets(SettingsLet), key=_builtins_first):
             self._provide(declared.model, partial(self.config.settings, declared.model, record.qualname), record)
         self._records = dict(sorted(self._records.items(), key=lambda item: item[1].path))
+        self.capability_settings = self.config.settings(CapabilitySettings, CAPABILITIES_SECTION)
+        requesters, owners = self._requesters()
+        self.capabilities = Capabilities(self._adapters(), requesters, owners, self.capability_settings, self.call)
+        self._instances[Capabilities] = self.capabilities
 
     @property
     def modules(self) -> tuple[ModuleRecord, ...]:
@@ -132,8 +148,10 @@ class Kernel:
         return found
 
     def provides(self, kind: object) -> bool:
-        """Whether the kernel can inject a parameter annotated with `kind`."""
-        return isinstance(kind, type) and (kind in self._instances or kind in self._factories)
+        """Whether the kernel can inject a parameter annotated with `kind`: a service, settings or a capability."""
+        return isinstance(kind, type) and (
+            kind in self._instances or kind in self._factories or capability_of(kind) is not None
+        )
 
     def bind[T](self, kind: type[T], instance: T) -> None:
         """Replace what the kernel injects for `kind`; heads use this to bind their own `Progress`."""
@@ -171,9 +189,21 @@ class Kernel:
         Raises:
             HeinzelError: If an argument is invalid, with a message naming it.
         """
-        validated = validate_call(config=ConfigDict(arbitrary_types_allowed=True))(operation.func)
+        func = operation.func
+        injected = {k: v for k, v in self._inject(func, dict(kwargs)).items() if k not in kwargs}
+        signature = inspect.signature(func, eval_str=True)
+
+        # Only what the caller passes is validated: injected values are the kernel's own, and capability protocols
+        # are not runtime-checkable, so pydantic could not build an isinstance check for them.
+        def call(**arguments: Any) -> Any:  # noqa: ANN401 - forwards the operation's result
+            return func(**arguments, **injected)
+
+        public = [p for name, p in signature.parameters.items() if name not in injected]
+        call.__signature__ = signature.replace(parameters=public)  # type: ignore[attr-defined]  # pydantic reads it
+        call.__annotations__ = {p.name: p.annotation for p in public if p.annotation is not inspect.Parameter.empty}
+        validated = validate_call(config=ConfigDict(arbitrary_types_allowed=True))(call)
         try:
-            return validated(**self._inject(operation.func, kwargs))
+            return validated(**kwargs)
         except ValidationError as exc:
             problems = "; ".join(f"{'.'.join(map(str, e['loc'])) or 'input'}: {e['msg']}" for e in exc.errors())
             msg = f"Invalid arguments for {operation.name}: {problems}"
@@ -182,13 +212,21 @@ class Kernel:
     def _inject(self, func: Callable[..., Any], kwargs: dict[str, Any]) -> dict[str, Any]:
         for name, parameter in inspect.signature(func, eval_str=True).parameters.items():
             annotation = get_origin(parameter.annotation) or parameter.annotation
-            if name not in kwargs and self.provides(annotation):
+            if name in kwargs:
+                continue
+            if capability := capability_of(annotation):
+                # A handle per requester: what it may call depends on what `func` declared (ADR 0028).
+                kwargs[name] = self.capabilities.handle(capability, func)
+            elif self.provides(annotation):
                 kwargs[name] = self.resolve(annotation)
         return kwargs
 
     def settings_of(self) -> list[tuple[str, ModuleSettings]]:
         """Every settings object in effect, by section: the kernel's `hz` first, then each module's."""
-        sections: list[tuple[str, ModuleSettings]] = [(KERNEL_SECTION, self.settings)]
+        sections: list[tuple[str, ModuleSettings]] = [
+            (KERNEL_SECTION, self.settings),
+            (CAPABILITIES_SECTION, self.capability_settings),
+        ]
         sections.extend((record.qualname, self.resolve(let.model)) for record, let in self.lets(SettingsLet))
         return sections
 
@@ -219,6 +257,52 @@ class Kernel:
             return
         self._factories[kind] = factory
 
+    def _adapters(self) -> list[Adapter]:
+        adapters: dict[tuple[str, str], Adapter] = {}
+        for record, let in sorted(self.lets(ProviderLet), key=_builtins_first):
+            problem = None
+            if (let.capability, let.adapter) in adapters:
+                problem = f"another module already provides {let.capability} as {let.adapter!r}"
+            elif missing := _missing_methods(let):
+                problem = f"adapter {let.name} lacks {', '.join(missing)} of {let.capability}"
+            if problem is None:
+                adapters[let.capability, let.adapter] = Adapter(module=record.qualname, let=let)
+            elif record.origin.builtin:
+                msg = f"Built-in module {record.qualname!r}: {problem}"
+                raise HeinzelError(msg)
+            else:
+                logger.warning("Skipping an adapter of %r: %s", record.qualname, problem)
+                self.errors[record.qualname] = f"Adapter skipped: {problem}"
+        return list(adapters.values())
+
+    def _requesters(self) -> tuple[list[Requester], dict[Callable[..., Any], Requester]]:
+        """Every requester, and every function that may ask for a capability with the requester it acts for."""
+        requesters: list[Requester] = []
+        owners: dict[Callable[..., Any], Requester] = {}
+        for record in self._records.values():
+            lets = record.module.lets
+            own = tuple(let.requirement for let in lets if isinstance(let, RequirementLet))
+            module = Requester(module=record.qualname, kind="module", name=record.module.name, requires=own)
+            requesters.append(module)
+            for let in lets:
+                match let:
+                    case OperationLet():
+                        requester = Requester(
+                            record.qualname, "operation", let.name, let.requires, own, publishes=not let.read_only
+                        )
+                        requesters.append(requester)
+                        owners[let.func] = requester
+                    case JobLet():
+                        requesters.append(requester := Requester(record.qualname, "job", let.name, let.requires, own))
+                        owners[let.func] = requester
+                    case ServiceLet() | ProviderLet():
+                        owners[let.factory] = module
+                    case InfoLet() | HealthLet():
+                        owners[let.provider] = module
+                    case _:
+                        pass
+        return requesters, owners
+
     def _is_disabled(self, qualname: str) -> bool:
         parts = qualname.split(".")
         return any(".".join(parts[: i + 1]) in self.settings.disabled_modules for i in range(len(parts)))
@@ -226,6 +310,13 @@ class Kernel:
 
 def _builtins_first(pair: tuple[ModuleRecord, Let]) -> tuple[bool, tuple[str, ...]]:
     return (not pair[0].origin.builtin, pair[0].path)
+
+
+def _missing_methods(let: ProviderLet) -> list[str]:
+    """Protocol methods a class-based adapter doesn't define; a factory function is checked when it is called."""
+    if not isinstance(let.factory, type):
+        return []
+    return [name for name in CAPABILITIES[let.capability].methods if not callable(getattr(let.factory, name, None))]
 
 
 def _provided_types(module: Module) -> set[type[Any]]:

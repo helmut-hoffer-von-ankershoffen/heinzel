@@ -2,7 +2,7 @@ from datetime import timedelta
 
 import pytest
 
-from heinzel import CatchUp, InfoLet, JobLet, Module, OperationLet, ServiceLet
+from heinzel import CatchUp, InfoLet, JobLet, Module, OperationLet, ProviderLet, RequirementLet, ServiceLet
 
 pytestmark = pytest.mark.unit
 
@@ -166,3 +166,79 @@ def test_jobs_are_validated_when_declared(options, problem):
 def test_a_job_let_refuses_a_timeout_that_is_not_positive():
     with pytest.raises(ValueError, match="timeout must be positive"):
         JobLet(name="x", func=_undecorated, summary="x", schedule="@daily", timeout=timedelta(0))
+
+
+def test_module_requirements_become_requirement_lets_named_after_the_capability():
+    module = Module("digest", "x", requires=["tracker:read", "documents:read", "documents:write"])
+    lets = [let for let in module.lets if isinstance(let, RequirementLet)]
+    assert [(let.name, str(let.requirement)) for let in lets] == [
+        ("tracker", "tracker:read"),
+        ("documents", "documents:read,write"),
+    ]
+
+
+def test_operations_and_jobs_record_their_requirements():
+    module = Module("digest", "x")
+
+    @module.operation(requires=["tracker:read"])
+    def show() -> None:
+        """Show."""
+
+    @module.operation(read_only=False, requires=["documents:read,write"])
+    def publish() -> None:
+        """Publish."""
+
+    @module.job(schedule="@daily", requires=["code-host:read"])
+    def nightly() -> None:
+        """Nightly."""
+
+    requires = {
+        let.name: [str(r) for r in let.requires] for let in module.lets if isinstance(let, OperationLet | JobLet)
+    }
+    assert requires == {"show": ["tracker:read"], "publish": ["documents:read,write"], "nightly": ["code-host:read"]}
+
+
+def test_writes_are_declared_only_by_publish_operations():
+    module = Module("digest", "x")
+
+    def peek() -> None:
+        """Peek."""
+
+    with pytest.raises(ValueError, match="writes happen only in publish operations"):
+        module.operation(requires=["documents:write"])(peek)
+    with pytest.raises(ValueError, match="writes happen only in publish operations"):
+        module.job(schedule="@daily", requires=["documents:read,write"])(peek)
+
+
+def test_provides_records_an_adapter_named_after_the_module_by_default():
+    module = Module("acme", "x")
+
+    @module.provides("tracker", modes={"read"}, hosts=["api.acme.invalid"])
+    class AcmeTracker:
+        pass
+
+    @module.provides("documents", modes={"read", "write"}, name="acme-docs")
+    class AcmeDocuments:
+        pass
+
+    lets = [let for let in module.lets if isinstance(let, ProviderLet)]
+    assert [(let.name, let.adapter, let.capability, sorted(let.modes), let.hosts) for let in lets] == [
+        ("acme:tracker", "acme", "tracker", ["read"], ("api.acme.invalid",)),
+        ("acme-docs:documents", "acme-docs", "documents", ["read", "write"], ()),
+    ]
+    assert lets[0].factory is AcmeTracker
+    assert lets[1].factory is AcmeDocuments
+
+
+@pytest.mark.parametrize(
+    ("capability", "modes", "name", "problem"),
+    [
+        ("chat", {"read"}, None, "Unknown capability 'chat'"),
+        ("tracker", {"write"}, None, "must serve some of"),
+        ("documents", set(), None, "must serve some of"),
+        ("tracker", {"read"}, "Acme", "Adapter name 'Acme'"),
+    ],
+)
+def test_provides_refuses_unknown_capabilities_modes_and_names(capability, modes, name, problem):
+    with pytest.raises(ValueError, match=problem):
+        Module("acme", "x").provides(capability, modes=modes, name=name)

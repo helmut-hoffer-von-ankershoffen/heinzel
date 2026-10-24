@@ -13,6 +13,7 @@ from typing import Any, Literal, overload
 from pydantic import BaseModel
 from rich.console import RenderableType
 
+from heinzel.kernel._capabilities import CAPABILITIES, MODES, Mode, parse_requirements
 from heinzel.kernel._config import ModuleSettings
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._lets import (
@@ -25,6 +26,8 @@ from heinzel.kernel._lets import (
     JobLet,
     Let,
     OperationLet,
+    ProviderLet,
+    RequirementLet,
     ServiceLet,
     SettingsLet,
 )
@@ -48,16 +51,18 @@ class Module:
         ```
     """
 
-    def __init__(self, name: str, summary: str, *, essential: bool = False) -> None:
+    def __init__(self, name: str, summary: str, *, essential: bool = False, requires: Iterable[str] = ()) -> None:
         """Declare a module.
 
         Args:
             name: Lowercase, dash-separated name; becomes the command group and the prefix of tool names.
             summary: One sentence on what the module is for.
             essential: Can't be disabled; for the few built-ins needed to repair a broken setup (`system`).
+            requires: Capabilities the whole module needs (ADR 0028), e.g. `["tracker:read", "documents:read,write"]`;
+                a `write` mode reaches only its publish operations.
 
         Raises:
-            ValueError: If the name is not a valid module name.
+            ValueError: If the name is not a valid module name, or a requirement is malformed.
         """
         if not NAME_PATTERN.fullmatch(name):
             msg = f"Module name {name!r} must match {NAME_PATTERN.pattern}"
@@ -66,6 +71,8 @@ class Module:
         self.summary = summary
         self.essential = essential
         self._lets: list[Let] = []
+        for requirement in parse_requirements(requires):
+            self.add(RequirementLet(name=requirement.capability, requirement=requirement))
 
     @property
     def lets(self) -> tuple[Let, ...]:
@@ -96,6 +103,7 @@ class Module:
         render: Callable[[Any], RenderableType] | None = None,
         exit_code: Callable[[Any], int] | None = None,
         heads: Iterable[str] | None = None,
+        requires: Iterable[str] = (),
     ) -> Callable[[F], F]: ...
 
     def operation[F: Callable[..., Any]](  # noqa: PLR0913 - keyword-only options of a decorator
@@ -108,6 +116,7 @@ class Module:
         render: Callable[[Any], RenderableType] | None = None,
         exit_code: Callable[[Any], int] | None = None,
         heads: Iterable[str] | None = None,
+        requires: Iterable[str] = (),
     ) -> F | Callable[[F], F]:
         """Advertise a function as an operation. Its docstring is required: it becomes the help text.
 
@@ -118,7 +127,13 @@ class Module:
             render: How human-facing heads present the result; the JSON form is the default.
             exit_code: Maps the result to an exit code for heads that have one; 0 when not given.
             heads: Restrict the operation to these heads, e.g. `{"cli"}` for interactive ones; all heads by default.
+            requires: Capabilities it asks for by type besides its module's (ADR 0028), e.g. `["tracker:read"]`;
+                `write` modes only with `read_only=False`.
+
+        Raises:
+            ValueError: If the docstring is missing, or a requirement is malformed or writes from a read-only operation.
         """
+        requirements = parse_requirements(requires)
 
         def decorate(target: F) -> F:
             summary = inspect.getdoc(target)
@@ -134,6 +149,7 @@ class Module:
                     render=render,
                     exit_code=exit_code,
                     heads=frozenset(heads) if heads is not None else None,
+                    requires=requirements,
                 )
             )
             return target
@@ -150,6 +166,7 @@ class Module:
         retries: int = 0,
         catch_up: CatchUp | Literal["latest", "all", "skip"] = CatchUp.LATEST,
         idempotency: Callable[[datetime], str] | None = None,
+        requires: Iterable[str] = (),
     ) -> Callable[[F], F]:
         """Advertise a function as a job the daemon runs on a schedule (ADR 0020). Its docstring is required.
 
@@ -163,11 +180,14 @@ class Module:
             retries: How often a failing run is retried within the same tick.
             catch_up: Missed slots: `latest` runs once, `all` once per slot, `skip` none.
             idempotency: Key of the run for a slot; `<job>@<slot>` by default.
+            requires: Capabilities it asks for by type besides its module's (ADR 0028); read modes only.
 
         Raises:
-            ValueError: If the docstring is missing, or the name, schedule, timeout or retries are invalid.
+            ValueError: If the docstring is missing, the name, schedule, timeout or retries are invalid, or a
+                requirement is malformed or writes.
         """
         duration = parse_duration(timeout)
+        requirements = parse_requirements(requires)
 
         def decorate(target: F) -> F:
             summary = inspect.getdoc(target)
@@ -185,6 +205,7 @@ class Module:
                     retries=retries,
                     catch_up=CatchUp(catch_up),
                     idempotency=idempotency,
+                    requires=requirements,
                 )
             )
             return target
@@ -199,6 +220,52 @@ class Module:
             factory: Builds the instance; its own parameters are injected. Defaults to `provides` itself.
         """
         self.add(ServiceLet(name=provides.__name__, provides=provides, factory=factory or provides))
+
+    def provides[F: Callable[..., Any]](
+        self, capability: str, *, modes: Iterable[Mode], hosts: Iterable[str] = (), name: str | None = None
+    ) -> Callable[[F], F]:
+        """Advertise a class (or factory) as an adapter of a capability (ADR 0028); usable as a class decorator.
+
+        The kernel builds one instance, injecting the factory's parameters (settings, `Credentials`), and hands
+        requesters a handle limited to the modes they declared and this adapter serves.
+
+        Args:
+            capability: The capability implemented, e.g. `tracker`; the factory's instances implement its protocol.
+            modes: The modes served: `{"read"}` or `{"read", "write"}`.
+            hosts: Hosts the adapter sends data to, shown by `hz system info`; leave empty only when configuration
+                decides.
+            name: Name bindings use (`[capabilities] tracker = "<name>"`); defaults to the module name.
+
+        Raises:
+            ValueError: If the capability, a mode or the name is unknown or malformed.
+        """
+        spec = CAPABILITIES.get(capability)
+        if spec is None:
+            msg = f"Unknown capability {capability!r}; known: {', '.join(sorted(CAPABILITIES))}"
+            raise ValueError(msg)
+        served = frozenset(modes)
+        if not served or not served <= spec.modes or not served <= set(MODES):
+            msg = f"Adapter of {capability} must serve some of {sorted(spec.modes)}, not {sorted(served)}"
+            raise ValueError(msg)
+        adapter = name or self.name
+        if not NAME_PATTERN.fullmatch(adapter):
+            msg = f"Adapter name {adapter!r} must match {NAME_PATTERN.pattern}"
+            raise ValueError(msg)
+
+        def decorate(factory: F) -> F:
+            self.add(
+                ProviderLet(
+                    name=f"{adapter}:{capability}",
+                    adapter=adapter,
+                    capability=capability,
+                    modes=served,
+                    hosts=tuple(hosts),
+                    factory=factory,
+                )
+            )
+            return factory
+
+        return decorate
 
     def settings[S: ModuleSettings](self, model: type[S]) -> type[S]:
         """Declare the module's settings; usable as a class decorator.

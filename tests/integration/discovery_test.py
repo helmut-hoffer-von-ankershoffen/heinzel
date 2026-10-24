@@ -16,6 +16,7 @@ def test_discovers_builtin_modules_and_submodules():
     assert [r.qualname for r in records] == [
         "system",
         "system.agent",
+        "system.capability",
         "system.changelog",
         "system.config",
         "system.credential",
@@ -54,6 +55,7 @@ def test_kernel_boots_from_discovery(settings):
     kernel = Kernel(settings, records, errors)
     assert [r.qualname for r in kernel.children("system")] == [
         "system.agent",
+        "system.capability",
         "system.changelog",
         "system.config",
         "system.credential",

@@ -54,6 +54,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `agent`: Install the Heinzelmännchen skills for...
+* `capability`: Show which adapters serve which...
 * `changelog`: Show the changelog of the installed...
 * `config`: Show, get, set and initialize configuration.
 * `credential`: Store and check the credentials modules...
@@ -126,6 +127,40 @@ Remove Heinzelmännchen&#x27;s skills from each configured agent skill directory
 
 ```console
 $ hz system agent uninstall [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system capability`
+
+Show which adapters serve which capabilities, and who reads and writes what.
+
+**Usage**:
+
+```console
+$ hz system capability [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `list`: List capabilities, their bindings and...
+
+#### `hz system capability list`
+
+List capabilities, their bindings and adapters, and every requirement with its adapter and hosts.
+
+**Usage**:
+
+```console
+$ hz system capability list [OPTIONS]
 ```
 
 **Options**:

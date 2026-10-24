@@ -4,7 +4,10 @@ Every module and plugin depends on this package; its public API is `hz` and `hei
 change like a library release: an ADR for a new concept, unit tests for every branch.
 
 - `_module.py` — `Module` and its decorators (`operation`, `job`, `service`, `settings`, `info`, `health`,
-  `credential`).
+  `credential`, `provides`; `requires=` on modules, operations and jobs).
+- `_protocols.py` — integration capability protocols (`CodeHost`, `Tracker`, `Documents`) and their models;
+  `_capabilities.py` — the capability registry with each method's mode and requirement strings;
+  `_bindings.py` — `[capabilities]` bindings and `Capabilities`, which hands requesters mode-gated handles (ADR 0028).
 - `_credentials.py` — `Credentials`, the only way to secrets (ADR 0030), and the environment backend.
 - `_lets.py` — let types, `Check`/`Status` and `CatchUp`. A new let kind needs a head, the kernel or a `system`
   submodule that consumes it (`JobLet`: `system.daemon`).
