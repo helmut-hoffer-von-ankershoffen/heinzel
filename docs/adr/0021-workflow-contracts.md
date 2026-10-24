@@ -144,6 +144,10 @@ readable prose. Each point says what 0.2 builds and what comes later.
       as a job is invalid in `check` too; compiling one contract never stops the others. A manual run saves the draft and a
       `.record.json` but no ledger receipt and says so; receipted runs go through the daemon
       (`hz system daemon tick --job workflow:<namespace>-<name>`).
+    - 0.2, the success measure of a drafting contract (maintainer's validation slice, 2026-10-24): each render
+      records its drafting time; `sent <name> --file <f>` or `--ref <document>` (the approved version where the asset
+      lives, read through `documents`) records the share of words changed, both word counts and a hash, never the
+      text, next to the draft; `show` reports both per draft. It is about drafts, never about people.
     - Later: `new`, `graph`, `fingerprint`, `migrate`, `export --prose`.
 
 ### Consequences

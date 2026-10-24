@@ -16,8 +16,9 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Check, Module
-from heinzel.kernel import CompiledJobs
+from heinzel import Check, ConfigEditor, HeinzelError, Module, Prompter
+from heinzel.kernel import CompiledJobs, PlaybookLet, PlaybookSetup
+from heinzel.modules.workflow._measure import Measurements, Sent
 from heinzel.modules.workflow._models import (
     CheckReport,
     CompiledContract,
@@ -29,12 +30,16 @@ from heinzel.modules.workflow._models import (
     RunResult,
     WorkflowSettings,
 )
+from heinzel.modules.workflow._playbooks import Discovery, PlaybookList
 from heinzel.modules.workflow._render import (
     render_check,
+    render_discovery,
     render_drafts,
     render_list,
     render_new,
+    render_playbooks,
     render_run,
+    render_sent,
     render_show,
 )
 from heinzel.modules.workflow._service import WorkflowService
@@ -70,8 +75,9 @@ def list_(service: WorkflowService) -> ContractList:
     return service.listing()
 
 
-# A contract written through a web page could reach a local REST server; the CLI and MCP get it, like `run`. The
-# starter has no schedule, so even then nothing would run on the daemon by itself.
+# A contract written through a web page could reach a local REST server; the CLI and MCP get it, like `run`. Neither
+# the starter nor a template has an active schedule (templates with one are refused), so nothing written here runs on
+# the daemon by itself.
 @module.operation(read_only=False, render=render_new, heads={"cli", "mcp"})
 def new(
     service: WorkflowService,
@@ -81,9 +87,74 @@ def new(
     team: Annotated[
         bool, Field(description="Write it into the team repository's workflows/ instead of your own directory.")
     ] = False,
+    template: Annotated[
+        str | None,
+        Field(
+            description="Start from a playbook's template contract, `<module>:<name>` (`hz workflow playbooks` lists "
+            "them), instead of the blank starter."
+        ),
+    ] = None,
+    asset: Annotated[
+        list[str] | None,
+        Field(
+            description="Fill a template's asset placeholder as type=reference, e.g. weekly-report=doc-123 "
+            "(`hz workflow discover` finds candidates); repeat for each."
+        ),
+    ] = None,
 ) -> NewContract:
-    """Write a starter contract, valid as written and commented, into your workflows directory; creates it."""
-    return service.new(name, team=team)
+    """Write a starter contract, or a playbook's template (--template), into your workflows directory."""
+    return service.new(name, team=team, template=template, assets=_assets(asset or []))
+
+
+def _assets(pairs: list[str]) -> dict[str, str]:
+    """`type=reference` pairs as a mapping.
+
+    Raises:
+        HeinzelError: If a pair has no `=`.
+    """
+    found: dict[str, str] = {}
+    for pair in pairs:
+        key, sep, value = (part.strip() for part in pair.partition("="))
+        if not sep or not key or not value:
+            msg = f"--asset {pair!r} must read type=reference, e.g. weekly-report=doc-123"
+            raise HeinzelError(msg)
+        if key in found:
+            msg = f"--asset {key} is given twice; give each asset type once"
+            raise HeinzelError(msg)
+        found[key] = value
+    return found
+
+
+@module.operation(render=render_playbooks)
+def playbooks(service: WorkflowService) -> PlaybookList:
+    """List the playbooks plugins contribute: asset types, template contracts and recommended settings."""
+    return service.playbooks()
+
+
+# Hints read your systems; like `drafts`, the CLI and MCP get it, not a web page that can reach a local REST server.
+@module.operation(render=render_discovery, heads={"cli", "mcp"})
+def discover(
+    service: WorkflowService,
+    playbook: Annotated[
+        str | None, Field(description="Only this module's playbook; every playbook's if omitted.")
+    ] = None,
+) -> Discovery:
+    """Find candidates for each playbook's asset types through the capabilities you have bound; reads only."""
+    return service.discover(playbook)
+
+
+class _PlaybookSetup(PlaybookSetup):
+    """Walks through a playbook for its module's setup step (ADR 0037)."""
+
+    def __init__(self, service: WorkflowService) -> None:
+        self._service = service
+
+    def run(self, playbook: PlaybookLet, prompter: Prompter, editor: ConfigEditor) -> None:
+        """Propose the playbook's settings, its assets and its templates; apply only what is accepted."""
+        self._service.setup(playbook, prompter, editor)
+
+
+module.service(PlaybookSetup, _PlaybookSetup)
 
 
 @module.operation(render=render_show)
@@ -101,6 +172,29 @@ def drafts(
 ) -> DraftList:
     """List the drafts runs saved locally, newest first, with their paths and records, or show the newest."""
     return service.drafts(name, latest=latest)
+
+
+# It reads a file you name and writes a small record next to the draft; like `drafts`, only the CLI and MCP get it.
+@module.operation(read_only=False, render=render_sent, heads={"cli", "mcp"})
+def sent(  # noqa: PLR0913, PLR0917 - one option per place the approved text can be, and the draft
+    service: WorkflowService,
+    name: Name,
+    file: Annotated[
+        Path | None, Field(description="What you finally sent, saved as a text or Markdown file; or give --ref.")
+    ] = None,
+    ref: Annotated[
+        str | None,
+        Field(description="The document the approved version lives in, read through the documents capability."),
+    ] = None,
+    draft: Annotated[
+        Path | None, Field(description="The draft it was edited from; the contract's newest draft if omitted.")
+    ] = None,
+    edit_minutes: Annotated[
+        float | None, Field(ge=0, description="Your own estimate of the minutes you spent editing; optional.")
+    ] = None,
+) -> Sent:
+    """Record how much of a draft you changed before sending it; `hz workflow show` reports it."""
+    return service.sent(name, file, ref=ref, draft=draft, edit_minutes=edit_minutes)
 
 
 @module.operation(render=render_check, exit_code=_check_exit_code)
@@ -137,10 +231,14 @@ __all__ = [
     "CompiledContract",
     "ContractList",
     "ContractSummary",
+    "Discovery",
     "DraftList",
     "Frontmatter",
+    "Measurements",
     "NewContract",
+    "PlaybookList",
     "RunResult",
+    "Sent",
     "WorkflowService",
     "WorkflowSettings",
     "module",
