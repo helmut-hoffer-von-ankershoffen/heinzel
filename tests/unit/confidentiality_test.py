@@ -176,7 +176,7 @@ def test_the_check_guards_commits_lint_ci_and_publishing():
     assert "check_confidentiality.py --identity" in hooks
     assert "check_confidentiality.py --branch" in hooks
     assert "scripts/check_confidentiality.py\n" in hooks
-    assert '"&confidential=uv run python scripts/check_confidentiality.py"' in (REPO / "Makefile").read_text(
+    assert '"&confidential=uv run --script scripts/check_confidentiality.py"' in (REPO / "Makefile").read_text(
         encoding="utf-8"
     )
     ci = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")

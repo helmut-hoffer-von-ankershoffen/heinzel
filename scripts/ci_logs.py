@@ -1,10 +1,14 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Print what failed in the latest CI run of the current branch, waiting for it if it is still running.
 
 One line for a green run; otherwise per failed job and step the error lines with a little context, without colors or
 timestamps, at most 60 lines each. When the run is green but the branch's pull request is blocked, the unresolved
 review threads that hold it (main requires them resolved). `--json` prints the same as a list of `{job, step, lines}`.
 
-Usage: uv run python scripts/ci_logs.py [--json] [--branch NAME]
+Usage: uv run --script scripts/ci_logs.py [--json] [--branch NAME]
 """
 
 import argparse

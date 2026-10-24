@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Derive the plugin template's Makefile, CI workflow and tool configuration from ours, so they never drift.
 
 Files that are identical for Heinzelmännchen and its plugins are symlinks in template/; files that differ slightly

@@ -62,6 +62,17 @@ streams all output.
 We don't use nox or tox: uv creates an isolated environment per Python version in seconds, so `make test-all-pythons`
 is a loop over `uv run --isolated --python 3.X`, and CI runs the same tests in a matrix on macOS and Linux.
 
+### Scripts
+
+The Python scripts in `scripts/` declare their dependencies inline ([PEP 723](https://peps.python.org/pep-0723/)) and
+run with `uv run --script scripts/x.py`: uv builds each one a small environment in its cache (tens of milliseconds the
+first time, reused after that) without syncing the project, so `make` steps, git hooks and plugins (which get the
+scripts through the template) don't depend on the project environment. Their `requires-python` is the project's, and
+any dependency is pinned with `==` to the version in `uv.lock`, so CI's uv cache, keyed on `uv.lock`, already holds it.
+A script that imports heinzel (`generate_docs.py`) runs with `uv run python` and says why in a `# Project-bound:`
+comment. `tests/unit/scripts_test.py` checks both, and that every caller uses the matching command. Shell scripts run
+with `bash scripts/x.sh`; never run a script by path, because plugins get them without the executable bit.
+
 ## Tests
 
 Every test is exactly one of `unit`, `integration` or `e2e` — definitions in
