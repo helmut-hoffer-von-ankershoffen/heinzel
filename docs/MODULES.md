@@ -17,6 +17,7 @@ modules; `hz system modules` lists what is installed.
 | [`system.doctor`](#systemdoctor) | Check that Heinzelmännchen and its modules are healthy. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
+| [`workflow`](#workflow) | Workflow contracts: Markdown files that compile to daemon jobs drafting with an agent. |
 
 ## `clock`
 
@@ -147,5 +148,20 @@ Settings: [`[system.plugin]`](CONFIGURATION.md#systemplugin).
 Run bounded agent sessions with Claude Code or a configured command.
 
 Settings: [`[system.runner]`](CONFIGURATION.md#systemrunner).
+
+Health checks: reported by `hz system doctor`.
+
+## `workflow`
+
+Workflow contracts: Markdown files that compile to daemon jobs drafting with an agent.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| List the contracts in your and your team's workflows directories, with their schedule and problems. | `hz workflow list` | `workflow_list` | `GET /workflow/list` |  |
+| Show a contract as the daemon runs it: schedule, requirements, adapters, inputs and publishes. | `hz workflow show` | `workflow_show` | `GET /workflow/show` |  |
+| Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate. | `hz workflow check` | `workflow_check` | `GET /workflow/check` |  |
+| Render a contract now: fetch its inputs, run the agent and save the draft; nothing is published. | `hz workflow run` | `workflow_run` | `POST /workflow/run` | yes |
+
+Settings: [`[workflow]`](CONFIGURATION.md#workflow).
 
 Health checks: reported by `hz system doctor`.

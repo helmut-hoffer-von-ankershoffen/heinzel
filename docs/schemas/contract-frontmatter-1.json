@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:heinzel:contract-frontmatter:1",
+  "$defs": {
+    "Agent": {
+      "additionalProperties": false,
+      "description": "Limits of the agent session. Which runner and model run it is configuration, never the contract's (ADR 0029).",
+      "properties": {
+        "tools": {
+          "description": "Read-only tools the agent may use, in the runner's naming (e.g. `Read`, `Grep`); empty for the runner's read-only default. The agent gets no hz tools: inputs are fetched before it starts.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Tools",
+          "type": "array"
+        },
+        "max_usd": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Most one run may cost in US dollars; none: no cap.",
+          "title": "Max Usd"
+        }
+      },
+      "title": "Agent",
+      "type": "object"
+    },
+    "Hz": {
+      "additionalProperties": false,
+      "description": "Everything Heinzelmännchen reads from a contract, under one `hz:` key (ADR 0021).",
+      "properties": {
+        "schema": {
+          "const": 1,
+          "description": "Version of the frontmatter format: 1.",
+          "title": "Schema",
+          "type": "integer"
+        },
+        "title": {
+          "description": "Display name, shown in lists and the daemon's jobs.",
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "scope": {
+          "const": "personal",
+          "default": "personal",
+          "description": "Who runs it: `personal`, on your own daemon. Team scope comes with the state repository.",
+          "title": "Scope",
+          "type": "string"
+        },
+        "schedule": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "When the daemon runs it: five cron fields in local time, e.g. `0 7 * * MON`. Without one it runs only with `hz workflow run`.",
+          "title": "Schedule"
+        },
+        "requires": {
+          "description": "Capabilities it reads, `<capability>:read`, e.g. `tracker:read`; `agent-runner:read` is implied. Configuration decides which adapter serves each; a contract never pins one nor writes.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Requires",
+          "type": "array"
+        },
+        "inputs": {
+          "description": "Data fetched before the agent starts, by name; each needs its capability.",
+          "patternProperties": {
+            "^[a-z][a-z0-9_]*$": {
+              "$ref": "#/$defs/Input"
+            }
+          },
+          "propertyNames": {
+            "maxLength": 64
+          },
+          "title": "Inputs",
+          "type": "object"
+        },
+        "outputs": {
+          "description": "What the agent drafts, by name: exactly one in this version.",
+          "patternProperties": {
+            "^[a-z][a-z0-9_]*$": {
+              "$ref": "#/$defs/Output"
+            }
+          },
+          "propertyNames": {
+            "maxLength": 64
+          },
+          "title": "Outputs",
+          "type": "object"
+        },
+        "publishes": {
+          "description": "Where the draft is meant to go, through publish operations; recorded, never run automatically.",
+          "items": {
+            "$ref": "#/$defs/Publish"
+          },
+          "title": "Publishes",
+          "type": "array"
+        },
+        "agent": {
+          "$ref": "#/$defs/Agent",
+          "description": "Limits of the agent session."
+        },
+        "timeout": {
+          "default": "PT10M",
+          "description": "How long the agent session may take.",
+          "examples": [
+            "7d",
+            "10m"
+          ],
+          "pattern": "^[1-9][0-9]*[smhd]$",
+          "title": "Timeout",
+          "type": "string"
+        },
+        "retries": {
+          "default": 0,
+          "description": "Retries within a daemon tick after a failed run.",
+          "maximum": 3,
+          "minimum": 0,
+          "title": "Retries",
+          "type": "integer"
+        },
+        "catch_up": {
+          "default": "latest",
+          "description": "Missed schedule slots: `latest` runs once, `all` once per slot, `skip` none.",
+          "enum": [
+            "latest",
+            "all",
+            "skip"
+          ],
+          "title": "Catch Up",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema",
+        "title",
+        "outputs"
+      ],
+      "title": "Hz",
+      "type": "object"
+    },
+    "Input": {
+      "additionalProperties": false,
+      "description": "Data fetched through a capability's read method before the agent session starts (ADR 0029, option a).",
+      "properties": {
+        "read": {
+          "description": "The capability read method that fetches it, `<capability>.<method>`, e.g. `tracker.issues_updated`; `hz system capability list` shows the capabilities.",
+          "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9_]*$",
+          "title": "Read",
+          "type": "string"
+        },
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "description": "Arguments of the method besides its time window, e.g. `{project: APP}`.",
+          "title": "Args",
+          "type": "object"
+        },
+        "window": {
+          "anyOf": [
+            {
+              "examples": [
+                "7d",
+                "10m"
+              ],
+              "pattern": "^[1-9][0-9]*[smhd]$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For methods that take a time window: how far back from the run, e.g. `7d`.",
+          "title": "Window"
+        }
+      },
+      "required": [
+        "read"
+      ],
+      "title": "Input",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "Output": {
+      "additionalProperties": false,
+      "description": "What the agent drafts; in 0.2 the draft is saved locally and nothing is published automatically.",
+      "properties": {
+        "format": {
+          "default": "markdown",
+          "description": "What the agent writes: `markdown` (the default) or `json`.",
+          "enum": [
+            "markdown",
+            "json"
+          ],
+          "title": "Format",
+          "type": "string"
+        }
+      },
+      "title": "Output",
+      "type": "object"
+    },
+    "Publish": {
+      "additionalProperties": false,
+      "description": "A write the draft is meant for, through a publish operation; recorded, never run automatically in 0.2.",
+      "properties": {
+        "action": {
+          "description": "The publish operation (`read_only=False`) that would write it, `<module>.<operation>`, e.g. `notes.publish`; it declares `write` itself, the contract never does (ADR 0028).",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$",
+          "title": "Action",
+          "type": "string"
+        },
+        "output": {
+          "description": "The output it publishes, a key of `hz.outputs`.",
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Output",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "output"
+      ],
+      "title": "Publish",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The YAML frontmatter of a contract: OpenProse-compatible identity on top, Heinzelmännchen's keys under `hz`.",
+  "properties": {
+    "name": {
+      "description": "The contract's name: lowercase words joined by dashes; equals the file stem.",
+      "maxLength": 64,
+      "pattern": "^[a-z](?:-?[a-z0-9])*$",
+      "title": "Name",
+      "type": "string"
+    },
+    "kind": {
+      "const": "responsibility",
+      "description": "The OpenProse kind: `responsibility`.",
+      "title": "Kind",
+      "type": "string"
+    },
+    "description": {
+      "description": "What the workflow keeps true, and for whom.",
+      "maxLength": 1024,
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "id": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "OpenProse's minted id (Crockford base32).",
+      "title": "Id"
+    },
+    "version": {
+      "anyOf": [
+        {
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-[0-9A-Za-z.-]+)?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The author's own semantic version.",
+      "title": "Version"
+    },
+    "hz": {
+      "$ref": "#/$defs/Hz",
+      "description": "Heinzelmännchen's keys."
+    }
+  },
+  "required": [
+    "name",
+    "kind",
+    "description",
+    "hz"
+  ],
+  "title": "Heinzelmännchen contract frontmatter (schema 1)",
+  "type": "object",
+  "patternProperties": {
+    "^x-": {
+      "description": "Extension keys, ignored."
+    }
+  }
+}

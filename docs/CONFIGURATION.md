@@ -73,3 +73,11 @@ Plugins add their own tables.
 | `command_enforces_read_only` | `HZ_SYSTEM_RUNNER__COMMAND_ENFORCES_READ_ONLY` | `False` | The `command` runner refuses to run until this is true: set it once the configured command restricts its agent to read-only tools itself. |
 | `command_read_only_tools` | `HZ_SYSTEM_RUNNER__COMMAND_READ_ONLY_TOOLS` | platform-specific | Tools, in the command's naming, a tool profile may ask the `command` runner for; others are refused. |
 | `command_env` | `HZ_SYSTEM_RUNNER__COMMAND_ENV` | platform-specific | Environment variables passed to the command besides PATH, HOME, LANG, LC_* and TMPDIR, e.g. the variable that holds its own login; HZ_CREDENTIAL_* variables are never passed. |
+
+## `[workflow]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `user_dir` | `HZ_WORKFLOW__USER_DIR` | platform-specific | Your own contracts, `<name>.prose.md`; they run on your daemon when they have a schedule. |
+| `team_repository` | `HZ_WORKFLOW__TEAM_REPOSITORY` | `None` | A checkout of your team's state repository; its contracts are in `workflows/`. They run only with `hz workflow run`, or on your daemon when named in `schedule_team`. |
+| `schedule_team` | `HZ_WORKFLOW__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name; the others run only by hand, so a team's contracts don't run on every member's daemon. |
