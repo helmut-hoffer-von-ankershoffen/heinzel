@@ -203,7 +203,8 @@ class Capabilities:
         self._build = build
         self._settings_of = settings_of
         self._instances: dict[tuple[str, str], object] = {}
-        self._hosts: dict[tuple[str, str], tuple[tuple[str, ...], str | None]] = {}
+        # By adapter, not by name: two adapters may share a name (an ambiguous binding) and differ in hosts.
+        self._hosts: dict[Adapter, tuple[tuple[str, ...], str | None]] = {}
 
     def adapter_for(self, requirement: Requirement) -> tuple[Adapter | None, str | None]:
         """The adapter that serves `requirement` (pinned or bound), and why it can't, if it can't."""
@@ -250,10 +251,9 @@ class Capabilities:
         let = adapter.let
         if let.configured_hosts is None:
             return let.hosts, None
-        key = (let.capability, let.adapter)
-        if key not in self._hosts:
-            self._hosts[key] = self._configured_hosts(let)
-        return self._hosts[key]
+        if adapter not in self._hosts:
+            self._hosts[adapter] = self._configured_hosts(let)
+        return self._hosts[adapter]
 
     def _configured_hosts(self, let: ProviderLet) -> tuple[tuple[str, ...], str | None]:
         function = cast("Callable[..., Iterable[str]]", let.configured_hosts)
@@ -264,9 +264,11 @@ class Capabilities:
             result: object = function(**settings)
             # A plugin may return anything; a lone string is one host, not a sequence of letters.
             values = [result] if isinstance(result, str) else list(cast("Iterable[object]", result))
-        # Isolation boundary: a plugin's settings or hosts function must never break info or doctor.
-        except Exception as exc:
-            logger.warning("Reading the hosts of adapter %s failed", let.name, exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - isolate plugins: their settings or hosts never break info or doctor
+            # No traceback and no message: pydantic's and a plugin's messages may repeat a URL with a token in it,
+            # and warnings reach the terminal.
+            name = getattr(function, "__qualname__", repr(function))
+            logger.warning("Reading the hosts of adapter %s through %s failed: %s", let.name, name, type(exc).__name__)
             return (), f"the hosts of {let.name} come from its settings, which couldn't be read ({type(exc).__name__})"
         hosts = [host_of(value) if isinstance(value, str) else None for value in values]
         if invalid := [str(number) for number, host in enumerate(hosts, 1) if host is None]:

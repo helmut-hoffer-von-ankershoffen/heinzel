@@ -525,6 +525,18 @@ def test_a_bad_configured_host_is_unknown_and_doctor_warns_without_the_value(mak
     assert "s3cret" not in json.dumps([report, info, doctor])
 
 
+def test_an_unused_adapter_with_a_bad_configured_host_does_not_degrade_doctor(make_kernel, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CAPABILITIES__DOCUMENTS", "elsewhere")  # forge is installed, configured, but unbound
+    kernel = forge_kernel(make_kernel, tmp_path, monkeypatch, '[forge]\napi_url = "not a url"\n')
+
+    code, report = hz(kernel, "system", "capability", "list")
+    assert [a["hosts"] for a in report["adapters"] if a["adapter"] == "forge"] == [["unknown (configured)"]]
+    code, doctor = hz(kernel, "system", "doctor")
+    assert code == 0
+    assert "binding documents" in [c["name"] for c in doctor["checks"]["system.capability"]]  # the env binding won
+    assert not [c for c in doctor["checks"]["system.capability"] if c["name"].startswith("hosts of")]
+
+
 def test_bindings_are_settings_like_any_other(kernel, tmp_path, monkeypatch):
     monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
     assert hz(kernel, "system", "config", "set", "capabilities.tracker", "acme")[0] == 0

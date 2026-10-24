@@ -67,7 +67,7 @@ class CapabilityService:
         }
 
     def checks(self) -> list[Check]:
-        """One check per declared requirement, per binding to a missing adapter and per unknown binding key."""
+        """A check per requirement, bad binding or binding key, and used adapter whose hosts are unknown."""
         checks = [
             Check(
                 name=f"binding {key}",
@@ -86,20 +86,9 @@ class CapabilityService:
             )
             for capability, adapter in self.capabilities.unknown_bindings()
         )
-        unknown_hosts = [(a, problem) for a in self.capabilities.adapters if (problem := self.capabilities.hosts(a)[1])]
-        checks.extend(
-            Check(
-                name=f"hosts of {adapter.let.name}",
-                status=Status.DEGRADED,
-                detail=f"{problem}; shown as {UNKNOWN_HOSTS}",
-                fix=(
-                    f"Check the settings of {adapter.module} with `hz system config show` and set a valid URL or "
-                    f"host name in your user configuration"
-                ),
-            )
-            for adapter, problem in unknown_hosts
-        )
-        for use in self.uses():
+        uses = self.uses()
+        checks.extend(self._host_checks(uses))
+        for use in uses:
             name = f"{use.requirement} for {use.requester}"
             if use.problem is None:
                 checks.append(Check(name=name, status=Status.UP, detail=f"served by {use.adapter}"))
@@ -113,3 +102,25 @@ class CapabilityService:
                     )
                 )
         return checks or [Check(name="requirements", status=Status.UP, detail="no module declares capabilities")]
+
+    def _host_checks(self, uses: list[CapabilityUse]) -> list[Check]:
+        """A check per adapter that is bound or serves a requirement and whose hosts couldn't be read.
+
+        An installed adapter nobody uses doesn't make doctor degraded: it sends nothing anywhere.
+        """
+        used = {(use.capability, use.adapter) for use in uses}
+        return [
+            Check(
+                name=f"hosts of {adapter.let.name}",
+                status=Status.DEGRADED,
+                detail=f"{problem}; shown as {UNKNOWN_HOSTS}",
+                fix=(
+                    f"Check the settings of {adapter.module} with `hz system config show` and set a valid URL or "
+                    f"host name in your user configuration; if they are valid, report it to {adapter.distribution}"
+                ),
+            )
+            for adapter in self.capabilities.adapters
+            if (adapter.let.capability, adapter.let.adapter) in used
+            or self.capabilities.bound(adapter.let.capability) == adapter.let.adapter
+            if (problem := self.capabilities.hosts(adapter)[1])
+        ]

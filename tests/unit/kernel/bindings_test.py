@@ -712,6 +712,30 @@ def test_hosts_that_cant_be_read_are_unknown_and_the_problem_repeats_no_value(ma
     assert acme_hosts(make_kernel, hosts, api_url="https://s3cret@acme.invalid") == ((), problem)
 
 
+def test_reading_hosts_logs_no_value_and_no_message(make_kernel, caplog):
+    acme_hosts(make_kernel, failing, api_url="https://s3cret@acme.invalid")
+    assert [record.getMessage() for record in caplog.records] == [
+        "Reading the hosts of adapter acme:documents through failing failed: RuntimeError"
+    ]
+    assert not any(record.exc_info for record in caplog.records)
+
+
+def test_two_adapters_with_one_name_keep_their_own_hosts(make_kernel):
+    class OtherSettings(ModuleSettings):
+        api_url: str = "https://other.acme.invalid"
+
+    def other(settings: OtherSettings) -> object:
+        return [settings.api_url]
+
+    kernel = make_kernel(acme=acme_module(url), acme2=acme_module(other, settings=OtherSettings))
+    assert not kernel.errors
+    view = kernel.resolve(CapabilityView)
+    assert sorted(view.hosts(adapter)[0] for adapter in view.adapters) == [
+        ("api.acme.invalid",),
+        ("other.acme.invalid",),
+    ]
+
+
 def test_settings_that_fail_validation_make_the_hosts_unknown(make_kernel):
     def strict(settings: StrictSettings) -> object:
         return [settings.api_url]
