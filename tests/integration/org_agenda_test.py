@@ -55,7 +55,7 @@ def test_the_agenda_needs_the_session_token(make_kernel):
 
 
 def test_without_a_calendar_the_agenda_says_what_to_run(make_kernel):
-    # `none`: the sole calendar adapter would serve it automatically (ADR 0056).
+    # `none`: the sole calendar adapter would serve it automatically (ADR 0055).
     agenda = client(make_kernel, calendar="none").get("/api/org/agenda", headers=AUTH)
     assert agenda.status_code == 200
     assert agenda.json() | {"now": None} == {

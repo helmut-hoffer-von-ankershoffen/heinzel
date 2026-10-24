@@ -29,7 +29,7 @@ Mode = Literal["read", "write"]
 MODES: tuple[Mode, ...] = ("read", "write")
 NO_ADAPTER = "none"
 """The binding that says a capability is served by nothing, also when an adapter would be chosen automatically
-(ADR 0056); no adapter may take the name."""
+(ADR 0055); no adapter may take the name."""
 _ADAPTER = re.compile(r"^[a-z][a-z0-9-]*$")
 
 
@@ -50,7 +50,7 @@ class Capability:
     purpose: str = ""
     """What it is for, in a few plain words after the title, e.g. `pull requests and reviews`."""
     automatic: bool = True
-    """Whether its only installed adapter serves it without a binding (ADR 0056). Not for `mail`: reading a mailbox
+    """Whether its only installed adapter serves it without a binding (ADR 0055). Not for `mail`: reading a mailbox
     is the person's explicit choice, whatever happens to be installed."""
 
     @property

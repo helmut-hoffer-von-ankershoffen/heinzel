@@ -8,7 +8,7 @@ from heinzel import Check, Login
 from heinzel.kernel import How, Mode
 
 State = Literal["connected", "not-signed-in", "not-bound", "attention", "unknown"]
-"""A connector's state from its offline checks (ADR 0056): signed in and serving something; its tool has no sign-in;
+"""A connector's state from its offline checks (ADR 0055): signed in and serving something; its tool has no sign-in;
 it serves no capability; another check needs attention; or nothing says, so only a live test can tell."""
 
 

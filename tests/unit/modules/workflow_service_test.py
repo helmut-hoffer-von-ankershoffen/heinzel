@@ -147,7 +147,7 @@ def dirs(tmp_path) -> tuple[Path, Path]:
 
 
 OFF = dict.fromkeys(("code_host", "tracker", "documents", "calendar", "mail", "meetings"), "none")
-"""What a test leaves unbound: a sole installed fake would otherwise serve it automatically (ADR 0056)."""
+"""What a test leaves unbound: a sole installed fake would otherwise serve it automatically (ADR 0055)."""
 
 
 @pytest.fixture

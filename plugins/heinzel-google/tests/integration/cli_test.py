@@ -60,4 +60,4 @@ def test_setup_through_the_cli(google_kernel, fake_gws, tmp_path, monkeypatch):
     written = "".join(p.read_text(encoding="utf-8") for p in home.rglob("*.toml"))
     assert 'documents = "google"' in written, prompter.transcript
     assert 'calendar = "google"' in written
-    assert "mail" not in written  # mail is never bound automatically (ADR 0056); declined, nothing is written
+    assert "mail" not in written  # mail is never bound automatically (ADR 0055); declined, nothing is written

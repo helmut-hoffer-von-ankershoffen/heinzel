@@ -231,7 +231,7 @@ def test_discover_finds_candidates_through_what_you_can_read(make):
 
 
 def test_discover_says_once_how_to_bind_an_unbound_capability(make):
-    off = {"agent_runner": "fake", "documents": "none"}  # the sole adapter would serve it automatically (ADR 0056)
+    off = {"agent_runner": "fake", "documents": "none"}  # the sole adapter would serve it automatically (ADR 0055)
     code, found = hz(make(off), "workflow", "discover")
     assert code == 0
     assert [p["hint"] for p in found["problems"]] == ["documents.read"]

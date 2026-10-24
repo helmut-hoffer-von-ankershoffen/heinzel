@@ -1,4 +1,4 @@
-"""The connector module: whether the tools hz reads through are connected, and a live test on demand (ADR 0056)."""
+"""The connector module: whether the tools hz reads through are connected, and a live test on demand (ADR 0055)."""
 
 from typing import Annotated
 
@@ -20,7 +20,7 @@ from heinzel.modules.system.connector._service import ConnectorService
 module = Module("connector", "Show whether each connector is signed in and serves something, and test one live.")
 module.service(ConnectorService)
 
-# Not the REST head: it has no authentication, and a test reaches the vendor as you (ADR 0047, ADR 0056).
+# Not the REST head: it has no authentication, and a test reaches the vendor as you (ADR 0047, ADR 0055).
 HEADS = frozenset({"cli", "mcp", "web"})
 
 Name = Annotated[str, Field(description="The connector, as `hz system connector list` names it, e.g. `github`.")]

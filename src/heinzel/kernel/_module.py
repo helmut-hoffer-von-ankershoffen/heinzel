@@ -370,7 +370,7 @@ class Module:
 
         A live provider may reach the network, with a short timeout of its own, and makes one cheap read-only call,
         such as asking the vendor's CLI who it is signed in as; it runs only on demand (`hz system connector test`),
-        never in doctor, which stays offline (ADR 0035, ADR 0056). A module has at most one of each.
+        never in doctor, which stays offline (ADR 0035, ADR 0055). A module has at most one of each.
 
         Args:
             func: The provider, when used as a bare decorator.

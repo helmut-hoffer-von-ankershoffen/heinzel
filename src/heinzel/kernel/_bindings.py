@@ -30,7 +30,7 @@ CAPABILITIES_SECTION = "capabilities"
 
 RequesterKind = Literal["module", "operation", "job"]
 How = Literal["configured", "automatic", "default", "off", "unbound"]
-"""How a capability got its adapter (ADR 0056): a configured binding; the only installed adapter, chosen
+"""How a capability got its adapter (ADR 0055): a configured binding; the only installed adapter, chosen
 automatically while nothing is configured; the core's default; `off`, configured to `none`; or none at all."""
 HOWS: tuple[How, ...] = ("configured", "automatic", "default", "off", "unbound")
 
@@ -38,7 +38,7 @@ HOWS: tuple[How, ...] = ("configured", "automatic", "default", "off", "unbound")
 def _options(capability: str) -> dict[str, Any]:
     """The JSON Schema extra of a binding: its values are the installed adapters of `capability`, or `none`.
 
-    The web head resolves the source into a list to choose from, so no binding is ever typed (ADR 0056).
+    The web head resolves the source into a list to choose from, so no binding is ever typed (ADR 0055).
     """
     return {"x-options": {"source": "adapters", "capability": capability, "none": NO_ADAPTER}}
 
@@ -49,7 +49,7 @@ class CapabilitySettings(ModuleSettings):
     Keys are capability names with `_` or `-` (`code_host` or `code-host`); values are adapter names, as
     `hz system capability list` shows them, or `none` for no adapter at all. While a capability has no binding, the
     only installed adapter that provides it serves it automatically, else the core's default if it has one, else
-    nobody (ADR 0056). A project `hz.toml` can't bind: only the site, user and `HZ_CONFIG` files and the environment
+    nobody (ADR 0055). A project `hz.toml` can't bind: only the site, user and `HZ_CONFIG` files and the environment
     can.
     """
 
@@ -388,7 +388,7 @@ class Capabilities:
         ]
 
     def binding(self, capability: str) -> tuple[str | None, How]:
-        """The adapter that serves `capability` unless a requirement pins another, and how it was chosen (ADR 0056).
+        """The adapter that serves `capability` unless a requirement pins another, and how it was chosen (ADR 0055).
 
         A configured binding wins, `none` included. Otherwise the only installed adapter of the capability serves
         it automatically: installing it was the choice, and there is nothing to choose between; except for a

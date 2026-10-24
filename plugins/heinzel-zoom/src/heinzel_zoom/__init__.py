@@ -3,7 +3,7 @@
 A Heinzelmännchen plugin, discovered through the `heinzel.modules` entry point in pyproject.toml. It provides the
 adapter `zoom` for the capability `meetings` in read mode (ADR 0028), built on the `mail` capability: it reads the
 summaries Zoom's AI Companion mails after a meeting through whichever mail adapter is bound, with no Zoom API and no
-Zoom credentials. It serves `meetings` automatically while it is the only provider (ADR 0056), or bind it with
+Zoom credentials. It serves `meetings` automatically while it is the only provider (ADR 0055), or bind it with
 `[capabilities] meetings = "zoom"`; `mail` needs a binding of its own.
 """
 

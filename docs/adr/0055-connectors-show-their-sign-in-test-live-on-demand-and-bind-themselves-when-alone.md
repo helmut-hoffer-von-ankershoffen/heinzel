@@ -6,7 +6,7 @@ amends: 0028
 related: 0015, 0030, 0032, 0035, 0039, 0048
 ---
 
-# 0056: Connectors show their sign-in, test live on demand, and bind themselves when they are alone
+# 0055: Connectors show their sign-in, test live on demand, and bind themselves when they are alone
 
 ## Context and Problem Statement
 

@@ -146,7 +146,7 @@ class SyncService:
     def _binding(self, recommendation: Recommendation) -> SyncItem:
         current, how = self._view.binding(recommendation.name)
         adapters = {a.let.adapter for a in self._view.adapters if a.let.capability == recommendation.name}
-        # Served only automatically, it is no choice of yours yet: a second provider would unbind it (ADR 0056).
+        # Served only automatically, it is no choice of yours yet: a second provider would unbind it (ADR 0055).
         if current == recommendation.value and how != "automatic":
             return _item(recommendation, current=current, state="applied", action="you have it")
         if recommendation.value not in adapters:
@@ -156,7 +156,7 @@ class SyncService:
             )
             return _item(recommendation, current=current, state="by-hand", action=action)
         # A binding only the core's default or the automatic choice made is no choice of yours: it is pending, like
-        # an unbound one; `none` is a choice, so it differs and only an explicit accept overrides it (ADR 0056).
+        # an unbound one; `none` is a choice, so it differs and only an explicit accept overrides it (ADR 0055).
         state: SyncState = "pending" if how in {"unbound", "default", "automatic"} else "differs"
         action = f"sets capabilities.{_key(recommendation.name)} = {recommendation.value!r} in your user file"
         return _item(recommendation, current=current, state=state, action=action)

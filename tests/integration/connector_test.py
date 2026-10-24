@@ -1,4 +1,4 @@
-"""`hz system connector` through the CLI: offline report, live test on demand, never in doctor (ADR 0056)."""
+"""`hz system connector` through the CLI: offline report, live test on demand, never in doctor (ADR 0055)."""
 
 import json
 
