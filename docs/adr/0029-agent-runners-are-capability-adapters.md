@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-10-23
 related: 0020, 0021, 0028
-amended-by: 0045, 0049, 0050
+amended-by: 0045, 0049, 0050, 0057
 ---
 
 # 0029: Agent runners are capability adapters; core ships Claude Code and a generic command adapter
