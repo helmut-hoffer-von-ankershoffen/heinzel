@@ -44,7 +44,7 @@ class Call:
 
     @property
     def path(self) -> str:
-        return next(arg for arg in self.args if arg.startswith("repos/"))
+        return next(arg for arg in self.args if arg.startswith("repos/") or arg == "user")
 
     @property
     def fields(self) -> dict[str, str]:
@@ -60,6 +60,7 @@ class FakeGh(Gh):
     calls: list[Call] = field(default_factory=list)
     installed: bool = True
     logged: bool = True
+    user: str = "ada"
     found: tuple[int, int, int] | None = (2, 103, 2)
     broken: str | None = None
     """A message `version` fails with, as for a gh that can't start."""
@@ -82,6 +83,9 @@ class FakeGh(Gh):
 
     def logged_in(self) -> bool:
         return self.logged
+
+    def account(self) -> str:
+        return self.user if self.logged else ""
 
     def serve(self, path: str, *pages: list[dict[str, Any]]) -> None:
         """Answer `gh api path` with `pages`, one per page number, then empty pages."""

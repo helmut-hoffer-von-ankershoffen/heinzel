@@ -49,6 +49,12 @@ def health(service: AtlassianService, view: CapabilityView) -> list[Check]:
     return service.checks(view)
 
 
+@module.health(live=True)
+def live(service: AtlassianService, view: CapabilityView) -> list[Check]:
+    """Read one item from each Atlassian product in use, through acli; run only by `hz system connector test`."""
+    return service.live(view)
+
+
 __all__ = [
     "GATEWAY",
     "Acli",

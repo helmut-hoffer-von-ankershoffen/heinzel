@@ -71,6 +71,8 @@ FIXED = {
 _PROXIES = frozenset({"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "ALL_PROXY"})
 _VERSION = re.compile(r"\bgh version v?(\d{1,4})\.(\d{1,4})\.(\d{1,6})")
 _HOST_KEY = re.compile(r"^([A-Za-z0-9.-]+):\s*$")
+_USER = re.compile(r"^[ \t]+user:[ \t]*['\"]?([A-Za-z0-9](?:[A-Za-z0-9-]{0,38}))['\"]?[ \t]*$")
+"""A login's user in gh's hosts file: a GitHub login, nothing else; a line holding a token never matches."""
 _CHUNK = 65_536
 _POSIX = os.name == "posix"
 
@@ -260,6 +262,29 @@ class Gh:
         except OSError:
             return False
         return False
+
+    def account(self) -> str:
+        """The user gh's hosts file names for the configured host, or "" if it names none or a token variable decides.
+
+        Reads the file line by line like `logged_in`, keeping only a `user:` line of the host's own block that is
+        shaped like a GitHub login, so a token stored there in plain text is never kept. GitHub is not asked.
+        """
+        host = self._settings.host
+        if any(os.environ.get(name) for name in _token_variables(host)):
+            return ""  # the variable's token decides who gh is, and only GitHub can say whose it is
+        inside = False
+        try:
+            with hosts_file().open(encoding="utf-8", errors="replace") as lines:
+                for number, line in enumerate(lines):
+                    if number >= MAX_HOSTS_LINES:
+                        return ""
+                    if found := _HOST_KEY.match(line):
+                        inside = found[1].lower() == host
+                    elif inside and (user := _USER.match(line.rstrip("\n"))):
+                        return user[1]
+        except OSError:
+            return ""
+        return ""
 
     def run(self, args: list[str], *, host: str, timeout: float) -> GhResult:
         """Run `gh <args>` for `host`; past `timeout` seconds, or past `MAX_BYTES` of output, it is stopped.

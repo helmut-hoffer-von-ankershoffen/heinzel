@@ -50,7 +50,8 @@ def run_setup(  # noqa: PLR0913, PLR0917 - what the step is injected with
         prompter.say(f"Give gws an OAuth client first, then run hz setup google again: {CLIENT}")
         return
     newly = _bind(view, prompter, editor)
-    mail = "mail" in newly or view.bound("mail") == "google"
+    # Mail Google serves only automatically was asked about in _bind: kept, it is in newly; declined, it is off.
+    mail = "mail" in newly or view.binding("mail") in {("google", "configured"), ("google", "default")}
     if signed_in and not mail:
         return
     if signed_in and "mail" not in newly:
@@ -71,15 +72,23 @@ def run_setup(  # noqa: PLR0913, PLR0917 - what the step is injected with
 
 
 def _bind(view: CapabilityView, prompter: Prompter, editor: ConfigEditor) -> set[str]:
-    """Offer each capability not yet read from Google; the ones now bound to it."""
+    """Offer each capability not chosen to be read from Google yet; the ones now bound to it.
+
+    Google serving a capability automatically, as the only installed adapter (ADR 0055), is no choice of the
+    person's: they are asked, and declining writes `none`, so mail stays opt-in even when nothing else provides it.
+    """
     newly: set[str] = set()
     for capability in CAPABILITIES:
-        bound = view.bound(capability)
-        if bound == "google":
+        bound, how = view.binding(capability)
+        if bound == "google" and how != "automatic":
             continue
-        question = f"Read {capability} from Google" + (f" instead of {bound}" if bound else "")
+        automatic = bound == "google"
+        other = None if automatic else bound
+        question = f"Read {capability} from Google" + (f" instead of {other}" if other else "")
         question += " (this grants read access to all of your mail)?" if capability in OPT_IN else "?"
-        if prompter.confirm(question, default=bound is None and capability not in OPT_IN):
+        if prompter.confirm(question, default=other is None and capability not in OPT_IN):
             prompter.say(f"Saved to {editor.write(f'capabilities.{capability}', 'google')}.")
             newly.add(capability)
+        elif automatic:
+            prompter.say(f"Not read from Google; saved to {editor.write(f'capabilities.{capability}', 'none')}.")
     return newly

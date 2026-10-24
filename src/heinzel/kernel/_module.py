@@ -14,7 +14,7 @@ from typing import Any, Literal, overload
 from pydantic import BaseModel
 from rich.console import RenderableType
 
-from heinzel.kernel._capabilities import CAPABILITIES, MODES, Mode, Requirement, parse_requirements
+from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Mode, Requirement, parse_requirements
 from heinzel.kernel._config import ConfigEditor, ModuleSettings
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._layers import LayerLet
@@ -319,6 +319,11 @@ class Module:
         if not NAME_PATTERN.fullmatch(adapter):
             msg = f"Adapter name {adapter!r} must match {NAME_PATTERN.pattern}"
             raise ValueError(msg)
+        if adapter == NO_ADAPTER:
+            msg = (
+                f"Adapter name {NO_ADAPTER!r} is reserved: `[capabilities] <capability> = {NO_ADAPTER!r}` binds nothing"
+            )
+            raise ValueError(msg)
         configured = hosts if callable(hosts) else None
         static = () if callable(hosts) else tuple(host_of(host) or host for host in hosts)
 
@@ -352,10 +357,31 @@ class Module:
         self.add(InfoLet(name=self.name, provider=func))
         return func
 
-    def health[F: Callable[..., list[Check]]](self, func: F) -> F:
-        """Advertise health checks for `hz system doctor`."""
-        self.add(HealthLet(name=self.name, provider=func))
-        return func
+    @overload
+    def health[F: Callable[..., list[Check]]](self, func: F, /) -> F: ...
+
+    @overload
+    def health[F: Callable[..., list[Check]]](self, /, *, live: bool = False) -> Callable[[F], F]: ...
+
+    def health[F: Callable[..., list[Check]]](
+        self, func: F | None = None, /, *, live: bool = False
+    ) -> F | Callable[[F], F]:
+        """Advertise health checks: offline ones for `hz system doctor`, or with `live=True` a connection test.
+
+        A live provider may reach the network, with a short timeout of its own, and makes one cheap read-only call,
+        such as asking the vendor's CLI who it is signed in as; it runs only on demand (`hz system connector test`),
+        never in doctor, which stays offline (ADR 0035, ADR 0055). A module has at most one of each.
+
+        Args:
+            func: The provider, when used as a bare decorator.
+            live: Whether it tests the connection rather than checking local state.
+        """
+
+        def decorate(target: F) -> F:
+            self.add(HealthLet(name=f"{self.name} live" if live else self.name, provider=target, live=live))
+            return target
+
+        return decorate if func is None else decorate(func)
 
     def credential(self, name: str, *, purpose: str, service: str | None = None) -> CredentialLet:
         """Declare a secret the module needs; pass the returned let to `Credentials.get` to read its value.

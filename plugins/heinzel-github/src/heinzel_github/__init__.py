@@ -47,6 +47,12 @@ def health(service: GithubService, view: CapabilityView) -> list[Check]:
     return service.checks(view)
 
 
+@module.health(live=True)
+def live(service: GithubService) -> list[Check]:
+    """Ask GitHub who `gh` is logged in as: one read, run only by `hz system connector test github`."""
+    return service.live()
+
+
 __all__ = [
     "GITHUB_HOST",
     "Gh",

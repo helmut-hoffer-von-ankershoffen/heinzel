@@ -148,8 +148,19 @@ def test_doctor_names_gh_auth_login_when_gh_has_no_login(github_kernel, fake_gh_
     assert (gh["status"], gh["fix"]) == ("degraded", "gh auth login --hostname github.com")
 
 
+def test_alone_it_serves_code_host_automatically_and_tracker_is_left_to_choose(github_kernel, github):
+    # GitHub is the only installed code host, so it serves automatically; the Atlassian plugin provides tracker too.
+    code, pulls = hz(github_kernel(digest=digest()), "digest", "merged", "acme/widgets", SINCE, UNTIL)
+    assert code == 0, pulls
+    report = hz(github_kernel(), "system", "connector", "list")[1]
+    choices = {c["capability"]: c for c in report["capabilities"]}
+    assert (choices["code-host"]["bound"], choices["code-host"]["how"]) == ("github", "automatic")
+    assert (choices["tracker"]["bound"], choices["tracker"]["how"]) == (None, "unbound")
+
+
 def test_unbound_the_requester_fails_and_doctor_names_the_binding(github_kernel, fake_gh_cli):
-    kernel = github_kernel(digest=digest())
+    off = Config(files=(), data={"capabilities": {"code-host": "none", "tracker": "none"}})
+    kernel = github_kernel(off, digest=digest())
     code, output = hz(kernel, "digest", "merged", "acme/widgets", SINCE, UNTIL)
     assert code != 0
     assert "hz system config set capabilities.code_host github" in str(output)

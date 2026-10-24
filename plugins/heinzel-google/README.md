@@ -64,6 +64,14 @@ Optional settings, in `[google]` or `HZ_GOOGLE__<FIELD>`: `gws_path`, the absolu
 controls must not choose the program that reads your data), and `timeout`, the seconds each `gws` run may take
 (default 60, also ignored in a project `hz.toml`).
 
+### Is it connected?
+
+Bound automatically while it is the only installed adapter of a capability, [ADR
+0055](../../docs/adr/0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md); `hz
+setup google` still asks, and declining mail there writes `mail = "none"`, so Gmail stays opt-in. `hz system connector
+list` (or Settings → Connectors in `hz ui`) shows whether gws has a sign-in, from its files alone; `hz system connector
+test google` asks Drive who is signed in (`gws drive about get`, 15 s at most), and only when you run it.
+
 ## Use
 
 Workflows ask for `documents` and `calendar`, never for Google:

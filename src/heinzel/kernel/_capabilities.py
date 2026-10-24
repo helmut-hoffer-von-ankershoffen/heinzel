@@ -27,6 +27,9 @@ from heinzel.kernel._protocols import (
 
 Mode = Literal["read", "write"]
 MODES: tuple[Mode, ...] = ("read", "write")
+NO_ADAPTER = "none"
+"""The binding that says a capability is served by nothing, also when an adapter would be chosen automatically
+(ADR 0055); no adapter may take the name."""
 _ADAPTER = re.compile(r"^[a-z][a-z0-9-]*$")
 
 
@@ -42,6 +45,10 @@ class Capability:
     checks: Mapping[tuple[str, str], Callable[[str], object]] = field(default_factory=lambda: MappingProxyType({}))
     """Checks of `str` arguments by (method, argument), raising `ValueError`: what a contract's `args` are held to
     before any run, e.g. a mail query's syntax."""
+    title: str = ""
+    """Its name for people, e.g. `Code host`: what settings and the web app show, without backticks."""
+    purpose: str = ""
+    """What it is for, in a few plain words after the title, e.g. `pull requests and reviews`."""
 
     @property
     def modes(self) -> frozenset[Mode]:
@@ -55,42 +62,56 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
         for capability in (
             Capability(
                 name="agent-runner",
+                title="Agent runner",
+                purpose="what runs a Heinzelmännchen's turn",
                 protocol=AgentRunner,
                 summary="Bounded agent sessions with read-only tools, reporting draft, tool calls and cost.",
                 methods=MappingProxyType({"run": "read"}),
             ),
             Capability(
                 name="calendar",
+                title="Calendar",
+                purpose="where your meetings and free time come from",
                 protocol=Calendar,
                 summary="The user's calendar: events in a window, with attendees and conferencing.",
                 methods=MappingProxyType({"events": "read"}),
             ),
             Capability(
                 name="chat",
+                title="Chat",
+                purpose="the channels your team talks in",
                 protocol=Chat,
                 summary="Channels people talk in: read their messages; post through publish operations.",
                 methods=MappingProxyType({"messages": "read", "post": "write"}),
             ),
             Capability(
                 name="code-host",
+                title="Code host",
+                purpose="pull requests and reviews",
                 protocol=CodeHost,
                 summary="Repositories and their merged pull requests on a code host.",
                 methods=MappingProxyType({"merged_pull_requests": "read"}),
             ),
             Capability(
                 name="directory",
+                title="Directory",
+                purpose="who people are and who reports to whom",
                 protocol=Directory,
                 summary="Who people are and who reports to whom: a directory of record, or guesses from 1:1s.",
                 methods=MappingProxyType({"person": "read", "reports": "read"}),
             ),
             Capability(
                 name="documents",
+                title="Documents",
+                purpose="the pages and docs you read and update",
                 protocol=Documents,
                 summary="Documents: read their text; replace a marked section through publish operations.",
                 methods=MappingProxyType({"read": "read", "replace_section": "write"}),
             ),
             Capability(
                 name="mail",
+                title="Mail",
+                purpose="the mailbox messages and meeting summaries come from",
                 protocol=Mail,
                 summary="A mailbox the user reads: messages in a window by sender, subject or label, and their text.",
                 methods=MappingProxyType({"messages": "read", "read": "read"}),
@@ -98,6 +119,8 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
             ),
             Capability(
                 name="meetings",
+                title="Meetings",
+                purpose="the meetings you took part in and their transcripts",
                 protocol=Meetings,
                 summary="Meetings the user took part in, and their transcripts.",
                 methods=MappingProxyType({"ended": "read", "transcripts": "read", "transcript": "read"}),
@@ -110,6 +133,8 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
             ),
             Capability(
                 name="tracker",
+                title="Tracker",
+                purpose="issues and tickets",
                 protocol=Tracker,
                 summary="Issues in an issue tracker.",
                 methods=MappingProxyType({"issues_updated": "read"}),

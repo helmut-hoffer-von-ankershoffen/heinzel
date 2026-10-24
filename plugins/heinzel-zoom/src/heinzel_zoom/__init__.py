@@ -6,7 +6,7 @@ summaries Zoom's AI Companion mails after a meeting through whichever mail adapt
 Zoom credentials. Bind it with `[capabilities] meetings = "zoom"` (and a `mail` adapter) in your user configuration.
 """
 
-from heinzel import Check
+from heinzel import Check, Mail
 from heinzel.kernel import CapabilityView
 from heinzel_zoom._adapter import Zoom
 from heinzel_zoom._models import QUERY, SUMMARY_SETTING, ZoomAbout, ZoomSettings
@@ -35,6 +35,12 @@ def system_info(service: ZoomService) -> ZoomAbout:
 def health(service: ZoomService, view: CapabilityView) -> list[Check]:
     """Where summaries come from and must be switched on, the mail binding and this adapter's; reads no mail."""
     return service.checks(view)
+
+
+@module.health(live=True)
+def live(service: ZoomService, mail: Mail) -> list[Check]:
+    """List the last day's summary emails through the bound mail adapter; run only by `hz system connector test`."""
+    return service.live(mail)
 
 
 __all__ = ["QUERY", "SUMMARY_SETTING", "Zoom", "ZoomAbout", "ZoomService", "ZoomSettings", "module"]

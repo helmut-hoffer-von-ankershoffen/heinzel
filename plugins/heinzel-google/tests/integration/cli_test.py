@@ -60,3 +60,4 @@ def test_setup_through_the_cli(google_kernel, fake_gws, tmp_path, monkeypatch):
     written = "".join(p.read_text(encoding="utf-8") for p in home.rglob("*.toml"))
     assert 'documents = "google"' in written, prompter.transcript
     assert 'calendar = "google"' in written
+    assert 'mail = "none"' in written  # Google served mail only automatically; declined, it is turned off

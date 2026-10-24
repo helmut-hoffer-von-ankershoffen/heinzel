@@ -79,6 +79,13 @@ def environment(source: Mapping[str, str] | None = None) -> dict[str, str]:
 
 
 SETUP = "hz setup google"
+NOT_SIGNED_IN = "gws is not signed in to"
+
+
+class GwsSignInError(HeinzelError):
+    """`gws` is not signed in to Google, or its sign-in expired: the message names the sign-in command."""
+
+
 CLIENT = "gws auth setup (needs gcloud), or create a Desktop OAuth client as gws's README describes"
 NEUTRAL = "/"
 """The working directory of every `gws` run: nowhere a project can put a `.env`."""
@@ -273,7 +280,12 @@ class GoogleSession:
         return str(Path(found).absolute())  # symlinks stay: a launcher may need its own name
 
     def get(
-        self, api: str, command: Sequence[str], params: Mapping[str, object], subject: str
+        self,
+        api: str,
+        command: Sequence[str],
+        params: Mapping[str, object],
+        subject: str,
+        timeout: float | None = None,
     ) -> tuple[dict[str, Any], int]:
         """Run `gws <command> --params <params>` and return the JSON object it prints, and its size in bytes.
 
@@ -282,10 +294,13 @@ class GoogleSession:
             command: Service, resource and method, e.g. `("docs", "documents", "get")`.
             params: The method's parameters.
             subject: What was asked for, for messages, e.g. `document 1AbC`.
+            timeout: Seconds `gws` may take, at most `google.timeout`; `google.timeout` when not given.
 
         Raises:
-            HeinzelError: If `gws` is missing, not signed in, times out, prints too much, or Google refuses.
+            HeinzelError: If `gws` is missing, not signed in, times out, prints too much, or Google refuses
+                (`GwsSignInError` when it is not signed in or its sign-in expired).
         """
+        limit = self._settings.timeout if timeout is None else min(timeout, self._settings.timeout)
         executable = self.executable()
         if self._checked != executable:
             self.version()
@@ -294,12 +309,12 @@ class GoogleSession:
         waits = 0
         while True:
             try:
-                process = self._gws.run(executable, arguments, self._settings.timeout)
+                process = self._gws.run(executable, arguments, limit)
             except OSError as exc:
                 msg = f"Could not start gws for {subject}: {type(exc).__name__}. Check google.gws_path: {INSTALL}."
                 raise HeinzelError(msg) from None
             if process.exit_code is None:
-                msg = f"gws did not answer {subject} within {self._settings.timeout:g} seconds; retry, or raise "
+                msg = f"gws did not answer {subject} within {limit:g} seconds; retry, or raise "
                 msg += "google.timeout."
                 raise HeinzelError(msg)
             if process.truncated:
@@ -320,7 +335,8 @@ class GoogleSession:
                 self._gws.sleep(float(2**waits))
                 waits += 1
                 continue
-            raise HeinzelError(self._problem(api, subject, process, error, waits))
+            problem = self._problem(api, subject, process, error, waits)
+            raise (GwsSignInError if problem.startswith(NOT_SIGNED_IN) else HeinzelError)(problem)
 
     def pages(
         self, api: str, command: Sequence[str], params: Mapping[str, object], subject: str, items: str
@@ -412,7 +428,7 @@ class GoogleSession:
         # Whether mail is read from Google isn't known here: outside Gmail, say how to keep Gmail's scope.
         login = LOGIN_WITH_MAIL if api == "Gmail" else f"{LOGIN} (add ,{MAIL_SCOPE} if you read mail from Google)"
         if process.exit_code == 2 or code == 401:  # noqa: PLR2004 - gws's auth error, or Unauthorized
-            return f"gws is not signed in to Google, or its sign-in expired ({said}). Sign in: {login}"
+            return f"{NOT_SIGNED_IN} Google, or its sign-in expired ({said}). Sign in: {login}"
         if reasons & _SCOPE:
             return f"{api} refused {subject}: gws's sign-in lacks the read-only scope ({said}). Sign in: {login}"
         if reasons & _DISABLED:
