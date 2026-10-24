@@ -340,11 +340,16 @@ def render(python: list[Package], web: list[Package]) -> str:
 
 
 def listed(text: str) -> dict[str, set[str]]:
-    """The package headings of each part of an ATTRIBUTIONS.md."""
+    """The package headings of each part of an ATTRIBUTIONS.md; headings inside a license text don't count."""
     found: dict[str, set[str]] = {PYTHON_SECTION: set(), WEB_SECTION: set()}
     current: set[str] | None = None
+    open_fence = ""
     for line in text.splitlines():
-        if line.startswith("## "):
+        if open_fence:
+            open_fence = "" if line == open_fence else open_fence
+        elif fenced := re.match(r"^`{3,}", line):
+            open_fence = fenced.group()
+        elif line.startswith("## "):
             current = found.get(line.removeprefix("## "))
         elif line.startswith("### ") and current is not None:
             current.add(line.removeprefix("### "))

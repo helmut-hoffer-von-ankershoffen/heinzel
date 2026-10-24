@@ -93,6 +93,15 @@ def test_the_output_is_stable_and_check_reads_back_what_it_lists():
     ]
 
 
+def test_headings_inside_a_license_text_are_not_packages_or_parts():
+    epl = "# Eclipse Public License\n\n## Web app (JavaScript) packages\n\n### 1. DEFINITIONS\n"
+    rendered = attributions.render([package("x", texts=(("LICENSE.md", epl),))], [package("react", "19.3.1")])
+    assert attributions.listed(rendered) == {
+        attributions.PYTHON_SECTION: {"x 1.0"},
+        attributions.WEB_SECTION: {"react 19.3.1"},
+    }
+
+
 def test_headings_that_github_would_give_the_same_anchor_are_numbered():
     seen: dict[str, int] = {}
     assert [attributions.anchor("a 1.0", seen), attributions.anchor("a 1.0", seen)] == ["a-10", "a-10-1"]
@@ -118,8 +127,10 @@ def test_the_web_listing_has_one_entry_per_installed_version(tmp_path):
     assert attributions.web_titles(listing) == {"b 1.0.0", "b 2.0.0"}
 
 
-def test_attributions_md_lists_what_the_lockfiles_pin():
+def test_attributions_md_reads_back_one_heading_per_row_of_its_tables():
     text = (REPO / "ATTRIBUTIONS.md").read_text(encoding="utf-8")
     listed = attributions.listed(text)
+    rows = [line for line in text.splitlines() if line.startswith("| [")]
+    assert sum(len(titles) for titles in listed.values()) == len(rows)
     assert "typer" in {title.split()[0] for title in listed[attributions.PYTHON_SECTION]}
     assert "react" in {title.split()[0] for title in listed[attributions.WEB_SECTION]}
