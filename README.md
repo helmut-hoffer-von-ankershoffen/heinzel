@@ -19,15 +19,15 @@
 | src/heinzel/modules/system/changelog/\_\_init\_\_.py |       21 |        3 |        4 |        2 |     80% | 35, 40-41 |
 | src/heinzel/modules/system/config/\_\_init\_\_.py    |       28 |        2 |        0 |        0 |     93% |    41, 58 |
 | src/heinzel/modules/system/config/\_render.py        |       18 |        1 |        8 |        1 |     92% |        18 |
-| src/heinzel/modules/system/config/\_service.py       |      147 |        2 |       40 |        1 |     98% |   162-163 |
+| src/heinzel/modules/system/config/\_service.py       |      148 |        2 |       40 |        1 |     98% |   163-164 |
 | src/heinzel/modules/system/daemon/\_schedule.py      |       65 |        3 |       20 |        1 |     95% |43-44, 102 |
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py    |       26 |        2 |        0 |        0 |     92% |    36, 64 |
 | src/heinzel/modules/system/plugin/\_service.py       |      124 |        5 |       28 |        2 |     95% |38-\>40, 115-116, 122, 129, 222 |
 | src/heinzel/modules/workflow/\_contracts.py          |      340 |        2 |      132 |        1 |     99% |   462-463 |
 | src/heinzel/modules/workflow/\_models.py             |      317 |        2 |       62 |        2 |     99% |74, 94, 427-\>425 |
 | src/heinzel/modules/workflow/\_render.py             |      121 |        8 |       50 |        3 |     91% |94, 110, 181-191 |
-| src/heinzel/modules/workflow/\_service.py            |      452 |        5 |      136 |        2 |     99% |283, 350-353, 441-442 |
-| **TOTAL**                                            | **6155** |   **62** | **1422** |   **26** | **99%** |           |
+| src/heinzel/modules/workflow/\_service.py            |      446 |        5 |      134 |        2 |     99% |283, 350-353, 441-442 |
+| **TOTAL**                                            | **6166** |   **62** | **1422** |   **26** | **99%** |           |
 
 60 files skipped due to complete coverage.
 
