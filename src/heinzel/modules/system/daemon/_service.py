@@ -53,6 +53,8 @@ from heinzel.modules.system.daemon._runtime import (
 )
 from heinzel.modules.system.daemon._units import (
     LABEL,
+    LOGIN_ITEM_HINT,
+    NOTIFIER_APP,
     SYSTEMD_NAME,
     check_interval,
     launchd_plist,
@@ -92,6 +94,11 @@ class Due:
     skip: str | None = None
 
 
+def notifier_in_applications() -> bool:
+    """Whether Heinzel Notifier.app is in ~/Applications."""
+    return (Path.home() / "Applications" / NOTIFIER_APP).exists()
+
+
 class DaemonService:
     """Installs, inspects and pauses the daemon, and runs ticks."""
 
@@ -107,6 +114,7 @@ class DaemonService:
         which: Callable[[str], str | None] = shutil.which,
         time_limit: TimeLimit = within,
         zone: tzinfo | None = None,
+        notifier_installed: Callable[[], bool] = notifier_in_applications,
     ) -> None:
         """Create the service; `for_user` builds it for the kernel, tests pass the rest.
 
@@ -121,7 +129,9 @@ class DaemonService:
             which: Finds executables.
             time_limit: Runs a job with a timeout.
             zone: The time zone cron expressions mean; the user's by default.
+            notifier_installed: Whether Heinzel Notifier.app is in ~/Applications, for the Login Items hint.
         """
+        self._notifier_installed = notifier_installed
         self._kernel = kernel
         self._runner = runner
         self._platform = platform
@@ -184,6 +194,7 @@ class DaemonService:
             if result.returncode != 0:
                 msg = f"`{' '.join(command)}` failed: {(result.stderr or result.stdout).strip()}"
                 raise HeinzelError(msg)
+        hint = LOGIN_ITEM_HINT if self._platform == "darwin" and not self._notifier_installed() else None
         return Installed(
             platform=self._platform,
             executable=executable,
@@ -191,6 +202,7 @@ class DaemonService:
             files=files,
             commands=commands,
             dry_run=False,
+            hint=hint,
         )
 
     def uninstall(self) -> Uninstalled:
