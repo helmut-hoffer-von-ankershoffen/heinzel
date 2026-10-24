@@ -195,7 +195,7 @@ def test_new_for_the_team_writes_into_the_repository_and_says_how_to_contribute(
     without = make_kernel(builtins=True, config=Config(files=(), data={"workflow": {"user_dir": str(user)}}))
     code, text = hz(without, "workflow", "new", "retro-agenda", "--team", json_output=False)
     assert code == 1
-    assert "hz system config set workflow.team_repository /path/to/checkout" in str(text)
+    assert "hzteamadopt/path/to/checkout" in unwrapped(text)
     table = {"user_dir": str(user), "team_repository": str(team)}
     kernel = make_kernel(builtins=True, config=Config(files=(), data={"workflow": table}))
     code, result = hz(kernel, "workflow", "new", "retro-agenda", "--team")

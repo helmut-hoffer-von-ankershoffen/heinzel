@@ -47,6 +47,7 @@ from heinzel.kernel import (
     Budget,
     CapabilityView,
     CompiledJobs,
+    OrgContext,
     Requester,
     Requirement,
     ToolProfile,
@@ -148,11 +149,18 @@ class WorkflowService:
     # Finding and checking --------------------------------------------------------------------------------------------
 
     @property
+    def team_repository(self) -> Path | None:
+        """The team repository's checkout: the `OrgContext`'s (`hz team join`), else the deprecated setting."""
+        if self._kernel.provides(OrgContext) and (checkout := self._kernel.resolve(OrgContext).team_checkout()):
+            return checkout
+        return self._workflow.team_repository
+
+    @property
     def directories(self) -> dict[Namespace, Path]:
         """Where contracts are found, by namespace: `team` (when configured) and `me`."""
         found: dict[Namespace, Path] = {}
-        if self._workflow.team_repository is not None:
-            found["team"] = self._workflow.team_repository / "workflows"
+        if self.team_repository is not None:
+            found["team"] = self.team_repository / "workflows"
         found["me"] = self._workflow.user_dir
         return found
 
@@ -192,7 +200,7 @@ class WorkflowService:
             NotADirectoryError: If the team repository or the directory is a file.
             OSError: If the directory is a symbolic link or can't be listed.
         """
-        repository = self._workflow.team_repository
+        repository = self.team_repository
         if namespace == "team" and repository is not None and repository.exists() and not repository.is_dir():
             raise NotADirectoryError(errno.ENOTDIR, f"the team repository {repository} is a file")
         return collect(directory)
@@ -235,8 +243,8 @@ class WorkflowService:
         """
         resolved = path.resolve()
         roots = [self._workflow.user_dir, Path.cwd()]
-        if self._workflow.team_repository is not None:
-            roots.append(self._workflow.team_repository)
+        if self.team_repository is not None:
+            roots.append(self.team_repository)
         if not any(resolved.is_relative_to(root.resolve()) for root in roots):
             msg = f"{path} is outside your workflows directory, the team repository and the current directory"
             raise HeinzelError(msg)
@@ -386,20 +394,18 @@ class WorkflowService:
             )
             raise HeinzelError(msg)
         namespace: Namespace = "team" if team else "me"
-        if team and self._workflow.team_repository is None:
+        if team and self.team_repository is None:
             msg = (
-                "No team repository is configured, so there is nowhere to write a team contract. Name a checkout "
-                "of your team's state repository: hz system config set workflow.team_repository /path/to/checkout"
+                "No team repository is configured, so there is nowhere to write a team contract. Join your team: "
+                "hz team join <url>, or record a checkout you have: hz team adopt /path/to/checkout"
             )
             raise HeinzelError(msg)
         directory = self.directories[namespace]
         # Contracts are read from real directories only (`collect`), so one written through a link would never be found.
         if directory.is_symlink():
-            key, real = ("team_repository", directory.parent.resolve()) if team else ("user_dir", directory.resolve())
-            msg = (
-                f"{directory} is a symbolic link; contracts are read from real directories only. Point at the real "
-                f"one: hz system config set workflow.{key} {shlex.quote(str(real))}"
-            )
+            real = shlex.quote(str(directory.parent.resolve() if team else directory.resolve()))
+            fix = f"hz team adopt {real}" if team else f"hz system config set workflow.user_dir {real}"
+            msg = f"{directory} is a symbolic link; contracts are read from real directories only. Instead: {fix}"
             raise HeinzelError(msg)
         path = directory / f"{name}{SUFFIX}"
         if path.exists():
@@ -453,7 +459,7 @@ class WorkflowService:
             ),
         ]
         if team:
-            repository = cast("Path", self._workflow.team_repository)
+            repository = cast("Path", self.team_repository)
             relative = shlex.quote(str(path.relative_to(repository)))
             name = qualified.partition(":")[2]
             steps += [
@@ -972,6 +978,19 @@ class WorkflowService:
                     fix="Fix the names in [workflow] schedule_team; `hz workflow list` shows the team's contracts",
                 )
             )
+        deprecated: list[Check] = []
+        if (legacy := self._workflow.team_repository) is not None:
+            deprecated.append(
+                Check(
+                    name="workflow team_repository",
+                    status=Status.DEGRADED,
+                    detail="[workflow] team_repository is deprecated; move it to [team]",
+                    fix="hz system config unset workflow.team_repository (or remove it from the site file or "
+                    "HZ_WORKFLOW__TEAM_REPOSITORY that sets it)"
+                    if self.team_repository != legacy  # [team] names a checkout already: the old key only lingers
+                    else f"hz team adopt {shlex.quote(str(legacy))}",
+                )
+            )
         if not checks:
             where = ", ".join(str(d) for d in self.directories.values())
             checks.append(
@@ -982,7 +1001,7 @@ class WorkflowService:
                     fix="hz workflow new my-first-workflow",
                 )
             )
-        return [*checks, self._retention_check()]
+        return [*checks, *deprecated, self._retention_check()]
 
     def _retention_check(self) -> Check:
         """How much `hz workflow prune` would delete now; degraded once expired files outlast the daemon's daily prune.

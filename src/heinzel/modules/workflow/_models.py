@@ -466,8 +466,8 @@ class WorkflowSettings(ModuleSettings):
     )
     team_repository: Path | None = Field(
         default=None,
-        description="A checkout of your team's state repository; its contracts are in `workflows/`. They run only "
-        "with `hz workflow run`, or on your daemon when named in `schedule_team`.",
+        description="Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A "
+        "checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`.",
     )
     schedule_team: list[str] = Field(
         default_factory=list,
