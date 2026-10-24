@@ -94,13 +94,13 @@ Doctor's look runs here rather than as a job: it only records notices, and an ho
 **Heinzel Notifier**, the macOS path.
 
 - `src/heinzel/modules/system/notify/macos/` holds a small Swift app (`main.swift`: an accessory `NSApplication` with
-  `UNUserNotificationCenter`), its icon (`icon.swift`, 🧝 drawn with AppKit) and `Info.plist` (`dev.heinzel.notifier`,
-  `LSUIElement`). `make notifier` (`scripts/notifier.py`) compiles it for arm64 and x86_64 (macOS 13+), joins them
-  with `lipo`, builds the icon with `iconutil`, stamps `CFBundleVersion` with a digest of the sources and signs it ad
-  hoc (`codesign --sign -`). CI and the release build it on a macOS runner and pass it to the Linux build job, whose
-  wheel and sdist ship it (`HeinzelNotifier.app`, not in git); the build checks that the wheel has it, and the release's
-  SLSA provenance covers the wheel. A wheel built without it (a plugin's, a fork's) still works: macOS then uses
-  osascript.
+  `UNUserNotificationCenter`), its icon (`heinzel.svg`, an original drawing that `icon.swift` renders with AppKit) and
+  `Info.plist` (`dev.heinzel.notifier`, `LSUIElement`). `make notifier` (`scripts/notifier.py`) compiles it for arm64
+  and x86_64 (macOS 13+), joins them with `lipo`, builds the icon with `iconutil`, stamps `CFBundleVersion` with a
+  digest of the sources and signs it ad hoc (`codesign --sign -`). CI and the release build it on a macOS runner and
+  pass it to the Linux build job, whose wheel and sdist ship it (`HeinzelNotifier.app`, not in git); the build checks
+  that the wheel has it, and the release's SLSA provenance covers the wheel. A wheel built without it (a plugin's, a
+  fork's) still works: macOS then uses osascript.
 - At run time Python copies the bundled app to `~/Applications/Heinzel Notifier.app` when it is missing or its files'
   digest differs, staging beside it and swapping, and checks the copy's digest. Installed by Python from a wheel it
   carries no quarantine flag, so Gatekeeper doesn't stop it; doctor warns if it has one and names `xattr -d

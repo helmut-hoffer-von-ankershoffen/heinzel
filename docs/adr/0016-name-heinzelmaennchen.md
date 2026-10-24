@@ -22,8 +22,8 @@ must be short.
 Chosen option: **the brand is Heinzelmännchen, the command is `hz`, the distribution is `heinzel`**, because the
 name fits the project's character and both short names are available where they are needed.
 
-- Brand: **Heinzelmännchen**, after the house spirits of Cologne who finished the townspeople's work at night.
-  Logo: 🧝.
+- Brand: **Heinzelmännchen**, after the house spirits of Cologne who finished the townspeople's work at night. Logo: 🧝,
+  where only text can go; the image is an original drawing of that elf (`heinzel.svg`, ADR 0046).
 - Command: **`hz`**. Everything a user types or sees uses `hz`: environment variables `HZ_*`, the `[hz]` config
   table, the project file `hz.toml`, the configuration directory `hz`, the skills `/hz-init` and `/hz-uninstall`.
 - Distribution, repository and Python package: **`heinzel`** (free on PyPI; `hz` is taken). Plugins are

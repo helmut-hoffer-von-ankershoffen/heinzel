@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Heinzelmännchen">
+  <!-- Heinzelmännchen's one icon, an original drawing: a young elf with a yellow face, blond hair, pointed ears and a
+       green tunic, on a transparent 512 by 512 square. The favicon, the app icons, the macOS notifier's icon and the
+       web app's Heinzel all come from this file (`make icons`); never an emoji font's artwork. -->
+  <path d="M88 512 C88 418 162 382 256 382 C350 382 424 418 424 512 Z" fill="#43A047"/>
+  <path d="M212 386 L256 446 L300 386 Z" fill="#FFD45E"/>
+  <path d="M132 214 C96 196 60 168 30 132 C40 196 70 262 132 290 Z" fill="#FFD45E"/>
+  <path d="M380 214 C416 196 452 168 482 132 C472 196 442 262 380 290 Z" fill="#FFD45E"/>
+  <path d="M120 230 C92 216 72 198 58 180 C70 222 92 254 122 268 Z" fill="#F2B547"/>
+  <path d="M392 230 C420 216 440 198 454 180 C442 222 420 254 390 268 Z" fill="#F2B547"/>
+  <circle cx="256" cy="246" r="142" fill="#FFD45E"/>
+  <path d="M100 266 C86 128 166 54 256 54 C346 54 426 128 412 266 C402 234 388 214 372 202 L358 234 L334 190 L306 228 L282 182 L256 224 L230 182 L206 228 L178 190 L154 234 L140 202 C124 214 110 234 100 266 Z" fill="#EDB22F"/>
+  <ellipse cx="206" cy="266" rx="17" ry="25" fill="#3D2A16"/>
+  <ellipse cx="306" cy="266" rx="17" ry="25" fill="#3D2A16"/>
+  <path d="M204 322 Q256 370 308 322" fill="none" stroke="#3D2A16" stroke-width="16" stroke-linecap="round"/>
+</svg>
