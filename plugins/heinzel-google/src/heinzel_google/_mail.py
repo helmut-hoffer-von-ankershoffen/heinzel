@@ -20,8 +20,8 @@ from datetime import UTC, datetime
 from email.header import decode_header, make_header
 from email.message import Message
 from email.utils import getaddresses
-from html.parser import HTMLParser
-from typing import Any, cast, override
+from html import unescape
+from typing import Any, cast
 
 from heinzel import HeinzelError, MailContent, MailMessage, MailQuery, Participant, Window, clean_text
 from heinzel_google._gws import GoogleSession
@@ -100,47 +100,52 @@ def gmail_search(query: MailQuery, window: Window) -> str:
     return " ".join(terms)
 
 
-class _Text(HTMLParser):
-    """HTML to plain text: the text of the document with line breaks at blocks; scripts, styles and titles dropped."""
-
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.parts: list[str] = []
-        self._hidden = 0
-
-    @override
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in _HIDDEN:
-            self._hidden += 1
-        elif tag == "body":
-            self._hidden = 0  # whatever the head left open ends here
-        elif tag in _BLOCK:
-            self.parts.append("\n")
-
-    @override
-    def handle_endtag(self, tag: str) -> None:
-        if tag in _HIDDEN:
-            self._hidden = max(0, self._hidden - 1)
-        elif tag in _BLOCK:
-            self.parts.append("\n")
-
-    @override
-    def handle_data(self, data: str) -> None:
-        if not self._hidden:
-            self.parts.append(data)
-
-
 def _tidy(text: str) -> str:
     lines = [" ".join(line.split()) for line in text.split("\n")]
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
+def _tag_name(tag: str) -> tuple[str, bool]:
+    """A tag's lower-case name and whether it closes, from the text between `<` and `>`."""
+    closing = tag.startswith("/")
+    words = tag.lstrip("/").split(None, 1)
+    return (words[0].rstrip("/").lower() if words else ""), closing
+
+
 def html_to_text(html: str) -> str:
-    """The text of an HTML mail body, whitespace tidied; one pass of the standard library's parser, no fallback."""
-    parser = _Text()
-    parser.feed(html)
-    parser.close()
-    return _tidy("".join(parser.parts))
+    """The text of an HTML mail body, whitespace tidied, in one linear scan.
+
+    Not `html.parser`: its handling of unterminated tags rescans the input and is quadratic on older Pythons. Text
+    between tags is kept, block tags become line breaks, the content of `script`, `style`, `title` and `template` and
+    comments are dropped, and an unterminated tag or comment ends the text. Entities are decoded once, at the end.
+    """
+    parts: list[str] = []
+    hidden: str | None = None
+    position, size = 0, len(html)
+    while position < size:
+        opening = html.find("<", position)
+        if opening == -1:
+            if hidden is None:
+                parts.append(html[position:])
+            break
+        if hidden is None:
+            parts.append(html[position:opening])
+        if html.startswith("<!--", opening):
+            ending = html.find("-->", opening + 4)
+            position = size if ending == -1 else ending + 3
+            continue
+        closing = html.find(">", opening + 1)
+        if closing == -1:
+            break
+        name, ends = _tag_name(html[opening + 1 : closing])
+        if hidden is not None:
+            hidden = None if (ends and name == hidden) or name == "body" else hidden
+        elif name in _HIDDEN and not ends and html[closing - 1] != "/":
+            hidden = name
+        elif name in _BLOCK:
+            parts.append("\n")
+        position = closing + 1
+    return _tidy(unescape("".join(parts)))
 
 
 def _walk(payload: Json) -> Iterator[Json]:

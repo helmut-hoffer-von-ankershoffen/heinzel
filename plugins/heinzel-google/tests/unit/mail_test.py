@@ -240,19 +240,32 @@ def test_html_with_an_open_head_still_shows_its_body_and_scripts_never_show():
     assert "still here" not in html_to_text("<title>unclosed<p>still here")
 
 
-def test_html_to_text_is_one_linear_pass(monkeypatch):
-    """The work grows with the input, not its square: count the parser's calls, not the clock."""
-    calls: list[int] = []
-    feed = _mail._Text.feed
+class Counting(str):
+    """A string that counts the searches made in it."""
 
-    def counting(self, data: str) -> None:
-        calls.append(len(data))
-        feed(self, data)
+    __slots__ = ()
 
-    monkeypatch.setattr(_mail._Text, "feed", counting)
-    for size in (1_000, 100_000):
-        html_to_text("<a" * size)
-    assert calls == [2_000, 200_000]  # one feed of the whole input, whatever its shape
+    searches = 0
+
+    def find(self, *args: object) -> int:  # type: ignore[override]
+        Counting.searches += 1
+        return super().find(*args)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("unit", ["<a", "<", "<p>", "x<b>", "<!--", "<script>", "<a href='"])
+def test_html_to_text_is_one_linear_scan(unit):
+    """The work grows with the input, not its square: count the searches, not the clock."""
+    for size in (1_000, 4_000):
+        Counting.searches = 0
+        html_to_text(Counting(unit * size))
+        assert Counting.searches <= 2 * size + 2
+
+
+def test_html_to_text_keeps_text_and_breaks_and_decodes_entities_once():
+    html = "<html><body><h1>Title</h1>a &amp;lt; b<br/>c<!-- hidden --><template>t</template><p>d</p>e < f"
+    assert html_to_text(html) == "Title\na &lt; b\nc\nd\ne"
+    assert html_to_text("<script>x</script >after<style/>shown") == "aftershown"  # a self-closed style hides nothing
+    assert html_to_text("text <unterminated") == "text"
 
 
 @pytest.mark.parametrize("charset", ["zlib", "base64", "hex", "rot13", "idna", "unicode_escape", "bogus"])
