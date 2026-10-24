@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-10-23
 related: 0010, 0020, 0021, 0022, 0024
+amended-by: 0052
 ---
 
 # 0023: The inventory is compiled from declared, discovered and plugin-contributed entries and published as graphs

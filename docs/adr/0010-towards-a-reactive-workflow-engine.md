@@ -1,7 +1,7 @@
 ---
 status: proposed
 date: 2026-10-23
-amended-by: 0020, 0021, 0038
+amended-by: 0020, 0021, 0038, 0049
 ---
 
 # 0010: Towards a reactive workflow engine

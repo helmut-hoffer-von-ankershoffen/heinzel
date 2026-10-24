@@ -4,6 +4,7 @@ date: 2026-10-24
 decision-makers: maintainer
 amends: 0018, 0029, 0039
 related: 0003, 0019, 0020, 0024, 0027, 0028, 0030, 0038, 0043
+amended-by: 0049, 0050, 0051
 ---
 
 # 0045: A chat that knows where you are and acts through hz, with every change confirmed in code

@@ -3,6 +3,7 @@ status: proposed
 date: 2026-10-23
 amends: 0010
 related: 0020
+amended-by: 0049, 0051, 0052
 ---
 
 # 0021: Workflows are Markdown contracts with YAML frontmatter
