@@ -46,7 +46,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          tag="$(scripts/release.sh "$BUMP" --open-pr | tail -n 1)"
+          tag="$(bash scripts/release.sh "$BUMP" --open-pr | tail -n 1)"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Run CI on the release pull request
         # Pull requests opened with the GitHub token don't trigger workflows; a dispatched run does.
