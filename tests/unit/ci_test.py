@@ -252,6 +252,29 @@ def test_the_release_regenerates_derived_files():
     assert bump < fix < commit
 
 
+def test_the_release_keeps_changelog_introductions():
+    """git-cliff regenerates CHANGELOG.md from commits; the prose written under release headings is put back, the
+    new release's from INTRO (the Release workflow's `intro` input), and the pull request shows the merged section."""
+    script = (REPO / "scripts" / "release.sh").read_text(encoding="utf-8")
+    save, regenerate, restore, commit, notes = (
+        script.index(marker)
+        for marker in (
+            'cp CHANGELOG.md "$work/previous.md"',
+            "git-cliff --offline --tag",
+            'uv run --script scripts/changelog_intros.py "$work/previous.md" CHANGELOG.md --version "$next"',
+            "git commit",
+            'uv run --script scripts/release_notes.py "$tag"',
+        )
+    )
+    assert save < regenerate < restore < commit < notes
+    assert '--intro "${INTRO:-}"' in script
+    release = yaml.safe_load((REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8"))
+    assert "intro" in release[True]["workflow_dispatch"]["inputs"]  # YAML 1.1 reads the key `on` as True
+    step = next(s for s in release["jobs"]["pull-request"]["steps"] if "release.sh" in s.get("run", ""))
+    assert step["env"]["INTRO"] == "${{ inputs.intro }}"
+    assert (REPO / "template" / "scripts" / "changelog_intros.py").resolve() == REPO / "scripts" / "changelog_intros.py"
+
+
 def test_pushing_runs_check_fast_through_a_hook():
     """What CI would catch first (format, lint, contracts, generated files, unit tests) fails before the push."""
     config = yaml.safe_load((REPO / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
