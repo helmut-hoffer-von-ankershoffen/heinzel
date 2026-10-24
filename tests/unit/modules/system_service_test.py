@@ -5,7 +5,7 @@ import pytest
 from pydantic import BaseModel
 
 from heinzel import Module, Status, __version__
-from heinzel.kernel import Installation, Progress, ReleaseCache
+from heinzel.kernel import Installation, Progress, ReleaseCache, ReleaseSource
 from heinzel.modules.system import GitHubReleases, SystemService, _github, github_releases
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, repository_of
 from heinzel.modules.system.doctor import release_check
@@ -165,6 +165,45 @@ def test_the_release_source_asks_the_latest_release_without_a_token(github):
     [(url, headers, timeout)] = github.requests
     assert (url, timeout) == ("https://api.github.com/repos/someone/heinzel/releases/latest", 2)
     assert "Authorization" not in headers
+
+
+def releases(*tags, prerelease=(), draft=()):
+    return [{"tag_name": tag, "prerelease": tag in prerelease, "draft": tag in draft} for tag in tags]
+
+
+@pytest.mark.parametrize(
+    ("answer", "prereleases", "expected"),
+    [
+        # Published by date, a fix for an older line last: SemVer decides, not GitHub's "latest".
+        (releases("v0.3.1", "v0.4.0", "v0.2.0"), False, "0.4.0"),
+        (releases("v0.5.0rc1", "v0.4.0"), False, "0.4.0"),
+        (releases("v0.5.0", "v0.4.0", prerelease={"v0.5.0"}), False, "0.4.0"),  # flagged on GitHub
+        (releases("v0.5.0rc1", "v0.4.0"), True, "0.5.0rc1"),
+        (releases("v0.6.0", "v0.4.0", draft={"v0.6.0"}), True, "0.4.0"),
+        ([*releases("v0.4.0"), {"tag_name": "nightly"}, "no release", {}], False, "0.4.0"),
+    ],
+)
+def test_the_highest_release_is_the_highest_version_not_the_newest(github, answer, prereleases, expected):
+    github.answer = answer
+    assert GitHubReleases("someone/heinzel").highest_version(2, prereleases=prereleases) == expected
+    [(url, headers, timeout)] = github.requests
+    assert (url, timeout) == ("https://api.github.com/repos/someone/heinzel/releases?per_page=30&page=1", 2)
+    assert "Authorization" not in headers
+
+
+@pytest.mark.parametrize(
+    ("answer", "error"),
+    [(releases("v1.0.0rc1"), ValueError), ([], ValueError), ({"tag_name": "v1.0.0"}, TypeError)],
+)
+def test_no_highest_release_is_an_error(github, answer, error):
+    github.answer = answer
+    with pytest.raises(error):
+        GitHubReleases("someone/heinzel").highest_version(2)
+
+
+def test_the_kernel_release_source_has_no_answer_of_its_own():
+    with pytest.raises(NotImplementedError):
+        ReleaseSource().highest_version(2)
 
 
 def test_the_release_source_reads_the_repository_from_the_installation(tmp_path):
