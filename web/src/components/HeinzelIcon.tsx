@@ -1,11 +1,17 @@
-// The colourful Heinzel the app greets you with: the same artwork as the status bar's name, wherever the app means
-// "your Heinzelmännchen" (the chat button, the chat's header, the fallback logo).
+// The colourful Heinzel the app greets you with, wherever the app means "your Heinzelmännchen" (the chat button, the
+// fallback logo): the classic one, as the app's icon shows it, the same on every system rather than each one's emoji.
+// Sized by the font size it sits in, like the emoji it replaced.
 import { cn } from "@/lib/utils";
+import { HeinzelAvatar } from "./HeinzelAvatar";
 
 export function HeinzelIcon({ className }: { className?: string }) {
   return (
-    <span aria-hidden className={cn("inline-flex shrink-0 items-center justify-center leading-none", className)}>
-      🧝
+    <span
+      aria-hidden
+      data-testid="heinzel-icon"
+      className={cn("inline-flex shrink-0 items-center justify-center leading-none", className)}
+    >
+      <HeinzelAvatar view="bust" />
     </span>
   );
 }
