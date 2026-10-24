@@ -14,6 +14,7 @@ import {
   PanelLeftOpen,
   Search,
   Settings,
+  Sparkles,
   Stethoscope,
   Sun,
   UserRound,
@@ -295,6 +296,9 @@ function Footer({ compact = false }: { compact?: boolean }) {
           </MenuLink>
           <MenuLink to="/profile" icon={UserRound} onSelect={close}>
             {t("nav.profile")}
+          </MenuLink>
+          <MenuLink to="?onboarding=" icon={Sparkles} onSelect={close}>
+            {t("account.setup")}
           </MenuLink>
           <MenuLink to="/doctor" icon={Stethoscope} onSelect={close}>
             {t("account.doctor")}
