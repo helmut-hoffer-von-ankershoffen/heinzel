@@ -54,6 +54,19 @@ Plugins add their own tables.
 | `api_url` | `HZ_GITHUB__API_URL` | `'https://api.github.com'` | Base URL of the GitHub REST API: `https://api.github.com`, or for GitHub Enterprise Server `https://<host>/api/v3`. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml, because the token goes there. `hz system capability list` shows its host as the adapter's. |
 | `timeout` | `HZ_GITHUB__TIMEOUT` | `30.0` | Seconds to wait for each answer from GitHub before giving up. |
 
+## `[org]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `handle` | `HZ_ORG__HANDLE` | `None` | Your handle in teams, pull requests and contracts: lowercase letters, digits and dashes, e.g. mira. Your GitHub login is a good one. |
+| `role` | `HZ_ORG__ROLE` | `None` | Your role, one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager. |
+| `timezone` | `HZ_ORG__TIMEZONE` | `None` | Your IANA time zone, e.g. Europe/Berlin. |
+| `working_hours` | `HZ_ORG__WORKING_HOURS` | `(9, 18)` | Start and end hour of your working day, e.g. [9, 18] or "09-18". |
+| `github` | `HZ_ORG__GITHUB` | `None` | Your GitHub login, needed to approve and own in a team. |
+| `coding_agent` | `HZ_ORG__CODING_AGENT` | `None` | The coding agent you draft with: claude-code, command (one of your own) or none. |
+| `name` | `HZ_ORG__NAME` | `None` | Your name, from your Google or GitHub login; stays on this machine, never in a repository. |
+| `email` | `HZ_ORG__EMAIL` | `None` | Your work email, from your Google login; stays on this machine, never in a repository. |
+
 ## `[system.agent]`
 
 | Key | Environment variable | Default | Description |

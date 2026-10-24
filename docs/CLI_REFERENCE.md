@@ -20,6 +20,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `atlassian`: Read Jira issues and Confluence pages: the...
 * `clock`: Show the time in each of the team&#x27;s time...
 * `github`: Read pull requests and issues from GitHub:...
+* `org`: Your profile, and the team, org and...
 * `setup`: Set up every module that has a setup step,...
 * `system`: Inspect, configure, diagnose and update...
 * `workflow`: Workflow contracts: Markdown files an...
@@ -119,6 +120,55 @@ Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the GitHub 
 
 ```console
 $ hz github info [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz org`
+
+Your profile, and the team, org and company you work with.
+
+**Usage**:
+
+```console
+$ hz org [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `setup`: Tell hz who you are; what your gh and gws...
+* `show`: Show your profile: who you are, your role,...
+
+### `hz org setup`
+
+Tell hz who you are; what your gh and gws logins and this machine say is found, the rest is asked once.
+
+**Usage**:
+
+```console
+$ hz org setup [OPTIONS]
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+### `hz org show`
+
+Show your profile: who you are, your role, time zone and working hours, and what is still missing.
+
+**Usage**:
+
+```console
+$ hz org show [OPTIONS]
 ```
 
 **Options**:

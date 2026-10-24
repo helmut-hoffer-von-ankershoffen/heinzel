@@ -9,6 +9,7 @@ modules; `hz system modules` lists what is installed.
 | [`atlassian`](#atlassian) | Read Jira issues and Confluence pages: the tracker and documents capabilities. |
 | [`clock`](#clock) | What time it is for everyone on the team. |
 | [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
+| [`org`](#org) | Your profile, and the team, org and company you work with. |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
 | [`system.capability`](#systemcapability) | Show which adapters serve which capabilities, and who reads and writes what. |
@@ -64,6 +65,20 @@ First-party plugin `heinzel-github`: `hz system plugin add github`.
 Settings: [`[github]`](CONFIGURATION.md#github).
 
 Health checks: reported by `hz system doctor`.
+
+## `org`
+
+Your profile, and the team, org and company you work with.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| Show your profile: who you are, your role, time zone and working hours, and what is still missing. | `hz org show` | `org_show` | `GET /org/show` |  |
+
+Settings: [`[org]`](CONFIGURATION.md#org).
+
+Health checks: reported by `hz system doctor`.
+
+Setup: `hz org setup` (required), also part of `hz setup`.
 
 ## `system`
 
