@@ -6,6 +6,7 @@ Needs network (PyPI). Every test gets its own uv tool directory, configuration a
 
 import json
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,7 +28,20 @@ UV_CACHE_DIR = subprocess.run(
 UV_PYTHON_DIR = subprocess.run(
     ["uv", "--color", "never", "python", "dir"], capture_output=True, text=True, check=False, timeout=60
 ).stdout.strip()
-BUILTIN_MODULES = {"system", "system.agent", "system.changelog", "system.config", "system.doctor", "system.plugin"}
+MODULES_DIR = REPO / "src" / "heinzel" / "modules"
+
+
+def builtin_modules() -> set[str]:
+    """The built-in modules in the checkout: packages whose `__init__.py` declares `module = Module(...)`."""
+    return {
+        ".".join(init.parent.relative_to(MODULES_DIR).parts)
+        for init in MODULES_DIR.rglob("__init__.py")
+        if init.parent != MODULES_DIR
+        and re.search(r"^module = Module\(", init.read_text(encoding="utf-8"), re.MULTILINE)
+    }
+
+
+BUILTIN_MODULES = builtin_modules()
 
 
 @dataclass
