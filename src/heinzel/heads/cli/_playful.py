@@ -23,10 +23,11 @@ WALK_FRAMES = 4
 
 
 def allowed(settings: Settings, console: Console, environ: Mapping[str, str] | None = None) -> bool:
-    """Whether art may appear on `console`: a colour terminal, the setting on, and no NO_COLOR, CI or TERM=dumb."""
+    """Whether art may appear on `console`: colour terminal, setting on, text output, no NO_COLOR, CI or dumb TERM."""
     env = os.environ if environ is None else environ
     return bool(
         settings.playful
+        and settings.output_format != "json"
         and console.is_terminal
         and console.color_system is not None
         and not console.is_dumb_terminal

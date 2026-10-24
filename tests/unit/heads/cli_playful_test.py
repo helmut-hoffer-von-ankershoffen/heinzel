@@ -93,3 +93,7 @@ def test_banner_prints_nothing_without_a_terminal(capsys: pytest.CaptureFixture[
 
     _banner(Kernel())  # type: ignore[arg-type]
     assert not re.search("[▀▄█]", capsys.readouterr().out)
+
+
+def test_art_is_off_when_the_default_output_is_json():
+    assert not _playful.allowed(Settings(output_format="json"), tty(), CLEAN)

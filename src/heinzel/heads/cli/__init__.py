@@ -360,9 +360,12 @@ def expert_hint(hidden: int) -> str:
 
 def _banner(kernel: Kernel) -> None:
     """The Heinzelmännchen beside the name, version and tagline, where a person watches a colour terminal."""
+    if "--json" in sys.argv or "json" in sys.argv:
+        return  # the flag is parsed later; a script asking for JSON gets no art
     if _playful.allowed(kernel.settings, console):
-        words = TAGLINE.split(" that ")
-        console.print(_playful.banner(["Heinzelmännchen", f"hz {__version__}", words[0], f"that {words[1]}"]), end="")
+        head, _, tail = TAGLINE.partition(" that ")
+        lines = ["Heinzelmännchen", f"hz {__version__}", head, *([f"that {tail}"] if tail else [])]
+        console.print(_playful.banner(lines), end="")
 
 
 def _print_version(kernel: Kernel, value: bool) -> None:
