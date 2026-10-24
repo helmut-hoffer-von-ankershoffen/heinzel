@@ -141,7 +141,7 @@ describe("the Workflow screen", () => {
     });
     renderAt("/contracts");
     await screen.findByRole("button", { name: /^weekly-report.*, Suggested contract$/ });
-    expect(calls.some((call) => call.url.includes("/workflow/discover"))).toBe(false);
+    expect(calls.some((call) => call.url.includes("/heinzel/discover"))).toBe(false);
     expect(screen.queryByRole("button", { name: /Discovered asset/ })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Discover" }));
     expect(
