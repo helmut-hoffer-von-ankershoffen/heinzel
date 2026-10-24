@@ -29,6 +29,7 @@ Plugins add their own tables.
 | `chat` | `HZ_CAPABILITIES__CHAT` | `None` | Adapter that serves `chat`, e.g. `slack`. |
 | `code_host` | `HZ_CAPABILITIES__CODE_HOST` | `None` | Adapter that serves `code-host`, e.g. `github`. |
 | `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | Adapter that serves `documents`. |
+| `mail` | `HZ_CAPABILITIES__MAIL` | `None` | Adapter that serves `mail`, e.g. `google`. |
 | `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | Adapter that serves `meetings`, e.g. `zoom`. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | Adapter that serves `tracker`, e.g. `github`. |
 

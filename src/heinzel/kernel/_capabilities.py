@@ -12,7 +12,7 @@ from types import MappingProxyType
 from typing import Any, Literal, cast
 
 from heinzel.kernel._agents import AgentRunner
-from heinzel.kernel._protocols import Calendar, Chat, CodeHost, Documents, Meetings, Tracker
+from heinzel.kernel._protocols import Calendar, Chat, CodeHost, Documents, Mail, Meetings, Tracker
 
 Mode = Literal["read", "write"]
 MODES: tuple[Mode, ...] = ("read", "write")
@@ -68,6 +68,12 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 protocol=Documents,
                 summary="Documents: read their text; replace a marked section through publish operations.",
                 methods=MappingProxyType({"read": "read", "replace_section": "write"}),
+            ),
+            Capability(
+                name="mail",
+                protocol=Mail,
+                summary="A mailbox the user reads: messages in a window by sender, subject or label, and their text.",
+                methods=MappingProxyType({"messages": "read", "read": "read"}),
             ),
             Capability(
                 name="meetings",

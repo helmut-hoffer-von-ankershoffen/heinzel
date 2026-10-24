@@ -221,7 +221,7 @@ def test_schema_violations_name_the_key_and_say_why(hz, field, text):
         ("[documents:write]", "a contract only reads"),
         ("[github:tracker:read]", "pins the adapter 'github'"),
         ("[tracker:read, tracker:read]", "required twice"),
-        ("[mail:read]", "unknown capability 'mail'"),
+        ("[spreadsheets:read]", "unknown capability 'spreadsheets'"),
     ],
 )
 def test_requirements_only_read_never_pin_and_never_repeat(requires, text):
@@ -260,7 +260,7 @@ INPUT = (
         ("{read: tracker.close, args: {}}", "hz.inputs.issues.read", "has no method 'close'"),
         ("{read: documents.replace_section, args: {}}", "hz.inputs.issues.read", "writes"),
         ("{read: agent-runner.run, args: {}}", "hz.inputs.issues.read", "not a capability an input can read"),
-        ("{read: mail.inbox, args: {}}", "hz.inputs.issues.read", "not a capability an input can read"),
+        ("{read: spreadsheets.rows, args: {}}", "hz.inputs.issues.read", "not a capability an input can read"),
         (
             "{read: code-host.merged_pull_requests, args: {repository: a/b}, window: 7d}",
             "hz.inputs.issues.read",
@@ -314,6 +314,35 @@ def test_inputs_can_name_chat_meetings_and_calendar_read_methods():
 )
 def test_inputs_of_the_new_capabilities_are_checked_like_the_others(spec, text):
     found = read_contract(PATH, "me", contract(hz=INPUT.format(spec))).diagnostics
+    assert any(text in d.message for d in found), [str(d) for d in found]
+
+
+MAIL_HZ = """\
+schema: 1
+title: Meeting notes
+requires: [mail:read]
+inputs:
+  summaries: {read: mail.messages, args: {query: 'from:meet.example subject:"Meeting summary"'}, window: 7d}
+outputs:
+  digest: {format: markdown}
+"""
+
+
+def test_inputs_can_name_mail_messages_with_a_query():
+    body = BODY.replace("- `issues`: issues that changed this week.", "- `summaries`: this week's meeting summaries.")
+    read = read_contract(PATH, "me", contract(hz=MAIL_HZ, body=body))
+    assert read.diagnostics == (), [str(d) for d in read.diagnostics]
+
+
+@pytest.mark.parametrize(
+    ("spec", "text"),
+    [
+        ("{read: mail.messages, window: 7d}", "query"),
+        ("{read: mail.read, args: {message: m-1}, window: 7d}", "takes no time window"),
+    ],
+)
+def test_mail_inputs_are_checked_like_the_others(spec, text):
+    found = read_contract(PATH, "me", contract(hz=INPUT.format(spec).replace("tracker:read", "mail:read"))).diagnostics
     assert any(text in d.message for d in found), [str(d) for d in found]
 
 

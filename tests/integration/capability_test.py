@@ -22,6 +22,10 @@ from heinzel import (
     Documents,
     Event,
     Kernel,
+    Mail,
+    MailContent,
+    MailMessage,
+    MailQuery,
     Meeting,
     Meetings,
     Message,
@@ -145,6 +149,7 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
         "chat": None,
         "code-host": None,
         "documents": "notes",
+        "mail": None,
         "meetings": None,
         "tracker": None,
     }
@@ -541,3 +546,150 @@ def test_bindings_are_settings_like_any_other(kernel, tmp_path, monkeypatch):
     monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
     assert hz(kernel, "system", "config", "set", "capabilities.tracker", "acme")[0] == 0
     assert 'tracker = "acme"' in (tmp_path / "config.toml").read_text()
+
+
+# Mail, and meetings provided from summary emails through whatever mail adapter is bound (ADR 0028).
+
+TOOL = Participant(name="Meeting tool", email="noreply@meet.invalid")
+
+
+class Inbox:
+    """A mail adapter for tests: two summary emails and a newsletter; it filters with `MailQuery` as real ones do."""
+
+    messages_by_id: ClassVar[dict[str, MailContent]] = {
+        content.message.id: content
+        for content in (
+            MailContent(
+                message=MailMessage(
+                    id=f"m{i}",
+                    sender=sender,
+                    recipients=[MIRA],
+                    subject=subject,
+                    received_at=WINDOW.since + timedelta(days=i),
+                    labels=["INBOX"],
+                ),
+                text=text,
+                headers={"From": sender.email or "", "Date": "x"},
+            )
+            for i, (sender, subject, text) in enumerate(
+                [
+                    (TOOL, "Meeting summary for Retro", "Quick recap: shipped."),
+                    (Participant(name="News", email="news@paper.invalid"), "Weekly news", "Read me."),
+                    (TOOL, "Meeting summary for Planning", "Quick recap: planned."),
+                ]
+            )
+        )
+    }
+
+    def messages(self, query: str, window: Window) -> list[MailMessage]:
+        wanted = MailQuery.parse(query)
+        return [
+            c.message
+            for c in self.messages_by_id.values()
+            if window.since <= c.message.received_at < window.until
+            and wanted.matches(c.message.sender.email, c.message.subject, c.message.labels)
+        ]
+
+    def read(self, message: str) -> MailContent:
+        return self.messages_by_id[message]
+
+
+class Summaries:
+    """A meetings adapter for tests that reads summary emails through the bound `mail` adapter."""
+
+    QUERY = 'from:meet.invalid subject:"Meeting summary for"'
+
+    def __init__(self, mail: Mail) -> None:
+        self.mail = mail
+
+    def ended(self, window: Window) -> list[Meeting]:
+        return [self._meeting(m) for m in self.mail.messages(self.QUERY, window)]
+
+    def transcripts(self, window: Window) -> list[Transcript]:
+        return [self.transcript(m.id) for m in self.mail.messages(self.QUERY, window)]
+
+    def transcript(self, meeting: str) -> Transcript:
+        content = self.mail.read(meeting)
+        segment = TranscriptSegment(offset_seconds=0, text=content.text)
+        return Transcript(meeting=self._meeting(content.message), segments=[segment])
+
+    @staticmethod
+    def _meeting(message: MailMessage) -> Meeting:
+        title = message.subject.removeprefix("Meeting summary for ")
+        return Meeting(id=message.id, title=title, started_at=message.received_at, ended_at=message.received_at)
+
+
+class Gateway:
+    """A second meetings provider, as a company's own plugin layer could bring through its gateway."""
+
+    def ended(self, window: Window) -> list[Meeting]:
+        return [Meeting(id="g1", title="Through the gateway", started_at=window.since, ended_at=window.since)]
+
+    def transcripts(self, window: Window) -> list[Transcript]:
+        return []
+
+    def transcript(self, meeting: str) -> Transcript:
+        raise NotImplementedError
+
+
+def mail_modules() -> dict[str, Module]:
+    inbox = Module("inbox", "Test-only mail adapter.")
+    inbox.provides("mail", modes={"read"}, hosts=["mail.invalid"])(Inbox)
+    summaries = Module("summaries", "Test-only meetings from summary emails.", requires=["mail:read"])
+    summaries.provides("meetings", modes={"read"}, hosts=[])(Summaries)
+    gateway = Module("gateway", "Test-only company gateway.")
+    gateway.provides("meetings", modes={"read"}, hosts=["gateway.invalid"])(Gateway)
+    notes = Module("minutes", "Reads meetings and mail.", requires=["meetings:read", "mail:read"])
+
+    @notes.operation
+    def held(meetings: Meetings) -> list[str]:
+        """Titles of the week's meetings."""
+        return [m.title for m in meetings.ended(WINDOW)]
+
+    @notes.operation
+    def said(meetings: Meetings) -> list[str]:
+        """What the week's summaries say."""
+        return [t.segments[0].text for t in meetings.transcripts(WINDOW)]
+
+    @notes.operation
+    def senders(mail: Mail) -> list[str | None]:
+        """Who sent the week's mail."""
+        return [m.sender.name for m in mail.messages("", WINDOW)]
+
+    return {"inbox": inbox, "summaries": summaries, "gateway": gateway, "minutes": notes}
+
+
+def bound(**capabilities: str) -> Config:
+    return Config(files=(), data={"capabilities": capabilities})
+
+
+def test_meetings_come_from_summary_emails_through_the_bound_mail_adapter(make_kernel):
+    kernel = make_kernel(builtins=True, config=bound(mail="inbox", meetings="summaries"), **mail_modules())
+    assert hz(kernel, "minutes", "held") == (0, ["Retro", "Planning"])
+    assert hz(kernel, "minutes", "said") == (0, ["Quick recap: shipped.", "Quick recap: planned."])
+    assert hz(kernel, "minutes", "senders") == (0, ["Meeting tool", "News", "Meeting tool"])
+    code, report = hz(kernel, "system", "capability", "list")
+    assert code == 0
+    uses = {(u["requester"], u["requirement"], u["adapter"]) for u in report["uses"]}
+    assert ("summaries", "mail:read", "inbox") in uses
+    assert ("minutes", "meetings:read", "summaries") in uses
+
+
+def test_configuration_chooses_between_providers_of_one_capability(make_kernel):
+    kernel = make_kernel(builtins=True, config=bound(mail="inbox", meetings="gateway"), **mail_modules())
+    assert hz(kernel, "minutes", "held") == (0, ["Through the gateway"])
+
+
+def test_a_provider_built_on_mail_reports_mail_unbound(make_kernel):
+    kernel = make_kernel(builtins=True, config=bound(meetings="summaries"), **mail_modules())
+    code, output = hz(kernel, "minutes", "held")
+    assert code != 0
+    assert "mail:read" in str(output)
+    code, report = hz(kernel, "system", "doctor")
+    assert code == 0
+    checks = {c["name"]: c["status"] for c in report["checks"]["system.capability"]}
+    assert checks["mail:read for summaries"] == "degraded"
+
+
+def test_mail_content_never_holds_address_headers():
+    assert Inbox().read("m0").headers == {"date": "x"}

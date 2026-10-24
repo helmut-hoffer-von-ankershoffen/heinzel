@@ -291,8 +291,8 @@ def test_the_kernel_refuses_handles_to_anyone_but_the_compilers_read_only_jobs(c
 def test_without_a_compiler_nobody_gets_handles_for_another_requester(kernel):
     with pytest.raises(HeinzelError, match=r"\(none enabled\)"):
         kernel.handle_for(Requester("contracts", "job", "x", READ_DOCUMENTS), "documents")
-    with pytest.raises(HeinzelError, match="Unknown capability 'mail'"):
-        kernel.handle_for(Requester("contracts", "job", "x", READ_DOCUMENTS), "mail")
+    with pytest.raises(HeinzelError, match="Unknown capability 'spreadsheets'"):
+        kernel.handle_for(Requester("contracts", "job", "x", READ_DOCUMENTS), "spreadsheets")
     assert kernel.compiled_jobs() == []
 
 
