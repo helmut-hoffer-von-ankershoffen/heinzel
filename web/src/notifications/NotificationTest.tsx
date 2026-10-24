@@ -33,7 +33,16 @@ export function popsUpOutside(result: SchemaTested, browser: DesktopState): bool
   return browser === "on" || native === "shown" || (native === "ready" && daemon === "ready");
 }
 
-export function NotificationTest({ className }: { className?: string }) {
+/** `onTerminal` runs after a fix is typed into the terminal, for a host (the setup dialog) that covers the panel. */
+export function NotificationTest({
+  className,
+  label,
+  onTerminal,
+}: {
+  className?: string;
+  label?: string;
+  onTerminal?: () => void;
+}) {
   const test = useTestNotice();
   const settings = useOpenNotificationSettings();
   const browser = useDesktopState();
@@ -100,7 +109,7 @@ export function NotificationTest({ className }: { className?: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" onClick={again} disabled={test.isPending}>
           {result ? <RotateCcw aria-hidden /> : <BellRing aria-hidden />}
-          {result ? t("notify.tryAgain") : t("notify.test")}
+          {result ? t("notify.tryAgain") : (label ?? t("notify.test"))}
         </Button>
         {fixed && <span className="text-xs text-muted-foreground">{t("notify.afterFix")}</span>}
       </div>
@@ -153,6 +162,7 @@ export function NotificationTest({ className }: { className?: string }) {
                 runInTerminal(confirm);
                 setConfirm(null);
                 setFixed(true);
+                onTerminal?.();
               }}
             >
               {t("notify.runIt")}
