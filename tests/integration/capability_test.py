@@ -20,12 +20,16 @@ from heinzel import (
     Config,
     Document,
     Documents,
+    DraftedMail,
     Event,
+    FreeBusy,
+    HeinzelError,
     Kernel,
     Mail,
     MailContent,
     MailMessage,
     MailQuery,
+    MailThread,
     Meeting,
     Meetings,
     Message,
@@ -343,6 +347,9 @@ class Agenda:
             )
         ]
 
+    def free_busy(self, people: str, window: Window) -> list[FreeBusy]:
+        return []
+
 
 def adapters() -> dict[str, Module]:
     talk = Module("talk", "Test-only chat adapter.")
@@ -644,6 +651,14 @@ class Inbox:
 
     def read(self, message: str) -> MailContent:
         return self.messages_by_id[message]
+
+    def thread(self, thread: str) -> MailThread:
+        msg = "No conversations in this mailbox"
+        raise HeinzelError(msg)
+
+    def draft(self, draft: str) -> DraftedMail:
+        msg = "No drafts in this mailbox"
+        raise HeinzelError(msg)
 
 
 class Summaries:

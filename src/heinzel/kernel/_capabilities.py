@@ -24,6 +24,7 @@ from heinzel.kernel._protocols import (
     Meetings,
     TeamGraph,
     Tracker,
+    free_busy_people,
 )
 
 Mode = Literal["read", "write"]
@@ -80,8 +81,19 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 title="Calendar",
                 purpose="where your meetings and free time come from",
                 protocol=Calendar,
-                summary="The user's calendar: events in a window, with attendees and conferencing.",
-                methods=MappingProxyType({"events": "read"}),
+                summary="The user's calendar: events in a window, with attendees and conferencing, free and busy "
+                "times; create, move, cancel and answer events through publish operations.",
+                methods=MappingProxyType(
+                    {
+                        "events": "read",
+                        "free_busy": "read",
+                        "create_event": "write",
+                        "update_event": "write",
+                        "cancel_event": "write",
+                        "respond": "write",
+                    }
+                ),
+                checks=MappingProxyType({("free_busy", "people"): free_busy_people}),
             ),
             Capability(
                 name="chat",
@@ -120,8 +132,19 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 title="Mail",
                 purpose="the mailbox messages and meeting summaries come from",
                 protocol=Mail,
-                summary="A mailbox the user reads: messages in a window by sender, subject or label, and their text.",
-                methods=MappingProxyType({"messages": "read", "read": "read"}),
+                summary="A mailbox the user reads: messages in a window by sender, subject or label, their text and "
+                "conversations; drafts, sending a draft and filing through publish operations.",
+                methods=MappingProxyType(
+                    {
+                        "messages": "read",
+                        "read": "read",
+                        "thread": "read",
+                        "draft": "read",
+                        "create_draft": "write",
+                        "send_draft": "write",
+                        "relabel": "write",
+                    }
+                ),
                 checks=MappingProxyType({("messages", "query"): MailQuery.parse}),
             ),
             Capability(

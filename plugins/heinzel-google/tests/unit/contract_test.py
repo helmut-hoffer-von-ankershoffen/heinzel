@@ -14,11 +14,11 @@ pytestmark = pytest.mark.unit
 PROVIDERS = [let for let in module.lets if isinstance(let, ProviderLet)]
 
 
-def test_the_adapter_serves_documents_calendar_and_mail_read_only_on_googles_hosts():
+def test_the_adapter_reads_documents_and_reads_and_writes_calendar_and_mail_on_googles_hosts():
     assert sorted((p.name, sorted(p.modes)) for p in PROVIDERS) == [
-        ("google:calendar", ["read"]),
+        ("google:calendar", ["read", "write"]),
         ("google:documents", ["read"]),
-        ("google:mail", ["read"]),
+        ("google:mail", ["read", "write"]),
     ]
     hosts = {p.capability: p.hosts for p in PROVIDERS}
     assert hosts == {"documents": tuple(DOCUMENT_HOSTS), "calendar": tuple(CALENDAR_HOSTS), "mail": tuple(MAIL_HOSTS)}
@@ -27,8 +27,8 @@ def test_the_adapter_serves_documents_calendar_and_mail_read_only_on_googles_hos
 
 def test_the_adapters_pass_the_shared_check():
     assert_adapter(GoogleDocuments, "documents")
-    assert_adapter(GoogleCalendar, "calendar")
-    assert_adapter(Gmail, "mail")
+    assert_adapter(GoogleCalendar, "calendar", modes=("read", "write"))
+    assert_adapter(Gmail, "mail", modes=("read", "write"))
 
 
 @pytest.mark.parametrize("provider", PROVIDERS, ids=lambda p: p.name)
@@ -43,7 +43,8 @@ def test_methods_of_the_declared_modes_match_the_protocol(provider):
 
 
 @pytest.mark.parametrize("provider", PROVIDERS, ids=lambda p: p.name)
-def test_no_write_method_is_implemented(provider):
+def test_a_write_method_is_implemented_only_where_the_write_mode_is_declared(provider):
     capability = CAPABILITIES[provider.capability]
     writes = [name for name, mode in capability.methods.items() if mode == "write"]
-    assert not [name for name in writes if hasattr(provider.factory, name)]
+    implemented = [name for name in writes if hasattr(provider.factory, name)]
+    assert implemented == (writes if "write" in provider.modes else [])

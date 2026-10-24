@@ -2849,6 +2849,24 @@
             "title": "Id",
             "type": "string"
           },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it takes place, in the event's words; none if unset.",
+            "title": "Location"
+          },
+          "organized_by_user": {
+            "default": false,
+            "description": "Whether the user organizes it, and so may move or cancel it for everyone.",
+            "title": "Organized By User",
+            "type": "boolean"
+          },
           "organizer": {
             "anyOf": [
               {
@@ -2859,6 +2877,24 @@
               }
             ],
             "description": "Who organizes it; none if the vendor doesn't say."
+          },
+          "response": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accepted",
+                  "declined",
+                  "tentative",
+                  "pending"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The user's own answer to the invitation: one of `RESPONSES`, or `pending` while unanswered; none when the user is not among the attendees.",
+            "title": "Response"
           },
           "start": {
             "description": "When it starts; midnight in the calendar's zone for an all-day event.",

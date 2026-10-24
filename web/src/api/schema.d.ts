@@ -3115,8 +3115,24 @@ export interface components {
              * @description Identifier of this occurrence in the adapter's notation.
              */
             id: string;
+            /**
+             * Location
+             * @description Where it takes place, in the event's words; none if unset.
+             */
+            location?: string | null;
+            /**
+             * Organized By User
+             * @description Whether the user organizes it, and so may move or cancel it for everyone.
+             * @default false
+             */
+            organized_by_user: boolean;
             /** @description Who organizes it; none if the vendor doesn't say. */
             organizer?: components["schemas"]["Participant"] | null;
+            /**
+             * Response
+             * @description The user's own answer to the invitation: one of `RESPONSES`, or `pending` while unanswered; none when the user is not among the attendees.
+             */
+            response?: ("accepted" | "declined" | "tentative" | "pending") | null;
             /**
              * Start
              * Format: date-time

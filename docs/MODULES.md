@@ -13,7 +13,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`atlassian`](#atlassian) | Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. |
 | [`clock`](#clock) | What time it is for everyone on the team. |
 | [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
-| [`google`](#google) | Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
+| [`google`](#google) | Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
 | [`graph`](#graph) | Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
 | [`report`](#report) | Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`). |
@@ -102,7 +102,7 @@ Health checks: reported by `hz system doctor`.
 
 ## `google`
 
-Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
+Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
 
 First-party plugin `heinzel-google`: `hz system plugin add google --confirm`.
 

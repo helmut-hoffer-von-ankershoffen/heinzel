@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-10-23
 amends: 0024
-amended-by: 0049, 0055
+amended-by: 0049, 0055, 0058
 related: 0012, 0017, 0021, 0022, 0023
 ---
 
@@ -420,3 +420,6 @@ adapters are first-party plugins, not separate repositories:
   for Google Workspace.
 - `heinzel-google` reads Google Workspace through the Google Workspace CLI, `gws`, which owns sign-in and tokens:
   [ADR 0042](0042-google-workspace-through-the-gws-cli.md).
+- **Calendar and mail write; three reads join them**: [ADR 0058](0058-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md)
+  amends the mail and calendar decisions above with a `write` mode for both and the reads `free_busy`, `thread` and
+  `draft`.

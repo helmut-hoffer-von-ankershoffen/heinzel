@@ -7,7 +7,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
-from heinzel import Event, Participant, Window
+from heinzel import Event, FreeBusy, Participant, Window
 from heinzel.modules.system.directory import DirectorySettings, OneOnOnes
 from heinzel.modules.system.directory._guess import guess_lines, person_from
 
@@ -162,6 +162,9 @@ class Agenda:
     def events(self, window: Window) -> list[Event]:
         self.windows.append(window)
         return self.events_
+
+    def free_busy(self, people: str, window: Window) -> list[FreeBusy]:
+        return []
 
 
 @pytest.mark.parametrize(("settings", "days"), [(DirectorySettings(), 56), (DirectorySettings(lookback_days=90), 90)])
