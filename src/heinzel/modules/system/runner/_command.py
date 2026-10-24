@@ -194,7 +194,10 @@ class CommandRunner:
                 detail = f"exit code {outcome.returncode}: {outcome.stderr_tail()}"
                 return AgentResult(**base, status="failed", detail=detail, warnings=warnings)
             if settings.command_output == "file":
-                output = read_output(output_file)
+                try:  # the agent ran: a bad output file is a failed run (it may have spent), not a misconfiguration
+                    output = read_output(output_file)
+                except HeinzelError as exc:
+                    return AgentResult(**base, status="failed", detail=str(exc), warnings=warnings)
                 if output is None:
                     detail = "the command wrote no output file"
                     return AgentResult(**base, status="failed", detail=detail, warnings=warnings)

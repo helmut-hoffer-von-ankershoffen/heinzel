@@ -24,6 +24,7 @@ from heinzel import (
 )
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat import ChatMessage, ChatService, ChatSettings, ChatStore
+from heinzel.modules.system.runner.chat._policy import guarded_settings, refusal
 from heinzel.modules.system.runner.chat._service import (
     CHAT_TIMEOUT,
     PREAMBLE,
@@ -63,7 +64,7 @@ class Recorder:
         command = tools.mcp_servers["hz"].command
         session = command[command.index("--chat") + 1]
         for call in self.propose:
-            StoreGate(self.store).propose(replace(call, session=session))
+            self.store.propose(replace(call, session=session))  # as the gate records it; its policy is tested below
         if self.during is not None:
             self.during(session)
         return AgentResult(
@@ -350,7 +351,7 @@ def test_the_session_is_locked_while_the_agent_runs(service, store):
 
 
 @pytest.mark.parametrize(
-    ("module", "operation", "arguments"),
+    "case",
     [
         ("system.plugin", "add", {"spec": "heinzel-acme"}),
         ("system", "update", {}),
@@ -358,33 +359,37 @@ def test_the_session_is_locked_while_the_agent_runs(service, store):
         ("system.config", "set", {"key": "capabilities.agent_runner", "value": "command"}),
         ("system.config", "unset", {"key": "system.runner.chat.session_max_usd"}),
         ("system.config", "init", {"path": "/etc/passwd", "force": True}),
+        ("system.config", "set", {"key": "workflow.schedule_team", "value": '["team:payroll"]'}),
+        ("system.config", "set", {"key": "team.repository", "value": "https://example.org/other.git"}),
+        ("system.daemon", "resume", {}),
+        ("system.config", "set", {"key": "org.email", "value": "someone@example.org"}),
+        ("system.config", "set", {"key": "system.plugin.github_token", "value": "x"}),
     ],
 )
-def test_a_chat_never_proposes_or_runs_what_installs_code_or_widens_its_powers(
-    store, service, module, operation, arguments
-):
+def test_a_chat_never_proposes_or_runs_what_installs_code_or_widens_its_powers(store, service, kernel, case):
+    module, operation, arguments = case
     chat = service.open(None)
     proposal = ProposedCall(
         session=chat.id, module=module, operation=operation, tool="x", arguments=arguments, command="hz x"
     )
     with pytest.raises(HeinzelError, match="terminal"):
-        StoreGate(store).propose(proposal)
+        StoreGate(store, kernel).propose(proposal)
     store.propose(proposal)  # forged straight into the store: confirm refuses it too
     with pytest.raises(HeinzelError, match=r"Not run: .*terminal"):
         service.confirm(chat.id, "a1")
 
 
-def test_a_setting_that_changes_nothing_that_runs_may_be_proposed(store, service):
+def test_a_setting_that_changes_nothing_that_runs_may_be_proposed(store, service, kernel):
     chat = service.open(None)
     proposal = ProposedCall(
         session=chat.id,
         module="system.config",
         operation="set",
         tool="system_config_set",
-        arguments={"key": "org.role", "value": "lead"},
+        arguments={"key": "system.directory.lookback_days", "value": "30"},
         command="hz system config set",
     )
-    assert StoreGate(store).propose(proposal) == "a1"
+    assert StoreGate(store, kernel).propose(proposal) == "a1"
 
 
 def test_what_the_person_reads_is_built_from_what_runs_and_only_parameters_run(service, store, seen):
@@ -480,3 +485,16 @@ def test_a_chat_about_a_notification_gets_what_the_notice_says(service, kernel):
     assert chat.context.detail.startswith("The weekly digest failed\nThe tracker refused the token.")
     assert "notification" in contract(chat.context)
     assert service.open(parse_context("no-such-event", None)).context.detail == ""  # type: ignore[union-attr]
+
+
+def test_every_setting_a_project_file_may_not_set_is_guarded(kernel):
+    guarded = guarded_settings(kernel)
+    assert {"system.runner.ask_max_usd", "system.runner.chat.session_max_usd", "hz.expert"} <= guarded
+    assert refusal("system.config", "set", {"key": "notes.anything"}, frozenset({"notes.anything"})) is not None
+
+
+def test_an_address_at_a_cut_is_redacted_before_the_cut():
+    text = "x" * 1990 + " alice.smith@example.com " + "y" * 4000
+    cut = transcript([ChatMessage(role="assistant", text=text, at=now())])
+    assert "alice" not in cut
+    assert "[email]" in cut

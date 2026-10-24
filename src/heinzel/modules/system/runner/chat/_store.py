@@ -18,7 +18,7 @@ from pathlib import Path
 
 from pydantic import JsonValue, ValidationError
 
-from heinzel import ActionGate, HeinzelError, ProposedCall, Settings
+from heinzel import ActionGate, HeinzelError, Kernel, ProposedCall, Settings
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
@@ -29,7 +29,7 @@ from heinzel.modules.system.runner.chat._models import (
     ChatSettings,
     ChatSummary,
 )
-from heinzel.modules.system.runner.chat._policy import refusal
+from heinzel.modules.system.runner.chat._policy import guarded_settings, refusal
 
 PRIVATE_DIR = 0o700
 PRIVATE_FILE = 0o600
@@ -285,9 +285,10 @@ class ChatStore:
 class StoreGate(ActionGate):
     """The kernel's `ActionGate`: proposals go into the session's store, nothing runs (ADR 0045)."""
 
-    def __init__(self, store: ChatStore) -> None:
-        """Record proposals in `store`."""
+    def __init__(self, store: ChatStore, kernel: Kernel) -> None:
+        """Record proposals in `store`; `kernel` names the settings a chat may not change."""
         self._store = store
+        self._kernel = kernel
 
     def propose(self, call: ProposedCall) -> str:
         """Record `call` as pending in its session and return its id.
@@ -295,7 +296,7 @@ class StoreGate(ActionGate):
         Raises:
             HeinzelError: If a chat may never run it, there is no such session, or it has too many proposals.
         """
-        if reason := refusal(call.module, call.operation, call.arguments):
+        if reason := refusal(call.module, call.operation, call.arguments, guarded_settings(self._kernel)):
             raise HeinzelError(reason)
         return self._store.propose(call)
 

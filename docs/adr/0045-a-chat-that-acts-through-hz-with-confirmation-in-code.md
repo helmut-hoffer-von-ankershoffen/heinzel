@@ -76,10 +76,12 @@ hide outside expert mode (`audience="expert"`, ADR 0041) is still a tool. In cha
   Ctrl-D leaves and keeps it pending); the web app shows a card with Confirm and Decline.
 - Some operations never run from a chat, confirmed or not, because one click on a plausible proposal would install
   code or widen what agents may do: `system plugin add/remove/new`, `system update`, `system agent install/uninstall`,
-  `system config init`, `system credential set/remove`, `system daemon install/uninstall`, and `system config
-  set/unset` of `hz.*`, `capabilities.*`, `system.runner.*`, `system.credential.*` and `system.daemon.*`
-  (`system.runner.chat._policy`). They are refused when proposed and again at confirm; the person runs them in a
-  terminal.
+  `system config init`, `system credential set/remove`, `system daemon install/uninstall/resume`, and `system config
+  set/unset` of `hz.*`, `capabilities.*`, `system.runner.*`, `system.credential.*`, `system.daemon.*`,
+  `system.agent.*`, `system.changelog.*`, `system.plugin.*`, `workflow.*` and `team.*`, and of every setting a project
+  `hz.toml` may not set (`ignored_in_project`, in any module, plugins' too: what a repository someone else controls may
+  not decide, an agent may not either; your profile is among them) (`system.runner.chat._policy`). They are refused
+  when proposed and again at confirm; the person runs them in a terminal.
 
 The kernel gains `ActionGate` and `ProposedCall` (`heinzel.kernel._chat`; not `ChatGate`, since `Chat` is the
 messaging capability), `McpServer`, `ToolProfile.mcp_servers` and `ToolProfile.read_files` in the agent runner

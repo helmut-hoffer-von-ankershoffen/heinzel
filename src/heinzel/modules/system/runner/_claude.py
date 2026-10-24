@@ -196,12 +196,13 @@ class Relay:
             return
         if not isinstance(event, dict):
             return
-        event = cast("dict[str, Any]", event)
+        event = cast("dict[str, Any]", event)  # checked to be a dict just before
         if event.get("type") == "stream_event":
             inner = event.get("event")
+            # Each cast follows an isinstance check: JSON objects, typed for the type checker.
             delta = cast("dict[str, Any]", inner).get("delta") if isinstance(inner, dict) else None
             if isinstance(delta, dict):
-                delta = cast("dict[str, Any]", delta)
+                delta = cast("dict[str, Any]", delta)  # checked to be a dict just before
                 if delta.get("type") == "text_delta" and isinstance(delta.get("text"), str):
                     self._emit("text", {"text": delta["text"]})
         elif event.get("type") == "assistant":
@@ -240,7 +241,7 @@ def _events(lines: Iterable[str]) -> Iterator[dict[str, Any]]:
         except json.JSONDecodeError:
             continue
         if isinstance(event, dict):
-            yield cast("dict[str, Any]", event)
+            yield cast("dict[str, Any]", event)  # checked to be a dict just before
 
 
 def parse_events(lines: Iterable[str], duration: float) -> AgentResult:
@@ -326,6 +327,7 @@ def explain(final: dict[str, Any], subtype: str, api_error: str | None) -> tuple
 
 def _tool_uses(event: dict[str, Any]) -> list[str]:
     message = event.get("message")
+    # Each cast follows an isinstance check: JSON objects and lists, typed for the type checker.
     content = cast("dict[str, Any]", message).get("content") if isinstance(message, dict) else None
     if not isinstance(content, list):
         return []
@@ -335,7 +337,7 @@ def _tool_uses(event: dict[str, Any]) -> list[str]:
 
 def _usage(final: dict[str, Any]) -> TokenUsage:
     raw = final.get("usage")
-    usage = cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}
+    usage = cast("dict[str, Any]", raw) if isinstance(raw, dict) else {}  # checked to be a dict just before
     return TokenUsage(
         input_tokens=whole_number(usage.get("input_tokens")),
         output_tokens=whole_number(usage.get("output_tokens")),
@@ -379,7 +381,7 @@ def login_check(executable: str, execute: Execute = run_bounded) -> Check:
     except json.JSONDecodeError:
         data = None
     if isinstance(data, dict):
-        status = cast("dict[str, Any]", data).get("loggedIn")
+        status = cast("dict[str, Any]", data).get("loggedIn")  # checked to be a dict just before
     if status is True:
         return Check(name="claude-code login", status=Status.UP, detail="logged in")
     if status is False:

@@ -222,7 +222,9 @@ def test_the_command_the_agent_starts_is_the_gated_chat_server(tmp_path, monkeyp
     async def scenario() -> str:
         server = StdioServerParameters(command=command[0], args=command[1:], env=dict(os.environ))
         async with Client(server) as client:
-            reply = await client.call_tool("system_config_set", {"key": "org.role", "value": "lead"})
+            reply = await client.call_tool(
+                "system_config_set", {"key": "system.directory.lookback_days", "value": "30"}
+            )
             return str(reply.content)
 
     assert "Not run" in anyio.run(scenario)

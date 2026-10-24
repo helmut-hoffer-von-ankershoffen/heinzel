@@ -8,6 +8,7 @@ with exactly the arguments shown (ADR 0045). Email addresses never reach the age
 and every tool result are redacted.
 """
 
+import contextlib
 import logging
 import sys
 import tempfile
@@ -30,7 +31,7 @@ from heinzel import (
     redact_emails,
 )
 from heinzel.modules.system.runner.chat._models import ChatAction, ChatContext, ChatMessage, ChatSession
-from heinzel.modules.system.runner.chat._policy import refusal
+from heinzel.modules.system.runner.chat._policy import guarded_settings, refusal
 from heinzel.modules.system.runner.chat._store import MAX_MESSAGES, ChatStore, dumps, now
 
 log = logging.getLogger(__name__)
@@ -102,7 +103,8 @@ def transcript(messages: list[ChatMessage], limit: int = TRANSCRIPT_LIMIT) -> st
     lines: list[str] = []
     size = 0
     for message in reversed(messages):
-        text = message.text or f"(no answer: {message.detail or message.status})"
+        # Redacted before it is cut, so no address is cut into something the pattern misses.
+        text = redact_emails(message.text or f"(no answer: {message.detail or message.status})")
         if len(text) > MESSAGE_SHARE:  # its start and its end: what was asked, and how it ended
             half = MESSAGE_SHARE // 2
             text = f"{text[:half]}\n…\n{text[-half:]}"
@@ -194,7 +196,8 @@ class ChatService:
                 result = AgentResult(runner="", status="failed", detail=str(exc), duration_seconds=0)
                 cap = 0.0
             except BaseException:  # interrupted: the run may have spent up to its cap, so that is what counts
-                self._answer(self._store.load(session), known, cap, STOPPED)
+                with contextlib.suppress(HeinzelError):  # never hide the interrupt behind a session removed meanwhile
+                    self._answer(self._store.load(session), known, cap, STOPPED)
                 raise
             return self._answer(self._store.load(session), known, cap, result)  # with what the agent proposed
 
@@ -241,7 +244,7 @@ class ChatService:
         with self._store.locked(session) as chat:
             found = self._pending(chat, action)
             operation = self._operation(found)
-            if reason := refusal(found.module, found.operation, found.arguments):
+            if reason := refusal(found.module, found.operation, found.arguments, guarded_settings(self._kernel)):
                 msg = f"Not run: {reason}"
                 raise HeinzelError(msg)
             # Only the operation's own parameters: a key naming an injected service would replace it.
@@ -251,7 +254,7 @@ class ChatService:
             self._store.save(chat)
             try:
                 value = self._kernel.invoke(operation, **arguments)
-                text = dumps(to_jsonable_python(value, fallback=str))
+                text = redact_emails(dumps(to_jsonable_python(value, fallback=str)))  # it goes into prompts
                 found.status, found.result = "done", text[:RESULT_LIMIT]
             except HeinzelError as exc:
                 found.status, found.result = "failed", str(exc)
