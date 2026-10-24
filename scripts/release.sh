@@ -36,6 +36,9 @@ echo "Preparing $tag (was $current)" >&2
 git switch --quiet --create "release/$tag"
 uv run --frozen bump-my-version bump --new-version "$next" --no-commit --no-tag --allow-dirty >&2
 uv lock --quiet
+# Regenerate what derives from the version (the plugin template's pyproject, generated docs); the release PR's
+# lint fails otherwise.
+make --no-print-directory fix >&2
 uv run --frozen git-cliff --offline --tag "$tag" --output CHANGELOG.md
 git add --update
 git commit --quiet --message "chore(release): $tag"
