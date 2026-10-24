@@ -1,6 +1,7 @@
 """The installable app (ADR 0046): manifest, service worker and icons served with the right types, headers and CSP."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from heinzel.heads import web
 from heinzel.heads.web._devices import Devices
+from heinzel.kernel import DEFAULT_THEME
 
 pytestmark = pytest.mark.integration
 
@@ -53,6 +55,23 @@ def test_the_manifest_makes_an_installable_standalone_app():
         assert (PUBLIC / icon["src"].lstrip("/")).is_file()
     assert (PUBLIC / "icons" / "apple-touch-icon.png").is_file()
     assert (PUBLIC / "favicon.ico").is_file()
+
+
+def test_the_launch_splash_of_the_os_and_the_apps_own_agree_with_the_default_theme():
+    # One colour for the installed app's launch screen (a manifest has no modes): the default theme's dark background,
+    # the app's look before this change. The page's own splash and theme-color follow the mode and the last theme.
+    manifest = json.loads((PUBLIC / "manifest.webmanifest").read_text(encoding="utf-8"))
+    assert manifest["background_color"] == manifest["theme_color"] == DEFAULT_THEME.dark.background
+    page = (PUBLIC.parent / "index.html").read_text(encoding="utf-8")
+    metas = dict(
+        re.findall(r'<meta name="theme-color" content="(#[0-9a-f]+)" media="\(prefers-color-scheme: (\w+)\)"', page)
+    )
+    assert metas == {DEFAULT_THEME.light.background: "light", DEFAULT_THEME.dark.background: "dark"}
+    light, dark = re.findall(r"--splash-background: (#[0-9a-f]+);", page)
+    assert (light, dark) == (DEFAULT_THEME.light.background, DEFAULT_THEME.dark.background)
+    for mode in (DEFAULT_THEME.light, DEFAULT_THEME.dark):
+        assert f"--splash-primary: {mode.primary};" in page
+        assert f"--splash-muted-foreground: {mode.muted_foreground};" in page
 
 
 def test_the_worker_never_caches_api_data_or_leaves_this_origin():

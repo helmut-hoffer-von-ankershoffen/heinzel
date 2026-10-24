@@ -64,13 +64,17 @@ STATIC = Path(__file__).parent / "static"
 """Where the build puts the app (`make web-build`, or the wheel's build hook); not in git."""
 HOST = "127.0.0.1"
 OK = 200
+SPLASH_SCRIPT = "'sha256-u8Ysltf4oyZ2Nb3mcKzngr4Se+3FG6DbYG+WTFCvh/E='"
+"""The one inline script allowed, by its hash: the splash's in `web/index.html`, which paints the last theme before the
+app loads (ADR 0046). A test recomputes it from the file, so a changed script fails until this changes with it."""
 CSP = (
-    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; "
-    "connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; "
-    "frame-ancestors 'none'"
+    f"default-src 'none'; script-src 'self' {SPLASH_SCRIPT}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    "font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; "
+    "form-action 'none'; frame-ancestors 'none'"
 )
-"""Only this origin, for everything; no inline scripts, no frames, no forms posting elsewhere. Inline styles are allowed
-because the terminal (xterm.js) writes its measurements into `<style>` elements; scripts stay this origin's only."""
+"""Only this origin, for everything; no frames, no forms posting elsewhere, and no inline script but the splash's, by
+hash. Inline styles are allowed because the terminal (xterm.js) writes its measurements into `<style>` elements, and
+the splash's critical CSS is one."""
 SECURITY_HEADERS = {
     "Content-Security-Policy": CSP,
     "X-Content-Type-Options": "nosniff",

@@ -109,6 +109,18 @@ const en = {
   "token.missing":
     "This page needs the session token of the `hz ui` that serves it. Open the link it printed, or start it again:",
   "token.refused": "The server refused this session's token. Open the link the running `hz ui` printed.",
+  "splash.starting": "Starting…",
+  "splash.connecting": "Connecting to hz…",
+  "splash.signingIn": "Signing you in…",
+  "splash.restarting": "Restarting hz…",
+  "splash.reconnecting": "Reconnecting to hz…",
+  "splash.ready": "Ready",
+  "splash.unreachableTitle": "hz isn't answering",
+  "splash.unreachable":
+    "hz ui isn't running on this machine, or it stopped. Start it in a terminal; this page connects as soon as it answers:",
+  "splash.tokenTitle": "Your sign-in expired",
+  "splash.token":
+    "hz ui started again with a new link, so it no longer accepts this page's. Open the link it printed, or stop it (Ctrl+C) and start it again for a new one:",
   "state.loading": "Loading…",
   "state.error": "Couldn't load this:",
   "copy.label": "Copy",

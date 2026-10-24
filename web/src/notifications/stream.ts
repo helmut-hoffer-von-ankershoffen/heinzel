@@ -2,6 +2,7 @@
 // header and the token must never be in a URL. Reconnects with a growing delay; stops when its signal aborts.
 import type { SchemaNotice } from "@/api/client";
 import { token } from "@/api/token";
+import { splash } from "@/splash/store";
 
 export type StreamEvent = { event: "notice"; notice: SchemaNotice } | { event: "changed"; latest: string | null };
 
@@ -66,6 +67,7 @@ export async function follow(
       }
     } catch {
       if (signal.aborted) return;
+      splash.send({ type: "suspect" }); // the stream broke: hz may be gone, and the splash checks
     }
     await wait(delay);
     delay = Math.min(delay * 2, MAX_DELAY);
