@@ -13,6 +13,7 @@ names are checked before they name a file or a branch, nothing is read or writte
 git command runs hardened (`_repo.git`), so a hostile repository can't point hz at a file outside its checkout.
 """
 
+import hashlib
 import os
 import shlex
 import shutil
@@ -31,6 +32,7 @@ from heinzel.kernel import (
     ConfirmedLines,
     Directory,
     HeinzelError,
+    Recommendation,
     Relation,
     Settings,
     clean_text,
@@ -571,6 +573,32 @@ class TeamService:
         show.plugin = manifest.plugin.name if manifest.plugin else None
         show.members = [_view(m, manifest) for m in roster.members if m.active(today)]
         return show
+
+    def recommendations(self) -> tuple[Recommendation, ...]:
+        """What the team's manifest recommends, each with its origin; a contract with the SHA-256 of its file.
+
+        Nothing when no team is configured or the manifest can't be read: `hz team show` and doctor report that.
+        """
+        checkout = self.checkout
+        if checkout is None:
+            return ()
+        try:
+            manifest = self._team_files(checkout)[0]
+        except HeinzelError:
+            return ()
+        origin = f"team {manifest.name} ({self._settings.repository or checkout}), {MANIFEST}"
+        wanted = manifest.recommend
+        found: list[Recommendation] = [Recommendation(kind="plugin", name=n, origin=origin) for n in wanted.plugins]
+        found += [Recommendation(kind="binding", name=c, value=a, origin=origin) for c, a in wanted.bindings.items()]
+        found += [Recommendation(kind="credential", name=n, origin=origin) for n in wanted.credentials]
+        for name in wanted.contracts:
+            relative = f"workflows/{name}.prose.md"
+            try:
+                digest = "sha256:" + hashlib.sha256(_read(checkout, relative).encode()).hexdigest()
+            except HeinzelError:  # missing, a link or too large: recommended, but there is nothing to pin
+                digest = None
+            found.append(Recommendation(kind="contract", name=name, value=digest, origin=f"{origin}, {relative}"))
+        return tuple(found)
 
     def manifest(self) -> Manifest | None:
         """The configured team's manifest; None when no team is configured.

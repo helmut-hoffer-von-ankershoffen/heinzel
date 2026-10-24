@@ -52,7 +52,7 @@ from heinzel.kernel._lets import (
     schedule_problem,
 )
 from heinzel.kernel._module import Module
-from heinzel.kernel._org import OrgContext
+from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, DiscoveryHint, PlaybookLet, PlaybookSetup
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
@@ -155,6 +155,8 @@ __all__ = [
     "Prompter",
     "ProviderLet",
     "PullRequest",
+    "Recommendation",
+    "RecommendationKind",
     "Relation",
     "ReleaseCache",
     "ReleaseSource",

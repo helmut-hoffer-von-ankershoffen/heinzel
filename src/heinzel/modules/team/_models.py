@@ -7,7 +7,7 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from heinzel.kernel import ModuleSettings
+from heinzel.kernel import CAPABILITIES, ModuleSettings
 from heinzel.modules.team._repo import check_url
 
 ROLES = (
@@ -32,6 +32,8 @@ NAME = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 DISTRIBUTION = re.compile(r"^heinzel-[a-z0-9]+(?:-[a-z0-9]+)*$")
 """A plugin distribution's name (ADR 0025)."""
 EMAIL = re.compile(r"^[^@\s]{1,64}@[A-Za-z0-9.-]{1,253}$")
+CREDENTIAL = re.compile(r"^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*/[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
+"""A credential as `service/name`, the way doctor names it; only names, never values."""
 MAX_NAME = 64
 MANIFEST = "hz.yaml"
 ROSTER = "team/roster.yaml"
@@ -131,6 +133,54 @@ class Plugin(_Strict):
         return name
 
 
+class Recommend(_Strict):
+    """What a team recommends its members use: shown with its origin, applied only when a member accepts it."""
+
+    plugins: list[str] = Field(default_factory=list[str], description="Plugin distributions, `heinzel-<name>`.")
+    bindings: dict[str, str] = Field(
+        default_factory=dict[str, str], description="Capability to adapter, e.g. `documents: google`."
+    )
+    credentials: list[str] = Field(
+        default_factory=list[str], description="Credentials members store themselves, as `service/name`; never values."
+    )
+    contracts: list[str] = Field(
+        default_factory=list[str], description="Team contracts in workflows/ members may let their daemon run."
+    )
+
+    @field_validator("plugins")
+    @classmethod
+    def _plugins(cls, names: list[str]) -> list[str]:
+        for name in names:
+            if not DISTRIBUTION.fullmatch(name):
+                msg = f"{name!r} isn't a plugin distribution; plugins are named heinzel-<name>"
+                raise ValueError(msg)
+        return names
+
+    @field_validator("bindings")
+    @classmethod
+    def _bindings(cls, bindings: dict[str, str]) -> dict[str, str]:
+        for capability, adapter in bindings.items():
+            if capability not in CAPABILITIES:
+                msg = f"{capability!r} isn't a capability; the capabilities are {', '.join(sorted(CAPABILITIES))}"
+                raise ValueError(msg)
+            check_name(adapter, "name of an adapter")
+        return bindings
+
+    @field_validator("credentials")
+    @classmethod
+    def _credentials(cls, names: list[str]) -> list[str]:
+        for name in names:
+            if not CREDENTIAL.fullmatch(name):
+                msg = f"{name!r} isn't a credential name; name it service/name, e.g. github/token"
+                raise ValueError(msg)
+        return names
+
+    @field_validator("contracts")
+    @classmethod
+    def _contracts(cls, names: list[str]) -> list[str]:
+        return [check_name(name, "contract name") for name in names]
+
+
 class Manifest(_Strict):
     """`hz.yaml` at the root of a team repository: what the team is. It configures nobody's machine."""
 
@@ -140,6 +190,9 @@ class Manifest(_Strict):
         default_factory=lambda: list(OWNER_ROLES), description="Roles that own the roster (CODEOWNERS of team/)."
     )
     plugin: Plugin | None = Field(default=None, description="The team's plugin, if it has one.")
+    recommend: Recommend = Field(
+        default_factory=Recommend, description="What the team recommends its members use; nothing is applied by it."
+    )
 
     @field_validator("name")
     @classmethod

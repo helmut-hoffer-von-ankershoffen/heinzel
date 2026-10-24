@@ -206,3 +206,20 @@ def test_adopt_says_what_it_did_and_what_is_left():
     assert "/x (no remote)" in shown
     assert "Set team.checkout." in shown
     assert "Add hz.yaml." in shown
+
+
+@pytest.mark.parametrize(
+    ("recommend", "problem"),
+    [
+        ({"plugins": ["evil"]}, "isn't a plugin distribution"),
+        ({"bindings": {"telepathy": "x"}}, "isn't a capability"),
+        ({"bindings": {"tracker": "Evil Adapter"}}, "isn't a name of an adapter"),
+        ({"credentials": ["token"]}, "isn't a credential name"),
+        ({"credentials": ["github/token=ghp_x"]}, "isn't a credential name"),
+        ({"contracts": ["../x"]}, "isn't a contract name"),
+        ({"schedule": ["x"]}, "Extra inputs"),
+    ],
+)
+def test_a_manifest_recommends_only_names_it_can_check(recommend, problem):
+    with pytest.raises(ValueError, match=problem):
+        Manifest.model_validate({"name": "payments", "recommend": recommend})

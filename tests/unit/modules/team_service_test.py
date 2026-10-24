@@ -4,6 +4,7 @@ The fake runs no program: it records each command and answers like git and gh wo
 commands run, in what order, what is written, and what a hostile repository can't do.
 """
 
+import hashlib
 import shutil
 from datetime import date
 from pathlib import Path
@@ -790,3 +791,31 @@ def test_draft_says_why_the_directory_could_not_be_read(tmp_path, remote):
     team, _, _ = joined(tmp_path, remote, login="mira-example")
     plan = team.draft(Org(fail=True))
     assert plan.next[0] == "The directory couldn't be read: no calendar is bound"
+
+
+def test_recommendations_carry_their_origin_and_a_contract_its_files_digest(tmp_path, remote):
+    (remote / "hz.yaml").write_text(
+        "name: payments\nrecommend:\n  plugins: [heinzel-google]\n  bindings: {documents: google}\n"
+        "  credentials: [google/oauth-client]\n  contracts: [weekly, gone]\n"
+    )
+    (remote / "workflows" / "weekly.prose.md").write_text("contract text")
+    team, _, _ = joined(tmp_path, remote)
+    found = {r.id: r for r in team.recommendations()}
+    assert list(found) == [
+        "plugin:heinzel-google",
+        "binding:documents",
+        "credential:google/oauth-client",
+        "contract:weekly",
+        "contract:gone",
+    ]
+    assert found["binding:documents"].value == "google"
+    assert found["contract:weekly"].value == "sha256:" + hashlib.sha256(b"contract text").hexdigest()
+    assert found["contract:gone"].value is None
+    assert found["plugin:heinzel-google"].origin == f"team payments ({URL}), hz.yaml"
+
+
+def test_no_team_or_an_invalid_manifest_recommends_nothing(tmp_path, remote):
+    assert service(tmp_path, Fake(remote)).recommendations() == ()
+    team, _, checkout = joined(tmp_path, remote)
+    (checkout / "hz.yaml").write_text("name: payments\nrecommend: {bindings: {telepathy: x}}\n")
+    assert team.recommendations() == ()
