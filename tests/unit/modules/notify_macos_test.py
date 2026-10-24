@@ -5,6 +5,8 @@ A fake app bundle and a fake runner: no real app is installed and nothing is lau
 
 import hashlib
 import importlib.util
+import json
+import struct
 import subprocess
 from pathlib import Path
 
@@ -120,12 +122,17 @@ def test_quarantine_is_read_with_xattr(tmp_path, bundled):
     assert not NotifierApp(tmp_path / "home", bundled=bundled, runner=Runner(code=1)).quarantined()
 
 
-def test_the_build_script_and_the_runtime_agree_on_the_version():
+def build_script():
     spec = importlib.util.spec_from_file_location("notifier_build", ROOT / "scripts" / "notifier.py")
     assert spec is not None
     assert spec.loader is not None
     script = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(script)
+    return script
+
+
+def test_the_build_script_and_the_runtime_agree_on_the_version():
+    script = build_script()
     assert script._version() == source_version(SOURCES)
     assert len(source_version()) == 16
     assert (
@@ -133,7 +140,7 @@ def test_the_build_script_and_the_runtime_agree_on_the_version():
         == hashlib.sha256(
             b"".join(
                 n.encode() + b"\0" + (SOURCES / n).read_bytes() + b"\0"
-                for n in ("Info.plist", "icon.swift", "main.swift")
+                for n in ("Info.plist", "heinzel-swarm.svg", "heinzel.svg", "icon.swift", "main.swift")
             )
         ).hexdigest()[:16]
     )
@@ -171,3 +178,47 @@ def test_a_symlink_changes_the_digest(tmp_path, bundled):
 
 def test_the_app_never_waits_forever_for_the_persons_answer():
     assert 'asyncAfter(deadline: .now() + 60) { finish("waiting", 3) }' in (SOURCES / "main.swift").read_text("utf-8")
+
+
+def png_size(png: bytes) -> tuple[int, int]:
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+    width, height = struct.unpack(">II", png[16:24])
+    return width, height
+
+
+def test_one_drawing_an_original_one_shows_heinzelmaennchen_everywhere():
+    script = build_script()
+    assert (script.ARTWORK, script.SWARM) == (SOURCES / "heinzel.svg", SOURCES / "heinzel-swarm.svg")
+    # Shapes only: no embedded image or font glyph, so nothing of an emoji font's artwork can ship in them.
+    for artwork in (script.ARTWORK, script.SWARM):
+        for embedded in (b"<image", b"<text", b"<use", b"<font", b"<style", b"data:", b"href"):
+            assert embedded not in artwork.read_bytes()
+    for copy, source in script.COPIES.items():
+        assert copy.read_bytes() == source.read_bytes(), f"{copy.relative_to(ROOT)} is stale: run make icons"
+    # One Heinzelmännchen where the swarm wouldn't read, the swarm where it does.
+    assert script.artwork_for(32) == script.ARTWORK
+    assert script.artwork_for(script.SWARM_FROM) == script.SWARM
+    for name, (background, fill) in script.WORDMARKS.items():
+        made = (script.THEME_LOGO / name).read_text(encoding="utf-8")
+        assert made == script.wordmark(background, fill), f"{name} is stale: run make icons"
+    # The drawing it replaced, a red pointed hat, is gone from everything that shows Heinzelmännchen.
+    for shown in (*script.COPIES, *(script.THEME_LOGO / name for name in script.WORDMARKS)):
+        assert b"M120 292 C160 200" not in shown.read_bytes()
+
+
+def test_the_web_icons_are_the_sizes_the_manifest_and_the_build_name():
+    script = build_script()
+    for name, (size, style) in script.WEB_ICONS.items():
+        assert style in {"tile", "maskable"}
+        assert png_size((script.PUBLIC / name).read_bytes()) == (size, size)
+    manifest = json.loads((script.PUBLIC / "manifest.webmanifest").read_text(encoding="utf-8"))
+    for icon in manifest["icons"]:
+        size, style = script.WEB_ICONS[icon["src"].lstrip("/")]
+        assert icon["sizes"] == f"{size}x{size}"
+        assert (icon["purpose"] == "maskable") == (style == "maskable")
+    ico = (script.PUBLIC / "favicon.ico").read_bytes()
+    _, kind, count = struct.unpack("<HHH", ico[:6])
+    assert (kind, count) == (1, len(script.FAVICON_SIZES))
+    for index, size in enumerate(script.FAVICON_SIZES):
+        _, _, _, _, _, _, length, offset = struct.unpack("<BBBBHHII", ico[6 + 16 * index : 22 + 16 * index])
+        assert png_size(ico[offset : offset + length]) == (size, size)
