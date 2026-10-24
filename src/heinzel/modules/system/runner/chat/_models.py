@@ -6,6 +6,7 @@ from typing import Annotated, ClassVar, Literal
 from pydantic import BaseModel, Field, JsonValue, StringConstraints
 
 from heinzel import ModuleSettings
+from heinzel.kernel import Billing, Effort
 
 ContextKind = Literal["route", "contract", "draft", "event", "text"]
 SessionId = Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{16}$")]
@@ -33,7 +34,13 @@ class ChatSettings(ModuleSettings):
         default=50, ge=1, le=1000, description="Chat sessions kept at most; the oldest beyond are removed."
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"session_max_usd"})
+    tools: Literal["everyday", "all"] = Field(
+        default="everyday",
+        description="Which operations the chat's agent can use: `everyday` (the ones `hz --help` lists; every tool is "
+        "sent with every message, so fewer make each message cheaper) or `all`, every operation expert mode shows.",
+    )
+
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"session_max_usd", "tools"})
 
 
 class ChatContext(BaseModel):
@@ -92,6 +99,19 @@ class ChatMessage(BaseModel):
     tools: dict[str, int] = Field(default_factory=dict, description="Tools the agent called, by name.")
     actions: list[str] = Field(default_factory=list, description="Ids of the actions the agent proposed in it.")
     warnings: list[str] = Field(default_factory=list, description="Limits the runner could not enforce.")
+    access: str | None = Field(default=None, description="The AI access in use when it answered, e.g. `claude-code`.")
+    model: str | None = Field(default=None, description="The model that answered, as the runner reported it.")
+    effort: Effort | None = Field(default=None, description="The effort it was asked for; none: the default.")
+    billing: Billing | None = Field(
+        default=None,
+        description="`plan`: on a subscription, so `cost_usd` is what it would cost at API prices, covered by the "
+        "plan; `api`: billed per token; none when the runner can't tell.",
+    )
+    duration_seconds: float | None = Field(default=None, description="How long the answer took.")
+    input_tokens: int | None = Field(default=None, description="Tokens sent, without cache reads, if reported.")
+    output_tokens: int | None = Field(default=None, description="Tokens produced, if reported.")
+    cache_read_tokens: int | None = Field(default=None, description="Input tokens read from the prompt cache.")
+    cache_write_tokens: int | None = Field(default=None, description="Input tokens written to the prompt cache.")
 
 
 class ChatCosts(BaseModel):
@@ -117,6 +137,8 @@ class ChatSession(BaseModel):
         default_factory=list[ChatAction], description="What the agent proposed, oldest first."
     )
     costs: ChatCosts = Field(description="What it cost and may still cost.")
+    model: str | None = Field(default=None, description="The model this chat asks for; none: the runner's default.")
+    effort: Effort | None = Field(default=None, description="The effort this chat asks for; none: the default.")
 
     @property
     def pending(self) -> list[ChatAction]:

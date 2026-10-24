@@ -213,6 +213,7 @@ def test_a_message_runs_the_runner_with_hz_tools_for_this_session_only(service, 
     assert tools.mcp_servers["hz"].command == server_command(chat.id, Path.cwd())
     assert server_command(chat.id, Path.cwd())[:3] == [sys.executable, "-m", "heinzel"]
     assert server_command(chat.id, Path.cwd())[-2:] == ["--project", str(Path.cwd())]
+    assert server_command(chat.id, Path.cwd())[-4:-2] == ["--chat-tools", "everyday"]
     assert tools.read_files is False  # no file tools: the chat reads through hz only
     assert run["prompt"] == "User: What does [email] own?"
     assert "workflow_show" in str(run["contract"])

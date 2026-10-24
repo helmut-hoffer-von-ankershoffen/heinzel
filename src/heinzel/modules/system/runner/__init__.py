@@ -72,8 +72,8 @@ def ask(
     with tempfile.TemporaryDirectory(prefix="hz-ask-") as directory:
         return runner.run(
             ASK_PREAMBLE + prompt.strip(),
-            contract="chat",
-            tools=ToolProfile(working_dir=Path(directory)),
+            contract="",  # a lean run's own short system prompt; the preamble is in the prompt
+            tools=ToolProfile(working_dir=Path(directory), read_files=False),  # lean: a question reads no files
             timeout=ASK_TIMEOUT,
             budget=Budget(max_usd=cap),
         )

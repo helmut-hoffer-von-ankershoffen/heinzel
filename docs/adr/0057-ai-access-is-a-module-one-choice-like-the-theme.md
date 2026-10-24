@@ -114,6 +114,17 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
    decision: it is a user-facing choice like `chat`, not administration ([ADR 0018](0018-one-administrative-namespace.md)).
 10. **Doctor.** The `ai` health check: the chosen option is installed and signed in, as far as status can tell
     offline; the bound agent runner is the one it names. `system.runner` keeps its runner checks.
+11. **Model, effort and honest cost per answer.** `AgentRunner.run` takes an optional `model` and `effort` (`low`,
+    `medium`, `high`, `xhigh`, `max`) that override the configured ones for one run; a runner that can't pass one
+    says so in its warnings. `hz ai models` lists the models and efforts of the AI access in use (`AccessStatus`
+    gains `efforts` and `billing`) for the chat composer's picker; a chat keeps its choice for its later messages.
+    Every answer keeps when it was made, how long it took, the AI access, model, effort, tokens and cost, shown
+    behind an (i). `billing` is `plan` when the agent ran on a subscription (Claude Code's `apiKeySource` is `none`,
+    its `authMethod` `claude.ai`): its cost is what the run would cost at API prices, which the plan covers, and is
+    labelled "uses your plan · ≈ $X at API prices" wherever it shows; `api` is real spend. A run without file tools
+    (a chat, a question, a test) is lean: its contract replaces Claude Code's own system prompt, and a chat's agent
+    gets the everyday operations as tools (`[system.runner.chat] tools = "all"` for every one), since every tool's
+    schema goes with every message.
 
 ### Consequences
 

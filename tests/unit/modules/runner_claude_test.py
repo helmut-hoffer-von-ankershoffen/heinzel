@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 
 from heinzel import Budget, HeinzelError, McpServer, Progress, Status, ToolProfile
-from heinzel.modules.system.runner._claude import SIGN_IN, ClaudeCodeRunner, login_check, parse_events
+from heinzel.modules.system.runner._claude import (
+    LEAN_PROMPT,
+    SIGN_IN,
+    ClaudeCodeRunner,
+    auth_status,
+    login_check,
+    parse_events,
+)
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import Outcome
 
@@ -429,3 +436,74 @@ def test_the_login_check_runs_in_an_empty_directory_and_survives_a_broken_cli():
         raise PermissionError(13, "Permission denied")
 
     assert login_check("/bin/claude", execute=broken).status == Status.DEGRADED
+
+
+def test_a_run_without_file_tools_is_lean_its_contract_replaces_claude_code_s_system_prompt():
+    fake = FakeExecute()
+    seen: dict[str, str] = {}
+
+    def execute(command: list[str], **kwargs: object) -> Outcome:
+        seen["prompt"] = Path(command[command.index("--system-prompt-file") + 1]).read_text(encoding="utf-8")
+        return fake(command, **kwargs)
+
+    run(
+        ClaudeCodeRunner(RunnerSettings(), execute=execute, which=lambda n: f"/bin/{n}"),
+        tools=ToolProfile(read_files=False),
+    )
+    [(command, _)] = fake.calls
+    assert "--append-system-prompt-file" not in command
+    assert seen["prompt"] == "Only summarize."
+    run(
+        ClaudeCodeRunner(RunnerSettings(), execute=execute, which=lambda n: f"/bin/{n}"),
+        contract="",
+        tools=ToolProfile(read_files=False),
+    )
+    assert seen["prompt"] == LEAN_PROMPT  # a lean run always brings a short prompt of its own
+    run(runner(fake))  # with file tools, Claude Code's own prompt stays and the contract is appended
+    assert "--append-system-prompt-file" in fake.calls[-1][0]
+
+
+def test_a_run_s_model_and_effort_override_the_configured_ones():
+    fake = FakeExecute()
+    run(runner(fake, model="opus"), model="sonnet", effort="high")
+    command = fake.calls[-1][0]
+    assert command[command.index("--model") + 1] == "sonnet"
+    assert command[command.index("--effort") + 1] == "high"
+    run(runner(fake, model="opus"))
+    command = fake.calls[-1][0]
+    assert command[command.index("--model") + 1] == "opus"
+    assert "--effort" not in command
+
+
+@pytest.mark.parametrize(("source", "billing"), [("none", None), ("ANTHROPIC_API_KEY", "api"), (None, None)])
+def test_the_billing_comes_from_the_api_key_source_claude_code_reports(source, billing):
+    init: dict[str, object] = {"type": "system", "model": "claude-opus-5-5"}
+    if source is not None:
+        init["apiKeySource"] = source
+    assert parse_events(stream([init, *EVENTS[1:]]).splitlines(), 1.0).billing == billing
+
+
+@pytest.mark.parametrize(("method", "billing"), [("claude.ai", "plan"), ("apiKey", "api")])
+def test_the_auth_status_says_how_the_login_is_billed(method, billing):
+    def execute(command: list[str], **kwargs: object) -> Outcome:
+        return Outcome(returncode=0, stdout=f'{{"loggedIn": true, "authMethod": "{method}"}}', stderr="")
+
+    check, found = auth_status("/bin/claude", execute=execute)
+    assert (check.status, found) == (Status.UP, billing)
+
+
+@pytest.mark.parametrize(("method", "billing"), [("claude.ai", "plan"), ("cloud", "api")])
+def test_a_run_without_an_api_key_asks_the_login_once_whether_a_plan_pays(method, billing):
+    init = {"type": "system", "model": "claude-opus-5-5", "apiKeySource": "none"}
+    asked: list[list[str]] = []
+
+    def execute(command: list[str], **kwargs: object) -> Outcome:
+        if command[1:3] == ["auth", "status"]:
+            asked.append(command)
+            return Outcome(returncode=0, stdout=f'{{"loggedIn": true, "authMethod": "{method}"}}', stderr="")
+        return Outcome(returncode=0, stdout=stream([init, *EVENTS[1:]]), stderr="")
+
+    target = ClaudeCodeRunner(RunnerSettings(), execute=execute, which=lambda name: f"/bin/{name}")
+    assert run(target).billing == billing
+    assert run(target).billing == billing
+    assert len(asked) == 1  # once per runner, not per message

@@ -33,7 +33,7 @@ def test_asks_read_only_in_an_empty_directory_within_the_cap():
     assert result.draft == "Run `hz system doctor`."
     [call] = runner.calls
     assert str(call["prompt"]).endswith("User: How healthy is hz?")
-    assert call["contract"] == "chat"
+    assert call["contract"] == ""  # lean: its own short system prompt, the preamble is in the prompt
     assert call["tools"].tools == []  # type: ignore[attr-defined] - the runner's read-only default
     assert call["timeout"] == ASK_TIMEOUT
     assert call["budget"] == Budget(max_usd=0.25)

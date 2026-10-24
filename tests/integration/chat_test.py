@@ -39,6 +39,7 @@ class Script:
 
     calls: list[tuple[str, dict[str, object]]] = field(default_factory=list)
     prompts: list[str] = field(default_factory=list)
+    choices: list[dict[str, object]] = field(default_factory=list)
     result: AgentResult | None = None
     kernel: Kernel | None = None
 
@@ -51,9 +52,17 @@ def fake_runner_module(script: Script, ran: list[str]) -> Module:
             self.progress = progress
 
         def run(
-            self, prompt: str, *, contract: str, tools: ToolProfile, timeout: timedelta, budget: Budget
+            self,
+            prompt: str,
+            *,
+            contract: str,
+            tools: ToolProfile,
+            timeout: timedelta,
+            budget: Budget,
+            **choice: object,
         ) -> AgentResult:
             del contract, timeout, budget
+            script.choices.append(choice)
             assert not tools.read_files  # a chat reads through hz only
             script.prompts.append(prompt)
             emit = self.progress.emitter()
@@ -189,7 +198,7 @@ def test_the_chat_mcp_server_proposes_writes_over_mcp_and_runs_nothing(kernel, r
     session = json.loads(hz(kernel, "chat", "open", "--json").output)["id"]
 
     async def scenario() -> None:
-        async with Client(mcp.build(kernel, chat=session)) as client:
+        async with Client(mcp.build(kernel, chat=session, chat_tools="all")) as client:
             listed = {tool.name for tool in (await client.list_tools()).tools}
             assert "fakeagent_publish" in listed
             assert not any(name.startswith("system_runner_chat") for name in listed)
@@ -216,7 +225,7 @@ def test_the_command_the_agent_starts_is_the_gated_chat_server(tmp_path, monkeyp
     kernel = boot()  # as `hz` boots there
     session = json.loads(hz(kernel, "chat", "open", "--json").output)["id"]
     assert (state / "chat" / session).is_dir()
-    command = server_command(session, Path.cwd())
+    command = server_command(session, Path.cwd(), "all")
     monkeypatch.chdir(tmp_path)  # where the agent starts it: anywhere else
 
     async def scenario() -> str:
@@ -230,6 +239,86 @@ def test_the_command_the_agent_starts_is_the_gated_chat_server(tmp_path, monkeyp
     assert "Not run" in anyio.run(scenario)
     shown = json.loads(hz(kernel, "chat", "show", session, "--json").output)
     assert [(a["operation"], a["status"]) for a in shown["actions"]] == [("set", "pending")]
+
+
+def test_a_chat_gets_the_everyday_operations_unless_all_are_asked_for(kernel):
+    """Every tool's schema goes with every message: the everyday ones make a short message far cheaper (ADR 0057)."""
+    session = json.loads(hz(kernel, "chat", "open", "--json").output)["id"]
+
+    async def listed(tools: str) -> set[str]:
+        async with Client(mcp.build(kernel, chat=session, chat_tools=tools)) as client:  # type: ignore[arg-type]
+            return {tool.name for tool in (await client.list_tools()).tools}
+
+    everyday = anyio.run(listed, "everyday")
+    every = anyio.run(listed, "all")
+    assert "fakeagent_publish" not in everyday  # a test module's operations are expert ones
+    assert "fakeagent_publish" in every
+    assert everyday < every
+
+
+def test_the_chat_keeps_its_model_and_effort_and_each_answer_says_how_it_was_made(kernel, script):
+    script.calls = []
+    script.result = AgentResult(
+        runner="fake",
+        model="sonnet-5",
+        billing="plan",
+        status="completed",
+        draft="Hi!",
+        usage=TokenUsage(input_tokens=3, output_tokens=40, cache_read_tokens=900, cost_usd=0.1337),
+        duration_seconds=2.5,
+    )
+    session = json.loads(hz(kernel, "chat", "open", "--json").output)["id"]
+    first = hz(kernel, "chat", "send", session, "hi", "--model", "sonnet", "--effort", "high", "--json")
+    assert first.exit_code == 0, first.output
+    hz(kernel, "chat", "send", session, "and again", "--json")
+    assert script.choices == [{"model": "sonnet", "effort": "high"}] * 2  # the chat keeps its choice
+    shown = json.loads(hz(kernel, "chat", "show", session, "--json").output)
+    assert (shown["model"], shown["effort"]) == ("sonnet", "high")
+    answer = shown["messages"][1]
+    assert {key: answer[key] for key in ("model", "effort", "billing", "duration_seconds", "input_tokens")} == {
+        "model": "sonnet-5",
+        "effort": "high",
+        "billing": "plan",
+        "duration_seconds": 2.5,
+        "input_tokens": 3,
+    }
+    hz(kernel, "chat", "send", session, "back to default", "--model", "", "--json")
+    assert script.choices[-1] == {"effort": "high"}  # an empty model goes back to the runner's own
+
+
+def test_the_terminal_labels_plan_usage_as_api_prices_covered_by_the_plan(kernel, script):
+    script.calls = []
+    script.result = AgentResult(
+        runner="fake",
+        billing="plan",
+        status="completed",
+        draft="Hi!",
+        usage=TokenUsage(cost_usd=0.13),
+        duration_seconds=1,
+    )
+    result = hz(kernel, "chat", input="hi\n/exit\n")
+    assert "uses your plan · ≈ $0.13 at API prices" in result.output
+
+
+def test_a_runner_from_before_model_and_effort_answers_without_them_and_says_so(make_kernel):
+    module = Module("oldagent", "A runner with the run of before model and effort.")
+
+    class OldRunner:
+        def run(
+            self, prompt: str, *, contract: str, tools: ToolProfile, timeout: timedelta, budget: Budget
+        ) -> AgentResult:
+            del prompt, contract, tools, timeout, budget
+            return AgentResult(runner="old", status="completed", draft="Hi!", duration_seconds=0.1)
+
+    module.provides("agent-runner", modes={"read"}, name="old")(OldRunner)
+    config = Config(files=(), data={"capabilities": {"agent_runner": "old"}})
+    kernel = make_kernel(builtins=True, oldagent=module, config=config)
+    session = json.loads(hz(kernel, "chat", "open", "--json").output)["id"]
+    result = hz(kernel, "chat", "send", session, "hi", "--model", "sonnet", "--json")
+    assert result.exit_code == 0, result.output
+    answer = json.loads(result.output)["messages"][-1]
+    assert (answer["status"], answer["text"]) == ("completed", "Hi!")
+    assert any("can't take a model or an effort" in warning for warning in answer["warnings"])
 
 
 def test_serving_a_chat_on_a_port_is_refused(kernel):

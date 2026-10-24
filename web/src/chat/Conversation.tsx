@@ -1,7 +1,8 @@
 // What a chat shows wherever it is (Home, the right sidebar): the messages, the answer as it streams with the tools
 // it calls, every proposed action as a card that runs only on Confirm, the costs, and the composer.
 import { Check, Info, Send, X } from "lucide-react";
-import { type FormEvent, type RefObject, useId, useState } from "react";
+import { type FormEvent, type RefObject, useEffect, useId, useState } from "react";
+import type { ModelChoice } from "@/api/chat";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
 import { useConfig } from "@/api/queries";
 import { CopyCommand } from "@/components/common";
@@ -9,19 +10,11 @@ import { Prose } from "@/components/Prose";
 import { Button } from "@/components/ui/button";
 import { format, t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { MessageInfo } from "./MessageInfo";
+import { ModelPicker } from "./ModelPicker";
 import type { Chat } from "./useChat";
 
 export const MESSAGE_LIMIT = 4000;
-
-function answerLine(message: SchemaChatMessage): string {
-  const cost =
-    message.cost_usd != null
-      ? format.usd(message.cost_usd)
-      : message.budget_usd != null
-        ? t("chat.costCounted", { cap: format.usd(message.budget_usd) })
-        : t("chat.costUnknown");
-  return t("chat.answerCost", { runner: message.runner || t("chat.agent"), cost });
-}
 
 /** Tool calls as small chips, folded away until asked for. */
 function Tools({ names }: { names: string[] }) {
@@ -83,7 +76,7 @@ export function ActionCard({
   );
 }
 
-function MessageItem({ message }: { message: SchemaChatMessage }) {
+function MessageItem({ message, first }: { message: SchemaChatMessage; first: boolean }) {
   if (message.role === "action") {
     return <li className="whitespace-pre-wrap text-xs text-muted-foreground">{message.text}</li>;
   }
@@ -105,7 +98,9 @@ function MessageItem({ message }: { message: SchemaChatMessage }) {
       )}
       {!user && (
         <>
-          <p className="mt-1 text-xs text-muted-foreground">{answerLine(message)}</p>
+          <div className="mt-0.5 flex items-center gap-1">
+            <MessageInfo message={message} first={first} />
+          </div>
           <Tools names={Object.entries(message.tools ?? {}).flatMap(([name, count]) => Array(count).fill(name))} />
         </>
       )}
@@ -142,6 +137,7 @@ export function Costs({ chat, className }: { chat: Chat; className?: string }) {
 
 export function Conversation({ chat, empty }: { chat: Chat; empty?: string }) {
   const messages = chat.session?.messages ?? [];
+  const firstAnswer = messages.findIndex((message) => message.role === "assistant");
   const pending = (chat.session?.actions ?? []).filter((action) => action.status === "pending");
   return (
     <ol className="flex flex-col gap-3" aria-live="polite">
@@ -149,7 +145,7 @@ export function Conversation({ chat, empty }: { chat: Chat; empty?: string }) {
       {messages.map((item, index) => (
         // Messages are append-only, so their position is their identity.
         // biome-ignore lint/suspicious/noArrayIndexKey: see above
-        <MessageItem key={index} message={item} />
+        <MessageItem key={index} message={item} first={index === firstAnswer} />
       ))}
       {pending.map((action) => (
         <ActionCard
@@ -196,40 +192,52 @@ export function Composer({
   className?: string;
 }) {
   const [message, setMessage] = useState("");
+  // The session's choice, until the person picks another; sent with the next message, which the session keeps.
+  const [picked, setPicked] = useState<ModelChoice | null>(null);
+  const sessionId = chat.session?.id;
+  // Another conversation has its own choice: a pick made in one never goes with another's message.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the conversation changes, by its id
+  useEffect(() => setPicked(null), [sessionId]);
+  const choice: ModelChoice = picked ?? { model: chat.session?.model ?? null, effort: chat.session?.effort ?? null };
   const inputId = useId();
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     const text = message.trim();
     if (!text || chat.live || chat.loading) return;
     setMessage("");
-    if (!(await chat.send(text, context))) setMessage((current) => current || text); // nothing lost on failure
+    if (!(await chat.send(text, context, picked ?? {})))
+      setMessage((current) => current || text); // nothing lost
+    else setPicked(null);
   };
   return (
-    <form onSubmit={submit} className={cn("flex items-end gap-2", className)}>
-      <label htmlFor={inputId} className="sr-only">
-        {t("chat.label")}
-      </label>
-      <textarea
-        id={inputId}
-        ref={inputRef}
-        rows={2}
-        value={message}
-        maxLength={MESSAGE_LIMIT}
-        onChange={(event) => setMessage(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) void submit(event);
-        }}
-        placeholder={t("chat.placeholder")}
-        className="min-h-9 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
-      />
-      <Button
-        type="submit"
-        size="icon"
-        disabled={!message.trim() || chat.live != null || chat.loading}
-        aria-label={t("chat.send")}
-      >
-        <Send aria-hidden />
-      </Button>
-    </form>
+    <div className={cn("flex flex-col gap-1", className)}>
+      <form onSubmit={submit} className="flex items-end gap-2">
+        <label htmlFor={inputId} className="sr-only">
+          {t("chat.label")}
+        </label>
+        <textarea
+          id={inputId}
+          ref={inputRef}
+          rows={2}
+          value={message}
+          maxLength={MESSAGE_LIMIT}
+          onChange={(event) => setMessage(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) void submit(event);
+          }}
+          placeholder={t("chat.placeholder")}
+          className="min-h-9 flex-1 resize-none rounded-lg border border-border bg-input px-2 py-1 text-sm"
+        />
+        <Button
+          type="submit"
+          size="icon"
+          disabled={!message.trim() || chat.live != null || chat.loading}
+          aria-label={t("chat.send")}
+        >
+          <Send aria-hidden />
+        </Button>
+      </form>
+      <ModelPicker value={choice} onChange={setPicked} disabled={chat.live != null} />
+    </div>
   );
 }

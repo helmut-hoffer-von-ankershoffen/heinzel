@@ -107,6 +107,10 @@ export const useSetTheme = () => {
   });
 };
 
+/** `hz ai models`: the models and efforts of the AI access in use, for the chat's picker (ADR 0057). */
+export const useAiModels = () =>
+  useQuery({ queryKey: ["ai", "models"], queryFn: () => unwrap(api.GET("/ai/models")), staleTime: 5 * 60 * 1000 });
+
 /** `hz system notify list`: the latest notices, newest first as the store keeps them (ADR 0043). */
 export const useNotices = () =>
   useQuery({

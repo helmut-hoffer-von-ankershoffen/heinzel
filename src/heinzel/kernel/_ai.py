@@ -9,6 +9,8 @@ from typing import Protocol
 
 from pydantic import BaseModel, Field
 
+from heinzel.kernel._agents import Billing, Effort
+
 
 class AccessStatus(BaseModel):
     """What an AI access option says about itself without calling a model."""
@@ -28,6 +30,14 @@ class AccessStatus(BaseModel):
         default=None,
         description="The `agent-runner` adapter that serves its chat and coding uses, e.g. `claude-code`; none when it "
         "has no agent.",
+    )
+    efforts: list[Effort] = Field(
+        default_factory=list[Effort], description="The efforts it can be asked for, low to max; empty when none."
+    )
+    billing: Billing | None = Field(
+        default=None,
+        description="`plan`: a subscription login, so a cost shown is what it would cost at API prices, covered by "
+        "the plan; `api`: billed per token; none when it can't tell.",
     )
 
 

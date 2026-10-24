@@ -137,6 +137,8 @@ class ChatRepl:
             self._show(reply)
         cost, cap = reply.get("cost_usd"), reply.get("budget_usd")
         spent = f"${cost:.4f}" if cost is not None else "cost not reported"
+        if cost is not None and reply.get("billing") == "plan":  # API prices, but the subscription pays (ADR 0057)
+            spent = f"uses your plan · ≈ ${cost:.2f} at API prices"
         if cost is None and cap:
             spent += f", counted as ${cap:.2f}"
         self.err_console.print(

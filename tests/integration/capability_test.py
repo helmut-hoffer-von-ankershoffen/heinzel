@@ -228,6 +228,7 @@ def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_o
     code, report = hz(make_kernel(builtins=True), "system", "doctor")
     assert code == 0
     assert report["checks"]["system.capability"] == [
+        {"name": "ai-access:read for ai", "status": "up", "detail": "served by claude-code", "fix": ""},
         {"name": "ai-access:read for ai.access", "status": "up", "detail": "served by claude-code", "fix": ""},
         {
             "name": "calendar:read for org agenda",
@@ -435,6 +436,7 @@ def test_capability_list_shows_the_new_capabilities_with_their_adapters(prepared
         ("calendar", "agenda", ("read",)),
     }
     assert [(u["requester"], u["requirement"], u["adapter"]) for u in report["uses"]] == [
+        ("ai", "ai-access:read", "claude-code"),
         ("ai.access", "ai-access:read", "claude-code"),
         ("org agenda", "calendar:read", "agenda"),
         ("prep", "chat:read", "talk"),

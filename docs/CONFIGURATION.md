@@ -186,6 +186,7 @@ Plugins add their own tables.
 | `session_max_usd` | `HZ_SYSTEM_RUNNER_CHAT__SESSION_MAX_USD` | `2.0` | Most one chat session may cost in US dollars, all its messages together; a message never costs more than system.runner.ask_max_usd. |
 | `keep_days` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS` | `30` | Days a chat session is kept after its last message, then removed. |
 | `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | Chat sessions kept at most; the oldest beyond are removed. |
+| `tools` | `HZ_SYSTEM_RUNNER_CHAT__TOOLS` | `'everyday'` | Which operations the chat's agent can use: `everyday` (the ones `hz --help` lists; every tool is sent with every message, so fewer make each message cheaper) or `all`, every operation expert mode shows. |
 
 ## `[system.theme]`
 

@@ -51,6 +51,7 @@ $ hz ai [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `access`: (expert) Pick how hz reaches AI: Claude...
+* `models`: (expert) List the models and efforts of...
 
 ### `hz ai access`
 
@@ -118,6 +119,22 @@ $ hz ai access use [OPTIONS] {name}
 **Arguments**:
 
 * `name`: The AI access to use, one `hz ai access list` shows, e.g. `claude-code`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz ai models`
+
+(expert) List the models and efforts of the AI access in use, for the chat&#x27;s model and effort picker.
+
+**Usage**:
+
+```console
+$ hz ai models [OPTIONS]
+```
 
 **Options**:
 
@@ -301,6 +318,8 @@ $ hz chat send [OPTIONS] {session} {message}
 **Options**:
 
 * `--budget-usd <float>`: Most this answer may cost in US dollars, within the per-message and session caps.
+* `--model <str>`: The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default.
+* `--effort <|low|medium|high|xhigh|max>`: The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -1930,6 +1949,7 @@ $ hz system serve mcp [OPTIONS]
 * `--port <int>`: Port for streamable-http.  [default: 8765]
 * `--chat SESSION`: Serve the tools of this chat session: reads run, everything else waits for your confirmation in the chat. Started by `hz chat` for its agent, over stdio only.
 * `--project <path>`: Read the configuration as if started in this directory (its hz.toml), as the chat does.
+* `--chat-tools <everyday|all>`: With --chat: the everyday operations as tools (cheaper messages), or all of them.  [default: everyday]
 * `--help`: Show this message and exit.
 
 ### `hz system theme`

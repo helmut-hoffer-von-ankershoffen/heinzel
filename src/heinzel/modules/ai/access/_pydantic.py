@@ -134,7 +134,8 @@ class PydanticAiAccess:
                     "fix": SET_KEY + also,
                 }
             )
-        return base.model_copy(update={"installed": True, "signed_in": True, "detail": f"{model}; key from {source}"})
+        signed = {"installed": True, "signed_in": True, "detail": f"{model}; key from {source}", "billing": "api"}
+        return base.model_copy(update=signed)
 
     def test(self) -> AccessTest:
         """One request with a few output tokens; a failure is a result."""

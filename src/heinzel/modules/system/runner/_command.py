@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from heinzel import AgentResult, Budget, HeinzelError, TokenUsage, ToolProfile
-from heinzel.kernel import subprocess_environment
+from heinzel.kernel import Effort, subprocess_environment
 from heinzel.modules.system.runner._claude import mcp_config, resolve, working_dir
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import MAX_OUTPUT, Execute, amount, run_bounded, whole_number
@@ -152,8 +152,21 @@ class CommandRunner:
             placeholders(argument)
         return resolve(settings.command[0], self._which, "The command runner's executable")
 
-    def run(self, prompt: str, *, contract: str, tools: ToolProfile, timeout: timedelta, budget: Budget) -> AgentResult:
+    def run(  # noqa: PLR0913 - the protocol's run, by keyword
+        self,
+        prompt: str,
+        *,
+        contract: str,
+        tools: ToolProfile,
+        timeout: timedelta,
+        budget: Budget,
+        model: str | None = None,
+        effort: Effort | None = None,
+    ) -> AgentResult:
         """Write prompt and contract to files, run the command, read the result; stop at `timeout`.
+
+        `model` fills `{model}` instead of the configured one; the command has no placeholder for the effort, so a
+        chosen effort is a warning.
 
         Raises:
             HeinzelError: If the runner is not configured to run (no command, read-only not recorded, a tool not
@@ -163,6 +176,9 @@ class CommandRunner:
         cwd = working_dir(tools)
         executable = self._check(tools)
         warnings = self._warnings(budget, tools)
+        chosen = model or settings.model
+        if effort is not None:
+            warnings.append(f"the effort {effort} can't be passed to the command, so its own applies")
         with tempfile.TemporaryDirectory(prefix="hz-run-") as directory:  # 0700: only this user reads the prompt
             folder = Path(directory)
             (folder / "prompt.md").write_text(prompt, encoding="utf-8")
@@ -175,7 +191,7 @@ class CommandRunner:
                 "output_file": str(output_file),
                 "working_dir": str(cwd or Path.cwd()),
                 "tools": ",".join(tools.tools),
-                "model": settings.model or "",
+                "model": chosen or "",
                 "timeout_seconds": str(int(timeout.total_seconds())),
                 "max_usd": "" if budget.max_usd is None else f"{budget.max_usd:g}",
                 "mcp_config": str(folder / "mcp.json"),
@@ -186,7 +202,7 @@ class CommandRunner:
                 command, input=None, cwd=cwd, env=environment(settings.command_env), timeout=timeout.total_seconds()
             )
             duration = time.monotonic() - started
-            base: dict[str, Any] = {"runner": NAME, "model": settings.model, "duration_seconds": duration}
+            base: dict[str, Any] = {"runner": NAME, "model": chosen, "duration_seconds": duration}
             if outcome.timed_out:
                 detail = f"stopped after {timeout}, the run's timeout"
                 return AgentResult(**base, status="timeout", detail=detail, warnings=warnings)

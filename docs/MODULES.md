@@ -42,6 +42,10 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 
 How hz reaches AI: the AI access in use, its status and a live test.
 
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the models and efforts of the AI access in use, for the chat's model and effort picker. | `hz ai models` | `ai_models` | — | `GET /api/ai/models` |  | expert |
+
 ## `ai.access`
 
 Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds.

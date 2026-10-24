@@ -79,14 +79,16 @@ def tools(kernel, session="0123456789abcdef"):
     return {item.name: mcp.chat_tool(kernel, item, session) for item in exposed(kernel, mcp.HEAD)}
 
 
-def test_a_chat_gets_every_tool_the_mcp_head_has_and_nothing_it_hides(kernel):
+def test_a_chat_asked_for_all_tools_gets_every_tool_the_mcp_head_has_and_nothing_it_hides(kernel):
     names = {item.name for item in exposed(kernel, mcp.HEAD)}
 
-    async def listed_tools() -> set[str]:
-        async with Client(mcp.build(kernel, chat="0123456789abcdef")) as client:
+    async def listed_tools(tools: str) -> set[str]:
+        async with Client(mcp.build(kernel, chat="0123456789abcdef", chat_tools=tools)) as client:  # type: ignore[arg-type]
             return {tool.name for tool in (await client.list_tools()).tools}
 
-    listed = anyio.run(listed_tools)
+    everyday = anyio.run(listed_tools, "everyday")  # the default: what a short message needs, far cheaper (ADR 0057)
+    assert everyday == {item.name for item in exposed(kernel, mcp.HEAD) if item.operation.audience == "everyday"}
+    listed = anyio.run(listed_tools, "all")
     assert listed == names
     assert {"notes_owner", "notes_publish", "system_doctor", "system_config_set"} <= listed
     assert "notes_private" not in listed

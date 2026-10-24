@@ -453,6 +453,22 @@
       "AgentResult": {
         "description": "The outcome of one agent session, for the job's result and its receipt.",
         "properties": {
+          "billing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan",
+                  "api"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`plan` when the agent ran on a subscription (its cost is at API prices, covered by the plan), `api` when on an API key; none when the runner can't tell.",
+            "title": "Billing"
+          },
           "detail": {
             "default": "",
             "description": "Why the run did not complete; empty when it did.",
@@ -1221,6 +1237,18 @@
       "ChatMessage": {
         "description": "One message of a chat.",
         "properties": {
+          "access": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The AI access in use when it answered, e.g. `claude-code`.",
+            "title": "Access"
+          },
           "actions": {
             "description": "Ids of the actions the agent proposed in it.",
             "items": {
@@ -1235,6 +1263,22 @@
             "title": "At",
             "type": "string"
           },
+          "billing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan",
+                  "api"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`plan`: on a subscription, so `cost_usd` is what it would cost at API prices, covered by the plan; `api`: billed per token; none when the runner can't tell.",
+            "title": "Billing"
+          },
           "budget_usd": {
             "anyOf": [
               {
@@ -1246,6 +1290,30 @@
             ],
             "description": "The cap the answer ran with; what it counts as against the session's cap when no cost is reported.",
             "title": "Budget Usd"
+          },
+          "cache_read_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Input tokens read from the prompt cache.",
+            "title": "Cache Read Tokens"
+          },
+          "cache_write_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Input tokens written to the prompt cache.",
+            "title": "Cache Write Tokens"
           },
           "cost_usd": {
             "anyOf": [
@@ -1265,11 +1333,78 @@
             "title": "Detail",
             "type": "string"
           },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long the answer took.",
+            "title": "Duration Seconds"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effort it was asked for; none: the default.",
+            "title": "Effort"
+          },
           "fix": {
             "default": "",
             "description": "A command that fixes why it did not complete, if there is one.",
             "title": "Fix",
             "type": "string"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens sent, without cache reads, if reported.",
+            "title": "Input Tokens"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model that answered, as the runner reported it.",
+            "title": "Model"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens produced, if reported.",
+            "title": "Output Tokens"
           },
           "role": {
             "description": "`user`, `assistant`, or `action`: what a confirmed or declined action did.",
@@ -1355,6 +1490,25 @@
             "title": "Created",
             "type": "string"
           },
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effort this chat asks for; none: the default.",
+            "title": "Effort"
+          },
           "id": {
             "description": "The session's id, for `hz chat --session` and the web app.",
             "pattern": "^[a-f0-9]{16}$",
@@ -1368,6 +1522,18 @@
             },
             "title": "Messages",
             "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model this chat asks for; none: the runner's default.",
+            "title": "Model"
           },
           "title": {
             "description": "Its first message, shortened, or its context.",
@@ -2797,6 +2963,52 @@
         "title": "EdgeMetadata",
         "type": "object"
       },
+      "EffortChoice": {
+        "description": "An effort the AI access in use can be asked for.",
+        "properties": {
+          "name": {
+            "description": "What `hz chat send --effort` takes, e.g. `medium`.",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "recommended": {
+            "description": "Whether it is the one to pick when unsure.",
+            "title": "Recommended",
+            "type": "boolean"
+          },
+          "title": {
+            "description": "What the picker shows, e.g. `Extra`.",
+            "title": "Title",
+            "type": "string"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What it costs beyond the others, e.g. `≈3.5x or more usage`.",
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "recommended"
+        ],
+        "title": "EffortChoice",
+        "type": "object"
+      },
       "Event": {
         "description": "One occurrence of an entry in a calendar; a recurring entry is expanded into its occurrences.",
         "properties": {
@@ -3892,6 +4104,102 @@
           "since"
         ],
         "title": "MemberView",
+        "type": "object"
+      },
+      "ModelChoice": {
+        "description": "A model the AI access in use offers.",
+        "properties": {
+          "name": {
+            "description": "What `hz chat send --model` takes, e.g. `sonnet`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "description": "What the picker shows, e.g. `Sonnet`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title"
+        ],
+        "title": "ModelChoice",
+        "type": "object"
+      },
+      "ModelList": {
+        "description": "The models and efforts of the AI access in use, for the chat's picker.",
+        "properties": {
+          "access": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The AI access in use, e.g. `claude-code`; none when none is.",
+            "title": "Access"
+          },
+          "billing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan",
+                  "api"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`plan` when it uses a subscription, `api` when billed per token.",
+            "title": "Billing"
+          },
+          "efforts": {
+            "description": "The efforts it takes, low to max; empty when it takes none.",
+            "items": {
+              "$ref": "#/components/schemas/EffortChoice"
+            },
+            "title": "Efforts",
+            "type": "array"
+          },
+          "models": {
+            "description": "Its models, current ones first; empty when it names none.",
+            "items": {
+              "$ref": "#/components/schemas/ModelChoice"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the list is empty or short.",
+            "title": "Note"
+          },
+          "title": {
+            "description": "Its title, e.g. `Claude Code`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access",
+          "title",
+          "billing",
+          "models",
+          "efforts"
+        ],
+        "title": "ModelList",
         "type": "object"
       },
       "ModuleInfo": {
@@ -6837,6 +7145,28 @@
         ]
       }
     },
+    "/ai/models": {
+      "get": {
+        "description": "List the models and efforts of the AI access in use, for the chat's model and effort picker.",
+        "operationId": "ai_models",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the models and efforts of the AI access in use, for the chat's model and effort picker.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/graph": {
       "get": {
         "description": "Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.",
@@ -8812,6 +9142,50 @@
               ],
               "description": "Most this answer may cost in US dollars, within the per-message and session caps.",
               "title": "Budget Usd"
+            }
+          },
+          {
+            "description": "The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default.",
+              "title": "Model"
+            }
+          },
+          {
+            "description": "The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default.",
+            "in": "query",
+            "name": "effort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default.",
+              "title": "Effort"
             }
           }
         ],

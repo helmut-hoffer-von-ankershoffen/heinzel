@@ -3,7 +3,17 @@
 The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets and decide how to expose them.
 """
 
-from heinzel.kernel._agents import AgentResult, AgentRunner, Budget, McpServer, RunStatus, TokenUsage, ToolProfile
+from heinzel.kernel._agents import (
+    AgentResult,
+    AgentRunner,
+    Billing,
+    Budget,
+    Effort,
+    McpServer,
+    RunStatus,
+    TokenUsage,
+    ToolProfile,
+)
 from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess
 from heinzel.kernel._bindings import HOWS, Adapters, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
@@ -164,6 +174,7 @@ __all__ = [
     "AgentRunner",
     "AiAccess",
     "AssetType",
+    "Billing",
     "Budget",
     "Calendar",
     "Capability",
@@ -188,6 +199,7 @@ __all__ = [
     "DiscoveryHint",
     "Document",
     "Documents",
+    "Effort",
     "Emit",
     "EnvironmentBackend",
     "Event",
