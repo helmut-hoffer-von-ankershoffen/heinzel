@@ -265,7 +265,7 @@ def test_says_when_it_cannot_enforce_the_budget():
 
 
 def test_a_missing_command_executable_or_working_directory_says_how_to_fix_it(tmp_path):
-    with pytest.raises(HeinzelError, match="No command is configured"):
+    with pytest.raises(HeinzelError, match="The command runner has no command"):
         run(CommandRunner(RunnerSettings(**TRUSTED), execute=FakeCli()))
     with pytest.raises(HeinzelError, match=r"executable \(mytool\) is not on PATH"):
         run(CommandRunner(RunnerSettings(command=["mytool"], **TRUSTED), execute=FakeCli(), which=lambda _: None))

@@ -35,6 +35,9 @@ from heinzel.modules.system.runner._process import MAX_OUTPUT, Execute, Outcome,
 NAME = "claude-code"
 HOSTS = ("api.anthropic.com",)
 """Where Claude Code sends prompts by default; a Bedrock or Vertex setup in managed settings differs."""
+DOCS = "https://docs.claude.com/en/docs/claude-code"
+BIND_COMMAND_RUNNER = "hz system config set capabilities.agent_runner command"
+"""The fix when Claude Code is missing: the command runner is the other core runner."""
 ISOLATION = (
     "--safe-mode",
     "--restricted",
@@ -96,10 +99,7 @@ class ClaudeCodeRunner:
         try:
             executable = resolve(self._settings.claude_executable, self._which, "Claude Code")
         except HeinzelError as exc:
-            msg = (
-                f"{exc} Install it (https://docs.claude.com/en/docs/claude-code) or bind another runner: "
-                f'[capabilities] agent_runner = "command".'
-            )
+            msg = f"{exc} Install it ({DOCS}), or bind the command runner: {BIND_COMMAND_RUNNER}"
             raise HeinzelError(msg) from None
         allowed = tools.tools or list(self._settings.read_only_tools)
         if unsafe := [tool for tool in allowed if tool not in self._settings.read_only_tools]:
