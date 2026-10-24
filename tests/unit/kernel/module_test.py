@@ -69,6 +69,29 @@ def test_service_and_info():
     assert "example" in repr(module)
 
 
+def test_credential_declares_a_let_and_returns_it():
+    module = Module("example", "x")
+    token = module.credential("api-token", purpose="Example API token.", service="shared")
+    assert module.lets == (token,)
+    assert (token.name, token.purpose, token.service) == ("api-token", "Example API token.", "shared")
+
+
+@pytest.mark.parametrize(("name", "purpose", "problem"), [("API_TOKEN", "x", "must match"), ("token", " ", "purpose")])
+def test_credential_needs_a_valid_name_and_a_purpose(name, purpose, problem):
+    with pytest.raises(ValueError, match=problem):
+        Module("example", "x").credential(name, purpose=purpose)
+
+
+@pytest.mark.parametrize("service", ["GitHub", "a..b", ".a", "a/b", "a.", ""])
+def test_credential_service_must_be_a_qualified_module_name(service):
+    with pytest.raises(ValueError, match="qualified module name"):
+        Module("example", "x").credential("token", purpose="x", service=service)
+
+
+def test_credential_service_may_be_nested():
+    assert Module("example", "x").credential("token", purpose="x", service="system.credential").service
+
+
 def test_job_decorator_records_schedule_and_policies():
     module = Module("example", "x")
 

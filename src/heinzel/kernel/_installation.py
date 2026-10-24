@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
+from heinzel.kernel._credentials import subprocess_environment
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._progress import Progress
 
@@ -33,7 +34,9 @@ HZ_TIMEOUT = 120
 def _run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
     """Run a command; a timeout becomes exit code 124 (as with timeout(1)), so callers handle it like any failure."""
     try:
-        return subprocess.run(command, capture_output=True, text=True, check=False, timeout=COMMAND_TIMEOUT)  # noqa: S603 - trusted parts, no shell
+        return subprocess.run(  # noqa: S603 - trusted parts, no shell
+            command, capture_output=True, text=True, check=False, timeout=COMMAND_TIMEOUT, env=subprocess_environment()
+        )
     except subprocess.TimeoutExpired:
         return subprocess.CompletedProcess(command, 124, "", f"{command[0]} timed out after {COMMAND_TIMEOUT}s")
 
@@ -134,6 +137,7 @@ class Installation:
                 text=True,
                 check=False,
                 timeout=HZ_TIMEOUT,
+                env=subprocess_environment(),
             )
         except subprocess.TimeoutExpired as exc:
             msg = f"`hz {' '.join(args)}` did not finish within {HZ_TIMEOUT}s after the change."

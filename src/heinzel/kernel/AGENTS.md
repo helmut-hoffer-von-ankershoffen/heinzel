@@ -3,7 +3,9 @@
 Every module and plugin depends on this package; its public API is `hz` and `heinzel.kernel` (`__init__.py`). Treat a
 change like a library release: an ADR for a new concept, unit tests for every branch.
 
-- `_module.py` — `Module` and its decorators (`operation`, `job`, `service`, `settings`, `info`, `health`).
+- `_module.py` — `Module` and its decorators (`operation`, `job`, `service`, `settings`, `info`, `health`,
+  `credential`).
+- `_credentials.py` — `Credentials`, the only way to secrets (ADR 0030), and the environment backend.
 - `_lets.py` — let types, `Check`/`Status` and `CatchUp`. A new let kind needs a head, the kernel or a `system`
   submodule that consumes it (`JobLet`: `system.daemon`).
 - `_discovery.py` — package walk + `heinzel.modules` entry points; plugin failures are collected, built-in ones raise.

@@ -56,11 +56,13 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `agent`: Install the Heinzelmännchen skills for...
 * `changelog`: Show the changelog of the installed...
 * `config`: Show, get, set and initialize configuration.
+* `credential`: Store and check the credentials modules...
 * `daemon`: Run modules&#x27; jobs in the background,...
 * `doctor`: Run every module&#x27;s health checks; exits...
 * `info`: Show versions, interpreter, settings,...
 * `modules`: List every module and the lets it advertises.
 * `plugin`: Find, add, remove, list and scaffold plugins.
+* `release`: Ask where Heinzelmännchen was installed...
 * `serve`: Serve every operation to coding agents...
 * `update`: Update Heinzelmännchen, keeping installed...
 
@@ -263,6 +265,84 @@ $ hz system config unset [OPTIONS] {key}
 **Options**:
 
 * `--scope <user|project>`: Which file to change: user, or the project&#x27;s hz.toml.  [default: user]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system credential`
+
+Store and check the credentials modules need, in the OS keychain.
+
+**Usage**:
+
+```console
+$ hz system credential [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `list`: List the credentials modules declare and...
+* `remove`: Remove a credential&#x27;s value from the...
+* `set`: Store a credential, read from standard...
+
+#### `hz system credential list`
+
+List the credentials modules declare and whether each is stored, never their values.
+
+**Usage**:
+
+```console
+$ hz system credential list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system credential remove`
+
+Remove a credential&#x27;s value from the keychain.
+
+**Usage**:
+
+```console
+$ hz system credential remove [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: Name of the credential, as `hz system credential list` shows it.  [required]
+
+**Options**:
+
+* `--service <str>`: Service it is kept under; needed only when several services declare the name.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system credential set`
+
+Store a credential, read from standard input or a hidden prompt, never from the command line.
+
+**Usage**:
+
+```console
+$ hz system credential set [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: Name of the credential, as `hz system credential list` shows it.  [required]
+
+**Options**:
+
+* `--service <str>`: Service it is kept under; needed only when several services declare the name.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -587,6 +667,22 @@ $ hz system plugin search [OPTIONS]
 **Options**:
 
 * `--text <str>`: Words that name or describe the plugin, e.g. `calendar`; sent to GitHub&#x27;s search. All plugins if omitted.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system release`
+
+Ask where Heinzelmännchen was installed from for its latest release, and whether to update.
+
+**Usage**:
+
+```console
+$ hz system release [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

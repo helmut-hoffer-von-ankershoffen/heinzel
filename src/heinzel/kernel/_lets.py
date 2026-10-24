@@ -127,6 +127,16 @@ class JobLet(Let):
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
+class CredentialLet(Let):
+    """A secret a module needs (ADR 0030); `Credentials` hands out its value, `hz system credential` stores it."""
+
+    purpose: str
+    """What the credential is for and where to get one, shown by `hz system credential list` and doctor."""
+    service: str | None = None
+    """Where it is kept; the qualified name of the declaring module when None. Name another to share one."""
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
 class InfoLet(Let):
     """A section contributed to `hz system info`. The provider may ask for injected services."""
 

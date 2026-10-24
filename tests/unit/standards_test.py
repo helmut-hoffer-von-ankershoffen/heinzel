@@ -157,6 +157,7 @@ ENV_READ = re.compile(r"""(?:environ\.get\(|environ\[|getenv\()\s*["'](HZ_[A-Z0-
 CODE_SUFFIXES = (".py", ".sh", ".jinja")
 NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's modules: why they are fine
     "HZ_URL": "a constant in tests/e2e/docs_test.py, not a variable",
+    "HZ_CREDENTIAL_": "credentials in the environment fallback, named per declared credential (ADR 0030)",
     "HZ_EXAMPLE__": "settings of the `example` module tests define",
     "HZ_A_B__": "the variable prefix of a module named `a-b`, in a test of env_prefix",
     "HZ_SYSTEM_CHANGELOG__": "the variable prefix of a nested module, in a test of env_prefix",

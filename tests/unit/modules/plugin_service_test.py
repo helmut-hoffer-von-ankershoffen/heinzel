@@ -1,8 +1,7 @@
-import io
+import os
 import subprocess
 import sys
 import urllib.error
-import urllib.request
 
 import pytest
 
@@ -113,18 +112,23 @@ def test_installed_groups_modules_by_distribution(make_kernel, tmp_path):
 def test_new_pins_the_template_and_passes_answers(make_kernel, tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "subprocess.run", lambda command, check: calls.append(command) or subprocess.CompletedProcess(command, 0)
+        "subprocess.run",
+        lambda command, check, env: calls.append((command, env)) or subprocess.CompletedProcess(command, 0),
     )
+    monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_API_TOKEN", "not-for-copier")
     service = service_for(make_kernel, tmp_path)
     assert service.new(tmp_path / "p", data=["plugin_name=crm"], ref="v1.2.3") == tmp_path / "p"
-    assert calls == [
-        ["uv", "tool", "run", "copier", "copy", "--vcs-ref", "v1.2.3", "--data", "plugin_name=crm",
-         "gh:helmut-hoffer-von-ankershoffen/heinzel", str(tmp_path / "p")],
+    [(command, env)] = calls
+    assert command == [
+        "uv", "tool", "run", "copier", "copy", "--vcs-ref", "v1.2.3", "--data", "plugin_name=crm",
+        "gh:helmut-hoffer-von-ankershoffen/heinzel", str(tmp_path / "p"),
     ]  # fmt: skip
+    assert "HZ_CREDENTIAL_EXAMPLE_API_TOKEN" not in env  # copier never needs a module's credentials
+    assert env["PATH"] == os.environ["PATH"]
 
 
 def test_new_reports_copier_failures(make_kernel, tmp_path, monkeypatch):
-    monkeypatch.setattr("subprocess.run", lambda command, check: subprocess.CompletedProcess(command, 1))
+    monkeypatch.setattr("subprocess.run", lambda command, check, env: subprocess.CompletedProcess(command, 1))
     with pytest.raises(HeinzelError, match="Failed to scaffold"):
         service_for(make_kernel, tmp_path).new(tmp_path / "p")
 
@@ -169,10 +173,10 @@ class FakeGitHub:
 
     def __init__(self) -> None:
         self.answer: object = {"items": []}
-        self.requests: list[tuple[str, dict[str, str]]] = []
+        self.requests: list[tuple[str, str | None, float]] = []
 
-    def get_json(self, url, headers):
-        self.requests.append((url, dict(headers)))
+    def get_json(self, url, token, timeout):
+        self.requests.append((url, token.get_secret_value() if token else None, timeout))
         if isinstance(self.answer, Exception):
             raise self.answer
         return self.answer
@@ -181,7 +185,7 @@ class FakeGitHub:
 @pytest.fixture
 def github(monkeypatch):
     fake = FakeGitHub()
-    monkeypatch.setattr(_service, "_get_json", fake.get_json)
+    monkeypatch.setattr(_service, "get_json", fake.get_json)
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     return fake
@@ -221,9 +225,9 @@ def test_search_filters_first_party_plugins_and_passes_the_text_to_github(make_k
     service = service_for(make_kernel, tmp_path)
     assert [p.name for p in service.search("TIME team").plugins] == ["heinzel-clock"]
     assert service.search("calendar").plugins == []
-    url, headers = github.requests[-1]
+    url, token, timeout = github.requests[-1]
     assert url.startswith("https://api.github.com/search/repositories?q=topic%3Aheinzel-plugin+calendar&")
-    assert "Authorization" not in headers
+    assert (token, timeout) == (None, 10)
 
 
 @pytest.mark.parametrize("variable", ["GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"])
@@ -231,7 +235,7 @@ def test_search_sends_a_github_token_from_the_environment(make_kernel, tmp_path,
     monkeypatch.setenv(variable, "t0ken")
     settings = make_kernel(builtins=True).resolve(PluginSettings)
     service_for(make_kernel, tmp_path, settings=settings).search()
-    assert github.requests[-1][1]["Authorization"] == "Bearer t0ken"
+    assert github.requests[-1][1] == "t0ken"
 
 
 @pytest.mark.parametrize(
@@ -248,15 +252,3 @@ def test_search_falls_back_to_first_party_plugins_with_a_warning(make_kernel, tm
     result = service_for(make_kernel, tmp_path).search()
     assert [p.name for p in result.plugins] == ["heinzel-clock"]
     assert result.warnings == [f"GitHub could not be searched ({reason}); showing first-party plugins only."]
-
-
-def test_get_json_asks_with_a_timeout_and_parses_the_answer(monkeypatch):
-    requests = []
-
-    def urlopen(request, timeout):
-        requests.append((request.full_url, request.get_header("User-agent"), timeout))
-        return io.BytesIO(b'{"items": []}')
-
-    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
-    assert _service._get_json("https://api.github.com/x", {"User-Agent": "hz"}) == {"items": []}
-    assert requests == [("https://api.github.com/x", "hz", 10)]

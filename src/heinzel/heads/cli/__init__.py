@@ -6,10 +6,12 @@ panels. A module with exactly one operation of its own name and no submodules co
 """
 
 import logging
+import os
 import platform
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Annotated
 
@@ -24,7 +26,7 @@ from heinzel.heads._exposure import collapses
 from heinzel.heads.cli._command import command
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._serve import serve_group
-from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Progress, boot
+from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Progress, ReleaseCache, boot
 
 console = Console()
 err_console = Console(stderr=True)
@@ -42,6 +44,7 @@ PLAIN_HELP = f"{LOGO} Heinzelmännchen: {TAGLINE}. Every operation accepts --jso
 CORE_PANEL = "Core"
 PLUGINS_PANEL = "Plugins"
 EX_CONFIG = 78  # sysexits.h: configuration error
+SYSTEM_INFO = ("system", "info")
 
 
 class SortedGroup(TyperGroup):
@@ -132,7 +135,9 @@ class _Mount:
         for _, entry in sorted(entries, key=lambda pair: pair[0]):
             match entry:
                 case OperationLet():
-                    parent.command(name=entry.name, help=entry.summary, epilog=footer)(self._command(entry))
+                    # The update hint follows the text of `hz system info` only (ADR 0031); --json never gets it.
+                    epilogue = partial(print_update_hint, kernel) if (qualname, entry.name) == SYSTEM_INFO else None
+                    parent.command(name=entry.name, help=entry.summary, epilog=footer)(self._command(entry, epilogue))
                 case ModuleRecord():
                     self._module(parent, qualname, entry)
 
@@ -155,8 +160,8 @@ class _Mount:
             self(group, record.qualname)
             parent.add_typer(group, cls=SortedGroup, rich_help_panel=panel)
 
-    def _command(self, operation: OperationLet) -> Callable[..., None]:
-        return command(self.kernel, operation, console, err_console, self.progress)
+    def _command(self, operation: OperationLet, epilogue: Callable[[], None] | None = None) -> Callable[..., None]:
+        return command(self.kernel, operation, console, err_console, self.progress, epilogue=epilogue)
 
 
 def _operations(kernel: Kernel, record: ModuleRecord) -> list[OperationLet]:
@@ -178,4 +183,34 @@ def _print_version(kernel: Kernel, value: bool) -> None:
     plugins = sorted({(r.origin.distribution, r.origin.version) for r in kernel.modules if not r.origin.builtin})
     for distribution, plugin_version in plugins:
         console.print(f"plugin {distribution} {plugin_version}", highlight=False)
+    print_update_hint(kernel)
     raise typer.Exit
+
+
+CI_VARIABLES = ("CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GITHUB_ACTIONS", "GITLAB_CI", "TF_BUILD")
+"""Environment variables CI systems set; no update hint is shown when one of them is."""
+
+
+def stdout_is_terminal() -> bool:
+    """Whether stdout is a terminal, asked when printing so redirected output counts; the seam tests fake."""
+    return sys.stdout.isatty()
+
+
+def update_hint(kernel: Kernel) -> str | None:
+    """The hint that a newer release is available, from the release cache only, never the network (ADR 0031).
+
+    None when the `update_check` setting is off, stdout is not a terminal, a CI variable is set, or no newer release
+    is cached.
+    """
+    if not kernel.settings.update_check or any(os.environ.get(name) for name in CI_VARIABLES):
+        return None
+    if not stdout_is_terminal():
+        return None
+    latest = ReleaseCache(kernel.settings.cache_dir).newer_than(__version__)
+    return f"v{latest} is available: hz system update" if latest else None
+
+
+def print_update_hint(kernel: Kernel) -> None:
+    """Print the update hint, if there is one to show."""
+    if hint := update_hint(kernel):
+        console.print(f"[yellow]{hint}[/yellow]", highlight=False)

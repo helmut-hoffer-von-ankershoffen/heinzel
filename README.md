@@ -71,6 +71,7 @@ hz system modules              # every module and submodule with the lets it adv
 hz system changelog            # release notes of the installed version
 hz system config show          # configuration files, settings in effect, their environment variables
 hz system config set hz.log_level INFO
+hz system release              # is there a newer release? (asks GitHub; HZ_UPDATE_CHECK=false hides the hint)
 hz system update               # update, keeping plugins
 hz system plugin add clock     # a first-party plugin
 hz clock                       # its command: the time for everyone on the team
@@ -118,6 +119,7 @@ Every module is a set of operations, and every operation is a `hz` command, an M
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
 - [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version.
 - [`system.config`](docs/MODULES.md#systemconfig) — Show, get, set and initialize configuration.
+- [`system.credential`](docs/MODULES.md#systemcredential) — Store and check the credentials modules need, in the OS keychain.
 - [`system.daemon`](docs/MODULES.md#systemdaemon) — Run modules' jobs in the background, supervised by launchd or systemd.
 - [`system.doctor`](docs/MODULES.md#systemdoctor) — Check that Heinzelmännchen and its modules are healthy.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, list and scaffold plugins.

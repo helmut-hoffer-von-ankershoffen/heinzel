@@ -63,7 +63,11 @@ class ConfigService:
                 current = setting.section
                 lines.append(f"\n[{current}]")
             lines.append(f"# {setting.description}")
-            lines.append(f"# {setting.key} = {_toml(setting.value)}")
+            # TOML has no null: a setting without a default gets a hint instead of an assignment that wouldn't parse.
+            if setting.value is None:
+                lines.append(f"# {setting.key}: not set by default")
+            else:
+                lines.append(f"# {setting.key} = {_toml(setting.value)}")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return target

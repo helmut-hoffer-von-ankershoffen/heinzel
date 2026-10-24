@@ -13,7 +13,8 @@ TEST_ORIGIN = Origin(distribution="heinzel-test", version="9.9.9", builtin=False
 @pytest.fixture(autouse=True)
 def _isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
     """No test sees the developer's HZ_* variables or state."""
-    for name in ("HZ_LOG_LEVEL", "HZ_PLUGINS_ENABLED", "HZ_DISABLED_MODULES", "HZ_CONFIG", "XDG_CONFIG_HOME"):
+    variables = ("HZ_LOG_LEVEL", "HZ_PLUGINS_ENABLED", "HZ_DISABLED_MODULES", "HZ_CONFIG", "HZ_UPDATE_CHECK")
+    for name in (*variables, "XDG_CONFIG_HOME"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path_factory.mktemp("hz-config")))
     monkeypatch.setenv("HZ_DATA_DIR", str(tmp_path_factory.mktemp("hz-data")))
@@ -21,6 +22,7 @@ def _isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pyt
     monkeypatch.setenv("HZ_STATE_DIR", str(tmp_path_factory.mktemp("hz-state")))
     monkeypatch.setenv("HZ_LOG_DIR", str(tmp_path_factory.mktemp("hz-log")))
     monkeypatch.setenv("HZ_SYSTEM_DAEMON__UNIT_DIR", str(tmp_path_factory.mktemp("hz-units")))
+    monkeypatch.setenv("HZ_SYSTEM_CREDENTIAL__BACKEND", "environment")  # never the real keychain (ADR 0030)
 
 
 @pytest.fixture
