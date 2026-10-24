@@ -4,14 +4,7 @@ The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets
 """
 
 from heinzel.kernel._agents import AgentResult, AgentRunner, Budget, RunStatus, TokenUsage, ToolProfile
-from heinzel.kernel._bindings import (
-    CAPABILITIES_SECTION,
-    Adapter,
-    Capabilities,
-    CapabilitySettings,
-    CapabilityUse,
-    Requester,
-)
+from heinzel.kernel._bindings import CapabilityView
 from heinzel.kernel._boot import boot
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, Capability, Mode, Requirement
 from heinzel.kernel._config import (
@@ -70,21 +63,17 @@ from heinzel.kernel._settings import Settings
 __all__ = [
     "BUILTIN_PACKAGE",
     "CAPABILITIES",
-    "CAPABILITIES_SECTION",
     "CORE_DISTRIBUTION",
     "ENTRY_POINT_GROUP",
     "FILENAME",
     "KERNEL_SECTION",
     "MODES",
     "PROJECT_FILENAME",
-    "Adapter",
     "AgentResult",
     "AgentRunner",
     "Budget",
-    "Capabilities",
     "Capability",
-    "CapabilitySettings",
-    "CapabilityUse",
+    "CapabilityView",
     "CatchUp",
     "Check",
     "CodeHost",
@@ -115,7 +104,6 @@ __all__ = [
     "ProviderLet",
     "PullRequest",
     "ReleaseCache",
-    "Requester",
     "Requirement",
     "RequirementLet",
     "RunStatus",

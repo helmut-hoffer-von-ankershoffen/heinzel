@@ -74,9 +74,16 @@ integration becomes a configuration change.
 
 ### Confirmation
 
-Not yet: proposed. When implemented: a shared contract-test suite per capability that every adapter runs, an
-import-linter contract that workflows and core modules do not import adapter plugins, `doctor` checks for every
-binding and every declared dependency, and a test that a plugin cannot use a capability or mode it didn't declare.
+Partly, for the part built in 0.2 (see the implementation status under More Information): a requester can't use a
+capability or mode it didn't declare, through every head (`tests/unit/kernel/bindings_test.py`,
+`tests/integration/capability_test.py`); requirement strings and the registry stay in step with the protocols
+(`tests/unit/kernel/capabilities_test.py`); declarations are checked when a module is imported
+(`tests/unit/kernel/module_test.py`); a hostile project `hz.toml` can neither bind nor configure execution, and
+doctor names the keys it tried (`tests/integration/capability_test.py`); doctor reports every unmet requirement and
+unknown binding; the import-linter contract "The core imports no vendor client or agent SDK" (`pyproject.toml`).
+Still planned: a shared contract-test suite per capability that every adapter runs, the generic MCP adapter, an
+import-linter contract that workflows and core modules do not import adapter plugins, and doctor checks that call
+bound adapters.
 
 ## More Information
 
@@ -85,17 +92,22 @@ binding and every declared dependency, and a test that a plugin cannot use a cap
 **What 0.2 implements.**
 
 The status stays proposed: the generic MCP adapter, the first vendor adapters, approvals and the shared adapter
-contract-test suite are not built yet. Built, with the choices made while building it (director's decisions,
-2026-10-24):
+contract-test suite are not built yet. Built, with the choices made while building it and in review of the pull
+request (director's decisions, 2026-10-24):
 
 - **Protocols** (`heinzel.kernel._protocols`, public in `heinzel`): only what the first workflows need. `CodeHost`
-  (`merged_pull_requests`, `issues` in a `Window`), `Tracker` (`issues_updated`), `Documents` (`read`;
-  `replace_section` as the only write). Results are pydantic models with described fields. No separate protocol
-  version number: the protocols are public API and follow the core's SemVer ([ADR 0026](0026-plugin-api-versioned-with-semver.md)),
-  which rejected a second API level number for the same reason.
+  (`merged_pull_requests` in a `Window`), `Tracker` (`issues_updated`), `Documents` (`read`; `replace_section` as the
+  only write). Issues belong to `tracker` alone, also when they live on the code host: a GitHub adapter provides both
+  capabilities. Results are pydantic models with described fields. No separate protocol version number: the protocols
+  are public API and follow the core's SemVer ([ADR 0026](0026-plugin-api-versioned-with-semver.md)), which rejected
+  a second API level number for the same reason.
+- **Growing a protocol.** Adding a method in a mode a capability already has breaks every adapter serving that mode,
+  so it goes through ADR 0026's deprecation cycle; adding a method in a new mode is additive, because adapters declare
+  the modes they serve and are only required to implement those modes' methods.
 - **Each method has a mode** in the capability registry (`CAPABILITIES`); a unit test keeps the registry and the
-  protocols in step. Capability names in requirements and bindings are `code-host`, `tracker` and `documents`; the
-  set is closed in 0.2 (plugins cannot add capabilities yet).
+  protocols in step. Capability names in requirements and bindings are `agent-runner`, `code-host`, `tracker` and
+  `documents`; the set is closed in 0.2 (plugins cannot add capabilities yet). An adapter must implement the methods
+  of the modes it declares, checked when the kernel registers an adapter class and when it builds one from a factory.
 - **Two new let kinds.** `ProviderLet` (`@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter
   class, named `<adapter>:<capability>`) can't be a `ServiceLet`: several adapters provide the same protocol and
   configuration picks one, while a service type has exactly one provider. `RequirementLet`
@@ -103,29 +115,51 @@ contract-test suite are not built yet. Built, with the choices made while buildi
   `CredentialLet` ([ADR 0030](0030-credentials-live-in-the-os-keychain.md)). Both are consumed by the kernel (binding,
   injection) and by `system.capability` (`hz system capability list`, the `hz system info` section and the doctor
   check). Operations and jobs declare their own needs with `requires=[...]`, stored on the `OperationLet` and
-  `JobLet`; they are not lets of their own because they belong to one function.
+  `JobLet`; they are not lets of their own because they belong to one function. A function's pin must agree with its
+  module's pin for the same capability, and one function can't act for two requesters.
 - **Injection by type, per requester.** An operation asks for `documents: Documents` like for a service
   ([ADR 0005](0005-dependency-injection-by-type.md)); heads hide the parameter. The kernel maps every operation, job,
-  service factory, adapter factory, info and health provider to the requester it acts for, and hands out a handle on
-  the bound adapter that exposes only the protocol's methods, in the modes granted. Asking for an undeclared
-  capability, or from a function no module declared, fails with a `HeinzelError` that says what to declare.
-- **Write only through publish operations.** Until approvals exist, "approved publish operation" is enforced
-  structurally: `write` is granted only to operations with `read_only=False` that declared it, themselves or through
-  their module. Declaring `write` on a read-only operation or a job is refused when the module is imported; services,
-  info and health providers only ever get read handles, so a write can't hide behind a shared service. Approval gating
-  of those operations comes with `hz inbox` ([ADR 0020](0020-daemon-head.md)).
-- **Binding is configuration, never discovery.** `[capabilities] tracker = "github"` in the user or team (`hz.toml`)
-  file, or `HZ_CAPABILITIES__TRACKER`; keys take `_` or `-`. A sole installed adapter is not bound automatically
-  (principle 1: declared beats discovered); doctor names the binding to write and the installed candidates. A pin
-  (`acme:documents:read`) uses that adapter whatever is bound, and the matrix shows it.
+  service factory, adapter factory, info and health provider to the requester it acts for, and hands out a handle that
+  exposes only the protocol's methods, in the modes granted, as wrapper functions: it has no attribute holding the
+  adapter and no bound methods. Asking for an undeclared capability, or from a function no module declared, fails
+  with a `HeinzelError` that says what to declare. `Kernel.invoke` validates the caller's arguments before injecting
+  anything, so invalid input never builds an adapter.
+- **Kernel-internal resolution.** `Capabilities` (which hands out handles) and its matrix rows stay in the kernel's
+  private modules; modules get a `CapabilityView` (bindings, adapters, matrix, fixes) and no way to ask for a handle
+  besides declaring a requirement. `Capabilities.handle_for(requester, capability)` is the seam for code that acts on
+  a requester's behalf without being its function, such as the compiler of workflow contracts
+  ([ADR 0021](0021-workflow-contracts.md)).
+- **Write only through publish operations, declared there.** Until approvals exist, "approved publish operation" is
+  enforced structurally: `write` is granted only to operations with `read_only=False` that declared it themselves.
+  `Module(requires=...)` refuses `write`, and so do read-only operations and jobs, when the module is imported;
+  services, info and health providers only ever get read handles, so a write can't hide behind a shared service.
+  `write` does not imply `read`: a publish operation that also reads declares `documents:read,write` (or reads through
+  its module's `documents:read`). Approval gating of those operations comes with `hz inbox` ([ADR 0020](0020-daemon-head.md)).
+- **Binding is configuration, never discovery, and never the project's.** `[capabilities] tracker = "github"` in the
+  site, user or `HZ_CONFIG` file, or `HZ_CAPABILITIES__TRACKER`; keys take `_` or `-`. A project `hz.toml` can't
+  bind (settings classes list such fields in `ignored_in_project`): a repository someone else controls must not decide
+  where data goes; doctor names any key it sets, never the value. A sole installed adapter is not bound automatically
+  (principle 1: declared beats discovered); doctor names the binding to write and the installed candidates. The only
+  default is `agent_runner = "claude-code"`, because the other core runner, `command`, needs a command line first;
+  doctor names the alternative when Claude Code is missing. A pin (`acme:documents:read`) uses that adapter whatever
+  is bound, and the matrix shows it. Two adapters with one name for one capability make that binding ambiguous: it is
+  refused, naming both modules and distributions.
+- **Reserved names.** Modules can't be named `hz` or `capabilities`, the kernel's configuration tables, so the
+  `[capabilities]` table stays flat.
 - **Doctor and info.** `hz system doctor` reports each unmet requirement as degraded (`tracker:read: no adapter
-  bound`, an adapter that is not installed, or one that lacks a mode) and each binding to an adapter nobody provides.
-  `hz system info` shows requester → capability:modes → adapter → hosts; hosts are what the adapter declares.
+  bound`, an adapter that is not installed or is ambiguous, or one that lacks a mode), each binding to an adapter
+  nobody provides and each `[capabilities]` key that names no capability. `hz system info` shows requester →
+  capability:modes → adapter → hosts; hosts are what the adapter declares, `unknown (configured)` when its
+  configuration decides.
+- **Not an isolation boundary.** Every module and plugin runs in the same process with the user's rights. A plugin can
+  import an adapter's module and build it, reach the adapter through a handle's closures with introspection, or call
+  the kernel's private modules. Handles and declarations make intent explicit and misuse visible in review, as
+  `Credentials` does ([ADR 0030](0030-credentials-live-in-the-os-keychain.md)); they don't stop a malicious plugin.
+  Only install plugins you trust ([SECURITY.md](../../SECURITY.md)).
 - **Not yet:** per-person and per-job binding overrides beyond the layered files, OAuth scopes and credentials per
   mode (adapters use `Credentials` as any module does), doctor checks that call adapters, plugin-defined
   capabilities, the generic MCP adapter, and contract tests for adapters. No vendor adapter ships in core; the tests
   use test-only adapters.
-- Import-linter: "The core imports no vendor client or agent SDK".
 
 - [ADR 0022](0022-embedded-workflows.md) describes `DocumentConnector` plugins (`heinzel-google`,
   `heinzel-atlassian`); under this ADR they are adapters of the documents and spreadsheets capabilities, and

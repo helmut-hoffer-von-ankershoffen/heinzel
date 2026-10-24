@@ -17,7 +17,7 @@ def render_report(report: CapabilityReport) -> RenderableType:
     for column in ("Adapter", "Capability", "Modes", "Hosts", "Module"):
         adapters.add_column(column, overflow="fold")
     for adapter in report.adapters:
-        hosts = ", ".join(adapter.hosts) or "set by its configuration"
+        hosts = ", ".join(adapter.hosts)
         adapters.add_row(adapter.adapter, adapter.capability, ",".join(adapter.modes), hosts, adapter.module)
     uses = Table(title="Who reads and writes what")
     for column in ("Requester", "Needs", "Adapter", "Hosts", "Problem"):

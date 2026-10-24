@@ -1,7 +1,12 @@
 """The capability module: which adapter serves each capability, and who reads and writes what (ADR 0028)."""
 
 from heinzel import Check, Module
-from heinzel.modules.system.capability._models import AdapterInfo, CapabilityInfo, CapabilityReport
+from heinzel.modules.system.capability._models import (
+    AdapterInfo,
+    CapabilityInfo,
+    CapabilityReport,
+    CapabilityUse,
+)
 from heinzel.modules.system.capability._render import render_report
 from heinzel.modules.system.capability._service import CapabilityService
 
@@ -27,4 +32,4 @@ def capability(service: CapabilityService) -> list[Check]:
     return service.checks()
 
 
-__all__ = ["AdapterInfo", "CapabilityInfo", "CapabilityReport", "CapabilityService", "module"]
+__all__ = ["AdapterInfo", "CapabilityInfo", "CapabilityReport", "CapabilityService", "CapabilityUse", "module"]

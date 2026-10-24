@@ -50,7 +50,9 @@ class OperationLet(Let):
     heads: frozenset[str] | None = None
     """Heads that expose the operation (`"cli"`, `"mcp"`, `"api"`); every head when None."""
     requires: tuple[Requirement, ...] = ()
-    """Capabilities the operation asks for by type, besides its module's (ADR 0028); `write` only if not read-only."""
+    """Capabilities the operation asks for by type, besides its module's (ADR 0028); `write` only if not read-only.
+
+    `write` doesn't imply `read`: a publish operation that also reads declares `documents:read,write`."""
 
     def __post_init__(self) -> None:
         """Refuse a read-only operation that declares a write.
@@ -213,10 +215,10 @@ class ProviderLet(Let):
 
 @dataclass(frozen=True, kw_only=True, slots=True)
 class RequirementLet(Let):
-    """A capability a whole module needs, declared with `Module(..., requires=[...])` and named after it (ADR 0028).
+    """A capability a whole module reads, declared with `Module(..., requires=[...])` and named after it (ADR 0028).
 
-    Every operation, job, service, info and health provider of the module may ask for it by type; a `write` mode
-    reaches only the module's publish operations (`read_only=False`).
+    Every operation, job, service, info and health provider of the module may ask for it by type. Only read modes:
+    `write` is declared on the publish operation (`read_only=False`) that writes.
     """
 
     requirement: Requirement

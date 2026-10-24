@@ -1,27 +1,45 @@
 """Service of the capability module: the report and its health checks."""
 
 from heinzel import Check, Status
-from heinzel.kernel import CAPABILITIES, MODES, Capabilities
-from heinzel.modules.system.capability._models import AdapterInfo, CapabilityInfo, CapabilityReport
+from heinzel.kernel import CAPABILITIES, MODES, CapabilityView
+from heinzel.modules.system.capability._models import AdapterInfo, CapabilityInfo, CapabilityReport, CapabilityUse
+
+UNKNOWN_HOSTS = "unknown (configured)"
+"""What the matrix says for an adapter whose hosts depend on its configuration."""
 
 
 class CapabilityService:
     """Reports capabilities, adapters, bindings and requirements; never calls an adapter."""
 
-    def __init__(self, capabilities: Capabilities) -> None:
-        """Work on the kernel's capabilities, injected."""
+    def __init__(self, capabilities: CapabilityView) -> None:
+        """Work on the kernel's read-only view of capabilities, injected."""
         self.capabilities = capabilities
+
+    def uses(self) -> list[CapabilityUse]:
+        """Every declared requirement with its adapter, hosts and problem."""
+        return [
+            CapabilityUse(
+                requester=use.requester,
+                kind=use.kind,
+                requirement=use.requirement,
+                capability=use.capability,
+                modes=list(use.modes),
+                adapter=use.adapter,
+                hosts=list(use.hosts) or ([UNKNOWN_HOSTS] if use.adapter else []),
+                problem=use.problem,
+            )
+            for use in self.capabilities.matrix()
+        ]
 
     def report(self) -> CapabilityReport:
         """Capabilities with their bindings, installed adapters, and the matrix."""
-        settings = self.capabilities.settings
         return CapabilityReport(
             capabilities=[
                 CapabilityInfo(
                     name=spec.name,
                     summary=spec.summary,
                     modes=[mode for mode in MODES if mode in spec.modes],
-                    bound=settings.bound(spec.name),
+                    bound=self.capabilities.bound(spec.name),
                 )
                 for spec in sorted(CAPABILITIES.values(), key=lambda spec: spec.name)
             ],
@@ -30,27 +48,36 @@ class CapabilityService:
                     adapter=adapter.let.adapter,
                     capability=adapter.let.capability,
                     modes=[mode for mode in MODES if mode in adapter.let.modes],
-                    hosts=list(adapter.let.hosts),
+                    hosts=list(adapter.let.hosts) or [UNKNOWN_HOSTS],
                     module=adapter.module,
+                    distribution=adapter.distribution,
                 )
-                for _, adapter in sorted(self.capabilities.adapters.items())
+                for adapter in self.capabilities.adapters
             ],
-            uses=self.capabilities.matrix(),
+            uses=self.uses(),
         )
 
     def matrix(self) -> dict[str, str]:
         """Where data can go, one entry per requirement: `requester → need` to `adapter → hosts`, or the problem."""
-        entries: dict[str, str] = {}
-        for use in self.capabilities.matrix():
-            hosts = ", ".join(use.hosts) or "hosts set by its configuration"
-            entries[f"{use.requester} → {use.requirement}"] = (
-                f"unmet: {use.problem}" if use.problem else f"{use.adapter} → {hosts}"
+        return {
+            f"{use.requester} → {use.requirement}": (
+                f"unmet: {use.problem}" if use.problem else f"{use.adapter} → {', '.join(use.hosts)}"
             )
-        return entries
+            for use in self.uses()
+        }
 
     def checks(self) -> list[Check]:
-        """One check per declared requirement and one per binding to an adapter nobody provides."""
+        """One check per declared requirement, per binding to a missing adapter and per unknown binding key."""
         checks = [
+            Check(
+                name=f"binding {key}",
+                status=Status.DEGRADED,
+                detail=f"[capabilities] {key} names no capability",
+                fix=f"Use one of {', '.join(sorted(CAPABILITIES))} (with `_` or `-`), or remove the key",
+            )
+            for key in self.capabilities.unknown_keys
+        ]
+        checks.extend(
             Check(
                 name=f"binding {capability}",
                 status=Status.DEGRADED,
@@ -58,8 +85,8 @@ class CapabilityService:
                 fix=self.capabilities.fix(capability),
             )
             for capability, adapter in self.capabilities.unknown_bindings()
-        ]
-        for use in self.capabilities.matrix():
+        )
+        for use in self.uses():
             name = f"{use.requirement} for {use.requester}"
             if use.problem is None:
                 checks.append(Check(name=name, status=Status.UP, detail=f"served by {use.adapter}"))

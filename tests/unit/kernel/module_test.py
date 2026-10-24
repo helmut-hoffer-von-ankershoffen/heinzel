@@ -169,12 +169,40 @@ def test_a_job_let_refuses_a_timeout_that_is_not_positive():
 
 
 def test_module_requirements_become_requirement_lets_named_after_the_capability():
-    module = Module("digest", "x", requires=["tracker:read", "documents:read", "documents:write"])
+    module = Module("digest", "x", requires=["tracker:read", "documents:read", "acme:code-host:read"])
     lets = [let for let in module.lets if isinstance(let, RequirementLet)]
     assert [(let.name, str(let.requirement)) for let in lets] == [
         ("tracker", "tracker:read"),
-        ("documents", "documents:read,write"),
+        ("documents", "documents:read"),
+        ("code-host", "acme:code-host:read"),
     ]
+
+
+def test_a_module_cannot_require_write_for_all_its_functions():
+    with pytest.raises(ValueError, match="can't require documents:read,write: declare write on the publish operation"):
+        Module("digest", "x", requires=["documents:read,write"])
+
+
+@pytest.mark.parametrize("name", ["hz", "capabilities"])
+def test_names_of_kernel_configuration_tables_are_reserved(name):
+    with pytest.raises(ValueError, match=f"Module name '{name}' is reserved"):
+        Module(name, "x")
+
+
+def test_a_function_cannot_pin_another_adapter_than_its_module():
+    module = Module("digest", "x", requires=["acme:documents:read"])
+
+    def publish() -> None:
+        """Publish."""
+
+    with pytest.raises(ValueError, match=r"conflicts with the pin of module 'digest' for documents \(acme\)"):
+        module.operation(read_only=False, requires=["documents:write"])(publish)
+    with pytest.raises(ValueError, match=r"conflicts with the pin of module 'digest' for documents \(acme\)"):
+        module.job(schedule="@daily", requires=["other:documents:read"])(publish)
+    module.operation(read_only=False, requires=["acme:documents:write"])(publish)
+    unpinned = Module("plain", "x", requires=["documents:read"])
+    with pytest.raises(ValueError, match=r"conflicts with the pin of module 'plain' for documents \(none\)"):
+        unpinned.operation(read_only=False, requires=["acme:documents:write"])(publish)
 
 
 def test_operations_and_jobs_record_their_requirements():

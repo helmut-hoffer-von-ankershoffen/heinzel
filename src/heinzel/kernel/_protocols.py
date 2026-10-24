@@ -61,14 +61,13 @@ class SectionReplacement(BaseModel):
 
 
 class CodeHost(Protocol):
-    """A code host: repositories, pull requests and their issues (capability `code-host`)."""
+    """A code host: repositories and their pull requests (capability `code-host`).
+
+    Issues are the `tracker` capability, also when they live on the code host: its adapter provides both.
+    """
 
     def merged_pull_requests(self, repository: str, window: Window) -> list[PullRequest]:
         """Pull requests of `repository` merged within `window`, oldest first. Mode: read."""
-        ...
-
-    def issues(self, repository: str, window: Window) -> list[Issue]:
-        """Issues of `repository` created or updated within `window`, oldest first. Mode: read."""
         ...
 
 

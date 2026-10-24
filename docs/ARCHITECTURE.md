@@ -49,7 +49,7 @@ the kinds it understands.
 | `CredentialLet` | `module.credential(name, purpose=...)` | `Credentials` (injected) and `hz system credential` with its doctor check ([ADR 0030](adr/0030-credentials-live-in-the-os-keychain.md)) |
 | `JobLet` | `@module.job(schedule="0 9 * * MON")` | `hz system daemon tick`, run by launchd or systemd ([ADR 0020](adr/0020-daemon-head.md)) |
 | `ProviderLet` | `@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter class | the kernel's capability bindings and `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
-| `RequirementLet` | `Module(..., requires=["tracker:read"])`; operations and jobs take `requires=[...]` | the kernel's capability handles and the doctor check of `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
+| `RequirementLet` | `Module(..., requires=["tracker:read"])` (read only); operations and jobs take `requires=[...]` | the kernel's capability handles and the doctor check of `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
 
 New kinds of lets (contracts, watchers) extend Heinzelmännchen without changing existing heads; see
 [ADR 0010](adr/0010-towards-a-reactive-workflow-engine.md).
@@ -75,8 +75,10 @@ an operation into a command; parameters without defaults become arguments, other
 shares its name and has no submodules collapses into a single command (`hz system changelog`).
 
 **Configuration.** Layered TOML files (site, user, project `hz.toml`, `$HZ_CONFIG`) under environment variables;
-the `[hz]` table holds kernel settings, `[<module>]` tables module settings
-([ADR 0012](adr/0012-layered-configuration.md)).
+the `[hz]` table holds kernel settings, `[capabilities]` the capability bindings, `[<module>]` tables module settings
+([ADR 0012](adr/0012-layered-configuration.md)). Settings that decide what runs or where data goes (the bindings, the
+agent runners' executables and tools) are ignored in a project `hz.toml`, and doctor names any it sets
+([ADR 0028](adr/0028-integrations-are-capability-adapters.md)).
 
 ## The command tree
 

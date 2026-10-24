@@ -20,6 +20,10 @@ def test_every_protocol_method_has_a_mode_and_a_docstring(name):
     assert spec.summary
 
 
+def test_issues_are_the_trackers_not_the_code_hosts():
+    assert CAPABILITIES["code-host"].methods == {"merged_pull_requests": "read"}
+
+
 def test_only_documents_can_write():
     assert {name for name, spec in CAPABILITIES.items() if "write" in spec.modes} == {"documents"}
 

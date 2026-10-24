@@ -13,7 +13,7 @@ from typing import Any, Literal, overload
 from pydantic import BaseModel
 from rich.console import RenderableType
 
-from heinzel.kernel._capabilities import CAPABILITIES, MODES, Mode, parse_requirements
+from heinzel.kernel._capabilities import CAPABILITIES, MODES, Mode, Requirement, parse_requirements
 from heinzel.kernel._config import ModuleSettings
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._lets import (
@@ -33,6 +33,8 @@ from heinzel.kernel._lets import (
 )
 from heinzel.kernel._spec import hookimpl
 
+RESERVED_NAMES = frozenset({"hz", "capabilities"})
+"""Names a module can't take: they are the kernel's and the capability bindings' configuration tables."""
 SERVICE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$")
 
 
@@ -58,20 +60,30 @@ class Module:
             name: Lowercase, dash-separated name; becomes the command group and the prefix of tool names.
             summary: One sentence on what the module is for.
             essential: Can't be disabled; for the few built-ins needed to repair a broken setup (`system`).
-            requires: Capabilities the whole module needs (ADR 0028), e.g. `["tracker:read", "documents:read,write"]`;
-                a `write` mode reaches only its publish operations.
+            requires: Capabilities the whole module reads (ADR 0028), e.g. `["tracker:read", "documents:read"]`;
+                `write` is declared on the publish operation that writes, never here.
 
         Raises:
-            ValueError: If the name is not a valid module name, or a requirement is malformed.
+            ValueError: If the name is not a valid module name or is reserved, or a requirement is malformed or writes.
         """
         if not NAME_PATTERN.fullmatch(name):
             msg = f"Module name {name!r} must match {NAME_PATTERN.pattern}"
+            raise ValueError(msg)
+        if name in RESERVED_NAMES:
+            msg = f"Module name {name!r} is reserved: `[{name}]` is a configuration table of the kernel"
+            raise ValueError(msg)
+        requirements = parse_requirements(requires)
+        if writes := [str(r) for r in requirements if "write" in r.modes]:
+            msg = (
+                f"Module {name!r} can't require {', '.join(writes)}: declare write on the publish operation that "
+                f"writes, `@module.operation(read_only=False, requires=[...])`"
+            )
             raise ValueError(msg)
         self.name = name
         self.summary = summary
         self.essential = essential
         self._lets: list[Let] = []
-        for requirement in parse_requirements(requires):
+        for requirement in requirements:
             self.add(RequirementLet(name=requirement.capability, requirement=requirement))
 
     @property
@@ -133,7 +145,7 @@ class Module:
         Raises:
             ValueError: If the docstring is missing, or a requirement is malformed or writes from a read-only operation.
         """
-        requirements = parse_requirements(requires)
+        requirements = self._requirements(requires)
 
         def decorate(target: F) -> F:
             summary = inspect.getdoc(target)
@@ -187,7 +199,7 @@ class Module:
                 requirement is malformed or writes.
         """
         duration = parse_duration(timeout)
-        requirements = parse_requirements(requires)
+        requirements = self._requirements(requires)
 
         def decorate(target: F) -> F:
             summary = inspect.getdoc(target)
@@ -220,6 +232,24 @@ class Module:
             factory: Builds the instance; its own parameters are injected. Defaults to `provides` itself.
         """
         self.add(ServiceLet(name=provides.__name__, provides=provides, factory=factory or provides))
+
+    def _requirements(self, requires: Iterable[str]) -> tuple[Requirement, ...]:
+        """Parse a function's requirements; a pin must agree with the module's pin for the same capability.
+
+        Raises:
+            ValueError: If a requirement is malformed, or pins another adapter than the module does.
+        """
+        requirements = parse_requirements(requires)
+        pins = {let.name: let.requirement.adapter for let in self._lets if isinstance(let, RequirementLet)}
+        for requirement in requirements:
+            if requirement.capability in pins and pins[requirement.capability] != requirement.adapter:
+                module_pin = pins[requirement.capability] or "none"
+                msg = (
+                    f"Requirement {requirement} conflicts with the pin of module {self.name!r} for "
+                    f"{requirement.capability} ({module_pin}): one adapter per capability"
+                )
+                raise ValueError(msg)
+        return requirements
 
     def provides[F: Callable[..., Any]](
         self, capability: str, *, modes: Iterable[Mode], hosts: Iterable[str] = (), name: str | None = None

@@ -1,8 +1,11 @@
 """Binding capabilities to adapters and the handles requesters get (ADR 0028), with test-only adapters."""
 
+import inspect
 from datetime import UTC, datetime
+from typing import Annotated
 
 import pytest
+from pydantic import Field
 
 from heinzel import (
     Config,
@@ -18,7 +21,8 @@ from heinzel import (
     Tracker,
     Window,
 )
-from heinzel.kernel import CAPABILITIES, Capabilities, CapabilitySettings, ModuleRecord, Origin
+from heinzel.kernel import CAPABILITIES, CapabilityView, ModuleRecord, Origin, Requirement
+from heinzel.kernel._bindings import Capabilities, CapabilitySettings, Requester
 
 pytestmark = pytest.mark.unit
 
@@ -33,11 +37,12 @@ class NotesSettings(ModuleSettings):
 class Notes:
     """A test-only documents adapter keeping text in memory."""
 
-    written: list[tuple[str, str, str]]
+    built = 0
 
     def __init__(self, settings: NotesSettings) -> None:
+        Notes.built += 1
         self.prefix = settings.prefix
-        self.written = []
+        self.written: list[tuple[str, str, str]] = []
 
     def read(self, ref: str) -> Document:
         return Document(ref=ref, title=f"{self.prefix}:{ref}", text="body")
@@ -48,6 +53,13 @@ class Notes:
 
     def extra(self) -> str:
         return "not part of the protocol"
+
+
+class Reader:
+    """A test-only documents adapter that can only read."""
+
+    def read(self, ref: str) -> Document:
+        return Document(ref=ref, title=f"reader:{ref}", text="")
 
 
 def notes_module(*, modes: tuple[str, ...] = ("read", "write"), name: str | None = None) -> Module:
@@ -89,6 +101,11 @@ def digest_module() -> Module:
         """Ask for an undeclared capability."""
         return len(tracker.issues_updated("APP", WINDOW))
 
+    @module.operation
+    def count(documents: Documents, times: Annotated[int, Field(ge=1)] = 1) -> int:
+        """Validate a constrained parameter next to a capability."""
+        return times * len(documents.read("weekly").title)
+
     @module.job(schedule="@daily", requires=["documents:read"])
     def nightly(documents: Documents) -> str:
         """Read nightly."""
@@ -101,8 +118,12 @@ def operation(kernel: Kernel, qualname: str, name: str) -> OperationLet:
     return next(let for record, let in kernel.lets(OperationLet) if record.qualname == qualname and let.name == name)
 
 
-def run(kernel: Kernel, qualname: str, name: str) -> object:
-    return kernel.invoke(operation(kernel, qualname, name))
+def run(kernel: Kernel, qualname: str, name: str, **kwargs: object) -> object:
+    return kernel.invoke(operation(kernel, qualname, name), **kwargs)
+
+
+def handle(kernel: Kernel, name: str = "show") -> object:
+    return kernel._capabilities.handle(CAPABILITIES["documents"], operation(kernel, "digest", name).func)
 
 
 @pytest.fixture
@@ -121,14 +142,27 @@ def test_calling_a_write_method_with_a_read_declaration_fails(kernel):
 
 def test_a_publish_operation_that_declared_write_can_write(kernel):
     assert run(kernel, "digest", "publish") == "weekly"
-    adapter = kernel.capabilities._instances["documents", "notes"]
+    adapter = kernel._capabilities._instances["documents", "notes"]
     assert isinstance(adapter, Notes)
     assert adapter.written == [("weekly", "summary", "new")]
 
 
-def test_a_publish_operation_must_declare_write_too(kernel):
+def test_a_publish_operation_must_declare_write_itself(kernel):
     with pytest.raises(HeinzelError, match=r"declare `documents:read,write`"):
         run(kernel, "digest", "publish-undeclared")
+
+
+def test_write_does_not_imply_read(make_kernel):
+    module = Module("writer", "Writes only.")
+
+    @module.operation(read_only=False, requires=["documents:write"])
+    def publish(documents: Documents) -> str:
+        """Read, having declared only write."""
+        return documents.read("x").title
+
+    kernel = make_kernel(notes=notes_module(), writer=module, config=bind(documents="notes"))
+    with pytest.raises(HeinzelError, match=r"writer publish can't call documents.read, which needs read"):
+        run(kernel, "writer", "publish")
 
 
 def test_asking_for_an_undeclared_capability_fails(kernel):
@@ -149,17 +183,60 @@ def test_a_function_no_module_declares_cannot_ask_for_a_capability(kernel):
         kernel.call(stranger)
 
 
+def test_a_handle_holds_no_adapter_attribute(kernel):
+    documents = handle(kernel)
+    with pytest.raises(AttributeError):
+        documents._adapter  # noqa: B018 - the attribute access is what is tested
+    assert not hasattr(documents, "__dict__")
+    assert type(documents).__slots__ == ("_allowed", "_denied", "_label")
+
+
+def test_handle_methods_are_wrappers_not_bound_methods(kernel):
+    read = handle(kernel).read
+    assert not inspect.ismethod(read)
+    assert not hasattr(read, "__self__")
+    assert not hasattr(read, "__wrapped__")
+    assert read.__qualname__ == "Documents.read"
+    assert read.__doc__ == Documents.read.__doc__
+
+
+def test_modules_get_a_view_that_hands_out_no_handles(kernel):
+    from heinzel.kernel._bindings import Capabilities
+
+    assert not kernel.provides(Capabilities)
+    view = kernel.resolve(CapabilityView)
+    assert not hasattr(view, "handle")
+    assert not hasattr(view, "handle_for")
+    assert not hasattr(view, "_capabilities") or not hasattr(view, "__dict__")
+    assert view.bound("documents") == "notes"
+    assert [(a.let.adapter, a.distribution) for a in view.adapters] == [("notes", "heinzel-test")]
+
+
 def test_handles_expose_only_protocol_methods(kernel):
-    handle = kernel.capabilities.handle(CAPABILITIES["documents"], operation(kernel, "digest", "show").func)
-    with pytest.raises(AttributeError, match="documents has no method 'extra'"):
-        handle.extra  # noqa: B018 - the attribute access is what is tested
-    assert repr(handle) == "<documents:read for digest show via Notes>"
+    documents = handle(kernel)
+    with pytest.raises(AttributeError, match="has no method 'extra'"):
+        documents.extra  # noqa: B018 - the attribute access is what is tested
+    assert repr(documents) == "<documents:read for digest show>"
+
+
+def test_a_requester_without_a_usable_mode_is_refused_at_handle_time(kernel):
+    writer = Requester("digest", "job", "odd", (Requirement("documents", frozenset({"write"})),))
+    with pytest.raises(
+        HeinzelError, match=r"may not use it: only publish operations may write; declare `documents:read`"
+    ):
+        kernel._capabilities.handle_for(writer, CAPABILITIES["documents"])
+
+
+def test_handle_for_serves_requesters_built_by_compilers(kernel):
+    reader = Requester("digest", "job", "contract", (Requirement("documents", frozenset({"read"})),))
+    assert kernel._capabilities.handle_for(reader, CAPABILITIES["documents"]).read("x").title == "notes:x"
 
 
 def test_an_unbound_capability_fails_with_the_binding_to_write(make_kernel):
     kernel = make_kernel(notes=notes_module(), digest=digest_module())
     with pytest.raises(
-        HeinzelError, match=r'no adapter bound. Bind it in the configuration: \[capabilities\] documents = "notes"'
+        HeinzelError,
+        match=r'no adapter bound. Bind it in your user configuration: \[capabilities\] documents = "notes"',
     ):
         run(kernel, "digest", "show")
 
@@ -168,7 +245,7 @@ def test_a_binding_to_an_unknown_adapter_fails(make_kernel):
     kernel = make_kernel(digest=digest_module(), config=bind(documents="nowhere"))
     with pytest.raises(HeinzelError, match=r"no installed module provides documents as 'nowhere'.*Install a plugin"):
         run(kernel, "digest", "show")
-    assert ("documents", "nowhere") in kernel.capabilities.unknown_bindings()
+    assert ("documents", "nowhere") in kernel._capabilities.unknown_bindings()
 
 
 def test_a_read_only_adapter_cannot_serve_a_write(make_kernel):
@@ -190,39 +267,20 @@ def test_a_pinned_requirement_uses_its_adapter_whatever_is_bound(make_kernel):
         notes=notes_module(), acme=notes_module(name="acme"), pinned=pinned, config=bind(documents="notes")
     )
     assert run(kernel, "pinned", "show") == "notes:x"
-    assert kernel.capabilities.matrix()[0].adapter == "acme"
-
-
-def test_a_write_declared_by_the_module_reaches_only_publish_operations(make_kernel):
-    module = Module("writer", "Declares write for the whole module.", requires=["documents:read,write"])
-
-    @module.operation
-    def peek(documents: Documents) -> str:
-        """Try to write from a read-only operation."""
-        return documents.replace_section("a", "b", "c").ref
-
-    @module.operation(read_only=False)
-    def publish(documents: Documents) -> str:
-        """Write."""
-        return documents.replace_section("a", "b", "c").ref
-
-    kernel = make_kernel(notes=notes_module(), writer=module, config=bind(documents="notes"))
-    with pytest.raises(HeinzelError, match="only publish operations"):
-        run(kernel, "writer", "peek")
-    assert run(kernel, "writer", "publish") == "a"
+    assert kernel._capabilities.matrix()[0].adapter == "acme"
 
 
 def test_services_get_their_modules_requirements(make_kernel):
     module = Module("reader", "Reads through a service.", requires=["documents:read"])
 
-    class Reader:
+    class ReaderService:
         def __init__(self, documents: Documents) -> None:
             self.documents = documents
 
-    module.service(Reader)
+    module.service(ReaderService)
 
     @module.operation
-    def show(reader: Reader) -> str:
+    def show(reader: ReaderService) -> str:
         """Read through the service."""
         return reader.documents.read("x").title
 
@@ -232,51 +290,56 @@ def test_services_get_their_modules_requirements(make_kernel):
 
 def test_the_kernel_injects_capabilities_so_heads_hide_them(kernel):
     assert kernel.provides(Documents)
-    assert kernel.resolve(Capabilities) is kernel.capabilities
+    assert kernel.provides(CapabilityView)
 
 
 def test_the_matrix_lists_every_declared_requirement(kernel):
-    rows = [(u.requester, u.kind, u.requirement, u.adapter, u.hosts, u.problem) for u in kernel.capabilities.matrix()]
+    rows = [(u.requester, u.kind, u.requirement, u.adapter, u.hosts, u.problem) for u in kernel._capabilities.matrix()]
     assert rows == [
-        ("digest", "module", "documents:read", "notes", ["notes.invalid"], None),
-        ("digest publish", "operation", "documents:write", "notes", ["notes.invalid"], None),
-        ("digest nightly", "job", "documents:read", "notes", ["notes.invalid"], None),
+        ("digest", "module", "documents:read", "notes", ("notes.invalid",), None),
+        ("digest publish", "operation", "documents:write", "notes", ("notes.invalid",), None),
+        ("digest nightly", "job", "documents:read", "notes", ("notes.invalid",), None),
     ]
 
 
-def test_a_plugin_adapter_colliding_with_another_is_skipped_and_reported(make_kernel):
-    kernel = make_kernel(notes=notes_module(), other=notes_module())
-    assert kernel.errors["other"] == "Adapter skipped: another module already provides documents as 'notes'"
-    assert kernel.capabilities.adapters["documents", "notes"].module == "notes"
+def test_two_plugins_with_one_adapter_name_make_the_binding_ambiguous(make_kernel):
+    other = Module("other", "Provides documents under the same adapter name.")
+    other.provides("documents", modes={"read"}, name="notes")(Reader)
+    kernel = make_kernel(notes=notes_module(), other=other, digest=digest_module(), config=bind(documents="notes"))
+    assert not kernel.errors
+    with pytest.raises(HeinzelError, match=r"'notes' is ambiguous: notes \(heinzel-test\) and other \(heinzel-test\)"):
+        run(kernel, "digest", "show")
 
 
-def test_an_adapter_class_missing_protocol_methods_is_skipped(make_kernel):
-    module = Module("broken", "Provides half a protocol.")
-
-    @module.provides("documents", modes={"read"})
-    class Half:
-        def read(self, ref: str) -> Document:
-            return Document(ref=ref, title="", text="")
-
+def test_an_adapter_class_must_define_the_methods_of_its_declared_modes(make_kernel):
+    module = Module("broken", "Claims to write without a write method.")
+    module.provides("documents", modes={"read", "write"})(Reader)
     kernel = make_kernel(broken=module)
     assert kernel.errors["broken"] == "Adapter skipped: adapter broken:documents lacks replace_section of documents"
-    assert not kernel.capabilities.adapters
+    assert not kernel._capabilities.adapters
 
 
-def test_an_adapter_factory_returning_half_a_protocol_fails_when_built(make_kernel):
-    module = Module("half", "Provides half a protocol through a factory function.")
+def test_a_read_only_adapter_class_needs_only_the_read_methods(make_kernel):
+    module = Module("reader", "Reads only.")
+    module.provides("documents", modes={"read"})(Reader)
+    kernel = make_kernel(reader=module, digest=digest_module(), config=bind(documents="reader"))
+    assert not kernel.errors
+    assert run(kernel, "digest", "show") == "reader:weekly"
 
-    class Half:
-        def read(self, ref: str) -> Document:
-            return Document(ref=ref, title="", text="")
 
-    def make_half() -> Half:
-        return Half()
+def test_an_adapter_factory_is_checked_against_its_declared_modes_when_built(make_kernel):
+    def make_reader() -> Reader:
+        return Reader()
 
-    module.provides("documents", modes={"read"})(make_half)
-    kernel = make_kernel(half=module, digest=digest_module(), config=bind(documents="half"))
+    claims_write = Module("half", "Claims to write through a factory.")
+    claims_write.provides("documents", modes={"read", "write"})(make_reader)
+    kernel = make_kernel(half=claims_write, digest=digest_module(), config=bind(documents="half"))
     with pytest.raises(HeinzelError, match="Adapter half:documents of half lacks replace_section of documents"):
         run(kernel, "digest", "show")
+    reads = Module("half", "Reads through a factory.")
+    reads.provides("documents", modes={"read"})(make_reader)
+    kernel = make_kernel(half=reads, digest=digest_module(), config=bind(documents="half"))
+    assert run(kernel, "digest", "show") == "reader:weekly"
 
 
 def test_a_builtin_adapter_collision_is_a_bug(settings):
@@ -290,6 +353,31 @@ def test_a_builtin_adapter_collision_is_a_bug(settings):
         Kernel(settings, records)
 
 
+def test_one_function_registered_for_two_operations_is_refused(make_kernel, settings):
+    def show() -> None:
+        """Show."""
+
+    def twice() -> Module:
+        module = Module("twice", "Registers one function twice.")
+        module.operation(show)
+        module.operation(name="again")(show)
+        return module
+
+    kernel = make_kernel(twice=twice())
+    assert kernel.errors["twice"] == (
+        "Requirement skipped: test_one_function_registered_for_two_operations_is_refused.<locals>.show "
+        "is registered for twice show and twice again; a function acts for one only"
+    )
+    with pytest.raises(HeinzelError, match="Built-in module 'twice'"):
+        Kernel(settings, [ModuleRecord("twice", twice(), BUILTIN)])
+
+
+def test_unknown_binding_keys_are_kept_for_doctor(make_kernel):
+    kernel = make_kernel(config=bind(trackr="acme", documents="notes"))
+    assert kernel._capabilities.unknown_keys == ("trackr",)
+    assert kernel.resolve(CapabilityView).unknown_keys == ("trackr",)
+
+
 def test_bindings_accept_dashes_and_environment_variables(monkeypatch):
     settings = Config(files=(), data={"capabilities": {"code-host": "acme"}}).settings(
         CapabilitySettings, "capabilities"
@@ -297,3 +385,57 @@ def test_bindings_accept_dashes_and_environment_variables(monkeypatch):
     assert settings.bound("code-host") == "acme"
     monkeypatch.setenv("HZ_CAPABILITIES__TRACKER", "acme-tracker")
     assert Config.empty().settings(CapabilitySettings, "capabilities").bound("tracker") == "acme-tracker"
+
+
+def test_a_project_file_cannot_bind_capabilities(tmp_path, monkeypatch):
+    user = tmp_path / "user"
+    user.mkdir()
+    (user / "config.toml").write_text('[capabilities]\ntracker = "mine"\n', encoding="utf-8")
+    project = tmp_path / "repo"
+    project.mkdir()
+    (project / "hz.toml").write_text(
+        '[capabilities]\ntracker = "evil"\ncode-host = "evil"\n[example]\nkept = 1\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(user))
+    config = Config.load(project)
+    settings = config.settings(CapabilitySettings, "capabilities")
+    assert (settings.bound("tracker"), settings.bound("code-host")) == ("mine", None)
+    assert config.project_keys("capabilities", CapabilitySettings.ignored_in_project) == ["code-host", "tracker"]
+    assert config.section("example") == {"kept": 1}
+
+
+class TestInvokeValidatesBeforeInjecting:
+    """Kernel.invoke validates what the caller passes, then injects (regressions for the capability change)."""
+
+    def test_an_unexpected_keyword_is_rejected(self, kernel):
+        with pytest.raises(HeinzelError, match="Invalid arguments for show: surprise: Unexpected keyword argument"):
+            run(kernel, "digest", "show", surprise=1)
+
+    def test_constrained_parameters_are_validated_before_an_adapter_is_built(self, kernel):
+        built = Notes.built
+        with pytest.raises(HeinzelError, match="Invalid arguments for count: times: Input should be greater"):
+            run(kernel, "digest", "count", times=0)
+        assert Notes.built == built
+        assert run(kernel, "digest", "count", times="2") == 2 * len("notes:weekly")
+
+    def test_an_explicitly_passed_injectable_is_still_validated(self, make_kernel):
+        module = Module("explicit", "Takes settings.")
+        module.settings(NotesSettings)
+
+        @module.operation
+        def prefix(settings: NotesSettings) -> str:
+            """Show the prefix."""
+            return settings.prefix
+
+        kernel = make_kernel(explicit=module)
+        assert run(kernel, "explicit", "prefix") == "notes"
+        assert run(kernel, "explicit", "prefix", settings=NotesSettings(prefix="given")) == "given"
+        with pytest.raises(HeinzelError, match="Invalid arguments for prefix: settings"):
+            run(kernel, "explicit", "prefix", settings="not settings")
+
+    def test_an_explicitly_passed_capability_is_accepted_as_is(self, kernel):
+        assert run(kernel, "digest", "show", documents=Reader()) == "reader:weekly"
+
+
+def test_capabilities_is_kernel_internal():
+    assert Capabilities.__module__ == "heinzel.kernel._bindings"

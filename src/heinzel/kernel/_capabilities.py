@@ -48,8 +48,8 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
             Capability(
                 name="code-host",
                 protocol=CodeHost,
-                summary="Repositories, merged pull requests and issues on a code host.",
-                methods=MappingProxyType({"merged_pull_requests": "read", "issues": "read"}),
+                summary="Repositories and their merged pull requests on a code host.",
+                methods=MappingProxyType({"merged_pull_requests": "read"}),
             ),
             Capability(
                 name="documents",
