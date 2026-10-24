@@ -13,6 +13,8 @@ except PackageNotFoundError:  # pragma: no cover - only when importing from a so
 from heinzel.kernel import (
     Check,
     Config,
+    CredentialLet,
+    Credentials,
     HealthLet,
     HeinzelError,
     InfoLet,
@@ -32,6 +34,8 @@ from heinzel.kernel import (
 __all__ = [
     "Check",
     "Config",
+    "CredentialLet",
+    "Credentials",
     "HealthLet",
     "HeinzelError",
     "InfoLet",

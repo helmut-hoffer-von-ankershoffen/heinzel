@@ -1,5 +1,6 @@
 """heinzel.testing's test-suite policy: one level per test, fastest level first, each with its level's timeout."""
 
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -93,3 +94,13 @@ def test_plugins_get_the_policy_from_heinzel_testing():
     conftest = (REPO / "template" / "tests" / "conftest.py.jinja").read_text(encoding="utf-8")
     assert "pytest_collection_modifyitems" not in conftest
     assert "CATEGORIES" not in conftest
+
+
+def test_isolation_forces_the_environment_backend_and_drops_credential_variables(monkeypatch):
+    from heinzel.testing import isolate_credentials
+
+    monkeypatch.setenv("HZ_SYSTEM_CREDENTIAL__BACKEND", "keyring")
+    monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_API_TOKEN", "from-the-developer")
+    isolate_credentials(monkeypatch)
+    assert os.environ["HZ_SYSTEM_CREDENTIAL__BACKEND"] == "environment"
+    assert "HZ_CREDENTIAL_EXAMPLE_API_TOKEN" not in os.environ

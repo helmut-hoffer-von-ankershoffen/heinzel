@@ -65,3 +65,16 @@ def test_service_and_info():
     assert info == InfoLet(name="example", provider=section)
     assert module.heinzel_lets() == module.lets
     assert "example" in repr(module)
+
+
+def test_credential_declares_a_let_and_returns_it():
+    module = Module("example", "x")
+    token = module.credential("api-token", purpose="Example API token.", service="shared")
+    assert module.lets == (token,)
+    assert (token.name, token.purpose, token.service) == ("api-token", "Example API token.", "shared")
+
+
+@pytest.mark.parametrize(("name", "purpose", "problem"), [("API_TOKEN", "x", "must match"), ("token", " ", "purpose")])
+def test_credential_needs_a_valid_name_and_a_purpose(name, purpose, problem):
+    with pytest.raises(ValueError, match=problem):
+        Module("example", "x").credential(name, purpose=purpose)

@@ -30,6 +30,12 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `skill_dirs` | `HZ_SYSTEM_AGENT__SKILL_DIRS` | platform-specific | Directories `hz system agent install` copies Heinzelmännchen's skills into, one per coding agent. |
 
+## `[system.credential]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `backend` | `HZ_SYSTEM_CREDENTIAL__BACKEND` | `'auto'` | Where credentials live: `keyring` (the OS keychain), `environment` (read-only HZ_CREDENTIAL_<SERVICE>_<NAME> variables), or `auto`: the keychain when one is usable, else the environment. |
+
 ## `[system.plugin]`
 
 | Key | Environment variable | Default | Description |

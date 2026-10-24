@@ -8,7 +8,9 @@ def test_clock(hz):
     assert times[0]["zone"] == "Europe/Berlin"
 ```
 
-Every test runs with its own configuration, data and cache directories, so nothing touches the developer's setup.
+Every test runs with its own configuration, data and cache directories, so nothing touches the developer's setup, and
+credentials come from the (empty) environment instead of the OS keychain. A test that stores credentials asks for
+`hz_credentials`, which keeps them in memory.
 
 A project that declares the markers `unit`, `integration` and `e2e` (Heinzelmännchen and every plugin from its
 template) also gets the test-suite policy of docs/CODING_STANDARDS.md: every test carries exactly one of them, they
@@ -16,6 +18,7 @@ run in that order, and each test has its level's timeout (`TIMEOUTS`) unless it 
 """
 
 import json
+import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -23,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 if TYPE_CHECKING:
-    from heinzel.kernel import Kernel
+    from heinzel.kernel import Credentials, Kernel
 
 # Heinzelmännchen itself is imported inside the fixtures: pytest loads this plugin before coverage measurement starts,
 # and a top-level import would hide the import-time lines of every module from the coverage report.
@@ -86,6 +89,36 @@ def hz_isolation(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempP
         monkeypatch.delenv(name, raising=False)
     for name in ("HZ_CONFIG_HOME", "HZ_DATA_DIR", "HZ_CACHE_DIR"):
         monkeypatch.setenv(name, str(tmp_path_factory.mktemp(name.lower())))
+    isolate_credentials(monkeypatch)
+
+
+def isolate_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never the real keychain (ADR 0030): credentials come from HZ_CREDENTIAL_* variables, the developer's removed."""
+    monkeypatch.setenv("HZ_SYSTEM_CREDENTIAL__BACKEND", "environment")
+    for name in [name for name in os.environ if name.startswith("HZ_CREDENTIAL_")]:
+        monkeypatch.delenv(name)
+
+
+class MemoryBackend:
+    """Credentials kept in a dictionary, for tests: `hz_credentials` puts one behind `Credentials`."""
+
+    name = "memory"
+
+    def __init__(self) -> None:
+        """Start empty."""
+        self.values: dict[tuple[str, str], str] = {}
+
+    def get(self, service: str, name: str) -> str | None:
+        """The stored value, or None."""
+        return self.values.get((service, name))
+
+    def set(self, service: str, name: str, value: str) -> None:
+        """Store a value."""
+        self.values[service, name] = value
+
+    def delete(self, service: str, name: str) -> bool:
+        """Remove a value; whether there was one."""
+        return self.values.pop((service, name), None) is not None
 
 
 @pytest.fixture
@@ -96,6 +129,16 @@ def hz_kernel() -> "Kernel":
     config = Config.empty()
     records, errors = discover()
     return Kernel(config.settings(Settings, "hz"), records, errors, config)
+
+
+@pytest.fixture
+def hz_credentials(hz_kernel: "Kernel") -> "Credentials":
+    """The `Credentials` of `hz_kernel` (and so of `hz`), kept in memory: `hz_credentials.set("api-token", "x")`."""
+    from heinzel.kernel import CredentialLet, Credentials  # noqa: PLC0415 - see the module comment
+
+    credentials = Credentials(MemoryBackend(), [(r.qualname, let) for r, let in hz_kernel.lets(CredentialLet)])
+    hz_kernel.bind(Credentials, credentials)
+    return credentials
 
 
 @pytest.fixture

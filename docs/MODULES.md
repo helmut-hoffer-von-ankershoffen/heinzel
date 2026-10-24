@@ -11,6 +11,7 @@ modules; `hz system modules` lists what is installed.
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
 | [`system.changelog`](#systemchangelog) | Release notes of the installed version. |
 | [`system.config`](#systemconfig) | Show, get, set and initialize configuration. |
+| [`system.credential`](#systemcredential) | Store and check the credentials modules need, in the OS keychain. |
 | [`system.doctor`](#systemdoctor) | Check that Heinzelmännchen and its modules are healthy. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
 
@@ -70,6 +71,20 @@ Show, get, set and initialize configuration.
 | Show one setting in effect, with its environment variable. | `hz system config get` | `system_config_get` | `GET /system/config/get` |  |
 | Change a setting in the user or project configuration file, after validating it. | `hz system config set` | `system_config_set` | `POST /system/config/set` | yes |
 | Remove a setting from the user or project configuration file, so its default applies again. | `hz system config unset` | `system_config_unset` | `POST /system/config/unset` | yes |
+
+## `system.credential`
+
+Store and check the credentials modules need, in the OS keychain.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| List the credentials modules declare and whether each is stored, never their values. | `hz system credential list` | `system_credential_list` | `GET /system/credential/list` |  |
+| Store a credential, read from standard input or a hidden prompt, never from the command line. | `hz system credential set` | — | — | yes |
+| Remove a credential's value from the keychain. | `hz system credential remove` | `system_credential_remove` | `POST /system/credential/remove` | yes |
+
+Settings: [`[system.credential]`](CONFIGURATION.md#systemcredential).
+
+Health checks: reported by `hz system doctor`.
 
 ## `system.doctor`
 

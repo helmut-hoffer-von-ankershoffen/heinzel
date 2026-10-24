@@ -19,6 +19,7 @@ def _isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pyt
     monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path_factory.mktemp("hz-config")))
     monkeypatch.setenv("HZ_DATA_DIR", str(tmp_path_factory.mktemp("hz-data")))
     monkeypatch.setenv("HZ_CACHE_DIR", str(tmp_path_factory.mktemp("hz-cache")))
+    monkeypatch.setenv("HZ_SYSTEM_CREDENTIAL__BACKEND", "environment")  # never the real keychain (ADR 0030)
 
 
 @pytest.fixture

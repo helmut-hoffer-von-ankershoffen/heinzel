@@ -27,6 +27,9 @@ Only the latest release receives security fixes while the project is on 0.x.
 - `hz system serve mcp|api` listens on `127.0.0.1` unless you pass another `--host`; the servers have no
   authentication, so don't expose them to a network you don't trust.
 - External commands (uv, git, copier) run without a shell, from argument lists, with timeouts.
+- Credentials that modules and plugins need are kept in your OS keychain (`hz system credential set NAME` reads
+  the value from a hidden prompt or standard input) and are never shown, logged or returned; on Linux without a
+  keychain they are read from `HZ_CREDENTIAL_<SERVICE>_<NAME>` variables, and `hz system doctor` warns about it.
 
 ## How we keep the project secure
 
@@ -41,6 +44,7 @@ Only the latest release receives security fixes while the project is on 0.x.
 | | Strict typing and an extensive lint rule set, including security rules (`S`) | ruff, mypy, pyright |
 | Secrets | Credentials (API keys, tokens, private keys) are blocked on commit and the whole history is scanned in CI | gitleaks (prek hook, `Secret scan` job) |
 | | Pushes with known secret formats are rejected | GitHub secret scanning with push protection |
+| | Credentials modules need live in the OS keychain behind one injected service, never in plaintext files; values never appear in output, logs or results, and the environment fallback is a doctor warning (ADR 0030) | `heinzel.Credentials`, `hz system credential`, `tests/integration/credential_test.py` |
 | | Confidential names (employers, customers, internal projects) are blocked in files, commit messages, branch names and pull request titles, against a private list kept outside the repository | `scripts/check_confidentiality.py`, hooks, CI, Publish |
 | Workflows | Actions pinned to full commit SHAs, read-only token by default, least privilege per job, no persisted credentials, no untrusted input in `run:` | zizmor, actionlint (`make lint`) |
 | | Supply-chain posture tracked | OpenSSF Scorecard |
