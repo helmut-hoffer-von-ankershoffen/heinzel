@@ -51,6 +51,10 @@ checks and dry-runs on a fresh installation, where only the agent runner is boun
 the schedule are commented examples to uncomment as you go. A name must be lowercase words joined by dashes; the
 error for anything else shows the name that works.
 
+To start from a complete contract instead, use a plugin's **playbook**: `hz workflow playbooks` lists the template
+contracts installed plugins offer, and `hz workflow new <name> --template <plugin>:<template>` writes one. The
+walkthrough, with a weekly report as the example: [Playbooks: your first contract from a plugin](PLAYBOOKS.md).
+
 Edit it in any editor, then:
 
 ```bash
@@ -103,6 +107,18 @@ hz workflow drafts --name weekly-digest --latest    # the newest draft of one co
 ```
 
 A manual run has no receipt, only its record; daemon runs write a receipt with the same content.
+
+### Measure whether it pays off
+
+```bash
+hz workflow sent weekly-digest --file ~/sent/digest.md --edit-minutes 5   # how much of the newest draft you changed
+hz workflow sent weekly-digest --ref <document>        # or the approved version where it lives, through `documents`
+hz workflow show weekly-digest                         # the success test: drafting time, share changed
+```
+
+`sent` compares what you finally sent with the draft and saves the share of words changed, both word counts and the
+sent text's hash next to the draft; the sent text isn't copied. `show` lists each draft's drafting time, cost and
+change. It stays local and is about the draft, never about people.
 
 ### Contribute a contract to your team's repository
 

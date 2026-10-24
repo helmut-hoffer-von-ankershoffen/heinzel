@@ -30,6 +30,7 @@ from pydantic_core import PydanticCustomError
 
 from heinzel import AgentResult, ModuleSettings, Window
 from heinzel.kernel import CAPABILITIES, Requirement, parse_duration, schedule_problem, user_config_dir
+from heinzel.modules.workflow._measure import Measurements
 
 SCHEMA_VERSION = 1
 """The version of the frontmatter format this Heinzelmännchen reads (`hz.schema`)."""
@@ -561,6 +562,11 @@ class CompiledContract(BaseModel):
     drafts: Path = Field(description="Where its drafts are saved.")
     draft_count: int = Field(description="How many drafts it has so far.")
     ready: bool = Field(description="Whether a run can start: no errors and every requirement served.")
+    measurements: Measurements | None = Field(
+        default=None,
+        description="Its success test: how long drafting took, and how much was changed before sending "
+        "(`hz workflow sent`); none without drafts.",
+    )
     next: list[Step] = Field(description="What to do next, as commands: fixes while not ready, then how to run it.")
 
 
@@ -613,6 +619,9 @@ class Rendered(BaseModel):
     sha256: str = Field(description="SHA-256 of the draft.")
     inputs: dict[str, str] = Field(description="SHA-256 of each input's data, by name.")
     agent: AgentResult = Field(description="What the agent session reported.")
+    seconds: float | None = Field(
+        default=None, description="Wall-clock seconds from fetching the inputs to saving the draft: drafting time."
+    )
     awaiting: list[str] = Field(
         description="Publish operations the draft is meant for; it waits for `hz inbox`, nothing was published."
     )

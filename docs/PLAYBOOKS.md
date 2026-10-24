@@ -1,0 +1,110 @@
+# Playbooks: your first contract from a plugin
+
+A contract keeps one asset true ([WORKFLOWS.md](WORKFLOWS.md)). A **playbook** is what a plugin brings so you don't
+start from a blank one: the asset types a kind of team work keeps (say, a rolling weekly report document and the
+team's tracker), hints for finding yours in what you can already read, template contracts that keep them true, and
+recommended settings. The core knows no playbook of its own; it lists, discovers, offers and measures
+([ADR 0037](adr/0037-plugins-bring-playbooks.md)).
+
+The running example is a weekly report playbook: it drafts this week's report every Friday at 17:00 from the week's
+merged pull requests, changed tracker items, the previous report and the team's tracking document, in the previous
+report's structure and tone. The draft is a local file; you edit it and send it yourself.
+
+## 1. Install a plugin with a playbook, and look at it
+
+```bash
+hz system plugin search --text playbook     # find one; `hz system plugin add <name>` installs it
+hz workflow playbooks                       # its asset types, templates and recommended settings
+```
+
+The recommended settings are only proposals, each shown with the `hz system config set` command that applies it.
+They usually bind the capabilities its templates read to the adapters it brings or expects (`code-host`, `tracker`,
+`documents`); the vendor's CLI or API is the adapter's transport, set up as the adapter's README says.
+
+## 2. Set it up
+
+```bash
+hz <plugin> setup     # or `hz setup`, which runs every module's step
+```
+
+The step shows the recommended settings and applies them only if you say yes. It runs the playbook's hints through
+the capabilities you have bound (read only) and asks which candidate is your asset, or lets you fill it in later.
+Then it offers each template contract and writes it into your workflows directory under a name you choose; an
+existing contract is never overwritten. Settings you just applied count from the next command: run the step again
+to discover through them.
+
+Without setup, or for an asset no hint finds:
+
+```bash
+hz workflow discover                                                     # candidates, by asset type
+hz workflow new weekly-report --template <plugin>:weekly-report \
+  --asset weekly-report=<document ref> --asset team-project=APP         # fill the placeholders you know
+```
+
+A placeholder you leave out stays as `{{asset:<type>}}` in the file; replace it there.
+
+## 3. Try it, draft it, schedule it
+
+```bash
+hz workflow show weekly-report             # requirements, adapters, and what to run next
+hz workflow run weekly-report --dry-run    # fetches the inputs and prints the packet; no agent runs, nothing is spent
+hz workflow run weekly-report              # drafts it now, within the contract's cost cap
+hz workflow drafts --name weekly-report --latest
+```
+
+Next to every draft a `.record.json` holds its lineage: which inputs were read, with which arguments, the SHA-256 of
+each input's data, the agent's report and how long drafting took. When the drafts read right, uncomment the
+template's `schedule: "0 17 * * FRI"`: five cron fields in your machine's local time (`TZ`, or the system's zone),
+daylight saving included. `hz system daemon install` then drafts it at the first tick after Friday 17:00; to have it
+waiting at 17:00 sharp, schedule it a little earlier.
+
+## 4. Send it, then measure
+
+Edit the draft and send it the way you always do. Then tell hz what you sent, from where it lives:
+
+```bash
+hz workflow sent weekly-report --file ~/reports/week-44.md --edit-minutes 10   # a file you saved
+hz workflow sent weekly-report --ref <document ref>                           # the document, through `documents`
+```
+
+hz compares it with the newest draft (`--draft <file>` picks another) and records, next to the draft, the share of
+words you changed, both word counts and the approved text's SHA-256; the text itself is not copied. `--edit-minutes`
+is your own estimate and optional. After a few Fridays, `hz workflow show weekly-report` has a **Success test** table:
+each draft's drafting time, cost, share changed and editing estimate, with the median drafting time and the mean
+share changed below it. It stays on your machine and is about the drafts, never about people.
+
+## Writing a playbook
+
+A playbook is a few lines in a plugin's module ([ARCHITECTURE: Plugins](ARCHITECTURE.md#plugins)):
+
+```python
+from pathlib import Path
+
+from heinzel import AssetType, DiscoveryHint, Module
+
+module = Module("teamwork", "Team rituals: the weekly report.")
+module.playbook(
+    "Draft the team's weekly report every Friday from the week's work and the previous report.",
+    assets=[
+        AssetType(
+            name="weekly-report",
+            description="The rolling document the team's reports live in.",
+            hints=[DiscoveryHint(read="documents.read", args={"ref": "doc-123"}, match="(?i)weekly report")],
+            kept_by="weekly-report",
+        ),
+        AssetType(name="team-project", description="The tracker project the team plans in."),
+    ],
+    templates=[Path(__file__).parent / "templates"],  # weekly-report.prose.md, with {{asset:...}} placeholders
+    defaults={"capabilities.tracker": "github"},  # proposals; applied only on yes
+)
+```
+
+- A hint is a contract input's shape (`read`, `args`, `window`) plus `match`, a pattern on each item's title. Today's
+  capability reads work within a known repository, project or document, so hints confirm and narrow; searching all
+  documents by title or folder needs listing reads that `documents` doesn't have yet.
+- Placeholders go in double-quoted strings, e.g. `args: {ref: "{{asset:weekly-report}}"}`, so the template is a valid
+  contract as written; test it with `hz workflow check --path`.
+- `kept_by` names the template whose output keeps the asset true. Drafts are local today; writing the draft where the
+  asset lives, approved in place, is planned.
+- `module.playbook` declares the module's setup step; a module with its own step passes `setup=False` and asks for
+  `heinzel.kernel.PlaybookSetup` in it.

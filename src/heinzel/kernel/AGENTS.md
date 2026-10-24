@@ -15,6 +15,8 @@ change like a library release: an ADR for a new concept, unit tests for every br
 - `_credentials.py` — `Credentials`, the only way to secrets (ADR 0030), and the environment backend.
 - `_lets.py` — let types, `Check`/`Status` and `CatchUp`. A new let kind needs a head, the kernel or a `system`
   submodule that consumes it (`JobLet`: `system.daemon`).
+- `_playbooks.py` — `PlaybookLet` (`module.playbook`), `AssetType`, `DiscoveryHint`, `ContractTemplate` and the
+  `PlaybookSetup` service: data plugins contribute, consumed by `workflow` (ADR 0037).
 - `_jobs.py` — `CompiledJobs`, a service, not a let: jobs compiled from data (workflow contracts, ADR 0021);
   `Kernel.compiled_jobs()` compiles them afresh on every call, and `system.daemon` runs them too.
 - `_discovery.py` — package walk + `heinzel.modules` entry points; plugin failures are collected, built-in ones raise.

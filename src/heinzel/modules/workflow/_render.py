@@ -8,6 +8,7 @@ from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
+from heinzel.modules.workflow._measure import Measurements, Sent
 from heinzel.modules.workflow._models import (
     GUIDE,
     CheckReport,
@@ -20,6 +21,7 @@ from heinzel.modules.workflow._models import (
     RunResult,
     Step,
 )
+from heinzel.modules.workflow._playbooks import Discovery, PlaybookList
 
 WHAT_A_CONTRACT_IS = (
     "A contract is a <name>.prose.md file: YAML frontmatter says what it reads and when it runs, and a Markdown body "
@@ -97,6 +99,8 @@ def render_show(contract: CompiledContract) -> RenderableType:
         parts.append(_requirements(contract))
     if contract.inputs or contract.outputs or contract.publishes:
         parts.append(_flows(contract))
+    if contract.measurements is not None:
+        parts.append(_measurements(contract.measurements))
     if contract.diagnostics:
         parts.append(_diagnostics(contract.diagnostics))
     parts.append(_next(contract.next))
@@ -135,6 +139,32 @@ def _flows(contract: CompiledContract) -> Table:
     return flows
 
 
+def _measurements(measurements: Measurements) -> RenderableType:
+    """The success test: per draft, how long drafting took, what it cost and how much was changed before sending."""
+    table = Table(title="Success test: drafting time and how much was changed")
+    for column in ("Drafted (UTC)", "Drafting", "Cost", "Changed", "Editing"):
+        table.add_column(column, overflow="fold")
+    for run in measurements.recent:
+        table.add_row(
+            f"{run.created:%Y-%m-%d %H:%M}",
+            f"{run.drafting_seconds:.0f}s" if run.drafting_seconds is not None else "-",
+            f"{run.cost_usd:g} USD" if run.cost_usd is not None else "-",
+            f"{run.changed:.0%}" if run.changed is not None else "not recorded",
+            f"{run.edit_minutes:g} min" if run.edit_minutes is not None else "-",
+        )
+    median = measurements.median_drafting_seconds
+    parts = [f"{measurements.drafts} draft(s)"]
+    if median is not None:
+        parts.append(f"median drafting {median:.0f}s")
+    if measurements.mean_changed is not None:
+        parts.append(f"{measurements.sent} sent, {measurements.mean_changed:.0%} of words changed on average")
+    else:
+        parts.append("none sent yet: `hz workflow sent <name> --file <what you sent>` records it")
+    if measurements.total_edit_minutes is not None:
+        parts.append(f"{measurements.total_edit_minutes:g} min editing in all")
+    return Group(table, Text("; ".join(parts)))
+
+
 def _agent(contract: CompiledContract) -> str:
     tools = ", ".join(contract.tools) or "the runner's read-only default"
     limit = f", at most {contract.max_usd:g} USD a run" if contract.max_usd is not None else ""
@@ -166,6 +196,66 @@ def render_new(result: NewContract) -> RenderableType:
         _next(result.next),
         Text(f"Guide: {GUIDE}"),
     )
+
+
+def render_sent(result: Sent) -> RenderableType:
+    """How much of the draft changed before it was sent, and where that was recorded."""
+    editing = f"; {result.edit_minutes:g} min editing" if result.edit_minutes is not None else ""
+    return Group(
+        Text(
+            f"{result.changed:.0%} of the words changed: "
+            f"{result.draft_words} drafted, {result.sent_words} sent{editing}",
+            style="bold",
+        ),
+        Text(f"Draft: {result.draft}\nRecorded: {result.record} (the sent text isn't copied, only its hash)"),
+        _next([Step(command=f"hz workflow show {result.contract}", why="drafting time and changes across the weeks")]),
+    )
+
+
+def render_playbooks(result: PlaybookList) -> RenderableType:
+    """Each playbook: its asset types with their hints, its templates and its recommended settings."""
+    if not result.playbooks:
+        return Group(
+            Text("No playbooks yet.", style="bold"),
+            Text("Plugins bring playbooks: asset types to look for, template contracts and recommended settings."),
+            _next(result.next),
+        )
+    parts: list[RenderableType] = []
+    for playbook in result.playbooks:
+        table = Table(title=Text(f"Playbook {playbook.module}: {playbook.summary}"))
+        for column in ("Kind", "Name", "What"):
+            table.add_column(column, overflow="fold")
+        for asset in playbook.assets:
+            hints = "; ".join(h.summary or h.read for h in asset.hints) or "no hints: you name it"
+            kept = f" Kept true by {asset.kept_by}." if asset.kept_by else ""
+            table.add_row("asset type", Text(asset.name), Text(f"{asset.description} Looks in: {hints}.{kept}"))
+        for template in playbook.templates:
+            fills = f" (assets: {', '.join(template.assets)})" if template.assets else ""
+            table.add_row("template", Text(template.template), Text(f"{template.command}{fills}"))
+        for default in playbook.defaults:
+            table.add_row("recommends", Text(default.key), Text(f"{default.command}  (only if you agree)"))
+        parts.append(table)
+    return Group(*parts, _next(result.next))
+
+
+def render_discovery(result: Discovery) -> RenderableType:
+    """The candidates for each asset type, and hints that couldn't run."""
+    parts: list[RenderableType] = []
+    if result.candidates:
+        table = Table(title="Candidates")
+        for column in ("Asset type", "Reference", "Title", "Found by"):
+            table.add_column(column, overflow="fold")
+        for candidate in result.candidates:
+            table.add_row(Text(candidate.asset), Text(candidate.ref), Text(candidate.title), Text(candidate.hint))
+        parts.append(table)
+    else:
+        parts.append(Text("No candidates found.", style="bold"))
+    if result.problems:
+        lines = Text()
+        for problem in result.problems:
+            lines.append(f"{problem.asset} {problem.hint}: {problem.problem}\n", style="yellow")
+        parts.append(lines)
+    return Group(*parts, _next(result.next))
 
 
 def render_drafts(result: DraftList) -> RenderableType:
