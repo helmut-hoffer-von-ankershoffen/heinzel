@@ -114,7 +114,7 @@ def test_release_asks_the_repository_heinzel_was_installed_from(make_kernel, git
 
 
 def test_release_never_sends_a_token(make_kernel, github, monkeypatch):
-    for variable in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
+    for variable in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN", "HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN"):
         monkeypatch.setenv(variable, "t0ken")
     SystemService(make_kernel(builtins=True)).release(None)
     [(_, headers, _)] = github.requests

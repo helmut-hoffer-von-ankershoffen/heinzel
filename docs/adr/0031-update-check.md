@@ -34,7 +34,8 @@ Heinzelmännchen find out about a newer release, and who tells the user?
 - **`hz system update --check`**: `update` changes the installation, so MCP marks it destructive and REST makes it a
   POST; a flag cannot make one call read-only.
 - **Send the user's GitHub token for a higher rate limit**: a token identifies the user to GitHub, which ADR 0027
-  rules out; 60 unauthenticated requests an hour are plenty for one check an hour.
+  rules out for a check nobody asked for; 60 unauthenticated requests an hour are plenty for one check an hour. (The
+  user-initiated `hz system changelog --newer` may send one; see below.)
 
 ## Decision Outcome
 
@@ -66,14 +67,19 @@ waits and nothing about the user is sent.
 - What a newer release brings: `hz system changelog --newer` shows the release notes of every release newer than the
   installed version, newest first (`--json`: a list of `{version, date, notes, url}`), so people see what they get
   before they update; the notice, the changelog header, `hz system release` and `hz system update` point to it. It
-  uses the network only when asked, with the same request rules as the check: unauthenticated GETs to the releases API
-  of the same repository through `heinzel.modules.system._github`, only the `heinzel/<version>` User-Agent, no token,
-  answers of at most 1 MB, at most 4 pages of 30 releases, 5 seconds per network operation. Drafts and pre-releases
+  uses the network only when asked: GETs to the releases API of the same repository through
+  `heinzel.modules.system._github`, the `heinzel/<version>` User-Agent, answers of at most 1 MB, at most 4 pages of
+  30 releases, 5 seconds per network operation. Because someone asked, it sends their GitHub token if one is set
+  (the setting `[system.changelog] github_token`, `HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN`, `GH_TOKEN` or `GITHUB_TOKEN`),
+  as `hz system plugin search` does, for GitHub's higher rate limit; only to api.github.com (`_github` refuses any
+  other URL and any redirect off api.github.com, so the token never reaches another host or plain http). Without a
+  token the requests are unauthenticated and it works the same, at 60 requests an hour. Drafts and pre-releases
   are skipped. Release notes are third-party text: the module removes control characters and invisible format
   characters (bidirectional controls, zero-width and tag characters; the zero-width joiner of emoji stays), so every
   head, MCP and REST included, gets them clean; a release's `url` is kept only if it is a plain release page of that
   repository; each release's notes are cut at 20,000 characters; and in the terminal links show their target.
-  Offline or rate-limited, it fails with one error naming the reason and the releases page, exit code 1. Without
+  Offline or rate-limited, it fails with one error naming the reason and the releases page, exit code 1;
+  rate-limited without a token, the error says that `GH_TOKEN` or `GITHUB_TOKEN` raises the limit. Without
   `--newer` the changelog and its JSON are unchanged.
 - Opt-out: the setting `update_check` (`[hz] update_check` in the user, site or `HZ_CONFIG` file, `HZ_UPDATE_CHECK`;
   a project's `hz.toml` cannot set it, so a repository can't switch it on or off for the people who clone it),
@@ -103,7 +109,8 @@ an hour, negative cache, the budget with a slow source, CI and the setting), `te
 (the notice on stderr only, never with `--json`, `--format json` or `output_format = "json"`, the start screen,
 `--version`, doctor, the changelog header, and the entry point checking once an hour with a fake source),
 `tests/unit/modules/changelog_test.py` (`--newer`: newest first, drafts and pre-releases skipped, bounded pages,
-cleaned and cut notes, no token, offline), `tests/integration/update_notice_test.py::test_changelog_newer_*` (text,
+cleaned and cut notes, no token unless one is set, the token from `GH_TOKEN`, `GITHUB_TOKEN` or the setting, never
+following a redirect off api.github.com, the rate-limit hint, offline), `tests/integration/update_notice_test.py::test_changelog_newer_*` (text,
 JSON and offline through the CLI with a fake GitHub),
 `tests/unit/kernel/installation_test.py::test_the_hz_probe_never_checks_for_updates`,
 `tests/unit/modules/system_service_test.py::test_release_never_sends_a_token`; the import-linter contract "Heads only
@@ -119,4 +126,8 @@ against this ADR.
 - Amended on 2026-10-24: the maintainer decided "users should see what they get before installing a new release",
   so `hz system changelog --newer` shows the notes of every newer release, and the notice and `hz system update` point
   to it.
+- Amended on 2026-10-24: `hz system changelog --newer` sends the user's GitHub token if one is set, to
+  api.github.com only, because the shared runners of CI exhausted the unauthenticated rate limit and the README test
+  of `--newer` failed; CI passes its read-only `GITHUB_TOKEN`. The hourly check and `hz system release` still never
+  send a token.
 - `hz system plugin search` is a different, user-initiated search and may send the user's configured GitHub token.
