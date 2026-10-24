@@ -2,6 +2,7 @@
 
 import json
 import sys
+import urllib.error
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -11,11 +12,13 @@ from heinzel import Module, Prompter, Settings, __version__
 from heinzel.heads import cli
 from heinzel.heads.cli import _setup, _update, build
 from heinzel.kernel import Kernel, ModuleRecord, Origin, ReleaseCache, ReleaseSource, discover
+from heinzel.modules.system import _github
+from heinzel.modules.system import _service as system_service
 
 pytestmark = pytest.mark.integration
 
 runner = CliRunner()
-NOTICE = f"hz 9.0.0 is available (installed {__version__}): hz system update"
+NOTICE = f"hz 9.0.0 is available (installed {__version__}): hz system update\n{_update.WHATS_NEW}"
 CLOCK = Origin("heinzel-clockwork", "1.2.3", builtin=False, url="https://github.com/someone/heinzel-clockwork")
 
 
@@ -151,7 +154,7 @@ def test_the_start_screen_shows_plugins_with_versions_and_links_and_the_notice(a
     plugins = screen[screen.index("Plugins") : screen.index("Core")]
     assert "heinzel-clockwork 1.2.3" in plugins
     assert "https://github.com/someone/heinzel-clockwork" in plugins
-    assert NOTICE in " ".join(screen.split())
+    assert " ".join(NOTICE.split()) in " ".join(screen.split())
     footer = screen[screen.index("Heinzelmännchen hz") :]
     assert "https://" not in footer  # the footer names, versions and describes; no link
 
@@ -188,14 +191,78 @@ def test_doctor_reports_the_newer_release_instead_of_the_notice(app):
 def test_changelog_starts_with_a_header_naming_the_newer_release_and_its_notes(app):
     result = runner.invoke(app, ["system", "changelog"])
     text = " ".join(result.stdout.split())
-    assert text.startswith(
-        f"You're on hz {__version__}; hz 9.0.0 is available: hz system update. What's new: "
-        "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases"
-    )
+    assert text.startswith(f"You're on hz {__version__}; hz 9.0.0 is available: hz system update. {_update.WHATS_NEW}")
     assert "Changelog" in text
     assert NOTICE not in result.stderr
     as_json = json.loads(runner.invoke(app, ["system", "changelog", "--json"]).stdout)
     assert as_json.startswith("# Changelog")  # unchanged: the header is for people only
+
+
+def fake_releases(monkeypatch, answer: object) -> list[str]:
+    """The GitHub releases API answering `answer` (raising it if it is an exception); the suite stays offline."""
+    asked: list[str] = []
+
+    def get_json(url, token, timeout):
+        assert (token, timeout) == (None, system_service.RELEASE_TIMEOUT)  # never a token (ADR 0031)
+        asked.append(url)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(_github, "get_json", get_json)
+    return asked
+
+
+NEWER = [
+    {
+        "tag_name": "v9.0.0",
+        "published_at": "2026-10-20T08:00:00Z",
+        "html_url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v9.0.0",
+        "body": "### Features\n\n- \u202ebrand new\u202c things",
+    },
+    {"tag_name": f"v{__version__}", "body": "what you have"},
+]
+
+
+def test_changelog_newer_shows_what_newer_releases_bring(app, monkeypatch):
+    asked = fake_releases(monkeypatch, NEWER)
+    result = runner.invoke(app, ["system", "changelog", "--newer"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0
+    assert "You're on hz" not in result.stdout  # the header is for the installed changelog
+    assert "hz 9.0.0 (2026-10-20)" in result.stdout
+    assert "brand new things" in result.stdout
+    assert "\u202e" not in result.stdout
+    assert "what you have" not in result.stdout
+    assert NOTICE not in result.stderr
+    assert asked == [f"{_github.GITHUB_API}/repos/helmut-hoffer-von-ankershoffen/heinzel/releases?per_page=30&page=1"]
+    as_json = json.loads(runner.invoke(app, ["system", "changelog", "--newer", "--json"]).stdout)
+    assert as_json == [
+        {
+            "version": "9.0.0",
+            "date": "2026-10-20",
+            "notes": "### Features\n\n- brand new things",
+            "url": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v9.0.0",
+        }
+    ]
+
+
+def test_changelog_newer_says_when_nothing_is_newer(app, monkeypatch):
+    fake_releases(monkeypatch, NEWER[1:])
+    result = runner.invoke(app, ["system", "changelog", "--newer"], env={"COLUMNS": "200"})
+    assert (result.exit_code, result.stdout.strip()) == (
+        0,
+        f"hz {__version__} is the latest release; nothing newer to show.",
+    )
+    assert json.loads(runner.invoke(app, ["system", "changelog", "--newer", "--json"]).stdout) == []
+
+
+def test_changelog_newer_offline_says_so_and_fails(app, monkeypatch):
+    fake_releases(monkeypatch, urllib.error.URLError("nodename nor servname provided"))
+    result = runner.invoke(app, ["system", "changelog", "--newer"], env={"COLUMNS": "300"})
+    assert result.exit_code == 1
+    assert "Could not ask GitHub for the releases newer than" in result.stderr
+    assert "nodename nor servname provided" in result.stderr
+    assert result.stdout == ""
 
 
 @pytest.mark.usefixtures("human")

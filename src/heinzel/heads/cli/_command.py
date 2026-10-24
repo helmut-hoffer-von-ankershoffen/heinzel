@@ -34,7 +34,7 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
     err_console: Console,
     progress: ConsoleProgress,
     *,
-    prologue: Callable[[], None] | None = None,
+    prologue: Callable[[object], None] | None = None,
     epilogue: Callable[[], None] | None = None,
 ) -> Callable[..., None]:
     """A Typer-compatible callable that runs the operation through the kernel and presents its result.
@@ -42,7 +42,7 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
     The command's signature is the operation's, minus injected parameters, plus `--format` and its shorthand `--json`.
     Parameters without a default become arguments, the others options; `Field(description=...)` becomes their help
     text. Progress goes to stderr and is silent for JSON output, so stdout always holds just the result.
-    `prologue` runs before text output and `epilogue` after it; neither runs for JSON.
+    `prologue` runs before text output, with the result, and `epilogue` after it; neither runs for JSON.
     """
     parameters = [
         _cli_parameter(parameter)
@@ -110,12 +110,12 @@ def _present(
     console: Console,
     operation: OperationLet,
     result: object,
-    prologue: Callable[[], None] | None,
+    prologue: Callable[[object], None] | None,
     epilogue: Callable[[], None] | None,
 ) -> None:
     """Print a result as text, with the operation's renderer if it has one, between prologue and epilogue."""
     if prologue is not None:
-        prologue()
+        prologue(result)
     if operation.render is not None:
         rendered = operation.render(result)
         # Bare text is content to copy or pipe as it is (a draft, a flowchart): the terminal wraps it, Rich must not
