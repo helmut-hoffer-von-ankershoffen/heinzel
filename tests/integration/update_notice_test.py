@@ -39,7 +39,7 @@ class FakeSource(ReleaseSource):
 def plugin_module() -> Module:
     module = Module("clockwork", "Wind the clocks.")
 
-    @module.operation
+    @module.operation(audience="everyday")  # listed on the start screen
     def wind() -> str:
         """Wind them."""
         return "wound"

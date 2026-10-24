@@ -1381,6 +1381,50 @@
         "title": "Disposition",
         "type": "string"
       },
+      "ExpertMode": {
+        "description": "Whether expert mode is on, and who each operation is for.",
+        "properties": {
+          "expert": {
+            "description": "Whether help, completion and the web app list every command.",
+            "title": "Expert",
+            "type": "boolean"
+          },
+          "next": {
+            "description": "What to run next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the mode in effect differs from the one asked for.",
+            "title": "Note"
+          },
+          "operations": {
+            "description": "Every available operation with its audience, so other heads list the same ones the CLI does.",
+            "items": {
+              "$ref": "#/components/schemas/OperationAudience"
+            },
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "expert",
+          "operations"
+        ],
+        "title": "ExpertMode",
+        "type": "object"
+      },
       "GraphEdge": {
         "description": "A contract maintaining an asset, or a contract reading an asset or a source as one of its inputs.",
         "properties": {
@@ -2126,6 +2170,37 @@
           "lets"
         ],
         "title": "ModuleInfo",
+        "type": "object"
+      },
+      "OperationAudience": {
+        "description": "Who one operation is for.",
+        "properties": {
+          "audience": {
+            "description": "`everyday`: always listed; `expert`: listed in expert mode only. Both run when called.",
+            "enum": [
+              "everyday",
+              "expert"
+            ],
+            "title": "Audience",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified name of the operation's module, e.g. `workflow` or `system.doctor`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The operation's name within its module, e.g. `graph`.",
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "module",
+          "operation",
+          "audience"
+        ],
+        "title": "OperationAudience",
         "type": "object"
       },
       "PlaybookList": {
@@ -3942,6 +4017,72 @@
           }
         },
         "summary": "Run every module's health checks; exits with 1 if anything is down.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/expert": {
+      "get": {
+        "description": "Show whether expert mode is on: `on` lists every command, `off` just the everyday ones.",
+        "operationId": "system_expert",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpertMode"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show whether expert mode is on: `on` lists every command, `off` just the everyday ones.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/expert/off": {
+      "post": {
+        "description": "Turn expert mode off: help, completion and the web app list the everyday commands.",
+        "operationId": "system_expert_off",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpertMode"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Turn expert mode off: help, completion and the web app list the everyday commands.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/expert/on": {
+      "post": {
+        "description": "Turn expert mode on: help, completion and the web app list every command.",
+        "operationId": "system_expert_on",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExpertMode"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Turn expert mode on: help, completion and the web app list every command.",
         "tags": [
           "system"
         ]

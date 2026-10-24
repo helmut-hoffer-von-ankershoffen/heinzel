@@ -1,5 +1,5 @@
 // One query per operation the screens read; TanStack Query caches them, so screens share what they fetched.
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap } from "./client";
 
 export const keys = {
@@ -13,6 +13,7 @@ export const keys = {
   playbooks: ["workflow", "playbooks"],
   discover: ["workflow", "discover"],
   jobs: ["system", "daemon", "jobs"],
+  expert: ["system", "expert"],
 } as const;
 
 export const useDoctor = () => useQuery({ queryKey: keys.doctor, queryFn: () => unwrap(api.GET("/system/doctor")) });
@@ -34,6 +35,20 @@ export const usePlaybooks = () =>
 export const useDiscover = (enabled: boolean) =>
   useQuery({ queryKey: keys.discover, queryFn: () => unwrap(api.GET("/workflow/discover")), enabled });
 export const useJobs = () => useQuery({ queryKey: keys.jobs, queryFn: () => unwrap(api.GET("/system/daemon/jobs")) });
+
+/** Expert mode and every operation's audience: which screens the navigation lists (ADR 0041). */
+export const useExpert = () => useQuery({ queryKey: keys.expert, queryFn: () => unwrap(api.GET("/system/expert")) });
+/** `hz system expert on` or `off`, the operations the CLI runs; the answer is the mode in effect. */
+export const useSetExpert = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (on: boolean) => unwrap(on ? api.POST("/system/expert/on") : api.POST("/system/expert/off")),
+    onSuccess: (mode) => {
+      client.setQueryData(keys.expert, mode);
+      void client.invalidateQueries({ queryKey: keys.config });
+    },
+  });
+};
 
 export const useAsk = () =>
   useMutation({

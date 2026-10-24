@@ -39,6 +39,12 @@ class Settings(ModuleSettings):
         default="text",
         description="Default output of every operation; `json` suits scripts and agents. `--format` overrides it.",
     )
+    expert: bool = Field(
+        default=False,
+        description="Expert mode: list every command in help, shell completion and the web app, not just the "
+        "everyday ones. Hidden commands run all the same, and MCP and REST always list everything. Change it with "
+        "`hz system expert on` or `off`; not settable in a project's hz.toml (ADR 0041).",
+    )
     plugins_enabled: bool = Field(
         default=True,
         description="Discover modules from installed plugins. Disable to debug a broken plugin.",
@@ -64,7 +70,7 @@ class Settings(ModuleSettings):
         "hz.toml.",
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"api_allowed_hosts", "update_check"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"api_allowed_hosts", "expert", "update_check"})
 
     @field_validator("disabled_modules", "api_allowed_hosts", mode="before")
     @classmethod

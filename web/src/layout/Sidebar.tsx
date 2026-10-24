@@ -1,11 +1,11 @@
 // The left sidebar: home and search on top, the navigation tree in the middle, profile and settings at the bottom.
 import { Home, Moon, Search, Settings, Sun, UserRound } from "lucide-react";
 import { NavLink } from "react-router";
-import { useContracts, useProfile } from "@/api/queries";
+import { useContracts, useExpert, useProfile } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { contractPath, sections } from "./navigation";
+import { CONTRACTS_SECTION, contractPath, sections, visibleSections } from "./navigation";
 import { useTheme } from "./theme";
 
 const link = ({ isActive }: { isActive: boolean }) =>
@@ -17,7 +17,13 @@ const link = ({ isActive }: { isActive: boolean }) =>
 export function Sidebar({ onSearch }: { onSearch: () => void }) {
   const contracts = useContracts();
   const profile = useProfile();
+  const expert = useExpert();
   const [theme, toggleTheme] = useTheme();
+  const listed = visibleSections(sections, expert.data).filter(
+    // The contracts section stays for its entries; with no graph listed and no contract, there's nothing to show.
+    (section) =>
+      section.label !== CONTRACTS_SECTION || section.items.length > 0 || Boolean(contracts.data?.contracts.length),
+  );
   return (
     <div className="flex h-full flex-col gap-2 p-3">
       <div className="flex items-center gap-1">
@@ -35,7 +41,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
       </div>
       <nav aria-label={t("nav.label")} className="min-h-0 flex-1 overflow-y-auto">
         <ul className="flex flex-col gap-1">
-          {sections.map((section) => (
+          {listed.map((section) => (
             <li key={section.label}>
               {section.to ? (
                 <NavLink to={section.to} end className={link}>
@@ -54,7 +60,7 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
                         </NavLink>
                       </li>
                     ))}
-                    {section.label === "nav.contracts" &&
+                    {section.label === CONTRACTS_SECTION &&
                       contracts.data?.contracts.map((contract) => {
                         const qualified = `${contract.namespace}:${contract.name}`;
                         return (

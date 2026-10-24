@@ -49,7 +49,8 @@ MODULES_HEADER = """\
 Generated from the code by `make docs`; CI fails when it is out of date. Every operation is the same in every head:
 a `hz` command, an MCP tool (`hz system serve mcp`), a REST endpoint (`hz system serve api`) and an endpoint of the web
 app's API (`hz ui`, under `/api`, behind its session token). Plugins add their own modules; `hz system modules` lists
-what is installed.
+what is installed. Operations marked *expert* are listed by `hz --help`, shell completion and the web app only in expert
+mode (`hz system expert on`); every one runs either way, and MCP and REST list them all (ADR 0041).
 """
 
 CONFIGURATION_HEADER = """\
@@ -132,8 +133,8 @@ def module_catalog() -> str:
         operations = [item for item in surfaces["cli"] if item.record.qualname == record.qualname]
         if operations:
             lines += [
-                "| Operation | CLI | MCP tool | REST | Web | Changes state |",
-                "| --- | --- | --- | --- | --- | --- |",
+                "| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |",
+                "| --- | --- | --- | --- | --- | --- | --- |",
             ]
             for item in operations:
                 in_mcp = any(o.operation is item.operation for o in surfaces["mcp"])
@@ -146,7 +147,8 @@ def module_catalog() -> str:
                     f"{f'`{item.name}`' if in_mcp else '—'} | "
                     f"{f'`{verb} /{path}`' if in_api else '—'} | "
                     f"{f'`{verb} /api/{path}`' if in_web else '—'} | "
-                    f"{'' if item.operation.read_only else 'yes'} |"
+                    f"{'' if item.operation.read_only else 'yes'} | "
+                    f"{'expert' if item.operation.audience == 'expert' else ''} |"
                 )
             lines.append("")
         settings = [let for owner, let in k.lets(SettingsLet) if owner.qualname == record.qualname]

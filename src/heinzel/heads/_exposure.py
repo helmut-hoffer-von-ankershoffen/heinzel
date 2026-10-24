@@ -30,28 +30,47 @@ def exposed(kernel: Kernel, head: str) -> list[Exposed]:
     """Every operation `head` should expose, in module order.
 
     An operation is left out when it needs a service only a disabled module provides, or when its `heads` restrict it
-    to other heads. A module whose only operation shares its name and has no submodules collapses onto its own path.
+    to other heads. An operation that shares its module's name takes the module's own path (`owns_path`).
     """
     result: list[Exposed] = []
     for record, operation in kernel.lets(OperationLet):
         if not kernel.available(operation.func) or (operation.heads is not None and head not in operation.heads):
             continue
-        collapsed = collapses(kernel, record)
         signature = operation.signature()
         result.append(
             Exposed(
                 record=record,
                 operation=operation,
-                path=record.path if collapsed else (*record.path, operation.name),
-                parameters=tuple(
-                    p
-                    for p in signature.parameters.values()
-                    if not kernel.provides(get_origin(p.annotation) or p.annotation)
-                ),
+                path=record.path if owns_path(kernel, record, operation) else (*record.path, operation.name),
+                parameters=public_parameters(kernel, operation),
                 returns=signature.return_annotation,
             )
         )
     return result
+
+
+def public_parameters(kernel: Kernel, operation: OperationLet) -> tuple[inspect.Parameter, ...]:
+    """The parameters a caller supplies; injected ones (services, settings, the kernel) are left out."""
+    return tuple(
+        p
+        for p in operation.signature().parameters.values()
+        if not kernel.provides(get_origin(p.annotation) or p.annotation)
+    )
+
+
+def owns_path(kernel: Kernel, record: ModuleRecord, operation: OperationLet) -> bool:
+    """Whether `operation` is what its module's own path does: `hz system changelog`, `hz system expert`.
+
+    It must share the module's name. A module whose only operation it is, without submodules, collapses into it. Beside
+    other operations or submodules it is what the group does by itself (`hz system expert`, `GET /system/expert`, next
+    to `hz system expert on`), but only when every parameter has a default: a required one would take a subcommand's
+    name as its value, so such an operation keeps its own name instead (`hz tool tool ARG`).
+    """
+    if operation.name != record.module.name:
+        return False
+    if collapses(kernel, record):
+        return True
+    return all(p.default is not inspect.Parameter.empty for p in public_parameters(kernel, operation))
 
 
 def collapses(kernel: Kernel, record: ModuleRecord) -> bool:
