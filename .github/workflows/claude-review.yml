@@ -2,7 +2,8 @@ name: Claude review
 
 # Opt-in: runs the reviewer agents on pull requests through the review skill, on a Claude subscription. Enable with
 # the secret CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) and the repository variable CLAUDE_REVIEW=true.
-# Pull requests from forks get no secrets, so they are skipped.
+# Pull requests from forks get no secrets, so they are skipped, and so are events sent by bots (the action refuses
+# them): the update-prs merge of main into a branch, a release pull request opened by the bot.
 
 on:
   pull_request:
@@ -16,7 +17,7 @@ concurrency: # a new push supersedes the review of the previous one
 
 jobs:
   review:
-    if: vars.CLAUDE_REVIEW == 'true' && !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository
+    if: vars.CLAUDE_REVIEW == 'true' && github.event.sender.type != 'Bot' && !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

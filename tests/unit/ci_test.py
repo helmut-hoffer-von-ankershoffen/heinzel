@@ -271,3 +271,16 @@ def test_the_template_audit_runs_in_ci_and_in_full_preflight():
     assert "make audit" in (REPO / "scripts" / "template-test.sh").read_text(encoding="utf-8")
     ci = "\n".join(commands(REPO / ".github" / "workflows" / "ci.yml"))
     assert "make template-test AUDIT=1" in ci
+
+
+def test_claude_review_skips_events_sent_by_bots():
+    """The action refuses bot-triggered runs (update-prs merges, release pull requests), so the job must not start."""
+    spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
+    condition = spec["jobs"]["review"]["if"]
+    for clause in (
+        "vars.CLAUDE_REVIEW == 'true'",
+        "github.event.sender.type != 'Bot'",
+        "!github.event.pull_request.draft",
+        "github.event.pull_request.head.repo.full_name == github.repository",
+    ):
+        assert clause in condition
