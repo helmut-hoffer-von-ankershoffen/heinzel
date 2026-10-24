@@ -33,6 +33,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
+| [`system.sound`](#systemsound) | Pick the web app's soundscape: off, Claude FM or one a plugin offers. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
@@ -355,6 +356,17 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |
 
 Settings: [`[system.runner.chat]`](CONFIGURATION.md#systemrunnerchat).
+
+## `system.sound`
+
+Pick the web app's soundscape: off, Claude FM or one a plugin offers.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the soundscapes of the web app, which one is picked and which plays, with each file's licence. | `hz system sound list` | `system_sound_list` | `GET /system/sound/list` | `GET /api/system/sound/list` |  | expert |
+| Pick the web app's soundscape, `off` for none: writes `[system.sound] name` to your configuration. | `hz system sound use` | `system_sound_use` | — | `POST /api/system/sound/use` | yes | expert |
+
+Settings: [`[system.sound]`](CONFIGURATION.md#systemsound).
 
 ## `system.theme`
 

@@ -39,6 +39,13 @@ Only the latest release receives security fixes while the project is on 0.x.
   Other network access happens when you install, update or add plugins (through uv), when you run
   `hz system release` (the same request) or `hz system plugin search` (the same kind, plus your GitHub token if
   you configured one), and when a plugin you installed calls a service.
+- **Sound in the web app is off until you press Play.** A stream soundscape (the built-in Claude FM, or a plugin's)
+  plays in its host's own player; the only host allowed is YouTube's privacy-enhanced `youtube-nocookie.com`, named
+  in code, never by a plugin or a configuration file. Nothing of it loads before you press Play, and the page's CSP
+  admits that one frame origin only while a stream is the soundscape in effect. Once you press Play, YouTube receives
+  your IP address and the app's local address (`http://127.0.0.1:<port>`), and may keep storage in its frame. A
+  repository's `hz.toml` can't switch sound on
+  ([ADR 0058](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md)).
 - `hz system serve mcp|api` listens on `127.0.0.1` unless you pass another `--host`; the servers have no
   authentication, so don't expose them to a network you don't trust. The REST server answers only requests to
   `localhost`, `127.0.0.1` or `[::1]` on its port (or names you list in `[hz] api_allowed_hosts`) and refuses
