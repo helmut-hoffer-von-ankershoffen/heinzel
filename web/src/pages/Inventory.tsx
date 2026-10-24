@@ -17,6 +17,7 @@ export function AssetTypes() {
           data.playbooks.length === 0 ? (
             <Empty
               text={t("inventory.typesEmpty")}
+              gnome={{ state: "thinking" }}
               commands={[...data.next.map((step) => step.command), "hz system plugin search"].slice(0, 3)}
             />
           ) : (
@@ -90,6 +91,7 @@ export function Assets() {
               {data.candidates.length === 0 ? (
                 <Empty
                   text={t("inventory.assetsEmpty")}
+                  gnome={{ state: "thinking" }}
                   commands={data.next.flatMap((step) => commandsIn(step.command))}
                 />
               ) : (

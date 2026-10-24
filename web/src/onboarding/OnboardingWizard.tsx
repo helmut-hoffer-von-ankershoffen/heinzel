@@ -10,6 +10,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState 
 import { Link, useSearchParams } from "react-router";
 import { api, type SchemaProfile, unwrap } from "@/api/client";
 import { keys, useConfig, usePlaybooks, useProfile, useSetSetting } from "@/api/queries";
+import { Gnome } from "@/components/Gnome";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { ThemePreviews } from "@/layout/ThemePreviews";
@@ -166,6 +167,7 @@ export function OnboardingWizard({ progress, onProgress, onClose }: Props) {
         </nav>
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-12 shrink-0 items-center border-b border-border pr-2 pl-5">
+            <Gnome age="grown" view="bust" className="mr-2" />
             <p className="text-ui-sm text-muted-foreground">
               {t("onboarding.position", { step: index + 1, count: STEPS.length })}
             </p>
@@ -255,7 +257,8 @@ function useSetting(section: string, key: string): string {
 
 function Saved({ state, error }: { state: "idle" | "pending" | "success" | "error"; error?: string }) {
   return (
-    <p role="status" className="min-h-5 text-xs text-muted-foreground">
+    <p role="status" className="flex min-h-5 items-center gap-1 text-xs text-muted-foreground">
+      {state === "success" && <Gnome state="done" view="bust" className="size-5" />}
       {state === "pending" ? t("onboarding.saving") : state === "success" ? t("onboarding.saved") : (error ?? "")}
     </p>
   );

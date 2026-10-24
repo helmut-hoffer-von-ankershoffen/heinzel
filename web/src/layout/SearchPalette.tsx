@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useConfig, useContracts, useExpert, usePlaybooks } from "@/api/queries";
+import { Gnome } from "@/components/Gnome";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { contractPath, listed, sections, visibleSections } from "./navigation";
@@ -113,7 +114,12 @@ export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenCha
             aria-label={t("search.label")}
             className="max-h-80 overflow-x-hidden overflow-y-auto p-1"
           >
-            {matches.length === 0 && <p className="p-3 text-sm text-muted-foreground">{t("search.none")}</p>}
+            {matches.length === 0 && (
+              <div role="presentation" className="flex items-center gap-3 p-3">
+                <Gnome state="thinking" view="bust" />
+                <p className="text-sm text-muted-foreground">{t("search.none")}</p>
+              </div>
+            )}
             {matches.map((entry, index) => (
               <div
                 key={`${entry.to}-${entry.label}`}
