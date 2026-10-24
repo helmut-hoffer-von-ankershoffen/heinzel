@@ -146,6 +146,9 @@ UNTRACKED = {
     ".ruff_cache",
     ".pytest_cache",
     "dist",
+    "node_modules",  # the web app's dependencies (web/)
+    "static",  # the web app as built into the package (src/heinzel/heads/web/static)
+    ".tools",
 }
 
 

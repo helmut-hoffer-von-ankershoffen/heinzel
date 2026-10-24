@@ -151,7 +151,8 @@ def test_direct_lifecycle(sandbox, wheel):
     assert json.loads(sandbox.hz("system", "plugin", "list", "--json")) == [
         {"distribution": "heinzel-dummy", "version": "1.2.3", "modules": ["dummy", "dummy.greet"]}
     ]
-    assert json.loads(sandbox.hz("system", "info", "--json"))["sections"] == {"dummy": {"greeting": "hello from dummy"}}
+    sections = json.loads(sandbox.hz("system", "info", "--json"))["sections"]
+    assert sections["dummy"] == {"greeting": "hello from dummy"}  # the core's own uses are tested in integration
 
     # `hz system update --source` switches the source and keeps plugins too.
     assert sandbox.hz("system", "update", "--source", str(wheel)).startswith("hz ")

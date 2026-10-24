@@ -8,6 +8,7 @@ flowchart LR
         CLI["CLI head<br/>hz ..."]
         MCP["MCP head<br/>hz system serve mcp"]
         REST["REST head<br/>hz system serve api"]
+        Web["Web head<br/>hz ui"]
         Daemon["Daemon head<br/>hz system serve daemon"]
     end
     subgraph Kernel
@@ -26,6 +27,7 @@ flowchart LR
     CLI -- "OperationLets" --> Registry
     MCP -.-> Registry
     REST -.-> Registry
+    Web -.-> Registry
     Daemon -.-> Registry
     CLI -- "call" --> Injector
 ```
@@ -80,7 +82,13 @@ capability `agent-runner`; core ships its Claude Code and generic command adapte
 **Head.** A view that boots the kernel and exposes operations ([ADR 0019](adr/0019-mcp-and-rest-heads.md)). All heads
 share one exposure rule (`heinzel.heads._exposure`): the same path, public parameters and `heads=` restrictions. The
 **MCP head** makes each operation a tool (`system_doctor`), the **REST head** an endpoint (`GET /system/doctor`,
-OpenAPI at `/docs`). The **daemon head** (`hz system serve daemon`) calls the `hz system daemon tick` operation in
+OpenAPI at `/docs`). The **web head** (`hz ui`, `heinzel.heads.web`) serves a
+React app (`web/`, built into the package) at `/` and the API head's endpoints for head `web` under `/api`, on
+localhost only, behind a token made per process and sent as `Authorization: Bearer`; every response carries a strict
+CSP. Operations hidden from the unauthenticated REST head because they read your profile or your systems list `web`
+in `heads=`; nothing that spends money is exposed but `hz system runner ask`, the app's chat, which has its own cap
+(ADR 0039, "a web head: a React app served by the API head", proposed). The typed client in `web/src/api/` is
+generated from the OpenAPI document by `make fix` and checked by `make check`. The **daemon head** (`hz system serve daemon`) calls the `hz system daemon tick` operation in
 a foreground loop; installed, launchd or systemd start that tick every few minutes instead
 ([ADR 0020](adr/0020-daemon-head.md)). The CLI head turns a module into a command group and
 an operation into a command; parameters without defaults become arguments, others options, and
@@ -104,6 +112,7 @@ there. Everything about Heinzelmännchen itself lives under one administrative n
 hz --version
 hz join URL                                join a team: who you are, the team, what is still missing (CLI only)
 hz setup [MODULE]                          every module's setup step, or one module's, wizard style (CLI only)
+hz ui                                      the web app on localhost, opened in your browser
 hz system info | modules | doctor | changelog | release | update
 hz system config  show | get | set | unset | init
 hz system plugin  list | add | remove | new

@@ -164,7 +164,12 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
             "distribution": "heinzel-test",
         }
     ]
-    assert [(u["requester"], u["requirement"], u["adapter"], u["hosts"]) for u in report["uses"]] == [
+    # The built-in modules' own uses (org chart, system.runner ask) are tested where they are declared.
+    assert [
+        (u["requester"], u["requirement"], u["adapter"], u["hosts"])
+        for u in report["uses"]
+        if u["requester"].startswith("digest")
+    ] == [
         ("digest", "documents:read", "notes", ["notes.invalid"]),
         ("digest publish", "documents:write", "notes", ["notes.invalid"]),
     ]
@@ -177,7 +182,8 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
 def test_info_shows_who_reads_and_writes_what(kernel):
     code, info = hz(kernel, "system", "info")
     assert code == 0
-    assert info["sections"]["system.capability"] == {
+    uses = info["sections"]["system.capability"]
+    assert {key: value for key, value in uses.items() if key.startswith("digest")} == {
         "digest → documents:read": "notes → notes.invalid",
         "digest publish → documents:write": "notes → notes.invalid",
     }
@@ -214,11 +220,17 @@ def test_doctor_reports_met_requirements_as_up(kernel):
     }
 
 
-def test_doctor_is_quiet_when_nothing_is_declared(make_kernel):
+def test_doctor_lists_only_the_core_s_own_requirement_when_no_plugin_declares_one(make_kernel):
+    """The core declares one need, the chat's agent runner (ADR 0039), which its default binding serves."""
     code, report = hz(make_kernel(builtins=True), "system", "doctor")
     assert code == 0
     assert report["checks"]["system.capability"] == [
-        {"name": "requirements", "status": "up", "detail": "no module declares capabilities", "fix": ""}
+        {
+            "name": "agent-runner:read for system.runner ask",
+            "status": "up",
+            "detail": "served by claude-code",
+            "fix": "",
+        }
     ]
 
 
@@ -393,6 +405,7 @@ def test_capability_list_shows_the_new_capabilities_with_their_adapters(prepared
         ("prep", "meetings:read", "rooms"),
         ("prep", "calendar:read", "agenda"),
         ("prep remind", "chat:write", "talk"),
+        ("system.runner ask", "agent-runner:read", "claude-code"),
     ]
     rendered = CliRunner().invoke(build(prepared), ["system", "capability", "list"])
     assert rendered.exit_code == 0

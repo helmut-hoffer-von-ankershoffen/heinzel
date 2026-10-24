@@ -115,6 +115,7 @@ Plugins add their own tables.
 | `command_enforces_read_only` | `HZ_SYSTEM_RUNNER__COMMAND_ENFORCES_READ_ONLY` | `False` | The `command` runner refuses to run until this is true: set it once the configured command restricts its agent to read-only tools itself. |
 | `command_read_only_tools` | `HZ_SYSTEM_RUNNER__COMMAND_READ_ONLY_TOOLS` | platform-specific | Tools, in the command's naming, a tool profile may ask the `command` runner for; others are refused. |
 | `command_env` | `HZ_SYSTEM_RUNNER__COMMAND_ENV` | platform-specific | Environment variables passed to the command besides PATH, HOME, LANG, LC_* and TMPDIR, e.g. the variable that holds its own login; HZ_CREDENTIAL_* variables are never passed. |
+| `ask_max_usd` | `HZ_SYSTEM_RUNNER__ASK_MAX_USD` | `0.25` | Most one answer of `hz system runner ask` (the web app's chat) may cost in US dollars. |
 
 ## `[team]`
 

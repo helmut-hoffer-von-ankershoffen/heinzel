@@ -22,6 +22,12 @@ class SettingInfo(BaseModel):
     value: Any = Field(description="Value in effect.")
     env: str = Field(description="Environment variable that overrides it.")
     description: str = Field(description="What the setting controls.")
+    default: Any = Field(default=None, description="Its default; none when it has none.")
+    source: str = Field(
+        default="default",
+        description="Where the value in effect comes from: `default`, a file's scope (`site`, `user`, `project`, "
+        "`explicit`) or `env`.",
+    )
 
 
 class ConfigReport(BaseModel):
