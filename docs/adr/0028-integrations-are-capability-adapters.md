@@ -391,7 +391,7 @@ adapters are first-party plugins, not separate repositories:
   their v0.1.0, and Google Workspace (`documents`, `calendar`, `mail`; through the `gws` CLI,
   [ADR 0042](0042-google-workspace-through-the-gws-cli.md)). Planned: Zoom and Slack.
 - Separate repositories, scaffolded from `template/`, remain the model for community and company plugins (for
-  example `heinzel-example`).
+  example the community plugins in heinzel-contrib, each in `plugins/heinzel-<name>/`).
 - The maintainer named the directory holding them `plugins/` ("it contains plugins"), with `heinzel-clock` moved there
   too; install specs use `#subdirectory=plugins/heinzel-<name>`.
 
