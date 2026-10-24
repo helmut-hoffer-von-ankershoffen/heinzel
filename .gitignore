@@ -22,4 +22,5 @@ reports/
 .tools/
 node_modules/
 src/heinzel/heads/web/static/
+src/heinzel/modules/system/notify/macos/HeinzelNotifier.app/
 web/test-results/

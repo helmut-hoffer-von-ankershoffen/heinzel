@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from heinzel import Check, CompiledJobs, HeinzelError, JobLet, Kernel, Module, Status
+from heinzel import Check, CompiledJobs, HeinzelError, JobLet, Kernel, Module, Notifications, Status
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
@@ -771,3 +771,41 @@ def test_the_service_reads_user_settings_not_a_project_hz_toml(make_kernel, tmp_
     monkeypatch.delenv("HZ_DATA_DIR")  # only the project file would set it
     service = DaemonService.for_user(make_kernel())
     assert not service.receipts_dir.is_relative_to(elsewhere)
+
+
+# Notices (ADR 0041)
+
+
+class FakeNotifications(Notifications):
+    def __init__(self, error: Exception | None = None) -> None:
+        self.posts = 0
+        self.error = error
+
+    def post_native(self) -> int:
+        self.posts += 1
+        if self.error is not None:
+            raise self.error
+        return 2
+
+
+def notifying(fake: FakeNotifications) -> Module:
+    module = Module("notices", "Provides notifications for tests.")
+    module.service(Notifications, lambda: fake)
+    return module
+
+
+def test_every_tick_ends_by_popping_up_due_notices(make, jobs):
+    fake = FakeNotifications()
+    service = make(jobs, notifying(fake))
+    service.tick()
+    assert fake.posts == 1
+    assert "posted 2 notice(s)" in service.log_path.read_text(encoding="utf-8")
+    service.tick(dry_run=True)
+    assert fake.posts == 1  # a dry run pops up nothing
+
+
+def test_a_failing_notifier_never_fails_the_tick(make, jobs):
+    service = make(jobs, notifying(FakeNotifications(OSError("disk full"))))
+    report = service.tick()
+    assert all(run.disposition is not Disposition.FAILED for run in report.runs)
+    assert "posting notices failed: OSError: disk full" in service.log_path.read_text(encoding="utf-8")

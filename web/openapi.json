@@ -1237,6 +1237,33 @@
         "title": "DefaultView",
         "type": "object"
       },
+      "Delivered": {
+        "description": "What `ack` marked as shown.",
+        "properties": {
+          "delivered": {
+            "description": "Ids of the notices that weren't marked as shown before.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Delivered",
+            "type": "array"
+          }
+        },
+        "required": [
+          "delivered"
+        ],
+        "title": "Delivered",
+        "type": "object"
+      },
+      "Delivery": {
+        "description": "Who showed a notice to the person.",
+        "enum": [
+          "web",
+          "daemon"
+        ],
+        "title": "Delivery",
+        "type": "string"
+      },
       "Diagnostic": {
         "description": "A problem in a contract file, with where it is and what to do.",
         "properties": {
@@ -2170,6 +2197,160 @@
           "lets"
         ],
         "title": "ModuleInfo",
+        "type": "object"
+      },
+      "Notice": {
+        "description": "One thing that deserves attention, as recorded: what it is, where to look, and whether it was shown.",
+        "properties": {
+          "at": {
+            "description": "When it was recorded.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "body": {
+            "description": "A sentence more, in plain text; may be empty.",
+            "title": "Body",
+            "type": "string"
+          },
+          "command": {
+            "description": "The command that shows it in a terminal, such as `hz system doctor`.",
+            "title": "Command",
+            "type": "string"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When it was shown; none while it waits.",
+            "title": "Delivered At"
+          },
+          "delivered_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Delivery"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who showed it; none while it waits."
+          },
+          "due": {
+            "description": "When it may pop up: `at`, or the next start of your working hours.",
+            "format": "date-time",
+            "title": "Due",
+            "type": "string"
+          },
+          "held": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it isn't shown as a desktop notification; none if it is.",
+            "title": "Held"
+          },
+          "id": {
+            "description": "Identifier of the notice, unique on this machine; later notices sort after it.",
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "description": "What makes two notices the same, so a repeat within the window is dropped.",
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/NoticeKind",
+            "description": "What it is about."
+          },
+          "popup": {
+            "description": "Whether it is shown as a desktop notification at all; false: in the list only.",
+            "title": "Popup",
+            "type": "boolean"
+          },
+          "route": {
+            "description": "Where the web app shows it, a path such as `/doctor`.",
+            "title": "Route",
+            "type": "string"
+          },
+          "title": {
+            "description": "One line: what happened.",
+            "title": "Title",
+            "type": "string"
+          },
+          "urgent": {
+            "default": false,
+            "description": "Whether it may interrupt outside working hours.",
+            "title": "Urgent",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "body",
+          "route",
+          "command",
+          "key",
+          "at",
+          "due",
+          "popup"
+        ],
+        "title": "Notice",
+        "type": "object"
+      },
+      "NoticeKind": {
+        "description": "What a notice is about; each kind can be switched off in `[system.notify]`.",
+        "enum": [
+          "draft",
+          "failed",
+          "doctor",
+          "release",
+          "test"
+        ],
+        "title": "NoticeKind",
+        "type": "string"
+      },
+      "NoticeList": {
+        "description": "The latest notices, and how they reach you on this machine.",
+        "properties": {
+          "native": {
+            "description": "How the daemon pops them up when no web app is open, in words.",
+            "title": "Native",
+            "type": "string"
+          },
+          "notices": {
+            "description": "The latest notices, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/Notice"
+            },
+            "title": "Notices",
+            "type": "array"
+          },
+          "waiting": {
+            "description": "How many of them wait to pop up: due, or held until your working hours.",
+            "title": "Waiting",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "notices",
+          "waiting",
+          "native"
+        ],
+        "title": "NoticeList",
         "type": "object"
       },
       "OperationAudience": {
@@ -4205,6 +4386,119 @@
           }
         },
         "summary": "List every module and the lets it advertises.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/notify/ack": {
+      "post": {
+        "description": "Mark notices as shown, so the daemon doesn't pop them up again.\n\nThe web app calls it for every notice it popped up.",
+        "operationId": "system_notify_ack",
+        "parameters": [
+          {
+            "description": "Ids of the notices that were shown, from `list`, separated by commas.",
+            "in": "query",
+            "name": "ids",
+            "required": true,
+            "schema": {
+              "description": "Ids of the notices that were shown, from `list`, separated by commas.",
+              "title": "Ids",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Delivered"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark notices as shown, so the daemon doesn't pop them up again.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/notify/list": {
+      "get": {
+        "description": "Show the latest notices, whether each popped up and who showed it, and how they reach you.",
+        "operationId": "system_notify_list",
+        "parameters": [
+          {
+            "description": "How many of the latest notices to show.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "How many of the latest notices to show.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the latest notices, whether each popped up and who showed it, and how they reach you.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/notify/test": {
+      "post": {
+        "description": "Record an urgent test notice, which the open web app or the next daemon tick pops up.\n\n`hz system notify install` pops one up at once, through the native notifier only.\n\nRaises:\n    HeinzelError: If notifications are off, or quiet mode keeps it from popping up.",
+        "operationId": "system_notify_test",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Record an urgent test notice, which the open web app or the next daemon tick pops up.",
         "tags": [
           "system"
         ]

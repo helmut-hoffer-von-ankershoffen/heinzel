@@ -566,6 +566,7 @@ def test_commands_are_sorted(app):
         "info",
         "layer",
         "modules",
+        "notify",
         "plugin",
         "release",
         "runner",

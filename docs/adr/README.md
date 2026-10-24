@@ -47,6 +47,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0040](0040-layers-and-playbooks-are-plugins.md) | Layers and playbooks are plugins: a plugin may be a layer with a parent and a site, and layers stack general to specific | proposed | 2026-10-24 |
 | [0041](0041-expert-mode-newcomers-see-the-everyday-commands.md) | Expert mode: newcomers see the everyday commands, `hz system expert on` shows all | proposed | 2026-10-24 |
 | [0042](0042-google-workspace-through-the-gws-cli.md) | Read Google Workspace through the Google Workspace CLI (`gws`) | accepted | 2026-10-24 |
+| [0043](0043-desktop-notifications-one-policy-shown-once.md) | Desktop notifications: one policy in the core, shown once, by hz's own macOS app | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -60,7 +61,10 @@ capability); [0038](0038-drafts-are-approved-in-place.md) amends [0010](0010-tow
 (`hz ui`) and [0019](0019-mcp-and-rest-heads.md) (a token-protected web head may expose what the unauthenticated REST
 head doesn't); [0041](0041-expert-mode-newcomers-see-the-everyday-commands.md) amends
 [0018](0018-one-administrative-namespace.md) (`hz system expert`; help lists the everyday commands) and
-[0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) (the navigation lists the same ones). ADRs 0021–0024 are
+[0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) (the navigation lists the same ones);
+[0043](0043-desktop-notifications-one-policy-shown-once.md) amends [0020](0020-daemon-head.md) (every tick ends by
+popping up due notices) and [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) (the notify operations are
+web endpoints, not REST ones). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 

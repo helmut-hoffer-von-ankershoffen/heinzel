@@ -44,6 +44,9 @@ def makefile() -> str:
     text = text.replace("@$(TOOLS) install build web", "@$(TOOLS) install")
     text = text.replace("build: web-build ## ", "build: ## ").replace("; the web app first)", ")")
     text = text.replace(" src/heinzel/heads/web/static", "")
+    # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
+    text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
+    text = re.sub(r"\nnotifier:.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text + (
         "\nupdate-template: ## Update this plugin to the latest Heinzelmännchen template (needs a clean working tree)\n"
@@ -67,6 +70,15 @@ def ci_workflow() -> str:
     text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships the web app\n[^\n]*", "", text)
     text = text.replace("      - run: uv build --all-packages\n", "      - run: uv build\n")
+    # Heinzel Notifier (ADR 0043): only the core builds and ships it.
+    text = re.sub(r"\n  notifier:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
+    text = text.replace("    needs: notifier\n", "")
+    text = re.sub(
+        r"\n      - uses: actions/download-artifact@[^\n]*\n        with:\n          name: notifier", "", text
+    )
+    text = re.sub(r"\n      - name: Unpack Heinzel Notifier into the package\n[^\n]*", "", text)
+    text = re.sub(r"\n      - name: Check the wheel ships Heinzel Notifier\n[^\n]*", "", text)
+    text = text.replace(", notifier, build]", ", build]")
     # The core's CI covers every platform of the shared scripts/tools.toml; a plugin, possibly private and paying for
     # its minutes, sets up on the two most contributors use.
     text = text.replace(
@@ -134,7 +146,11 @@ def gitignore() -> str:
     """Git won't read a symlinked .gitignore, so the template gets a copy."""
     text = (ROOT / ".gitignore").read_text(encoding="utf-8")
     # Without the web head's app (ADR 0039): plugins have no web/.
-    return re.sub(r"(?m)^(node_modules/|src/heinzel/heads/web/static/|web/test-results/)\n", "", text)
+    core_only = (
+        r"node_modules/|src/heinzel/heads/web/static/|src/heinzel/modules/system/notify/macos/\S+|web/test-results/"
+    )
+    pattern = rf"(?m)^({core_only})\n"
+    return re.sub(pattern, "", text)
 
 
 GENERATED = {

@@ -109,6 +109,21 @@ Plugins add their own tables.
 | `lookback_days` | `HZ_SYSTEM_DIRECTORY__LOOKBACK_DAYS` | `56` | How many days of the bound calendar, up to now, to look for recurring 1:1s in; at least 42, so that a 1:1 every two weeks can occur three times. |
 | `min_occurrences` | `HZ_SYSTEM_DIRECTORY__MIN_OCCURRENCES` | `3` | How often two people must have met alone, weekly or every two weeks, before hz guesses a reporting line between them. |
 
+## `[system.notify]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | `HZ_SYSTEM_NOTIFY__ENABLED` | `True` | Record notices at all; false turns every kind off. |
+| `draft` | `HZ_SYSTEM_NOTIFY__DRAFT` | `True` | Notify when a draft is ready to read and approve. |
+| `failed` | `HZ_SYSTEM_NOTIFY__FAILED` | `True` | Notify when a contract run on your daemon failed. |
+| `doctor` | `HZ_SYSTEM_NOTIFY__DOCTOR` | `True` | Notify when `hz system doctor` finds something degraded or down. |
+| `release` | `HZ_SYSTEM_NOTIFY__RELEASE` | `False` | Notify when a newer release of Heinzelmännchen is out. |
+| `quiet` | `HZ_SYSTEM_NOTIFY__QUIET` | `False` | Quiet mode: record notices in the list, never pop one up, urgent ones included. |
+| `working_hours` | `HZ_SYSTEM_NOTIFY__WORKING_HOURS` | `True` | Hold notices that aren't urgent until your working hours ([org] working_hours, Monday to Friday, in [org] timezone) start. |
+| `per_hour` | `HZ_SYSTEM_NOTIFY__PER_HOUR` | `6` | At most this many pop-ups an hour; more go to the list only. |
+| `repeat_hours` | `HZ_SYSTEM_NOTIFY__REPEAT_HOURS` | `24` | The same notice again within this many hours is dropped. |
+| `native` | `HZ_SYSTEM_NOTIFY__NATIVE` | `True` | Let the daemon pop up native notifications (Heinzel Notifier on macOS, notify-send on Linux) when no web app is open. |
+
 ## `[system.plugin]`
 
 | Key | Environment variable | Default | Description |

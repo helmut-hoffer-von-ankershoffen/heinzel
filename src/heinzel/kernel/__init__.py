@@ -65,6 +65,7 @@ from heinzel.kernel._lets import (
     schedule_problem,
 )
 from heinzel.kernel._module import Module
+from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, DiscoveryHint, PlaybookLet, PlaybookSetup
 from heinzel.kernel._progress import Progress
@@ -134,6 +135,7 @@ __all__ = [
     "CredentialLet",
     "Credentials",
     "DeclaredCredential",
+    "Delivery",
     "Directory",
     "DiscoveryHint",
     "Document",
@@ -168,6 +170,9 @@ __all__ = [
     "Module",
     "ModuleRecord",
     "ModuleSettings",
+    "Notice",
+    "NoticeKind",
+    "Notifications",
     "OperationLet",
     "OrgContext",
     "Origin",

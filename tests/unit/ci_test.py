@@ -20,6 +20,8 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "uv run --script scripts/check_confidentiality.py --require": "the secret must be configured in this repo",
         "unzip -l ": "asserts what the built wheel contains",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
+        "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
+        "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
     },
     "demo.yml": {"uv tool install --editable .": "installs hz from this checkout for the recording"},
     "publish.yml": {
@@ -28,6 +30,9 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'name="$(uv version': "exports the release's CycloneDX bill of materials",
         "uv run --script scripts/release_notes.py": "writes the release notes",
         'cp "$BUNDLE"': "attaches the provenance attestation and creates the GitHub release",
+        "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
+        "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
+        "unzip -l ": "asserts that the released wheel ships Heinzel Notifier",
     },
     "release.yml": {
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",

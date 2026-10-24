@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, cast
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
 
-from heinzel import CatchUp, Check, Config, HeinzelError, JobLet, Kernel, Settings, Status
+from heinzel import CatchUp, Check, Config, HeinzelError, JobLet, Kernel, Notifications, Settings, Status
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._ledger import Ledger
@@ -361,10 +361,23 @@ class DaemonService:
             try:
                 runs = self._run(jobs, job, now, log)
                 self._write_state("heartbeat.json", {"last_tick": now.isoformat()})
+                self._post_notices(log)
                 log.write(logging.INFO, f"tick done: {len(runs)} run(s)")
             finally:
                 log.close()
         return TickReport(at=now, dry_run=False, paused=False, locked=False, runs=runs)
+
+    def _post_notices(self, log: TickLog) -> None:
+        """Pop up due notices natively when no web app shows them (ADR 0043); a failure only costs the pop-up."""
+        if not self._kernel.provides(Notifications):
+            return
+        try:
+            posted = self._kernel.resolve(Notifications).post_native()
+        except Exception as exc:  # noqa: BLE001 - isolation boundary: notices never fail a tick
+            log.write(logging.WARNING, f"posting notices failed: {describe(exc)}")
+            return
+        if posted:
+            log.write(logging.INFO, f"posted {posted} notice(s)")
 
     def _plan(self, jobs: list[Job], manual: str | None, now: datetime) -> list[JobRun]:
         ledger = Ledger(self.receipts_dir)

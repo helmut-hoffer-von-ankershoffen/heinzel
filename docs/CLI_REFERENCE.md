@@ -293,6 +293,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `info`: (expert) Show versions, interpreter,...
 * `layer`: (expert) Show the layer plugins installed...
 * `modules`: (expert) List every module and the lets it...
+* `notify`: (expert) Pop up what deserves your...
 * `plugin`: (expert) Find, add, remove, list and...
 * `release`: (expert) Ask where Heinzelmännchen was...
 * `runner`: (expert) Run bounded agent sessions with...
@@ -918,6 +919,96 @@ $ hz system layer show [OPTIONS]
 
 ```console
 $ hz system modules [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system notify`
+
+(expert) Pop up what deserves your attention: in the web app while it is open, else natively.
+
+**Usage**:
+
+```console
+$ hz system notify [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `ack`: (expert) Mark notices as shown, so the...
+* `install`: (expert) Install the native notifier...
+* `list`: (expert) Show the latest notices, whether...
+* `test`: (expert) Record an urgent test notice,...
+
+#### `hz system notify ack`
+
+(expert) Mark notices as shown, so the daemon doesn&#x27;t pop them up again.
+
+**Usage**:
+
+```console
+$ hz system notify ack [OPTIONS] {ids}
+```
+
+**Arguments**:
+
+* `ids`: Ids of the notices that were shown, from `list`, separated by commas.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system notify install`
+
+(expert) Install the native notifier (Heinzel Notifier on macOS) and pop up a test notification now.
+
+**Usage**:
+
+```console
+$ hz system notify install [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system notify list`
+
+(expert) Show the latest notices, whether each popped up and who showed it, and how they reach you.
+
+**Usage**:
+
+```console
+$ hz system notify list [OPTIONS]
+```
+
+**Options**:
+
+* `--limit <int>`: How many of the latest notices to show.  [default: 50]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system notify test`
+
+(expert) Record an urgent test notice, which the open web app or the next daemon tick pops up.
+
+**Usage**:
+
+```console
+$ hz system notify test [OPTIONS]
 ```
 
 **Options**:

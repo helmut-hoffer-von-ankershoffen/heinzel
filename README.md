@@ -155,6 +155,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.doctor`](docs/MODULES.md#systemdoctor) — Check that Heinzelmännchen and its modules are healthy.
 - [`system.expert`](docs/MODULES.md#systemexpert) — Expert mode: list every command, or just the everyday ones.
 - [`system.layer`](docs/MODULES.md#systemlayer) — Show the layer plugins installed and the stack you are in, general to specific.
+- [`system.notify`](docs/MODULES.md#systemnotify) — Pop up what deserves your attention: in the web app while it is open, else natively.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, list and scaffold plugins.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
