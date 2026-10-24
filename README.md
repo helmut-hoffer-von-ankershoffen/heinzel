@@ -136,6 +136,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.config`](docs/MODULES.md#systemconfig) — Show, get, set and initialize configuration.
 - [`system.credential`](docs/MODULES.md#systemcredential) — Store and check the credentials modules need, in the OS keychain.
 - [`system.daemon`](docs/MODULES.md#systemdaemon) — Run modules' jobs in the background, supervised by launchd or systemd.
+- [`system.directory`](docs/MODULES.md#systemdirectory) — Guess reporting lines from recurring 1:1s in your calendar, for setup to confirm.
 - [`system.doctor`](docs/MODULES.md#systemdoctor) — Check that Heinzelmännchen and its modules are healthy.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, list and scaffold plugins.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
@@ -234,12 +235,7 @@ with all the tooling, CI/CD and agent setup: `hz system plugin new ../heinzel-mi
 
 ## Contribute
 
-```bash
-git clone https://github.com/helmut-hoffer-von-ankershoffen/heinzel && cd heinzel
-make setup   # dependencies and git hooks
-make check   # everything CI checks offline, in seconds
-```
-
-[CONTRIBUTING.md](CONTRIBUTING.md) explains the workflow; [AGENTS.md](AGENTS.md) is the guide for coding agents;
+You need git, make and [uv](https://docs.astral.sh/uv/); `make setup` installs everything else.
+[CONTRIBUTING.md](CONTRIBUTING.md) takes you from a clone to a merged pull request; [AGENTS.md](AGENTS.md) is the guide for coding agents;
 [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md) the rules; [docs/adr/](docs/adr/) the decisions.
 Security issues: [SECURITY.md](SECURITY.md).
