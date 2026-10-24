@@ -127,14 +127,61 @@ export const usePluginSearch = (text: string) =>
     staleTime: 5 * 60 * 1000,
   });
 
-/** `hz system plugin add|remove`: installs or removes code, so the UI asks first. */
+/** `hz system plugin add` without `confirm`: what a spec would install (source, version, publisher), installing nothing. */
+export const usePluginPreview = () =>
+  useMutation({
+    mutationFn: (spec: string) => unwrap(api.POST("/system/plugin/add", { params: { query: { spec } } })),
+  });
+
+export type PluginChangeRequest = { add: string } | { remove: string } | { enable: string } | { disable: string };
+
+/** `hz system plugin add --confirm|remove|enable|disable`: changes what code runs, so the UI asks first (ADR 0047). */
 export const useChangePlugin = () => {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (variables: { add: string } | { remove: string }) =>
-      "add" in variables
-        ? unwrap(api.POST("/system/plugin/add", { params: { query: { spec: variables.add } } }))
-        : unwrap(api.POST("/system/plugin/remove", { params: { query: { distribution: variables.remove } } })),
+    mutationFn: (variables: PluginChangeRequest) => {
+      if ("add" in variables) {
+        // The requirement the preview answered, pinned to what was shown, so the dialog's version is the one installed.
+        return unwrap(api.POST("/system/plugin/add", { params: { query: { spec: variables.add, confirm: true } } }));
+      }
+      if ("remove" in variables) {
+        return unwrap(api.POST("/system/plugin/remove", { params: { query: { distribution: variables.remove } } }));
+      }
+      if ("enable" in variables) {
+        return unwrap(api.POST("/system/plugin/enable", { params: { query: { distribution: variables.enable } } }));
+      }
+      return unwrap(api.POST("/system/plugin/disable", { params: { query: { distribution: variables.disable } } }));
+    },
     onSettled: () => client.invalidateQueries({ queryKey: ["system", "plugin"] }),
   });
 };
+
+/** Wait until `hz ui` answers again after a restart: `/system/info` with the same token, every `interval` ms. */
+export async function waitForServer(interval = 500, attempts = 120): Promise<boolean> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, interval));
+    try {
+      const { response } = await api.GET("/system/info");
+      if (response.ok) return true;
+    } catch {
+      // Not listening yet: the restarting process hasn't taken over the socket's backlog.
+    }
+  }
+  return false;
+}
+
+/** `POST /api/restart`: `hz ui` runs itself again with the same port and token; then the page reloads. */
+export const useRestartServer = ({
+  reload = () => window.location.reload(),
+  interval = 500,
+}: {
+  reload?: () => void;
+  interval?: number;
+} = {}) =>
+  useMutation({
+    mutationFn: async () => {
+      await unwrap(api.POST("/restart"));
+      if (!(await waitForServer(interval))) throw new Error("hz ui didn't answer again; start it in a terminal: hz ui");
+      reload();
+    },
+  });
