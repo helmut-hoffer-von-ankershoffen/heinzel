@@ -1,6 +1,6 @@
 [project]
 name = "heinzel"
-version = "0.0.0"
+version = "0.1.0"
 description = "Heinzelmännchen: an open-source, AI-driven operating system for product development teams."
 readme = "README.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
@@ -50,7 +50,7 @@ Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
 [dependency-groups]
 # What the unit, integration and e2e tests need, and no more: CI installs only this group for the test matrix.
 test = [
-    "heinzel-clock>=0.0.0", # the workspace member; the release process bumps the bound
+    "heinzel-clock>=0.1.0", # the workspace member; the release process bumps the bound
     "coverage>=7.12",
     "httpx>=0.28",
     "prek>=0.2",
@@ -216,7 +216,7 @@ example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
 [tool.bumpversion]
-current_version = "0.0.0"
+current_version = "0.1.0"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false
