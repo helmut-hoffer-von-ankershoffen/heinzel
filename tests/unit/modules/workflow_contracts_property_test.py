@@ -18,7 +18,8 @@ pytestmark = pytest.mark.unit
 
 PATH = Path("digest.prose.md")
 BOUNDARY = "can't read the contract"
-QUICK = settings(max_examples=60, deadline=None, database=None)
+#: More examples than the profile in tests/unit/conftest.py gives: the parser is fast and the input is untrusted.
+QUICK = settings(max_examples=60)
 
 #: Text that looks like a contract often enough to reach the YAML and body checks, not only the frontmatter split.
 YAMLISH = st.text(alphabet=st.sampled_from(list("abz019 :-_[]{},'\"#&*!|>?\n\t")), max_size=200)
