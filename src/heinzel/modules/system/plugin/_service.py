@@ -22,7 +22,7 @@ TEMPLATE = "gh:helmut-hoffer-von-ankershoffen/heinzel"
 REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 FIRST_PARTY: Mapping[str, str] = MappingProxyType(
     {
-        "atlassian": "Read Jira issues and Confluence pages: the tracker and documents capabilities.",
+        "atlassian": "Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.",
         "clock": "What time it is for everyone on the team.",
         "github": "Read pull requests and issues from GitHub: the code-host and tracker capabilities.",
     }

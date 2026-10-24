@@ -1,0 +1,28 @@
+[
+  {
+    "expand": "renderedFields",
+    "id": "10003",
+    "self": "https://acme.atlassian.net/rest/api/3/issue/10003",
+    "key": "WID-3",
+    "fields": {
+      "summary": "Widget export drops the last row",
+      "status": {"name": "In Progress", "statusCategory": {"key": "indeterminate"}},
+      "updated": "2026-10-05T12:00:00.000+0200",
+      "assignee": {"accountId": "5b10ac8d82e05b22cc7d4ef5", "displayName": "Wilma Widget"},
+      "labels": ["export", "ui"]
+    }
+  },
+  {
+    "expand": "renderedFields",
+    "id": "10004",
+    "self": "https://acme.atlassian.net/rest/api/3/issue/10004",
+    "key": "WID-4",
+    "fields": {
+      "summary": "Document the widget API",
+      "status": {"name": "Done", "statusCategory": {"key": "done"}},
+      "updated": "2026-10-06T00:00:00.000+0000",
+      "assignee": null,
+      "labels": []
+    }
+  }
+]
