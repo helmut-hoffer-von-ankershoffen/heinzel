@@ -18,8 +18,16 @@ from heinzel import (
     SkillLet,
     Skills,
 )
+from heinzel.kernel import (
+    SkillFile,
+    read_skill,
+    read_skill_file,
+    skill_frame,
+    skill_instructions,
+    skill_tools,
+    skills_in,
+)
 from heinzel.kernel import _skills as skills
-from heinzel.kernel import read_skill, read_skill_file, skill_frame, skill_instructions, skill_tools, skills_in
 
 pytestmark = pytest.mark.unit
 
@@ -351,3 +359,9 @@ def test_frontmatter_over_4_kb_and_special_files_are_refused(tmp_path):
     os.mkfifo(fifo / "pipe")
     with pytest.raises(ValueError, match="neither a file nor a directory"):
         read_skill(fifo)
+
+
+@pytest.mark.parametrize("path", ["../x", "/abs", "a/./b", ""])
+def test_a_skill_file_path_must_stay_below_the_skill(path):
+    with pytest.raises(ValueError, match="isn't a path below"):
+        SkillFile(path=path, kind="other", size=0, sha256="")
