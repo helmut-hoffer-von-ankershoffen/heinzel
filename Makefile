@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses secrets template-test template-sync docs fuzz demo notifier icons web-build web-dev test-web build changelog ci-logs pr sync release clean
+.PHONY: help install setup doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo notifier icons web-build web-dev test-web build changelog ci-logs pr sync release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -19,6 +19,7 @@ LINT := \
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
+		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
 		"&actionlint=uv run actionlint" \
 		"&typos=uv run typos" \
@@ -68,6 +69,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
 		"&demo=uv run --script scripts/demo_tape.py --check" \
+		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(WEB_LINT) $(WEB_TYPES) \
 		"unit=uv run pytest -m unit -n auto -x -q --session-timeout=60" $(WEB_TESTS)
 
@@ -86,6 +88,7 @@ fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated 
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py" \
 		"&web-client=$(WEB_PROJECT_CLEAN) client" \
 		"&demo=uv run --script scripts/demo_tape.py" \
+		"&attributions=uv run --quiet --script scripts/attributions.py" \
 		"format=uv run ruff format --quiet ." \
 		"ruff=uv run ruff check --fix --quiet --exit-zero ."
 	@git status --short
@@ -144,6 +147,9 @@ template-test: ## Render the plugin template, run its checks and audit against t
 
 docs: ## Regenerate docs/CLI_REFERENCE.md from the code
 	uv run python scripts/generate_docs.py
+
+attributions: ## Regenerate ATTRIBUTIONS.md: every package hz ships (Python and web app), with its license text
+	uv run --quiet --script scripts/attributions.py
 
 fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; x86_64 Linux, Python 3.12 to 3.14)
 	uv run --group fuzz python fuzz/contract_fuzz.py -max_total_time=$(or $(FUZZ_SECONDS),60) -timeout=10

@@ -263,6 +263,8 @@ jobs:
       - run: make build
       - name: Check the wheel ships the changelog
         run: unzip -l dist/heinzel-[0-9]*.whl | grep -q 'heinzel/CHANGELOG.md'
+      - name: Check the wheel ships the attributions
+        run: unzip -l dist/heinzel-[0-9]*.whl | grep -q 'licenses/ATTRIBUTIONS.md'
       - name: Check the wheel ships the web app
         run: unzip -l dist/heinzel-[0-9]*.whl | grep -q 'heinzel/heads/web/static/index.html'
       - name: Check the wheel ships Heinzel Notifier

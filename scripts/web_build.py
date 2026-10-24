@@ -16,6 +16,7 @@ Usage: uv run --script scripts/web_build.py COMMAND
     install              install web/'s dependencies as locked, offline when the store has them
     build                build the app into src/heinzel/heads/web/static, stamped with the digest of its sources
     licenses             check the licenses of what the app bundles against .license-allowlist (it ships in the wheel)
+    licenses --json      print them as `pnpm licenses list --prod --json` does (scripts/attributions.py reads it)
 """
 
 import fcntl
@@ -180,10 +181,14 @@ def refused_licenses(listing: dict[str, list[dict[str, object]]], allowed: list[
     )
 
 
-def licenses() -> int:
-    """Check every runtime dependency of the app against .license-allowlist; they ship in the wheel."""
+def licenses(*, as_json: bool = False) -> int:
+    """Check every runtime dependency of the app against .license-allowlist (they ship in the wheel), or list them."""
     ensure_installed()
-    listing = json.loads(pnpm("licenses", "list", "--prod", "--json", capture=True).stdout)
+    output = pnpm("licenses", "list", "--prod", "--json", capture=True).stdout
+    if as_json:
+        print(output.strip())
+        return 0
+    listing = json.loads(output)
     refused = refused_licenses(listing, allowed_licenses())
     if refused:
         print("Web dependencies under licenses not on .license-allowlist:", *refused, sep="\n  ", file=sys.stderr)
@@ -216,7 +221,7 @@ def main(argv: list[str], extra: dict[str, Callable[[list[str]], int]] | None = 
         "exec": _exec,
         "install": lambda _: _install(),
         "build": lambda _: _build(),
-        "licenses": lambda _: licenses(),
+        "licenses": lambda args: licenses(as_json="--json" in args),
         **(extra or {}),
     }
     if command not in commands:

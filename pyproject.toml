@@ -5,7 +5,8 @@ description = "Heinzelmännchen: an open-source, AI-driven operating system for 
 readme = "README.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
 license = "MIT"
-license-files = ["LICENSE"]
+# ATTRIBUTIONS.md: every package hz ships, with its license text; the wheel bundles the web app's (`make attributions`).
+license-files = ["LICENSE", "ATTRIBUTIONS.md"]
 requires-python = ">=3.12"
 keywords = ["cli", "typer", "pluggy", "agents", "product-development", "workflows"]
 classifiers = [
@@ -425,6 +426,9 @@ venv = ".venv"
 CPY = "CPY" # ruff rule prefix (flake8-copyright)
 Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-contracts.md
 intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
+
+[tool.typos.files]
+extend-exclude = ["ATTRIBUTIONS.md"] # third-party license texts, quoted as their authors wrote them
 
 [tool.importlinter]
 root_packages = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]

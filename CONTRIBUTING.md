@@ -157,7 +157,9 @@ On `main`, the Demo workflow re-renders it on macOS whenever the tape changes, a
   Fix the cause of a failing check; never bypass a hook (`--no-verify`) or loosen a rule to get green.
 - **Commits:** `type(scope): summary`, the whole line at most 72 characters; types and scopes are in
   [CODING_STANDARDS.md](docs/CODING_STANDARDS.md#commits-branches-and-releases). A new dependency needs a reason in
-  the commit body. The release process owns `CHANGELOG.md` and version numbers.
+  the commit body, and keeps [ATTRIBUTIONS.md](ATTRIBUTIONS.md) current: `make fix` regenerates it from uv.lock and
+  web/pnpm-lock.yaml (`make attributions` alone), and `make check` fails while it lists other packages than they
+  pin. The release process owns `CHANGELOG.md` and version numbers.
 - **Scripts:** Python scripts in `scripts/` declare their dependencies inline
   ([PEP 723](https://peps.python.org/pep-0723/), pinned to uv.lock's versions) and run with
   `uv run --script scripts/x.py`, outside the project environment; one that imports heinzel runs with
