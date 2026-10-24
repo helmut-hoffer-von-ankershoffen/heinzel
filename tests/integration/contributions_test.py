@@ -42,8 +42,11 @@ def test_the_cli_lists_the_built_in_status_items_with_their_slots(kernel):
     assert by_id["system.daemon:daemon"]["item"]["text"] == "Daemon not installed"
     assert by_id["system.daemon:daemon"]["slots"] == {"footer": True}
     agenda = by_id["org:meeting"]
-    assert agenda["item"]["text"] == "No calendar"  # optional: no calendar degrades, never fails
-    assert agenda["item"]["effect"]["kind"] == "command"
+    # Optional: without a usable calendar it degrades, never fails. Which one depends on the installed plugins: none
+    # bound, or the only calendar adapter bound by itself (ADR 0055) but not signed in.
+    assert agenda["problem"] is None
+    assert agenda["item"]["text"] in {"No calendar", "Calendar unavailable"}
+    assert agenda["item"]["detail"][0]["tone"] == "warn"
 
 
 def test_the_listing_runs_nothing_and_hide_writes_the_choice(kernel):
