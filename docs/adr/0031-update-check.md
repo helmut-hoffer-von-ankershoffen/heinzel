@@ -5,73 +5,99 @@ decision-makers: maintainer
 related: 0018, 0020, 0027
 ---
 
-# 0031: The update check is one unauthenticated request on demand; only the CLI shows a cached hint
+# 0031: The CLI checks for a newer release hourly, anonymously and in the background, and says so on stderr
 
 ## Context and Problem Statement
 
 People should learn that a newer Heinzelmännchen exists without watching the repository. [ADR 0027](0027-nothing-is-sent-home.md)
-forbids update checks with identifying data and allows network access only on the user's behalf; it left open how an
-update notifier fits that rule. `hz --version` and `hz system info` are where people look for versions, and neither
-should touch the network. How does Heinzelmännchen find out about a newer release, and who tells the user?
+forbids update checks with identifying data. The first version of this decision asked only on demand
+(`hz system release`) and showed a hint from that cache in `hz --version` and `hz system info`; in practice nobody ran
+`hz system release`, so nobody saw a hint. The maintainer asked for the notice to show always, but never in JSON,
+cached for an hour, with a short timeout, and without retrying on every command when offline. How does
+Heinzelmännchen find out about a newer release, and who tells the user?
 
 ## Decision Drivers
 
-- ADR 0027: nothing identifying leaves the machine; network only on the user's behalf.
-- Ordinary commands stay offline and fast.
+- ADR 0027: nothing identifying leaves the machine.
+- No command gets noticeably slower, online or offline; an offline machine doesn't ask on every command.
 - Machine output (JSON, MCP, REST) stays stable and free of messages meant for people
-  ([ADR 0003](0003-heads-are-views-on-operations.md)).
+  ([ADR 0003](0003-heads-are-views-on-operations.md)); pipes stay clean.
 - Read-only operations are read-only in every head ([ADR 0019](0019-mcp-and-rest-heads.md)).
 
 ## Considered Options
 
-- **A read-only `hz system release` asks once, unauthenticated, and caches; the CLI shows a hint from the cache**
-  (chosen)
+- **The CLI checks at most hourly in the background with a short timeout, caches successes and failures, and prints
+  a notice on stderr after human output** (chosen)
+- **Ask only on demand (`hz system release`) and show a hint from that cache**: the first version of this decision;
+  the cache stays empty unless someone asks, so the hint almost never shows.
+- **Check synchronously on every command**: every command waits for the network, and offline for the timeout.
 - **`hz system update --check`**: `update` changes the installation, so MCP marks it destructive and REST makes it a
-  POST; a flag cannot make one call read-only, and agents would need a confirmation just to look.
-- **Check on every command or in the background by default**: network access nobody asked for, and slower commands.
+  POST; a flag cannot make one call read-only.
 - **Send the user's GitHub token for a higher rate limit**: a token identifies the user to GitHub, which ADR 0027
-  rules out; 60 unauthenticated requests an hour are plenty for a check a day.
+  rules out; 60 unauthenticated requests an hour are plenty for one check an hour.
 
 ## Decision Outcome
 
-Chosen option: **a read-only `hz system release` asks once, unauthenticated, and caches; the CLI shows a hint from
-the cache**, because it answers the question without sending anything identifying or making ordinary commands
-touch the network.
+Chosen option: **the CLI checks at most hourly in the background with a short timeout, caches successes and failures,
+and prints a notice on stderr after human output**, because people see the notice without asking, while no command
+waits and nothing about the user is sent.
 
 - What is sent: one GET to the latest-release endpoint of the package source the installation came from, today the
   GitHub releases API of the repository in the uv tool receipt (the default repository otherwise), with only a
-  `heinzel/<version>` User-Agent: no token, no identifier. Offline or rate-limited is a warning, never a failure.
-- The answer is cached in the cache directory (`ReleaseCache` in the kernel), which knows nothing about GitHub.
-  `hz system release` always asks fresh, because someone asked; automatic refreshes happen at most every 24 hours.
-- A daemon job ([ADR 0020](0020-daemon-head.md)) will refresh the cache, at most every 24 hours and only while the
-  setting is on. Until then only `hz system release` asks.
-- The setting `update_check` (`[hz] update_check`, `HZ_UPDATE_CHECK`, default on) controls the hint; set it to
-  `false` to switch the hint off.
-- The hint "vX.Y.Z is available: hz system update" is the CLI head's decision: it appears after `hz --version` and
-  the text output of `hz system info`, only when the setting is on, stdout is a terminal and no CI variable is set.
-  It is never in JSON, MCP or REST output; `hz system info` carries the cached version as data (`latest_release`).
-- `hz system release` joins the `hz system` commands of [ADR 0018](0018-one-administrative-namespace.md).
+  `heinzel/<version>` User-Agent: no token, no identifier. The system module provides it to the kernel as a
+  `ReleaseSource`; heads never import GitHub code.
+- When: the `hz` entry point starts the check on a daemon thread when the release cache (`ReleaseCache` in the
+  kernel, in the cache directory) was last asked an hour ago or longer. The cache is stamped *before* asking, so a
+  check that fails, times out or is cut short when the command ends also waits an hour; a failure is recorded with its
+  reason (`hz system doctor` shows it). The timeout is 2 seconds per network operation (urllib's timeout applies to
+  connecting and to each read, not in total), and after its own work a command waits at most 2 seconds in total for a
+  check still running, then exits and drops it. JSON invocations and the servers start the check too; it writes only
+  the cache.
+- Who tells: the notice "hz X.Y.Z is available (installed A.B.C): hz system update" comes from the cache only. The
+  CLI prints it on stderr after the text output of every command, after `hz --version`, and in the footer of `hz` and
+  `hz --help` (the start screen), only when the setting is on, the stream is a terminal and no CI variable is set.
+  Commands that say it themselves print no notice: `hz system release`, `hz system update`, `hz system doctor` (an
+  informational `release` check, which also says why the last check failed) and `hz system changelog` (a header,
+  "You're on X; Y is available: hz system update. What's new: <the repository's releases page>", above the installed
+  version's notes; the changelog itself asks nothing, and its JSON stays the installed changelog). Never in JSON, MCP
+  or REST output; there the version is data: `latest_release` in `hz system info` and the doctor's `release` check.
+- `hz system release` always asks, because someone asked, and caches the answer or the failure like the check.
+- Opt-out: the setting `update_check` (`[hz] update_check` in the user, site or `HZ_CONFIG` file, `HZ_UPDATE_CHECK`;
+  a project's `hz.toml` cannot set it, so a repository can't switch it on or off for the people who clone it),
+  default on; `false` turns both the check and the notice off. Any CI variable (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`,
+  ...) turns both off too.
+- `hz system release` joins the `hz system` commands of [ADR 0018](0018-one-administrative-namespace.md). A daemon
+  job ([ADR 0020](0020-daemon-head.md)) may refresh the same cache later, under the same setting.
 
-This is consistent with ADR 0027: the request carries nothing about the user, and it is made only when the user asks
-(or, later, by a daemon job the user can switch off with the same setting).
+This is consistent with ADR 0027: the request carries nothing about the user, and the setting switches it off.
 
 ### Consequences
 
-- Good: a checkable promise; ordinary commands never use the network for this.
-- Good: the kernel only caches a version; GitHub stays in the system module (`heinzel.modules.system._github`).
-- Bad: the hint is only as fresh as the last check, and unauthenticated requests can be rate-limited on shared IPs.
+- Good: people learn about a release within an hour of using `hz`, without asking and without waiting.
+- Good: offline or rate-limited costs one failed request an hour, never a slower command.
+- Good: the kernel only caches a version and knows a `ReleaseSource` by type; GitHub stays in the system module
+  (`heinzel.modules.system._github`).
+- Bad: GitHub sees one anonymous request an hour from each machine that uses `hz` (its IP address), which the
+  setting turns off.
+- Bad: a command that ends while the check is still running drops it; the next check is an hour later. The cache is
+  replaced atomically, so a dropped check can at worst leave a small `.release.json.<pid>` file behind.
 - Bad: installs from other package sources (PyPI) still ask GitHub until the check learns their APIs.
 
 ### Confirmation
 
-`tests/unit/modules/system_service_test.py::test_release_never_sends_a_token`, the release tests beside it and
-`tests/unit/modules/github_test.py`; the CLI tests in `tests/integration/cli_test.py`
-(`test_system_info_json_has_the_latest_release_as_data_but_no_hint`, `test_no_update_hint_when_the_setting_is_off`,
-`test_no_update_hint_when_stdout_is_not_a_terminal`, `test_no_update_hint_in_ci`); the import-linter contract
-"Modules use only the kernel's public API, like plugins" lists `heinzel.kernel._release`. The security-reviewer
-checks changes to the request against this ADR.
+`tests/unit/kernel/release_test.py` (freshness, stamping, failures), `tests/unit/heads/cli_update_test.py` (one check
+an hour, negative cache, the budget with a slow source, CI and the setting), `tests/integration/update_notice_test.py`
+(the notice on stderr only, never with `--json`, `--format json` or `output_format = "json"`, the start screen,
+`--version`, doctor, the changelog header, and the entry point checking once an hour with a fake source),
+`tests/unit/kernel/installation_test.py::test_the_hz_probe_never_checks_for_updates`,
+`tests/unit/modules/system_service_test.py::test_release_never_sends_a_token`; the import-linter contract "Heads only
+know what the kernel discovered" keeps GitHub out of the heads. The security-reviewer checks changes to the request
+against this ADR.
 
 ## More Information
 
 - Answers the update-notifier question left open in [ADR 0027](0027-nothing-is-sent-home.md).
+- Amended on 2026-10-24: the maintainer decided the check is automatic, cached for an hour (failures included), with a
+  short timeout, shown always but never in JSON, and switched off by the `update_check` setting and in CI. The first
+  version asked only on demand.
 - `hz system plugin search` is a different, user-initiated search and may send the user's configured GitHub token.

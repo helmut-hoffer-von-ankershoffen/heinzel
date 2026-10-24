@@ -59,7 +59,7 @@ from heinzel.kernel._protocols import (
     Tracker,
     Window,
 )
-from heinzel.kernel._release import ReleaseCache
+from heinzel.kernel._release import ReleaseCache, ReleaseSource
 from heinzel.kernel._settings import Settings
 
 __all__ = [
@@ -107,6 +107,7 @@ __all__ = [
     "ProviderLet",
     "PullRequest",
     "ReleaseCache",
+    "ReleaseSource",
     "Requester",
     "Requirement",
     "RequirementLet",

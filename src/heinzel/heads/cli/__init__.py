@@ -6,7 +6,6 @@ panels. A module with exactly one operation of its own name and no submodules co
 """
 
 import logging
-import os
 import platform
 import sys
 from collections.abc import Callable
@@ -19,23 +18,26 @@ import typer
 from pydantic import ValidationError
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.markup import escape
+from rich.text import Text
 from typer.core import TyperGroup
 
 from heinzel import __version__
 from heinzel.heads._exposure import collapses
+from heinzel.heads.cli import _update
 from heinzel.heads.cli._command import command
 from heinzel.heads.cli._progress import ConsoleProgress
-from heinzel.heads.cli._render import message
+from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._serve import serve_group
-from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Progress, ReleaseCache, boot
+from heinzel.heads.cli._update import print_changelog_header, print_notice, start_check
+from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Origin, Progress, boot
 
 console = Console()
 err_console = Console(stderr=True)
 
-REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 LOGO = "🧝"
 TAGLINE = "open-source helpers that keep product teams running"
-FOOTER = f"{LOGO} [bold magenta]Heinzelmännchen[/bold magenta] [dim]hz {__version__} · {TAGLINE} · {REPOSITORY}[/dim]"
+FOOTER = f"{LOGO} [bold magenta]Heinzelmännchen[/bold magenta] [dim]hz {__version__} · {TAGLINE}[/dim]"
 HELP = (
     f"{LOGO} [bold magenta]Heinzelmännchen[/bold magenta]: {TAGLINE}, working in the background like the "
     "helpers of Cologne.\n\nEvery operation accepts [bold]--json[/bold]. Start with [bold]hz system info[/bold] or "
@@ -45,7 +47,10 @@ PLAIN_HELP = f"{LOGO} Heinzelmännchen: {TAGLINE}. Every operation accepts --jso
 CORE_PANEL = "Core"
 PLUGINS_PANEL = "Plugins"
 EX_CONFIG = 78  # sysexits.h: configuration error
-SYSTEM_INFO = ("system", "info")
+QUIET = {("system", "release"), ("system", "update"), ("system.changelog", "changelog"), ("system.doctor", "doctor")}
+"""Operations that say themselves whether a newer release is available, so no update notice follows them."""
+CHANGELOG = ("system.changelog", "changelog")
+"""Its text output starts with a header when a newer release is available (ADR 0031)."""
 
 
 class SortedGroup(TyperGroup):
@@ -68,7 +73,7 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     app = typer.Typer(
         name="hz",
         help=PLAIN_HELP if plain else HELP,
-        epilog=None if plain else footer,
+        epilog=None if plain else start_screen_footer(kernel),
         cls=SortedGroup,
         no_args_is_help=True,
         pretty_exceptions_show_locals=False,
@@ -86,7 +91,7 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
             typer.Option(
                 "--version",
                 "-V",
-                help="Show the version, Python, platform, installation and plugins, then exit.",
+                help="Show the version and repository, Python, platform, installation and plugins, then exit.",
                 callback=print_version,
                 is_eager=True,
             ),
@@ -100,7 +105,7 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
 
     progress = ConsoleProgress(err_console)
     kernel.bind(Progress, progress)
-    mount = _Mount(kernel, progress, footer)
+    mount = _Mount(kernel, progress, footer, plain=plain)
     mount(app, None)
     if system := mount.groups.get("system"):
         system.add_typer(serve_group(SortedGroup, footer, kernel, console, err_console), cls=SortedGroup)
@@ -115,7 +120,12 @@ def main() -> None:
         err_console.print(message("Configuration error:", str(exc)))
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
-    build(kernel)()
+    check = start_check(kernel)  # in the background, at most once an hour (ADR 0031)
+    try:
+        build(kernel)()
+    finally:
+        if check is not None:
+            check.wait()
 
 
 @dataclass
@@ -125,6 +135,7 @@ class _Mount:
     kernel: Kernel
     progress: ConsoleProgress
     footer: str | None
+    plain: bool = False
     groups: dict[str, typer.Typer] = field(default_factory=dict[str, typer.Typer])
 
     def __call__(self, parent: typer.Typer, qualname: str | None) -> None:
@@ -136,19 +147,25 @@ class _Mount:
         for _, entry in sorted(entries, key=lambda pair: pair[0]):
             match entry:
                 case OperationLet():
-                    # The update hint follows the text of `hz system info` only (ADR 0031); --json never gets it.
-                    epilogue = partial(print_update_hint, kernel) if (qualname, entry.name) == SYSTEM_INFO else None
-                    parent.command(name=entry.name, help=entry.summary, epilog=footer)(self._command(entry, epilogue))
+                    parent.command(name=entry.name, help=entry.summary, epilog=footer)(
+                        self._command(entry, (qualname, entry.name))
+                    )
                 case ModuleRecord():
                     self._module(parent, qualname, entry)
 
     def _module(self, parent: typer.Typer, qualname: str | None, record: ModuleRecord) -> None:
         operations = _operations(self.kernel, record)
         panel = (CORE_PANEL if record.origin.builtin else PLUGINS_PANEL) if qualname is None else None
+        plugin = None if self.plain or qualname is not None else plugin_line(record.origin)
         if collapses(self.kernel, record) and operations:
+            summary = operations[0].summary
             parent.command(
-                name=record.module.name, help=operations[0].summary, epilog=self.footer, rich_help_panel=panel
-            )(self._command(operations[0]))
+                name=record.module.name,
+                help=summary,
+                short_help=f"{summary}\n{plugin}" if plugin else None,
+                epilog=self.footer,
+                rich_help_panel=panel,
+            )(self._command(operations[0], (record.qualname, operations[0].name)))
         elif operations or self.kernel.children(record.qualname):
             group = typer.Typer(
                 name=record.module.name,
@@ -159,10 +176,16 @@ class _Mount:
             )
             self.groups[record.qualname] = group
             self(group, record.qualname)
-            parent.add_typer(group, cls=SortedGroup, rich_help_panel=panel)
+            short_help = f"{record.module.summary}\n{plugin}" if plugin else None
+            parent.add_typer(group, cls=SortedGroup, rich_help_panel=panel, short_help=short_help)
 
-    def _command(self, operation: OperationLet, epilogue: Callable[[], None] | None = None) -> Callable[..., None]:
-        return command(self.kernel, operation, console, err_console, self.progress, epilogue=epilogue)
+    def _command(self, operation: OperationLet, key: tuple[str | None, str]) -> Callable[..., None]:
+        # The update notice follows every text output on stderr (ADR 0031); JSON never gets it.
+        epilogue = None if key in QUIET else partial(print_notice, self.kernel, err_console)
+        prologue = partial(print_changelog_header, self.kernel, console) if key == CHANGELOG else None
+        return command(
+            self.kernel, operation, console, err_console, self.progress, prologue=prologue, epilogue=epilogue
+        )
 
 
 def _operations(kernel: Kernel, record: ModuleRecord) -> list[OperationLet]:
@@ -173,45 +196,39 @@ def _operations(kernel: Kernel, record: ModuleRecord) -> list[OperationLet]:
     ]
 
 
+def plugin_line(origin: Origin) -> str | None:
+    """A plugin's distribution and version, and its repository below, as escaped markup; None for built-ins."""
+    if origin.builtin:
+        return None
+    text = f"{origin.distribution} {origin.version}" + (f"\n{origin.url}" if origin.url else "")
+    return f"[dim]{escape(terminal_safe(text))}[/dim]"
+
+
+def start_screen_footer(kernel: Kernel) -> str:
+    """The footer of `hz` and `hz --help`, with the update notice when stdout is a terminal and there is one."""
+    text = _update.notice(kernel) if _update.is_terminal(console) else None
+    return f"{FOOTER}\n\n[yellow]{text}[/yellow]" if text else FOOTER
+
+
 def _print_version(kernel: Kernel, value: bool) -> None:
     if not value:
         return
-    console.print(f"hz {__version__}", highlight=False)
-    console.print(f"python {platform.python_version()} ({sys.executable})", highlight=False, soft_wrap=True)
-    console.print(f"platform {platform.platform()}", highlight=False)
-    kind = "uv tool" if (Path(sys.prefix) / "uv-receipt.toml").is_file() else "environment"
-    console.print(f"installation {kind} {sys.prefix}", highlight=False, soft_wrap=True)
-    plugins = sorted({(r.origin.distribution, r.origin.version) for r in kernel.modules if not r.origin.builtin})
-    for distribution, plugin_version in plugins:
-        console.print(f"plugin {distribution} {plugin_version}", highlight=False)
-    print_update_hint(kernel)
+    origins = {(r.origin.distribution, r.origin.version, r.origin.url, r.origin.builtin) for r in kernel.modules}
+    core = next((url for _, _, url, builtin in origins if builtin and url), None)
+    lines = [f"hz {__version__}"]
+    if core:
+        lines.append(f"repository {core}")
+    lines += [
+        f"python {platform.python_version()} ({sys.executable})",
+        f"platform {platform.platform()}",
+        f"installation {'uv tool' if (Path(sys.prefix) / 'uv-receipt.toml').is_file() else 'environment'} {sys.prefix}",
+    ]
+    lines += [
+        f"plugin {distribution} {version}" + (f" {url}" if url else "")
+        for distribution, version, url, builtin in sorted(origins, key=lambda origin: origin[0])
+        if not builtin
+    ]
+    for line in lines:
+        console.print(TerminalSafe(Text(line)), highlight=False, soft_wrap=True)
+    print_notice(kernel, err_console)
     raise typer.Exit
-
-
-CI_VARIABLES = ("CI", "CONTINUOUS_INTEGRATION", "BUILD_NUMBER", "GITHUB_ACTIONS", "GITLAB_CI", "TF_BUILD")
-"""Environment variables CI systems set; no update hint is shown when one of them is."""
-
-
-def stdout_is_terminal() -> bool:
-    """Whether stdout is a terminal, asked when printing so redirected output counts; the seam tests fake."""
-    return sys.stdout.isatty()
-
-
-def update_hint(kernel: Kernel) -> str | None:
-    """The hint that a newer release is available, from the release cache only, never the network (ADR 0031).
-
-    None when the `update_check` setting is off, stdout is not a terminal, a CI variable is set, or no newer release
-    is cached.
-    """
-    if not kernel.settings.update_check or any(os.environ.get(name) for name in CI_VARIABLES):
-        return None
-    if not stdout_is_terminal():
-        return None
-    latest = ReleaseCache(kernel.settings.cache_dir).newer_than(__version__)
-    return f"v{latest} is available: hz system update" if latest else None
-
-
-def print_update_hint(kernel: Kernel) -> None:
-    """Print the update hint, if there is one to show."""
-    if hint := update_hint(kernel):
-        console.print(f"[yellow]{hint}[/yellow]", highlight=False)

@@ -21,4 +21,5 @@ change like a library release: an ADR for a new concept, unit tests for every br
 - `_boot.py` — `boot()`, the only place that ties configuration, discovery and the kernel together.
 - `_config.py`, `_settings.py` — layered TOML + env configuration (`ignored_in_project`: fields a project
   `hz.toml` can't set); `_installation.py` — the uv tool environment;
-  `_progress.py` — head-agnostic progress; `_duration.py` — `parse_duration` (`5m`).
+  `_progress.py` — head-agnostic progress; `_duration.py` — `parse_duration` (`5m`); `_release.py` —
+  `ReleaseCache` and `ReleaseSource`, the latest release last seen and who asks for it (ADR 0031).

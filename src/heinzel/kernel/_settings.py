@@ -45,9 +45,10 @@ class Settings(ModuleSettings):
     )
     update_check: bool = Field(
         default=True,
-        description="Say in `hz --version` and `hz system info` when a newer release is available, from what "
-        "`hz system release` last found (ADR 0031); only in text output on a terminal, never in CI. Ordinary "
-        "commands never ask the network. Set to false to turn the hint off.",
+        description="Check for a newer release at most once an hour, in the background with a 2-second timeout, "
+        "and say so on stderr after human output (ADR 0031): one unauthenticated request that carries nothing about "
+        "you. A failed check waits an hour too. Never in JSON, MCP or REST output, and off in CI. Set to false to "
+        "turn the check and the notice off; not settable in a project's hz.toml.",
     )
     disabled_modules: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset(),
@@ -63,7 +64,7 @@ class Settings(ModuleSettings):
         "hz.toml.",
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"api_allowed_hosts"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"api_allowed_hosts", "update_check"})
 
     @field_validator("disabled_modules", "api_allowed_hosts", mode="before")
     @classmethod

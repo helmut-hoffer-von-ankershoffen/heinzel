@@ -4,10 +4,11 @@ import urllib.error
 import pytest
 from pydantic import BaseModel
 
-from heinzel import Module, __version__
-from heinzel.kernel import ReleaseCache
-from heinzel.modules.system import SystemService, _github
+from heinzel import Module, Status, __version__
+from heinzel.kernel import Installation, Progress, ReleaseCache
+from heinzel.modules.system import GitHubReleases, SystemService, _github, github_releases
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, repository_of
+from heinzel.modules.system.doctor import release_check
 
 pytestmark = pytest.mark.unit
 
@@ -149,3 +150,46 @@ def test_release_warns_instead_of_failing_and_keeps_the_cache(make_kernel, githu
     assert (check.latest, check.update_available, check.url) == (None, False, None)
     assert check.warnings == [f"Could not ask {SOURCE} for the latest release ({reason})."]
     assert ReleaseCache(kernel.settings.cache_dir).latest is None
+
+
+def test_a_failed_release_check_stamps_the_cache_so_the_hourly_check_waits(make_kernel, github):
+    github.answer = urllib.error.URLError("no route to host")
+    kernel = make_kernel()
+    SystemService(kernel).release(None)
+    cache = ReleaseCache(kernel.settings.cache_dir)
+    assert (cache.error, cache.checked_at is not None) == ("no route to host", True)
+
+
+def test_the_release_source_asks_the_latest_release_without_a_token(github):
+    assert GitHubReleases("someone/heinzel").latest_version(2) == "99.0.0"
+    [(url, headers, timeout)] = github.requests
+    assert (url, timeout) == ("https://api.github.com/repos/someone/heinzel/releases/latest", 2)
+    assert "Authorization" not in headers
+
+
+def test_the_release_source_reads_the_repository_from_the_installation(tmp_path):
+    assert github_releases(Installation(Progress(), prefix=tmp_path, uv="uv")).repository == DEFAULT_REPOSITORY
+
+
+@pytest.mark.parametrize(
+    ("cache_state", "update_check", "expected"),
+    [
+        (("99.0.0", None), True, (f"hz 99.0.0 is available (installed {__version__})", "hz system update")),
+        ((__version__, None), True, (f"hz {__version__} is up to date (latest release {__version__})", "")),
+        ((None, "offline"), True, ("no release known yet; the last check failed: offline", "hz system release")),
+        (
+            (None, None),
+            False,
+            ("no release known yet; the hourly check is off (update_check = false)", "hz system release"),
+        ),
+    ],
+)
+def test_doctor_says_what_the_release_cache_knows(settings, cache_state, update_check, expected):
+    cached, error = cache_state
+    cache = ReleaseCache(settings.cache_dir)
+    if cached:
+        cache.remember(cached)
+    if error:
+        cache.stamp(error=error)
+    check = release_check(settings.model_copy(update={"update_check": update_check}))
+    assert (check.name, check.status, (check.detail, check.fix)) == ("release", Status.UP, expected)

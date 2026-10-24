@@ -5,13 +5,14 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import HeinzelError, Module
-from heinzel.kernel import Installation
+from heinzel.kernel import Installation, ReleaseSource
 from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, SystemInfo
 from heinzel.modules.system._render import render_info, render_modules, render_release
-from heinzel.modules.system._service import SystemService
+from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
 
 module = Module("system", "Inspect, configure, diagnose and update Heinzelmännchen itself.", essential=True)
 module.service(SystemService)
+module.service(ReleaseSource, github_releases)  # what the CLI's hourly update check asks (ADR 0031)
 
 
 @module.operation(render=render_info)
@@ -32,7 +33,8 @@ def release(service: SystemService, installation: Installation) -> ReleaseCheck:
 
     One unauthenticated GET to the GitHub releases API of the repository in the uv tool receipt (or the default
     repository) with only a `heinzel/<version>` User-Agent (ADR 0031); offline or rate-limited, the result carries a
-    warning. The answer is cached for the hint in `hz --version` and `hz system info` (setting `update_check`).
+    warning. Always asks, even when the hourly check (setting `update_check`) asked a minute ago; the answer is
+    cached for the update notice.
     """
     requirements = installation.requirements()
     return service.release(requirements[0] if requirements else None)
@@ -64,4 +66,12 @@ def update(
     return installation.hz("--version").splitlines()[0]
 
 
-__all__ = ["ModuleInfo", "ReleaseCheck", "SystemInfo", "SystemService", "module"]
+__all__ = [
+    "GitHubReleases",
+    "ModuleInfo",
+    "ReleaseCheck",
+    "SystemInfo",
+    "SystemService",
+    "github_releases",
+    "module",
+]

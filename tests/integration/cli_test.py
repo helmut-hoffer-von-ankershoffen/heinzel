@@ -1,6 +1,5 @@
 """CLI head -> kernel -> modules -> services, with real collaborators and file I/O. Offline."""
 
-import io
 import json
 import subprocess
 import sys
@@ -16,9 +15,8 @@ from pydantic import BaseModel, Field
 from typer.testing import CliRunner
 
 from heinzel import Config, HeinzelError, Module, Settings, __version__
-from heinzel.heads import cli
 from heinzel.heads.cli import build
-from heinzel.kernel import Kernel, ReleaseCache, discover
+from heinzel.kernel import ReleaseCache
 from heinzel.modules.system import _github
 from heinzel.modules.system import _service as system_service
 
@@ -74,11 +72,11 @@ def test_version(app):
     assert result.exit_code == 0
     lines = result.output.splitlines()
     assert lines[0] == f"hz {__version__}"
-    assert lines[1].startswith("python ")
-    assert "plugin heinzel-test 9.9.9" in lines
+    assert lines[1] == "repository https://github.com/helmut-hoffer-von-ankershoffen/heinzel"  # from its metadata
+    assert lines[2].startswith("python ")
+    assert "plugin heinzel-test 9.9.9" in lines  # no Project-URL, no link
 
 
-HINT = "v9.0.0 is available: hz system update"
 RELEASE = {"tag_name": "v9.0.0", "html_url": "https://github.com/org/heinzel/releases/tag/v9.0.0"}
 
 
@@ -100,7 +98,7 @@ def test_system_release_reports_a_newer_release_and_caches_it(app, monkeypatch):
     check = json.loads(runner.invoke(app, ["system", "release", "--json"]).output)
     assert (check["current"], check["latest"], check["update_available"]) == (__version__, "9.0.0", True)
     text = runner.invoke(app, ["system", "release"], env={"COLUMNS": "200"}).output
-    assert f"v9.0.0 is available (installed: {__version__}): hz system update" in text
+    assert f"hz 9.0.0 is available (installed {__version__}): hz system update" in text
     assert ReleaseCache(Settings().cache_dir).latest == "9.0.0"
 
 
@@ -118,82 +116,6 @@ def test_system_release_offline_is_a_warning_not_a_failure(app, monkeypatch):
     assert "Warning: Could not ask" in result.output
     assert "(no route to host)" in result.output
     assert json.loads(runner.invoke(app, ["system", "release", "--json"]).output)["latest"] is None
-
-
-@pytest.fixture
-def newer_release_cached(monkeypatch):
-    """A newer release in the cache, stdout a terminal and no CI variable: every condition for the hint holds."""
-    ReleaseCache(Settings().cache_dir).remember("9.0.0")
-    monkeypatch.setattr(cli, "stdout_is_terminal", lambda: True)  # CliRunner's stdout is never a terminal
-    for variable in cli.CI_VARIABLES:
-        monkeypatch.delenv(variable, raising=False)
-
-
-@pytest.mark.usefixtures("newer_release_cached")
-def test_version_shows_the_update_hint(app):
-    assert runner.invoke(app, ["--version"]).output.splitlines()[-1] == HINT
-
-
-@pytest.mark.usefixtures("newer_release_cached")
-def test_system_info_text_shows_the_update_hint(app):
-    assert runner.invoke(app, ["system", "info"], env={"COLUMNS": "200"}).output.rstrip().endswith(HINT)
-
-
-@pytest.mark.usefixtures("newer_release_cached")
-def test_system_info_json_has_the_latest_release_as_data_but_no_hint(app):
-    as_json = runner.invoke(app, ["system", "info", "--json"]).output
-    assert HINT not in as_json
-    assert json.loads(as_json)["latest_release"] == "9.0.0"
-
-
-@pytest.mark.usefixtures("newer_release_cached")
-def test_only_system_info_text_gets_the_update_hint(app):
-    assert HINT not in runner.invoke(app, ["system", "modules"], env={"COLUMNS": "200"}).output
-
-
-@pytest.mark.usefixtures("newer_release_cached")
-def test_no_update_hint_when_the_setting_is_off(app, monkeypatch):
-    monkeypatch.setenv("HZ_UPDATE_CHECK", "false")
-    off = build(Kernel(Config.empty().settings(Settings, "hz"), discover(plugins=False)[0]))
-    assert HINT not in runner.invoke(off, ["--version"]).output
-    assert HINT not in runner.invoke(off, ["system", "info"], env={"COLUMNS": "200"}).output
-
-
-@pytest.mark.usefixtures("newer_release_cached")
-def test_no_update_hint_when_stdout_is_not_a_terminal(app, monkeypatch):
-    monkeypatch.setattr(cli, "stdout_is_terminal", lambda: False)
-    assert HINT not in runner.invoke(app, ["--version"]).output
-    assert HINT not in runner.invoke(app, ["system", "info"], env={"COLUMNS": "200"}).output
-
-
-@pytest.mark.usefixtures("newer_release_cached")
-@pytest.mark.parametrize("variable", ["CI", "GITHUB_ACTIONS"])
-def test_no_update_hint_in_ci(app, monkeypatch, variable):
-    monkeypatch.setenv(variable, "true")
-    assert HINT not in runner.invoke(app, ["--version"]).output
-
-
-@pytest.mark.usefixtures("newer_release_cached")
-def test_an_empty_ci_variable_is_not_ci(app, monkeypatch):
-    monkeypatch.setenv("CI", "")
-    assert runner.invoke(app, ["--version"]).output.splitlines()[-1] == HINT
-
-
-def test_no_update_hint_without_a_newer_release(app, monkeypatch):
-    ReleaseCache(Settings().cache_dir).remember(__version__)
-    monkeypatch.setattr(cli, "stdout_is_terminal", lambda: True)
-    for variable in cli.CI_VARIABLES:
-        monkeypatch.delenv(variable, raising=False)
-    assert "is available" not in runner.invoke(app, ["--version"]).output
-
-
-def test_stdout_is_terminal_asks_stdout(monkeypatch):
-    class Terminal(io.StringIO):
-        def isatty(self):
-            return True
-
-    monkeypatch.setattr("sys.stdout", Terminal())
-    assert cli.stdout_is_terminal()
 
 
 def test_help_lists_modules(app):
@@ -441,7 +363,6 @@ def test_format_option_and_output_format_setting(app, monkeypatch):
 
 def test_output_format_setting_makes_json_the_default(make_kernel, monkeypatch):
     monkeypatch.setenv("HZ_OUTPUT_FORMAT", "json")
-    from heinzel import Config
 
     app = build(make_kernel(builtins=True, settings_=Config.empty().settings(Settings, "hz"), **example_modules()))
     assert json.loads(runner.invoke(app, ["example", "greet", "Ada"]).output)["text"] == "Hello, Ada!"

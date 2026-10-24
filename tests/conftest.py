@@ -13,7 +13,7 @@ TEST_ORIGIN = Origin(distribution="heinzel-test", version="9.9.9", builtin=False
 @pytest.fixture(autouse=True)
 def _isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
     """No test sees the developer's HZ_* variables or state."""
-    variables = ("HZ_LOG_LEVEL", "HZ_PLUGINS_ENABLED", "HZ_DISABLED_MODULES", "HZ_CONFIG", "HZ_UPDATE_CHECK")
+    variables = ("HZ_LOG_LEVEL", "HZ_PLUGINS_ENABLED", "HZ_DISABLED_MODULES", "HZ_CONFIG")
     for name in (*variables, "XDG_CONFIG_HOME"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path_factory.mktemp("hz-config")))

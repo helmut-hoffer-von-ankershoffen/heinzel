@@ -95,6 +95,7 @@ KERNEL = [
     "ProviderLet",
     "PullRequest",
     "ReleaseCache",
+    "ReleaseSource",
     "Requester",
     "Requirement",
     "RequirementLet",

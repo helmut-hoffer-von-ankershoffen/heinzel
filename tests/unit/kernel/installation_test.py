@@ -112,3 +112,16 @@ def test_uv_and_hz_run_without_credential_variables(tmp_path, monkeypatch):
     Installation(Progress(), prefix=tmp_path, uv="uv").hz("--version")
     assert len(environments) == 2
     assert all("HZ_CREDENTIAL_EXAMPLE_API_TOKEN" not in env and "PATH" in env for env in environments)
+
+
+def test_the_hz_probe_never_checks_for_updates(tmp_path, monkeypatch):
+    environments = []
+
+    def recording(command, **kwargs):
+        environments.append(kwargs["env"])
+        return subprocess.CompletedProcess(command, 0, "hz 9.9.9", "")
+
+    monkeypatch.setenv("HZ_UPDATE_CHECK", "true")
+    monkeypatch.setattr(subprocess, "run", recording)
+    Installation(Progress(), prefix=tmp_path, uv="uv").hz("--version")
+    assert environments[0]["HZ_UPDATE_CHECK"] == "false"

@@ -10,7 +10,8 @@ from rich.console import RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from heinzel import Check, HealthLet, Kernel, Module, Settings, Status
+from heinzel import Check, HealthLet, Kernel, Module, Settings, Status, __version__
+from heinzel.kernel import ReleaseCache
 
 MINIMUM_PYTHON = (3, 12)
 
@@ -107,6 +108,7 @@ def core(kernel: Kernel, settings: Settings) -> list[Check]:
         for section, model in kernel.settings_of()
         for key in kernel.config.project_keys(section, type(model).ignored_in_project)
     )
+    checks.append(release_check(settings))
     for name, directory in (("data_dir", settings.data_dir), ("cache_dir", settings.cache_dir)):
         existing = next((p for p in (directory, *directory.parents) if p.exists()), None)
         writable = existing is not None and os.access(existing, os.W_OK)
@@ -118,6 +120,28 @@ def core(kernel: Kernel, settings: Settings) -> list[Check]:
             )
         )
     return checks
+
+
+def release_check(settings: Settings) -> Check:
+    """Whether a newer release is known, from the release cache (ADR 0031); informational, so always up."""
+    cache = ReleaseCache(settings.cache_dir)
+    failed = f"; the last check failed: {cache.error}" if cache.error else ""
+    if latest := cache.newer_than(__version__):
+        return Check(
+            name="release",
+            status=Status.UP,
+            detail=f"hz {latest} is available (installed {__version__}){failed}",
+            fix="hz system update",
+        )
+    if cache.latest is not None:
+        detail = f"hz {__version__} is up to date (latest release {cache.latest}){failed}"
+    elif cache.error:
+        detail = f"no release known yet; the last check failed: {cache.error}"
+    else:
+        detail = "no release known yet"
+    if not settings.update_check:
+        detail += "; the hourly check is off (update_check = false)"
+    return Check(name="release", status=Status.UP, detail=detail, fix="" if cache.latest else "hz system release")
 
 
 __all__ = ["HealthReport", "module"]

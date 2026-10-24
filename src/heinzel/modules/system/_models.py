@@ -13,6 +13,9 @@ class ModuleInfo(BaseModel):
     distribution: str = Field(description="Distribution that ships the module; `hz` for built-ins.")
     version: str = Field(description="Version of that distribution.")
     builtin: bool = Field(description="Whether the module ships with Heinzelmännchen.")
+    repository: str | None = Field(
+        description="Source repository of that distribution, from its Project-URL metadata; none if it names none."
+    )
     lets: dict[str, list[str]] = Field(description="Names of the advertised lets, by kind.")
 
 
@@ -20,6 +23,7 @@ class SystemInfo(BaseModel):
     """The state of this Heinzelmännchen installation."""
 
     version: str = Field(description="Installed Heinzelmännchen version.")
+    repository: str | None = Field(description="Source repository of Heinzelmännchen, from its Project-URL metadata.")
     python_version: str = Field(description="Version of the Python running hz.")
     python_executable: str = Field(description="Path of the Python interpreter running hz.")
     platform: str = Field(description="Operating system and architecture.")
@@ -28,7 +32,8 @@ class SystemInfo(BaseModel):
     plugin_errors: dict[str, str] = Field(description="Plugins that failed to load, by entry point name.")
     sections: dict[str, Any] = Field(description="Sections contributed by modules, by qualified module name.")
     latest_release: str | None = Field(
-        description="Latest release last seen by `hz system release`, from its cache; none if never asked."
+        description="Latest release last seen by `hz system release` or the CLI's hourly check, from the cache; "
+        "none if never asked."
     )
 
 

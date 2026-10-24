@@ -137,7 +137,8 @@ class Installation:
                 text=True,
                 check=False,
                 timeout=HZ_TIMEOUT,
-                env=subprocess_environment(),
+                # A probe, not a person: no update check (ADR 0031) to wait for or to spend a request on.
+                env=subprocess_environment() | {"HZ_UPDATE_CHECK": "false"},
             )
         except subprocess.TimeoutExpired as exc:
             msg = f"`hz {' '.join(args)}` did not finish within {HZ_TIMEOUT}s after the change."
