@@ -9,7 +9,7 @@ from heinzel.modules.org._models import format_hours, parse_hours
 pytestmark = pytest.mark.unit
 
 
-def test_the_core_roles_are_the_seven_of_adr_0033():
+def test_the_core_roles_are_the_seven_of_the_onboarding_adr():
     assert ROLES == (
         "engineer",
         "principal",

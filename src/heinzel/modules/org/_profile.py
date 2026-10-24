@@ -1,4 +1,4 @@
-"""Your profile: what the identity step finds, what it still asks, and where it writes (ADR 0033 §2, §5).
+"""Your profile: what the identity step finds, what it still asks, and where it writes (the perfect-onboarding ADR).
 
 Identity is found, not asked: handle and GitHub login from `gh`, name and email from `gws`, the time zone from this
 machine, the coding agent from your PATH (`_discovery`). A first run asks only what can't be found: always your role
@@ -90,25 +90,29 @@ def _ask(
 ) -> dict[str, list[int] | str | None]:
     login = settings.github or (found.github.id if found.github else None)
     handle = settings.handle or _handle_from(login)
-    if change or handle is None:
-        handle = prompter.text("Handle, e.g. mira", default=handle, validate=handle_problem)
+    if change or handle is None or prompter.has_preset("handle"):
+        handle = prompter.text("Handle, e.g. mira", default=handle, validate=handle_problem, key="handle")
     role = settings.role
-    if change or role is None:
+    if change or role is None or prompter.has_preset("role"):
         for name, meaning in ROLE_MEANINGS.items():
             prompter.say(f"  {name}: {meaning}")
-        role = prompter.choice("Your role", ROLES, default=role if role in ROLES else None)
+        role = prompter.choice("Your role", ROLES, default=role if role in ROLES else None, key="role")
     timezone = settings.timezone or found.timezone
-    if change or timezone is None:
+    if change or timezone is None or prompter.has_preset("timezone"):
         timezone = ask_timezone(prompter, timezone)
     hours = settings.working_hours if "working_hours" in settings.model_fields_set else default_hours(timezone)
-    if change or "working_hours" not in settings.model_fields_set:
-        hours = parse_hours(prompter.text("Working hours", default=format_hours(hours), validate=_hours_problem))
+    if change or "working_hours" not in settings.model_fields_set or prompter.has_preset("working_hours"):
+        hours = parse_hours(
+            prompter.text("Working hours", default=format_hours(hours), validate=_hours_problem, key="working_hours")
+        )
     github = login
-    if change:  # a first run doesn't ask: a GitHub login matters only once you join a team
-        answer = prompter.text(f"GitHub login, {NONE} for none", default=github or NONE, validate=_github_problem)
+    if change or prompter.has_preset("github"):  # a first run doesn't ask: it matters only once you join a team
+        answer = prompter.text(
+            f"GitHub login, {NONE} for none", default=github or NONE, validate=_github_problem, key="github"
+        )
         github = None if answer.lower() == NONE else answer
     agent = settings.coding_agent or found.coding_agent
-    if change:
+    if change or prompter.has_preset("coding_agent"):
         agent = _ask_agent(prompter, agent)
     return {
         "handle": handle,
@@ -151,19 +155,22 @@ def _name(found: Discovered) -> str | None:
     return (found.google.name if found.google else None) or (found.github.name if found.github else None)
 
 
+KEY = "timezone"
+
+
 def ask_timezone(prompter: Prompter, default: str | None) -> str:
     """An IANA time zone, found by part of its name (`berlin`, `new york`); an empty answer takes `default`."""
     while True:
-        query = prompter.text("Time zone, a city or region such as Berlin", default=default)
+        query = prompter.text("Time zone, a city or region such as Berlin", default=default, key=KEY)
         if query in available_timezones():
             return query
         matches = search(query)
-        if not matches:
-            prompter.say(f"No time zone matches {query!r}; try a city such as Lisbon or a region such as Europe.")
-        elif len(matches) > MAX_MATCHES:
-            prompter.say(f"{len(matches)} time zones match {query!r}; type more of the name.")
-        elif len(matches) == 1:
+        if len(matches) == 1:
             return matches[0]
+        if not matches:
+            prompter.refuse(f"No time zone matches {query!r}; try a city such as Lisbon or a region, Europe.", KEY)
+        elif len(matches) > MAX_MATCHES or prompter.has_preset(KEY):  # a preset can't pick among several
+            prompter.refuse(f"{len(matches)} time zones match {query!r}; give more of the name.", KEY)
         else:
             return prompter.choice("Which one?", matches)
 
@@ -188,5 +195,5 @@ def _hours_problem(answer: str) -> str | None:
 
 def _ask_agent(prompter: Prompter, current: CodingAgent) -> CodingAgent:
     prompter.say("claude-code: Claude Code; command: a command of your own; none: none yet")
-    answer = prompter.choice("Coding agent you draft with", CODING_AGENTS, default=current)
+    answer = prompter.choice("Coding agent you draft with", CODING_AGENTS, default=current, key="coding_agent")
     return next(agent for agent in CODING_AGENTS if agent == answer)

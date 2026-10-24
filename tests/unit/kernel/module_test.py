@@ -208,9 +208,10 @@ def test_names_of_kernel_configuration_tables_are_reserved(name):
         Module(name, "x")
 
 
-def test_setup_is_reserved_for_hz_setup():
-    with pytest.raises(ValueError, match="Module name 'setup' is reserved: it is the command `hz setup`"):
-        Module("setup", "x")
+@pytest.mark.parametrize("name", ["setup", "join"])
+def test_top_level_commands_are_reserved(name):
+    with pytest.raises(ValueError, match=f"Module name '{name}' is reserved: it is the command `hz {name}`"):
+        Module(name, "x")
 
 
 def test_setup_decorator_forms():
@@ -228,6 +229,19 @@ def test_setup_decorator_forms():
     assert bare.lets == (SetupLet(name="a", func=step, summary="Pick the zones.", required=False),)
     assert optional.lets[0] == SetupLet(name="b", func=step, summary="Pick the zones.")
     assert required.lets[0] == SetupLet(name="c", func=step, summary="Pick the zones.", required=True)
+    assert required.lets[0].phase == "connect"
+
+
+def test_a_setup_step_declares_its_phase():
+    module = Module("profile", "x")
+
+    def step() -> None:
+        """Who you are."""
+
+    module.setup(phase="identity")(step)
+    assert module.lets[0].phase == "identity"
+    with pytest.raises(ValueError, match="Setup phase 'later' is not one of identity, membership, connect, work, run"):
+        Module("other", "x").setup(phase="later")  # type: ignore[call-overload]
 
 
 def test_setup_needs_a_docstring_and_is_one_per_module():

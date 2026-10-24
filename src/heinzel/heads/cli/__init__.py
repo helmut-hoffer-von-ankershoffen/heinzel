@@ -26,6 +26,8 @@ from heinzel import __version__
 from heinzel.heads._exposure import collapses
 from heinzel.heads.cli import _update
 from heinzel.heads.cli._command import command
+from heinzel.heads.cli._join import HELP as JOIN_HELP
+from heinzel.heads.cli._join import JoinCommand
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._serve import serve_group
@@ -112,6 +114,9 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     # Top level by the maintainer's decision, the one exception to ADR 0018, and the only way to run a step (ADR 0032).
     setup = SetupCommands(kernel, console, err_console).command()
     app.command(name="setup", help=SETUP_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(setup)
+    # The invite line, `uvx heinzel join <team repository>`: the second exception to ADR 0018, by the maintainer.
+    join = JoinCommand(kernel, console, err_console).command()
+    app.command(name="join", help=JOIN_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(join)
     if system := mount.groups.get("system"):
         system.add_typer(serve_group(SortedGroup, footer, kernel, console, err_console), cls=SortedGroup)
     return app

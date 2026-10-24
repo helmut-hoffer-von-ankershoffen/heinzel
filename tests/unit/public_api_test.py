@@ -4,6 +4,9 @@ Plugins import from `heinzel` and `heinzel.kernel` (ADR 0026, the public API). A
 plugin: record it in this file, in the same commit, and mark a removal or rename as breaking (`!`).
 """
 
+import tomllib
+from pathlib import Path
+
 import pytest
 
 import heinzel
@@ -157,6 +160,7 @@ KERNEL = [
     "Requirement",
     "RequirementLet",
     "RunStatus",
+    "SETUP_PHASES",
     "ScriptExhausted",
     "ScriptedPrompter",
     "SectionReplacement",
@@ -164,6 +168,7 @@ KERNEL = [
     "Settings",
     "SettingsLet",
     "SetupLet",
+    "SetupPhase",
     "Span",
     "Status",
     "TokenUsage",
@@ -198,6 +203,12 @@ def api_change(exported: list[str], snapshot: list[str]) -> dict[str, list[str]]
         "added": sorted(set(exported) - set(snapshot)),
         "removed": sorted(set(snapshot) - set(exported)),
     }
+
+
+def test_heinzel_is_the_same_command_as_hz():
+    """`uvx heinzel join <team repository>` is the invite line: uvx runs the script named like the package."""
+    scripts = tomllib.loads((Path(__file__).parents[2] / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert scripts["scripts"]["heinzel"] == scripts["scripts"]["hz"] == "heinzel.heads.cli:main"
 
 
 def test_finds_api_changes():
