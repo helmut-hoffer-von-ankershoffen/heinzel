@@ -33,7 +33,7 @@ def test_checks_when_gh_is_logged_in_and_both_capabilities_are_bound(fake_gh):
     checks = {c.name: c for c in service(fake_gh).checks(BOTH)}
     assert set(checks) == {"gh", "code-host", "tracker"}
     assert all(c.status is Status.UP for c in checks.values())
-    assert checks["gh"].detail == "gh is logged in to github.com; GitHub not contacted"
+    assert checks["gh"].detail == "gh (/usr/local/bin/gh) is logged in to github.com; GitHub not contacted"
     assert checks["tracker"].detail == "served by github"
     assert fake_gh.calls == []
 

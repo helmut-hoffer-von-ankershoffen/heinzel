@@ -105,7 +105,7 @@ def _time(item: dict[str, Any], key: str) -> datetime:
     try:
         return datetime.fromisoformat(str(item[key])).astimezone(UTC)
     except (KeyError, ValueError):
-        msg = f"GitHub's answer lacks a valid {key}; is github.host a GitHub?"
+        msg = f"GitHub's answer lacks a valid {key}; is github.host a GitHub server?"
         raise HeinzelError(msg) from None
 
 
@@ -136,19 +136,26 @@ def _text(item: dict[str, Any], key: str) -> str:
     return clean_text(value)
 
 
+def _url(item: dict[str, Any]) -> str:
+    url = _text(item, "html_url")
+    if not url.startswith("https://"):  # shown as a link: no javascript: or other schemes
+        raise ValueError(url)
+    return url
+
+
 def _pull_request(repository: str, item: dict[str, Any], merged: datetime) -> PullRequest:
     try:
         return PullRequest(
             repository=repository,
             number=_number(item),
             title=_text(item, "title"),
-            url=_text(item, "html_url"),
+            url=_url(item),
             author=_login(item.get("user")),
             merged_at=merged,
             labels=_labels(item),
         )
     except (KeyError, TypeError, ValueError):
-        msg = "GitHub's answer lacks fields of a pull request; is github.host a GitHub?"
+        msg = "GitHub's answer lacks fields of a pull request; is github.host a GitHub server?"
         raise HeinzelError(msg) from None
 
 
@@ -157,12 +164,12 @@ def _issue(repository: str, item: dict[str, Any], updated: datetime) -> Issue:
         return Issue(
             key=f"{repository}#{_number(item)}",
             title=_text(item, "title"),
-            url=_text(item, "html_url"),
+            url=_url(item),
             state=_text(item, "state"),
             updated_at=updated,
             assignee=_login(item.get("assignee")),
             labels=_labels(item),
         )
     except (KeyError, TypeError, ValueError):
-        msg = "GitHub's answer lacks fields of an issue; is github.host a GitHub?"
+        msg = "GitHub's answer lacks fields of an issue; is github.host a GitHub server?"
         raise HeinzelError(msg) from None

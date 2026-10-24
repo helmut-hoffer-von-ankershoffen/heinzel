@@ -53,7 +53,7 @@ class GithubService:
 
     def _gh_check(self) -> Check:
         host = self._settings.host
-        if self._gh.executable() is None:
+        if (path := self._gh.executable()) is None:
             return Check(
                 name="gh",
                 status=Status.DEGRADED,
@@ -64,7 +64,7 @@ class GithubService:
             return Check(
                 name="gh", status=Status.DEGRADED, detail=f"gh is not logged in to {host}", fix=login_fix(host)
             )
-        return Check(name="gh", status=Status.UP, detail=f"gh is logged in to {host}; GitHub not contacted")
+        return Check(name="gh", status=Status.UP, detail=f"gh ({path}) is logged in to {host}; GitHub not contacted")
 
     def _binding_checks(self, bindings: Bindings) -> list[Check]:
         checks: list[Check] = []

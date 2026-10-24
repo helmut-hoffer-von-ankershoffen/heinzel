@@ -120,10 +120,8 @@ def test_doctor_checks_the_login_and_bindings_without_contacting_github(github_k
     code, report = hz(github_kernel(BOUND), "system", "doctor")
     assert code == 0
     github = {c["name"]: c for c in report["checks"]["github"]}
-    assert (github["gh"]["status"], github["gh"]["detail"]) == (
-        "up",
-        "gh is logged in to github.com; GitHub not contacted",
-    )
+    assert github["gh"]["status"] == "up"
+    assert github["gh"]["detail"] == f"gh ({fake_gh_cli.bin / 'gh'}) is logged in to github.com; GitHub not contacted"
     assert github["code-host"]["detail"] == "served by github"
     assert [c["argv"][:2] for c in fake_gh_cli.calls()] == [["auth", "token"]]  # local only, never `gh api`
     assert "credential github/github-token" not in json.dumps(report)
@@ -148,6 +146,14 @@ def test_unbound_the_requester_fails_and_doctor_names_the_binding(github_kernel,
     assert capability["code-host:read for digest"]["status"] == "degraded"
     github = {c["name"]: c for c in report["checks"]["github"]}
     assert github["bindings"]["status"] == "degraded"
+    assert not [c for c in fake_gh_cli.calls() if c["argv"][0] == "api"]
+
+
+def test_a_leftover_api_url_fails_with_the_setting_that_replaced_it(github_kernel, fake_gh_cli):
+    config = Config(files=(), data={**BOUND.data, "github": {"api_url": "https://ghe.example.com/api/v3"}})
+    code, output = hz(github_kernel(config, digest=digest()), "digest", "issues", "acme/widgets", SINCE, UNTIL)
+    assert code != 0
+    assert "github.host" in str(output)
     assert not [c for c in fake_gh_cli.calls() if c["argv"][0] == "api"]
 
 

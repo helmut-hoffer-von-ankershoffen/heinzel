@@ -1,9 +1,9 @@
 """Settings and the models the plugin's own operations return."""
 
 import re
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from heinzel import ModuleSettings
 
@@ -36,6 +36,18 @@ class GithubSettings(ModuleSettings):
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"host"})
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_api_url(cls, data: Any) -> Any:  # noqa: ANN401 - the raw settings, whatever they are
+        # `api_url` was replaced by `host`; ignoring a leftover would quietly read github.com instead of the server.
+        if isinstance(data, dict) and "api_url" in data:
+            msg = (
+                "api_url was replaced by host, the host name gh logs in to: remove api_url and set e.g. "
+                "`hz system config set github.host ghe.example.com`"
+            )
+            raise ValueError(msg)
+        return data
 
     @field_validator("host")
     @classmethod

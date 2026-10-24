@@ -17,6 +17,10 @@ reads what you can read, as you: no app to register, no token to create or store
 gh auth login                           # or: gh auth login --hostname ghe.example.com
 ```
 
+The adapter acts with whatever that login may do, which is usually more than reading; it only ever sends GET
+requests. If you stored a token for an earlier version, remove it:
+`hz system credential remove github-token --service github` (or unset `HZ_CREDENTIAL_GITHUB_GITHUB_TOKEN`).
+
 Bind the adapter in your user configuration, never in a project `hz.toml`, which Heinzelmännchen ignores for bindings:
 
 ```bash
@@ -36,6 +40,12 @@ Or per shell: `HZ_CAPABILITIES__CODE_HOST=github`, `HZ_CAPABILITIES__TRACKER=git
 
 For GitHub Enterprise Server, name its host in your user configuration or `HZ_GITHUB__HOST`; the adapter passes it to
 `gh` as `--hostname` and `GH_HOST`, so `gh` uses its login for that host:
+
+```bash
+hz system config set github.host ghe.example.com
+```
+
+or in the file (`api_url` from earlier versions is refused; `host` replaced it):
 
 ```toml
 [github]

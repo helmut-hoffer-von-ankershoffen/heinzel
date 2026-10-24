@@ -9,7 +9,7 @@ this service through the kernel (`kernel.bind(Gh, fake)`) or put a fake `gh` fir
 import shutil
 import subprocess
 import threading
-from collections.abc import Callable
+import time
 from dataclasses import dataclass
 from typing import IO, cast
 
@@ -22,9 +22,16 @@ MAX_ERROR_BYTES = 65_536
 """Bytes of `gh`'s standard error kept; enough for any message it prints."""
 AUTH_TIMEOUT = 10.0
 """Seconds `gh auth token` gets; it reads `gh`'s local configuration or the keychain, never the network."""
+POLL = 0.05
+"""Seconds between checks of a running `gh` for its exit, its timeout and its output cap."""
+DRAIN_WAIT = 5.0
+"""Seconds to wait for `gh`'s output after it ended."""
 INSTALL = "https://cli.github.com"
-DROPPED = frozenset({"GH_DEBUG", "DEBUG", "GH_FORCE_TTY", "CLICOLOR_FORCE", "GH_REPO", "GH_BROWSER", "BROWSER"})
-"""Variables `gh` must not see: debug output prints request headers; the others make its output unpredictable."""
+DROPPED = frozenset(
+    {"GH_DEBUG", "DEBUG", "GODEBUG", "GH_FORCE_TTY", "CLICOLOR_FORCE", "GH_REPO", "GH_BROWSER", "BROWSER"}
+)
+"""Variables `gh` must not see: debug output (`GODEBUG=http2debug=2` too) prints request headers with the token; the
+others make its output unpredictable."""
 
 
 def login_fix(host: str) -> str:
@@ -60,13 +67,13 @@ def environment(host: str) -> dict[str, str]:
 
 
 class _Capture:
-    """Drains a pipe in a thread, keeping at most `limit` + 1 bytes; past that it calls `overflow` once."""
+    """Drains a pipe in a thread, keeping at most `limit` + 1 bytes; sets `overflowed` once it has seen more."""
 
-    def __init__(self, stream: IO[bytes], limit: int, overflow: Callable[[], None] | None = None) -> None:
+    def __init__(self, stream: IO[bytes], limit: int) -> None:
         self.chunks: list[bytes] = []
         self.size = 0
+        self.overflowed = threading.Event()
         self._limit = limit
-        self._overflow = overflow
         self._thread = threading.Thread(target=self._drain, args=(stream,), daemon=True)
         self._thread.start()
 
@@ -75,12 +82,13 @@ class _Capture:
             while chunk := stream.read(65536):
                 if self.size <= self._limit:
                     self.chunks.append(chunk[: self._limit + 1 - self.size])
-                    if self.size + len(chunk) > self._limit and self._overflow is not None:
-                        self._overflow()
                 self.size += len(chunk)
+                if self.size > self._limit:
+                    self.overflowed.set()
 
     def data(self) -> bytes:
-        self._thread.join()
+        # A child `gh` started (a credential helper) may hold the pipe open after `gh` is gone: don't wait for it.
+        self._thread.join(DRAIN_WAIT)
         return b"".join(self.chunks)
 
 
@@ -115,21 +123,28 @@ class Gh:
         except OSError as exc:
             msg = f"Could not start the GitHub CLI `gh` ({type(exc).__name__}); reinstall it from {INSTALL}."
             raise HeinzelError(msg) from None
-        stdout = _Capture(cast("IO[bytes]", process.stdout), MAX_BYTES, process.kill)  # both are pipes, see above
+        stdout = _Capture(cast("IO[bytes]", process.stdout), MAX_BYTES)  # both are pipes, see above
         stderr = _Capture(cast("IO[bytes]", process.stderr), MAX_ERROR_BYTES)
-        returncode: int | None
+        returncode: int | None = None
+        deadline = time.monotonic() + timeout
         try:
-            returncode = process.wait(timeout)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-            returncode = None
+            # Kill from this thread only, after a short wait: never while another thread may be reaping `gh`.
+            while not stdout.overflowed.is_set() and (left := deadline - time.monotonic()) > 0:
+                try:
+                    returncode = process.wait(min(left, POLL))
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+        finally:
+            if process.poll() is None:  # timed out, too much output, or interrupted
+                process.kill()
+                process.wait()
         out = stdout.data()
         return GhResult(
             returncode=returncode,
             stdout=out,
             stderr=stderr.data()[:MAX_ERROR_BYTES].decode(errors="replace"),
-            truncated=len(out) > MAX_BYTES,
+            truncated=stdout.overflowed.is_set(),
         )
 
     def logged_in(self, host: str) -> bool:

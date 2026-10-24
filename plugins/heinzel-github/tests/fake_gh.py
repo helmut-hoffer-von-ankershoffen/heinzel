@@ -3,8 +3,9 @@
 conftest.py installs it as an executable named `gh` on a `PATH` of its own, so the adapter's real `Gh` runner starts
 it as it would start the real one. The routes file (`FAKE_GH_ROUTES`) maps `<path>?page=<n>` to an answer:
 `fixture` (a file in `tests/fixtures`) or `stdout`, plus optional `stderr`, `exit`, `sleep` (seconds) and `pad` (extra
-bytes of output); `logins` lists the hosts `gh auth token` has a login for. Each call is appended to `FAKE_GH_LOG` as
-JSON: its arguments and the `GH_*`, `HZ_*`, `DEBUG` and `NO_COLOR` variables it saw.
+bytes of output); `logins` lists the hosts `gh auth token` has a login for, `auth_sleep` delays it. Each call is
+appended to `FAKE_GH_LOG` as JSON: its arguments, the `GH_*`, `HZ_*`, `DEBUG` and `NO_COLOR` variables it saw, and the
+names of all variables.
 """
 
 import json
@@ -21,8 +22,9 @@ def main(argv: list[str]) -> int:
     routes = json.loads(Path(os.environ["FAKE_GH_ROUTES"]).read_text(encoding="utf-8"))
     env = {key: value for key, value in os.environ.items() if key.startswith(RECORDED)}
     with Path(os.environ["FAKE_GH_LOG"]).open("a", encoding="utf-8") as log:
-        log.write(json.dumps({"argv": argv, "env": env}) + "\n")
+        log.write(json.dumps({"argv": argv, "env": env, "all_env": sorted(os.environ)}) + "\n")
     if argv[:2] == ["auth", "token"]:
+        time.sleep(routes.get("auth_sleep", 0))
         host = argv[argv.index("--hostname") + 1]
         if host in routes.get("logins", []):
             sys.stdout.write("gho_fakeTokenOnlyTheFakeGhPrints0000\n")

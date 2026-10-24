@@ -54,7 +54,7 @@ def test_a_full_page_asks_for_the_next_one(fake_gh):
 
 def test_more_than_the_page_limit_asks_for_a_shorter_window(fake_gh):
     fake_gh.serve(PATH, *([{"id": i} for i in range(100)] for _ in range(MAX_PAGES)))
-    with pytest.raises(HeinzelError, match=f"more than {MAX_PAGES} pages"):
+    with pytest.raises(HeinzelError, match=f"{MAX_PAGES} or more full pages"):
         items(fake_gh)
 
 
@@ -65,11 +65,19 @@ def test_not_logged_in_names_gh_auth_login_for_the_host(fake_gh):
     )
 
 
-def test_a_rejected_login_says_to_log_in_again(fake_gh):
-    fake_gh.fail(PATH, 1, "gh: Bad credentials (HTTP 401)\n", {"message": "Bad credentials"})
+def test_a_rejected_login_says_to_log_in_again_or_replace_the_environment_token(fake_gh):
+    # What gh prints for a 401: the status, then a hint that names `gh auth login`.
+    stderr = "gh: Bad credentials (HTTP 401)\nTry authenticating with:  gh auth login\n"
+    fake_gh.fail(PATH, 1, stderr, {"message": "Bad credentials"})
     text = message(fake_gh)
     assert "rejected gh's login for github.com (401: Bad credentials)" in text
     assert "gh auth login --hostname github.com" in text
+    assert "GH_TOKEN" in text
+
+
+def test_too_many_requests_is_a_rate_limit_whatever_it_says(fake_gh):
+    fake_gh.fail(PATH, 1, "gh: Slow down (HTTP 429)\n", {"message": "Slow down"})
+    assert "rate limit is reached" in message(fake_gh)
 
 
 def test_not_found_says_to_check_spelling_and_access(fake_gh):

@@ -38,7 +38,10 @@ def said(text: str) -> str:
 
 
 class GhClient:
-    """GETs JSON from GitHub's REST API with `gh api`, as the account `gh` is logged in with on one host."""
+    """GETs JSON from GitHub's REST API with `gh api`, as the account `gh` is logged in with on one host.
+
+    That login usually may write too; this client only ever sends GET, to paths the adapter builds under `repos/`.
+    """
 
     def __init__(self, gh: Gh, host: str, timeout: float) -> None:
         """Read from `host` through `gh`, giving each call `timeout` seconds."""
@@ -66,7 +69,7 @@ class GhClient:
             yield items
             if len(items) < PER_PAGE:
                 return
-        msg = f"{path} has more than {MAX_PAGES} pages of results; {too_many}."
+        msg = f"{path} has {MAX_PAGES} or more full pages of results; {too_many}."
         raise HeinzelError(msg)
 
     def _list(self, path: str, params: Mapping[str, str]) -> list[dict[str, Any]]:
@@ -98,7 +101,9 @@ class GhClient:
             raise HeinzelError(self._problem(path, result))
         items = _json(result.stdout, path)
         if not isinstance(items, list) or not all(isinstance(item, dict) for item in cast("list[object]", items)):
-            msg = f"GitHub answered {path} with something other than a list of objects; is {self._host} a GitHub?"
+            msg = (
+                f"GitHub answered {path} with something other than a list of objects; is {self._host} a GitHub server?"
+            )
             raise HeinzelError(msg)
         return cast("list[dict[str, Any]]", items)  # checked above
 
@@ -108,11 +113,15 @@ class GhClient:
         found = _STATUS.search(stderr)
         status = int(found.group(1)) if found else None
         text = said(_message(result.stdout) or _first_line(stderr))
-        if result.returncode == NOT_LOGGED_IN or "gh auth login" in stderr:
-            return f"`gh` is not logged in to {host}; run `{login_fix(host)}`, then try again."
+        # gh adds "Try authenticating with: gh auth login" to a 401 too: the status decides first.
         if status == 401:  # noqa: PLR2004 - Unauthorized
-            return f"GitHub rejected gh's login for {host} (401: {text}); log in again with `{login_fix(host)}`."
-        if status in {403, 429} and "rate limit" in text.lower():
+            return (
+                f"GitHub rejected gh's login for {host} (401: {text}); log in again with `{login_fix(host)}`, "
+                "or replace GH_TOKEN or GH_ENTERPRISE_TOKEN if one is set, as it takes precedence."
+            )
+        if status is None and (result.returncode == NOT_LOGGED_IN or "gh auth login" in stderr):
+            return f"`gh` is not logged in to {host}; run `{login_fix(host)}`, then try again."
+        if status == 429 or (status == 403 and "rate limit" in text.lower()):  # noqa: PLR2004 - Too Many Requests
             return (
                 f"GitHub's rate limit is reached for {path} ({status}: {text}); wait a few minutes and try again. "
                 f"`gh api rate_limit --hostname {host}` shows when it resets."

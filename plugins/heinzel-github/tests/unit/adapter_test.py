@@ -231,6 +231,14 @@ def test_a_boolean_number_is_a_clear_error(fake_gh):
         adapter(fake_gh).merged_pull_requests("acme/widgets", OCTOBER)
 
 
+def test_a_link_that_is_not_https_is_a_clear_error(fake_gh):
+    item = fake_gh.issue(1, updated_at="2026-10-02T00:00:00Z")
+    item["html_url"] = "javascript:alert(1)"
+    fake_gh.serve(ISSUES, [item])
+    with pytest.raises(HeinzelError, match="fields of an issue"):
+        adapter(fake_gh).issues_updated("acme/widgets", OCTOBER)
+
+
 def test_the_configured_host_and_timeout_are_used(fake_gh):
     fake_gh.serve(ISSUES, [])
     adapter(fake_gh, host="GHE.example.com", timeout=5).issues_updated("acme/widgets", OCTOBER)

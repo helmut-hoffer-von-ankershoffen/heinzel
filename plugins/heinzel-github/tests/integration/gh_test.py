@@ -28,12 +28,14 @@ def test_gh_gets_exactly_the_arguments_and_its_answer_comes_back(fake_gh_cli):
 def test_gh_sees_the_host_and_no_credentials_or_debug_switches(fake_gh_cli, monkeypatch):
     monkeypatch.setenv("HZ_CREDENTIAL_GITHUB_GITHUB_TOKEN", "made-up-secret")
     monkeypatch.setenv("GH_DEBUG", "api")
+    monkeypatch.setenv("GODEBUG", "http2debug=2")
     fake_gh_cli.answer(PATH, stdout="[]")
     Gh().run(call(), host="ghe.example.com", timeout=10)
     env = fake_gh_cli.calls()[0]["env"]
     assert env["GH_HOST"] == "ghe.example.com"
     assert env["GH_PROMPT_DISABLED"] == "1"
     assert "GH_DEBUG" not in env
+    assert "GODEBUG" not in fake_gh_cli.calls()[0]["all_env"]
     assert "HZ_CREDENTIAL_GITHUB_GITHUB_TOKEN" not in env
 
 
@@ -45,6 +47,20 @@ def test_an_error_keeps_the_exit_code_stderr_and_body(fake_gh_cli):
         "gh: Not Found (HTTP 404)\n",
         b'{"message": "Not Found"}',
     )
+
+
+def test_stderr_is_capped(fake_gh_cli):
+    fake_gh_cli.answer(PATH, stdout="[]", stderr="e" * (_gh.MAX_ERROR_BYTES + 10_000))
+    result = Gh().run(call(), host="github.com", timeout=10)
+    assert len(result.stderr) == _gh.MAX_ERROR_BYTES
+    assert not result.truncated
+
+
+def test_a_login_check_that_hangs_counts_as_not_logged_in(fake_gh_cli, monkeypatch):
+    monkeypatch.setattr(_gh, "AUTH_TIMEOUT", 0.3)
+    fake_gh_cli.routes["auth_sleep"] = 30
+    fake_gh_cli.login("github.com")
+    assert not Gh().logged_in("github.com")
 
 
 def test_gh_is_stopped_at_the_timeout(fake_gh_cli):

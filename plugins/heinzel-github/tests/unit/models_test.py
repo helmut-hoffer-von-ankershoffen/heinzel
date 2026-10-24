@@ -34,6 +34,11 @@ def test_only_host_names_are_accepted(host):
         GithubSettings(host=host)
 
 
+def test_a_leftover_api_url_is_refused_with_the_setting_that_replaced_it():
+    with pytest.raises(ValidationError, match=r"hz system config set github\.host ghe\.example\.com"):
+        GithubSettings(api_url="https://ghe.example.com/api/v3")
+
+
 def test_a_project_file_may_not_set_the_host():
     assert "host" in GithubSettings.ignored_in_project
 
