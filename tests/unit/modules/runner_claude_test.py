@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from heinzel import Budget, HeinzelError, McpServer, Progress, Status, ToolProfile
-from heinzel.modules.system.runner._claude import ClaudeCodeRunner, login_check, parse_events
+from heinzel.modules.system.runner._claude import SIGN_IN, ClaudeCodeRunner, login_check, parse_events
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import Outcome
 
@@ -347,14 +347,14 @@ def recorded(error: str | None, result: str, *, subtype: str = "success", reason
         (
             "authentication_failed",
             "Not logged in · Please run /login",
-            "Claude Code isn't logged in: run `claude auth login` (Not logged in · Please run /login)",
+            f"Claude Code isn't signed in: {SIGN_IN} (Not logged in · Please run /login)",
             "claude auth login",
         ),
         (
             "authentication_failed",
             "Failed to authenticate: OAuth session expired and could not be refreshed",
             (
-                "Claude Code's login expired: run `claude auth login` "
+                f"Claude Code's sign-in expired: {SIGN_IN} "
                 "(Failed to authenticate: OAuth session expired and could not be refreshed)"
             ),
             "claude auth login",

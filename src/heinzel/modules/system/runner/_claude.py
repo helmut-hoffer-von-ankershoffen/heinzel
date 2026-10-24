@@ -294,12 +294,18 @@ LOGIN = "claude auth login"
 """The fix when Claude Code isn't logged in, or its login expired: it signs in without a session."""
 ERROR_TEXT = 300
 """Characters of Claude Code's own error text kept in a detail line."""
+SIGN_IN = "run `claude` in a terminal and `/login` (or `claude auth login`), then try again"
+"""What to do about a missing or expired sign-in, as the chat shows it."""
 KNOWN_ERRORS = (
     # (what Claude Code says, as a lower-case fragment or its error code; what to tell the person; the fix)
-    (("expired", "could not be refreshed"), "Claude Code's login expired: run `claude auth login`", LOGIN),
+    (
+        ("expired", "could not be refreshed"),
+        f"Claude Code's sign-in expired: {SIGN_IN}",
+        LOGIN,
+    ),
     (
         ("authentication_failed", "not logged in", "failed to authenticate", "invalid api key", "/login"),
-        "Claude Code isn't logged in: run `claude auth login`",
+        f"Claude Code isn't signed in: {SIGN_IN}",
         LOGIN,
     ),
     (("rate_limit", "rate limit", "429"), "Claude Code hit a rate limit; try again in a minute", ""),
