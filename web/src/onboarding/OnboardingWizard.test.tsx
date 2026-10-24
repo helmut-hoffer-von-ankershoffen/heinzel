@@ -163,3 +163,82 @@ describe("Onboarding focus and answers", { timeout: 20_000 }, () => {
     expect(screen.queryByRole("dialog", { name: "Set up hz" })).not.toBeInTheDocument();
   });
 });
+
+describe("Onboarding notifications step", { timeout: 20_000 }, () => {
+  const channel = (name: string, state: string, extra = {}) => ({
+    name,
+    state,
+    detail: `${name} detail`,
+    fix: null,
+    command: null,
+    ...extra,
+  });
+  const blocked = {
+    notice: { id: "n1", title: "Test", body: "x", severity: "urgent" },
+    native: "macOS doesn't allow Heinzel Notifier",
+    pops_up: false,
+    channels: [
+      channel("web", "ready"),
+      channel("native", "blocked", { fix: "open-settings" }),
+      channel("daemon", "missing", { fix: "install-daemon", command: "hz system daemon install" }),
+    ],
+  };
+  const idle = { installed: false, loaded: false, paused: false, jobs: 0, failing: [] };
+  const open = async (extra: Record<string, unknown>) => {
+    mockApi({
+      ...answers,
+      "/api/org/show": newcomer,
+      "/api/system/notify/list": { notices: [], waiting: 0 },
+      ...extra,
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const dialog = await screen.findByRole("dialog", { name: "Set up hz" });
+    await user.click(within(dialog).getByRole("button", { name: /Notifications/ }));
+    return { user, dialog };
+  };
+
+  it("shows how each way of reaching you stands after the test notice, with its fix", async () => {
+    const { user, dialog } = await open({
+      "/api/system/notify/test": { status: 503, body: blocked },
+      "/api/system/daemon/status": idle,
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Send a test notice" }));
+    const result = await within(dialog).findByRole("region", { name: "How the test went" });
+    expect(within(result).getByText(/native detail/)).toBeInTheDocument();
+    expect(within(result).getByRole("button", { name: "Install daemon" })).toBeInTheDocument();
+  });
+
+  it("says why the test notice failed", async () => {
+    const { user, dialog } = await open({
+      "/api/system/notify/test": { status: 400, body: { error: "Notifications are off" } },
+      "/api/system/daemon/status": idle,
+    });
+    await user.click(within(dialog).getByRole("button", { name: "Send a test notice" }));
+    expect(await within(dialog).findByText(/Notifications are off/)).toHaveAttribute("role", "alert");
+  });
+
+  it("closes the dialog when the daemon install goes to the terminal, so the terminal is seen", async () => {
+    const sent: string[] = [];
+    connectTerminal((text) => sent.push(text));
+    const { user, dialog } = await open({ "/api/system/daemon/status": idle });
+    await user.click(within(dialog).getByRole("button", { name: "Install the daemon" }));
+    await user.click(within(dialog).getByRole("button", { name: "Run it" }));
+    expect(sent).toEqual(["hz system daemon install\r"]);
+    expect(screen.queryByRole("dialog", { name: "Set up hz" })).not.toBeInTheDocument();
+    connectTerminal(null);
+  });
+
+  it("says the daemon is installed and running, or installed but not running", async () => {
+    const running = await open({
+      "/api/system/daemon/status": { ...idle, installed: true, loaded: true },
+    });
+    expect(await within(running.dialog).findByText("Daemon installed and running")).toBeInTheDocument();
+    expect(within(running.dialog).queryByRole("button", { name: "Install the daemon" })).not.toBeInTheDocument();
+  });
+
+  it("says when the daemon is installed but not running", async () => {
+    const { dialog } = await open({ "/api/system/daemon/status": { ...idle, installed: true } });
+    expect(await within(dialog).findByText(/Installed, but not running yet/)).toBeInTheDocument();
+  });
+});

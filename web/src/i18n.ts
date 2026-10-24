@@ -74,7 +74,9 @@ const en = {
   "onboarding.notifications.native": "On this computer",
   "onboarding.notifications.nativeHint": "Send a test notice to see how hz pops up on this computer.",
   "onboarding.notifications.test": "Send a test notice",
-  "onboarding.notifications.tested": "Sent; it should pop up in a moment",
+  "onboarding.notifications.installed": "Daemon installed and running",
+  "onboarding.notifications.notLoaded":
+    "Installed, but not running yet: install again, or see hz system daemon status.",
   "onboarding.notifications.daemon": "In the background",
   "onboarding.notifications.daemonHint": "The daemon runs your schedules and notices while hz isn't open.",
   "onboarding.notifications.install": "Install the daemon",

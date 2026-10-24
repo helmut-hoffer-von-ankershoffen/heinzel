@@ -9,7 +9,7 @@ import { Check, X } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, type SchemaProfile, unwrap } from "@/api/client";
-import { keys, useConfig, usePlaybooks, useProfile, useSetSetting, useTestNotice } from "@/api/queries";
+import { keys, useConfig, usePlaybooks, useProfile, useSetSetting } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { ThemePreviews } from "@/layout/ThemePreviews";
@@ -17,6 +17,7 @@ import { TimeZonePicker } from "@/layout/TimeZonePicker";
 import { runInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { setDesktop, useDesktopState } from "@/notifications/desktop";
+import { NotificationTest } from "@/notifications/NotificationTest";
 import {
   contractName,
   loadProgress,
@@ -217,7 +218,7 @@ function Step({ id, onClose }: { id: StepId; onClose: () => void }) {
     case "connectors":
       return <SettingsLink section="connectors" label="onboarding.connectors.open" onClose={onClose} />;
     case "notifications":
-      return <Notifications />;
+      return <Notifications onClose={onClose} />;
     case "first":
       return <FirstHeinzel />;
   }
@@ -327,13 +328,26 @@ function YouForm({ me }: { me: SchemaProfile }) {
 }
 
 /** A command that changes this machine, typed into the terminal only after the person confirms it here. */
-function Confirmed({ command, label, disabled }: { command: string; label: string; disabled?: boolean }) {
+function Confirmed({
+  command,
+  label,
+  disabled,
+  onRun,
+}: {
+  command: string;
+  label: string;
+  disabled?: boolean;
+  onRun?: () => void;
+}) {
   // The command as it was when asked, so editing the field behind the question can't change what runs.
   const [asking, setAsking] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const done = (run: boolean) => {
-    if (run && asking) runInTerminal(asking);
+    if (run && asking) {
+      runInTerminal(asking);
+      onRun?.();
+    }
     setSent(run);
     setAsking(null);
     // The question unmounts; the focus goes back to the button that asked it.
@@ -449,9 +463,17 @@ function TeamForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Notifications() {
+/** `hz system daemon status`, re-read while the step is open: the terminal install is seen when it finishes. */
+const useDaemonStatus = () =>
+  useQuery({
+    queryKey: ["system", "daemon", "status"],
+    queryFn: () => unwrap(api.GET("/system/daemon/status")),
+    refetchInterval: 3000,
+  });
+
+function Notifications({ onClose }: { onClose: () => void }) {
   const state = useDesktopState();
-  const test = useTestNotice();
+  const daemon = useDaemonStatus().data;
   const [busy, setBusy] = useState(false);
   return (
     <div className="flex max-w-lg flex-col gap-5">
@@ -468,17 +490,27 @@ function Notifications() {
         </Button>
       </Item>
       <Item title={t("onboarding.notifications.native")} hint={t("onboarding.notifications.nativeHint")}>
-        <Button variant="outline" disabled={test.isPending} onClick={() => test.mutate()}>
-          {t("onboarding.notifications.test")}
-        </Button>
-        {test.isSuccess && (
-          <span role="status" className="text-xs text-muted-foreground">
-            {t("onboarding.notifications.tested")}
-          </span>
-        )}
+        <NotificationTest label={t("onboarding.notifications.test")} onTerminal={onClose} />
       </Item>
       <Item title={t("onboarding.notifications.daemon")} hint={t("onboarding.notifications.daemonHint")}>
-        <Confirmed command="hz system daemon install" label={t("onboarding.notifications.install")} />
+        {daemon?.installed && daemon.loaded ? (
+          <span role="status" className="text-sm text-ok">
+            {t("onboarding.notifications.installed")}
+          </span>
+        ) : (
+          <>
+            <Confirmed
+              command="hz system daemon install"
+              label={t("onboarding.notifications.install")}
+              onRun={onClose}
+            />
+            {daemon?.installed && (
+              <span role="status" className="text-xs text-warn">
+                {t("onboarding.notifications.notLoaded")}
+              </span>
+            )}
+          </>
+        )}
       </Item>
     </div>
   );
