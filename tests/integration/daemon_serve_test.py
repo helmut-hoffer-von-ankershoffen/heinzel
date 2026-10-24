@@ -51,17 +51,26 @@ def test_serve_daemon_prints_each_tick_as_a_json_line(kernel, monkeypatch, calls
 def test_serve_daemon_reports_failing_ticks_and_goes_on(kernel, monkeypatch, settings):
     import heinzel.heads.daemon as head
 
-    receipts = settings.data_dir / "receipts"
-    receipts.mkdir(parents=True)
-    (receipts / "broken.json").write_text("{", encoding="utf-8")
+    settings.state_dir.mkdir(parents=True, exist_ok=True)
+    (settings.state_dir / "daemon").write_text("not a directory", encoding="utf-8")  # the tick lock can't be taken
     real = head.serve
-    monkeypatch.setattr(head, "serve", lambda k, i, report: real(k, i, report, ticks=1))
+    monkeypatch.setattr(head, "serve", lambda k, i, report: real(k, i, report, ticks=2, sleep=lambda _: None))
     result = runner.invoke(build(kernel), ["system", "serve", "daemon"])
     assert result.exit_code == 0
-    assert "Tick failed" in result.output
+    assert result.output.count("Tick failed with a bug") == 2
 
 
 def test_serve_daemon_rejects_a_malformed_interval(kernel):
     result = runner.invoke(build(kernel), ["system", "serve", "daemon", "--interval", "soon"])
     assert result.exit_code == 2
     assert "Invalid value" in result.output
+
+
+def test_serve_daemon_reports_heinzel_errors_as_failed_ticks(kernel, monkeypatch):
+    import heinzel.heads.daemon as head
+    from heinzel import HeinzelError
+
+    monkeypatch.setattr(head, "serve", lambda k, i, report: report(HeinzelError("ledger [broken]")))
+    result = runner.invoke(build(kernel), ["system", "serve", "daemon"])
+    assert result.exit_code == 0
+    assert "Tick failed: ledger [broken]" in result.output

@@ -1,13 +1,21 @@
-"""What a tick needs from the machine: a lock, a log, a time limit for jobs and subprocesses with timeouts."""
+"""What a tick needs from the machine: private files, a lock, a log, a time limit for jobs and subprocesses.
+
+Receipts, state and logs can contain job output and errors, so directories are created 0700 and files 0600,
+whatever the umask, and every file is written to a temporary name, flushed to disk and renamed, so a crash or a full
+disk never leaves half a file.
+"""
 
 import fcntl
+import io
 import json
 import logging
+import os
 import subprocess
 import threading
 from collections import deque
 from collections.abc import Callable, Generator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -22,9 +30,25 @@ COMMAND_TIMEOUT = 60
 """Seconds launchctl, systemctl and uv may take; they answer in milliseconds unless something is broken."""
 LOG_BYTES = 1_000_000
 LOG_BACKUPS = 5
+PRIVATE_DIR = 0o700
+PRIVATE_FILE = 0o600
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
-TimeLimit = Callable[[Callable[[], object], float], str | None]
+
+
+@dataclass(frozen=True, slots=True)
+class Outcome:
+    """How one attempt to run a job ended."""
+
+    value: object = None
+    """What the job returned."""
+    error: str | None = None
+    """What went wrong, or None."""
+    abandoned: threading.Thread | None = None
+    """The thread of a job that overran its timeout and may still be running."""
+
+
+TimeLimit = Callable[[Callable[[], object], float], Outcome]
 
 
 def run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -40,26 +64,70 @@ def describe(exc: BaseException) -> str:
     return str(exc) if isinstance(exc, HeinzelError) else f"{type(exc).__name__}: {exc}"
 
 
-def within(func: Callable[[], object], seconds: float) -> str | None:
-    """Run `func` in a daemon thread for at most `seconds`; return what went wrong, or None.
+def within(func: Callable[[], object], seconds: float) -> Outcome:
+    """Run `func` in a daemon thread for at most `seconds`.
 
-    A job that overruns is abandoned, not stopped: Python can't kill a thread. The thread is a daemon thread so the
-    tick process still exits; per-job subprocesses that can be killed come later (ADR 0020).
+    A job that overruns is abandoned, not stopped: Python can't kill a thread, so it may go on and still have side
+    effects. The thread is a daemon thread so the tick process still exits; per-job subprocesses that can be killed
+    come later (ADR 0020).
     """
-    problems: list[str] = []
+    results: list[Outcome] = []
 
     def target() -> None:
         try:
-            func()
+            results.append(Outcome(value=func()))
         except BaseException as exc:  # noqa: BLE001 - a job's failure is recorded in its receipt, never raised
-            problems.append(describe(exc))
+            results.append(Outcome(error=describe(exc)))
 
     thread = threading.Thread(target=target, name="hz-job", daemon=True)
     thread.start()
     thread.join(seconds)
     if thread.is_alive():
-        return f"timed out after {seconds:g}s"
-    return problems[0] if problems else None
+        error = f"timed out after {seconds:g}s and was abandoned; it may still be running and have side effects"
+        return Outcome(error=error, abandoned=thread)
+    return results[0]
+
+
+def private_dir(path: Path) -> Path:
+    """Create `path` and its missing parents as 0700, and make `path` itself 0700."""
+    missing = [p for p in (path, *path.parents) if not p.exists()]
+    for directory in reversed(missing):
+        directory.mkdir(mode=PRIVATE_DIR, exist_ok=True)
+    path.chmod(PRIVATE_DIR)
+    return path
+
+
+def _fsync_dir(directory: Path) -> None:
+    descriptor = os.open(directory, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def write_private(path: Path, text: str, mode: int = PRIVATE_FILE, *, shared_dir: bool = False) -> None:
+    """Write `text` atomically and durably: a temporary file with `mode`, fsync, rename, fsync of the directory.
+
+    The directory is made private (0700) unless `shared_dir`, e.g. for unit files in ~/Library/LaunchAgents.
+    """
+    if shared_dir:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        private_dir(path.parent)
+    temporary = path.with_name(f".{path.name}.tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    temporary.chmod(mode)  # the umask may have narrowed or widened os.open's mode
+    temporary.replace(path)
+    _fsync_dir(path.parent)
+
+
+def _open_private(path: Path, flags: int) -> int:
+    private_dir(path.parent)
+    return os.open(path, flags | os.O_CREAT, PRIVATE_FILE)
 
 
 @contextmanager
@@ -69,8 +137,7 @@ def lock(path: Path) -> Generator[bool]:
     Yields:
         True while holding the lock; False, without waiting, if another process holds it.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as handle:
+    with os.fdopen(_open_private(path, os.O_WRONLY | os.O_APPEND), "a") as handle:
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
@@ -82,23 +149,36 @@ def lock(path: Path) -> Generator[bool]:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+class _PrivateRotatingFileHandler(RotatingFileHandler):
+    """Opens the log and each new file after a rotation as 0600."""
+
+    def _open(self) -> io.TextIOWrapper:
+        descriptor = _open_private(Path(self.baseFilename), os.O_WRONLY | os.O_APPEND)
+        return os.fdopen(descriptor, "a", encoding=self.encoding)
+
+
 class TickLog:
     """The daemon's JSON-lines log, rotated by size because launchd never rotates its own output files."""
 
-    def __init__(self, path: Path, tick: str) -> None:
-        """Log to `path` on behalf of one tick."""
+    def __init__(self, path: Path, tick: str, clock: Callable[[], datetime]) -> None:
+        """Log to `path` on behalf of one tick; each line carries the time `clock` gives when it is written."""
         self.path = path
         self._tick = tick
+        self._clock = clock
         self._handler: RotatingFileHandler | None = None
 
-    def write(self, at: datetime, level: int, message: str, **fields: Any) -> None:  # noqa: ANN401 - JSON fields
+    def write(self, level: int, message: str, **fields: Any) -> None:  # noqa: ANN401 - JSON fields
         """Append one line."""
         if self._handler is None:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self._handler = RotatingFileHandler(
+            self._handler = _PrivateRotatingFileHandler(
                 self.path, maxBytes=LOG_BYTES, backupCount=LOG_BACKUPS, encoding="utf-8"
             )
-        line = {"at": at.isoformat(), "level": logging.getLevelName(level), "message": message, "tick": self._tick}
+        line = {
+            "at": self._clock().isoformat(),
+            "level": logging.getLevelName(level),
+            "message": message,
+            "tick": self._tick,
+        }
         line |= {key: value for key, value in fields.items() if value is not None}
         self._handler.emit(logging.makeLogRecord({"msg": json.dumps(line), "levelno": level}))
 

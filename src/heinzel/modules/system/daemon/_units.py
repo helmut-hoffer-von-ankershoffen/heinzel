@@ -57,8 +57,9 @@ def launchd_plist(executable: Path, minutes: int, log_dir: Path) -> str:
         "LowPriorityIO": True,
         "Nice": NICE,
         "RunAtLoad": False,
-        # The tick logs to its own rotated JSON-lines file; these catch only crashes, since launchd never rotates them.
-        "StandardOutPath": str(log_dir / "launchd.out.log"),
+        # The tick logs to its own rotated JSON-lines file. Its report on stdout goes nowhere and stderr catches only
+        # crashes, because launchd never rotates these files.
+        "StandardOutPath": "/dev/null",
         "StandardErrorPath": str(log_dir / "launchd.err.log"),
         "EnvironmentVariables": {"PATH": f"{executable.parent}:{PATH}"},
     }
@@ -73,7 +74,7 @@ def on_calendar(minutes: int) -> str:
 
 def systemd_service(executable: Path) -> str:
     """The oneshot service that runs one tick."""
-    command = shlex.join([str(executable), *TICK])
+    command = shlex.join([str(executable), *TICK]).replace("%", "%%")  # systemd expands % specifiers
     return (
         "[Unit]\n"
         "Description=Heinzelmännchen daemon tick\n"
@@ -82,6 +83,7 @@ def systemd_service(executable: Path) -> str:
         "[Service]\n"
         "Type=oneshot\n"
         f"ExecStart={command}\n"
+        "StandardOutput=null\n"
         f"Nice={NICE}\n"
         "IOSchedulingClass=idle\n"
         f"TimeoutStartSec={TICK_TIMEOUT}\n"

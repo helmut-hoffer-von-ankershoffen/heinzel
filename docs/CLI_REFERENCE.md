@@ -473,7 +473,7 @@ $ hz system daemon status [OPTIONS]
 
 #### `hz system daemon tick`
 
-Run the jobs that are due and write a receipt for each; launchd or systemd call this.
+Run the jobs that are due and write a receipt for each; exits with 1 if any job failed.
 
 **Usage**:
 

@@ -9,6 +9,7 @@ from heinzel.kernel import parse_duration
 from heinzel.modules.system.daemon._models import (
     DaemonSettings,
     DaemonStatus,
+    Disposition,
     Installed,
     JobInfo,
     LogLine,
@@ -21,13 +22,21 @@ from heinzel.modules.system.daemon._render import render_installed, render_jobs,
 from heinzel.modules.system.daemon._service import DaemonService
 
 module = Module("daemon", "Run modules' jobs in the background, supervised by launchd or systemd.")
+"""Jobs run unattended, with your rights, on their schedule once installed (SECURITY.md). Stop them with
+`hz system daemon pause`, `hz system daemon uninstall`, or by disabling the module that brings them."""
 module.settings(DaemonSettings)
-module.service(DaemonService)
+module.service(DaemonService, DaemonService.for_user)
 
 INTERVAL_PATTERN = r"^[1-9][0-9]*m$|^1h$"
 
 
-@module.operation(read_only=False, render=render_installed)
+def _tick_exit_code(report: TickReport) -> int:
+    return 1 if any(run.disposition is Disposition.FAILED for run in report.runs) else 0
+
+
+# Installing persistence that runs code at every login is a deliberate human act, not something an agent does over
+# MCP or a client over REST.
+@module.operation(read_only=False, render=render_installed, heads={"cli"})
 def install(
     service: DaemonService,
     interval: Annotated[
@@ -39,7 +48,7 @@ def install(
     return service.install(parse_duration(interval), dry_run=dry_run)
 
 
-@module.operation(read_only=False)
+@module.operation(read_only=False, heads={"cli"})
 def uninstall(service: DaemonService) -> Uninstalled:
     """Unload and remove the daemon's unit; receipts and logs stay."""
     return service.uninstall()
@@ -60,7 +69,7 @@ def logs(
     return service.logs(lines)
 
 
-@module.operation(read_only=False, render=render_tick)
+@module.operation(read_only=False, render=render_tick, exit_code=_tick_exit_code)
 def tick(
     service: DaemonService,
     dry_run: Annotated[bool, Field(description="Only show which jobs are due; run nothing.")] = False,
@@ -68,7 +77,7 @@ def tick(
         str | None, Field(description="Run this job now, as `<module>:<job>` from `hz system daemon jobs`.")
     ] = None,
 ) -> TickReport:
-    """Run the jobs that are due and write a receipt for each; launchd or systemd call this."""
+    """Run the jobs that are due and write a receipt for each; exits with 1 if any job failed."""
     return service.tick(dry_run=dry_run, job=job)
 
 

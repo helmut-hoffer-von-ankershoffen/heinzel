@@ -1,8 +1,11 @@
 """DaemonService with a fake clock, a fake runner and temporary directories: never the real launchd, systemd or home."""
 
 import json
+import os
+import stat
 import subprocess
-from datetime import datetime, timedelta
+import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -12,7 +15,7 @@ from heinzel import Check, HeinzelError, Kernel, Module, Status
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
-from heinzel.modules.system.daemon._runtime import lock, within
+from heinzel.modules.system.daemon._runtime import Outcome, lock, within
 from heinzel.modules.system.daemon._units import LABEL
 
 pytestmark = pytest.mark.unit
@@ -22,14 +25,22 @@ T0 = datetime(2026, 10, 5, 10, 2, tzinfo=BERLIN)
 
 
 class Clock:
+    """Like production's `datetime.now().astimezone()`: a fixed UTC offset, not the zone's rules."""
+
     def __init__(self, now: datetime = T0) -> None:
         self.now = now
 
     def __call__(self) -> datetime:
-        return self.now
+        local = self.now.astimezone(BERLIN)
+        offset = local.utcoffset()
+        assert offset is not None
+        return local.replace(tzinfo=timezone(offset))
 
-    def set(self, hour: int, minute: int = 0) -> None:
-        self.now = self.now.replace(hour=hour, minute=minute)
+    def set(self, hour: int, minute: int = 0, day: int | None = None, month: int | None = None) -> None:
+        local = self.now.astimezone(BERLIN)
+        self.now = local.replace(
+            month=month or local.month, day=day or local.day, hour=hour, minute=minute, tzinfo=BERLIN
+        )
 
 
 class Runner:
@@ -106,6 +117,7 @@ def make(make_kernel, settings, tmp_path, bin_dir):
             clock=clock or Clock(),
             which=lambda name: f"/bin/{name}",
             time_limit=time_limit,
+            zone=BERLIN,
         )
 
     return build
@@ -259,7 +271,7 @@ def test_health_flags_a_daemon_that_stopped_ticking(make, jobs):
 def test_health_flags_pause_and_failing_jobs(make, calls):
     broken = Module("broken", "Broken jobs.")
 
-    @broken.job(schedule="not cron")
+    @broken.job(schedule="0 0 31 2 *")
     def invalid() -> None:
         """Never runs."""
 
@@ -350,10 +362,37 @@ def test_a_job_without_receipts_starts_at_the_previous_tick(make, jobs, calls):
     clock = Clock()
     service = make(clock=clock)
     service.tick()  # leaves a heartbeat at 10:02
-    clock.set(12, 3)
+    clock.set(10, 6)
     report = make(jobs, clock=clock).tick()
-    every_slot = [run.as_of.hour for run in report.runs if run.job == "example:every-slot"]
-    assert every_slot == [11, 12]
+    assert [run.job for run in report.runs] == []  # 10:00 fell before the previous tick
+
+
+def test_a_new_job_after_a_long_pause_runs_only_the_latest_interval(make, jobs, calls):
+    clock = Clock()
+    make(clock=clock).tick()  # a heartbeat at 10:02, then the machine is off for hours
+    clock.set(15, 3)
+    report = make(jobs, clock=clock).tick()
+    assert {(run.job, run.as_of.hour) for run in report.runs} == {
+        ("example:hourly", 15),
+        ("example:every-slot", 15),
+        ("example:on-time", 15),
+    }
+
+
+def test_a_last_run_in_the_future_means_the_clock_went_back(make, jobs, calls):
+    clock = Clock()
+    clock.set(15, 1)
+    service = make(jobs, clock=clock)
+    service.tick()
+    clock.set(11, 1)
+    assert {run.as_of.hour for run in service.tick(dry_run=True).runs} == {11}
+    report = service.tick()
+    assert {(run.job, run.as_of.hour) for run in report.runs} == {
+        ("example:hourly", 11),
+        ("example:every-slot", 11),
+        ("example:on-time", 11),
+    }
+    assert any("the clock went back" in line.message and line.level == "WARNING" for line in service.logs(20))
 
 
 def test_receipts_chain_and_record_the_slot(make, jobs, settings):
@@ -395,17 +434,39 @@ def test_failures_are_retried_within_the_tick(make, calls):
     assert (calls.count("try"), calls.count("never")) == (2, 3)
 
 
-def test_a_job_that_times_out_fails(make, jobs, calls):
+def test_a_job_that_times_out_is_final_and_skipped_while_it_still_runs(make, calls):
+    slow = Module("slow", "Slow jobs.")
+
+    @slow.job(schedule="0 * * * *", retries=3)
+    def stuck() -> None:
+        """Overruns."""
+
+    still_running = threading.Event()
+    thread = threading.Thread(target=still_running.wait, daemon=True)
+    thread.start()
     seen = []
 
     def time_limit(func, seconds):
         seen.append(seconds)
-        return f"timed out after {seconds:g}s"
+        return Outcome(error="timed out after 900s and was abandoned; it may still have side effects", abandoned=thread)
 
-    report = make(jobs, time_limit=time_limit).tick()
-    assert {run.error for run in report.runs} == {"timed out after 900s"}
-    assert seen == [900.0, 900.0, 900.0]
-    assert calls == []
+    clock = Clock()
+    service = make(slow, clock=clock, time_limit=time_limit)
+    [first] = service.tick().runs
+    assert (first.disposition, seen) == (Disposition.FAILED, [900.0])  # no retry after a timeout
+    assert "abandoned" in (first.error or "")
+    clock.set(11, 1)
+    [second] = service.tick().runs
+    assert (second.disposition, second.error) == (
+        Disposition.SKIPPED,
+        "its previous run timed out and is still running",
+    )
+    assert seen == [900.0]
+    still_running.set()
+    thread.join()
+    clock.set(12, 1)
+    assert service.tick().runs[0].disposition is Disposition.FAILED
+    assert seen == [900.0, 900.0]
 
 
 def test_a_slot_whose_idempotency_key_was_rendered_is_skipped(make, calls):
@@ -464,6 +525,7 @@ def test_a_paused_daemon_runs_nothing(make, jobs, calls):
     assert service.pause().paused
     report = service.tick()
     assert (report.paused, report.runs, calls) == (True, [], [])
+    assert service.tick(dry_run=True).paused
     assert not service.resume().paused
     assert service.tick().runs
 
@@ -478,7 +540,7 @@ def test_a_tick_while_another_holds_the_lock_runs_nothing(make, jobs, calls, set
 def test_a_job_with_an_invalid_schedule_fails_without_a_receipt(make, calls):
     broken = Module("broken", "Broken jobs.")
 
-    @broken.job(schedule="every monday")
+    @broken.job(schedule="61 * * * *")
     def invalid() -> None:
         """Runs only by hand."""
         calls.append("invalid")
@@ -514,3 +576,163 @@ def test_status_asks_systemd_whether_the_timer_is_active(make, bin_dir):
 )
 def test_units_go_where_the_service_manager_looks(platform, tail):
     assert unit_dir(platform).parts[-2:] == tail
+
+
+# Containment
+
+
+def test_a_damaged_receipt_chain_fails_only_its_job(make, jobs, calls, settings):
+    clock = Clock()
+    service = make(jobs, clock=clock)
+    service.tick()
+    receipts = settings.data_dir / "receipts"
+    hourly = next(p for p in receipts.glob("*.json") if '"example:hourly"' in p.read_text(encoding="utf-8"))
+    hourly.write_text(hourly.read_text(encoding="utf-8").replace("rendered", "failed"), encoding="utf-8")
+    (receipts / "garbage.json").write_text("{", encoding="utf-8")
+    calls.clear()
+    clock.set(11, 1)
+    outcome = {run.job: (run.disposition, run.error or "") for run in service.tick().runs}
+    assert outcome["example:hourly"][0] is Disposition.FAILED
+    assert "changed after it was written" in outcome["example:hourly"][1]
+    assert outcome["example:every-slot"][0] is Disposition.RENDERED
+    assert sorted(calls) == ["every-slot", "on-time"]
+    assert "example:hourly" in service.status().failing
+    assert any("garbage.json is unreadable" in line.message for line in service.logs(20))
+    plan = {run.job: run.disposition for run in service.tick(dry_run=True).runs}
+    assert plan["example:hourly"] is Disposition.FAILED
+
+
+def test_an_idempotency_function_that_raises_fails_only_its_job(make, calls):
+    mixed = Module("mixed", "Mixed jobs.")
+
+    def broken_key(slot: datetime) -> str:
+        msg = "no key"
+        raise RuntimeError(msg)
+
+    @mixed.job(schedule="0 * * * *", idempotency=broken_key)
+    def keyless() -> None:
+        """Has a broken key."""
+        calls.append("keyless")
+
+    @mixed.job(schedule="0 * * * *")
+    def fine() -> None:
+        """Runs."""
+        calls.append("fine")
+
+    outcome = {run.job: (run.disposition, run.error) for run in make(mixed).tick().runs}
+    assert outcome == {
+        "mixed:keyless": (Disposition.FAILED, "RuntimeError: no key"),
+        "mixed:fine": (Disposition.RENDERED, None),
+    }
+    assert calls == ["fine"]
+
+
+def test_a_manual_run_never_cancels_the_scheduled_one(make, calls):
+    daily = Module("daily", "Once a day.")
+
+    @daily.job(schedule="0 * * * *", idempotency=lambda slot: slot.date().isoformat())
+    def digest() -> None:
+        """At most once a day."""
+        calls.append("digest")
+
+    clock = Clock()
+    clock.set(9, 30)
+    service = make(daily, clock=clock)
+    [manual] = service.tick(job="daily:digest").runs
+    assert manual.wake is Wake.MANUAL
+    clock.set(10, 2)
+    [scheduled] = service.tick().runs
+    assert (scheduled.wake, scheduled.disposition) == (Wake.SCHEDULE, Disposition.RENDERED)
+    assert calls == ["digest", "digest"]
+
+
+def test_the_receipt_keeps_what_the_job_returned(make, jobs, settings):
+    make(jobs).tick()
+    chain = Ledger(settings.data_dir / "receipts").chain("example:hourly")
+    assert chain[0].result == "done"
+
+
+# Daylight saving time: cron means wall-clock time in the user's zone, whatever offset the clock reports
+
+
+def daily_module(calls: list[str], schedule: str) -> Module:
+    module = Module("daily", "Daily jobs.")
+
+    @module.job(schedule=schedule, catch_up="all")
+    def report() -> None:
+        """Report daily."""
+        calls.append("report")
+
+    return module
+
+
+def test_catch_up_across_the_change_to_winter_time_keeps_the_wall_clock_time(make, calls, settings):
+    clock = Clock(datetime(2026, 10, 24, 9, 1, tzinfo=BERLIN))
+    service = make(daily_module(calls, "0 9 * * *"), clock=clock)
+    service.tick()  # 24 October 09:00 summer time, stored as +02:00
+    clock.set(10, 0, day=27)
+    runs = service.tick().runs
+    assert [run.as_of.isoformat() for run in runs] == [
+        "2026-10-25T09:00:00+01:00",
+        "2026-10-26T09:00:00+01:00",
+        "2026-10-27T09:00:00+01:00",
+    ]
+    stored = Ledger(settings.data_dir / "receipts").chain("daily:report")
+    assert [r.as_of.utcoffset() for r in stored] == [timedelta(hours=2)] + [timedelta(hours=1)] * 3
+
+
+def test_a_time_that_happens_twice_when_the_clocks_go_back_runs_once(make, calls):
+    clock = Clock(datetime(2026, 10, 24, 2, 31, tzinfo=BERLIN))
+    service = make(daily_module(calls, "30 2 * * *"), clock=clock)
+    service.tick()
+    clock.now = datetime(2026, 10, 25, 4, 0, tzinfo=BERLIN)
+    [run] = service.tick().runs
+    assert run.as_of.isoformat() == "2026-10-25T02:30:00+02:00"  # the first 02:30
+    assert calls == ["report", "report"]
+
+
+def test_a_time_that_does_not_exist_when_the_clocks_go_forward_runs_shifted_by_the_gap(make, calls):
+    clock = Clock(datetime(2027, 3, 27, 2, 31, tzinfo=BERLIN))
+    service = make(daily_module(calls, "30 2 * * *"), clock=clock)
+    service.tick()
+    clock.now = datetime(2027, 3, 28, 12, 0, tzinfo=BERLIN)
+    [run] = service.tick().runs
+    assert run.as_of.isoformat() == "2027-03-28T03:30:00+02:00"
+
+
+# Files
+
+
+def mode(path: Path) -> int:
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+def test_receipts_state_and_logs_are_private_and_units_readable(make, jobs, settings, tmp_path):
+    previous = os.umask(0o022)
+    try:
+        service = make(jobs)
+        service.install(timedelta(minutes=5))
+        service.tick()
+        service.pause()
+    finally:
+        os.umask(previous)
+    receipts = settings.data_dir / "receipts"
+    assert mode(receipts) == 0o700
+    assert {mode(p) for p in receipts.glob("*.json")} == {0o600}
+    assert mode(settings.state_dir / "daemon") == 0o700
+    assert {mode(p) for p in (settings.state_dir / "daemon").iterdir()} == {0o600}
+    assert mode(settings.log_dir) == 0o700
+    assert mode(settings.log_dir / "daemon.jsonl") == 0o600
+    assert mode(tmp_path / "units" / f"{LABEL}.plist") == 0o644
+    assert mode(tmp_path / "units") != 0o700  # the LaunchAgents directory is left as it is
+
+
+def test_the_service_reads_user_settings_not_a_project_hz_toml(make_kernel, tmp_path, monkeypatch):
+    project = tmp_path / "repo"
+    project.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    (project / "hz.toml").write_text(f'[hz]\ndata_dir = "{elsewhere}"\n', encoding="utf-8")
+    monkeypatch.chdir(project)
+    monkeypatch.delenv("HZ_DATA_DIR")  # only the project file would set it
+    service = DaemonService.for_user(make_kernel())
+    assert not service.receipts_dir.is_relative_to(elsewhere)

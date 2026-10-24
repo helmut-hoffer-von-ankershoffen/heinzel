@@ -27,7 +27,7 @@
 	<key>StandardErrorPath</key>
 	<string>/Users/ada/Library/Logs/hz/launchd.err.log</string>
 	<key>StandardOutPath</key>
-	<string>/Users/ada/Library/Logs/hz/launchd.out.log</string>
+	<string>/dev/null</string>
 	<key>StartCalendarInterval</key>
 	<array>
 		<dict>

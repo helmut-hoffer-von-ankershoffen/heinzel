@@ -38,7 +38,7 @@ def serve(
 ) -> None:
     """Tick every `interval` until interrupted, or `ticks` times, handing each result or error to `report`.
 
-    A failing tick is reported and the loop goes on, as the next launchd or systemd firing would.
+    A failing tick, a bug included, is reported and the loop goes on, as the next launchd or systemd firing would.
 
     Raises:
         HeinzelError: If the daemon module is disabled.
@@ -48,7 +48,7 @@ def serve(
     while ticks is None or done < ticks:
         try:
             report(kernel.invoke(operation))
-        except HeinzelError as exc:
+        except Exception as exc:  # noqa: BLE001 - a loop that dies on one bad tick isn't a daemon; launchd wouldn't stop
             report(exc)
         done += 1
         if ticks is None or done < ticks:

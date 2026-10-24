@@ -2,6 +2,9 @@
 
 The OS supervises and the daemon ticks (ADR 0020): launchd or systemd starts `hz system daemon tick` every few
 minutes, a short-lived process that survives `hz system update`, crashes and sleep by construction.
+
+The service reads only user-scope configuration (site and user files and the environment, not a project's
+`hz.toml`), so the unit, the receipts and the logs are the same wherever `hz` runs, and a repository can't move them.
 """
 
 import json
@@ -11,11 +14,15 @@ import shutil
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-from heinzel import CatchUp, Check, HeinzelError, JobLet, Kernel, Settings, Status
+from pydantic import JsonValue
+from pydantic_core import to_jsonable_python
+
+from heinzel import CatchUp, Check, Config, HeinzelError, JobLet, Kernel, Settings, Status
+from heinzel.kernel import KERNEL_SECTION
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import (
@@ -31,7 +38,19 @@ from heinzel.modules.system.daemon._models import (
     Uninstalled,
     Wake,
 )
-from heinzel.modules.system.daemon._runtime import Runner, TickLog, TimeLimit, lock, run, tail, within
+from heinzel.modules.system.daemon._runtime import (
+    Outcome,
+    Runner,
+    TickLog,
+    TimeLimit,
+    describe,
+    lock,
+    private_dir,
+    run,
+    tail,
+    within,
+    write_private,
+)
 from heinzel.modules.system.daemon._units import (
     LABEL,
     SYSTEMD_NAME,
@@ -43,15 +62,17 @@ from heinzel.modules.system.daemon._units import (
     systemd_timer,
 )
 
+if TYPE_CHECKING:
+    import threading
+
 DEFAULT_INTERVAL = 5
 """Minutes between ticks unless `install --interval` says otherwise."""
 STALE_TICKS = 3
 """A daemon that missed this many intervals in a row is reported as degraded."""
 PLATFORMS = ("darwin", "linux")
-
-
-def _now() -> datetime:
-    return datetime.now().astimezone()
+UNIT_MODE = 0o644
+"""launchd and systemd read unit files; they hold no secrets."""
+MODULE_SECTION = "system.daemon"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +81,15 @@ class Job:
 
     id: str
     let: JobLet
+
+
+@dataclass(frozen=True, slots=True)
+class Due:
+    """A slot to handle in this tick: run it, or record why it is skipped."""
+
+    slot: datetime
+    wake: Wake
+    skip: str | None = None
 
 
 class DaemonService:
@@ -73,11 +103,12 @@ class DaemonService:
         runner: Runner = run,
         platform: str = sys.platform,
         uid: Callable[[], int] = os.getuid,
-        clock: Callable[[], datetime] = _now,
+        clock: Callable[[], datetime] | None = None,
         which: Callable[[str], str | None] = shutil.which,
         time_limit: TimeLimit = within,
+        zone: tzinfo | None = None,
     ) -> None:
-        """Create the service; the kernel and settings are injected, the rest is for tests.
+        """Create the service; `for_user` builds it for the kernel, tests pass the rest.
 
         Args:
             kernel: Finds the jobs and injects their parameters.
@@ -86,21 +117,30 @@ class DaemonService:
             runner: Runs launchctl, systemctl and uv.
             platform: `sys.platform`, to pick launchd or systemd.
             uid: The user id launchd's GUI domain is named after.
-            clock: The current time, aware of the local time zone.
+            clock: The current time, timezone-aware; now in `zone` by default.
             which: Finds executables.
-            time_limit: Runs a job with a timeout and returns its error.
+            time_limit: Runs a job with a timeout.
+            zone: The time zone cron expressions mean; the user's by default.
         """
         self._kernel = kernel
         self._runner = runner
         self._platform = platform
         self._uid = uid
-        self._clock = clock
+        self._zone = zone or schedule.local_zone()
+        self._clock = clock or (lambda: datetime.now(self._zone))
         self._which = which
         self._time_limit = time_limit
+        self._abandoned: dict[str, threading.Thread] = {}
         self.unit_dir = daemon.unit_dir
         self.receipts_dir = settings.data_dir / "receipts"
         self.state_dir = settings.state_dir / "daemon"
         self.log_path = settings.log_dir / "daemon.jsonl"
+
+    @classmethod
+    def for_user(cls, kernel: Kernel) -> "DaemonService":
+        """The service with user-scope settings: a project's `hz.toml` can't move the unit, receipts or logs."""
+        config = Config.load(Path.home())  # as if run from the home directory, like the uninstall skill does
+        return cls(kernel, config.settings(Settings, KERNEL_SECTION), config.settings(DaemonSettings, MODULE_SECTION))
 
     # Installing ------------------------------------------------------------------------------------------------------
 
@@ -123,10 +163,9 @@ class DaemonService:
                 commands=[],
                 dry_run=True,
             )
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        private_dir(self.log_path.parent)
         for path, content in files.items():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
+            write_private(path, content, UNIT_MODE, shared_dir=True)
         self._write_state(
             "install.json",
             {
@@ -230,13 +269,16 @@ class DaemonService:
         return checks
 
     def jobs(self) -> list[JobInfo]:
-        """Every job the kernel knows, with its schedule, next slot and last run."""
+        """Every job the kernel knows, with its schedule, next slot and last run; a damaged ledger is a problem."""
         ledger = Ledger(self.receipts_dir)
         now = self._clock()
         infos: list[JobInfo] = []
         for job in self._jobs():
             problem = schedule.problem(job.let.schedule)
-            last = ledger.last(job.id)
+            try:
+                last = ledger.last(job.id)
+            except HeinzelError as exc:
+                last, problem = None, str(exc)
             infos.append(
                 JobInfo(
                     job=job.id,
@@ -246,7 +288,9 @@ class DaemonService:
                     timeout_seconds=job.let.timeout.total_seconds(),
                     retries=job.let.retries,
                     catch_up=job.let.catch_up,
-                    next_run=None if problem else schedule.next_slot(job.let.schedule, now),
+                    next_run=None
+                    if schedule.problem(job.let.schedule)
+                    else schedule.next_slot(job.let.schedule, now, self._zone),
                     last_disposition=last.disposition if last else None,
                     last_as_of=last.as_of if last else None,
                     problem=problem,
@@ -267,8 +311,7 @@ class DaemonService:
 
     def pause(self) -> Toggled:
         """Turn the local kill switch on: ticks run no job until `resume`."""
-        self.state_dir.mkdir(parents=True, exist_ok=True)
-        (self.state_dir / "paused").touch()
+        write_private(self.state_dir / "paused", "")
         return Toggled(paused=True)
 
     def resume(self) -> Toggled:
@@ -281,8 +324,10 @@ class DaemonService:
     def tick(self, *, dry_run: bool = False, job: str | None = None) -> TickReport:
         """Run the jobs that are due, or `job` now, and write a receipt for each; `dry_run` only says what is due.
 
+        One job's failure, a damaged receipt chain included, fails that job only; the others still run.
+
         Raises:
-            HeinzelError: If `job` names no registered job, or the ledger is damaged.
+            HeinzelError: If `job` names no registered job.
         """
         now = self._clock()
         jobs = self._jobs()
@@ -291,18 +336,20 @@ class DaemonService:
             if not jobs:
                 msg = f"No job {job!r}; `hz system daemon jobs` lists them."
                 raise HeinzelError(msg)
-        if self.paused:
-            return TickReport(at=now, dry_run=dry_run, paused=True, locked=False, runs=[])
         if dry_run:
+            if self.paused:
+                return TickReport(at=now, dry_run=True, paused=True, locked=False, runs=[])
             return TickReport(at=now, dry_run=True, paused=False, locked=False, runs=self._plan(jobs, job, now))
         with lock(self.state_dir / "tick.lock") as acquired:
             if not acquired:
                 return TickReport(at=now, dry_run=False, paused=False, locked=True, runs=[])
-            log = TickLog(self.log_path, f"{now:%Y%m%dT%H%M%S}")
+            if self.paused:  # checked under the lock, so a `pause` that waited for a tick is honoured by the next
+                return TickReport(at=now, dry_run=False, paused=True, locked=False, runs=[])
+            log = TickLog(self.log_path, f"{now:%Y%m%dT%H%M%S}", self._clock)
             try:
                 runs = self._run(jobs, job, now, log)
                 self._write_state("heartbeat.json", {"last_tick": now.isoformat()})
-                log.write(now, logging.INFO, f"tick done: {len(runs)} run(s)")
+                log.write(logging.INFO, f"tick done: {len(runs)} run(s)")
             finally:
                 log.close()
         return TickReport(at=now, dry_run=False, paused=False, locked=False, runs=runs)
@@ -311,86 +358,134 @@ class DaemonService:
         ledger = Ledger(self.receipts_dir)
         planned: list[JobRun] = []
         for job in jobs:
-            for slot, wake, skip in self._due(ledger, job, manual, now):
-                planned.append(
-                    JobRun(
-                        job=job.id,
-                        as_of=slot,
-                        wake=wake,
-                        disposition=Disposition.SKIPPED if skip else None,
-                        error=skip,
-                    )
+            try:
+                due = self._due(ledger, job, manual, now, None)
+            except HeinzelError as exc:
+                planned.append(_failed(job, now, str(exc)))
+                continue
+            planned.extend(
+                JobRun(
+                    job=job.id,
+                    as_of=d.slot,
+                    wake=d.wake,
+                    disposition=Disposition.SKIPPED if d.skip else None,
+                    error=d.skip,
                 )
+                for d in due
+            )
         return planned
 
     def _run(self, jobs: list[Job], manual: str | None, now: datetime, log: TickLog) -> list[JobRun]:
         ledger = Ledger(self.receipts_dir)
+        ledger.broken()  # reads the receipts, so unreadable files are known before any job runs
+        for name in ledger.unreadable:
+            log.write(logging.WARNING, f"receipt file {name} is unreadable and was ignored")
         runs: list[JobRun] = []
         for job in jobs:
             problem = schedule.problem(job.let.schedule)
             if problem and manual is None:
-                log.write(now, logging.ERROR, problem, job=job.id)
-                runs.append(
-                    JobRun(job=job.id, as_of=now, wake=Wake.SCHEDULE, disposition=Disposition.FAILED, error=problem)
-                )
+                log.write(logging.ERROR, problem, job=job.id)
+                runs.append(_failed(job, now, problem))
                 continue
-            for slot, wake, reason in self._due(ledger, job, manual, now):
-                key = job.let.idempotency(slot) if job.let.idempotency else f"{job.id}@{slot.isoformat()}"
-                skip = reason
-                if skip is None and wake is Wake.SCHEDULE and ledger.rendered(job.id, key):
-                    skip = f"already rendered as {key}"
-                error = skip if skip is not None else self._execute(job)
-                disposition = (
-                    Disposition.SKIPPED if skip is not None else Disposition.FAILED if error else Disposition.RENDERED
-                )
-                receipt = ledger.append(
-                    job=job.id,
-                    wake=wake,
-                    disposition=disposition,
-                    as_of=slot,
-                    idempotency_key=key,
-                    error=error,
-                    written_at=self._clock(),
-                )
-                level = logging.ERROR if disposition is Disposition.FAILED else logging.INFO
-                log.write(now, level, f"{job.id} {disposition.value}", job=job.id, receipt=receipt.id, error=error)
-                runs.append(
-                    JobRun(job=job.id, as_of=slot, wake=wake, disposition=disposition, error=error, receipt=receipt.id)
-                )
+            try:
+                runs.extend(self._handle(ledger, job, due, log) for due in self._due(ledger, job, manual, now, log))
+            except Exception as exc:  # noqa: BLE001 - one job's damage (its ledger, its idempotency function) is its own
+                error = describe(exc)
+                log.write(logging.ERROR, f"{job.id} failed: {error}", job=job.id, error=error)
+                runs.append(_failed(job, now, error))
         return runs
 
-    def _due(
-        self, ledger: Ledger, job: Job, manual: str | None, now: datetime
-    ) -> list[tuple[datetime, Wake, str | None]]:
-        """The slots to handle now, each with its wake cause and, for slots to skip, why.
+    def _handle(self, ledger: Ledger, job: Job, due: Due, log: TickLog) -> JobRun:
+        """Run or skip one slot of a job and write its receipt."""
+        if due.wake is Wake.MANUAL:  # its own key space, so a manual run never cancels a scheduled one
+            key = f"manual:{job.id}@{due.slot.isoformat()}"
+        else:
+            key = job.let.idempotency(due.slot) if job.let.idempotency else f"{job.id}@{due.slot.isoformat()}"
+        skip = due.skip
+        if skip is None and due.wake is Wake.SCHEDULE and ledger.rendered(job.id, key):
+            skip = f"already rendered as {key}"
+        previous = self._abandoned.get(job.id)
+        if skip is None and previous is not None and previous.is_alive():
+            skip = "its previous run timed out and is still running"
+        outcome = Outcome(error=skip) if skip is not None else self._execute(job)
+        if skip is not None:
+            disposition = Disposition.SKIPPED
+        else:
+            disposition = Disposition.FAILED if outcome.error else Disposition.RENDERED
+        receipt = ledger.append(
+            job=job.id,
+            wake=due.wake,
+            disposition=disposition,
+            as_of=due.slot,
+            idempotency_key=key,
+            error=outcome.error,
+            written_at=self._clock(),
+            result=_json(outcome.value) if disposition is Disposition.RENDERED else None,
+        )
+        level = logging.ERROR if disposition is Disposition.FAILED else logging.INFO
+        log.write(level, f"{job.id} {disposition.value}", job=job.id, receipt=receipt.id, error=outcome.error)
+        return JobRun(
+            job=job.id,
+            as_of=due.slot,
+            wake=due.wake,
+            disposition=disposition,
+            error=outcome.error,
+            receipt=receipt.id,
+        )
 
-        A job without schedule receipts starts at the previous tick (or one interval ago on the first tick), so a new
-        job never replays its history, whatever its catch-up policy.
+    def _due(self, ledger: Ledger, job: Job, manual: str | None, now: datetime, log: TickLog | None) -> list[Due]:
+        """The slots to handle now.
+
+        Missed slots count from the job's last scheduled receipt. A job without one starts at the later of the
+        previous tick and one interval ago, so a new job, or one whose receipts were moved aside, never replays its
+        history, even after a long time without ticks. A last receipt more than an interval in the future means the
+        clock went back; the job then starts again from one interval ago.
+
+        Raises:
+            HeinzelError: If the job's receipts are damaged.
         """
         if manual is not None:
-            return [(now, Wake.MANUAL, None)]
+            return [Due(now, Wake.MANUAL)]
         if schedule.problem(job.let.schedule):
             return []
         interval = timedelta(minutes=self._interval())
         last = ledger.last(job.id, Wake.SCHEDULE)
-        after = last.as_of if last is not None else self._last_tick() or now - interval
+        start = max(filter(None, (self._last_tick(), now - interval)))
+        if last is not None and last.as_of > now + interval:
+            if log is not None:
+                log.write(
+                    logging.WARNING,
+                    f"{job.id}: last run {last.as_of.isoformat()} is in the future; the clock went back",
+                    job=job.id,
+                )
+            after = now - interval
+        else:
+            after = last.as_of if last is not None else start
+        rule = job.let.schedule
         if job.let.catch_up is CatchUp.ALL:
-            return [(slot, Wake.SCHEDULE, None) for slot in schedule.slots(job.let.schedule, after, now)]
-        slot = schedule.latest(job.let.schedule, after, now)
+            return [Due(slot, Wake.SCHEDULE) for slot in schedule.slots(rule, after, now, self._zone)]
+        slot = schedule.latest(rule, after, now, self._zone)
         if slot is None:
             return []
         if job.let.catch_up is CatchUp.SKIP and now - slot > interval:
-            return [(slot, Wake.SCHEDULE, "missed slot; catch_up is skip")]
-        return [(slot, Wake.SCHEDULE, None)]
+            return [Due(slot, Wake.SCHEDULE, "missed slot; catch_up is skip")]
+        return [Due(slot, Wake.SCHEDULE)]
 
-    def _execute(self, job: Job) -> str | None:
-        """Run a job through kernel injection with its timeout, retrying failures; the last error, or None."""
-        error: str | None = None
+    def _execute(self, job: Job) -> Outcome:
+        """Run a job through kernel injection with its timeout, retrying failures but never a timeout.
+
+        A job that timed out may still be running, so running it again could do its work twice; its thread is
+        remembered, and the job is skipped while it is alive.
+        """
+        outcome = Outcome()
         for _ in range(job.let.retries + 1):
-            error = self._time_limit(lambda: self._kernel.call(job.let.func), job.let.timeout.total_seconds())
-            if error is None:
-                return None
-        return error
+            outcome = self._time_limit(lambda: self._kernel.call(job.let.func), job.let.timeout.total_seconds())
+            if outcome.abandoned is not None:
+                self._abandoned[job.id] = outcome.abandoned
+                return outcome
+            if outcome.error is None:
+                return outcome
+        return outcome
 
     # Helpers ---------------------------------------------------------------------------------------------------------
 
@@ -506,8 +601,13 @@ class DaemonService:
         return cast("dict[str, str | int]", data) if isinstance(data, dict) else {}
 
     def _write_state(self, name: str, data: dict[str, str | int]) -> None:
-        self.state_dir.mkdir(parents=True, exist_ok=True)
-        path = self.state_dir / name
-        temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        temporary.replace(path)
+        write_private(self.state_dir / name, json.dumps(data, indent=2) + "\n")
+
+
+def _failed(job: Job, now: datetime, error: str) -> JobRun:
+    return JobRun(job=job.id, as_of=now, wake=Wake.SCHEDULE, disposition=Disposition.FAILED, error=error)
+
+
+def _json(value: object) -> JsonValue:
+    """A job's return value as JSON for its receipt; what JSON can't express is kept as its text."""
+    return cast("JsonValue", to_jsonable_python(value, fallback=str))

@@ -6,6 +6,7 @@ from typing import Annotated
 import typer
 from pydantic import BaseModel
 from rich.console import Console
+from rich.markup import escape
 from typer.core import TyperGroup
 
 from heinzel.kernel import HeinzelError, Kernel, parse_duration
@@ -64,7 +65,9 @@ def serve_group(
 
         def report(result: object) -> None:
             if isinstance(result, HeinzelError):
-                err_console.print(f"[red]Tick failed:[/red] {result}")
+                err_console.print(f"[red]Tick failed:[/red] {escape(str(result))}")
+            elif isinstance(result, Exception):
+                err_console.print(f"[red]Tick failed with a bug:[/red] {type(result).__name__}: {escape(str(result))}")
             elif isinstance(result, BaseModel):
                 out_console.print(result.model_dump_json(), soft_wrap=True, highlight=False, markup=False)
 

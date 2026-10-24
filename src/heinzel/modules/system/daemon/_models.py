@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 from heinzel import CatchUp, ModuleSettings
 
@@ -52,6 +52,7 @@ class Receipt(BaseModel):
     as_of: datetime = Field(description="The schedule slot the run covers; the time of a manual run.")
     idempotency_key: str = Field(description="Key of the run; a slot whose key was rendered never runs again.")
     error: str | None = Field(default=None, description="What went wrong, when failed; why, when skipped.")
+    result: JsonValue = Field(default=None, description="What the job returned, as JSON, when rendered.")
 
 
 class JobRun(BaseModel):

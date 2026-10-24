@@ -77,9 +77,11 @@ def test_tick_runs_due_jobs_writes_receipts_and_logs(kernel, calls, settings):
 
 def test_a_job_that_overruns_its_timeout_fails(make_kernel):
     kernel = make_kernel(builtins=True, slow=stuck_module())
-    report = json.loads(hz(kernel, "system", "daemon", "tick", "--job", "slow:stuck", "--json").output)
-    [run] = report["runs"]
-    assert (run["disposition"], run["error"], run["wake"]) == ("failed", "timed out after 0.01s", "manual")
+    result = runner.invoke(build(kernel), ["system", "daemon", "tick", "--job", "slow:stuck", "--json"])
+    assert result.exit_code == 1  # a failed job makes the tick fail, so launchd, systemd and CI see it
+    [run] = json.loads(result.output)["runs"]
+    assert (run["disposition"], run["wake"]) == ("failed", "manual")
+    assert run["error"].startswith("timed out after 0.01s and was abandoned")
     STUCK.set()
 
 
