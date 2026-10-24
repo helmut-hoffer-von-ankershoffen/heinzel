@@ -1,7 +1,8 @@
-name: Release
+name: Prepare release
 
 # Step 1 of a release: open the release pull request. Derives the next version from conventional commits (or a forced
-# bump), updates versions and CHANGELOG.md on `release/vX.Y.Z`, opens the pull request and starts CI on it.
+# bump), updates versions and CHANGELOG.md on `release/vX.Y.Z`, opens the pull request, enables squash auto-merge and
+# starts CI on it (`make release` dispatches this workflow; `make release-local` runs the same script on a laptop).
 # Step 2 happens when the pull request is merged: see release-tag.yml. ADR 0008 and 0013 explain the flow.
 
 on:
@@ -39,7 +40,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-      - run: uv sync --frozen
+      - name: Install the pinned tools, as locally
+        run: make install # what `make fix` and the release script use; no git hooks, so no local pre-push check on the runner
       - name: Prepare the release branch and open the pull request
         id: release
         shell: bash # -eo pipefail: a failing release.sh must fail the step, not yield an empty tag
@@ -59,3 +61,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
         run: gh workflow run ci.yml --ref "release/$TAG"
+      - name: Merge when CI is green
+        # The required check "CI OK" comes from the run dispatched above, which reports on the branch's head commit.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: gh pr merge "release/$TAG" --squash --auto
