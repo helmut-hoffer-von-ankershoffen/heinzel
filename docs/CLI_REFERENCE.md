@@ -128,22 +128,7 @@ $ hz org [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `setup`: Tell hz who you are; what your gh and gws...
 * `show`: Show your profile: who you are, your role,...
-
-### `hz org setup`
-
-Tell hz who you are; what your gh and gws logins and this machine say is found, the rest is asked once.
-
-**Usage**:
-
-```console
-$ hz org setup [OPTIONS]
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
 
 ### `hz org show`
 

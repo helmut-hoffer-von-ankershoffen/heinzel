@@ -61,13 +61,13 @@ def echo_module() -> Module:
     return module
 
 
-def make_kernel(*, update_check: bool = True) -> Kernel:
+def make_kernel(*, update_check: bool = True, disabled: frozenset[str] = frozenset()) -> Kernel:
     records = [
         *discover(plugins=False)[0],
         ModuleRecord("clockwork", plugin_module(), CLOCK),
         ModuleRecord("echo", echo_module(), CLOCK),
     ]
-    return Kernel(Settings(update_check=update_check), records)
+    return Kernel(Settings(update_check=update_check, disabled_modules=disabled), records)
 
 
 @pytest.fixture
@@ -119,10 +119,13 @@ def test_setup_of_one_module_is_followed_by_the_notice(app, monkeypatch):
     assert result.stderr.strip() == NOTICE
 
 
-def test_setup_of_every_module_leaves_the_news_to_doctor(app, monkeypatch, tmp_path):
+@pytest.mark.usefixtures("human")
+def test_setup_of_every_module_leaves_the_news_to_doctor(monkeypatch, tmp_path):
     monkeypatch.setattr(_setup, "has_terminal", lambda: True)
     monkeypatch.chdir(tmp_path)
-    result = runner.invoke(app, ["setup"], input="\n", env={"COLUMNS": "200"})
+    kernel = make_kernel(disabled=frozenset({"org"}))  # only echo's optional step, not org's questions
+    result = runner.invoke(build(kernel), ["setup"], input="\n", env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
     doctor = " ".join(result.stdout[result.stdout.index("Heinzelmännchen is") :].replace("│", " ").split())
     assert "release ✔ up hz 9.0.0 is" in doctor  # its release check names the newer release
     assert NOTICE not in result.stderr
