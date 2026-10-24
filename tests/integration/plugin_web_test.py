@@ -111,6 +111,19 @@ def test_confirmed_the_shown_requirement_is_installed_recorded_and_a_restart_ask
     assert [(e["action"], e["requirement"]) for e in history] == [("add", "heinzel-crm==1.1.0")]
 
 
+def test_a_first_party_catalog_entry_installs_through_the_add_endpoint_by_its_install_spec(client, kernel):
+    entry = next(p for p in kernel.resolve(PluginService).search("clock").plugins if p.short_name == "clock")
+    assert (entry.source, entry.install_spec) == ("first-party", "clock")
+    shown = client.post("/api/system/plugin/add", params={"spec": entry.install_spec}, headers=AUTH).json()
+    assert (shown["done"], shown["candidate"]["first_party"], shown["candidate"]["spec"]) == (False, True, "clock")
+    assert kernel.runs == []
+    params = {"spec": shown["candidate"]["spec"], "confirm": True}
+    answer = client.post("/api/system/plugin/add", params=params, headers=AUTH)
+    assert answer.status_code == 200
+    assert answer.json()["done"] is True
+    assert any("heinzel-clock" in part for part in kernel.runs[0])
+
+
 @pytest.mark.parametrize(
     "spec",
     [
@@ -239,7 +252,7 @@ def test_the_cli_shows_what_it_would_install_and_how_to_confirm(kernel):
     assert kernel.runs == []
     done = CliRunner().invoke(app, ["system", "plugin", "add", "heinzel-crm==1.1.0", "--confirm"])
     assert done.exit_code == 0, done.output
-    assert "Added heinzel-crm." in done.output
+    assert "Installed heinzel-crm 1.1.0." in done.output
     listed = CliRunner().invoke(app, ["system", "plugin", "list"])
     assert "heinzel-test" in listed.output
     assert "enabled" in listed.output
