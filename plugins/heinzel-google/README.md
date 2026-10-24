@@ -24,7 +24,7 @@ credentials or other secrets; of gws's own variables only `GOOGLE_WORKSPACE_CLI_
 `_CLIENT_ID`, `_CLIENT_SECRET` and `GOOGLE_WORKSPACE_PROJECT_ID`, not its token, credentials-file, sanitizing or log
 variables), a
 timeout that stops `gws` and anything it started, and at most 10 MB of output read. Why `gws`:
-[ADR 0038](../../docs/adr/0038-google-workspace-through-the-gws-cli.md).
+[ADR 0042](../../docs/adr/0042-google-workspace-through-the-gws-cli.md).
 
 What leaves this machine, and where to: file ids, the Drive query (the modified-time window and the `--name` text)
 the calendar window and the mail search, to Google's API hosts (`www.googleapis.com` for Drive and Calendar,

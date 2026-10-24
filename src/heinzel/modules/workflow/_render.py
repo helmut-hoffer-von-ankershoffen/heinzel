@@ -13,6 +13,7 @@ from heinzel.modules.workflow._models import (
     GUIDE,
     CheckReport,
     CompiledContract,
+    ContractGraph,
     ContractList,
     Diagnostic,
     Directory,
@@ -340,3 +341,29 @@ def render_prune(report: PruneReport) -> RenderableType:
     files = Text("".join(f"  {path}\n" for path in report.files))  # paths name contracts: text, never markup
     problems = Text("".join(f"{problem}\n" for problem in report.problems), style="red")
     return Group(summary, files, problems, _next(report.next))
+
+
+def render_graph(graph: ContractGraph) -> RenderableType:
+    """Each contract with what it maintains and reads, then cycles and unmaintained inputs; or only the flowchart."""
+    if graph.mermaid_only:
+        return Text(graph.mermaid.rstrip("\n"))  # names and arguments from contract files: text, never markup
+    contracts = [n.id for n in graph.nodes if n.kind == "contract"]
+    if not contracts:
+        return Group(
+            Text("No contracts yet, so no graph.\n", style="bold"), Text(WHAT_A_CONTRACT_IS + "\n"), _next(graph.next)
+        )
+    table = Table(title="Contract graph")
+    for column in ("Contract", "Maintains", "Reads"):
+        table.add_column(column, overflow="fold")
+    for contract in contracts:
+        maintains = [e.target for e in graph.edges if e.kind == "maintains" and e.source == contract]
+        reads = [f"{e.input}: {e.source}" for e in graph.edges if e.kind == "reads" and e.target == contract]
+        table.add_row(Text(contract), Text("\n".join(maintains)), Text("\n".join(reads) or "-"))
+    problems = Text()
+    for cycle in graph.cycles:
+        problems.append(f"Cycle, so none of these runs: {', '.join(cycle)}\n", style="red")
+    for gap in graph.unmaintained:
+        problems.append(
+            f"{gap.contract} input {gap.input!r}: nobody maintains {gap.asset} ({gap.why})\n", style="yellow"
+        )
+    return Group(table, problems, _next(graph.next))

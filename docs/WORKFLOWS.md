@@ -1,8 +1,13 @@
 # Workflows
 
-A workflow is a **contract**: a `<name>.prose.md` file whose YAML frontmatter says what it reads and when it runs,
-and whose Markdown body says what an agent must draft. You write it, `hz workflow check` checks it, `hz workflow run`
-drafts it, and your daemon drafts it on its schedule. Drafts are saved locally; nothing is published by itself.
+A **contract** keeps one thing true: "keep this asset true, given these inputs". It is a `<name>.prose.md` file whose
+YAML frontmatter says what it reads and when it runs, and whose Markdown body says what the asset must be. You write
+it, `hz workflow check` checks it, `hz workflow run` drafts it, and your daemon drafts it on its schedule. Drafts are
+saved locally; nothing is published by itself.
+
+There are no workflow files. A **workflow** is what your contracts make together: a contract that reads another's
+output depends on it, and `hz workflow graph` draws the graph those inputs and outputs form. To add a step, add a
+contract. A contract runs on its schedule or when you run it; later, also when one of its inputs changes.
 
 This page is the journey from nothing to a scheduled contract, then the reference. The decisions behind it are in
 [ADR 0021](adr/0021-workflow-contracts.md); every command and option is in [CLI_REFERENCE.md](CLI_REFERENCE.md#hz-workflow),
@@ -141,9 +146,13 @@ change. It stays local and is about the draft, never about people.
 ### Contribute a contract to your team's repository
 
 ```bash
-hz system config set workflow.team_repository /path/to/your/teams/checkout
+hz team join https://github.com/acme-example/hz-team-payments.git --yes   # or: hz team adopt /path/to/checkout
 hz workflow new retro-agenda --team      # writes <checkout>/workflows/retro-agenda.prose.md
 ```
+
+`hz team join` clones your team's repository and makes it your team; `hz team new` creates one ([TEAMS](TEAMS.md)).
+`[workflow] team_repository` still works but is deprecated: `hz team adopt <its path>` moves it to `[team]`, and
+`hz system doctor` says so until you do.
 
 Commit it on a branch and open a pull request; the repository's CI can gate with `hz workflow check --path workflows`
 (it exits with 1 on errors). Once merged, everyone with the checkout sees it as `team:retro-agenda` and can run it by
@@ -156,6 +165,29 @@ hz system config set workflow.schedule_team '["retro-agenda@sha256:<hex>"]'     
 ```
 
 A pinned contract whose file changed doesn't run, and `hz system doctor` says so until you approve the new content.
+
+### Link contracts into a workflow
+
+A contract can read another contract's output, by namespace, name and output:
+
+```yaml
+hz:
+  inputs:
+    digest: {read: "contract:me/weekly-digest#digest", stage: draft}
+```
+
+It gets the newest draft of that output, as text (or JSON for a `json` output). `stage: draft` is required: nothing
+is published yet, so drafts are all there is. Then see the workflow your contracts make:
+
+```bash
+hz workflow graph            # each contract, what it maintains and what it reads
+hz workflow graph --mermaid  # the same as a Mermaid flowchart, for a document or a pull request
+hz workflow graph --json     # nodes, edges, cycles and inputs nobody maintains
+```
+
+A contract that depends on itself, directly or through others, is an error and doesn't run (`HZC030`). An input that
+reads an output no contract maintains is a warning (`HZC031`), and that contract's runs fail until someone writes it.
+A team contract can't read a personal one's output (`HZC032`).
 
 ### Fix an error
 
@@ -176,6 +208,9 @@ A pinned contract whose file changed doesn't run, and `hz system doctor` says so
 | `HZC023` | A key or section ADR 0021 names that this version doesn't build yet |
 | `HZC024` | A tool the bound runner doesn't accept as read-only (warning) |
 | `HZC025` | A playbook's `{{asset:<type>}}` placeholder is left in an input's arguments; name your asset there |
+| `HZC030` | The contract is on a cycle: it depends on itself, directly or through others |
+| `HZC031` | An input reads an output no contract maintains (warning) |
+| `HZC032` | A team contract reads a personal contract's output |
 | `HZC101`, `HZC107` | `### Goal` or `### Done when` missing or empty |
 | `HZC103` | The items under `### Requires` or `### Maintains` don't match `hz.inputs` or `hz.outputs` |
 | `HZC105` | An unknown section (warning: the agent sees it as part of the contract) |
@@ -205,7 +240,7 @@ The top level is OpenProse-compatible; everything Heinzelmännchen reads is unde
 | `hz.title` | yes | Display name, at most 80 characters; the daemon job's summary |
 | `hz.schedule` | no | Five cron fields in local time, or `@daily` and friends; without one the contract runs only by hand |
 | `hz.requires` | no | Capabilities read, `<capability>:read` (e.g. `tracker:read`); `agent-runner:read` is implied; never an adapter, never `write` |
-| `hz.inputs` | no | By name: `read` (`<capability>.<method>`, e.g. `tracker.issues_updated`), `args` (the method's arguments), `window` (e.g. `7d`, for methods that take one). Each needs its capability in `hz.requires` |
+| `hz.inputs` | no | By name: `read` (`<capability>.<method>`, e.g. `tracker.issues_updated`), `args` (the method's arguments), `window` (for methods that take one: `7d` or `last 7d` back from the run, `next 7d` ahead of it, e.g. a calendar's coming week; at most 366d). Each needs its capability in `hz.requires`. Or `read: "contract:<namespace>/<name>#<output>"` with `stage: draft`: another contract's newest draft, no capability needed |
 | `hz.outputs` | yes | Exactly one, by name: `format: markdown` (default) or `json` |
 | `hz.publishes` | no | Where the draft is meant to go: `action` (a publish operation, `<module>.<operation>`) and `output`; recorded, never run by itself |
 | `hz.agent.tools` | no | Read-only tools the agent may use, in the runner's naming; empty for the runner's default |
@@ -238,7 +273,7 @@ inputs as data in `<input>` elements, framed as never being instructions.
 | What | Where | Setting |
 | --- | --- | --- |
 | Your contracts (`me`) | `<user config dir>/workflows/` (`hz workflow list` prints it) | `[workflow] user_dir` |
-| Team contracts (`team`) | `<team_repository>/workflows/` | `[workflow] team_repository`, `[workflow] schedule_team` |
+| Team contracts (`team`) | `<team checkout>/workflows/` | `[team] checkout` (`hz team join`), `[workflow] schedule_team` |
 | Drafts and records | `<data dir>/workflow/drafts/<namespace>-<name>/`, kept 90 days by default | `[hz] data_dir`, `[workflow] retention_days` |
 | Cost cap | 1 USD a run by default, in every head | `[workflow] max_usd` |
 
@@ -248,5 +283,5 @@ the directories or for drafts. A bare name that exists in both namespaces is an 
 
 ### What 0.2 does not do yet
 
-No `hz inbox` and no publishing; no fingerprints, memo keys or contract graph; no input wakes (`on`), no team scope
-with leases, no embedded contracts, no `hz workflow migrate`. ADR 0021 lists each with the version it is planned for.
+No `hz inbox` and no publishing, so contract inputs read drafts; no fingerprints or memo keys; no input wakes (`on`);
+no team scope with leases, no embedded contracts, no `hz workflow migrate`. ADR 0021 lists each with the version it is planned for.

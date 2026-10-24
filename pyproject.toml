@@ -220,6 +220,10 @@ markers = [
 source = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
 branch = true
 relative_files = true
+# make test runs the suite on xdist workers: subprocesses, measured through coverage's .pth hook into a data file each
+# (parallel) and merged by `coverage combine`. Python subprocesses the tests start (`python -m heinzel`) count too.
+parallel = true
+patch = ["subprocess"]
 
 [tool.coverage.report]
 fail_under = 90
@@ -238,7 +242,7 @@ allowed_prefixes = ["Merge", "Revert", "Pull request", "fixup!", "squash!", "ame
 
 [tool.commitizen.customize]
 schema = "<type>(<scope>)!: <summary of at most 72 characters>\n\n<body: why>\n\n<footers>"
-schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|workflow|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|clock|github|atlassian|google|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
+schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|workflow|team|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|clock|github|atlassian|google|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
 example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
@@ -470,7 +474,7 @@ type = "forbidden"
 source_modules = ["heinzel.modules"]
 forbidden_modules = [
     "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation", "heinzel.kernel._jobs",
-    "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings",
+    "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._org", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings",
     "heinzel.kernel._protocols", "heinzel.kernel._spec",
 ]
 allow_indirect_imports = true # going through heinzel.kernel's public API is the point

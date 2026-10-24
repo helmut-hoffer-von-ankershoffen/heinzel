@@ -6,7 +6,7 @@ shell string, with the executable resolved to an absolute path (`google.gws_path
 or `gws` on an absolute PATH entry), an environment without Heinzelmännchen's credentials, the root directory as its
 working directory (gws reads a `.env` from where it runs, which a project could otherwise ship), a timeout that kills
 its process group, and at most `MAX_BYTES` of output kept. Every failure becomes a `HeinzelError` that says what to
-do; text from `gws` passes `clean_text`, token-shaped strings are redacted whole before anything is cut (ADR 0038).
+do; text from `gws` passes `clean_text`, token-shaped strings are redacted whole before anything is cut (ADR 0042).
 """
 
 import contextlib

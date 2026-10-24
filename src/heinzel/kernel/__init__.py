@@ -29,7 +29,7 @@ from heinzel.kernel._credentials import (
 )
 from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_reporting_lines
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
-from heinzel.kernel._duration import parse_duration
+from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation, requirement_from_receipt
 from heinzel.kernel._jobs import CompiledJobs
@@ -52,6 +52,7 @@ from heinzel.kernel._lets import (
     schedule_problem,
 )
 from heinzel.kernel._module import Module
+from heinzel.kernel._org import OrgContext
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, DiscoveryHint, PlaybookLet, PlaybookSetup
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
@@ -94,8 +95,10 @@ __all__ = [
     "FILENAME",
     "INTERRUPT",
     "KERNEL_SECTION",
+    "MAX_WINDOW",
     "MODES",
     "PROJECT_FILENAME",
+    "WINDOW_PATTERN",
     "AgentResult",
     "AgentRunner",
     "AssetType",
@@ -143,6 +146,7 @@ __all__ = [
     "ModuleRecord",
     "ModuleSettings",
     "OperationLet",
+    "OrgContext",
     "Origin",
     "Participant",
     "Person",
@@ -168,6 +172,7 @@ __all__ = [
     "Settings",
     "SettingsLet",
     "SetupLet",
+    "Span",
     "Status",
     "TokenUsage",
     "ToolProfile",
@@ -181,7 +186,9 @@ __all__ = [
     "draft_reporting_lines",
     "env_prefix",
     "environment_variable",
+    "format_duration",
     "parse_duration",
+    "parse_window",
     "requirement_from_receipt",
     "schedule_problem",
     "subprocess_environment",

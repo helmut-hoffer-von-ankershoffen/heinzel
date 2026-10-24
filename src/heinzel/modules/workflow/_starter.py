@@ -34,13 +34,15 @@ def title_of(name: str) -> str:
     return name.replace("-", " ").capitalize()
 
 
-def starter(name: str) -> str:
-    """The text of a starter contract named `name`."""
+def starter(name: str, namespace: str = "me") -> str:
+    """The text of a starter contract named `name`; its commented example reads a contract of the same `namespace`."""
     title = title_of(name)
     return f"""\
 ---
-# A workflow contract: this YAML frontmatter says what it reads and when it runs; the
-# Markdown body below says what the agent must draft. Lines starting with # are comments.
+# A contract keeps one thing true: "keep this asset (the output) true, given these inputs".
+# This YAML frontmatter says what it reads and when it runs; the Markdown body says what the
+# asset must be. There are no workflow files: contracts that read each other's outputs make
+# the workflow, and `hz workflow graph` draws it. Lines starting with # are comments.
 # `hz workflow check` lists every problem by file and line. The guide: {GUIDE}
 name: {name}
 kind: responsibility
@@ -58,14 +60,18 @@ hz:
   # (`hz system capability list`). Every input below needs its capability here.
   # requires: [tracker:read]
   # Data fetched before the agent starts, by name: a capability's read method, its
-  # arguments, and a time window ending when the run starts. Describe each input under
-  # `### Requires` in the body.
+  # arguments, and a time window back from the run (`7d`) or ahead of it (`next 7d`).
+  # Or another contract's output, which links the two: its newest draft. Describe each
+  # input under `### Requires` in the body.
   # inputs:
   #   issues:
   #     read: tracker.issues_updated
   #     args: {{project: APP}}
   #     window: 7d
-  # What the agent drafts: exactly one output, `markdown` or `json`.
+  #   digest:
+  #     read: "contract:{namespace}/weekly-digest#digest"
+  #     stage: draft
+  # The asset it keeps true, which other contracts can read: one output, `markdown` or `json`.
   outputs:
     draft: {{format: markdown}}
   # Where the draft is meant to go, through a publish operation of an installed module.

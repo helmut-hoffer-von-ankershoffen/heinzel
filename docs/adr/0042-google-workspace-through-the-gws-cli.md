@@ -5,7 +5,7 @@ decision-makers: maintainer
 related: 0017, 0027, 0028, 0030, 0032, 0035
 ---
 
-# 0038: Read Google Workspace through the Google Workspace CLI (`gws`)
+# 0042: Read Google Workspace through the Google Workspace CLI (`gws`)
 
 ## Context and Problem Statement
 

@@ -2,17 +2,18 @@
 
 import re
 import textwrap
-import time
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+import yaml
 
 from heinzel import JobLet, Window
-from heinzel.kernel import schedule_problem
+from heinzel.kernel import format_duration, schedule_problem
 from heinzel.modules.workflow import _contracts as contracts
 from heinzel.modules.workflow._contracts import _load, collect, contract_name, read_contract, sections
-from heinzel.modules.workflow._models import NAME, Frontmatter, _format_duration, cron_problem
+from heinzel.modules.workflow._models import NAME, Frontmatter, cron_problem
 
 pytestmark = pytest.mark.unit
 
@@ -113,6 +114,13 @@ def test_broken_yaml_is_reported_on_its_line(frontmatter, code, line):
 
 def test_characters_yaml_refuses_are_reported():
     assert problems("---\nname: ￾\n---\n")[0] == (2, "HZC001", "frontmatter")
+
+
+def test_an_escape_past_the_last_unicode_character_is_a_diagnostic_not_a_crash():
+    """Found by the fuzzer: PyYAML raises chr()'s ValueError for `\\U00110000` instead of a YAML error."""
+    [problem] = list(read_contract(Path("x.prose.md"), "me", '---\nname: "\\U00110000"\n---\n').diagnostics)
+    assert problem.code == "HZC001"
+    assert "an escape names no character" in problem.message
 
 
 ESC = "\x1b"
@@ -415,6 +423,106 @@ def test_input_arguments_add_the_window_ending_at_the_run():
     assert arguments == {"project": "APP", "window": Window(since=until - timedelta(days=7), until=until)}
 
 
+CALENDAR = """\
+schema: 1
+title: Digest
+requires: [calendar:read]
+inputs:
+  issues: {{read: calendar.events, window: {window}}}
+outputs:
+  digest: {{format: markdown}}
+"""
+
+
+@pytest.mark.parametrize(
+    ("window", "since", "until"),
+    [
+        ("7d", -timedelta(days=7), timedelta(0)),
+        ("last 2h", -timedelta(hours=2), timedelta(0)),
+        ("next 7d", timedelta(0), timedelta(days=7)),
+        ("next 366d", timedelta(0), timedelta(days=366)),
+    ],
+)
+def test_a_window_looks_back_from_the_run_or_ahead_of_it(window, since, until):
+    read = read_contract(PATH, "me", contract(CALENDAR.format(window=window)))
+    assert read.valid, read.diagnostics
+    assert read.frontmatter is not None
+    run = datetime(2026, 10, 24, 7, tzinfo=UTC)
+    spec = read.frontmatter.hz.inputs["issues"]
+    assert spec.arguments(run) == {"window": Window(since=run + since, until=run + until)}
+    assert read.frontmatter.model_dump(mode="json")["hz"]["inputs"]["issues"]["window"] == window.removeprefix("last ")
+    assert Frontmatter.model_validate(read.frontmatter.model_dump(mode="json", by_alias=True)) == read.frontmatter
+
+
+@pytest.mark.parametrize(
+    ("window", "says"),
+    [
+        ("next 367d", "longer than 366d"),
+        ("367d", "longer than 366d"),
+        ("soon", "back from the run, e.g. `7d`"),
+        ("next  7d", "back from the run"),
+        ("ahead 7d", "back from the run"),
+        ("7", "back from the run"),
+    ],
+)
+def test_a_window_is_written_back_or_ahead_and_bounded(window, says):
+    text = contract(CALENDAR.format(window=f'"{window}"'))
+    assert [(c, f) for _, c, f in problems(text)] == [("HZC002", "hz.inputs.issues.window")]
+    assert says in messages(text)
+
+
+UPSTREAM = """\
+schema: 1
+title: Digest
+inputs:
+  issues: {read: "contract:me/weekly-digest#digest", stage: draft}
+outputs:
+  digest: {format: markdown}
+"""
+
+
+def test_an_input_may_read_another_contracts_output_and_needs_no_capability():
+    read = read_contract(PATH, "me", contract(UPSTREAM))
+    assert read.valid, read.diagnostics
+    assert read.frontmatter is not None
+    spec = read.frontmatter.hz.inputs["issues"]
+    assert (spec.upstream, spec.capability, spec.method) == (("me", "weekly-digest", "digest"), "contract", "")
+    assert spec.arguments(datetime(2026, 10, 24, tzinfo=UTC)) == {}
+    assert list(read.frontmatter.hz.requirements()) == ["agent-runner"]
+
+
+@pytest.mark.parametrize(
+    ("spec", "field", "says"),
+    [
+        ('{read: "contract:me/weekly-digest#digest"}', "hz.inputs.issues.stage", "set `stage: draft`"),
+        (
+            '{read: "contract:me/weekly-digest#digest", stage: draft, window: 7d}',
+            "hz.inputs.issues.window",
+            "takes no `window`",
+        ),
+        (
+            '{read: "contract:me/weekly-digest#digest", stage: draft, args: {a: 1}}',
+            "hz.inputs.issues.args",
+            "takes no `args`",
+        ),
+        (f'{{read: "contract:me/{"a" * 65}#digest", stage: draft}}', "hz.inputs.issues.read", "at most 64"),
+        ('{read: "contract:you/x#digest", stage: draft}', "hz.inputs.issues.read", "String should match"),
+        (
+            "{read: tracker.issues_updated, args: {project: APP}, window: 7d, stage: draft}",
+            "hz.inputs.issues.stage",
+            "only an input that reads a contract's output has a stage",
+        ),
+    ],
+)
+def test_a_contract_input_reads_the_newest_draft_and_nothing_else(spec, field, says):
+    hz = UPSTREAM.replace('{read: "contract:me/weekly-digest#digest", stage: draft}', spec)
+    if "tracker" in spec:
+        hz = hz.replace("title: Digest\n", "title: Digest\nrequires: [tracker:read]\n")
+    text = contract(hz)
+    assert [(c, f) for _, c, f in problems(text)] == [("HZC002", field)]
+    assert says in messages(text)
+
+
 def test_durations_serialize_the_way_they_are_written():
     read = read_contract(EXAMPLE, "me")
     assert read.frontmatter is not None
@@ -422,8 +530,8 @@ def test_durations_serialize_the_way_they_are_written():
     assert dumped["hz"]["timeout"] == "10m"
     assert dumped["hz"]["inputs"]["merged"]["window"] == "7d"
     assert dumped["hz"]["schema"] == 1
-    assert _format_duration(timedelta(seconds=90)) == "90s"
-    assert _format_duration(timedelta(hours=2)) == "2h"
+    assert format_duration(timedelta(seconds=90)) == "90s"
+    assert format_duration(timedelta(hours=2)) == "2h"
     assert Frontmatter.model_validate(dumped) == read.frontmatter
 
 
@@ -447,20 +555,46 @@ ALIAS_BOMB = "a: &a [x, x, x, x, x, x, x, x, x]\n" + "".join(
 )
 
 
-def test_an_alias_bomb_is_refused_before_anything_expands():
+class _Work:
+    """How much YAML work reading one contract did: events the scan pulled, and whether any node was built."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.events = 0
+        self.built = False
+        parse, compose = yaml.parse, contracts._Loader.get_single_node
+
+        def counting(*args: object, **kwargs: object) -> Iterator[yaml.Event]:
+            for event in parse(*args, **kwargs):
+                self.events += 1
+                yield event
+
+        def composing(loader: contracts._Loader) -> object:
+            self.built = True
+            return compose(loader)
+
+        monkeypatch.setattr(yaml, "parse", counting)
+        monkeypatch.setattr(contracts._Loader, "get_single_node", composing)
+
+
+def test_an_alias_bomb_is_refused_before_anything_expands(monkeypatch):
+    # Bounded work, not a wall-clock budget: the scan stops at the first anchor and no node is ever built.
     assert len(ALIAS_BOMB) < 1024
-    started = time.monotonic()
+    work = _Work(monkeypatch)
     found = read_contract(PATH, "me", f"---\n{ALIAS_BOMB}---\n{BODY}").diagnostics
-    assert time.monotonic() - started < 1
     assert [(d.code, d.message) for d in found][:1] == [("HZC004", "anchors and aliases aren't allowed")]
+    assert not work.built
+    assert work.events <= 5  # stream, document, mapping, the key `a`, then its anchored list
 
 
-def test_deep_nesting_is_refused_fast():
-    started = time.monotonic()
-    found = read_contract(PATH, "me", "---\nx: " + "[" * 5000 + "]" * 5000 + "\n---\n" + BODY).diagnostics
-    assert time.monotonic() - started < 1
+@pytest.mark.parametrize("levels", [5_000, 50_000])
+def test_deep_nesting_is_refused_after_reading_only_the_allowed_depth(monkeypatch, levels):
+    # The work is bounded by the limit, not by the input: ten times the nesting reads the same few events.
+    work = _Work(monkeypatch)
+    found = read_contract(PATH, "me", "---\nx: " + "[" * levels + "]" * levels + "\n---\n" + BODY).diagnostics
     assert found[0].code == "HZC004"
-    assert "nested deeper than 32 levels" in found[0].message
+    assert f"nested deeper than {contracts.MAX_DEPTH} levels" in found[0].message
+    assert not work.built
+    assert work.events <= contracts.MAX_DEPTH + 5  # stream, document, mapping, the key, then MAX_DEPTH + 1 lists
 
 
 def test_too_many_values_are_refused():

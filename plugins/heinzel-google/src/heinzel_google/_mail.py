@@ -1,4 +1,4 @@
-"""The Gmail adapter of the `mail` capability (ADR 0028), read mode only, through `gws gmail ...` (ADR 0038).
+"""The Gmail adapter of the `mail` capability (ADR 0028), read mode only, through `gws gmail ...` (ADR 0042).
 
 `messages` lists the ids Gmail finds for the window (`after:`/`before:` in epoch seconds, widened a second), the
 sender (`from:`) and the label (by id, `labelIds`, exact), reads each one's metadata (`users messages get`, format

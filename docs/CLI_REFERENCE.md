@@ -24,6 +24,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `org`: Your profile, and the team, org and...
 * `setup`: Set up every module that has a setup step,...
 * `system`: Inspect, configure, diagnose and update...
+* `team`: Your team&#x27;s repository: create one (`hz...
 * `workflow`: Workflow contracts: Markdown files an...
 * `zoom`: Read meetings from Zoom&#x27;s meeting-summary...
 
@@ -1031,6 +1032,140 @@ $ hz system update [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+## `hz team`
+
+Your team&#x27;s repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
+
+**Usage**:
+
+```console
+$ hz team [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `add`: Add someone to your team&#x27;s roster, as one...
+* `adopt`: Make an existing checkout your team...
+* `join`: Clone a team repository with your own...
+* `new`: Create a team repository from the...
+* `show`: Show your team: its repository, checkout...
+
+### `hz team add`
+
+Add someone to your team&#x27;s roster, as one of its owners: a pull request the other owners see.
+
+**Usage**:
+
+```console
+$ hz team add [OPTIONS] {handle}
+```
+
+**Arguments**:
+
+* `handle`: Their handle: lowercase letters, digits, dashes.  [required]
+
+**Options**:
+
+* `--login <str>`: Their GitHub login; an owner needs one.
+* `--role <str>`: Their role: one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager.  [default: engineer]
+* `--owner / --no-owner`: Make them an owner: they approve roster changes.  [default: no-owner]
+* `--by <str>`: Your own GitHub login, when `gh` isn&#x27;t signed in as you.
+* `--yes / --no-yes`: Carry out the steps that wait for you: remote changes, and making the team yours.  [default: no-yes]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz team adopt`
+
+Make an existing checkout your team repository; replaces the deprecated `workflow.team_repository`.
+
+**Usage**:
+
+```console
+$ hz team adopt [OPTIONS] {path}
+```
+
+**Arguments**:
+
+* `path`: A checkout of your team repository you already have.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz team join`
+
+Clone a team repository with your own access, find you in its roster, and make it your team.
+
+**Usage**:
+
+```console
+$ hz team join [OPTIONS] {url}
+```
+
+**Arguments**:
+
+* `url`: The team repository&#x27;s URL, the invite: https, ssh or a local path.  [required]
+
+**Options**:
+
+* `--propose / --no-propose`: When the roster doesn&#x27;t list you, open a pull request adding you; owners merge it.  [default: no-propose]
+* `--handle <str>`: Your handle: the roster entry that is you when it has no login yet, or the one to propose.
+* `--role <str>`: Your role when you propose to be added: one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager.  [default: engineer]
+* `--login <str>`: Your GitHub login, when `gh` isn&#x27;t signed in; asked of `gh api user` otherwise.
+* `--yes / --no-yes`: Carry out the steps that wait for you: remote changes, and making the team yours.  [default: no-yes]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz team new`
+
+Create a team repository from the template: you its first owner, its roster drafted for review.
+
+**Usage**:
+
+```console
+$ hz team new [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The team&#x27;s name: lowercase words joined by dashes, e.g. payments.  [required]
+
+**Options**:
+
+* `--github <str>`: Create it on GitHub as this private repository, owner/name; only on this machine if none.
+* `--roster <str>`: Draft the roster from a GitHub team you can read: github:&lt;org&gt;/&lt;team&gt;, or github:&lt;org&gt;.
+* `--role <str>`: Your role: one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager.  [default: engineering-manager]
+* `--handle <str>`: Your handle in the team; defaults to your GitHub login.
+* `--login <str>`: Your GitHub login, when `gh` isn&#x27;t signed in; asked of `gh api user` otherwise.
+* `--yes / --no-yes`: Carry out the steps that wait for you: remote changes, and making the team yours.  [default: no-yes]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz team show`
+
+Show your team: its repository, checkout and members, and what is wrong with them.
+
+**Usage**:
+
+```console
+$ hz team show [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ## `hz workflow`
 
 Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon&#x27;s schedule (`hz workflow new` starts one).
@@ -1050,6 +1185,7 @@ $ hz workflow [OPTIONS] COMMAND [ARGS]...
 * `check`: Check contracts and list every problem...
 * `discover`: Find candidates for each playbook&#x27;s asset...
 * `drafts`: List the drafts runs saved locally, newest...
+* `graph`: Show the workflow your contracts make:...
 * `list`: List the contracts in your and your team&#x27;s...
 * `new`: Write a starter contract, or a playbook&#x27;s...
 * `playbooks`: List the playbooks plugins contribute:...
@@ -1106,6 +1242,23 @@ $ hz workflow drafts [OPTIONS]
 
 * `--name <str>`: Only this contract&#x27;s drafts; every contract&#x27;s if omitted.
 * `--latest / --no-latest`: Print the newest draft instead of the list.  [default: no-latest]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz workflow graph`
+
+Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
+
+**Usage**:
+
+```console
+$ hz workflow graph [OPTIONS]
+```
+
+**Options**:
+
+* `--mermaid / --no-mermaid`: Print only the Mermaid flowchart, to paste into a document or a pull request.  [default: no-mermaid]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

@@ -308,6 +308,8 @@ def _load(text: str) -> tuple[dict[str, Any], dict[KeyPath, int]]:
         raise _YamlError(line, "HZC001", f"YAML doesn't parse: {exc.problem or exc}", hint(line)) from exc
     except yaml.YAMLError as exc:
         raise _YamlError(0, "HZC001", f"YAML doesn't parse: {exc}") from exc
+    except ValueError as exc:  # PyYAML's scanner lets an escape past U+10FFFF (`"\U00110000"`) escape as chr()'s error
+        raise _YamlError(0, "HZC001", f"YAML doesn't parse: an escape names no character ({exc})") from exc
     if not isinstance(data, dict):
         raise _YamlError(0, "HZC001", "the frontmatter must be a mapping of keys to values")
     return cast("dict[str, Any]", data), lines
