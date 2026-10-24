@@ -3,6 +3,7 @@
 import json
 import subprocess
 import sys
+import urllib.error
 from pathlib import Path
 from typing import Annotated
 
@@ -15,6 +16,7 @@ from typer.testing import CliRunner
 
 from heinzel import HeinzelError, Module, Settings, __version__
 from heinzel.heads.cli import build
+from heinzel.kernel import _release
 
 pytestmark = pytest.mark.integration
 
@@ -70,6 +72,74 @@ def test_version(app):
     assert lines[0] == f"hz {__version__}"
     assert lines[1].startswith("python ")
     assert "plugin heinzel-test 9.9.9" in lines
+
+
+HINT = "v9.0.0 is available: hz system update"
+RELEASE = {"tag_name": "v9.0.0", "html_url": "https://github.com/org/heinzel/releases/tag/v9.0.0"}
+
+
+def fake_release_source(monkeypatch, answer):
+    """The GitHub releases API answering `answer` (raising it if it is an exception); the suite stays offline."""
+
+    def get_json(url, token, timeout):
+        assert url == f"{_release.GITHUB_API}/repos/{_release.DEFAULT_REPOSITORY}/releases/latest"
+        assert (token, timeout) == (None, _release.TIMEOUT)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(_release, "github_get_json", get_json)
+
+
+def test_system_release_reports_a_newer_release_and_caches_it(app, monkeypatch):
+    fake_release_source(monkeypatch, RELEASE)
+    check = json.loads(runner.invoke(app, ["system", "release", "--json"]).output)
+    assert (check["current"], check["latest"], check["update_available"]) == (__version__, "9.0.0", True)
+    text = runner.invoke(app, ["system", "release"], env={"COLUMNS": "200"}).output
+    assert f"v9.0.0 is available (installed: {__version__}): hz system update" in text
+    cached = json.loads((Settings().cache_dir / _release.CACHE_FILENAME).read_text(encoding="utf-8"))
+    assert cached["latest"] == "9.0.0"
+
+
+def test_system_release_says_when_hz_is_up_to_date(app, monkeypatch):
+    fake_release_source(monkeypatch, {**RELEASE, "tag_name": f"v{__version__}"})
+    result = runner.invoke(app, ["system", "release"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    assert f"hz {__version__} is up to date" in result.output
+
+
+def test_system_release_offline_is_a_warning_not_a_failure(app, monkeypatch):
+    fake_release_source(monkeypatch, urllib.error.URLError("no route to host"))
+    result = runner.invoke(app, ["system", "release"], env={"COLUMNS": "200"})
+    assert result.exit_code == 0, result.output
+    assert "(no route to host)" in result.output
+    assert json.loads(runner.invoke(app, ["system", "release", "--json"]).output)["latest"] is None
+
+
+def test_version_and_info_show_the_update_hint(app, monkeypatch):
+    # CliRunner's stdout is never a terminal, so the gate is faked here; the gate itself is tested in the kernel.
+    monkeypatch.setattr("heinzel.heads.cli.update_hint", lambda settings: HINT)
+    monkeypatch.setattr("heinzel.modules.system._service.update_hint", lambda settings: HINT)
+    assert runner.invoke(app, ["--version"]).output.splitlines()[-1] == HINT
+    assert HINT in runner.invoke(app, ["system", "info"], env={"COLUMNS": "200"}).output
+    as_json = runner.invoke(app, ["system", "info", "--json"]).output
+    assert HINT not in as_json
+    assert "update_hint" not in json.loads(as_json)
+    from heinzel.modules.system import SystemInfo
+
+    assert all(
+        "update_hint" not in SystemInfo.model_json_schema(mode=m)["properties"] for m in ("validation", "serialization")
+    )
+
+
+def test_no_update_hint_when_output_is_not_a_terminal(app, monkeypatch):
+    fake_release_source(monkeypatch, RELEASE)
+    runner.invoke(app, ["system", "release"])
+    assert (Settings().cache_dir / _release.CACHE_FILENAME).is_file()
+    for variable in _release.CI_VARIABLES:  # so only the terminal check can hide the hint
+        monkeypatch.delenv(variable, raising=False)
+    assert "available" not in runner.invoke(app, ["--version"]).output
+    assert "available" not in runner.invoke(app, ["system", "info"]).output
 
 
 def test_help_lists_modules(app):
@@ -133,16 +203,15 @@ def fake_github(monkeypatch, answer):
     """GitHub's search API answering `answer` (raising it if it is an exception); the suite stays offline."""
     from heinzel.modules.system.plugin import _service
 
-    def get_json(url, headers):
+    def get_json(url, token, timeout):
         assert url.startswith(_service.GITHUB_SEARCH)
-        assert "Authorization" not in headers
+        assert token is None
         if isinstance(answer, Exception):
             raise answer
         return answer
 
-    for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setattr(_service, "_get_json", get_json)
+    monkeypatch.delenv("HZ_SYSTEM_PLUGIN__GITHUB_TOKEN", raising=False)
+    monkeypatch.setattr(_service, "github_get_json", get_json)
 
 
 CRM = {
@@ -355,7 +424,7 @@ def test_commands_are_sorted(app):
     root = typer.main.get_command(app)
     system = root.commands["system"]  # type: ignore[attr-defined]
     assert root.list_commands(None) == sorted(root.list_commands(None))  # type: ignore[arg-type]
-    expected = ["agent", "changelog", "config", "doctor", "info", "modules", "plugin", "serve", "update"]
+    expected = ["agent", "changelog", "config", "doctor", "info", "modules", "plugin", "release", "serve", "update"]
     assert system.list_commands(None) == expected
 
 

@@ -58,5 +58,11 @@ promise to users.
 - [SECURITY.md](../../SECURITY.md) "What Heinzelmännchen does on your machine": "`hz` sends nothing anywhere on its own".
 - Receipts and local logs: [ADR 0020](0020-daemon-head.md); health checks: [ADR 0015](0015-health-checks-as-lets.md).
 - Decided by the maintainer on 2026-10-23.
-- Open questions: how the update notifier planned for 0.2 checks for new versions within this rule, and whether
-  plugins also declare outbound data in `hz system info`.
+- The update check (0.2) is an ordinary call to the package source, on the user's behalf: `hz system release`
+  asks the GitHub releases API of the repository in the uv tool receipt (the default repository otherwise) with a
+  `heinzel/<version>` User-Agent and the optional `github_token`, and nothing else, then caches the answer.
+  `hz --version` and `hz system info` only read that cache, to show a one-line hint when the `update_check` setting
+  is on, stdout is a terminal and no CI variable is set; never in JSON output. Ordinary commands make no network
+  call. Later a daemon job ([ADR 0020](0020-daemon-head.md)) refreshes the cache, at most every 24 hours and only
+  while `update_check` is on.
+- Open question: whether plugins also declare outbound data in `hz system info`.

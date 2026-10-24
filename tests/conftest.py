@@ -15,6 +15,8 @@ def _isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pyt
     """No test sees the developer's HZ_* variables or state."""
     for name in ("HZ_LOG_LEVEL", "HZ_PLUGINS_ENABLED", "HZ_DISABLED_MODULES", "HZ_CONFIG", "XDG_CONFIG_HOME"):
         monkeypatch.delenv(name, raising=False)
+    for name in ("HZ_UPDATE_CHECK", "HZ_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path_factory.mktemp("hz-config")))
     monkeypatch.setenv("HZ_DATA_DIR", str(tmp_path_factory.mktemp("hz-data")))
     monkeypatch.setenv("HZ_CACHE_DIR", str(tmp_path_factory.mktemp("hz-cache")))

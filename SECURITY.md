@@ -20,7 +20,9 @@ Only the latest release receives security fixes while the project is on 0.x.
 - **Plugins run with the same rights.** Only add plugins you trust, from sources you trust; `hz system plugin list`
   shows where each one came from.
 - `hz` sends nothing anywhere on its own: no telemetry. Network access happens when you install, update or add
-  plugins (through uv) and when a plugin you installed calls a service.
+  plugins (through uv), when you ask for the latest release or search plugins (a GET to api.github.com with a
+  `heinzel/<version>` User-Agent and, if you configured one, your GitHub token; nothing else), and when a plugin you
+  installed calls a service. `hz --version` and `hz system info` only read what `hz system release` cached.
 - `hz system serve mcp|api` listens on `127.0.0.1` unless you pass another `--host`; the servers have no
   authentication, so don't expose them to a network you don't trust.
 - External commands (uv, git, copier) run without a shell, from argument lists, with timeouts.

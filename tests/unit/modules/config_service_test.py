@@ -37,6 +37,7 @@ def test_init_writes_valid_toml_with_every_setting_commented(kernel, tmp_path):
     parsed = tomllib.loads(uncommented)
     assert parsed["hz"]["plugins_enabled"] is True
     assert parsed["example"]["greeting"] == "Hi"
+    assert "# github_token: not set by default" in text
 
 
 def test_init_refuses_to_overwrite_without_force(kernel, tmp_path):

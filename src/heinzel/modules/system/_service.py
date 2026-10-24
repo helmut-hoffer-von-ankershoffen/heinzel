@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from heinzel import InfoLet, Kernel, __version__
+from heinzel.kernel import update_hint
 from heinzel.modules.system._models import ModuleInfo, SystemInfo
 
 
@@ -48,6 +49,7 @@ class SystemService:
             modules=self.modules(),
             plugin_errors=dict(self._kernel.errors),
             sections={record.qualname: self._section(let) for record, let in self._kernel.lets(InfoLet)},
+            update_hint=update_hint(self._kernel.settings),
         )
 
     def _section(self, let: InfoLet) -> Any:  # noqa: ANN401 - sections are free-form JSON

@@ -18,7 +18,8 @@ class PluginSettings(ModuleSettings):
         default=None,
         validation_alias=AliasChoices("HZ_SYSTEM_PLUGIN__GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"),
         description="GitHub token for `hz system plugin search`, which works without one at a lower rate limit; "
-        "also read from GH_TOKEN or GITHUB_TOKEN. Sent to api.github.com only.",
+        "also read from GH_TOKEN or GITHUB_TOKEN; falls back to the kernel's `github_token` (HZ_GITHUB_TOKEN). Sent to "
+        "api.github.com only.",
     )
 
 

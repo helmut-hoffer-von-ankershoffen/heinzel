@@ -4,7 +4,6 @@ import contextlib
 import json
 import subprocess
 import urllib.error
-import urllib.request
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
@@ -15,7 +14,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
 from heinzel import HeinzelError, Kernel, __version__
-from heinzel.kernel import CORE_DISTRIBUTION, Installation
+from heinzel.kernel import CORE_DISTRIBUTION, Installation, github_get_json
 from heinzel.modules.system.plugin._models import AvailablePlugin, PluginInfo, PluginSearch, PluginSettings
 
 TEMPLATE = "gh:helmut-hoffer-von-ankershoffen/heinzel"
@@ -27,13 +26,6 @@ TOPIC = "heinzel-plugin"
 GITHUB_SEARCH = "https://api.github.com/search/repositories"
 TIMEOUT = 10
 """Seconds to wait for GitHub before searching without it."""
-
-
-def _get_json(url: str, headers: Mapping[str, str]) -> Any:  # noqa: ANN401 - free-form JSON
-    """GET `url` and parse the JSON answer; the plugin module's only network access, and the seam tests fake."""
-    request = urllib.request.Request(url, headers=dict(headers))  # noqa: S310 - https URL built from a constant
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310 - https URL built from a constant
-        return json.load(response)
 
 
 def distributions_in_spec(spec: str) -> set[str]:
@@ -217,10 +209,8 @@ class PluginService:
             TypeError: If the answer has an unexpected shape.
         """
         query = urlencode({"q": f"topic:{TOPIC} {text}".strip(), "sort": "stars", "per_page": 100})
-        headers = {"Accept": "application/vnd.github+json", "User-Agent": "hz"}
-        if self._settings.github_token:
-            headers["Authorization"] = f"Bearer {self._settings.github_token.get_secret_value()}"
-        items = _get_json(f"{GITHUB_SEARCH}?{query}", headers)["items"]
+        token = self._settings.github_token or self._kernel.settings.github_token
+        items = github_get_json(f"{GITHUB_SEARCH}?{query}", token, TIMEOUT)["items"]
         if not isinstance(items, list):
             msg = f"expected a list of repositories, got {type(items).__name__}"
             raise TypeError(msg)

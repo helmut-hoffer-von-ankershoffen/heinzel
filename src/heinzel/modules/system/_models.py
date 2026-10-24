@@ -3,6 +3,7 @@
 from typing import Any
 
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 
 
 class ModuleInfo(BaseModel):
@@ -27,3 +28,8 @@ class SystemInfo(BaseModel):
     modules: list[ModuleInfo] = Field(description="Every registered module.")
     plugin_errors: dict[str, str] = Field(description="Plugins that failed to load, by entry point name.")
     sections: dict[str, Any] = Field(description="Sections contributed by modules, by qualified module name.")
+    update_hint: SkipJsonSchema[str | None] = Field(
+        default=None,
+        exclude=True,  # for people at a terminal only: not in JSON, MCP or REST output, nor their schemas
+        description="That a newer release is available, from the cache `hz system release` fills.",
+    )

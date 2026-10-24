@@ -75,7 +75,7 @@ there. Everything about Heinzelmännchen itself lives under one administrative n
 
 ```
 hz --version
-hz system info | modules | doctor | changelog | update
+hz system info | modules | doctor | changelog | release | update
 hz system config  show | get | set | unset | init
 hz system plugin  list | add | remove | new
 hz system agent   skills | install | uninstall

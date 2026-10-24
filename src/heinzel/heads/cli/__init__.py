@@ -24,7 +24,7 @@ from heinzel.heads._exposure import collapses
 from heinzel.heads.cli._command import command
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._serve import serve_group
-from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Progress, boot
+from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Progress, boot, update_hint
 
 console = Console()
 err_console = Console(stderr=True)
@@ -178,4 +178,6 @@ def _print_version(kernel: Kernel, value: bool) -> None:
     plugins = sorted({(r.origin.distribution, r.origin.version) for r in kernel.modules if not r.origin.builtin})
     for distribution, plugin_version in plugins:
         console.print(f"plugin {distribution} {plugin_version}", highlight=False)
+    if hint := update_hint(kernel.settings):
+        console.print(f"[yellow]{hint}[/yellow]", highlight=False)
     raise typer.Exit
