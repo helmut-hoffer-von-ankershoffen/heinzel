@@ -4621,6 +4621,12 @@
             "title": "Plugins",
             "type": "array"
           },
+          "previewed": {
+            "default": false,
+            "description": "Whether a terminal already showed the preview and asked; the CLI says no more.",
+            "title": "Previewed",
+            "type": "boolean"
+          },
           "restart_required": {
             "description": "Whether a running `hz ui` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.",
             "title": "Restart Required",
