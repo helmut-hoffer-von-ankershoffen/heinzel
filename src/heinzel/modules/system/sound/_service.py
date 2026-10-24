@@ -194,7 +194,7 @@ class SoundService(SoundAssets):
                 f"`[system.sound]` (or an HZ_SYSTEM_SOUND__ variable) isn't valid ({problems}); no sound plays and "
                 "the defaults apply until it is fixed."
             )
-            next_steps = ["hz system config show"]
+            next_steps = ["hz system config reveal user"]  # show, get and unset fail while a value is invalid
         selected = settings.name
         if selected != OFF and selected not in available.soundscapes:
             note = (
