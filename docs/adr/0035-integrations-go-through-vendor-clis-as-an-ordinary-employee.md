@@ -1,7 +1,8 @@
 ---
-status: proposed
+status: accepted
 date: 2026-10-24
 decision-makers: maintainer
+supersedes: 0033, 0034
 related: 0015, 0017, 0027, 0028, 0029, 0030, 0032, 0033, 0034
 ---
 
@@ -78,7 +79,7 @@ app; `Credentials` stays for services without such a CLI.** Checkable statements
    (PATH, HOME, LANG, LC_*, TMPDIR, the CLI's own configuration variables the adapter names), never `HZ_CREDENTIAL_*`
    and never the inherited environment whole.
 4. **Output is JSON, parsed into models.** Every call asks the CLI for machine-readable output (`gh --json`,
-   `acli --output json`, `gws` JSON) and parses it into the pydantic models of the capability; unknown fields are
+   `acli --json`, `gws` JSON) and parses it into the pydantic models of the capability; unknown fields are
    ignored, every string passes `clean_text` ([ADR 0028](0028-integrations-are-capability-adapters.md)). Human-readable
    output is never parsed. Paging uses the CLI's own paging or limit flags until the `Window` is covered or the byte
    budget is passed, then raises the "narrow the window" error of ADR 0028.
@@ -117,9 +118,8 @@ app; `Credentials` stays for services without such a CLI.** Checkable statements
 
 ### Consequences
 
-- This record contradicts the accepted [ADR 0033](0033-github-rest-api-over-urllib.md) and
-  [ADR 0034](0034-atlassian-cloud-rest-apis-over-urllib.md) (urllib, tokens): on acceptance it supersedes both
-  (`supersedes`/`superseded-by` are set then); until then they stand and the adapters stay as they are.
+- This record supersedes [ADR 0033](0033-github-rest-api-over-urllib.md) and
+  [ADR 0034](0034-atlassian-cloud-rest-apis-over-urllib.md) (urllib, tokens).
 - The **GitHub adapter** moves from its HTTP transport and the `github-token` credential to `gh` (`gh api` with
   `--paginate` and `--jq`, or `gh pr list --json`, as each method needs); the **Atlassian adapter** from HTTP and an
   API token to `acli`. Their `CredentialLet`s go, their READMEs say "install and log in", `hz system doctor` checks
@@ -141,7 +141,11 @@ app; `Credentials` stays for services without such a CLI.** Checkable statements
 
 ### Confirmation
 
-Not yet: proposed. When implemented: the bounded subprocess helper's argument lists, timeouts, process group, output
+Implemented for GitHub (`gh`, pull request #49) and Atlassian (`acli`, pull request #40): each CLI adapter's command
+lines, JSON parsing, paging and error mapping against recorded outputs
+(`plugins/heinzel-github/tests/unit/gh_test.py`, `plugins/heinzel-atlassian/tests/unit/acli_test.py`) and against a
+fake CLI (`plugins/heinzel-github/tests/integration/gh_test.py`, `plugins/heinzel-atlassian/tests/integration/acli_test.py`).
+Still to come with the shared helper and the Google Workspace adapter: the bounded subprocess helper's argument lists, timeouts, process group, output
 caps and environment allowlist with real processes (`tests/integration/runner_process_test.py`, extended), and that an
 adapter subprocess never sees `HZ_CREDENTIAL_*` or the inherited environment (`tests/unit/kernel/process_test.py`);
 each CLI adapter's command lines, JSON parsing, paging, error mapping and version refusal against recorded outputs
@@ -153,8 +157,9 @@ import-linter contract "The core imports no vendor client or agent SDK" (`pyproj
 
 ## More Information
 
-- Decided by the maintainer, 2026-10-24: vendor CLIs as the transport that owns authentication; nothing an ordinary
-  employee may not do; meetings as summary e-mails. Technical shape by the architect.
+- Decided by the maintainer, 2026-10-24: "Integrations use only what an ordinary employee may do; vendor CLIs (gh,
+  acli, gws) are the transport and own authentication"; meetings as summary e-mails. Technical shape by the architect.
+  Accepted 2026-10-24, with both first-party adapters on their CLIs (Atlassian via `acli`, #40; GitHub via `gh`, #49).
 - Builds on [ADR 0028](0028-integrations-are-capability-adapters.md) (adapters over any transport, `hosts`,
   `clean_text`, the window rule), [ADR 0029](0029-agent-runners-are-capability-adapters.md) (the bounded subprocess the
   runners already have: process groups, timeouts, caps, environment allowlist), [ADR 0030](0030-credentials-live-in-the-os-keychain.md)
