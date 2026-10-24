@@ -198,6 +198,16 @@ def test_changelog_newer_shows_what_newer_releases_bring(app, monkeypatch):
     ]
 
 
+def test_changelog_newer_says_when_nothing_is_newer(app, monkeypatch):
+    fake_releases(monkeypatch, NEWER[1:])
+    result = runner.invoke(app, ["system", "changelog", "--newer"], env={"COLUMNS": "200"})
+    assert (result.exit_code, result.stdout.strip()) == (
+        0,
+        f"hz {__version__} is the latest release; nothing newer to show.",
+    )
+    assert json.loads(runner.invoke(app, ["system", "changelog", "--newer", "--json"]).stdout) == []
+
+
 def test_changelog_newer_offline_says_so_and_fails(app, monkeypatch):
     fake_releases(monkeypatch, urllib.error.URLError("nodename nor servname provided"))
     result = runner.invoke(app, ["system", "changelog", "--newer"], env={"COLUMNS": "300"})

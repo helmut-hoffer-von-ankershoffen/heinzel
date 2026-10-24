@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 from markdown_it import MarkdownIt
+from packaging.version import InvalidVersion, Version
 from pydantic import Field
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
@@ -40,7 +41,11 @@ def render(result: str | list[ReleaseNotes]) -> RenderableType:
     if not result:
         return Text(f"hz {__version__} is the latest release; nothing newer to show.")
     parts: list[RenderableType] = [
-        Text(f"{len(result)} release(s) newer than the installed hz {__version__}, newest first:", style="bold")
+        Text(
+            f"{len(result)} {'release is' if len(result) == 1 else 'releases are'} newer than the installed "
+            f"hz {__version__}, newest first:",
+            style="bold",
+        )
     ]
     for release in result:
         title = f"hz {release.version}" + (f" ({release.date.isoformat()})" if release.date else "")
@@ -59,7 +64,7 @@ def changelog(
         bool,
         Field(
             description="Show what the releases newer than the installed version bring instead, newest first; "
-            "asks GitHub, anonymously."
+            "asks GitHub, anonymously. As JSON: a list of {version, date, notes, url}."
         ),
     ] = False,
 ) -> str | list[ReleaseNotes]:
@@ -85,6 +90,11 @@ def changelog(
 
 
 def _newer(installation: Installation) -> list[ReleaseNotes]:
+    try:
+        Version(__version__)
+    except InvalidVersion as exc:
+        msg = f"hz {__version__} is no release version, so no release is newer or older than it."
+        raise HeinzelError(msg) from exc
     releases = github_releases(installation)
     try:
         return releases.newer_than(__version__, RELEASE_TIMEOUT)

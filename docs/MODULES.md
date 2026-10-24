@@ -92,7 +92,7 @@ Inspect, configure, diagnose and update Heinzelmännchen itself.
 | Show versions, interpreter, settings, modules and what modules report. | `hz system info` | `system_info` | `GET /system/info` |  |
 | List every module and the lets it advertises. | `hz system modules` | `system_modules` | `GET /system/modules` |  |
 | Ask where Heinzelmännchen was installed from for its latest release, and whether to update. | `hz system release` | `system_release` | `GET /system/release` |  |
-| Update Heinzelmännchen, keeping installed plugins, and show the version now installed. | `hz system update` | `system_update` | `POST /system/update` | yes |
+| Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`. | `hz system update` | `system_update` | `POST /system/update` | yes |
 
 ## `system.agent`
 

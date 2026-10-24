@@ -221,7 +221,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `plugin`: Find, add, remove, list and scaffold plugins.
 * `release`: Ask where Heinzelmännchen was installed...
 * `serve`: Serve every operation to coding agents...
-* `update`: Update Heinzelmännchen, keeping installed...
+* `update`: Update Heinzelmännchen, keeping plugins;...
 
 ### `hz system agent`
 
@@ -337,7 +337,7 @@ $ hz system changelog [OPTIONS]
 
 **Options**:
 
-* `--newer / --no-newer`: Show what the releases newer than the installed version bring instead, newest first; asks GitHub, anonymously.  [default: no-newer]
+* `--newer / --no-newer`: Show what the releases newer than the installed version bring instead, newest first; asks GitHub, anonymously. As JSON: a list of {version, date, notes, url}.  [default: no-newer]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -949,7 +949,7 @@ $ hz system serve mcp [OPTIONS]
 
 ### `hz system update`
 
-Update Heinzelmännchen, keeping installed plugins, and show the version now installed.
+Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
 
 **Usage**:
 

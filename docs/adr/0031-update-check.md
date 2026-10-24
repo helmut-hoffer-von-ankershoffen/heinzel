@@ -54,9 +54,9 @@ waits and nothing about the user is sent.
   check still running, then exits and drops it. JSON invocations and the servers start the check too; it writes only
   the cache.
 - Who tells: the notice "hz X.Y.Z is available (installed A.B.C): hz system update", with "What's new: hz system
-  changelog --newer" on a second line, comes from the cache only. The
-  CLI prints it on stderr after the text output of every command, after `hz --version`, and in the footer of `hz` and
-  `hz --help` (the start screen), only when the setting is on, the stream is a terminal and no CI variable is set.
+  changelog --newer" on a second line, comes from the cache only. The CLI prints it on stderr after the text output
+  of every command, after `hz --version`, and in the footer of `hz` and `hz --help` (the start screen), only when the
+  setting is on, the stream is a terminal and no CI variable is set.
   Commands that say it themselves print no notice: `hz system release`, `hz system update`, `hz system doctor` (an
   informational `release` check, which also says why the last check failed) and `hz system changelog` (a header,
   "You're on X; Y is available: hz system update. What's new: hz system changelog --newer", above the installed
@@ -69,10 +69,12 @@ waits and nothing about the user is sent.
   uses the network only when asked, with the same request rules as the check: unauthenticated GETs to the releases API
   of the same repository through `heinzel.modules.system._github`, only the `heinzel/<version>` User-Agent, no token,
   answers of at most 1 MB, at most 4 pages of 30 releases, 5 seconds per network operation. Drafts and pre-releases
-  are skipped. Release notes are third-party text: control and bidirectional characters are removed in the module, so
-  every head gets them clean, each release's notes are cut at 20,000 characters, and links show their target. Offline
-  or rate-limited, it fails with one error naming the reason and the releases page, exit code 1. Without `--newer`
-  the changelog and its JSON are unchanged.
+  are skipped. Release notes are third-party text: the module removes control characters and invisible format
+  characters (bidirectional controls, zero-width and tag characters; the zero-width joiner of emoji stays), so every
+  head, MCP and REST included, gets them clean; a release's `url` is kept only if it is a plain release page of that
+  repository; each release's notes are cut at 20,000 characters; and in the terminal links show their target.
+  Offline or rate-limited, it fails with one error naming the reason and the releases page, exit code 1. Without
+  `--newer` the changelog and its JSON are unchanged.
 - Opt-out: the setting `update_check` (`[hz] update_check` in the user, site or `HZ_CONFIG` file, `HZ_UPDATE_CHECK`;
   a project's `hz.toml` cannot set it, so a repository can't switch it on or off for the people who clone it),
   default on; `false` turns both the check and the notice off. Any CI variable (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`,

@@ -3,6 +3,7 @@
 import platform
 import re
 import sys
+import unicodedata
 import urllib.error
 from collections import defaultdict
 from datetime import date
@@ -28,14 +29,21 @@ MAX_PAGES = 4
 """Pages asked for at most: the newest `PAGE_SIZE * MAX_PAGES` releases, in a bounded number of requests."""
 MAX_NOTES = 20_000
 """Characters of one release's notes kept at most; longer notes end with a pointer to the release page."""
-UNSAFE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]")
-"""Control characters but tab and line feed, and bidirectional controls: what a terminal acts on, or what makes text
-show something other than it says."""
+CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u2028\u2029]")
+"""Control characters but tab and line feed, and the Unicode line and paragraph separators."""
+ZERO_WIDTH_JOINER = "\u200d"
+"""The one invisible format character kept: emoji are built with it."""
+_TAG = re.compile(r"[A-Za-z0-9._+-]+")
 
 
 def clean(text: str) -> str:
-    """Third-party text without control and bidirectional characters, with line feeds for line breaks."""
-    return UNSAFE.sub("", text.replace("\r\n", "\n").replace("\r", "\n"))
+    """Third-party text without control or invisible format characters, with line feeds for line breaks.
+
+    Format characters (Unicode category Cf) are bidirectional controls, zero-width characters and tag characters: they
+    make text show something other than it says, or hide text a reader can't see but a model reads.
+    """
+    text = CONTROLS.sub("", text.replace("\r\n", "\n").replace("\r", "\n"))
+    return "".join(c for c in text if c == ZERO_WIDTH_JOINER or unicodedata.category(c) != "Cf")
 
 
 def repository_of(requirement: str | None) -> str:
@@ -111,7 +119,7 @@ class GitHubReleases(ReleaseSource):
                 raise TypeError(msg)
             items = cast("list[object]", answer)
             reached = False
-            for notes in filter(None, map(_release_notes, items)):
+            for notes in filter(None, (_release_notes(item, self.repository) for item in items)):
                 if Version(notes.version) > installed:
                     found.setdefault(Version(notes.version), notes)
                 else:
@@ -121,7 +129,23 @@ class GitHubReleases(ReleaseSource):
         return [found[key] for key in sorted(found, reverse=True)]
 
 
-def _release_notes(item: object) -> ReleaseNotes | None:
+def _release_page(url: object, repository: str) -> str | None:
+    """`url` if it is a release page of `repository` on github.com, character by character; None otherwise."""
+    prefix = f"https://github.com/{repository}/releases/tag/"
+    if isinstance(url, str) and url.lower().startswith(prefix.lower()) and _TAG.fullmatch(url[len(prefix) :]):
+        return url
+    return None
+
+
+def _cut(notes: str, url: str | None) -> str:
+    """`notes` cut at `MAX_NOTES` characters, closing a code block left open, with a pointer to all of it."""
+    cut = notes[:MAX_NOTES].rstrip()
+    if cut.count("```") % 2:
+        cut += "\n```"
+    return f"{cut}\n\n... (cut short; read all of it on {url or 'the release page'})"
+
+
+def _release_notes(item: object, repository: str) -> ReleaseNotes | None:
     """A published release from GitHub's answer; None for drafts, pre-releases and anything that is no release."""
     if not isinstance(item, dict):
         return None
@@ -139,11 +163,11 @@ def _release_notes(item: object) -> ReleaseNotes | None:
         day = date.fromisoformat(published[:10]) if isinstance(published, str) else None
     except ValueError:
         day = None
-    url = _github_link(release.get("html_url"))
+    url = _release_page(release.get("html_url"), repository)
     body = release.get("body")
     notes = clean(body).strip() if isinstance(body, str) else ""
     if len(notes) > MAX_NOTES:
-        notes = f"{notes[:MAX_NOTES].rstrip()}\n\n... (cut short; read all of it on {url or 'the release page'})"
+        notes = _cut(notes, url)
     return ReleaseNotes(version=str(version), date=day, notes=notes, url=url)
 
 

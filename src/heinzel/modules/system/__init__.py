@@ -48,9 +48,9 @@ def update(
         Field(description="Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel."),
     ] = None,
 ) -> str:
-    """Update Heinzelmännchen, keeping installed plugins, and show the version now installed.
+    """Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
 
-    See what the update brings first: `hz system changelog --newer`.
+    Shows the version now installed.
 
     Raises:
         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
