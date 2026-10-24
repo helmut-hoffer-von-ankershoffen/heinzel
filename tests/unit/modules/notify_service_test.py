@@ -238,7 +238,7 @@ def test_the_base_class_only_declares():
             call()
 
 
-def test_once_an_hour_the_tick_reports_what_doctor_finds(make_kernel, monkeypatch):
+def test_once_an_hour_the_tick_reports_what_doctor_finds(make_kernel, monkeypatch, clock):
     monkeypatch.setenv("HZ_SYSTEM_NOTIFY__DOCTOR", "true")  # tests turn it off (heinzel.testing)
     sick = Module("sick", "A module whose check fails.")
 
@@ -250,10 +250,13 @@ def test_once_an_hour_the_tick_reports_what_doctor_finds(make_kernel, monkeypatc
     kernel = make_kernel(builtins=True, sick=sick)
     service = kernel.resolve(NotifyService)
     monkeypatch.setattr(service, "_notifier", Native(None, detail="none in tests"))
+    monkeypatch.setattr(
+        service, "_clock", clock
+    )  # a pinned clock: the hour passes when the test says so, not under load
     service.post_native()
     assert len(service.recent()) == 1
     assert service.look() == 0  # not again within the hour
-    service.store.looked(service.recent()[0].at - timedelta(hours=2))
+    clock.now += timedelta(hours=2)
     assert service.look() == 1  # the same notice again, not a new one
     assert len(service.recent()) == 1
     notice = service.recent()[0]
