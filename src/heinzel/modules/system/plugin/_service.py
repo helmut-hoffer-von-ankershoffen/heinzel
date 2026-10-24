@@ -14,7 +14,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
 from heinzel import HeinzelError, Kernel, __version__
-from heinzel.kernel import CORE_DISTRIBUTION, Installation
+from heinzel.kernel import CORE_DISTRIBUTION, Installation, subprocess_environment
 from heinzel.modules.system._github import get_json
 from heinzel.modules.system.plugin._models import AvailablePlugin, PluginInfo, PluginSearch, PluginSettings
 
@@ -145,7 +145,8 @@ class PluginService:
             command += ["--data", answer]
         command += [template, str(destination)]
         # Copier asks questions, so it gets the terminal instead of a spinner.
-        if subprocess.run(command, check=False).returncode != 0:  # noqa: S603 - trusted parts, no shell; interactive: no timeout
+        interactive = subprocess.run(command, check=False, env=subprocess_environment())  # noqa: S603 - trusted parts, no shell; interactive: no timeout
+        if interactive.returncode != 0:
             msg = f"Failed to scaffold a plugin into {destination}."
             raise HeinzelError(msg)
         return destination

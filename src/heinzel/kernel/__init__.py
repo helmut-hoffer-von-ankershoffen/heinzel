@@ -14,11 +14,29 @@ from heinzel.kernel._config import (
     env_prefix,
     user_config_dir,
 )
+from heinzel.kernel._credentials import (
+    CredentialBackend,
+    Credentials,
+    DeclaredCredential,
+    EnvironmentBackend,
+    environment_variable,
+    subprocess_environment,
+)
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation, requirement_from_receipt
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
-from heinzel.kernel._lets import Check, HealthLet, InfoLet, Let, OperationLet, ServiceLet, SettingsLet, Status
+from heinzel.kernel._lets import (
+    Check,
+    CredentialLet,
+    HealthLet,
+    InfoLet,
+    Let,
+    OperationLet,
+    ServiceLet,
+    SettingsLet,
+    Status,
+)
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._release import ReleaseCache
@@ -34,6 +52,11 @@ __all__ = [
     "Check",
     "Config",
     "ConfigFile",
+    "CredentialBackend",
+    "CredentialLet",
+    "Credentials",
+    "DeclaredCredential",
+    "EnvironmentBackend",
     "HealthLet",
     "HeinzelError",
     "InfoLet",
@@ -54,7 +77,9 @@ __all__ = [
     "boot",
     "discover",
     "env_prefix",
+    "environment_variable",
     "requirement_from_receipt",
+    "subprocess_environment",
     "user_config_dir",
     "walk",
 ]

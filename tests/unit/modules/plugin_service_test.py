@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import urllib.error
@@ -111,18 +112,23 @@ def test_installed_groups_modules_by_distribution(make_kernel, tmp_path):
 def test_new_pins_the_template_and_passes_answers(make_kernel, tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(
-        "subprocess.run", lambda command, check: calls.append(command) or subprocess.CompletedProcess(command, 0)
+        "subprocess.run",
+        lambda command, check, env: calls.append((command, env)) or subprocess.CompletedProcess(command, 0),
     )
+    monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_API_TOKEN", "not-for-copier")
     service = service_for(make_kernel, tmp_path)
     assert service.new(tmp_path / "p", data=["plugin_name=crm"], ref="v1.2.3") == tmp_path / "p"
-    assert calls == [
-        ["uv", "tool", "run", "copier", "copy", "--vcs-ref", "v1.2.3", "--data", "plugin_name=crm",
-         "gh:helmut-hoffer-von-ankershoffen/heinzel", str(tmp_path / "p")],
+    [(command, env)] = calls
+    assert command == [
+        "uv", "tool", "run", "copier", "copy", "--vcs-ref", "v1.2.3", "--data", "plugin_name=crm",
+        "gh:helmut-hoffer-von-ankershoffen/heinzel", str(tmp_path / "p"),
     ]  # fmt: skip
+    assert "HZ_CREDENTIAL_EXAMPLE_API_TOKEN" not in env  # copier never needs a module's credentials
+    assert env["PATH"] == os.environ["PATH"]
 
 
 def test_new_reports_copier_failures(make_kernel, tmp_path, monkeypatch):
-    monkeypatch.setattr("subprocess.run", lambda command, check: subprocess.CompletedProcess(command, 1))
+    monkeypatch.setattr("subprocess.run", lambda command, check, env: subprocess.CompletedProcess(command, 1))
     with pytest.raises(HeinzelError, match="Failed to scaffold"):
         service_for(make_kernel, tmp_path).new(tmp_path / "p")
 

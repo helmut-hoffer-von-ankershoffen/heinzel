@@ -479,7 +479,19 @@ def test_commands_are_sorted(app):
     root = typer.main.get_command(app)
     system = root.commands["system"]  # type: ignore[attr-defined]
     assert root.list_commands(None) == sorted(root.list_commands(None))  # type: ignore[arg-type]
-    expected = ["agent", "changelog", "config", "doctor", "info", "modules", "plugin", "release", "serve", "update"]
+    expected = [
+        "agent",
+        "changelog",
+        "config",
+        "credential",
+        "doctor",
+        "info",
+        "modules",
+        "plugin",
+        "release",
+        "serve",
+        "update",
+    ]
     assert system.list_commands(None) == expected
 
 

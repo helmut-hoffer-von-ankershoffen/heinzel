@@ -100,9 +100,11 @@ class Kernel:
             Progress: Progress(),
         }
         self._factories: dict[type[Any], Callable[..., Any]] = {Installation: Installation}
-        for record, service in self.lets(ServiceLet):
+        # Built-ins first, so a plugin providing a type a built-in provides is the one skipped and reported, whatever
+        # its name sorts as.
+        for record, service in sorted(self.lets(ServiceLet), key=_builtins_first):
             self._provide(service.provides, service.factory, record)
-        for record, declared in self.lets(SettingsLet):
+        for record, declared in sorted(self.lets(SettingsLet), key=_builtins_first):
             self._provide(declared.model, partial(self.config.settings, declared.model, record.qualname), record)
         self._records = dict(sorted(self._records.items(), key=lambda item: item[1].path))
 
@@ -220,6 +222,10 @@ class Kernel:
     def _is_disabled(self, qualname: str) -> bool:
         parts = qualname.split(".")
         return any(".".join(parts[: i + 1]) in self.settings.disabled_modules for i in range(len(parts)))
+
+
+def _builtins_first(pair: tuple[ModuleRecord, Let]) -> tuple[bool, tuple[str, ...]]:
+    return (not pair[0].origin.builtin, pair[0].path)
 
 
 def _provided_types(module: Module) -> set[type[Any]]:

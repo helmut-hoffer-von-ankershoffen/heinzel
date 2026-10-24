@@ -118,6 +118,7 @@ Every module is a set of operations, and every operation is a `hz` command, an M
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
 - [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version.
 - [`system.config`](docs/MODULES.md#systemconfig) — Show, get, set and initialize configuration.
+- [`system.credential`](docs/MODULES.md#systemcredential) — Store and check the credentials modules need, in the OS keychain.
 - [`system.doctor`](docs/MODULES.md#systemdoctor) — Check that Heinzelmännchen and its modules are healthy.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, list and scaffold plugins.
 <!-- modules:end -->

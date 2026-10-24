@@ -18,6 +18,7 @@ def test_discovers_builtin_modules_and_submodules():
         "system.agent",
         "system.changelog",
         "system.config",
+        "system.credential",
         "system.doctor",
         "system.plugin",
     ]
@@ -54,6 +55,7 @@ def test_kernel_boots_from_discovery(settings):
         "system.agent",
         "system.changelog",
         "system.config",
+        "system.credential",
         "system.doctor",
         "system.plugin",
     ]

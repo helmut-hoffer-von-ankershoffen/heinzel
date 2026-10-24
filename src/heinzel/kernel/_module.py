@@ -13,10 +13,11 @@ from pydantic import BaseModel
 from rich.console import RenderableType
 
 from heinzel.kernel._config import ModuleSettings
-from heinzel.kernel._lets import Check, HealthLet, InfoLet, Let, OperationLet, ServiceLet, SettingsLet
+from heinzel.kernel._lets import Check, CredentialLet, HealthLet, InfoLet, Let, OperationLet, ServiceLet, SettingsLet
 from heinzel.kernel._spec import hookimpl
 
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
+SERVICE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$")
 
 
 class Module:
@@ -153,6 +154,31 @@ class Module:
         """Advertise health checks for `hz system doctor`."""
         self.add(HealthLet(name=self.name, provider=func))
         return func
+
+    def credential(self, name: str, *, purpose: str, service: str | None = None) -> CredentialLet:
+        """Declare a secret the module needs; pass the returned let to `Credentials.get` to read its value.
+
+        Args:
+            name: Lowercase, dash-separated, e.g. `api-token`.
+            purpose: What it is for and where to get one, e.g. "GitHub token with repo scope, from github.com/settings".
+            service: Keep it under another service to share it between modules, a qualified module name such as
+                `github` or `system.credential`; defaults to this module's.
+
+        Raises:
+            ValueError: If the name or service is malformed, or the purpose is empty.
+        """
+        if not NAME_PATTERN.fullmatch(name):
+            msg = f"Credential name {name!r} must match {NAME_PATTERN.pattern}"
+            raise ValueError(msg)
+        if service is not None and not SERVICE_PATTERN.fullmatch(service):
+            msg = f"Credential service {service!r} must be a qualified module name matching {SERVICE_PATTERN.pattern}"
+            raise ValueError(msg)
+        if not purpose.strip():
+            msg = f"Credential {name!r} needs a purpose; people see it when it is missing"
+            raise ValueError(msg)
+        let = CredentialLet(name=name, purpose=purpose, service=service)
+        self.add(let)
+        return let
 
     @hookimpl
     def heinzel_lets(self) -> Sequence[Let]:

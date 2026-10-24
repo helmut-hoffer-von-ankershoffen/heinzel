@@ -46,6 +46,7 @@ the kinds it understands.
 | `SettingsLet` | `@module.settings` on a `ModuleSettings` class | the injector: settings from the module's TOML table and `HZ_<MODULE>__*` |
 | `InfoLet` | `@module.info` | `hz system info` |
 | `HealthLet` | `@module.health` returning `Check`s | `hz system doctor` |
+| `CredentialLet` | `module.credential(name, purpose=...)` | `Credentials` (injected) and `hz system credential` with its doctor check ([ADR 0030](adr/0030-credentials-live-in-the-os-keychain.md)) |
 
 New kinds of lets (contracts, watchers, schedules) extend Heinzelmännchen without changing existing heads; see
 [ADR 0010](adr/0010-towards-a-reactive-workflow-engine.md).
