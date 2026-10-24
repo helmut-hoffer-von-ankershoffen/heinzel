@@ -20,9 +20,15 @@ from heinzel.modules.system.plugin._models import AvailablePlugin, PluginInfo, P
 
 TEMPLATE = "gh:helmut-hoffer-von-ankershoffen/heinzel"
 REPOSITORY = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
-FIRST_PARTY: Mapping[str, str] = MappingProxyType({"clock": "What time it is for everyone on the team."})
-"""First-party plugins in `packages/heinzel-<name>/` (ADR 0017) by name, with their descriptions; found by
-`hz system plugin add <name>`."""
+FIRST_PARTY: Mapping[str, str] = MappingProxyType(
+    {
+        "atlassian": "Read Jira issues and Confluence pages: the tracker and documents capabilities.",
+        "clock": "What time it is for everyone on the team.",
+        "github": "Read pull requests and issues from GitHub: the code-host and tracker capabilities.",
+    }
+)
+"""First-party plugins in `plugins/heinzel-<name>/` (ADR 0017) by name, with their descriptions; found by
+`hz system plugin add <name>`. Released with the core, never installed by default."""
 TOPIC = "heinzel-plugin"
 GITHUB_SEARCH = "https://api.github.com/search/repositories"
 TIMEOUT = 10
@@ -66,11 +72,11 @@ class PluginService:
         """The spec of a first-party plugin, from the same source and version as the installed core; None otherwise.
 
         A core installed from git gets the plugin from the same repository and revision; a development checkout gets
-        it from its `packages/` directory; anything else gets it from the release tag of the running version.
+        it from its `plugins/` directory; anything else gets it from the release tag of the running version.
         """
         if name not in FIRST_PARTY:
             return None
-        subdirectory = f"packages/heinzel-{name}"
+        subdirectory = f"plugins/heinzel-{name}"
         checkout = Path(__file__).resolve().parents[5] / subdirectory
         if checkout.is_dir():
             return f"heinzel-{name} @ {checkout.as_uri()}"
@@ -167,7 +173,7 @@ class PluginService:
                 source="first-party",
                 community=False,
                 install_spec=name,
-                url=f"{REPOSITORY}/tree/main/packages/heinzel-{name}",
+                url=f"{REPOSITORY}/tree/main/plugins/heinzel-{name}",
                 stars=None,
                 installed=f"heinzel-{name}" in installed,
             )

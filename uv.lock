@@ -10,7 +10,9 @@ resolution-markers = [
 [manifest]
 members = [
     "heinzel",
+    "heinzel-atlassian",
     "heinzel-clock",
+    "heinzel-github",
 ]
 
 [[package]]
@@ -914,7 +916,9 @@ dev = [
     { name = "copier" },
     { name = "coverage" },
     { name = "git-cliff" },
+    { name = "heinzel-atlassian" },
     { name = "heinzel-clock" },
+    { name = "heinzel-github" },
     { name = "httpx" },
     { name = "hypothesis" },
     { name = "import-linter" },
@@ -938,7 +942,9 @@ fuzz = [
 ]
 test = [
     { name = "coverage" },
+    { name = "heinzel-atlassian" },
     { name = "heinzel-clock" },
+    { name = "heinzel-github" },
     { name = "httpx" },
     { name = "hypothesis" },
     { name = "jsonschema" },
@@ -974,7 +980,9 @@ dev = [
     { name = "copier", specifier = ">=9.19" },
     { name = "coverage", specifier = ">=7.12" },
     { name = "git-cliff", specifier = ">=2.14.0,<3" },
-    { name = "heinzel-clock", editable = "packages/heinzel-clock" },
+    { name = "heinzel-atlassian", editable = "plugins/heinzel-atlassian" },
+    { name = "heinzel-clock", editable = "plugins/heinzel-clock" },
+    { name = "heinzel-github", editable = "plugins/heinzel-github" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "hypothesis", specifier = ">=6.140" },
     { name = "import-linter", specifier = ">=2.5" },
@@ -996,7 +1004,9 @@ dev = [
 fuzz = [{ name = "atheris", marker = "python_full_version < '3.15' and sys_platform == 'linux'", specifier = ">=3.1" }]
 test = [
     { name = "coverage", specifier = ">=7.12" },
-    { name = "heinzel-clock", editable = "packages/heinzel-clock" },
+    { name = "heinzel-atlassian", editable = "plugins/heinzel-atlassian" },
+    { name = "heinzel-clock", editable = "plugins/heinzel-clock" },
+    { name = "heinzel-github", editable = "plugins/heinzel-github" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "hypothesis", specifier = ">=6.140" },
     { name = "jsonschema", specifier = ">=4.26" },
@@ -1007,9 +1017,31 @@ test = [
 ]
 
 [[package]]
+name = "heinzel-atlassian"
+version = "0.2.0"
+source = { editable = "plugins/heinzel-atlassian" }
+dependencies = [
+    { name = "heinzel" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "heinzel", editable = "." }]
+
+[[package]]
 name = "heinzel-clock"
 version = "0.2.0"
-source = { editable = "packages/heinzel-clock" }
+source = { editable = "plugins/heinzel-clock" }
+dependencies = [
+    { name = "heinzel" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "heinzel", editable = "." }]
+
+[[package]]
+name = "heinzel-github"
+version = "0.2.0"
+source = { editable = "plugins/heinzel-github" }
 dependencies = [
     { name = "heinzel" },
 ]

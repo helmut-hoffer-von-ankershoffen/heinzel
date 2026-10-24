@@ -15,8 +15,8 @@ cases:
   - id: adr-0017-proposed
     commit: 1eb3056  # fixed by e5585e9 "docs(adr): adopt a MADR-based template, retrofit ADRs ..."
     class: I3
-    locations: [docs/adr/0017-first-party-plugins-in-the-core-repository.md, packages/]
-    about: ADR 0017 was still proposed although first-party plugins already lived in packages/.
+    locations: [docs/adr/0017-first-party-plugins-in-the-core-repository.md, plugins/]
+    about: ADR 0017 was still proposed although first-party plugins already lived in plugins/.
   - id: retired-hook-name
     commit: d8be182  # fixed by cf388fe "fix(kernel): rename the pluggy hook ..."
     class: I4

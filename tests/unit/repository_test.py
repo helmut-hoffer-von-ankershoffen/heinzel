@@ -1,6 +1,7 @@
 """Checks on files agents and tools read, so they never silently break."""
 
 import json
+import os
 import re
 import tomllib
 from pathlib import Path
@@ -83,13 +84,73 @@ def test_claude_settings_hooks_exist(root):
         assert (root / script.group()).is_file(), f"{root.name}: {script.group()} is missing"
 
 
-def test_first_party_plugins_match_the_packages_directory():
+def test_first_party_plugins_match_the_plugins_directory():
     from heinzel.modules.system.plugin._service import FIRST_PARTY
 
-    packages = {p.name.removeprefix("heinzel-") for p in (REPO / "packages").iterdir() if p.is_dir()}
+    packages = {p.name.removeprefix("heinzel-") for p in (REPO / "plugins").iterdir() if p.is_dir()}
     assert packages == set(FIRST_PARTY)
     for name, description in FIRST_PARTY.items():
-        project = tomllib.loads((REPO / "packages" / f"heinzel-{name}" / "pyproject.toml").read_text(encoding="utf-8"))
+        project = tomllib.loads((REPO / "plugins" / f"heinzel-{name}" / "pyproject.toml").read_text(encoding="utf-8"))
         assert project["project"]["description"].startswith(description.removesuffix(".")), (
             f"`hz system plugin search` describes heinzel-{name} like its pyproject.toml does"
         )
+
+
+@pytest.mark.parametrize("package", sorted((REPO / "plugins").iterdir()), ids=lambda p: p.name)
+def test_first_party_plugins_are_released_tested_and_fenced_with_the_core(package):
+    """Every first-party plugin follows the core's version, runs in its suite and coverage, and obeys the contracts,
+    but the core distribution never depends on it: users choose it with `hz system plugin add` (ADR 0017, 0028)."""
+    root = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+    project = tomllib.loads((package / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    distribution, root_package = package.name, package.name.replace("-", "_")
+    version = root["project"]["version"]
+    assert project["name"] == distribution
+    assert project["version"] == version
+    assert project["dependencies"] == [f"heinzel>={version}"]
+    assert not any(r.startswith(distribution) for r in root["project"]["dependencies"]), "not installed by default"
+    assert f"{distribution}>={version}" in root["dependency-groups"]["test"]
+    assert root["tool"]["uv"]["sources"][distribution] == {"workspace": True}
+    assert root_package in root["tool"]["coverage"]["run"]["source"]
+    assert f"plugins/{distribution}/src" in root["tool"]["mypy"]["mypy_path"]
+    assert root_package in root["tool"]["importlinter"]["root_packages"]
+    contracts = {c["name"]: c for c in root["tool"]["importlinter"]["contracts"]}
+    assert root_package in contracts["First-party plugins use only the public API, like any plugin"]["source_modules"]
+    assert (
+        root_package
+        in contracts["First-party plugins are independent of each other, like separate repositories"]["modules"]
+    )
+    assert any(
+        root_package in c.get("forbidden_modules", [])
+        for c in contracts.values()
+        if c.get("source_modules") == ["heinzel"]
+    )
+    bumped = {(f["filename"], f["search"]) for f in root["tool"]["bumpversion"]["files"]}
+    assert (f"plugins/{distribution}/pyproject.toml", '"heinzel>={current_version}"') in bumped
+    assert (
+        f"plugins/{distribution}/pyproject.toml",
+        f'name = "{distribution}"\nversion = "{{current_version}}"',
+    ) in bumped
+    assert ("pyproject.toml", f'"{distribution}>={{current_version}}"') in bumped
+
+
+UNTRACKED = {".git", ".venv", "worktrees", "__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_cache", "dist"}
+
+
+def test_nothing_names_the_old_directory_of_first_party_plugins():
+    """The maintainer named it `plugins/` ("it contains plugins"); only the changelog's history keeps the old name."""
+    old = re.compile(r"(?<![\w-])" + "packages" + "/")  # split, so this file doesn't name it either
+    offenders = []
+    for directory, subdirectories, files in os.walk(REPO):
+        subdirectories[:] = [d for d in subdirectories if d not in UNTRACKED]
+        for name in files:
+            path = Path(directory) / name
+            if name in {"CHANGELOG.md", "uv.lock"} or path.is_symlink():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                continue
+            offenders += [
+                f"{path.relative_to(REPO)}:{n}" for n, line in enumerate(text.splitlines(), 1) if old.search(line)
+            ]
+    assert offenders == []

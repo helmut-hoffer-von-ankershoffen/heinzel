@@ -65,7 +65,7 @@ incompatible plugin is reported by `hz system info --json` and `hz system doctor
 
 ## More Information
 
-- First-party plugins in `packages/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md)) are released
+- First-party plugins in `plugins/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md)) are released
   with the core; once this is implemented they will pin it exactly, so the check always passes for them.
 - Plugin naming: [ADR 0025](0025-plugin-distributions-are-named-heinzel-name.md). The stable plugin API is the
   milestone for 1.0 in [INTENT.md](../../INTENT.md#where-we-are).

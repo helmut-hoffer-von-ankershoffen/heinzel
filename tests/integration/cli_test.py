@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Annotated
 
 import click
+import heinzel_atlassian
 import heinzel_clock
+import heinzel_github
 import pytest
 import typer
 from pydantic import BaseModel, Field
@@ -205,7 +207,9 @@ def test_plugin_search_lists_first_party_and_community_plugins(app, monkeypatch)
     assert result.exit_code == 0, result.output
     found = json.loads(result.output)
     assert [(p["name"], p["source"], p["community"], p["install_spec"]) for p in found["plugins"]] == [
+        ("heinzel-atlassian", "first-party", False, "atlassian"),
         ("heinzel-clock", "first-party", False, "clock"),
+        ("heinzel-github", "first-party", False, "github"),
         ("heinzel-crm", "github", True, "git+https://github.com/someone/heinzel-crm"),
     ]
     assert found["warnings"] == []
@@ -226,7 +230,7 @@ def test_plugin_search_offline_shows_first_party_plugins_and_a_warning(app, monk
     result = runner.invoke(app, ["system", "plugin", "search", "--json"])
     assert result.exit_code == 0, result.output
     found = json.loads(result.output)
-    assert [p["name"] for p in found["plugins"]] == ["heinzel-clock"]
+    assert [p["name"] for p in found["plugins"]] == ["heinzel-atlassian", "heinzel-clock", "heinzel-github"]
     assert found["warnings"] == [
         "GitHub could not be searched (network is unreachable); showing first-party plugins only."
     ]
@@ -494,7 +498,15 @@ def test_finds_commands_without_json():
 
 
 def test_every_operation_accepts_json(make_kernel):
-    app = build(make_kernel(builtins=True, clock=heinzel_clock.module, **example_modules()))
+    app = build(
+        make_kernel(
+            builtins=True,
+            atlassian=heinzel_atlassian.module,
+            clock=heinzel_clock.module,
+            github=heinzel_github.module,
+            **example_modules(),
+        )
+    )
     assert set(leaves_without_json(typer.main.get_command(app))) == SERVERS | SETUP
     help_text = " ".join(click.unstyle(runner.invoke(app, ["--help"]).output).split())  # CI forces colours
     assert "Every operation accepts --json" in help_text

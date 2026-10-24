@@ -1,0 +1,15 @@
+[project]
+name = "heinzel-atlassian"
+version = "0.2.0"
+description = "Read Jira issues and Confluence pages: the tracker and documents capabilities."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = ["heinzel>=0.2.0"] # released together; the release process bumps the bound
+
+[project.entry-points."heinzel.modules"]
+atlassian = "heinzel_atlassian"
+
+[build-system]
+requires = ["hatchling>=1.29.0"]
+build-backend = "hatchling.build"

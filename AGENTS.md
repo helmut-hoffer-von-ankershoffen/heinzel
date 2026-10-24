@@ -48,6 +48,8 @@ src/heinzel/kernel/   discovery, Module, lets, Kernel (registry + injector), set
 src/heinzel/heads/    cli/ (Typer), mcp/, api/ (FastAPI): views on the kernel
 src/heinzel/modules/  built-in modules: a package declaring `module = Module(name, summary)` is a module, nested
                       ones are submodules; nothing to register. Commands are `@module.operation` functions.
+plugins/              first-party plugins (clock, github, atlassian): workspace members released with the core, not
+                      installed by default; public API only, like any plugin (ADR 0017, 0028)
 template/             copier template for plugins. Shared files are symlinks into this repo; its Makefile, CI,
                       pyproject, SECURITY.md and badges are generated (`make fix`), so edit the originals.
 agent-skills/         the user-facing Claude Code plugin (skills hz-init, hz, hz-uninstall)

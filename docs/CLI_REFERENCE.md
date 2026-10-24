@@ -17,10 +17,45 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `atlassian`: Read Jira issues and Confluence pages: the...
 * `clock`: Show the time in each of the team&#x27;s time...
-* `setup`: Set up every module that has a setup step,...
+* `github`: Read pull requests and issues from GitHub:...
 * `system`: Inspect, configure, diagnose and update...
 * `workflow`: Workflow contracts: Markdown files an...
+
+## `hz atlassian`
+
+Read Jira issues and Confluence pages: the tracker and documents capabilities.
+
+**Usage**:
+
+```console
+$ hz atlassian [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `info`: Show this plugin&#x27;s version, the...
+
+### `hz atlassian info`
+
+Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the Atlassian site and APIs it uses.
+
+**Usage**:
+
+```console
+$ hz atlassian info [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
 
 ## `hz clock`
 
@@ -29,7 +64,7 @@ Show the time in each of the team&#x27;s time zones.
 **Usage**:
 
 ```console
-$ hz clock [OPTIONS] COMMAND [ARGS]...
+$ hz clock [OPTIONS]
 ```
 
 **Options**:
@@ -39,36 +74,38 @@ $ hz clock [OPTIONS] COMMAND [ARGS]...
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-**Commands**:
+## `hz github`
 
-* `setup`: Pick the team&#x27;s time zones and the working...
-
-### `hz clock setup`
-
-Pick the team&#x27;s time zones and the working hours in each.
+Read pull requests and issues from GitHub: the code-host and tracker capabilities.
 
 **Usage**:
 
 ```console
-$ hz clock setup [OPTIONS]
+$ hz github [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Options**:
 
 * `--help`: Show this message and exit.
 
-## `hz setup`
+**Commands**:
 
-Set up every module that has a setup step, wizard style; optional steps can be skipped.
+* `info`: Show this plugin&#x27;s version, the...
+
+### `hz github info`
+
+Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the GitHub API it uses.
 
 **Usage**:
 
 ```console
-$ hz setup [OPTIONS]
+$ hz github info [OPTIONS]
 ```
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
 ## `hz system`
