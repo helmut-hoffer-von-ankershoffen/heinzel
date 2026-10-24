@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, get_args
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, model_validator
@@ -313,6 +313,11 @@ class RequirementLet(Let):
     requirement: Requirement
 
 
+SetupPhase = Literal["identity", "membership", "connect", "work", "run"]
+"""Who you are, whom you work with, which tools you use, what hz starts doing for you, and whether it runs alone."""
+SETUP_PHASES: tuple[SetupPhase, ...] = get_args(SetupPhase)
+
+
 @dataclass(frozen=True, kw_only=True, slots=True)
 class SetupLet(Let):
     """An interactive setup step (ADR 0032), named after its module: `hz setup <module>`, and part of `hz setup`.
@@ -325,3 +330,5 @@ class SetupLet(Let):
     summary: str
     required: bool = False
     """Whether `hz setup` runs it without offering to skip it."""
+    phase: SetupPhase = "connect"
+    """Where in `hz setup` it runs: phases run in `SETUP_PHASES` order (ADR 0032, amended)."""

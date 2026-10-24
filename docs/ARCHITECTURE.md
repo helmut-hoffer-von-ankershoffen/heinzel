@@ -97,10 +97,11 @@ agent runners' executables and tools) are ignored in a project `hz.toml`, and do
 The top level belongs to the team's work: every module a plugin brings (and future built-in workflow modules) sits
 there. Everything about Heinzelmännchen itself lives under one administrative namespace, `hz system`
 ([ADR 0018](adr/0018-one-administrative-namespace.md)), except `hz setup`, which runs every module's setup step
-([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)):
+([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)), and `hz join`, the invite line that joins a team:
 
 ```
 hz --version
+hz join URL                                join a team: who you are, the team, what is still missing (CLI only)
 hz setup [MODULE]                          every module's setup step, or one module's, wizard style (CLI only)
 hz system info | modules | doctor | changelog | release | update
 hz system config  show | get | set | unset | init

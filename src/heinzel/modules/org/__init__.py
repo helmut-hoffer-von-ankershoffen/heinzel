@@ -1,4 +1,4 @@
-"""The org module: who you are to hz and, later, whom you work with: your team, org and company (ADR 0024, 0033).
+"""The org module: who you are to hz and, later, whom you work with: your team, org and company (ADR 0024).
 
 Your profile (handle, role, time zone, working hours, GitHub login, coding agent) is asked once by `hz setup` and kept
 in your user configuration, `[org]`; nothing about you is written to a repository by this module. Other modules ask
@@ -60,7 +60,7 @@ def sync(
     return service.sync(accept)
 
 
-@module.setup(required=True)
+@module.setup(required=True, phase="identity")
 def setup(settings: OrgSettings, prompter: Prompter, editor: ConfigEditor) -> None:
     """Tell hz who you are; what your gh and gws logins and this machine say is found, the rest is asked once."""
     prompter.say("Your profile is kept on this machine only; nothing goes into a repository.")

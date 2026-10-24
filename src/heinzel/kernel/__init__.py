@@ -35,6 +35,7 @@ from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation, requir
 from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._lets import (
+    SETUP_PHASES,
     CatchUp,
     Check,
     CredentialLet,
@@ -48,6 +49,7 @@ from heinzel.kernel._lets import (
     ServiceLet,
     SettingsLet,
     SetupLet,
+    SetupPhase,
     Status,
     schedule_problem,
 )
@@ -98,6 +100,7 @@ __all__ = [
     "MAX_WINDOW",
     "MODES",
     "PROJECT_FILENAME",
+    "SETUP_PHASES",
     "WINDOW_PATTERN",
     "AgentResult",
     "AgentRunner",
@@ -174,6 +177,7 @@ __all__ = [
     "Settings",
     "SettingsLet",
     "SetupLet",
+    "SetupPhase",
     "Span",
     "Status",
     "TokenUsage",
