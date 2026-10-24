@@ -12,7 +12,7 @@ from types import MappingProxyType
 from typing import Any, Literal, cast
 
 from heinzel.kernel._agents import AgentRunner
-from heinzel.kernel._protocols import CodeHost, Documents, Tracker
+from heinzel.kernel._protocols import Calendar, Chat, CodeHost, Documents, Meetings, Tracker
 
 Mode = Literal["read", "write"]
 MODES: tuple[Mode, ...] = ("read", "write")
@@ -46,6 +46,18 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 methods=MappingProxyType({"run": "read"}),
             ),
             Capability(
+                name="calendar",
+                protocol=Calendar,
+                summary="The user's calendar: events in a window, with attendees and conferencing.",
+                methods=MappingProxyType({"events": "read"}),
+            ),
+            Capability(
+                name="chat",
+                protocol=Chat,
+                summary="Channels people talk in: read messages and threads; post through publish operations.",
+                methods=MappingProxyType({"channel": "read", "messages": "read", "thread": "read", "post": "write"}),
+            ),
+            Capability(
                 name="code-host",
                 protocol=CodeHost,
                 summary="Repositories and their merged pull requests on a code host.",
@@ -56,6 +68,12 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 protocol=Documents,
                 summary="Documents: read their text; replace a marked section through publish operations.",
                 methods=MappingProxyType({"read": "read", "replace_section": "write"}),
+            ),
+            Capability(
+                name="meetings",
+                protocol=Meetings,
+                summary="Meetings the user took part in, and their transcripts.",
+                methods=MappingProxyType({"ended": "read", "transcript": "read"}),
             ),
             Capability(
                 name="tracker",

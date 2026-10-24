@@ -96,6 +96,56 @@ def test_plugins_get_the_policy_from_heinzel_testing():
     assert "CATEGORIES" not in conftest
 
 
+class Chatter:
+    """A test-only chat adapter that reads and posts."""
+
+    def channel(self, name: str) -> object:
+        return name
+
+    def messages(self, channel: str, window: object) -> list[object]:
+        return [channel, window]
+
+    def thread(self, channel: str, message: str) -> list[object]:
+        return [channel, message]
+
+    def post(self, channel: str, text: str, thread: str | None = None) -> object:
+        return (channel, text, thread)
+
+
+def test_assert_adapter_accepts_a_class_or_an_instance_that_implements_its_modes():
+    from heinzel.testing import assert_adapter
+
+    assert_adapter(Chatter, "chat", modes={"read", "write"})
+    assert_adapter(Chatter(), "chat")
+
+
+def test_assert_adapter_names_missing_methods_and_other_parameters():
+    from heinzel.testing import assert_adapter
+
+    class Partial:
+        def channel(self, name: str) -> object:
+            return name
+
+        def messages(self, channel: str) -> list[object]:
+            return [channel]
+
+    with pytest.raises(AssertionError, match=r"messages takes \(channel\), the protocol \(channel, window\)"):
+        assert_adapter(Partial, "chat")
+    with pytest.raises(AssertionError, match=r"thread is missing \(mode read\)"):
+        assert_adapter(Partial(), "chat")
+    with pytest.raises(
+        AssertionError, match=r"^Partial doesn't implement chat \(Chat\): post is missing \(mode write\)$"
+    ):
+        assert_adapter(Partial, "chat", modes={"write"})
+
+
+def test_assert_adapter_refuses_unknown_capabilities():
+    from heinzel.testing import assert_adapter
+
+    with pytest.raises(ValueError, match="Unknown capability 'mail'"):
+        assert_adapter(Chatter, "mail")
+
+
 def test_isolation_forces_the_environment_backend_and_drops_credential_variables(monkeypatch):
     from heinzel.testing import isolate_credentials
 

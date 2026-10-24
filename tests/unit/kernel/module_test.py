@@ -181,6 +181,14 @@ def test_module_requirements_become_requirement_lets_named_after_the_capability(
 def test_a_module_cannot_require_write_for_all_its_functions():
     with pytest.raises(ValueError, match="can't require documents:read,write: declare write on the publish operation"):
         Module("digest", "x", requires=["documents:read,write"])
+    with pytest.raises(ValueError, match="can't require chat:write: declare write on the publish operation"):
+        Module("announcer", "x", requires=["chat:write"])
+
+
+def test_only_chat_and_documents_have_a_write_mode_to_declare():
+    for capability in ("calendar", "code-host", "meetings", "tracker"):
+        with pytest.raises(ValueError, match=f"{capability} has no write mode"):
+            Module("x", "x", requires=[f"{capability}:write"])
 
 
 @pytest.mark.parametrize("name", ["hz", "capabilities"])
@@ -261,7 +269,7 @@ def test_provides_records_an_adapter_named_after_the_module_by_default():
 @pytest.mark.parametrize(
     ("capability", "modes", "name", "problem"),
     [
-        ("chat", {"read"}, None, "Unknown capability 'chat'"),
+        ("mail", {"read"}, None, "Unknown capability 'mail'"),
         ("tracker", {"write"}, None, "must serve some of"),
         ("documents", set(), None, "must serve some of"),
         ("tracker", {"read"}, "Acme", "Adapter name 'Acme'"),

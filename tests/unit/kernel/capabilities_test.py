@@ -1,12 +1,28 @@
 """Capability specs and requirement strings (ADR 0028)."""
 
 import inspect
+from typing import get_type_hints
 
 import pytest
 
 from heinzel.kernel import CAPABILITIES, Requirement
 from heinzel.kernel._capabilities import capability_of, parse_requirements
-from heinzel.kernel._protocols import Documents, Tracker
+from heinzel.kernel._protocols import (
+    Calendar,
+    Channel,
+    Chat,
+    Documents,
+    Event,
+    Meeting,
+    Meetings,
+    Message,
+    Participant,
+    PostedMessage,
+    Tracker,
+    Transcript,
+    TranscriptSegment,
+    Window,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -24,8 +40,43 @@ def test_issues_are_the_trackers_not_the_code_hosts():
     assert CAPABILITIES["code-host"].methods == {"merged_pull_requests": "read"}
 
 
-def test_only_documents_can_write():
-    assert {name for name, spec in CAPABILITIES.items() if "write" in spec.modes} == {"documents"}
+def test_only_documents_and_chat_can_write():
+    assert {name for name, spec in CAPABILITIES.items() if "write" in spec.modes} == {"chat", "documents"}
+
+
+def test_chat_meetings_and_calendar_read_in_windows_and_only_chat_posts():
+    assert CAPABILITIES["chat"].methods == {"channel": "read", "messages": "read", "thread": "read", "post": "write"}
+    assert CAPABILITIES["meetings"].methods == {"ended": "read", "transcript": "read"}
+    assert CAPABILITIES["calendar"].methods == {"events": "read"}
+    assert CAPABILITIES["chat"].protocol is Chat
+    assert CAPABILITIES["meetings"].protocol is Meetings
+    assert CAPABILITIES["calendar"].protocol is Calendar
+
+
+@pytest.mark.parametrize("name", sorted(set(CAPABILITIES) - {"agent-runner"}))
+def test_read_methods_take_only_required_json_shaped_arguments_so_contracts_can_name_them(name):
+    """A contract input passes fixed `args` once (ADR 0021): no optional parameter, every one a string or a window."""
+    spec = CAPABILITIES[name]
+    for method, mode in spec.methods.items():
+        if mode != "read":
+            continue
+        hints = get_type_hints(getattr(spec.protocol, method))
+        for parameter in inspect.signature(getattr(spec.protocol, method)).parameters.values():
+            if parameter.name == "self":
+                continue
+            assert parameter.default is inspect.Parameter.empty, f"{name}.{method}: {parameter.name} is optional"
+            assert hints[parameter.name] in {str, Window}, f"{name}.{method}: {parameter.name} isn't str or Window"
+
+
+def test_protocol_results_are_models_with_described_fields():
+    for model in (Channel, Message, PostedMessage, Meeting, Transcript, TranscriptSegment, Event, Participant):
+        for field_name, info in model.model_fields.items():
+            assert info.description, f"{model.__name__}.{field_name} has no description"
+
+
+def test_people_are_names_and_emails_only():
+    """ADR 0024: no judgement, count or rank about a person; the email is the directory's join key."""
+    assert set(Participant.model_fields) == {"name", "email"}
 
 
 def test_finds_the_capability_of_a_protocol():
@@ -51,7 +102,7 @@ def test_parses_requirements(text, expected):
     [
         ("tracker", "must read"),
         ("a:b:c:d", "must read"),
-        ("chat:write", "unknown capability 'chat'"),
+        ("mail:read", "unknown capability 'mail'"),
         ("tracker:", "modes must be"),
         ("tracker:delete", "modes must be"),
         ("tracker:write", "tracker has no write mode"),

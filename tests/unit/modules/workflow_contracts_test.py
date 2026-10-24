@@ -274,6 +274,50 @@ def test_inputs_name_a_read_method_of_a_required_capability_with_its_arguments(s
     assert any(d.field == field and text in d.message for d in found), [str(d) for d in found]
 
 
+MEETINGS_HZ = """\
+schema: 1
+title: One-on-one prep
+requires: [chat:read, meetings:read, calendar:read]
+inputs:
+  issues: {read: chat.messages, args: {channel: "#platform"}, window: 7d}
+  thread: {read: chat.thread, args: {channel: "#platform", message: "1729.0001"}}
+  meetings: {read: meetings.ended, window: 7d}
+  transcript: {read: meetings.transcript, args: {meeting: m-1}}
+  events: {read: calendar.events, window: 7d}
+outputs:
+  digest: {format: markdown}
+"""
+
+MEETINGS_BODY = BODY.replace(
+    "- `issues`: issues that changed this week.",
+    "- `issues`: what the channel discussed this week.\n- `thread`: the thread to prepare.\n"
+    "- `meetings`: meetings that ended this week.\n- `transcript`: what the last one-on-one said.\n"
+    "- `events`: this week's calendar.",
+)
+
+
+def test_inputs_can_name_chat_meetings_and_calendar_read_methods():
+    read = read_contract(PATH, "me", contract(hz=MEETINGS_HZ, body=MEETINGS_BODY))
+    assert read.diagnostics == (), [str(d) for d in read.diagnostics]
+    assert read.frontmatter is not None
+    assert sorted(read.frontmatter.hz.requirements()) == ["agent-runner", "calendar", "chat", "meetings"]
+
+
+@pytest.mark.parametrize(
+    ("spec", "text"),
+    [
+        ("{read: chat.post, args: {channel: x, text: y}}", "writes"),
+        ("{read: chat.messages, args: {channel: x}}", "set `window`"),
+        ("{read: meetings.transcript, args: {meeting: m-1}, window: 7d}", "takes no time window"),
+        ("{read: calendar.events, args: {calendar: work}, window: 7d}", "no argument 'calendar'"),
+        ("{read: meetings.ended, window: 7d}", "needs `meetings:read`"),
+    ],
+)
+def test_inputs_of_the_new_capabilities_are_checked_like_the_others(spec, text):
+    found = read_contract(PATH, "me", contract(hz=INPUT.format(spec))).diagnostics
+    assert any(text in d.message for d in found), [str(d) for d in found]
+
+
 def test_an_invalid_schedule_is_its_own_code():
     found = read_contract(PATH, "me", contract(hz="schema: 1\ntitle: T\nschedule: every monday\noutputs: {d: {}}\n"))
     assert [d.code for d in found.diagnostics if d.field == "hz.schedule"] == ["HZC011"]
