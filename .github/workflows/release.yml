@@ -12,6 +12,10 @@ on:
         type: choice
         options: [auto, patch, minor, major]
         default: auto
+      intro:
+        description: Introduction of the release in CHANGELOG.md and the release notes (optional; editable in the PR)
+        type: string
+        required: false
 
 permissions: {}
 
@@ -41,6 +45,7 @@ jobs:
         shell: bash # -eo pipefail: a failing release.sh must fail the step, not yield an empty tag
         env:
           BUMP: ${{ inputs.bump }}
+          INTRO: ${{ inputs.intro }}
           GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name "github-actions[bot]"

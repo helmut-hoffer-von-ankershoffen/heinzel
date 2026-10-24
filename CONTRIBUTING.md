@@ -115,11 +115,13 @@ Fully automated and pull-request based ([ADR 0013](docs/adr/0013-pull-request-ba
 
 1. Actions → **Release** → Run workflow (`auto` derives the bump from commits; or force `patch`/`minor`/`major`).
    It opens a pull request `chore(release): vX.Y.Z` that updates the version everywhere and `CHANGELOG.md`, and
-   runs CI on it.
+   runs CI on it. The optional **intro** becomes the release's introduction under its heading in `CHANGELOG.md` and
+   in the release notes; edit it in the pull request like the rest. Introductions of earlier releases survive the
+   regeneration; hand edits to their entries don't, because entries come from the commits.
 2. Review and merge it. **Release tag** then tags the merge commit and **Publish** builds wheel and sdist, attests
    their provenance and creates the GitHub release with the changelog section as notes.
 
-`make release` opens the same pull request from a workstation.
+`make release` (`make release INTRO="..."`) opens the same pull request from a workstation.
 
 ## Repository settings (maintainers)
 
