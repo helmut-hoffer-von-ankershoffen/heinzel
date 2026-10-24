@@ -14,6 +14,7 @@ Kernel settings live in the `[hz]` table, module settings in a table named after
 (`[example]`, `[system.changelog]`).
 """
 
+import json
 import os
 import tomllib
 from collections.abc import Mapping
@@ -35,6 +36,7 @@ PROJECT_FILENAME = "hz.toml"
 KERNEL_SECTION = "hz"
 
 Scope = Literal["site", "user", "project", "explicit"]
+WritableScope = Literal["user", "project"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,3 +214,45 @@ def _merge(target: dict[str, Any], source: Mapping[str, Any]) -> None:
             target[key] = existing
         else:
             target[key] = incoming if incoming is not None else value
+
+
+class ConfigEditor:
+    """Changes configuration files the way `hz system config set` does; provided by `system.config` (ADR 0032).
+
+    Setup steps ask for it by type. Values are validated against the setting's model before anything is written.
+    The kernel declares the interface; `system.config` implements it, so plugins depend on the kernel only.
+    """
+
+    def write(self, key: str, value: object, scope: WritableScope = "user") -> Path:
+        """Validate `value` for the setting `key` (`section.key`, e.g. `clock.zones`) and write it to the file.
+
+        Raises:
+            HeinzelError: If the key is unknown or the value is invalid for it.
+        """
+        raise NotImplementedError
+
+    def unset(self, key: str, scope: WritableScope = "user") -> Path:
+        """Remove the setting `key` from the file, so its default applies again.
+
+        Raises:
+            HeinzelError: If the key is unknown or not set in that file.
+        """
+        raise NotImplementedError
+
+
+def toml_value(value: object) -> str:
+    """A TOML literal for a JSON-compatible value: `true`, `3`, `"text"`, `["a", "b"]`, `{ name = "x" }`."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, Mapping):
+        items = cast("Mapping[str, object]", value).items()
+        pairs = ", ".join(f"{_toml_key(str(key))} = {toml_value(item)}" for key, item in items)
+        return f"{{ {pairs} }}" if pairs else "{}"
+    if isinstance(value, list | tuple):
+        return "[" + ", ".join(toml_value(item) for item in cast("list[object]", value)) + "]"
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _toml_key(key: str) -> str:
+    bare = key.isascii() and key and all(c.isalnum() or c in "-_" for c in key)
+    return key if bare else json.dumps(key, ensure_ascii=False)

@@ -50,7 +50,7 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 - **Declaration.** `@module.setup(required=False)` on a function with a docstring adds a `SetupLet` named after the
   module (one per module, like `InfoLet`). Its first docstring line is shown before the step. Its parameters are
   injected like an operation's: settings, services, `Credentials`, and `Prompter`.
-- **Prompter.** `heinzel.Prompter` asks `text`, `choice`, `choices` (several), `confirm`, `number` and `secret`
+- **Prompter.** `heinzel.Prompter` asks `text`, `choice`, `choices` (several, or none), `confirm`, `number` and `secret`
   questions, each with a default and, where it makes sense, a `validate` callback returning a problem or None; an
   invalid answer is explained and asked again. Heads implement two primitives, `read` and `say`. The kernel's default
   is not interactive and raises `HeinzelError`; the CLI binds a console prompter; tests use
@@ -84,11 +84,12 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 
 ### Confirmation
 
-- `tests/unit/kernel/setup_test.py`: the decorator, reserved names, ordering, the configured heuristic, the
-  prompter's validation and re-asking with `ScriptedPrompter`.
-- `tests/unit/heads/cli/setup_test.py` and `tests/integration/setup_test.py`: `hz setup` and `hz <module> setup`
-  with scripted answers through the console prompter, skipping, required steps, already configured, Ctrl-C, the
-  refusal without a TTY, and that MCP and REST expose no setup.
+- `tests/unit/kernel/module_test.py`: the decorator, one step per module, the reserved name `setup`;
+  `tests/unit/kernel/prompter_test.py`: every question, its validation and re-asking, with `ScriptedPrompter`.
+- `tests/unit/heads/cli_setup_test.py`: the order, the configured heuristic, the equivalent commands, skipping,
+  required steps, already configured, failing steps, Ctrl-C and the console prompter.
+- `tests/integration/setup_test.py`: `hz setup` and `hz <module> setup` answered on stdin, the summary and doctor
+  on the configuration just written, the refusal without a TTY, and that MCP and REST expose no setup.
 - `packages/heinzel-clock/tests/clock_test.py`: `hz clock setup` and the migration of the old settings shape.
 - `tests/unit/public_api_test.py` snapshots the new names.
 

@@ -1,9 +1,10 @@
+import tomllib
 from pathlib import Path
 
 import pytest
 
 from heinzel import Config, HeinzelError, ModuleSettings, Settings
-from heinzel.kernel import ConfigFile, env_prefix
+from heinzel.kernel import ConfigEditor, ConfigFile, env_prefix, toml_value
 from heinzel.kernel._config import config_files, user_config_dir
 
 pytestmark = pytest.mark.unit
@@ -97,3 +98,28 @@ def test_invalid_toml_is_a_heinzel_error(monkeypatch, tmp_path):
     (tmp_path / "hz.toml").write_text("not = [valid", encoding="utf-8")
     with pytest.raises(HeinzelError, match="not valid TOML"):
         Config.load(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("value", "literal"),
+    [
+        (True, "true"),
+        (3, "3"),
+        ("Grüße", '"Grüße"'),
+        (["a", 1], '["a", 1]'),
+        ((9, 18), "[9, 18]"),
+        ({}, "{}"),
+        ({"name": "Asia/Tokyo", "hours": [10, 19]}, '{ name = "Asia/Tokyo", hours = [10, 19] }'),
+        ({"Europe/Berlin": 1, "": 2}, '{ "Europe/Berlin" = 1, "" = 2 }'),
+    ],
+)
+def test_toml_value_writes_literals_tomllib_reads_back(value, literal):
+    assert toml_value(value) == literal
+    assert tomllib.loads(f"v = {literal}")["v"] == (list(value) if isinstance(value, tuple) else value)
+
+
+def test_the_config_editor_is_an_interface_system_config_implements():
+    with pytest.raises(NotImplementedError):
+        ConfigEditor().write("clock.zones", [])
+    with pytest.raises(NotImplementedError):
+        ConfigEditor().unset("clock.zones")

@@ -5,13 +5,14 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Module
+from heinzel import ConfigEditor, Module
 from heinzel.modules.system.config._models import ConfigFileInfo, ConfigReport, SettingInfo
 from heinzel.modules.system.config._render import render_report
 from heinzel.modules.system.config._service import ConfigService, Scope
 
 module = Module("config", "Show, get, set and initialize configuration.", essential=True)
 module.service(ConfigService)
+module.service(ConfigEditor, ConfigService)  # how setup steps write settings (ADR 0032)
 
 
 @module.operation(render=render_report)

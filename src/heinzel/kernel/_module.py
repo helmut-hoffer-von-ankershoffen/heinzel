@@ -30,11 +30,14 @@ from heinzel.kernel._lets import (
     RequirementLet,
     ServiceLet,
     SettingsLet,
+    SetupLet,
 )
 from heinzel.kernel._spec import hookimpl
 
-RESERVED_NAMES = frozenset({"hz", "capabilities"})
-"""Names a module can't take: they are the kernel's and the capability bindings' configuration tables."""
+RESERVED_NAMES = frozenset({"hz", "capabilities", "setup"})
+"""Names a module can't take: the kernel's and the capability bindings' configuration tables, and `hz setup`."""
+SETUP = "setup"
+"""The command of a module's setup step (ADR 0032): no operation of a module with a step may take it."""
 SERVICE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$")
 
 
@@ -70,7 +73,8 @@ class Module:
             msg = f"Module name {name!r} must match {NAME_PATTERN.pattern}"
             raise ValueError(msg)
         if name in RESERVED_NAMES:
-            msg = f"Module name {name!r} is reserved: `[{name}]` is a configuration table of the kernel"
+            what = "the command `hz setup`" if name == SETUP else f"`[{name}]`, a configuration table of the kernel"
+            msg = f"Module name {name!r} is reserved: it is {what}"
             raise ValueError(msg)
         requirements = parse_requirements(requires)
         if writes := [str(r) for r in requirements if "write" in r.modes]:
@@ -99,6 +103,9 @@ class Module:
         """
         if any(type(existing) is type(let) and existing.name == let.name for existing in self._lets):
             msg = f"Module {self.name!r} already has a {type(let).__name__} named {let.name!r}"
+            raise ValueError(msg)
+        if _setup_clash(let, self._lets):
+            msg = f"Module {self.name!r} can't have both a setup step and an operation named {SETUP!r}"
             raise ValueError(msg)
         self._lets.append(let)
 
@@ -341,6 +348,36 @@ class Module:
         self.add(let)
         return let
 
+    @overload
+    def setup[F: Callable[..., Any]](self, func: F, /) -> F: ...
+
+    @overload
+    def setup[F: Callable[..., Any]](self, /, *, required: bool = False) -> Callable[[F], F]: ...
+
+    def setup[F: Callable[..., Any]](self, func: F | None = None, /, *, required: bool = False) -> F | Callable[[F], F]:
+        """Advertise the module's interactive setup step (ADR 0032): `hz <module> setup`, and part of `hz setup`.
+
+        The function asks for `Prompter` and whatever else it needs by type, like an operation, and writes through
+        `ConfigEditor` and `Credentials`. Its docstring is required: the first line introduces the step.
+
+        Args:
+            func: The function, when used as a bare decorator.
+            required: `hz setup` runs it without offering to skip it; optional steps can be skipped.
+
+        Raises:
+            ValueError: If the docstring is missing, the module already has a step, or an operation named `setup`.
+        """
+
+        def decorate(target: F) -> F:
+            summary = inspect.getdoc(target)
+            if not summary:
+                msg = f"Setup step {target.__qualname__} needs a docstring; it introduces the step."
+                raise ValueError(msg)
+            self.add(SetupLet(name=self.name, func=target, summary=summary.splitlines()[0], required=required))
+            return target
+
+        return decorate(func) if func is not None else decorate
+
     @hookimpl
     def heinzel_lets(self) -> Sequence[Let]:
         """Hand the lets to the kernel."""
@@ -349,3 +386,14 @@ class Module:
     def __repr__(self) -> str:
         """Show the name and what the module advertises."""
         return f"Module({self.name!r}, lets={[let.name for let in self._lets]})"
+
+
+def _setup_clash(let: Let, lets: Iterable[Let]) -> bool:
+    """Whether `let` and one of `lets` are a setup step and an operation named `setup`: both would be the command."""
+
+    def setup_operation(candidate: Let) -> bool:
+        return isinstance(candidate, OperationLet) and candidate.name == SETUP
+
+    if isinstance(let, SetupLet):
+        return any(map(setup_operation, lets))
+    return setup_operation(let) and any(isinstance(existing, SetupLet) for existing in lets)

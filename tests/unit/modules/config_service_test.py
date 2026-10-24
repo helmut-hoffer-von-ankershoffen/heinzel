@@ -1,9 +1,9 @@
 import tomllib
 
 import pytest
-from pydantic import Field
+from pydantic import BaseModel, Field
 
-from heinzel import Config, HeinzelError, Module, ModuleSettings
+from heinzel import Config, ConfigEditor, HeinzelError, Module, ModuleSettings
 from heinzel.modules.system.config import ConfigService
 
 pytestmark = pytest.mark.unit
@@ -115,3 +115,30 @@ def test_an_empty_list_setting_still_gets_an_example(make_kernel):
     module.settings(Lists)
     with pytest.raises(HeinzelError, match=r"""set lists\.names '\["first", "second"\]'"""):
         ConfigService(make_kernel(lists=module)).set("lists.names", "a,b")
+
+
+class Hours(BaseModel):
+    """Hours of one zone."""
+
+    name: str
+    hours: tuple[int, int] = (9, 18)
+
+
+def test_write_validates_values_and_models_and_writes_tables(make_kernel, tmp_path, monkeypatch):
+    class Tables(ModuleSettings):
+        """Settings holding tables."""
+
+        zones: list[Hours] = Field(default_factory=list)
+        limits: dict[str, int] = Field(default_factory=lambda: {"a": 1})
+
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    module = Module("tables", "x")
+    module.settings(Tables)
+    service = ConfigService(make_kernel(tables=module))
+    assert isinstance(service, ConfigEditor)
+    path = service.write("tables.zones", [Hours(name="Asia/Tokyo", hours=(10, 19)), {"name": "Europe/Berlin"}])
+    assert tomllib.loads(path.read_text(encoding="utf-8")) == {
+        "tables": {"zones": [{"name": "Asia/Tokyo", "hours": [10, 19]}, {"name": "Europe/Berlin"}]}
+    }
+    with pytest.raises(HeinzelError, match=r"set tables\.limits '\{ a = 1 \}'"):
+        service.write("tables.limits", "many")
