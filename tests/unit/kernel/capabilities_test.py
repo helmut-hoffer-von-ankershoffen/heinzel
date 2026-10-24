@@ -14,6 +14,10 @@ from heinzel.kernel._protocols import (
     Chat,
     Documents,
     Event,
+    Mail,
+    MailContent,
+    MailMessage,
+    MailQuery,
     Meeting,
     Meetings,
     Message,
@@ -83,6 +87,7 @@ def test_contract_shaped_reads_take_a_window_and_id_reads_serve_operations():
         ("calendar", "events"),
         ("chat", "messages"),
         ("code-host", "merged_pull_requests"),
+        ("mail", "messages"),
         ("meetings", "ended"),
         ("meetings", "transcripts"),
         ("tracker", "issues_updated"),
@@ -90,7 +95,18 @@ def test_contract_shaped_reads_take_a_window_and_id_reads_serve_operations():
 
 
 def test_protocol_results_are_models_with_described_fields():
-    for model in (Message, PostedMessage, Meeting, Transcript, TranscriptSegment, Event, Participant):
+    for model in (
+        Message,
+        PostedMessage,
+        Meeting,
+        Transcript,
+        TranscriptSegment,
+        Event,
+        Participant,
+        MailMessage,
+        MailContent,
+        MailQuery,
+    ):
         for field_name, info in model.model_fields.items():
             assert info.description, f"{model.__name__}.{field_name} has no description"
 
@@ -101,6 +117,29 @@ def test_new_datetimes_and_windows_must_be_timezone_aware():
         Window(since=naive, until=naive)
     with pytest.raises(ValidationError):
         Event(id="e", title="t", start=naive, end=naive)
+
+
+def test_argument_checks_name_a_str_argument_of_a_read_method():
+    for name, spec in CAPABILITIES.items():
+        for (method, argument), check in spec.checks.items():
+            assert spec.methods.get(method) == "read", f"{name}.{method}"
+            assert get_type_hints(getattr(spec.protocol, method))[argument] is str, f"{name}.{method}({argument})"
+            assert callable(check)
+    assert CAPABILITIES["mail"].checks["messages", "query"] == MailQuery.parse
+
+
+def test_mail_only_reads():
+    assert CAPABILITIES["mail"].methods == {"messages": "read", "read": "read"}
+    assert CAPABILITIES["mail"].protocol is Mail
+    assert CAPABILITIES["mail"].modes == {"read"}
+
+
+def test_mail_senders_and_recipients_are_participants_so_packets_drop_their_addresses():
+    hints = get_type_hints(MailMessage)
+    assert hints["sender"] is Participant
+    assert hints["recipients"] == list[Participant]
+    with pytest.raises(ValidationError):
+        MailMessage(id="m", sender=Participant(), subject="s", received_at=datetime(2026, 10, 1))  # noqa: DTZ001
 
 
 def test_people_are_names_and_emails_only():
@@ -131,7 +170,7 @@ def test_parses_requirements(text, expected):
     [
         ("tracker", "must read"),
         ("a:b:c:d", "must read"),
-        ("mail:read", "unknown capability 'mail'"),
+        ("spreadsheets:read", "unknown capability 'spreadsheets'"),
         ("tracker:", "modes must be"),
         ("tracker:delete", "modes must be"),
         ("tracker:write", "tracker has no write mode"),

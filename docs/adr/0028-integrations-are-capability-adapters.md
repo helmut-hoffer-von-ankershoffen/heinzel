@@ -48,6 +48,12 @@ integration becomes a configuration change.
 - **Workflows name capabilities, never vendors**: a contract asks for `tracker` or `documents`, not for a product.
 - **Binding**: configuration binds capability → adapter per team and per person, in the layered configuration
   ([ADR 0012](0012-layered-configuration.md)). `hz system doctor` checks every bound adapter.
+- **Several providers per capability, configuration chooses** (maintainer's decision, 2026-10-24): any number of
+  installed adapters may provide one capability, and the binding names the one in use. That includes a company's
+  own private plugin layer, which may provide the same capabilities through its own gateway and is then bound instead
+  of the first-party plugin; nothing in the core or in workflows changes. An adapter may itself be built on another
+  capability, declared like any requirement (`requires=["mail:read"]`), so a provider can read through whichever
+  adapter serves that capability.
 - **Dependencies with access modes**: a plugin declares the capabilities it needs and in which mode, for example
   `requires = ["tracker:read", "documents:read,write", "chat:write"]`; an adapter declares what it provides
   (`provides = ["documents:read,write", "calendar:read"]`) and the hosts it reaches. Capabilities, not vendors, so a
@@ -61,7 +67,8 @@ integration becomes a configuration change.
     for a privacy notice ([ADR 0024](0024-people-and-org.md)).
   - Calling a capability or mode that wasn't declared fails, at runtime and in a test.
 - **First adapters, planned for 0.2**: GitHub (code host, tracker), Atlassian (tracker, documents), Google Workspace
-  (documents, calendar; spreadsheets and mail later), Zoom (meetings and transcripts) and Slack (chat). All five are
+  (documents, calendar, mail; spreadsheets later), Zoom (meetings, from Zoom's meeting-summary emails read through the
+  bound `mail` adapter, not from Zoom's API: maintainer's decision, 2026-10-24) and Slack (chat). All five are
   first-party plugins in `plugins/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md)): maintainer's
   decision, 2026-10-24.
 
@@ -79,9 +86,11 @@ integration becomes a configuration change.
 Partly, for the part built in 0.2 (see the implementation status under More Information): a requester can't use a
 capability or mode it didn't declare, through every head, for documents and for chat
 (`tests/unit/kernel/bindings_test.py`, `tests/integration/capability_test.py`, with test-only chat, meetings and
-calendar adapters that correlate an event with its meeting); requirement strings and the registry stay in step with
+calendar adapters that correlate an event with its meeting, and a meetings adapter built on a mail adapter, chosen
+over a second meetings provider by configuration); requirement strings and the registry stay in step with
 the protocols, window reads stay contract-shaped and id reads stay the only others, new datetimes are timezone-aware,
-and people stay names and emails (`tests/unit/kernel/capabilities_test.py`); contract inputs name the new methods
+and people stay names and emails (`tests/unit/kernel/capabilities_test.py`); the mail query syntax and headers
+without addresses (`tests/unit/kernel/mail_test.py`); contract inputs name the new methods
 (`tests/unit/modules/workflow_contracts_test.py`); the packet builder cleans every string and drops emails
 (`tests/unit/modules/workflow_service_test.py`); `clean_text` (`tests/unit/kernel/text_test.py`) and
 `assert_adapter` (`tests/unit/testing_test.py`); declarations are checked when a module is imported
@@ -95,6 +104,8 @@ bound adapters.
 ## More Information
 
 - The dependency model with read and write modes was proposed by the maintainer on 2026-10-23.
+- Mail as a v1 capability, meetings from summary emails, and several providers per capability chosen by
+  configuration, including a company's own plugin layer: the maintainer's decisions of 2026-10-24.
 
 **What 0.2 implements.**
 
@@ -104,7 +115,8 @@ request (director's decisions, 2026-10-24):
 
 - **Protocols** (`heinzel.kernel._protocols`, public in `heinzel`): only what the first workflows need. `CodeHost`
   (`merged_pull_requests` in a `Window`), `Tracker` (`issues_updated`), `Documents` (`read`; `replace_section` as the
-  only write), and, for the Slack, Zoom and Google Workspace adapters (below), `Chat`, `Meetings` and `Calendar`.
+  only write), and, for the Slack, Zoom and Google Workspace adapters (below), `Chat`, `Meetings`, `Calendar` and
+  `Mail`.
   Issues belong to `tracker` alone, also when they live on the code host: a GitHub adapter provides both
   capabilities. Results are pydantic models with described fields. No separate protocol version number: the protocols
   are public API and follow the core's SemVer ([ADR 0026](0026-plugin-api-versioned-with-semver.md)), which rejected
@@ -116,7 +128,7 @@ request (director's decisions, 2026-10-24):
   in a minor release.
 - **Each method has a mode** in the capability registry (`CAPABILITIES`); a unit test keeps the registry and the
   protocols in step. Capability names in requirements and bindings are `agent-runner`, `calendar`, `chat`,
-  `code-host`, `documents`, `meetings` and `tracker`; the core defines the set (plugins cannot add capabilities yet)
+  `code-host`, `documents`, `mail`, `meetings` and `tracker`; the core defines the set (plugins cannot add capabilities yet)
   and grows it under the growth rule above. An adapter must implement the methods of the modes it declares, checked
   when the kernel registers an adapter class and when it builds one from a factory; `heinzel.testing.assert_adapter`
   runs the same check, plus the parameter names and defaults, in a plugin's own tests (a first piece of the shared
@@ -143,7 +155,7 @@ request (director's decisions, 2026-10-24):
     `#name` is a channel of the configured team; direct messages and group chats are out of scope. Message ids are
     the vendor's (a Slack `ts`). No `channel(name)` lookup and no `thread(channel, message)`: `messages` already
     includes replies and no listed workflow needs a name lookup.
-  - `meetings` (Zoom first; Meet and Teams later): `ended(window)` lists the user's meetings that ended in the window
+  - `meetings` (Zoom first, from its summary emails; Meet and Teams later): `ended(window)` lists the user's meetings that ended in the window
     with their participants; `transcripts(window)` returns the transcripts of those that have one, each carrying its
     `Meeting` (id, title, start, end, participants) and speaker-attributed segments, so a contract reads transcripts
     without knowing ids; `transcript(meeting)` is the operation-level read for a known `Meeting.id`. All `read`;
@@ -173,9 +185,30 @@ request (director's decisions, 2026-10-24):
     they fit Confluence: the adapter exports the document as text and locates the marker in the document's body for
     the write. A `search(query, window)` read is not added: no 0.2 workflow needs it, and adding a read method later
     goes through the deprecation cycle above, so it waits for a workflow that does.
-  - **Mail is deferred.** No 0.2 workflow reads mail: newsletters are outputs, not inputs, and a Gmail read scope is
-    the most sensitive one a Google adapter could ask for (Google restricts it and requires its own review). A `mail`
-    capability comes with the first workflow that needs it, likely `send` as its first method.
+  - **Mail is a v1 capability** (maintainer's decision, 2026-10-24, reversing the deferral this ADR recorded
+    earlier the same day). Meetings arrive as summary emails from the meeting tool, so mail is an input after all,
+    with swappable providers like every capability (Gmail first, through the Google Workspace plugin; IMAP or a
+    company gateway later). Read only: `messages(query, window)`, the messages received in the window that match
+    `query`, oldest first, contract-shaped; `read(message)`, one message's text and headers, for operations that know
+    the id. Nothing sends, files or deletes mail; a `send` would be a new mode under the growth rule.
+    - **One query syntax for every provider**, so a contract's `args` stay portable: `from:<address or domain>
+      subject:<text> label:<name>`, each at most once, quoted when it holds spaces, all terms matching; the core
+      parses it (`MailQuery.parse`) and defines what matches (`MailQuery.matches`), and adapters translate it into the
+      vendor's search and check `matches` on what comes back. A free-form vendor query would tie contracts to a vendor.
+      A contract's query is checked when the contract is read, not at its first run: the registry holds checks of
+      `str` arguments (`Capability.checks`), and contract validation runs them.
+    - **People stay participants.** `MailMessage.sender` and `recipients` are `Participant`s, so the packet builder
+      drops their addresses like every other. `MailContent.headers` keeps only an allowlist of headers that carry no
+      addresses (`MAIL_HEADERS`: `date`, `message-id`, `list-id`, ...), because a denylist misses `Received`,
+      `Authentication-Results`, `List-Post` and vendor variants; the model drops the rest whatever the adapter passes,
+      and the packet builder validates every model again, so `model_construct` or a later mutation can't bypass it.
+    - **Bounded.** Lists follow the window rule above; `MailContent.text` is the text part or the HTML converted to
+      text, attachments left out, and an adapter raises a `HeinzelError` past a byte budget of its own instead of
+      cutting it. Every string passes `clean_text`, like all adapter output.
+    - **Meetings from summary emails.** A meetings adapter may read the meeting tool's summary emails through the
+      bound `mail` adapter instead of the tool's API (the Zoom plugin does), declaring `mail:read` itself: no
+      credentials of the meeting tool, and the mailbox's provider stays swappable. Such a transcript is the summary,
+      not a verbatim record, which the adapter documents.
 - **Two new let kinds.** `ProviderLet` (`@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter
   class, named `<adapter>:<capability>`) can't be a `ServiceLet`: several adapters provide the same protocol and
   configuration picks one, while a service type has exactly one provider. `RequirementLet`

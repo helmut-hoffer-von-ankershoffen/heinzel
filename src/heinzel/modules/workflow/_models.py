@@ -29,7 +29,7 @@ from pydantic import (
 from pydantic_core import PydanticCustomError
 
 from heinzel import AgentResult, ModuleSettings, Window
-from heinzel.kernel import CAPABILITIES, Requirement, parse_duration, schedule_problem, user_config_dir
+from heinzel.kernel import CAPABILITIES, Capability, Requirement, parse_duration, schedule_problem, user_config_dir
 from heinzel.modules.workflow._measure import Measurements
 
 SCHEMA_VERSION = 1
@@ -156,11 +156,22 @@ class Input(_Strict):
         if missing := [p for p in named if p not in self.args]:
             raise at(("args",), f"{self.read} needs `args: {{{missing[0]}: ...}}`")
         for name in named:
-            try:
-                TypeAdapter(hints[name]).validate_python(self.args[name])
-            except ValidationError as exc:
-                raise at(("args", name), f"{name}: {exc.errors()[0]['msg']}") from exc
+            if problem := self._argument_problem(spec, name, hints[name]):
+                raise problem
         return self
+
+    def _argument_problem(self, spec: Capability, name: str, hint: Any) -> PydanticCustomError | None:  # noqa: ANN401 - a type hint
+        """Why the argument `name` lacks the method's type or fails the capability's own check of it; None if not."""
+        try:
+            TypeAdapter(hint).validate_python(self.args[name])
+        except ValidationError as exc:
+            return at(("args", name), f"{name}: {exc.errors()[0]['msg']}")
+        if check := spec.checks.get((self.method, name)):
+            try:
+                check(str(self.args[name]))  # a str: validated above
+            except ValueError as exc:
+                return at(("args", name), f"{name}: {exc}")
+        return None
 
     def arguments(self, until: datetime) -> dict[str, Any]:
         """The method's keyword arguments for a run at `until`: `args`, plus the window ending then."""

@@ -47,11 +47,12 @@ class CapabilitySettings(ModuleSettings):
     chat: str | None = Field(default=None, description="Adapter that serves `chat`, e.g. `slack`.")
     code_host: str | None = Field(default=None, description="Adapter that serves `code-host`, e.g. `github`.")
     documents: str | None = Field(default=None, description="Adapter that serves `documents`.")
+    mail: str | None = Field(default=None, description="Adapter that serves `mail`, e.g. `google`.")
     meetings: str | None = Field(default=None, description="Adapter that serves `meetings`, e.g. `zoom`.")
     tracker: str | None = Field(default=None, description="Adapter that serves `tracker`, e.g. `github`.")
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
-        {"agent_runner", "calendar", "chat", "code_host", "documents", "meetings", "tracker"}
+        {"agent_runner", "calendar", "chat", "code_host", "documents", "mail", "meetings", "tracker"}
     )
 
     @model_validator(mode="before")

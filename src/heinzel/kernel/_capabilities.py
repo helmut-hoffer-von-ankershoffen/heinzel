@@ -6,13 +6,13 @@ declares what it provides. Requirements name capabilities, never vendors, so a b
 """
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, cast
 
 from heinzel.kernel._agents import AgentRunner
-from heinzel.kernel._protocols import Calendar, Chat, CodeHost, Documents, Meetings, Tracker
+from heinzel.kernel._protocols import Calendar, Chat, CodeHost, Documents, Mail, MailQuery, Meetings, Tracker
 
 Mode = Literal["read", "write"]
 MODES: tuple[Mode, ...] = ("read", "write")
@@ -28,6 +28,9 @@ class Capability:
     summary: str
     methods: Mapping[str, Mode] = field(default_factory=lambda: MappingProxyType({}))
     """Every method of the protocol with the mode a handle needs to call it."""
+    checks: Mapping[tuple[str, str], Callable[[str], object]] = field(default_factory=lambda: MappingProxyType({}))
+    """Checks of `str` arguments by (method, argument), raising `ValueError`: what a contract's `args` are held to
+    before any run, e.g. a mail query's syntax."""
 
     @property
     def modes(self) -> frozenset[Mode]:
@@ -68,6 +71,13 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 protocol=Documents,
                 summary="Documents: read their text; replace a marked section through publish operations.",
                 methods=MappingProxyType({"read": "read", "replace_section": "write"}),
+            ),
+            Capability(
+                name="mail",
+                protocol=Mail,
+                summary="A mailbox the user reads: messages in a window by sender, subject or label, and their text.",
+                methods=MappingProxyType({"messages": "read", "read": "read"}),
+                checks=MappingProxyType({("messages", "query"): MailQuery.parse}),
             ),
             Capability(
                 name="meetings",
