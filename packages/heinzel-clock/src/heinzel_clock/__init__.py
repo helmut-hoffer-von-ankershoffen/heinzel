@@ -156,7 +156,8 @@ def setup(settings: ClockSettings, prompter: Prompter, editor: ConfigEditor) -> 
     if not prompter.confirm("Save these time zones?"):
         prompter.say("Nothing was saved.")
         return
-    editor.write("clock.zones", [zone.model_dump(mode="json") for zone in chosen])
+    path = editor.write("clock.zones", [zone.model_dump(mode="json") for zone in chosen])
+    prompter.say(f"Saved to {path}.")
     if settings.working_hours is not None:
         # The zones now carry their hours. It may be set where setup doesn't write (a project file, HZ_* variables).
         with suppress(HeinzelError):

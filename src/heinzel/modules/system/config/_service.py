@@ -2,7 +2,7 @@
 
 import shlex
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import tomlkit
 from pydantic import ValidationError
@@ -98,7 +98,10 @@ class ConfigService(ConfigEditor):
             HeinzelError: If the key is unknown or the value is invalid for it.
         """
         section, name, model = self._locate(key)
-        parsed = to_jsonable_python(value)
+        parsed = _without_none(to_jsonable_python(value))
+        if parsed is None:
+            msg = f"TOML has no null; to let {key} take its default, run `hz system config unset {key}`."
+            raise HeinzelError(msg)
         table = {**self._kernel.config.section(section), name: parsed}
         try:
             Config(files=(), data=_nest(section, table)).settings(model, section)
@@ -108,8 +111,7 @@ class ConfigService(ConfigEditor):
         path = self._scope_file(scope)
         document = _load(path)
         _table(document, section)[name] = parsed
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(tomlkit.dumps(document), encoding="utf-8")
+        _save(path, document)
         return path
 
     def unset(self, key: str, scope: Scope = "user") -> Path:
@@ -126,7 +128,7 @@ class ConfigService(ConfigEditor):
             msg = f"{key} is not set in {path}"
             raise HeinzelError(msg)
         del table[name]
-        path.write_text(tomlkit.dumps(document), encoding="utf-8")
+        _save(path, document)
         return path
 
     def _locate(self, key: str) -> tuple[str, str, type[ModuleSettings]]:
@@ -177,6 +179,23 @@ def _parse_value(value: str) -> Any:  # noqa: ANN401 - any TOML value
         return tomlkit.parse(f"value = {value}")["value"].unwrap()
     except ParseError:
         return value
+
+
+def _without_none(value: Any) -> Any:  # noqa: ANN401 - any JSON-compatible value
+    """`value` without None in tables and arrays: TOML has no null, an absent key means its default."""
+    if isinstance(value, dict):
+        return {k: _without_none(v) for k, v in cast("dict[str, Any]", value).items() if v is not None}
+    if isinstance(value, list):
+        return [_without_none(v) for v in cast("list[object]", value) if v is not None]
+    return value
+
+
+def _save(path: Path, document: tomlkit.TOMLDocument) -> None:
+    """Write the file whole or not at all: Ctrl-C or a full disk never leaves half a configuration behind."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(tomlkit.dumps(document), encoding="utf-8")
+    temporary.replace(path)
 
 
 def _nest(section: str, table: dict[str, Any]) -> dict[str, Any]:

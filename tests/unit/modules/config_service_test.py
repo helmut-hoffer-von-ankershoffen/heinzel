@@ -142,3 +142,13 @@ def test_write_validates_values_and_models_and_writes_tables(make_kernel, tmp_pa
     }
     with pytest.raises(HeinzelError, match=r"set tables\.limits '\{ a = 1 \}'"):
         service.write("tables.limits", "many")
+
+
+def test_write_drops_none_and_refuses_it_alone(kernel, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    service = ConfigService(kernel)
+    with pytest.raises(HeinzelError, match=r"TOML has no null; .* `hz system config unset example\.nickname`"):
+        service.write("example.nickname", None)
+    path = service.write("example.zones", ["Europe/Berlin", None])
+    assert tomllib.loads(path.read_text(encoding="utf-8")) == {"example": {"zones": ["Europe/Berlin"]}}
+    assert [p.name for p in tmp_path.iterdir()] == ["config.toml"]  # replaced whole, no temporary file left

@@ -58,8 +58,9 @@ def vault() -> Module:
 
 
 @pytest.fixture
-def terminal(monkeypatch):
+def terminal(monkeypatch, tmp_path):
     monkeypatch.setattr(_setup, "stdin_is_terminal", lambda: True)
+    monkeypatch.chdir(tmp_path)  # doctor after setup reads the files again; no hz.toml from above the repository
 
 
 @pytest.fixture
@@ -233,3 +234,23 @@ def test_without_doctor_setup_ends_with_the_summary(make_kernel, settings, termi
     assert result.exit_code == 0, result.output
     assert "Heinzelmännchen is" not in result.output
     assert " done " in result.output
+
+
+def test_a_module_whose_only_command_takes_arguments_keeps_both_reachable(make_kernel, terminal):
+    module = Module("echo", "Echoes.")
+
+    @module.operation
+    def echo(text: str) -> str:
+        """Echo the text."""
+        return text
+
+    @module.setup
+    def setup(prompter: Prompter) -> None:
+        """Say hi."""
+        prompter.say("hi")
+
+    app = build(make_kernel(builtins=True, echo=module))
+    assert runner.invoke(app, ["echo", "echo", "setup", "--json"]).stdout.strip() == '"setup"'
+    result = runner.invoke(app, ["echo", "setup"])
+    assert result.exit_code == 0, result.output
+    assert "echo: done" in result.output

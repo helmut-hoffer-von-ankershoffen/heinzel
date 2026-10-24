@@ -61,7 +61,8 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 - **Commands (CLI only).** `hz <module> setup` runs one module's step; `hz setup` runs every step: built-in modules
   first, then the others alphabetically by qualified name. An optional step asks "Set up clock now? [Y/n]" first; a
   required one doesn't. A step whose module is already configured says so and asks whether to change it. Ctrl-C stops
-  the run and keeps finished steps. `hz setup` ends with a summary and `hz system doctor` on the configuration just
+  the run and keeps finished steps; configuration files are replaced whole, never half written. A step that fails is
+  reported and the others still run. `hz setup` ends with a summary and `hz system doctor` on the configuration just
   written. A module that collapses into one command (`hz clock`) keeps that command and gains `hz clock setup`.
 - **Already configured.** A module counts as configured when one of its settings is set in a file or the environment,
   or one of its declared credentials is stored. A module with neither always runs its step.
@@ -80,7 +81,10 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 - Bad: the order is fixed (built-ins, then alphabetical). A step that needs another module's step first has to say so
   in its text until an `after=` declaration exists.
 - Bad: "configured" is a heuristic; a module whose defaults are fine is offered its step until something is set.
-- Neutral: new public API: `SetupLet`, `Prompter`, `ConfigEditor` (additive, [ADR 0026](0026-plugin-api-versioned-with-semver.md)).
+- Neutral: new public API, additive ([ADR 0026](0026-plugin-api-versioned-with-semver.md)): `SetupLet`,
+  `Prompter` and `ConfigEditor` in `heinzel`; for tests `ScriptedPrompter`, `ScriptExhausted` and `INTERRUPT` in
+  `heinzel.kernel` and the `hz_prompter` fixture in `heinzel.testing`; `toml_value` in `heinzel.kernel`. All are in
+  the snapshot of `tests/unit/public_api_test.py`.
 
 ### Confirmation
 

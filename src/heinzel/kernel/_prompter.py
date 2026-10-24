@@ -31,7 +31,7 @@ class Prompter:
             HeinzelError: Always: there is nobody to ask.
         """
         del secret
-        msg = f"Can't ask {prompt.strip()!r}: nobody is there to answer. Run `hz setup` in a terminal."
+        msg = f"Can't ask {prompt.strip()!r}: nobody is there to answer; run setup where a person can."
         raise HeinzelError(msg)
 
     def say(self, text: str) -> None:
@@ -62,9 +62,9 @@ class Prompter:
         Raises:
             HeinzelError: If nobody can answer.
         """
-        while not (answer := self.read(_prompt(question, None), secret=True).strip()):
+        while not (answer := self.read(_prompt(question, None), secret=True)).strip():
             self.say("The value is empty; please enter it.")
-        return answer
+        return answer.rstrip("\r\n")  # a token is taken as typed; only the line ending goes
 
     def confirm(self, question: str, *, default: bool = True) -> bool:
         """Yes or no; an empty answer takes `default`.
@@ -148,6 +148,10 @@ class Prompter:
             self.say(f"  {number}) {option}")
 
 
+class ScriptExhausted(Exception):  # noqa: N818 - says what happened, like StopIteration
+    """A `ScriptedPrompter` was asked more questions than it has answers: a test's script is too short."""
+
+
 INTERRUPT = "\x03"
 """An answer for `ScriptedPrompter` that interrupts like Ctrl-C does."""
 
@@ -170,11 +174,11 @@ class ScriptedPrompter(Prompter):
 
         Raises:
             KeyboardInterrupt: For the answer `INTERRUPT`.
-            LookupError: When the script has no answer left, naming the prompt.
+            ScriptExhausted: When the script has no answer left, naming the prompt.
         """
         if not self.answers:
             msg = f"The script has no answer left for {prompt.strip()!r}"
-            raise LookupError(msg)
+            raise ScriptExhausted(msg)
         answer = self.answers.pop(0)
         if answer == INTERRUPT:
             self.transcript.append(f"{prompt}^C")

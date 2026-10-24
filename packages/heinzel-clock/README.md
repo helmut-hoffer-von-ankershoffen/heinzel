@@ -14,5 +14,6 @@ Each zone is an IANA name, which gets working hours 9 to 18, or a table with its
 the MCP tool `clock` (`hz system serve mcp`) and `GET /clock` (`hz system serve api`); the zones are checked by
 `hz system doctor`, and `hz setup` includes the clock's optional setup step.
 
-The settings before per-zone hours (`zones` as names and one `working_hours` for all) are still read, with a
-deprecation warning and a degraded doctor check; `hz clock setup` rewrites them in the new shape.
+The settings before per-zone hours (`zones` as names and one `working_hours` for all) are still read, and
+`hz system doctor` reports them as degraded. `hz clock setup` rewrites them in the new shape when they are in your
+user file; remove `working_hours` from a project `hz.toml` or `HZ_CLOCK__WORKING_HOURS` yourself.

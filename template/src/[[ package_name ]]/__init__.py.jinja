@@ -30,7 +30,8 @@ def system_info(service: [[ class_prefix ]]Service) -> [[ class_prefix ]]About:
 def setup(settings: [[ class_prefix ]]Settings, prompter: Prompter, editor: ConfigEditor) -> None:
     """Choose how `hello` greets."""
     greeting = prompter.text("How should `hello` greet?", default=settings.greeting)
-    editor.write("[[ plugin_name ]].greeting", greeting)  # validated like `hz system config set`, user scope
+    path = editor.write("[[ plugin_name ]].greeting", greeting)  # validated like `hz system config set`, user scope
+    prompter.say(f"Saved to {path}.")
 
 
 __all__ = ["[[ class_prefix ]]About", "[[ class_prefix ]]Service", "[[ class_prefix ]]Settings", "module"]

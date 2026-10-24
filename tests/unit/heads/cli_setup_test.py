@@ -30,7 +30,7 @@ from heinzel.heads.cli._setup import (
     steps,
     summary,
 )
-from heinzel.kernel import INTERRUPT, ModuleRecord, Origin, ScriptedPrompter, discover
+from heinzel.kernel import INTERRUPT, ModuleRecord, Origin, ScriptedPrompter, ScriptExhausted, discover
 from heinzel.testing import MemoryBackend
 
 pytestmark = pytest.mark.unit
@@ -226,7 +226,7 @@ def test_a_failing_step_is_reported_and_the_rest_still_run(make_kernel):
 
 
 def test_a_script_running_out_of_answers_fails_the_test_not_the_step(kernel):
-    with pytest.raises(LookupError):
+    with pytest.raises(ScriptExhausted):
         Runner(kernel, ScriptedPrompter([""])).run(steps(kernel), offer_skip=True)
 
 
@@ -274,3 +274,66 @@ def test_the_console_prompter_hides_secrets_on_a_terminal(monkeypatch):
 def test_stdin_is_terminal_asks_stdin(monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
     assert _setup.stdin_is_terminal() is False
+
+
+@pytest.mark.parametrize(
+    ("error", "detail"),
+    [
+        (KeyError("zones"), "KeyError: 'zones' (a bug in the step"),
+        (PermissionError("config.toml is read-only"), "config.toml is read-only"),
+    ],
+)
+def test_lookup_and_file_errors_of_a_step_are_failures_not_crashes(make_kernel, error, detail):
+    module = Module("broken", "Fails.")
+
+    @module.setup
+    def setup() -> None:
+        """Fail."""
+        raise error
+
+    kernel = make_kernel(broken=module)
+    results = Runner(kernel, ScriptedPrompter([""])).run(steps(kernel), offer_skip=True)
+    assert results[0].outcome is Outcome.FAILED
+    assert results[0].detail.startswith(detail)
+
+
+def test_invalid_settings_of_the_module_name_the_reset_command(monkeypatch, tmp_path):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    invalid = Config(files=(), data={"greet": {"greeting": ["not", "text"]}})
+    kernel = kernel_of(invalid, greet=(greet_module(), PLUGIN))
+    result = Runner(kernel, ScriptedPrompter()).run(steps(kernel), offer_skip=True)[-1]
+    assert result.outcome is Outcome.FAILED
+    assert "its configuration is invalid: GreetSettings greeting:" in result.detail
+    assert result.detail.endswith("`hz system config unset greet.greeting` resets it, then run setup again")
+
+
+def test_invalid_settings_of_another_module_name_no_reset_command(make_kernel):
+    other = Module("other", "Has settings.")
+    other.settings(GreetSettings)
+    needy = Module("needy", "Uses them.")
+
+    @needy.setup
+    def setup(settings: GreetSettings) -> None:
+        """Use them."""
+
+    kernel = make_kernel(other=other, needy=needy, config=Config(files=(), data={"other": {"greeting": [1]}}))
+    result = Runner(kernel, ScriptedPrompter([""])).run(steps(kernel), offer_skip=True)[0]
+    assert result.outcome is Outcome.FAILED
+    assert "resets it" not in result.detail
+
+
+def test_the_console_prompter_refuses_a_secret_it_would_echo(monkeypatch):
+    class Terminal(io.StringIO):
+        def isatty(self) -> bool:
+            return True
+
+    def echoing(prompt: str) -> str:
+        import warnings
+
+        warnings.warn("Can not control echo on the terminal.", _setup.getpass.GetPassWarning, stacklevel=1)
+        return "visible"
+
+    monkeypatch.setattr("sys.stdin", Terminal())
+    monkeypatch.setattr(_setup.getpass, "getpass", echoing)
+    with pytest.raises(HeinzelError, match="can't hide what you type"):
+        ConsolePrompter(Console(file=io.StringIO())).read("Token: ", secret=True)

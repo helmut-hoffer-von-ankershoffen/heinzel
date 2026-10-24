@@ -8,6 +8,7 @@ already configured is offered a change instead. Ctrl-C stops and keeps what fini
 import getpass
 import shlex
 import sys
+import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -29,6 +30,7 @@ from heinzel.kernel import (
     ModuleRecord,
     OperationLet,
     Prompter,
+    ScriptExhausted,
     SettingsLet,
     SetupLet,
     toml_value,
@@ -57,14 +59,20 @@ class ConsolePrompter(Prompter):
 
         Raises:
             KeyboardInterrupt: At the end of input.
+            HeinzelError: If the terminal can't hide a secret as it is typed.
         """
         try:
             # getpass reads the terminal device, not stdin, so piped answers are read as plain lines.
             if secret and sys.stdin.isatty():
-                return getpass.getpass(terminal_safe(prompt))
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", getpass.GetPassWarning)  # it would echo the secret instead
+                    return getpass.getpass(terminal_safe(prompt))
             return self.console.input(Text(terminal_safe(prompt)))
         except EOFError:
             raise KeyboardInterrupt from None
+        except getpass.GetPassWarning as exc:
+            msg = "The terminal can't hide what you type, so the secret wasn't read; use `hz system credential set`."
+            raise HeinzelError(msg) from exc
 
     def say(self, text: str) -> None:
         """Print a line as written, never as markup."""
@@ -168,10 +176,10 @@ class Runner:
             outcome = self._ask_and_run(record, let, offer_skip=offer_skip)
         except ValidationError as exc:
             # The module's settings in a file or HZ_* variable are invalid, so neither its step nor its check can run.
-            detail = f"its configuration is invalid: {invalid(exc)}"
-        except HeinzelError as exc:
+            detail = f"its configuration is invalid: {invalid(exc)}{self._reset_hint(record, exc)}"
+        except (HeinzelError, OSError) as exc:
             detail = str(exc)
-        except (KeyboardInterrupt, LookupError):
+        except (KeyboardInterrupt, ScriptExhausted):
             raise
         except Exception as exc:  # noqa: BLE001 - a broken plugin's step is reported, the other steps still run
             detail = f"{type(exc).__name__}: {exc} (a bug in the step; report it to the module's authors)"
@@ -179,6 +187,14 @@ class Runner:
             return StepResult(module=record.qualname, required=let.required, outcome=outcome)
         self.prompter.say(f"{record.qualname} failed: {detail}")
         return StepResult(module=record.qualname, required=let.required, outcome=Outcome.FAILED, detail=detail)
+
+    def _reset_hint(self, record: ModuleRecord, exc: ValidationError) -> str:
+        """How to reset the invalid setting, when it is one of the module's own."""
+        models = [let.model for owner, let in self.kernel.lets(SettingsLet) if owner.qualname == record.qualname]
+        location = exc.errors()[0]["loc"]
+        if location and any(model.__name__ == exc.title for model in models):
+            return f"; `hz system config unset {record.qualname}.{location[0]}` resets it, then run setup again"
+        return ""
 
     def _ask_and_run(self, record: ModuleRecord, let: SetupLet, *, offer_skip: bool) -> Outcome:
         ask = self.prompter.confirm
@@ -298,7 +314,8 @@ class SetupCommands:
             highlight=False,
             soft_wrap=True,
         )
-        self.err_console.print(Text("\n".join(lines) or "  (nothing to configure)"), highlight=False, soft_wrap=True)
+        listing = terminal_safe("\n".join(lines)) or "  (nothing to configure)"
+        self.err_console.print(Text(listing), highlight=False, soft_wrap=True)
         raise typer.Exit(code=1)
 
     def _doctor(self) -> None:

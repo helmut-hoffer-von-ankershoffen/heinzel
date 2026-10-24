@@ -125,6 +125,7 @@ KERNEL = [
     "Requirement",
     "RequirementLet",
     "RunStatus",
+    "ScriptExhausted",
     "ScriptedPrompter",
     "SectionReplacement",
     "ServiceLet",

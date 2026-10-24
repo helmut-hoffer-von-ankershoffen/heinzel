@@ -1,7 +1,7 @@
 import pytest
 
 from heinzel import HeinzelError, Prompter
-from heinzel.kernel import INTERRUPT, ScriptedPrompter
+from heinzel.kernel import INTERRUPT, ScriptedPrompter, ScriptExhausted
 
 pytestmark = pytest.mark.unit
 
@@ -41,8 +41,8 @@ def test_an_empty_default_is_not_shown():
 
 
 def test_secrets_are_never_empty_and_never_recorded():
-    prompter = ScriptedPrompter(["", "s3cret"])
-    assert prompter.secret("Token") == "s3cret"
+    prompter = ScriptedPrompter([" ", " s3cret "])
+    assert prompter.secret("Token") == " s3cret "  # taken as typed
     assert prompter.transcript == ["Token: ***", "The value is empty; please enter it.", "Token: ***"]
 
 
@@ -146,7 +146,7 @@ def test_a_script_can_interrupt_like_ctrl_c():
 
 
 def test_a_script_without_answers_names_the_question():
-    with pytest.raises(LookupError, match="no answer left for 'Name:'"):
+    with pytest.raises(ScriptExhausted, match="no answer left for 'Name:'"):
         ScriptedPrompter().text("Name")
 
 

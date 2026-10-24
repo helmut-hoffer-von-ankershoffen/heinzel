@@ -52,7 +52,7 @@ from heinzel.kernel._lets import (
 )
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
-from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter
+from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
     Calendar,
     Chat,
@@ -138,6 +138,7 @@ __all__ = [
     "Requirement",
     "RequirementLet",
     "RunStatus",
+    "ScriptExhausted",
     "ScriptedPrompter",
     "SectionReplacement",
     "ServiceLet",
