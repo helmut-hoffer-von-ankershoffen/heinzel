@@ -5,6 +5,11 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 ## [0.1.0](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.1.0) - 2026-10-24
 
 
+The first release: the foundation the workflows will build on. A kernel that discovers modules and the lets they
+advertise; every operation as a CLI command, an MCP tool and a REST endpoint; layered configuration, health checks
+and plugin management with a template and a first-party `clock` plugin; agent skills for coding agents; and releases
+with provenance attestations and an SBOM. What comes next is in the [roadmap](INTENT.md#where-we-are).
+
 ### ✨ Features
 
 - Heinzelmännchen foundation ([b40f8eb](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/b40f8eb09950070326ca21765b9a2ceca180d2a5))
