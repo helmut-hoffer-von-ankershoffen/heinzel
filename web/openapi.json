@@ -5058,6 +5058,18 @@
             "description": "Your name; on this machine only.",
             "title": "Name"
           },
+          "retired_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A role the profile names that hz no longer offers; the role counts as not set.",
+            "title": "Retired Role"
+          },
           "role": {
             "anyOf": [
               {

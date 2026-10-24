@@ -205,6 +205,9 @@ class ConfigService(ConfigEditor):
         except ValidationError as exc:
             msg = f"Invalid value for {key}: {exc.errors()[0]['msg']}\n{self._example(key, section, name, model)}"
             raise HeinzelError(msg) from exc
+        if problem := model.refuse_written(name, parsed):
+            msg = f"Invalid value for {key}: {problem}"
+            raise HeinzelError(msg)
         path = self._scope_file(scope)
         document = _load(path)
         _table(document, section)[name] = parsed

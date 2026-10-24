@@ -10,7 +10,17 @@ from heinzel import Config, HeinzelError, Status
 from heinzel.kernel import OrgContext
 from heinzel.modules import team
 from heinzel.modules.team import TeamContext, TeamService, TeamSettings
-from heinzel.modules.team._models import Action, Adopted, Manifest, Member, MemberView, Roster, TeamPlan, TeamShow
+from heinzel.modules.team._models import (
+    Action,
+    Adopted,
+    Manifest,
+    Member,
+    MemberView,
+    Roster,
+    TeamPlan,
+    TeamShow,
+    check_role,
+)
 from heinzel.modules.team._render import render_adopted, render_plan, render_show
 from heinzel.modules.team._template import with_owner
 
@@ -103,12 +113,13 @@ def test_the_roster_knows_its_owners_by_flag_and_by_role():
     roster = Roster(
         members=[
             Member(handle="mira", roles=["engineer"], owner=True, since=TODAY),
-            Member(handle="priya", roles=["engineering-leadership"], since=TODAY),
+            Member(handle="priya", roles=["engineering-manager"], since=TODAY),
             Member(handle="theo", roles=["engineer"], since=TODAY),
+            Member(handle="lena", roles=["product-leadership"], since=TODAY),  # retired, still owns
             Member(handle="old", roles=["engineering-manager"], since=TODAY, until=date(2020, 1, 1)),
         ]
     )
-    assert [m.handle for m in roster.owners(Manifest(name="payments"), TODAY)] == ["mira", "priya"]
+    assert [m.handle for m in roster.owners(Manifest(name="payments"), TODAY)] == ["mira", "priya", "lena"]
 
 
 @pytest.mark.parametrize(
@@ -297,3 +308,10 @@ def test_a_checkout_without_a_manifest_is_an_error_that_says_what_to_run(tmp_pat
 def test_a_layer_setting_is_a_layer_name():
     with pytest.raises(ValueError, match="isn't a layer name"):
         TeamSettings(layer="Acme Payments")
+
+
+def test_a_roster_naming_a_retired_role_still_loads_but_no_one_is_added_with_one():
+    member = Member(handle="priya", roles=["principal"], since=TODAY)
+    assert member.roles == ["principal"]
+    with pytest.raises(ValueError, match="isn't a role"):
+        check_role("principal")

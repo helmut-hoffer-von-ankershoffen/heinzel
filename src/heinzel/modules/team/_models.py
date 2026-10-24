@@ -13,18 +13,11 @@ from heinzel.modules.team._repo import check_url
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-ROLES = (
-    "engineer",
-    "principal",
-    "engineering-manager",
-    "engineering-leadership",
-    "product-manager",
-    "product-leadership",
-    "program-manager",
-)
-"""The core role vocabulary; layers' plugins add roles later, never rename these."""
+ROLES = ("engineering-manager", "engineer", "product-manager", "program-manager")
+"""The core role vocabulary, as in [org] (EM, IC, PM, TPM); layers' plugins add roles later, never rename these."""
 OWNER_ROLES = ("engineering-manager", "engineering-leadership", "product-leadership")
-"""Roles that own the roster by default; the creator of a team is its first owner whatever their role."""
+"""Roles that own the roster by default; the creator of a team is its first owner whatever their role. The retired
+leadership roles stay here, so rosters that name them keep their owners."""
 HANDLE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 """A handle: lowercase letters and digits, single dashes between; it names a file, so nothing else."""
 MAX_HANDLE = 39

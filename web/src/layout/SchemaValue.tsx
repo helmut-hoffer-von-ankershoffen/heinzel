@@ -28,13 +28,15 @@ type Props = {
 export function SchemaValue({ id, label, schema, control = controlFor(schema), value, disabled, onChange }: Props) {
   // Hours of a day (0–24) read as times.
   const hours = /hour/i.test(label);
+  const offered = control.kind === "choice" && control.options.some((option) => String(option) === String(value));
   switch (control.kind) {
     case "choice":
       return (
         <select
           id={id}
           aria-label={id ? undefined : label}
-          value={value === undefined || value === null ? "" : String(value)}
+          // A value that is no longer a choice (a retired role) reads as not set, so a new one is picked.
+          value={offered ? String(value) : ""}
           disabled={disabled}
           onChange={(event) => {
             const picked = control.options.find((option) => String(option) === event.target.value);
@@ -42,7 +44,7 @@ export function SchemaValue({ id, label, schema, control = controlFor(schema), v
           }}
           className={field}
         >
-          {(value === undefined || value === null) && <option value="">{t("settings.notSet")}</option>}
+          {!offered && <option value="">{t("settings.notSet")}</option>}
           {control.options.map((option) => (
             <option key={String(option)} value={String(option)}>
               {shown(option, hours)}

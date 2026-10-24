@@ -11,36 +11,29 @@ from pydantic_settings import NoDecode
 
 from heinzel import ModuleSettings
 
-ROLES = (
-    "engineer",
-    "principal",
-    "engineering-manager",
-    "engineering-leadership",
-    "product-manager",
-    "product-leadership",
-    "program-manager",
-)
-"""The core role vocabulary (the perfect-onboarding ADR); a team's layers may add roles, never rename these."""
+ROLES = ("engineering-manager", "engineer", "product-manager", "program-manager")
+"""The four roles hz offers: EM, IC, PM and TPM. A team's layers may add roles, never rename these.
+
+A company's levels (such as IC1 to IC7) are a separate dimension, to come later and overridable by a company plugin;
+they are not roles."""
+RETIRED_ROLES = frozenset({"principal", "engineering-leadership", "product-leadership"})
+"""Roles hz offered before: a profile that names one still loads, shows the role as not set, and doctor asks for one
+of the four."""
 ROLE_MEANINGS = {
-    "engineer": "builds and runs the product",
-    "principal": "senior engineer who shapes how it is built",
     "engineering-manager": "leads a team of engineers",
-    "engineering-leadership": "leads engineering across teams",
+    "engineer": "builds and runs the product",
     "product-manager": "decides what a team builds",
-    "product-leadership": "leads product across teams",
     "program-manager": "coordinates work across teams",
 }
 
 ROLE_LABELS: dict[str, JsonValue] = {
-    "engineer": "Engineer",
-    "principal": "Principal engineer",
-    "engineering-manager": "Engineering manager",
-    "engineering-leadership": "Engineering leadership",
-    "product-manager": "Product manager",
-    "product-leadership": "Product leadership",
-    "program-manager": "Program manager",
+    "engineering-manager": "EM · Engineering Manager",
+    "engineer": "IC · Engineer",
+    "product-manager": "PM · Product Manager",
+    "program-manager": "TPM · Technical Program Manager",
 }
 """How Settings names each role."""
+ROLE_PICK = "pick EM, IC, PM or TPM"
 
 CodingAgent = Literal["claude-code", "command", "none"]
 CODING_AGENTS: tuple[CodingAgent, ...] = get_args(CodingAgent)
@@ -189,12 +182,23 @@ class OrgSettings(ModuleSettings):
     def _hours(cls, value: Any) -> Any:  # noqa: ANN401 - whatever the configuration holds
         return parse_hours(value)
 
+    @classmethod
+    def refuse_written(cls, name: str, value: object) -> str | None:
+        """A retired role loads from a file that names it, but is never written again."""
+        if name == "role" and value in RETIRED_ROLES:
+            return f"role {value} is no longer offered; {ROLE_PICK}"
+        return None
+
     @field_validator("handle", "role", "timezone", "github", "email")
     @classmethod
     def _valid(cls, value: str | None, info: ValidationInfo) -> str | None:
         # One validator per field, not per model, so an error names the key that `hz system config unset` resets.
         check = FIELD_CHECKS[info.field_name or ""]
-        if value is not None and (problem := check(value)):
+        if (
+            value is not None
+            and not (info.field_name == "role" and value in RETIRED_ROLES)
+            and (problem := check(value))
+        ):
             raise ValueError(problem)
         return value
 
@@ -226,14 +230,20 @@ class Profile(BaseModel):
     complete: bool = Field(description="Whether handle, role and time zone are set.")
     missing: list[str] = Field(description="Settings still missing, e.g. org.handle.")
     fix: str = Field(description="What to run to complete or change the profile.")
+    retired_role: str | None = Field(
+        default=None, description="A role the profile names that hz no longer offers; the role counts as not set."
+    )
 
     @classmethod
     def of(cls, settings: OrgSettings) -> Self:
         """The profile in `settings`."""
-        missing = [f"org.{name}" for name in REQUIRED if getattr(settings, name) is None]
+        retired = settings.role if settings.role in RETIRED_ROLES else None
+        role = None if retired else settings.role
+        missing = [f"org.{name}" for name in REQUIRED if (role if name == "role" else getattr(settings, name)) is None]
         return cls(
             handle=settings.handle,
-            role=settings.role,
+            role=role,
+            retired_role=retired,
             timezone=settings.timezone,
             working_hours=format_hours(settings.working_hours),
             working_hours_set="working_hours" in settings.model_fields_set,

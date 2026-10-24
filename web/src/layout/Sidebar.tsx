@@ -241,11 +241,8 @@ function ThemeLogo({ mark = false, className }: { mark?: boolean; className?: st
 /** Short role labels, as in a chat app's account line; unknown roles show as they are. */
 const ROLE_SHORT: Record<string, string> = {
   engineer: "IC",
-  principal: "Principal",
   "engineering-manager": "EM",
-  "engineering-leadership": "Eng Lead",
   "product-manager": "PM",
-  "product-leadership": "Product Lead",
   "program-manager": "TPM",
 };
 

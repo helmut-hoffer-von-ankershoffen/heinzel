@@ -170,8 +170,9 @@ your team with one line in chat: hz team join …" and the reminder about the co
 
 - **The roster is drafted, you own it.** `--roster github:<org>/<team-slug>` reads the GitHub team you can read
   (`github:<org>` an organisation); everyone besides you starts as `engineer`, you fix roles in a commit
-  (`hz team add` for later joiners; the roles: `engineer`, `principal`, `engineering-manager`,
-  `engineering-leadership`, `product-manager`, `product-leadership`, `program-manager`). Guesses from the recurring
+  (`hz team add` for later joiners; the roles, four: `engineering-manager` (EM), `engineer` (IC), `product-manager`
+  (PM) and `program-manager` (TPM); a company's levels such as IC1 to IC7 are a separate dimension, to come later
+  from a company plugin). Guesses from the recurring
   1:1s in your calendar, for you to confirm, are **coming in the next release**: the `directory` capability's
   `one-on-ones` adapter exists, no command drafts a roster from it yet. The roster holds handle, GitHub login, an
   optional e-mail, roles and dates: never names, titles or managers.

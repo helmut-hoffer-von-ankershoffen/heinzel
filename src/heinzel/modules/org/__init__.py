@@ -12,7 +12,7 @@ from pydantic import Field
 from heinzel import Calendar, Check, ConfigEditor, Module, Prompter, Status
 from heinzel.kernel import CapabilityView
 from heinzel.modules.org._agenda import Agenda, local_now, read_agenda
-from heinzel.modules.org._models import ROLES, OrgSettings, Profile
+from heinzel.modules.org._models import ROLE_PICK, ROLES, OrgSettings, Profile
 from heinzel.modules.org._profile import ProfileService, ask_profile
 from heinzel.modules.org._render import render_agenda, render_profile
 from heinzel.modules.org._sync import SyncItem, SyncReport, SyncService, render_sync
@@ -45,6 +45,16 @@ def profile(service: ProfileService, recommendations: SyncService) -> list[Check
     """Your profile names your handle, role and time zone; and drift from what your team recommends."""
     found = service.profile()
     drift = recommendations.health()
+    if found.retired_role:
+        return [
+            Check(
+                name="profile",
+                status=Status.DEGRADED,
+                detail=f"role {found.retired_role} is no longer offered; {ROLE_PICK}",
+                fix=f"Run `hz setup`, or `hz system config set org.role <role>` with one of {', '.join(ROLES)}",
+            ),
+            *drift,
+        ]
     if not found.complete:
         return [
             Check(

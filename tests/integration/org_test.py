@@ -46,6 +46,7 @@ def test_show_reports_the_configured_profile(hz, monkeypatch):
         "complete": True,
         "missing": [],
         "fix": "hz setup",
+        "retired_role": None,
     }
     shown = hz("org", "show", json=False).output
     assert "08-16" in shown
@@ -129,3 +130,20 @@ def test_setup_with_an_invalid_role_says_how_to_reset_it(make_kernel, monkeypatc
     assert result.exit_code == 1
     failed = next(line for line in prompter.transcript if line.startswith("org failed:"))
     assert failed.endswith("`hz system config unset org.role` resets it, then run setup again")
+
+
+def test_a_retired_role_loads_and_doctor_asks_for_one_of_the_four(hz, monkeypatch):
+    monkeypatch.setenv("HZ_ORG__HANDLE", "mira")
+    monkeypatch.setenv("HZ_ORG__ROLE", "principal")
+    monkeypatch.setenv("HZ_ORG__TIMEZONE", "Europe/Lisbon")
+    shown = hz("org", "show").json
+    assert (shown["role"], shown["retired_role"], shown["missing"]) == (None, "principal", ["org.role"])
+    [profile] = hz("system", "doctor").json["checks"]["org"]
+    assert profile["status"] == "degraded"
+    assert profile["detail"] == "role principal is no longer offered; pick EM, IC, PM or TPM"
+
+
+def test_setting_a_retired_role_is_refused(hz):
+    result = hz("system", "config", "set", "org.role", "principal", json=False)
+    assert result.exit_code != 0
+    assert "no longer offered; pick EM, IC, PM or TPM" in result.output

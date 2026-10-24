@@ -68,6 +68,15 @@ class ModuleSettings(BaseSettings):
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)
 
+    @classmethod
+    def refuse_written(cls, name: str, value: object) -> str | None:
+        """Why `value` may still be read for the field `name` but no longer be written there, or None.
+
+        For values a module retired: a file that holds one keeps loading, `hz system config set` refuses it.
+        """
+        del name, value
+        return None
+
     section_title: ClassVar[str | None] = None
     """What Settings in the web app calls the module's section, e.g. `Notifications`; its name when none."""
 

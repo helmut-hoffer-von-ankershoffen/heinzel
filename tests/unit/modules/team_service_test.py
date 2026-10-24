@@ -520,7 +520,7 @@ def test_a_roster_with_a_handle_twice_is_invalid(tmp_path, remote):
 
 def test_an_owner_adds_an_owner_with_a_pull_request_and_codeowners_lists_them(tmp_path, remote):
     team, fake, checkout = joined(tmp_path, remote, login="mira-example")
-    plan = team.add("priya", login="priya-example", role="principal", owner=True, yes=True)
+    plan = team.add("priya", login="priya-example", role="program-manager", owner=True, yes=True)
     assert plan.done
     assert plan.pull_request
     assert ["git", "-C", str(checkout), "switch", "--quiet", "-C", "hz/add-priya", "origin/trunk"] in fake.commands

@@ -64,7 +64,7 @@ def found(monkeypatch):
 
 def test_when_everything_is_found_only_role_and_working_hours_are_asked(found):
     found(EVERYTHING)
-    prompter = ScriptedPrompter(["3", ""])
+    prompter = ScriptedPrompter(["1", ""])
     editor = RecordingEditor()
     assert ask_profile(OrgSettings(), prompter, editor) == CONFIG
     assert editor.written == {
@@ -78,6 +78,15 @@ def test_when_everything_is_found_only_role_and_working_hours_are_asked(found):
         "org.email": "mira@example.com",
     }
     assert "  Google login  mira@example.com (your gws login)" in prompter.transcript
+    assert not any(line.startswith(("Handle", "Time zone", "GitHub login")) for line in prompter.transcript)
+
+
+def test_a_retired_role_is_asked_again(found):
+    found(EVERYTHING)
+    prompter = ScriptedPrompter(["2", ""])
+    editor = RecordingEditor()
+    ask_profile(OrgSettings(role="principal"), prompter, editor)
+    assert editor.written["org.role"] == "engineer"
     assert not any(line.startswith(("Handle", "Time zone", "GitHub login")) for line in prompter.transcript)
 
 
@@ -211,8 +220,8 @@ def answers(presets: dict[str, object]) -> Prompter:
 def test_an_answers_file_sets_up_the_profile_without_a_person(found):
     found(EVERYTHING)
     editor = RecordingEditor()
-    ask_profile(OrgSettings(), answers({"org.role": "principal", "org.working_hours": "10-18"}), editor)
-    assert editor.written["org.role"] == "principal"
+    ask_profile(OrgSettings(), answers({"org.role": "program-manager", "org.working_hours": "10-18"}), editor)
+    assert editor.written["org.role"] == "program-manager"
     assert editor.written["org.working_hours"] == [10, 18]
     assert editor.written["org.handle"] == "mira-example"  # found, so nothing needed answering
 

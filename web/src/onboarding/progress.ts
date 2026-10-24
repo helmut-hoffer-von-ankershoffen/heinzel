@@ -38,11 +38,8 @@ export const setupIncomplete = (profile: SchemaProfile | undefined) =>
 export const ROLES = [
   ["engineering-manager", "EM"],
   ["engineer", "IC"],
-  ["principal", "Principal"],
   ["product-manager", "PM"],
   ["program-manager", "TPM"],
-  ["engineering-leadership", "Eng Lead"],
-  ["product-leadership", "Product Lead"],
 ] as const;
 
 /** "Send the weekly status to my team" → `send-the-weekly-status`: a contract name `hz workflow new` takes. */

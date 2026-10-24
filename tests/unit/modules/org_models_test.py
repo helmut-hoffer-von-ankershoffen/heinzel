@@ -9,16 +9,24 @@ from heinzel.modules.org._models import format_hours, parse_hours
 pytestmark = pytest.mark.unit
 
 
-def test_the_core_roles_are_the_seven_of_the_onboarding_adr():
-    assert ROLES == (
-        "engineer",
-        "principal",
-        "engineering-manager",
-        "engineering-leadership",
-        "product-manager",
-        "product-leadership",
-        "program-manager",
-    )
+def test_the_roles_are_four_em_ic_pm_and_tpm():
+    assert ROLES == ("engineering-manager", "engineer", "product-manager", "program-manager")
+    labels = OrgSettings.model_json_schema()["properties"]["role"]["x-labels"]
+    assert labels == {
+        "engineering-manager": "EM · Engineering Manager",
+        "engineer": "IC · Engineer",
+        "product-manager": "PM · Product Manager",
+        "program-manager": "TPM · Technical Program Manager",
+    }
+
+
+def test_a_retired_role_still_loads_counts_as_not_set_and_is_named():
+    settings = OrgSettings(handle="mira", role="principal", timezone="Europe/Berlin")
+    profile = Profile.of(settings)
+    assert (profile.role, profile.retired_role, profile.complete) == (None, "principal", False)
+    assert profile.missing == ["org.role"]
+    with pytest.raises(ValidationError, match="not a role"):
+        OrgSettings(role="cto")
 
 
 def test_a_complete_profile_names_handle_role_and_time_zone():
@@ -76,3 +84,11 @@ def test_the_coding_agent_is_one_of_three():
 
 def test_a_project_file_cant_set_who_you_are():
     assert set(OrgSettings.model_fields) <= OrgSettings.ignored_in_project
+
+
+def test_a_retired_role_is_never_written_again():
+    assert OrgSettings.refuse_written("role", "principal") == (
+        "role principal is no longer offered; pick EM, IC, PM or TPM"
+    )
+    assert OrgSettings.refuse_written("role", "engineer") is None
+    assert OrgSettings.refuse_written("handle", "principal") is None

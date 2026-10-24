@@ -4413,6 +4413,11 @@ export interface components {
              */
             name: string | null;
             /**
+             * Retired Role
+             * @description A role the profile names that hz no longer offers; the role counts as not set.
+             */
+            retired_role?: string | null;
+            /**
              * Role
              * @description Your role, e.g. engineering-manager.
              */
