@@ -593,7 +593,7 @@ $ hz system plugin search [OPTIONS]
 
 ### `hz system serve`
 
-Serve every operation to coding agents (MCP) or over HTTP (REST).
+Serve every operation to coding agents (MCP) or over HTTP (REST), or run the daemon in the foreground.
 
 **Usage**:
 
@@ -608,6 +608,7 @@ $ hz system serve [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `api`: Serve every operation as a REST endpoint;...
+* `daemon`: Run the daemon&#x27;s tick in the foreground...
 * `mcp`: Serve every operation as an MCP tool, e.g.
 
 #### `hz system serve api`
@@ -624,6 +625,21 @@ $ hz system serve api [OPTIONS]
 
 * `--host <str>`: Interface to listen on.  [default: 127.0.0.1]
 * `--port <int>`: Port to listen on.  [default: 8000]
+* `--help`: Show this message and exit.
+
+#### `hz system serve daemon`
+
+Run the daemon&#x27;s tick in the foreground every interval, printing each result as a JSON line.
+
+**Usage**:
+
+```console
+$ hz system serve daemon [OPTIONS]
+```
+
+**Options**:
+
+* `--interval DURATION`: Time between ticks, e.g. 30s, 5m or 1h.  [default: 5m]
 * `--help`: Show this message and exit.
 
 #### `hz system serve mcp`
