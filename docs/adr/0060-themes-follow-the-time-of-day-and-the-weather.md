@@ -6,7 +6,7 @@ amends: 0044
 related: 0003, 0027, 0039, 0043
 ---
 
-# 0058: Themes follow the time of day and the weather: variants on a closed vocabulary of signals
+# 0060: Themes follow the time of day and the weather: variants on a closed vocabulary of signals
 
 ## Context and Problem Statement
 

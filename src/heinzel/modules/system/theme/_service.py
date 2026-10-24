@@ -274,7 +274,7 @@ class ThemeService(ThemeFonts):
         return self.listing()
 
     def signals(self) -> ThemeSignalsView:
-        """The signals now (ADR 0058): the daypart in the person's time zone, and what the modules publish.
+        """The signals now (ADR 0060): the daypart in the person's time zone, and what the modules publish.
 
         Each module's signals operation runs at most once per its interval, on a worker of its own with a deadline of
         `DEADLINE`: one that fails, hangs or returns something else leaves its signals unknown until the next

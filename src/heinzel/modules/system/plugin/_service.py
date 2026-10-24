@@ -185,7 +185,7 @@ class PluginService:
             capabilities = sorted({f"{let.adapter}:{let.capability}" for let in lets if isinstance(let, ProviderLet)})
             themes = sorted({let.name for let in lets if isinstance(let, ThemeLet)})
             playbooks = [r.qualname for r in mine if any(isinstance(let, PlaybookLet) for let in r.module.lets)]
-            # Signals a theme follows (ADR 0058) are part of the look, not a capability of their own.
+            # Signals a theme follows (ADR 0060) are part of the look, not a capability of their own.
             signals = {let.func for let in lets if isinstance(let, SignalLet)}
             features = any(
                 isinstance(let, OperationLet) and let.name not in TEMPLATE_OPERATIONS and let.func not in signals

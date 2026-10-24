@@ -1,6 +1,6 @@
 // Applies the selected theme (ADR 0044) as CSS custom properties on <html>, for light or dark as the page shows.
 // The default theme sets nothing: index.css is its source, so the app looks right before the list arrives.
-// Its variant (ADR 0058) follows the signals; a change of variant fades over 1.5 s (`.theme-shift` in index.css), never
+// Its variant (ADR 0060) follows the signals; a change of variant fades over 1.5 s (`.theme-shift` in index.css), never
 // on the first paint or a switch of mode, and not at all with reduced motion.
 import { useEffect, useRef, useState } from "react";
 import type { SchemaThemeView } from "@/api/client";

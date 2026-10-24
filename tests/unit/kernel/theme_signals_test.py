@@ -1,4 +1,4 @@
-"""Signals themes follow (ADR 0058): the daypart from the clock and the sun, and what a module publishes."""
+"""Signals themes follow (ADR 0060): the daypart from the clock and the sun, and what a module publishes."""
 
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo

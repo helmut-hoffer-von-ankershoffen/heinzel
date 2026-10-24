@@ -59,7 +59,7 @@ sidebar = "#241e1a"
 input = "#38322d"
 popover = "#1d1713"
 
-# Variants (ADR 0058): the look follows the time of day and the weather; the one naming most signals wins.
+# Variants (ADR 0060): the look follows the time of day and the weather; the one naming most signals wins.
 [[variant]]
 when = { daypart = ["evening", "night"] }
 light = { main_tint = "#eef0f7", backdrop = { gradient = "linear", angle = 180, stops = ["main_tint", "background"], opacity = 0.6 } }

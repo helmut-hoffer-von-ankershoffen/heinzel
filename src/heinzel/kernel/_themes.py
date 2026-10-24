@@ -360,7 +360,7 @@ def _words(value: object) -> object:
 class ThemeWhen(BaseModel):
     """When a variant applies, e.g. `when = { daypart = "night", weather = ["rain", "drizzle"] }`.
 
-    Every signal it names has one of its values. Signals are a closed vocabulary (ADR 0058), so a misspelt one is
+    Every signal it names has one of its values. Signals are a closed vocabulary (ADR 0060), so a misspelt one is
     refused at import.
     """
 
@@ -401,7 +401,7 @@ type Signals = dict[str, str | None]
 
 
 class ThemeVariant(BaseModel):
-    """A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0058)."""
+    """A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0060)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
@@ -539,12 +539,12 @@ class Theme(BaseModel):
     variant: tuple[ThemeVariant, ...] = Field(
         default=(),
         max_length=MAX_VARIANTS,
-        description="Colours that follow the time of day and the weather (`[[variant]]` in its file, ADR 0058).",
+        description="Colours that follow the time of day and the weather (`[[variant]]` in its file, ADR 0060).",
     )
 
     @model_validator(mode="after")
     def _readable(self) -> "Theme":
-        """Refuse a theme whose text is hard to read, in either mode, as it is or in any variant (ADR 0058).
+        """Refuse a theme whose text is hard to read, in either mode, as it is or in any variant (ADR 0060).
 
         Raises:
             ValueError: If text falls under 4.5:1 on a surface it sits on.

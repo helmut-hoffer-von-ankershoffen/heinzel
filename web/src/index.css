@@ -49,7 +49,7 @@
   --color-main-tint: transparent;
 }
 
-/* A theme's backdrop behind the main area (ADR 0058), built by the web app from checked parts; none by default. */
+/* A theme's backdrop behind the main area (ADR 0060), built by the web app from checked parts; none by default. */
 :root {
   --theme-backdrop: none;
 }

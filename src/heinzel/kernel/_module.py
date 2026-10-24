@@ -563,7 +563,7 @@ class Module:
     def signals[F: Callable[..., ThemeSignals]](
         self, *, every: str | timedelta, name: str | None = None
     ) -> Callable[[F], F]:
-        """Publish signals themes follow (ADR 0058): a read-only operation returning `ThemeSignals`, read every `every`.
+        """Publish signals themes follow (ADR 0060): a read-only operation returning `ThemeSignals`, read every `every`.
 
         `system.theme` calls it at most once per interval and hands its values to the web app, whose theme picks the
         variant they match; it is an ordinary operation too, so `hz <module> <name>` shows what it publishes. Keep it

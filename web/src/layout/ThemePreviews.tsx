@@ -3,7 +3,7 @@
 // The tokens are set as custom properties on the preview's root, from the list's typed values (ADR 0044); nothing is
 // built into CSS text, and only the selected theme's font files are loaded (the others show their stack's fallback).
 import { Home, Search } from "lucide-react";
-// Each preview shows the variant the signals pick now (ADR 0058); in expert mode, "Preview conditions" picks another
+// Each preview shows the variant the signals pick now (ADR 0060); in expert mode, "Preview conditions" picks another
 // daypart and weather for the previews only, to see every variant.
 import { type CSSProperties, useId, useState } from "react";
 import type { SchemaThemeView } from "@/api/client";

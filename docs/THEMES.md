@@ -7,7 +7,7 @@ use <name>` picks one. Every value passes a grammar at import, so a theme can't 
 
 ## Themes that follow the time of day and the weather
 
-A theme can declare variants ([ADR 0058](adr/0058-themes-follow-the-time-of-day-and-the-weather.md)): colours that
+A theme can declare variants ([ADR 0060](adr/0060-themes-follow-the-time-of-day-and-the-weather.md)): colours that
 apply when the **signals** match. There are two, with a fixed vocabulary:
 
 | Signal | Values | From |
@@ -136,4 +136,4 @@ dark = { main_tint = "#1e293b", backdrop = { gradient = "linear", angle = 180, s
 ```
 
 Animated wallpapers (drifting clouds, falling rain and snow, stars at night) come with layered wallpapers, the next
-step of ADR 0058's More Information.
+step of ADR 0060's More Information.

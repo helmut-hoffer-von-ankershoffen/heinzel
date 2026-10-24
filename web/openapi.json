@@ -6561,7 +6561,7 @@
         "type": "object"
       },
       "ThemeSignalsView": {
-        "description": "The signals now, which pick a theme's variant (ADR 0058).",
+        "description": "The signals now, which pick a theme's variant (ADR 0060).",
         "properties": {
           "daypart": {
             "description": "The time of day in your time zone, e.g. `evening`.",
@@ -6659,7 +6659,7 @@
       },
       "ThemeVariant": {
         "additionalProperties": false,
-        "description": "A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0058).",
+        "description": "A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0060).",
         "properties": {
           "dark": {
             "anyOf": [
@@ -6832,7 +6832,7 @@
             "type": "string"
           },
           "variant": {
-            "description": "Colours that apply when the signals match (ADR 0058); the one naming most signals wins.",
+            "description": "Colours that apply when the signals match (ADR 0060); the one naming most signals wins.",
             "items": {
               "$ref": "#/components/schemas/ThemeVariant"
             },
@@ -6866,7 +6866,7 @@
       },
       "ThemeWhen": {
         "additionalProperties": false,
-        "description": "When a variant applies, e.g. `when = { daypart = \"night\", weather = [\"rain\", \"drizzle\"] }`.\n\nEvery signal it names has one of its values. Signals are a closed vocabulary (ADR 0058), so a misspelt one is\nrefused at import.",
+        "description": "When a variant applies, e.g. `when = { daypart = \"night\", weather = [\"rain\", \"drizzle\"] }`.\n\nEvery signal it names has one of its values. Signals are a closed vocabulary (ADR 0060), so a misspelt one is\nrefused at import.",
         "properties": {
           "daypart": {
             "default": [],

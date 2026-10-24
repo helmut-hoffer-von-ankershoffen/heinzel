@@ -1,4 +1,4 @@
-// A theme's variants (ADR 0058): colours that follow the signals, the time of day and the weather. The variant naming
+// A theme's variants (ADR 0060): colours that follow the signals, the time of day and the weather. The variant naming
 // most signals wins, the first on a tie, exactly as `variant_of` in the kernel. A backdrop is built from its typed
 // parts only: a hex stop or a known token, an angle and an opacity checked again here; anything else draws nothing.
 import type {

@@ -1,4 +1,4 @@
-"""The time zone of the daypart (ADR 0058): `[org] timezone`, never from a project file, else the machine's."""
+"""The time zone of the daypart (ADR 0060): `[org] timezone`, never from a project file, else the machine's."""
 
 import pytest
 

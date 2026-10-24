@@ -1,4 +1,4 @@
-"""Signals: the few facts about now a theme's variants follow, the time of day and the weather (ADR 0058).
+"""Signals: the few facts about now a theme's variants follow, the time of day and the weather (ADR 0060).
 
 The vocabulary is closed: `daypart` (computed by `system.theme` from the person's time zone and, when a module knows
 them, sunrise and sunset) and `weather` (published by a module). A module publishes signals with
