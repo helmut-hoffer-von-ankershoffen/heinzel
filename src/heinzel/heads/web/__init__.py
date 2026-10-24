@@ -143,7 +143,7 @@ def api_app(
     return app
 
 
-def build(
+def build(  # noqa: PLR0913 - all but the kernel by keyword
     kernel: Kernel,
     *,
     port: int | None,
