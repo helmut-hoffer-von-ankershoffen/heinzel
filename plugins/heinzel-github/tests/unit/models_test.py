@@ -1,44 +1,56 @@
 import pytest
-from heinzel_github import GITHUB_API, GithubSettings
+from heinzel_github import GITHUB_HOST, GithubSettings
+from heinzel_github._models import api_host
 from pydantic import ValidationError
 
 pytestmark = pytest.mark.unit
 
 
 def test_defaults_to_github_com():
-    assert GithubSettings().api_url == GITHUB_API
+    assert GithubSettings().host == GITHUB_HOST == "github.com"
 
 
-def test_an_enterprise_url_loses_its_trailing_slash():
-    assert GithubSettings(api_url=" https://ghe.example.com/api/v3/ ").api_url == "https://ghe.example.com/api/v3"
+def test_an_enterprise_host_is_trimmed_and_lower_cased():
+    assert GithubSettings(host=" GHE.Example.com ").host == "ghe.example.com"
 
 
 @pytest.mark.parametrize(
-    "url",
+    "host",
     [
-        "http://ghe.example.com/api/v3",
-        "ghe.example.com",
-        "https://",
+        "https://ghe.example.com",
+        "ghe.example.com/api/v3",
+        "ghe.example.com:8443",
+        "user@ghe.example.com",
+        "localhost",
         "",
-        "https://ghe.example.com/api/v3?x=1",
-        "https://ghe.example.com/api/v3?",
-        "https://ghe.example.com/api/v3#top",
-        "https://user:pw@ghe.example.com/api/v3",
-        "https://token@ghe.example.com",
-        "https://ghe.example.com:port/api/v3",
-        "https:///api/v3",
+        "-ghe.example.com",
+        "ghe..example.com",
+        "ghe.example.com --with-token",
+        "ghe_example.com",
     ],
 )
-def test_only_https_urls_without_user_query_or_fragment_are_accepted(url):
-    with pytest.raises(ValidationError, match="https URL"):
-        GithubSettings(api_url=url)
+def test_only_host_names_are_accepted(host):
+    with pytest.raises(ValidationError, match="host must be a host name"):
+        GithubSettings(host=host)
 
 
-def test_a_port_is_fine():
-    assert (
-        GithubSettings(api_url="https://ghe.example.com:8443/api/v3").api_url == "https://ghe.example.com:8443/api/v3"
-    )
+def test_a_leftover_api_url_is_refused_with_the_setting_that_replaced_it():
+    with pytest.raises(ValidationError, match=r"hz system config set github\.host ghe\.example\.com"):
+        GithubSettings(api_url="https://ghe.example.com/api/v3")
 
 
-def test_a_project_file_may_not_set_the_api_url():
-    assert "api_url" in GithubSettings.ignored_in_project
+def test_a_project_file_may_not_set_the_host_the_program_or_the_timeout():
+    assert {"host", "gh", "timeout"} <= GithubSettings.ignored_in_project
+
+
+def test_gh_is_looked_up_on_path_and_calls_get_a_minute():
+    settings = GithubSettings()
+    assert (settings.gh, settings.timeout) == ("gh", 60.0)
+
+
+@pytest.mark.parametrize(
+    ("host", "api"),
+    [("github.com", "api.github.com"), ("acme.ghe.com", "api.acme.ghe.com"), ("ghe.example.com", "ghe.example.com")],
+)
+def test_the_api_host_is_where_gh_sends_requests(host, api):
+    assert api_host(host) == api
