@@ -22,8 +22,8 @@ change like a library release: an ADR for a new concept, unit tests for every br
 - `_lets.py` — let types, `Check`/`Status` and `CatchUp`. A new let kind needs a head, the kernel, a `system`
   submodule or the built-in module that owns the concept to consume it (`JobLet`: `system.daemon`; `PlaybookLet`:
   `workflow`, ADR 0037; `ThemeLet`: `system.theme`, ADR 0044; `StatusLet`, `ActionLet`, `WidgetLet`: `system.ui`,
-  ADR 0055).
-- `_contributions.py` — what a module adds to the web app as data (ADR 0055): `StatusItem`, the widget shapes
+  ADR 0056).
+- `_contributions.py` — what a module adds to the web app as data (ADR 0056): `StatusItem`, the widget shapes
   (`CardWidget`, `ListWidget`, `MetricWidget`, `ProgressWidget`), the effects (`Navigate`, `OpenUrl`, `RunOperation`,
   `RunCommand`), `Tone`, `Icon`, `Slot`, the link grammar (`link_problem`) and the lets `module.status`,
   `module.action` and `module.widget` declare, each a view over one of the module's read-only operations;

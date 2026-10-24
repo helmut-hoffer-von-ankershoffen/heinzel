@@ -1,5 +1,5 @@
 // The status bar under the screen: hz's version on the left; the meeting running now or the next
-// one, and a clock, on the right, then what modules add (ADR 0055). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
+// one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, Video } from "lucide-react";

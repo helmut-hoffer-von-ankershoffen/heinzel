@@ -1,4 +1,4 @@
-"""The daemon in the status bar (ADR 0055): each state, its tone and the buttons; installing stays the person's act."""
+"""The daemon in the status bar (ADR 0056): each state, its tone and the buttons; installing stays the person's act."""
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path

@@ -1,4 +1,4 @@
-"""`system.ui` runs each contribution in isolation and builds what only the server may say (ADR 0055)."""
+"""`system.ui` runs each contribution in isolation and builds what only the server may say (ADR 0056)."""
 
 from typing import Annotated
 

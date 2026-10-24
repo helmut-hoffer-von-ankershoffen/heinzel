@@ -1,4 +1,4 @@
-// What modules contribute to the app (ADR 0055): status items (footer, sidebar), header actions and Today widgets.
+// What modules contribute to the app (ADR 0056): status items (footer, sidebar), header actions and Today widgets.
 // A module sends data only, in closed shapes this file renders; it never ships code. Each list is fetched once, then
 // each entry at its own refresh, so a slow or failing one never holds up the rest. What a click does comes from the
 // server: a write runs only after the person confirms the exact `hz …` call the server built.

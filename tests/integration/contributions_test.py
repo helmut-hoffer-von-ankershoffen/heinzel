@@ -1,4 +1,4 @@
-"""Contributions end to end (ADR 0055): the CLI and the web head list them, the REST head never does.
+"""Contributions end to end (ADR 0056): the CLI and the web head list them, the REST head never does.
 
 The built-in ones are enough: the daemon's status item and the org agenda's, which degrades without a calendar.
 """

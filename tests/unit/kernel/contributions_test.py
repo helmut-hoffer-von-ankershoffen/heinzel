@@ -1,4 +1,4 @@
-"""Contributions are data the kernel checks (ADR 0055): links, texts, shapes, effects, slots and caps per module."""
+"""Contributions are data the kernel checks (ADR 0056): links, texts, shapes, effects, slots and caps per module."""
 
 from datetime import UTC, datetime, timedelta
 
