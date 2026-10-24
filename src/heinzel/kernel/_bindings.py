@@ -14,6 +14,7 @@ visible in review, as `Credentials` does (ADR 0030); they don't stop a malicious
 import logging
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, ClassVar, Literal, cast
 
 from pydantic import Field, model_validator
@@ -46,13 +47,19 @@ class CapabilitySettings(ModuleSettings):
     calendar: str | None = Field(default=None, description="Adapter that serves `calendar`, e.g. `google`.")
     chat: str | None = Field(default=None, description="Adapter that serves `chat`, e.g. `slack`.")
     code_host: str | None = Field(default=None, description="Adapter that serves `code-host`, e.g. `github`.")
+    directory: str | None = Field(
+        default="one-on-ones",
+        description="Adapter that serves `directory`: `one-on-ones` (the default, the core's guesses from recurring "
+        "1:1s in the bound calendar, each marked as a guess for the user to confirm), or one from a plugin that reads "
+        "a directory of record.",
+    )
     documents: str | None = Field(default=None, description="Adapter that serves `documents`.")
     mail: str | None = Field(default=None, description="Adapter that serves `mail`, e.g. `google`.")
     meetings: str | None = Field(default=None, description="Adapter that serves `meetings`, e.g. `zoom`.")
     tracker: str | None = Field(default=None, description="Adapter that serves `tracker`, e.g. `github`.")
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
-        {"agent_runner", "calendar", "chat", "code_host", "documents", "mail", "meetings", "tracker"}
+        {"agent_runner", "calendar", "chat", "code_host", "directory", "documents", "mail", "meetings", "tracker"}
     )
 
     @model_validator(mode="before")
@@ -82,6 +89,9 @@ class Requester:
     """What its module declared, which it may use too (read modes only)."""
     publishes: bool = False
     """Whether it is a publish operation (`read_only=False`), the only kind that gets `write`."""
+    serves: tuple[tuple[str, str], ...] = ()
+    """For a module that only provides adapters, the (capability, adapter) pairs it provides: its requirements are
+    needed only while one of them serves someone."""
 
     @property
     def label(self) -> str:
@@ -152,15 +162,26 @@ class _Handle:
         return f"<{self._label}>"
 
 
-def _wrap(method: Callable[..., Any], capability: Capability, name: str) -> Callable[..., Any]:
+def _wrap(instance: Callable[[], object], capability: Capability, name: str) -> Callable[..., Any]:
     def call(*args: Any, **kwargs: Any) -> Any:  # noqa: ANN401 - forwards the protocol method
-        return method(*args, **kwargs)
+        return getattr(instance(), name)(*args, **kwargs)
 
     # Not functools.wraps: it would set __wrapped__ to the bound method and with it the adapter.
     call.__name__ = name
     call.__qualname__ = f"{capability.protocol.__name__}.{name}"
     call.__doc__ = getattr(capability.protocol, name).__doc__
     return call
+
+
+def _idle(rows: list[tuple[Requester, CapabilityUse]]) -> set[Requester]:
+    """Requesters of modules that only provide adapters, none of which serves a requester that is needed itself."""
+    idle = {requester for requester, _ in rows if requester.serves}
+    while True:
+        used = {(use.capability, use.adapter) for requester, use in rows if requester not in idle}
+        still = {requester for requester in idle if not used.intersection(requester.serves)}
+        if still == idle:
+            return idle
+        idle = still
 
 
 class Capabilities:
@@ -225,24 +246,28 @@ class Capabilities:
         return adapter, None
 
     def matrix(self) -> list[CapabilityUse]:
-        """Who needs what, in which modes, through which adapter and hosts, and what is unmet."""
-        rows: list[CapabilityUse] = []
+        """Who needs what, in which modes, through which adapter and hosts, and what is unmet.
+
+        Leaves out the requirements of a module that only provides adapters while none of them serves anyone: such
+        a module reads nothing then, so its needs are neither a use nor a doctor finding.
+        """
+        rows: list[tuple[Requester, CapabilityUse]] = []
         for requester in (*self.requesters, *(r for r in self._compiled() if r.requires)):
             for requirement in requester.requires:
                 adapter, problem = self.adapter_for(requirement)
-                rows.append(
-                    CapabilityUse(
-                        requester=requester.label,
-                        kind=requester.kind,
-                        requirement=str(requirement),
-                        capability=requirement.capability,
-                        modes=tuple(m for m in MODES if m in requirement.modes),
-                        adapter=adapter.let.adapter if adapter else None,
-                        hosts=self.hosts_of(adapter)[0] if adapter else (),
-                        problem=problem,
-                    )
+                use = CapabilityUse(
+                    requester=requester.label,
+                    kind=requester.kind,
+                    requirement=str(requirement),
+                    capability=requirement.capability,
+                    modes=tuple(m for m in MODES if m in requirement.modes),
+                    adapter=adapter.let.adapter if adapter else None,
+                    hosts=self.hosts_of(adapter)[0] if adapter else (),
+                    problem=problem,
                 )
-        return rows
+                rows.append((requester, use))
+        idle = _idle(rows)
+        return [use for requester, use in rows if requester not in idle]
 
     def hosts_of(self, adapter: Adapter) -> tuple[tuple[str, ...], str | None]:
         """The host names `adapter` reaches, and why they are unknown if its settings decide them and it failed.
@@ -332,12 +357,14 @@ class Capabilities:
         if adapter is None or problem is not None:
             msg = f"{requester.label} needs {wanted}: {problem}. {self.fix(capability.name)}"
             raise HeinzelError(msg)
-        instance = self._instance(adapter, capability)
+        # Built on the first call, not here: a requester that never calls it, such as a setup step that drafts only
+        # when asked, doesn't fail because what the adapter itself needs is unbound.
+        instance = partial(self._instance, adapter, capability)
         allowed: dict[str, Callable[..., Any]] = {}
         denied: dict[str, str] = {}
         for name, mode in capability.methods.items():
             if mode in modes:
-                allowed[name] = _wrap(getattr(instance, name), capability, name)
+                allowed[name] = _wrap(instance, capability, name)
                 continue
             if mode in requirement.modes:
                 why = "only publish operations (read_only=False) may write"

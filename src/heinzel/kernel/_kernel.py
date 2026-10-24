@@ -394,7 +394,13 @@ class Kernel:
         for record in self._records.values():
             lets = record.module.lets
             own = tuple(let.requirement for let in lets if isinstance(let, RequirementLet))
-            module = Requester(module=record.qualname, kind="module", name=record.module.name, requires=own)
+            # A module that only provides adapters needs its requirements only while one of them serves someone.
+            users = (OperationLet, JobLet, ServiceLet, InfoLet, HealthLet, SetupLet)
+            provided = tuple((let.capability, let.adapter) for let in lets if isinstance(let, ProviderLet))
+            serves = () if any(isinstance(let, users) for let in lets) else provided
+            module = Requester(
+                module=record.qualname, kind="module", name=record.module.name, requires=own, serves=serves
+            )
             requesters.append(module)
             for let in lets:
                 match let:

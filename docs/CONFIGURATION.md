@@ -28,6 +28,7 @@ Plugins add their own tables.
 | `calendar` | `HZ_CAPABILITIES__CALENDAR` | `None` | Adapter that serves `calendar`, e.g. `google`. |
 | `chat` | `HZ_CAPABILITIES__CHAT` | `None` | Adapter that serves `chat`, e.g. `slack`. |
 | `code_host` | `HZ_CAPABILITIES__CODE_HOST` | `None` | Adapter that serves `code-host`, e.g. `github`. |
+| `directory` | `HZ_CAPABILITIES__DIRECTORY` | `'one-on-ones'` | Adapter that serves `directory`: `one-on-ones` (the default, the core's guesses from recurring 1:1s in the bound calendar, each marked as a guess for the user to confirm), or one from a plugin that reads a directory of record. |
 | `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | Adapter that serves `documents`. |
 | `mail` | `HZ_CAPABILITIES__MAIL` | `None` | Adapter that serves `mail`, e.g. `google`. |
 | `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | Adapter that serves `meetings`, e.g. `zoom`. |
@@ -85,6 +86,13 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `unit_dir` | `HZ_SYSTEM_DAEMON__UNIT_DIR` | platform-specific | Where `install` writes the launchd LaunchAgent (macOS) or the systemd user units (Linux). |
+
+## `[system.directory]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `lookback_days` | `HZ_SYSTEM_DIRECTORY__LOOKBACK_DAYS` | `56` | How many days of the bound calendar, up to now, to look for recurring 1:1s in. |
+| `min_occurrences` | `HZ_SYSTEM_DIRECTORY__MIN_OCCURRENCES` | `3` | How often two people must have met alone, weekly or every two weeks, before hz guesses a reporting line between them. |
 
 ## `[system.plugin]`
 

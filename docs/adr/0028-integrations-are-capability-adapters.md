@@ -38,7 +38,7 @@ configuration binds each capability to an adapter**, because workflows stay vend
 integration becomes a configuration change.
 
 - **Capabilities**: the core defines typed protocols for code host, tracker, documents, spreadsheets, calendar,
-  meetings (including transcripts), chat and mail. Each protocol is small, versioned with the plugin API
+  meetings (including transcripts), chat, mail and the directory (who people are and who reports to whom). Each protocol is small, versioned with the plugin API
   ([ADR 0026](0026-plugin-api-versioned-with-semver.md)), and covers what workflows need, not a vendor's whole API.
 - **Adapters**: plugins implement one or more capabilities over any transport: a vendor API, a CLI such as `gh`, or
   an MCP server, including a company MCP gateway that fronts several vendors.
@@ -54,6 +54,13 @@ integration becomes a configuration change.
   of the first-party plugin; nothing in the core or in workflows changes. An adapter may itself be built on another
   capability, declared like any requirement (`requires=["mail:read"]`), so a provider can read through whichever
   adapter serves that capability.
+- **The org chart is the `directory` capability** (maintainer's decision, 2026-10-24). If a plugin can discover it
+  (an HR system, a chat tool's profile fields, an IdP such as Google Workspace's directory), hz uses it and the user
+  only confirms. Otherwise setup asks, starting from a draft the core guesses from signals the user can already read
+  (recurring 1:1s in their calendar), so the user corrects rather than types. A guess is marked as one, with its
+  evidence, and is never stored as fact until the user confirms it. People stay `Participant`s, so the packet builder
+  drops their addresses as for every other capability. This implements the `Directory` of
+  [ADR 0024](0024-people-and-org.md) as a capability protocol rather than a service of its own.
 - **Dependencies with access modes**: a plugin declares the capabilities it needs and in which mode, for example
   `requires = ["tracker:read", "documents:read,write", "chat:write"]`; an adapter declares what it provides
   (`provides = ["documents:read,write", "calendar:read"]`) and the hosts it reaches. Capabilities, not vendors, so a
@@ -90,7 +97,12 @@ calendar adapters that correlate an event with its meeting, and a meetings adapt
 over a second meetings provider by configuration); requirement strings and the registry stay in step with
 the protocols, window reads stay contract-shaped and id reads stay the only others, new datetimes are timezone-aware,
 and people stay names and emails (`tests/unit/kernel/capabilities_test.py`); the mail query syntax and headers
-without addresses (`tests/unit/kernel/mail_test.py`); contract inputs name the new methods
+without addresses (`tests/unit/kernel/mail_test.py`); the directory's models, its packet-safe people and the setup
+seam's precedence (`tests/unit/kernel/directory_test.py`, `tests/unit/kernel/capabilities_test.py`), the 1:1 guesses
+(`tests/unit/modules/directory_guess_test.py`), and the fallback through the CLI, with and without a calendar or a
+directory of record (`tests/integration/directory_test.py`); handles that build their adapter on the first call and
+adapter-only modules whose needs count only while their adapters serve someone (`tests/unit/kernel/bindings_test.py`);
+contract inputs name the new methods
 (`tests/unit/modules/workflow_contracts_test.py`); the packet builder cleans every string and drops emails
 (`tests/unit/modules/workflow_service_test.py`); `clean_text` (`tests/unit/kernel/text_test.py`) and
 `assert_adapter` (`tests/unit/testing_test.py`); declarations are checked when a module is imported
@@ -106,6 +118,8 @@ bound adapters.
 - The dependency model with read and write modes was proposed by the maintainer on 2026-10-23.
 - Mail as a v1 capability, meetings from summary emails, and several providers per capability chosen by
   configuration, including a company's own plugin layer: the maintainer's decisions of 2026-10-24.
+- The org chart as the `directory` capability, read from a plugin when one can discover it and otherwise drafted
+  from visible signals for the user to correct: the maintainer's decision of 2026-10-24.
 
 **What 0.2 implements.**
 
@@ -116,7 +130,7 @@ request (director's decisions, 2026-10-24):
 - **Protocols** (`heinzel.kernel._protocols`, public in `heinzel`): only what the first workflows need. `CodeHost`
   (`merged_pull_requests` in a `Window`), `Tracker` (`issues_updated`), `Documents` (`read`; `replace_section` as the
   only write), and, for the Slack, Zoom and Google Workspace adapters (below), `Chat`, `Meetings`, `Calendar` and
-  `Mail`.
+  `Mail`; `Directory` for setup and roster drafting (below).
   Issues belong to `tracker` alone, also when they live on the code host: a GitHub adapter provides both
   capabilities. Results are pydantic models with described fields. No separate protocol version number: the protocols
   are public API and follow the core's SemVer ([ADR 0026](0026-plugin-api-versioned-with-semver.md)), which rejected
@@ -128,7 +142,7 @@ request (director's decisions, 2026-10-24):
   in a minor release.
 - **Each method has a mode** in the capability registry (`CAPABILITIES`); a unit test keeps the registry and the
   protocols in step. Capability names in requirements and bindings are `agent-runner`, `calendar`, `chat`,
-  `code-host`, `documents`, `mail`, `meetings` and `tracker`; the core defines the set (plugins cannot add capabilities yet)
+  `code-host`, `directory`, `documents`, `mail`, `meetings` and `tracker`; the core defines the set (plugins cannot add capabilities yet)
   and grows it under the growth rule above. An adapter must implement the methods of the modes it declares, checked
   when the kernel registers an adapter class and when it builds one from a factory; `heinzel.testing.assert_adapter`
   runs the same check, plus the parameter names and defaults, in a plugin's own tests (a first piece of the shared
@@ -209,6 +223,37 @@ request (director's decisions, 2026-10-24):
       bound `mail` adapter instead of the tool's API (the Zoom plugin does), declaring `mail:read` itself: no
       credentials of the meeting tool, and the mailbox's provider stays swappable. Such a transcript is the summary,
       not a verbatim record, which the adapter documents.
+  - **The directory** (director's decisions on the maintainer's decision above, 2026-10-24). `person(person)`, a
+    login or email to a `Person` (or none): `who` (a `Participant`), `login`, `title`, `department`, `team`,
+    `manager` and `reports`; `reports(person)`, the direct reports as `Person`s. Both `read`, both id reads, so
+    module operations use the directory and contracts don't. A reporting line is a `Relation`: `who`, `login`, and
+    `guess` with its `evidence` in words (names, never addresses; a guess without evidence is refused). Nothing
+    HR-sensitive (ADR 0024 §7): no compensation, ratings, absences, start dates or locations.
+    - **The fallback is a core adapter**, `one-on-ones` in `system.directory`, like the core's agent runners: a
+      recurring 1:1 (exactly two attendees with addresses, the same two, at least three times, a median gap of 5 to
+      16 days, not all-day, not cancelled) in the bound calendar's last 56 days (`[system.directory]`) makes its
+      organizer the guessed manager of the other attendee. A series without an organizer among the two says nothing
+      about who reports to whom and is left out; when several people organize 1:1s with one person, the most frequent
+      is the manager guess and the others are named in its evidence. It knows people by email only and keeps nothing
+      between calls. It is the second default binding (`directory = "one-on-ones"`, besides `agent_runner`): it reads
+      only through the user's own calendar binding and reaches no host itself, and the decision is that setup starts
+      from a draft wherever no plugin is bound.
+    - **The setup seam** is `heinzel.draft_reporting_lines(directory, person, confirmed=None)`, which setup and
+      roster code call with the `Directory` handle they declared (`requires=["directory:read"]`). Per attribute
+      (manager, reports) a directory of record wins over what the user confirmed (ADR 0033: the IdP overrides what
+      people declare), and what the user confirmed (`ConfirmedLines`, logins or emails the caller stored) wins over
+      a guess. The `ReportingDraft` keeps every guess marked and says `needs_confirmation`; a directory that fails
+      with a `HeinzelError` (no calendar bound) leaves the confirmed lines and says why in `problem`, so setup asks
+      instead of failing. The seam stores nothing: a guess becomes a fact only when the caller stores what the user
+      confirmed, in the person's own file (ADR 0033).
+    - **Handles build their adapter on the first call**, not when injected, so a requester that never calls it, or
+      a setup step that drafts only when asked, doesn't fail because what the adapter itself needs is unbound; the
+      binding is still checked when the handle is made.
+    - **A module that only provides adapters** (no operation, job, service, info, health or setup step) needs its
+      requirements only while one of its adapters serves a requirement that is needed itself. Until then they are
+      left out of the matrix, info and doctor: such a module reads nothing, so `system.directory`'s `calendar:read`
+      doesn't degrade doctor for someone who never drafts an org chart, and does as soon as a module needs
+      `directory:read` and no calendar is bound.
 - **Two new let kinds.** `ProviderLet` (`@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter
   class, named `<adapter>:<capability>`) can't be a `ServiceLet`: several adapters provide the same protocol and
   configuration picks one, while a service type has exactly one provider. `RequirementLet`
@@ -246,9 +291,10 @@ request (director's decisions, 2026-10-24):
   site, user or `HZ_CONFIG` file, or `HZ_CAPABILITIES__TRACKER`; keys take `_` or `-`. A project `hz.toml` can't
   bind (settings classes list such fields in `ignored_in_project`): a repository someone else controls must not decide
   where data goes; doctor names any key it sets, never the value. A sole installed adapter is not bound automatically
-  (principle 1: declared beats discovered); doctor names the binding to write and the installed candidates. The only
-  default is `agent_runner = "claude-code"`, because the other core runner, `command`, needs a command line first;
-  doctor names the alternative when Claude Code is missing. A pin (`acme:documents:read`) uses that adapter whatever
+  (principle 1: declared beats discovered); doctor names the binding to write and the installed candidates. The
+  defaults are `agent_runner = "claude-code"`, because the other core runner, `command`, needs a command line first
+  (doctor names the alternative when Claude Code is missing), and `directory = "one-on-ones"`, the core's guesses
+  (above). A pin (`acme:documents:read`) uses that adapter whatever
   is bound, and the matrix shows it. Two adapters with one name for one capability make that binding ambiguous: it is
   refused, naming both modules and distributions.
 - **Reserved names.** Modules can't be named `hz` or `capabilities`, the kernel's configuration tables, so the

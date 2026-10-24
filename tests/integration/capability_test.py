@@ -148,6 +148,7 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
         "calendar": None,
         "chat": None,
         "code-host": None,
+        "directory": "one-on-ones",
         "documents": "notes",
         "mail": None,
         "meetings": None,

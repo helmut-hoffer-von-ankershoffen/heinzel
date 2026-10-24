@@ -12,6 +12,7 @@ from heinzel.kernel._capabilities import capability_of, parse_requirements
 from heinzel.kernel._protocols import (
     Calendar,
     Chat,
+    Directory,
     Documents,
     Event,
     Mail,
@@ -22,7 +23,9 @@ from heinzel.kernel._protocols import (
     Meetings,
     Message,
     Participant,
+    Person,
     PostedMessage,
+    Relation,
     Tracker,
     Transcript,
     TranscriptSegment,
@@ -106,6 +109,8 @@ def test_protocol_results_are_models_with_described_fields():
         MailMessage,
         MailContent,
         MailQuery,
+        Person,
+        Relation,
     ):
         for field_name, info in model.model_fields.items():
             assert info.description, f"{model.__name__}.{field_name} has no description"
@@ -126,6 +131,16 @@ def test_argument_checks_name_a_str_argument_of_a_read_method():
             assert get_type_hints(getattr(spec.protocol, method))[argument] is str, f"{name}.{method}({argument})"
             assert callable(check)
     assert CAPABILITIES["mail"].checks["messages", "query"] == MailQuery.parse
+
+
+def test_the_directory_only_reads_and_names_people_as_participants():
+    """The prompt-privacy rule (ADR 0028): the packet builder drops a `Participant`'s email, so people are those."""
+    assert CAPABILITIES["directory"].methods == {"person": "read", "reports": "read"}
+    assert CAPABILITIES["directory"].protocol is Directory
+    assert get_type_hints(Person)["who"] is Participant
+    assert get_type_hints(Relation)["who"] is Participant
+    assert "email" not in Person.model_fields
+    assert "email" not in Relation.model_fields
 
 
 def test_mail_only_reads():

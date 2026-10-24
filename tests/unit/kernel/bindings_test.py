@@ -768,3 +768,73 @@ def test_hosts_may_read_only_their_own_modules_settings(make_kernel, settings):
     assert not kernel._capabilities.adapters
     with pytest.raises(HeinzelError, match="Built-in module 'acme': the hosts of adapter acme:documents read"):
         Kernel(settings, [ModuleRecord("acme", acme_module(url, settings=None), BUILTIN)])
+
+
+def test_a_handle_builds_its_adapter_on_the_first_call_not_when_injected(make_kernel):
+    Notes.built = 0
+    kernel = make_kernel(notes=notes_module(), digest=digest_module(), config=bind(documents="notes"))
+    documents = handle(kernel)
+    assert Notes.built == 0
+    assert documents.read("weekly").title == "notes:weekly"  # type: ignore[attr-defined]
+    assert documents.read("other").title == "notes:other"  # type: ignore[attr-defined]
+    assert Notes.built == 1
+
+
+class Layer:
+    """A tracker adapter on top of documents, the way `system.directory` builds on calendar."""
+
+    def __init__(self, documents: Documents) -> None:
+        self.documents = documents
+
+    def issues_updated(self, project: str, window: Window) -> list[object]:
+        return []
+
+
+class Top:
+    """A chat adapter on top of the tracker."""
+
+    def __init__(self, tracker: Tracker) -> None:
+        self.tracker = tracker
+
+    def messages(self, channel: str, window: Window) -> list[Message]:
+        return []
+
+
+def layered(*, with_operation: bool = False) -> Module:
+    module = Module("layer", "Issues from documents.", requires=["documents:read"])
+    module.provides("tracker", modes={"read"}, hosts=[])(Layer)
+    if with_operation:
+
+        @module.operation
+        def peek(documents: Documents) -> str:
+            """Read through the module's own requirement."""
+            return documents.read("x").ref
+
+    return module
+
+
+def needs(kernel: Kernel) -> set[str]:
+    return {f"{use.requester} {use.requirement}" for use in kernel._capabilities.matrix()}
+
+
+def test_an_adapter_only_modules_needs_count_only_while_its_adapter_serves_someone(make_kernel):
+    assert needs(make_kernel(layer=layered(), config=bind(tracker="layer"))) == set()
+    tracked = Module("issues", "Reads issues.", requires=["tracker:read"])
+    used = needs(make_kernel(layer=layered(), issues=tracked, config=bind(tracker="layer")))
+    assert used == {"issues tracker:read", "layer documents:read"}
+    unused = needs(make_kernel(layer=layered(), issues=tracked, config=bind(tracker="other")))
+    assert unused == {"issues tracker:read"}
+
+
+def test_a_module_that_also_has_operations_keeps_its_needs(make_kernel):
+    assert needs(make_kernel(layer=layered(with_operation=True))) == {"layer documents:read"}
+
+
+def test_needs_of_a_chain_of_unused_adapter_modules_all_drop_out(make_kernel):
+    top = Module("top", "Chat from issues.", requires=["tracker:read"])
+    top.provides("chat", modes={"read"}, hosts=[])(Top)
+    kernel = make_kernel(layer=layered(), top=top, config=bind(tracker="layer", chat="top"))
+    assert needs(kernel) == set()
+    reader = Module("reader", "Reads chat.", requires=["chat:read"])
+    kernel = make_kernel(layer=layered(), top=top, reader=reader, config=bind(tracker="layer", chat="top"))
+    assert needs(kernel) == {"reader chat:read", "top tracker:read", "layer documents:read"}

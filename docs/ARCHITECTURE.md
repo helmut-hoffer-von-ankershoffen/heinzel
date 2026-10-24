@@ -68,7 +68,10 @@ A capability protocol (`Tracker`, `Documents`, `Chat`, `Meetings`, `Calendar`, `
 on the adapter bound in `[capabilities]`, limited to the modes the asking operation, job or module declared; `write`
 reaches only publish operations (`read_only=False`); adapters pass every string they return through `clean_text`.
 Several adapters may provide one capability and the binding picks one; an adapter may build on another capability
-(meetings from summary emails, through `mail`) ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)). Agent sessions are the
+(meetings from summary emails, through `mail`) ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)).
+The org chart is the capability `directory`: a plugin's directory of record when one is bound, otherwise the core's
+`one-on-ones` adapter (`system.directory`), which guesses reporting lines from recurring 1:1s in the bound calendar
+and marks each as a guess; setup and roster code draft through `draft_reporting_lines`. Agent sessions are the
 capability `agent-runner`; core ships its Claude Code and generic command adapters in `system.runner`
 ([ADR 0029](adr/0029-agent-runners-are-capability-adapters.md)).
 

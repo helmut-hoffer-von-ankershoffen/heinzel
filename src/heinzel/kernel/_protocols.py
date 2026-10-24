@@ -23,7 +23,7 @@ import re
 from datetime import datetime
 from typing import Protocol, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class Window(BaseModel):
@@ -418,4 +418,67 @@ class Mail(Protocol):
 
     def read(self, message: str) -> MailContent:
         """The message `message` (a `MailMessage.id`) with its text and headers, for operations. Mode: read."""
+        ...
+
+
+class Relation(BaseModel):
+    """A person's manager or one of their direct reports, and whether a directory says so or hz guessed it."""
+
+    who: Participant = Field(description="Who: display name and email.")
+    login: str | None = Field(
+        default=None, description="Their login in the source, e.g. a chat or GitHub user name; none if it has none."
+    )
+    guess: bool = Field(
+        default=False,
+        description="Whether this was drafted from signals the user can read (a recurring 1:1 in their calendar) "
+        "instead of read from a directory of record: shown for the user to confirm or correct, never stored as fact.",
+    )
+    evidence: list[str] = Field(
+        default_factory=list,
+        description='What a guess rests on, in words, e.g. `weekly 1:1 "Ada / Bob", 6 times from 2026-09-01 to '
+        "2026-10-06, organized by Ada`; names, never addresses. Empty for what a directory says.",
+    )
+
+    @model_validator(mode="after")
+    def _guesses_show_evidence(self) -> Self:
+        if self.guess and not self.evidence:
+            msg = "a guessed reporting line must say what it rests on (evidence)"
+            raise ValueError(msg)
+        return self
+
+
+class Person(BaseModel):
+    """A person as a directory knows them: who they are, their place in the org, and their reporting lines."""
+
+    who: Participant = Field(description="Who: display name and email.")
+    login: str | None = Field(
+        default=None, description="Their login in the source, e.g. a chat or GitHub user name; none if it has none."
+    )
+    title: str | None = Field(default=None, description="Job title, in the source's words; none if it has none.")
+    department: str | None = Field(default=None, description="Department or org unit; none if the source has none.")
+    team: str | None = Field(default=None, description="Team, in the source's words; none if the source has none.")
+    manager: Relation | None = Field(default=None, description="Who they report to; none if unknown or nobody.")
+    reports: list[Relation] = Field(
+        default_factory=list[Relation], description="Their direct reports, by name; empty if none or unknown."
+    )
+
+
+class Directory(Protocol):
+    """Who people are and who reports to whom (capability `directory`, ADR 0024).
+
+    Served by a directory of record when a plugin can read one (an HR system, a chat tool's profile fields, an IdP
+    such as Google Workspace), otherwise by the core's `one-on-ones` adapter, which guesses reporting lines from
+    recurring 1:1s in the bound calendar and marks every one as a guess (`Relation.guess`) with its evidence.
+
+    Read only, and only the fields above: never compensation, ratings, absences or anything else HR-sensitive
+    (ADR 0024). A `person` argument is a login or an email address, matched as the source matches them (emails ignore
+    case). Neither method takes a window, so contracts don't read the directory; module operations do.
+    """
+
+    def person(self, person: str) -> Person | None:
+        """The person whose login or email is `person`, or None if the source doesn't know them. Mode: read."""
+        ...
+
+    def reports(self, person: str) -> list[Person]:
+        """The direct reports of the person whose login or email is `person`, by name; empty if none. Mode: read."""
         ...
