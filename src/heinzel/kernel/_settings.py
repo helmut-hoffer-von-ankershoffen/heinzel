@@ -23,6 +23,14 @@ class Settings(ModuleSettings):
         default_factory=lambda: platformdirs.user_cache_path(APP_NAME),
         description="Where Heinzelmännchen keeps caches that can be deleted at any time.",
     )
+    state_dir: Path = Field(
+        default_factory=lambda: platformdirs.user_state_path(APP_NAME),
+        description="Where Heinzelmännchen keeps runtime state such as locks and the daemon's pause flag.",
+    )
+    log_dir: Path = Field(
+        default_factory=lambda: platformdirs.user_log_path(APP_NAME),
+        description="Where background work such as the daemon writes its logs.",
+    )
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="WARNING",
         description="Log level for Heinzelmännchen and its modules.",

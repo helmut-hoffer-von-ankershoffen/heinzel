@@ -11,6 +11,8 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `data_dir` | `HZ_DATA_DIR` | platform-specific | Where Heinzelmännchen keeps its local state. |
 | `cache_dir` | `HZ_CACHE_DIR` | platform-specific | Where Heinzelmännchen keeps caches that can be deleted at any time. |
+| `state_dir` | `HZ_STATE_DIR` | platform-specific | Where Heinzelmännchen keeps runtime state such as locks and the daemon's pause flag. |
+| `log_dir` | `HZ_LOG_DIR` | platform-specific | Where background work such as the daemon writes its logs. |
 | `log_level` | `HZ_LOG_LEVEL` | `'WARNING'` | Log level for Heinzelmännchen and its modules. |
 | `output_format` | `HZ_OUTPUT_FORMAT` | `'text'` | Default output of every operation; `json` suits scripts and agents. `--format` overrides it. |
 | `plugins_enabled` | `HZ_PLUGINS_ENABLED` | `True` | Discover modules from installed plugins. Disable to debug a broken plugin. |

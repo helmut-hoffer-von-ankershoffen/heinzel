@@ -1,6 +1,8 @@
+from datetime import timedelta
+
 import pytest
 
-from heinzel import InfoLet, Module, OperationLet, ServiceLet
+from heinzel import CatchUp, InfoLet, JobLet, Module, OperationLet, ServiceLet
 
 pytestmark = pytest.mark.unit
 
@@ -65,3 +67,57 @@ def test_service_and_info():
     assert info == InfoLet(name="example", provider=section)
     assert module.heinzel_lets() == module.lets
     assert "example" in repr(module)
+
+
+def test_job_decorator_records_schedule_and_policies():
+    module = Module("example", "x")
+
+    def key(slot):
+        return slot.date().isoformat()
+
+    @module.job(schedule="0 9 * * MON", timeout="2m", retries=2, catch_up="all", idempotency=key)
+    def weekly_digest() -> str:
+        """Draft the weekly digest.
+
+        More detail.
+        """
+        return "draft"
+
+    [job] = module.lets
+    assert isinstance(job, JobLet)
+    assert (job.name, job.summary, job.schedule, job.scope) == (
+        "weekly-digest",
+        "Draft the weekly digest.",
+        "0 9 * * MON",
+        "personal",
+    )
+    assert (job.timeout, job.retries, job.catch_up, job.idempotency) == (timedelta(minutes=2), 2, CatchUp.ALL, key)
+    assert job.func is weekly_digest
+
+
+def test_job_defaults():
+    module = Module("example", "x")
+
+    @module.job(schedule="@daily", name="custom")
+    def _job() -> None:
+        """Do it daily."""
+
+    [job] = module.lets
+    assert isinstance(job, JobLet)
+    assert (job.name, job.timeout, job.retries, job.catch_up, job.idempotency) == (
+        "custom",
+        timedelta(minutes=15),
+        0,
+        CatchUp.LATEST,
+        None,
+    )
+
+
+def test_job_requires_docstring_and_valid_options():
+    module = Module("example", "x")
+    with pytest.raises(ValueError, match="needs a docstring"):
+        module.job(schedule="@daily")(lambda: None)
+    with pytest.raises(ValueError, match="retries"):
+        module.job(schedule="@daily", retries=-1)
+    with pytest.raises(ValueError, match="positive whole number"):
+        module.job(schedule="@daily", timeout="soon")

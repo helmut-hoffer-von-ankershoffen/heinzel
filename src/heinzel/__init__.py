@@ -11,11 +11,13 @@ except PackageNotFoundError:  # pragma: no cover - only when importing from a so
     __version__ = "0.0.0"
 
 from heinzel.kernel import (
+    CatchUp,
     Check,
     Config,
     HealthLet,
     HeinzelError,
     InfoLet,
+    JobLet,
     Kernel,
     Let,
     Module,
@@ -30,11 +32,13 @@ from heinzel.kernel import (
 )
 
 __all__ = [
+    "CatchUp",
     "Check",
     "Config",
     "HealthLet",
     "HeinzelError",
     "InfoLet",
+    "JobLet",
     "Kernel",
     "Let",
     "Module",

@@ -21,7 +21,7 @@ paths=()
 if [[ -n "$purge" ]]; then
   # Ask Heinzelmännchen where its own files are, from $HOME and without overrides, so no project hz.toml or variable can point
   # the purge somewhere else. Only directories named hz below $HOME, and the user config file, are ever removed.
-  report="$(cd "$HOME" && env -u HZ_CONFIG -u HZ_DATA_DIR -u HZ_CACHE_DIR "$hz" system config show --json)"
+  report="$(cd "$HOME" && env -u HZ_CONFIG -u HZ_DATA_DIR -u HZ_CACHE_DIR -u HZ_STATE_DIR -u HZ_LOG_DIR "$hz" system config show --json)"
   while IFS= read -r path; do paths+=("$path"); done < <(
     printf '%s' "$report" | "$(uv --color never tool dir)/heinzel/bin/python" -c '
 import json, sys
@@ -30,7 +30,7 @@ for f in report["files"]:
     if f["scope"] == "user" and f["exists"]:
         print(f["path"])
 for s in report["settings"]:
-    if s["section"] == "hz" and s["key"] in ("data_dir", "cache_dir"):
+    if s["section"] == "hz" and s["key"] in ("data_dir", "cache_dir", "state_dir", "log_dir"):
         print(s["value"])
 ')
 fi

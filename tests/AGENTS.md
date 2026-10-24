@@ -6,5 +6,5 @@
   README. `fixtures/heinzel-dummy` is a minimal plugin with a submodule for the e2e lifecycle tests.
 - `make_kernel(builtins=True, example=module, example__sub=submodule, config=..., settings_=...)` builds a kernel from
   test modules (`__` becomes `.`); `settings` gives default settings. Every test gets its own `HZ_CONFIG_HOME`,
-  `HZ_DATA_DIR` and `HZ_CACHE_DIR`.
+  `HZ_DATA_DIR`, `HZ_CACHE_DIR`, `HZ_STATE_DIR` and `HZ_LOG_DIR`.
 - Fast loop: `uv run pytest tests/unit -x -q` (`--lf` reruns failures).

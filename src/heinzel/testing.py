@@ -8,7 +8,8 @@ def test_clock(hz):
     assert times[0]["zone"] == "Europe/Berlin"
 ```
 
-Every test runs with its own configuration, data and cache directories, so nothing touches the developer's setup.
+Every test runs with its own configuration, data, cache, state and log directories, so nothing touches the
+developer's setup.
 
 A project that declares the markers `unit`, `integration` and `e2e` (Heinzelmännchen and every plugin from its
 template) also gets the test-suite policy of docs/CODING_STANDARDS.md: every test carries exactly one of them, they
@@ -39,6 +40,15 @@ ISOLATED = (
     "HZ_DISABLED_MODULES",
     "XDG_CONFIG_HOME",
 )
+
+OWN_DIRECTORIES = (
+    "HZ_CONFIG_HOME",
+    "HZ_DATA_DIR",
+    "HZ_CACHE_DIR",
+    "HZ_STATE_DIR",
+    "HZ_LOG_DIR",
+)
+"""Each test gets its own empty directory for each of these."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +94,7 @@ def hz_isolation(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempP
     """No test sees the developer's HZ_* variables, configuration or state."""
     for name in ISOLATED:
         monkeypatch.delenv(name, raising=False)
-    for name in ("HZ_CONFIG_HOME", "HZ_DATA_DIR", "HZ_CACHE_DIR"):
+    for name in OWN_DIRECTORIES:
         monkeypatch.setenv(name, str(tmp_path_factory.mktemp(name.lower())))
 
 

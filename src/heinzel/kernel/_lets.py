@@ -7,8 +7,9 @@ would turn the same operations into tools and a REST head into endpoints, withou
 import inspect
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 from rich.console import RenderableType
@@ -91,6 +92,38 @@ class HealthLet(Let):
     """Health checks for `hz system doctor`. The provider returns checks and may ask for injected services."""
 
     provider: Callable[..., list[Check]]
+
+
+class CatchUp(StrEnum):
+    """What a job does about schedule slots it missed while the machine slept or was off."""
+
+    LATEST = "latest"
+    """Run once, for the most recent missed slot."""
+    ALL = "all"
+    """Run once per missed slot, oldest first."""
+    SKIP = "skip"
+    """Run only for a slot that fell within the last tick interval; record the missed ones as skipped."""
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class JobLet(Let):
+    """Work the daemon runs on a schedule (ADR 0020). `func` is injected like an operation and never prints.
+
+    The kernel stores the cron expression as written; `hz system daemon` validates it and computes the slots.
+    """
+
+    func: Callable[..., Any]
+    summary: str
+    schedule: str
+    """A five-field cron expression in local time, e.g. `0 9 * * MON`."""
+    scope: Literal["personal"] = "personal"
+    """`personal` jobs run on their owner's daemon; team jobs follow with the shared state repository."""
+    timeout: timedelta = timedelta(minutes=15)
+    retries: int = 0
+    """How often a failing run is retried within the same tick."""
+    catch_up: CatchUp = CatchUp.LATEST
+    idempotency: Callable[[datetime], str] | None = None
+    """The key of the run for a schedule slot; `<job>@<slot>` when None. A slot with a rendered key never reruns."""
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)

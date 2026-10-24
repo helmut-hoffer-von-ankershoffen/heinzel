@@ -15,10 +15,22 @@ from heinzel.kernel._config import (
     user_config_dir,
 )
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
+from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import CORE_DISTRIBUTION, Installation, requirement_from_receipt
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
-from heinzel.kernel._lets import Check, HealthLet, InfoLet, Let, OperationLet, ServiceLet, SettingsLet, Status
+from heinzel.kernel._lets import (
+    CatchUp,
+    Check,
+    HealthLet,
+    InfoLet,
+    JobLet,
+    Let,
+    OperationLet,
+    ServiceLet,
+    SettingsLet,
+    Status,
+)
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._settings import Settings
@@ -30,6 +42,7 @@ __all__ = [
     "FILENAME",
     "KERNEL_SECTION",
     "PROJECT_FILENAME",
+    "CatchUp",
     "Check",
     "Config",
     "ConfigFile",
@@ -37,6 +50,7 @@ __all__ = [
     "HeinzelError",
     "InfoLet",
     "Installation",
+    "JobLet",
     "Kernel",
     "Let",
     "Module",
@@ -52,6 +66,7 @@ __all__ = [
     "boot",
     "discover",
     "env_prefix",
+    "parse_duration",
     "requirement_from_receipt",
     "user_config_dir",
     "walk",
