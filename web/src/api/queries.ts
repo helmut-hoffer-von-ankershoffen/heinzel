@@ -107,6 +107,28 @@ export const useSetTheme = () => {
   });
 };
 
+/** `hz ai access list`: every AI access option, its status and the one in use (ADR 0057). */
+export const useAiAccess = () =>
+  useQuery({ queryKey: ["ai", "access", "list"], queryFn: () => unwrap(api.GET("/ai/access/list")) });
+
+/** `hz ai access use <name>`: the one choice, like the theme; it binds the runner the option names too. */
+export const useSetAiAccess = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => unwrap(api.POST("/ai/access/use", { params: { query: { name } } })),
+    onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access", "list"] }),
+  });
+};
+
+/** `hz ai access test --name <name>`: one cheap live check, only when asked; it may cost a little. */
+export const useTestAiAccess = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => unwrap(api.POST("/ai/access/test", { params: { query: { name } } })),
+    onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access", "list"] }),
+  });
+};
+
 /** `hz system notify list`: the latest notices, newest first as the store keeps them (ADR 0043). */
 export const useNotices = () =>
   useQuery({
