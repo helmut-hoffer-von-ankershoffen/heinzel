@@ -116,6 +116,13 @@ def test_characters_yaml_refuses_are_reported():
     assert problems("---\nname: ￾\n---\n")[0] == (2, "HZC001", "frontmatter")
 
 
+def test_an_escape_past_the_last_unicode_character_is_a_diagnostic_not_a_crash():
+    """Found by the fuzzer: PyYAML raises chr()'s ValueError for `\\U00110000` instead of a YAML error."""
+    [problem] = list(read_contract(Path("x.prose.md"), "me", '---\nname: "\\U00110000"\n---\n').diagnostics)
+    assert problem.code == "HZC001"
+    assert "an escape names no character" in problem.message
+
+
 ESC = "\x1b"
 
 
