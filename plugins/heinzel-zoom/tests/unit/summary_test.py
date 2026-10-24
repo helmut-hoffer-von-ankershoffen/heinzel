@@ -52,7 +52,9 @@ def test_a_summary_yields_its_meeting_and_sections(emails):
         ("Meeting summary - Planning", "Planning"),
         ("Meeting assets for Board prep are ready!", "Board prep"),
         ("Meeting assets for Board prep is ready", "Board prep"),
-        ("Fwd: Re: Meeting summary for 1:1 Mira / Jonas", "1:1 Mira / Jonas"),
+        ("Meeting summary for 1:1 Mira / Jonas", "1:1 Mira / Jonas"),
+        ("Re: Meeting summary for 1:1 Mira / Jonas", None),
+        ("Fwd: Meeting summary for Weekly sync", None),
         ("Meeting summary for \u202eReview\u200b", "Review"),
         ("Your meeting has ended", None),
         ("Cloud recording - Weekly sync is now available", None),
@@ -114,6 +116,44 @@ def test_people_given_as_addresses_are_dropped_and_links_outside_zoom_ignored():
     assert found.url == "https://zoom.us/s/1"
 
 
+def test_links_lose_their_query_so_no_address_or_token_rides_along():
+    found = parse(SUBJECT, "Open https://zoom.us/j/1?email=ada@example.com&tk=secret#x in Zoom.\n")
+    assert found.url == "https://zoom.us/j/1"
+
+
+def test_a_line_cut_at_its_limit_leaves_no_part_of_an_address():
+    found = parse(SUBJECT, "Quick recap\n" + "x " * (MAX_LINE // 2 - 6) + "write ada@example.com now\n")
+    (line,) = found.sections[0].lines
+    assert "@" not in line
+    assert "ada" not in line
+    assert len(line) <= MAX_LINE
+
+
+def test_participants_given_with_their_address_keep_only_their_name():
+    found = parse(SUBJECT, "Participants: Ada Lovelace <ada@example.com>, Bo (bo@example.com), Cy\n")
+    assert found.people == ("Ada Lovelace", "Bo", "Cy")
+
+
+def test_the_footer_ends_the_content_and_words_like_unsubscribe_inside_it_stay():
+    body = (
+        "Quick recap\nWe discussed how users unsubscribe from the list.\n"
+        "Zoom Video Communications, Inc.\n55 Example Blvd\nSan Jose, CA\nMeeting ID: 812 3456 7890\n"
+    )
+    found = parse(SUBJECT, body)
+    assert found.sections == (Section("Quick recap", ("We discussed how users unsubscribe from the list.",)),)
+    assert found.conference_id == "81234567890"  # facts still count after the footer
+
+
+def test_a_short_line_without_anything_under_it_stays_in_the_topic_before_it():
+    found = parse(SUBJECT, "Summary\nRelease\nThe team agreed.\nDecision deferred to Thursday\nBudget\nIt holds.\n")
+    assert found.sections == (
+        Section("Release", ("The team agreed.", "Decision deferred to Thursday")),
+        Section("Budget", ("It holds.",)),
+    )
+    found = parse(SUBJECT, "Summary\nRelease\nThe team agreed.\nDecision deferred to Thursday\n")
+    assert found.sections == (Section("Release", ("The team agreed.", "Decision deferred to Thursday")),)
+
+
 def test_meeting_times_end_when_the_summary_arrived():
     at = datetime(2026, 10, 20, 10, tzinfo=UTC)
     assert meeting_times(at, timedelta(minutes=30)) == (at - timedelta(minutes=30), at)
@@ -157,7 +197,7 @@ def test_a_rendered_summary_parses_back_to_its_sections(recap, steps, topics):
 def test_any_body_parses_and_nothing_unsafe_comes_out(body, title):
     found = parse(f"Meeting summary for {title}x", body)
     assert found is not None
-    texts = [found.title, *found.people, *(s.text for s in found.sections)]
+    texts = [found.title, *found.people, *(s.text for s in found.sections), found.url or ""]
     for text in texts:
         assert clean_text(text) == text
         assert _EMAIL.search(text) is None

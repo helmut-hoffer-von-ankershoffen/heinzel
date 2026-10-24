@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from heinzel_zoom import Zoom, ZoomSettings
+from heinzel_zoom import Zoom, ZoomSettings, _adapter
 from heinzel_zoom._adapter import MAX_SUMMARIES, SUMMARY_CHARS, WINDOW_CHARS
 
 from heinzel import HeinzelError, Participant, Window
@@ -63,7 +63,7 @@ def test_a_summary_without_sections_has_no_transcript(mailbox, emails):
     zoom = Zoom(ZoomSettings(), mailbox.holding(emails("a", text="Meeting ID: 812 3456 7890\n")))
     (meeting,) = zoom.ended(WINDOW)
     assert not meeting.has_transcript
-    assert zoom.transcripts(WINDOW)[0].segments == []
+    assert zoom.transcripts(WINDOW) == []  # only meetings that have one
 
 
 def test_transcripts_are_the_summaries_one_segment_per_section_without_speakers(mailbox, emails):
@@ -103,18 +103,27 @@ def test_too_many_summaries_ask_for_a_shorter_window(mailbox, emails):
     assert mailbox.reads == []
 
 
-def test_summaries_longer_than_the_window_budget_ask_for_a_shorter_window(mailbox, emails):
-    long = "Quick recap\n" + "x" * (SUMMARY_CHARS - 20)
-    count = WINDOW_CHARS // len(long) + 1
-    many = [emails(f"m{i}", text=long, received=WINDOW.since + timedelta(hours=i)) for i in range(count)]
-    with pytest.raises(HeinzelError, match=f"longer than {WINDOW_CHARS} characters together"):
-        Zoom(ZoomSettings(), mailbox.holding(*many)).transcripts(WINDOW)
+def test_summaries_longer_than_the_window_budget_ask_for_a_shorter_window(mailbox, emails, monkeypatch):
+    monkeypatch.setattr(_adapter, "WINDOW_CHARS", 2 * len(emails("x").text))  # two summaries fit, three don't
+    many = [emails(f"m{i}", received=WINDOW.since + timedelta(hours=i)) for i in range(3)]
+    zoom = Zoom(ZoomSettings(), mailbox.holding(*many))
+    with pytest.raises(HeinzelError, match="characters together; ask for a shorter window"):
+        zoom.transcripts(WINDOW)
+    assert len(zoom.ended(Window(since=WINDOW.since, until=WINDOW.since + timedelta(hours=2)))) == 2
+    assert WINDOW_CHARS == 2_000_000
 
 
-def test_a_message_too_long_to_be_a_summary_fails(mailbox, emails):
-    zoom = Zoom(ZoomSettings(), mailbox.holding(emails("big", text="x" * (SUMMARY_CHARS + 1))))
+def test_a_message_too_long_to_be_a_summary_fails_by_id_and_is_skipped_in_a_window(mailbox, emails):
+    zoom = Zoom(ZoomSettings(), mailbox.holding(emails("big", text="x" * (SUMMARY_CHARS + 1)), emails("sync")))
     with pytest.raises(HeinzelError, match=f"longer than {SUMMARY_CHARS} characters, more than a Zoom summary"):
         zoom.transcript("big")
+    assert [m.id for m in zoom.ended(WINDOW)] == ["sync"]
+
+
+def test_transcript_refuses_a_message_outside_the_configured_query(mailbox, emails):
+    zoom = Zoom(ZoomSettings(), mailbox.holding(emails("lookalike", sender=NEWS)))
+    with pytest.raises(HeinzelError, match=r"not a Zoom meeting summary matching zoom\.query"):
+        zoom.transcript("lookalike")
 
 
 def test_a_message_that_is_no_summary_by_the_time_it_is_read_is_skipped(mailbox, emails):

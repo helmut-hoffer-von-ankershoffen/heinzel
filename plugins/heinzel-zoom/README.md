@@ -49,8 +49,8 @@ def decided(meetings: Meetings, since: datetime, until: datetime) -> list[Transc
 | Method | What it reads |
 | --- | --- |
 | `ended(window)` | `mail.messages(zoom.query, window)`, keeping messages whose subject is a Zoom summary, then each one with `mail.read` |
-| `transcripts(window)` | the same messages, each summary as a transcript |
-| `transcript(meeting)` | `mail.read(meeting)` |
+| `transcripts(window)` | the same messages, each summary that has sections as a transcript |
+| `transcript(meeting)` | `mail.read(meeting)`, refused unless it matches `zoom.query` and is a Zoom summary |
 
 What a meeting holds:
 
@@ -65,6 +65,9 @@ What a meeting holds:
 A transcript here is the summary, not a verbatim record, because Zoom's summary emails contain no transcript. It has
 one segment per section (`Quick recap`, `Next steps`, and each topic under `Summary`), without a speaker, at offset 0.
 
+Replies and forwards (`Re:`, `Fwd:`) are someone's mail about a summary, not Zoom's, so they are skipped. The
+summary's content ends at Zoom's footer. Links keep no query or fragment, which could carry an address or a token.
+
 Mail stays private:
 
 - Every string passes `clean_text`.
@@ -72,9 +75,10 @@ Mail stays private:
 - An address in the summary's text becomes `[address]`.
 - Senders' addresses never reach a workflow's agent, because the packet builder drops them.
 
-Limits: a summary longer than 200,000 characters is refused, and so is a window with more than 500 summaries or more
-than 2,000,000 characters of them. Each error says to ask for a shorter window. The mail adapter applies its own
-limits too.
+Limits: a message longer than 200,000 characters is no Zoom summary, so a window skips it and `transcript` refuses
+it. A window with more than 500 summaries or more than 2,000,000 characters of them fails and says to ask for a
+shorter one. The mail adapter applies its own limits too. Each summary is read with its own `mail.read`, one after the
+other.
 
 ```bash
 hz zoom info                    # this plugin, its version and the mail query it uses

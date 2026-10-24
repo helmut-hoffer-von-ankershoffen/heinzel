@@ -9,8 +9,8 @@ segment per section without a speaker, not a verbatim record: Zoom's summary ema
 from heinzel import (
     HeinzelError,
     Mail,
-    MailContent,
     MailMessage,
+    MailQuery,
     Meeting,
     Participant,
     Transcript,
@@ -51,7 +51,7 @@ class Zoom:
         Raises:
             HeinzelError: As `ended`.
         """
-        return [_transcript(meeting, summary) for meeting, summary in self._summaries(window)]
+        return [_transcript(meeting, summary) for meeting, summary in self._summaries(window) if summary.sections]
 
     def transcript(self, meeting: str) -> Transcript:
         """The transcript of the meeting `meeting` (a `Meeting.id`), for operations that know the id. Mode: read.
@@ -60,9 +60,16 @@ class Zoom:
             HeinzelError: If the message is no Zoom summary, or the mail adapter fails.
         """
         content = self._mail.read(meeting)
-        found = _parse(content)
+        if len(content.text) > SUMMARY_CHARS:
+            msg = f"Message {meeting} is longer than {SUMMARY_CHARS} characters, more than a Zoom summary."
+            raise HeinzelError(msg)
+        wanted = MailQuery.parse(self._settings.query)
+        found = parse(content.message.subject, content.text) if wanted.matches(content.message) else None
         if found is None:
-            msg = f"Message {meeting} is not a Zoom meeting summary; take Meeting.id from `ended` or `transcripts`."
+            msg = (
+                f"Message {meeting} is not a Zoom meeting summary matching zoom.query; take Meeting.id from `ended` "
+                "or `transcripts`."
+            )
             raise HeinzelError(msg)
         return _transcript(_meeting(content.message, found), found)
 
@@ -78,21 +85,16 @@ class Zoom:
         budget = WINDOW_CHARS
         for message in sorted(listed, key=lambda m: (m.received_at, m.id)):
             content = self._mail.read(message.id)
+            if len(content.text) > SUMMARY_CHARS:
+                continue  # longer than any Zoom summary: someone's mail with a summary-like subject, not Zoom's
             budget -= len(content.text)
             if budget < 0:
                 msg = f"The Zoom summaries of this window are longer than {WINDOW_CHARS} characters together; ask "
                 msg += "for a shorter window."
                 raise HeinzelError(msg)
-            if summary := _parse(content):
+            if summary := parse(content.message.subject, content.text):
                 found.append((_meeting(message, summary), summary))
         return found
-
-
-def _parse(content: MailContent) -> Summary | None:
-    if len(content.text) > SUMMARY_CHARS:
-        msg = f"Message {content.message.id} is longer than {SUMMARY_CHARS} characters, more than a Zoom summary."
-        raise HeinzelError(msg)
-    return parse(content.message.subject, content.text)
 
 
 def _meeting(message: MailMessage, summary: Summary) -> Meeting:

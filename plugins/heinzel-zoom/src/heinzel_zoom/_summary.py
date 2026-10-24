@@ -15,15 +15,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from heinzel import clean_text
-from heinzel_zoom._text import ADDRESS, name, without_addresses
+from heinzel_zoom._text import name, without_addresses
 
-_FORWARDED = r"^(?:re:\s*|fwd?:\s*)*"
+# Zoom's own subjects only: a reply or forward (`Re:`, `Fwd:`) is someone's mail about a summary, not a summary.
 _SUBJECTS = (
-    re.compile(
-        _FORWARDED + r"meeting\s+summary\s+for\s+(?P<title>.+?)(?:\s+\((?P<date>[\d/.\-]+)\))?\s*$", re.IGNORECASE
-    ),
-    re.compile(_FORWARDED + r"meeting\s+summary\s*[:\-]\s*(?P<title>.+?)\s*$", re.IGNORECASE),
-    re.compile(_FORWARDED + r"meeting\s+assets\s+for\s+(?P<title>.+?)\s+(?:are|is)\s+ready!?\s*$", re.IGNORECASE),
+    re.compile(r"^meeting\s+summary\s+for\s+(?P<title>.+?)(?:\s+\((?P<date>[\d/.\-]+)\))?\s*$", re.IGNORECASE),
+    re.compile(r"^meeting\s+summary\s*[:\-]\s*(?P<title>.+?)\s*$", re.IGNORECASE),
+    re.compile(r"^meeting\s+assets\s+for\s+(?P<title>.+?)\s+(?:are|is)\s+ready!?\s*$", re.IGNORECASE),
 )
 _MEETING_ID = re.compile(r"^\s*meeting\s+id\s*[:#]?\s*(?P<id>\d(?:[\d \-]{7,18})\d)\s*$", re.IGNORECASE)
 _DURATION = re.compile(
@@ -31,7 +29,8 @@ _DURATION = re.compile(
     re.IGNORECASE,
 )
 _PEOPLE = re.compile(r"^\s*(?:participants|attendees)\s*:\s*(?P<people>.+)$", re.IGNORECASE)
-_LINK = re.compile(r"https://(?:[a-z0-9-]+\.)*zoom\.us/[^\s<>()\"']*", re.IGNORECASE)
+_LINK = re.compile(r"https://(?:[a-z0-9-]+\.)*zoom\.us/[^\s<>()\"'?#@]*", re.IGNORECASE)
+"""A zoom.us link up to its query or fragment, which may carry an address or a token."""
 _BULLET = re.compile(r"^\s*(?:[-*\u2022\u25cf\u25aa]|\d{1,3}[.)])\s+")
 HEADINGS = ("quick recap", "next steps", "summary")
 """Section headings Zoom writes, lower case; other headings inside `Summary` are topics."""
@@ -45,6 +44,7 @@ _FOOTER = (
     "you are receiving this",
     "this email was sent",
 )
+"""How lines of Zoom's footer start, lower case; the summary's content ends at the first one."""
 MAX_LINE = 2_000
 """Characters of one line kept; Zoom's longest paragraphs are well below it."""
 
@@ -84,8 +84,7 @@ def title_of(subject: str) -> str | None:
 
 
 def _footer(line: str) -> bool:
-    lowered = line.casefold()
-    return any(mark in lowered for mark in _FOOTER)
+    return line.casefold().startswith(_FOOTER)
 
 
 @dataclass(slots=True)
@@ -100,14 +99,18 @@ class _Reader:
     sections: list[Section] = field(default_factory=list[Section])
     heading: str | None = None
     lines: list[str] = field(default_factory=list[str])
+    in_footer: bool = False
 
     def read(self, raw: str) -> None:
-        line = " ".join(raw.split())[:MAX_LINE]
-        if self.url is None and (link := _LINK.search(line)):
+        whole = " ".join(raw.split())
+        if self.url is None and (link := _LINK.search(whole)):
             self.url = link.group().rstrip(".,;")
-        line = without_addresses(line)
-        if not line or _footer(line) or _LINK.fullmatch(line) or self._fact(line) or title_of(line) == self.title:
-            return  # empty, boilerplate, a fact about the meeting, or the subject repeated as the first line
+        if not whole or self._fact(whole):
+            return
+        line = _cut(without_addresses(whole))
+        self.in_footer = self.in_footer or _footer(line)
+        if self.in_footer or _LINK.fullmatch(line) or title_of(line) == self.title:
+            return  # the footer and what follows it, a bare link, or the subject repeated as the first line
         if _heading(line, self.heading):
             self._close()
             self.heading = line.rstrip(":")
@@ -121,8 +124,9 @@ class _Reader:
         elif (found := _DURATION.match(line)) and (found.group("hours") or found.group("minutes")):
             self.duration = timedelta(hours=int(found.group("hours") or 0), minutes=int(found.group("minutes") or 0))
         elif found := _PEOPLE.match(line):
-            parts = re.split(r"[,;]", found.group("people"))
-            self.people = tuple(p for part in parts if (p := name(part)) and p != ADDRESS)
+            # `Name <address>` keeps the name; a part that is, or still holds, an address is dropped by `name`.
+            parts = (re.sub(r"<[^>]*>|\([^)]*@[^)]*\)", "", part) for part in re.split(r"[,;]", found.group("people")))
+            self.people = tuple(p for part in parts if (p := name(part)))
         else:
             return False
         return True
@@ -130,6 +134,10 @@ class _Reader:
     def _close(self) -> None:
         if self.heading is not None and self.lines:
             self.sections.append(Section(self.heading, tuple(self.lines)))
+        elif self.heading is not None and self.heading.casefold() not in HEADINGS and self.sections:
+            # A short line taken for a topic heading, with nothing under it, is a line of the topic before it.
+            previous = self.sections[-1]
+            self.sections[-1] = Section(previous.heading, (*previous.lines, self.heading))
         self.lines = []
 
     def summary(self) -> Summary:
@@ -146,6 +154,13 @@ def parse(subject: str, text: str) -> Summary | None:
     for raw in clean_text(text).splitlines():
         reader.read(raw)
     return reader.summary()
+
+
+def _cut(line: str) -> str:
+    """`line` cut to `MAX_LINE` characters, without a cut-off word that held an `@`, so no part of an address stays."""
+    if len(line) <= MAX_LINE:
+        return line
+    return re.sub(r"\S*@\S*$", "", line[:MAX_LINE]).rstrip()
 
 
 def _heading(line: str, current: str | None) -> bool:
