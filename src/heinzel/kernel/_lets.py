@@ -20,6 +20,9 @@ from rich.console import RenderableType
 from heinzel.kernel._capabilities import Mode, Requirement
 from heinzel.kernel._config import ModuleSettings
 
+Audience = Literal["everyday", "expert"]
+"""Who an operation is for: `everyday` is the small surface newcomers see, `expert` everything else (ADR 0041)."""
+AUDIENCES: frozenset[str] = frozenset(get_args(Audience))
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 """Names of modules, jobs and credentials: lowercase words joined by dashes."""
 CRON_ALIASES = frozenset({"@yearly", "@annually", "@monthly", "@weekly", "@daily", "@midnight", "@hourly"})
@@ -126,6 +129,10 @@ class OperationLet(Let):
     """Capabilities the operation asks for by type, besides its module's (ADR 0028); `write` only if not read-only.
 
     `write` doesn't imply `read`: a publish operation that also reads declares `documents:read,write`."""
+    audience: Audience = "expert"
+    """Who it is for in heads people browse (CLI help and completion, the web app's navigation): `everyday`
+    operations are always listed, `expert` ones only in expert mode (`[hz] expert`). Hidden is never disabled: every
+    operation runs when called, and machine heads (MCP, REST) list all of them (ADR 0041)."""
 
     def __post_init__(self) -> None:
         """Refuse a read-only operation that declares a write.
@@ -138,6 +145,9 @@ class OperationLet(Let):
                 f"Operation {self.name!r} can't require {', '.join(writes)}: writes happen only in publish operations "
                 f"(read_only=False)"
             )
+            raise ValueError(msg)
+        if self.audience not in AUDIENCES:
+            msg = f"Operation {self.name!r} has audience {self.audience!r}; use one of {', '.join(sorted(AUDIENCES))}"
             raise ValueError(msg)
 
     def signature(self) -> inspect.Signature:

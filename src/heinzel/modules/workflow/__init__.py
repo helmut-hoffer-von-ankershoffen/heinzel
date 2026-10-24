@@ -77,7 +77,7 @@ def _prune_exit_code(report: PruneReport) -> int:
     return 1 if report.problems else 0
 
 
-@module.operation(render=render_list)
+@module.operation(render=render_list, audience="everyday")
 def list_(service: WorkflowService) -> ContractList:
     """List the contracts in your and your team's workflows directories, with their schedule and problems."""
     return service.listing()
@@ -86,7 +86,7 @@ def list_(service: WorkflowService) -> ContractList:
 # A contract written through a web page could reach a local REST server; the CLI and MCP get it, like `run`. Neither
 # the starter nor a template has an active schedule (templates with one are refused), so nothing written here runs on
 # the daemon by itself.
-@module.operation(read_only=False, render=render_new, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_new, heads={"cli", "mcp"}, audience="everyday")
 def new(
     service: WorkflowService,
     name: Annotated[
@@ -166,14 +166,14 @@ class _PlaybookSetup(PlaybookSetup):
 module.service(PlaybookSetup, _PlaybookSetup)
 
 
-@module.operation(render=render_show)
+@module.operation(render=render_show, audience="everyday")
 def show(service: WorkflowService, name: Name) -> CompiledContract:
     """Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps."""
     return service.show(name)
 
 
 # Drafts hold data fetched from your systems; a web page can reach a local REST server, so the CLI and MCP list them.
-@module.operation(render=render_drafts, heads={"cli", "mcp"})
+@module.operation(render=render_drafts, heads={"cli", "mcp"}, audience="everyday")
 def drafts(
     service: WorkflowService,
     name: Annotated[str | None, Field(description="Only this contract's drafts; every contract's if omitted.")] = None,
@@ -230,7 +230,7 @@ def check(
 
 
 # A render spends money; REST is reachable from a browser, so only the CLI and MCP get it.
-@module.operation(read_only=False, render=render_run, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_run, heads={"cli", "mcp"}, audience="everyday")
 def run(
     service: WorkflowService,
     name: Name,

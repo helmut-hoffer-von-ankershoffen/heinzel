@@ -15,6 +15,7 @@ Plugins add their own tables.
 | `log_dir` | `HZ_LOG_DIR` | platform-specific | Where background work such as the daemon writes its logs. |
 | `log_level` | `HZ_LOG_LEVEL` | `'WARNING'` | Log level for Heinzelmännchen and its modules. |
 | `output_format` | `HZ_OUTPUT_FORMAT` | `'text'` | Default output of every operation; `json` suits scripts and agents. `--format` overrides it. |
+| `expert` | `HZ_EXPERT` | `False` | Expert mode: list every command in help, shell completion and the web app, not just the everyday ones. Hidden commands run all the same, and MCP and REST always list everything. Change it with `hz system expert on` or `off`; not settable in a project's hz.toml (ADR 0041). |
 | `plugins_enabled` | `HZ_PLUGINS_ENABLED` | `True` | Discover modules from installed plugins. Disable to debug a broken plugin. |
 | `update_check` | `HZ_UPDATE_CHECK` | `True` | Check for a newer release at most once an hour, in the background with a 2-second timeout, and say so on stderr after human output (ADR 0031): one unauthenticated request that carries nothing about you. A failed check waits an hour too. Never in JSON, MCP or REST output, and off in CI. Set to false to turn the check and the notice off; not settable in a project's hz.toml. |
 | `disabled_modules` | `HZ_DISABLED_MODULES` | `frozenset()` | Qualified names of modules to switch off, with their submodules. Comma-separated in the environment, a list in TOML. |

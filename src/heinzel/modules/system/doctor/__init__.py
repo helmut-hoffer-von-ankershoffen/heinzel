@@ -48,7 +48,7 @@ def _exit_code(report: HealthReport) -> int:
     return 1 if report.status is Status.DOWN else 0
 
 
-@module.operation(render=_render, exit_code=_exit_code)
+@module.operation(render=_render, exit_code=_exit_code, audience="everyday")
 def doctor(kernel: Kernel) -> HealthReport:
     """Run every module's health checks; exits with 1 if anything is down."""
     checks: dict[str, list[Check]] = {}

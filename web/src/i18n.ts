@@ -65,6 +65,12 @@ const en = {
   "settings.exists": "exists",
   "settings.missing": "not there",
   "settings.notSet": "not set",
+  "settings.expert": "Expert mode",
+  "settings.expertOn":
+    "On: the navigation, search and `hz --help` list every screen and command. Your choice, in your user configuration.",
+  "settings.expertOff":
+    "Off: the navigation, search and `hz --help` list the everyday screens and commands; every other one still works.",
+  "settings.expertFailed": "Expert mode didn't change: {problem}",
   "contracts.title": "Contract graph",
   "contracts.intro":
     "Contracts, the assets they maintain and what they read. Select a contract to open it; cycles and unmaintained inputs are listed below.",

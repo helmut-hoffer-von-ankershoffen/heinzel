@@ -93,7 +93,15 @@ a foreground loop; installed, launchd or systemd start that tick every few minut
 ([ADR 0020](adr/0020-daemon-head.md)). The CLI head turns a module into a command group and
 an operation into a command; parameters without defaults become arguments, others options, and
 `Field(description=...)` becomes help text. Every operation's command gets `--json`. A module whose only operation
-shares its name and has no submodules collapses into a single command (`hz system changelog`).
+shares its name and has no submodules collapses into a single command (`hz system changelog`); beside other
+operations, the one named like its module is what the group does by itself (`hz system expert`, next to `hz system
+expert on`), in every head.
+
+**Expert mode.** Every operation declares its `audience`: `everyday` (`@module.operation(audience="everyday")`) or
+`expert`, the default. Outside expert mode (`[hz] expert`, user scope; `hz system expert on|off`) the CLI's help and
+shell completion and the web app's navigation and search list only everyday operations, and `hz --help` ends with how
+many are hidden. Hidden is never disabled: every command runs and answers `--help`, and MCP and REST list every
+operation ([ADR 0041](adr/0041-expert-mode-newcomers-see-the-everyday-commands.md)).
 
 **Configuration.** Layered TOML files (site, user, project `hz.toml`, `$HZ_CONFIG`) under environment variables;
 the `[hz]` table holds kernel settings, `[capabilities]` the capability bindings, `[<module>]` tables module settings
@@ -114,6 +122,7 @@ hz join URL                                join a team: who you are, the team, w
 hz setup [MODULE]                          every module's setup step, or one module's, wizard style (CLI only)
 hz ui                                      the web app on localhost, opened in your browser
 hz system info | modules | doctor | changelog | release | update
+hz system expert [on | off]                every command in help, or just the everyday ones (ADR 0041)
 hz system config  show | get | set | unset | init
 hz system plugin  list | add | remove | new
 hz system layer   list | show

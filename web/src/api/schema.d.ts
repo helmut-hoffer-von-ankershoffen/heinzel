@@ -371,6 +371,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/expert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show whether expert mode is on: `on` lists every command, `off` just the everyday ones.
+         * @description Show whether expert mode is on: `on` lists every command, `off` just the everyday ones.
+         */
+        get: operations["system_expert"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/expert/off": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn expert mode off: help, completion and the web app list the everyday commands.
+         * @description Turn expert mode off: help, completion and the web app list the everyday commands.
+         */
+        post: operations["system_expert_off"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/expert/on": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn expert mode on: help, completion and the web app list every command.
+         * @description Turn expert mode on: help, completion and the web app list every command.
+         */
+        post: operations["system_expert_on"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/info": {
         parameters: {
             query?: never;
@@ -1617,6 +1677,32 @@ export interface components {
          */
         Disposition: "rendered" | "skipped" | "failed";
         /**
+         * ExpertMode
+         * @description Whether expert mode is on, and who each operation is for.
+         */
+        ExpertMode: {
+            /**
+             * Expert
+             * @description Whether help, completion and the web app list every command.
+             */
+            expert: boolean;
+            /**
+             * Next
+             * @description What to run next.
+             */
+            next?: string[];
+            /**
+             * Note
+             * @description Why the mode in effect differs from the one asked for.
+             */
+            note?: string | null;
+            /**
+             * Operations
+             * @description Every available operation with its audience, so other heads list the same ones the CLI does.
+             */
+            operations: components["schemas"]["OperationAudience"][];
+        };
+        /**
          * GraphEdge
          * @description A contract maintaining an asset, or a contract reading an asset or a source as one of its inputs.
          */
@@ -2068,6 +2154,28 @@ export interface components {
              * @description Version of that distribution.
              */
             version: string;
+        };
+        /**
+         * OperationAudience
+         * @description Who one operation is for.
+         */
+        OperationAudience: {
+            /**
+             * Audience
+             * @description `everyday`: always listed; `expert`: listed in expert mode only. Both run when called.
+             * @enum {string}
+             */
+            audience: "everyday" | "expert";
+            /**
+             * Module
+             * @description The qualified name of the operation's module, e.g. `workflow` or `system.doctor`.
+             */
+            module: string;
+            /**
+             * Operation
+             * @description The operation's name within its module, e.g. `graph`.
+             */
+            operation: string;
         };
         /**
          * PlaybookList
@@ -2792,6 +2900,7 @@ export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
 export type SchemaDisposition = components['schemas']['Disposition'];
+export type SchemaExpertMode = components['schemas']['ExpertMode'];
 export type SchemaGraphEdge = components['schemas']['GraphEdge'];
 export type SchemaGraphNode = components['schemas']['GraphNode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
@@ -2808,6 +2917,7 @@ export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
+export type SchemaOperationAudience = components['schemas']['OperationAudience'];
 export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
@@ -3278,6 +3388,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthReport"];
+                };
+            };
+        };
+    };
+    system_expert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpertMode"];
+                };
+            };
+        };
+    };
+    system_expert_off: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpertMode"];
+                };
+            };
+        };
+    };
+    system_expert_on: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExpertMode"];
                 };
             };
         };

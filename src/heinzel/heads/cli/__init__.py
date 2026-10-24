@@ -2,9 +2,14 @@
 
 Commands and groups are sorted alphabetically at every level; built-in modules and plugins sit in separate help
 panels. A module with exactly one operation of its own name and no submodules collapses into a plain command, so the
-`changelog` submodule of `system` reads as `hz system changelog`.
+`changelog` submodule of `system` reads as `hz system changelog`; beside other operations, the one named like its
+module runs when the group is called without a subcommand (`hz system expert`, next to `hz system expert on`).
+
+Outside expert mode, help and shell completion list the everyday operations only, and say how many others there are
+(ADR 0041); every command runs either way.
 """
 
+import inspect
 import logging
 import platform
 import sys
@@ -12,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from pydantic import ValidationError
@@ -23,7 +28,7 @@ from rich.text import Text
 from typer.core import TyperGroup
 
 from heinzel import __version__
-from heinzel.heads._exposure import collapses
+from heinzel.heads._exposure import collapses, owns_path
 from heinzel.heads.cli import _update
 from heinzel.heads.cli._command import command
 from heinzel.heads.cli._join import HELP as JOIN_HELP
@@ -47,9 +52,14 @@ HELP = (
     "helpers of Cologne.\n\nEvery operation accepts [bold]--json[/bold]. Start with [bold]hz setup[/bold], then "
     "[bold]hz system doctor[/bold]."
 )
-PLAIN_HELP = f"{LOGO} Heinzelmännchen: {TAGLINE}. Every operation accepts --json."
+PLAIN_HELP = (
+    f"{LOGO} Heinzelmännchen: {TAGLINE}. Every operation accepts --json. Commands marked (expert) run like any other "
+    "but are listed in help and completion only in expert mode: hz system expert on."
+)
 CORE_PANEL = "Core"
 PLUGINS_PANEL = "Plugins"
+EXPERT_MARK = "(expert)"
+"""Marks commands for experts in the generated reference, which lists every command (ADR 0041)."""
 EX_CONFIG = 78  # sysexits.h: configuration error
 QUIET = {("system", "release"), ("system", "update"), ("system.changelog", "changelog"), ("system.doctor", "doctor")}
 """Operations that say themselves whether a newer release is available, so no update notice follows them."""
@@ -71,13 +81,13 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
 
     Args:
         kernel: The booted kernel.
-        plain: Help without Rich markup and footer, for the generated reference docs.
+        plain: Help without Rich markup and footer, for the generated reference docs: every command listed, the ones
+            for experts marked.
     """
     footer = None if plain else FOOTER
     app = typer.Typer(
         name="hz",
         help=PLAIN_HELP if plain else HELP,
-        epilog=None if plain else start_screen_footer(kernel),
         cls=SortedGroup,
         no_args_is_help=True,
         pretty_exceptions_show_locals=False,
@@ -109,8 +119,8 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
 
     progress = ConsoleProgress(err_console)
     kernel.bind(Progress, progress)
-    mount = _Mount(kernel, progress, footer, plain=plain)
-    mount(app, None)
+    mount = _Mount(kernel, progress, footer, plain=plain, expert=kernel.settings.expert)
+    count = mount(app, None) + Count(commands=3)  # setup, join and ui: everyday, for everyone
     # Top level by the maintainer's decision, the one exception to ADR 0018, and the only way to run a step (ADR 0032).
     setup = SetupCommands(kernel, console, err_console).command()
     app.command(name="setup", help=SETUP_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(setup)
@@ -121,7 +131,18 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
     # (ADR 0039, "a web head: a React app served by the API head").
     app.command(name="ui", help=UI_HELP, epilog=footer, rich_help_panel=CORE_PANEL)(ui_command(kernel, err_console))
     if system := mount.groups.get("system"):
-        system.add_typer(serve_group(SortedGroup, footer, kernel, console, err_console), cls=SortedGroup)
+        # Starting servers is for experts: agents and scripts are configured once, by someone who knows `hz`.
+        serve = serve_group(SortedGroup, footer, kernel, console, err_console)
+        for info in serve.registered_commands:
+            info.help = mount.help(info.help or inspect.getdoc(info.callback) or "", expert=True)
+        serve.info.help = mount.help(serve.info.help or "", expert=True)
+        system.add_typer(serve, cls=SortedGroup, hidden=mount.hides(expert=True))
+        servers = Count(len(serve.registered_commands), len(serve.registered_commands))
+        count += servers
+        mount.hint(system, mount.counts["system"] + servers)
+    if not plain:
+        hidden = 0 if mount.expert else count.expert
+        app.info.epilog = start_screen_footer(kernel, hidden)
     return app
 
 
@@ -141,57 +162,140 @@ def main() -> None:
             check.wait()
 
 
+@dataclass(frozen=True, slots=True)
+class Count:
+    """How many commands a part of the tree holds, and how many of them are for experts only."""
+
+    commands: int = 0
+    expert: int = 0
+
+    def __add__(self, other: "Count") -> "Count":
+        """Both counts together."""
+        return Count(self.commands + other.commands, self.expert + other.expert)
+
+    @property
+    def all_expert(self) -> bool:
+        """Whether every command in it is for experts, so the part as a whole is too."""
+        return self.commands > 0 and self.commands == self.expert
+
+
 @dataclass
 class _Mount:
-    """Adds modules' operations and submodules to command groups, alphabetically, remembering each group."""
+    """Adds modules' operations and submodules to command groups, alphabetically, remembering each group.
+
+    Outside expert mode, expert operations, and groups holding nothing else, are hidden: left out of help and shell
+    completion, but they run when typed (ADR 0041). Inside a hidden group nothing is hidden, so its own help lists
+    its commands. `plain` (the generated reference) lists everything and marks what is for experts.
+    """
 
     kernel: Kernel
     progress: ConsoleProgress
     footer: str | None
     plain: bool = False
+    expert: bool = False
     groups: dict[str, typer.Typer] = field(default_factory=dict[str, typer.Typer])
+    counts: dict[str, Count] = field(default_factory=dict[str, Count])
 
-    def __call__(self, parent: typer.Typer, qualname: str | None) -> None:
+    def __call__(self, parent: typer.Typer, qualname: str | None) -> Count:
+        """Mount the operations and submodules of `qualname` (the top level for None) on `parent`; count them."""
         kernel, footer = self.kernel, self.footer
         entries: list[tuple[str, OperationLet | ModuleRecord]] = []
         if qualname is not None:
-            entries += [(operation.name, operation) for operation in _operations(kernel, kernel.module(qualname))]
+            record = kernel.module(qualname)
+            # The operation named like its module is the group's own command, not one of its subcommands.
+            entries += [(op.name, op) for op in _operations(kernel, record) if not owns_path(kernel, record, op)]
         entries += [(record.module.name, record) for record in kernel.children(qualname)]
+        count = Count()
         for _, entry in sorted(entries, key=lambda pair: pair[0]):
             match entry:
                 case OperationLet():
-                    parent.command(name=entry.name, help=entry.summary, epilog=footer)(
-                        self._command(entry, (qualname, entry.name))
-                    )
+                    parent.command(
+                        name=entry.name, help=self.help(entry.summary, expert=entry.audience == "expert"),
+                        epilog=footer, hidden=self.hides(expert=entry.audience == "expert"),
+                    )(self._command(entry, (qualname, entry.name)))  # fmt: skip
+                    count += _count(entry)
                 case ModuleRecord():
-                    self._module(parent, qualname, entry)
+                    count += self._module(parent, qualname, entry)
+        return count
 
-    def _module(self, parent: typer.Typer, qualname: str | None, record: ModuleRecord) -> None:
+    def hides(self, *, expert: bool) -> bool:
+        """Whether a command or group for experts (when `expert`) is hidden in this tree."""
+        return expert and not (self.expert or self.plain)
+
+    def hint(self, group: typer.Typer, count: Count) -> None:
+        """End a visible group's help with how many of its commands are hidden, like the start screen's."""
+        if self.footer is not None and not count.all_expert and self.hides(expert=count.expert > 0):
+            group.info.epilog = f"{self.footer}\n\n{expert_hint(count.expert)}"
+
+    def help(self, text: str, *, expert: bool) -> str:
+        """Help text, marked as for experts in the generated reference."""
+        return f"{EXPERT_MARK} {text}" if expert and self.plain else text
+
+    def _module(self, parent: typer.Typer, qualname: str | None, record: ModuleRecord) -> Count:
         operations = _operations(self.kernel, record)
         panel = (CORE_PANEL if record.origin.builtin else PLUGINS_PANEL) if qualname is None else None
         plugin = None if self.plain or qualname is not None else plugin_line(record.origin)
         # A setup step never changes the module's command path: it runs as `hz setup <module>` (ADR 0032).
         if collapses(self.kernel, record) and operations:
-            summary = operations[0].summary
+            operation = operations[0]
+            expert = operation.audience == "expert"
+            summary = self.help(operation.summary, expert=expert)
             parent.command(
                 name=record.module.name,
                 help=summary,
                 short_help=f"{summary}\n{plugin}" if plugin else None,
                 epilog=self.footer,
                 rich_help_panel=panel,
-            )(self._command(operations[0], (record.qualname, operations[0].name)))
-        elif operations or self.kernel.children(record.qualname):
-            group = typer.Typer(
-                name=record.module.name,
-                help=record.module.summary,
-                epilog=self.footer,
-                cls=SortedGroup,
-                no_args_is_help=True,
-            )
-            self.groups[record.qualname] = group
-            self(group, record.qualname)
-            short_help = f"{record.module.summary}\n{plugin}" if plugin else None
-            parent.add_typer(group, cls=SortedGroup, rich_help_panel=panel, short_help=short_help)
+                hidden=self.hides(expert=expert),
+            )(self._command(operation, (record.qualname, operation.name)))
+            return _count(operation)
+        if not operations and not self.kernel.children(record.qualname):
+            return Count()
+        own = next((op for op in operations if owns_path(self.kernel, record, op)), None)
+        group = typer.Typer(
+            name=record.module.name,
+            epilog=self.footer,
+            cls=SortedGroup,
+            no_args_is_help=own is None,
+            invoke_without_command=own is not None,
+        )
+        self.groups[record.qualname] = group
+        count = self(group, record.qualname)
+        if own is not None:
+            group.callback()(self._own(own, (record.qualname, own.name)))
+            count += _count(own)
+        if count.all_expert:
+            # The group itself is what's hidden; whoever asks for its help or completes in it sees what it holds.
+            for command_info in group.registered_commands:
+                command_info.hidden = False
+            for group_info in group.registered_groups:
+                group_info.hidden = False
+        self.counts[record.qualname] = count
+        self.hint(group, count)
+        summary = self.help(record.module.summary, expert=count.all_expert)
+        short_help = f"{summary}\n{plugin}" if plugin else None
+        parent.add_typer(
+            group,
+            cls=SortedGroup,
+            help=summary,
+            rich_help_panel=panel,
+            short_help=short_help,
+            hidden=self.hides(expert=count.all_expert),
+        )
+        return count
+
+    def _own(self, operation: OperationLet, key: tuple[str | None, str]) -> Callable[..., None]:
+        """The callback of a group that runs its module's own operation when called without a subcommand."""
+        run = self._command(operation, key)
+
+        def own(ctx: typer.Context, **kwargs: Any) -> None:  # noqa: ANN401 - forwarded to the operation
+            if ctx.invoked_subcommand is None:
+                run(**kwargs)
+
+        context = inspect.Parameter("ctx", inspect.Parameter.KEYWORD_ONLY, annotation=typer.Context)
+        own.__signature__ = inspect.Signature([context, *inspect.signature(run).parameters.values()])  # type: ignore[attr-defined]  # Typer reads it
+        own.__doc__ = run.__doc__
+        return own
 
     def _command(self, operation: OperationLet, key: tuple[str | None, str]) -> Callable[..., None]:
         # The update notice follows every text output on stderr (ADR 0031); JSON never gets it.
@@ -200,6 +304,10 @@ class _Mount:
         return command(
             self.kernel, operation, console, err_console, self.progress, prologue=prologue, epilogue=epilogue
         )
+
+
+def _count(operation: OperationLet) -> Count:
+    return Count(1, int(operation.audience == "expert"))
 
 
 def _operations(kernel: Kernel, record: ModuleRecord) -> list[OperationLet]:
@@ -218,10 +326,22 @@ def plugin_line(origin: Origin) -> str | None:
     return f"[dim]{escape(terminal_safe(text))}[/dim]"
 
 
-def start_screen_footer(kernel: Kernel) -> str:
-    """The footer of `hz` and `hz --help`, with the update notice when stdout is a terminal and there is one."""
+def start_screen_footer(kernel: Kernel, hidden: int = 0) -> str:
+    """The footer of `hz` and `hz --help`, ending with how many commands expert mode would add (ADR 0041).
+
+    The update notice comes before that line when stdout is a terminal and there is one.
+    """
     text = _update.notice(kernel) if _update.is_terminal(console) else None
-    return f"{FOOTER}\n\n[yellow]{text}[/yellow]" if text else FOOTER
+    footer = f"{FOOTER}\n\n[yellow]{text}[/yellow]" if text else FOOTER
+    if hidden:
+        footer += f"\n\n{expert_hint(hidden)}"
+    return footer
+
+
+def expert_hint(hidden: int) -> str:
+    """The line that ends the start screen outside expert mode: how many commands are hidden, and how to list them."""
+    commands = "command for experts is" if hidden == 1 else "commands for experts are"
+    return f"[dim]{hidden} more {commands} hidden; [bold]hz system expert on[/bold] lists them.[/dim]"
 
 
 def _print_version(kernel: Kernel, value: bool) -> None:

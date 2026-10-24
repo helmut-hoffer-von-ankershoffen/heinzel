@@ -388,3 +388,27 @@ def test_provides_refuses_invalid_hosts(hosts, problem):
 def test_jobs_refuse_schedules_that_arent_five_ascii_cron_fields(schedule):
     with pytest.raises(ValueError, match="must be five cron fields"):
         JobLet(name="x", func=lambda: None, summary="s", schedule=schedule)
+
+
+def test_operations_are_for_experts_unless_declared_everyday():
+    module = Module("example", "x")
+
+    @module.operation
+    def deep() -> None:
+        """For experts."""
+
+    @module.operation(audience="everyday")
+    def daily() -> None:
+        """For everyone."""
+
+    audiences = {let.name: let.audience for let in module.lets if isinstance(let, OperationLet)}
+    assert audiences == {"deep": "expert", "daily": "everyday"}
+
+
+def test_an_unknown_audience_is_refused():
+    module = Module("example", "x")
+    with pytest.raises(ValueError, match="audience 'everyone'"):
+
+        @module.operation(audience="everyone")  # type: ignore[arg-type]
+        def wrong() -> None:
+            """Wrong."""

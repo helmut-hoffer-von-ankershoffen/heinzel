@@ -91,6 +91,10 @@ Every operation takes `--json` (or `--format json`; `HZ_OUTPUT_FORMAT=json` make
 agents; the long-running `serve` commands are the exception. Exit codes: `0` success, `1` an error with a readable message, `2` a usage error, `78` invalid
 configuration. All commands: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
+`hz --help` lists the everyday commands; `hz system expert on` lists every command in help, shell completion and the
+web app, and `hz system expert off` goes back. Commands for experts run either way, and MCP and REST always offer
+them all ([ADR 0041](docs/adr/0041-expert-mode-newcomers-see-the-everyday-commands.md)).
+
 How the pieces fit — more in [ARCHITECTURE.md](docs/ARCHITECTURE.md):
 
 ```mermaid
@@ -143,6 +147,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.daemon`](docs/MODULES.md#systemdaemon) — Run modules' jobs in the background, supervised by launchd or systemd.
 - [`system.directory`](docs/MODULES.md#systemdirectory) — Guess reporting lines from recurring 1:1s in your calendar, for setup to confirm.
 - [`system.doctor`](docs/MODULES.md#systemdoctor) — Check that Heinzelmännchen and its modules are healthy.
+- [`system.expert`](docs/MODULES.md#systemexpert) — Expert mode: list every command, or just the everyday ones.
 - [`system.layer`](docs/MODULES.md#systemlayer) — Show the layer plugins installed and the stack you are in, general to specific.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, list and scaffold plugins.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
