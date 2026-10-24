@@ -406,7 +406,7 @@ class Module:
 
         Data only, one per module: `hz workflow playbooks` lists it, `hz workflow discover` evaluates its hints
         through read-only capability handles, and `hz workflow new --template <module>:<name>` writes its templates.
-        Unless `setup` is False, it also declares the module's setup step (ADR 0032): `hz <module> setup` and
+        Unless `setup` is False, it also declares the module's setup step (ADR 0032): `hz setup <module>` and
         `hz setup` propose the recommended settings, the assets the hints find and the templates, and apply only what
         the person accepts. A module with its own setup step passes `setup=False` and asks for `PlaybookSetup` in it.
 
