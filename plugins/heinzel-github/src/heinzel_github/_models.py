@@ -32,17 +32,26 @@ class GithubSettings(ModuleSettings):
 
     host: str = Field(
         default=GITHUB_HOST,
-        description="The GitHub host `gh` talks to: `github.com`, or the host name of a GitHub Enterprise Server "
-        "such as `ghe.example.com`; passed to `gh` as `--hostname` and `GH_HOST`, so `gh` uses its login for that "
-        "host. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml.",
+        title="GitHub host",
+        description="The GitHub host to use: github.com, or your GitHub Enterprise Server's host "
+        "name. The GitHub CLI's sign-in for that host is used. Only your own settings "
+        "can set it, never a project's.",
+        examples=["github.com"],
     )
     gh: str = Field(
         default="gh",
         min_length=1,
-        description="The GitHub CLI to run: a name looked up on PATH (absolute entries only) or an absolute path.",
+        title="GitHub CLI",
+        description="The GitHub CLI to run: a name found on your PATH, or the full path to it.",
+        json_schema_extra={"x-expert": True},
     )
     timeout: float = Field(
-        default=60.0, gt=0, le=600, description="Seconds to wait for each `gh` call before stopping it."
+        default=60.0,
+        gt=0,
+        le=600,
+        title="Time limit",
+        description="How long to wait for each GitHub CLI call before stopping it.",
+        json_schema_extra={"x-expert": True, "x-unit": "seconds"},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"host", "gh", "timeout"})

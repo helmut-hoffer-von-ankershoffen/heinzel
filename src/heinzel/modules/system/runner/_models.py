@@ -15,56 +15,94 @@ class RunnerSettings(ModuleSettings):
     repository someone else controls must not decide what runs on your machine.
     """
 
+    section_title: ClassVar[str | None] = "Agent runner"  # the heading in Settings
+
     model: str | None = Field(
         default=None,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/@\[\]-]*$",  # a name, never an option: a project file may set it
-        description="Model for every run, e.g. `sonnet`; the agent's own default when not set.",
+        title="Model",
+        description="The model every run uses; the agent's own default when not set.",
+        examples=["sonnet"],
     )
-    claude_executable: str = Field(default="claude", description="The Claude Code CLI, a name on PATH or a path.")
+    claude_executable: str = Field(
+        default="claude",
+        title="Claude Code CLI",
+        description="The Claude Code CLI to run: a name found on your PATH, or the full path to it.",
+        json_schema_extra={"x-expert": True},
+    )
     read_only_tools: list[str] = Field(
         default=["Read", "Grep", "Glob"],
-        description="Claude Code tools a run may use; a profile asking for anything else is refused. Add only tools "
-        "that cannot change anything.",
+        title="Read-only tools",
+        description="Claude Code tools a run may use; a profile asking for any other is refused. "
+        "Add only tools that can't change anything.",
+        json_schema_extra={"x-expert": True},
     )
     command: list[str] = Field(
         default_factory=list,
-        description="The `command` runner's command line, one argument per item, never through a shell. "
-        "Placeholders: {prompt_file}, {contract_file}, {output_file}, {working_dir}, {tools}, {model}, "
-        "{timeout_seconds}, {max_usd}, {mcp_config} (a JSON file of MCP servers in the `mcpServers` shape, for a "
-        "chat's hz tools); `{{` and `}}` are literal braces; e.g. "
-        '["mytool", "ai", "run", "--prompt", '
-        '"{prompt_file}"].',
+        title="Command line",
+        description="Your own runner's command line, one argument per item, never run through a "
+        "shell. Placeholders: {prompt_file}, {contract_file}, {output_file}, "
+        "{working_dir}, {tools}, {model}, {timeout_seconds}, {max_usd} and "
+        "{mcp_config}, a JSON file of MCP servers for a chat's tools. Double braces "
+        "are literal braces.",
+        examples=[["mytool", "ai", "run", "--prompt", "{prompt_file}"]],
+        json_schema_extra={"x-expert": True},
     )
     command_output: Literal["stdout", "file"] = Field(
-        default="stdout", description="Where the `command` runner reads the result: stdout, or {output_file}."
+        default="stdout",
+        title="Where the result is",
+        description="Where your own runner's result is read from: what the command prints, or the output file.",
+        json_schema_extra={
+            "x-expert": True,
+            "x-labels": {"stdout": "What the command prints", "file": "The output file"},
+        },
     )
     command_format: Literal["text", "json"] = Field(
         default="text",
-        description="`text`: the output is the draft. `json`: an object with the draft under `command_draft_key` "
-        "and, optionally, `usage` (input_tokens, output_tokens) and `total_cost_usd`.",
+        title="Result format",
+        description="How your own runner's result is read: as the draft itself, or as JSON with "
+        "the draft under the draft key and, optionally, usage and total_cost_usd.",
+        json_schema_extra={
+            "x-expert": True,
+            "x-labels": {"text": "Text: the draft itself", "json": "JSON: the draft under the draft key"},
+        },
     )
-    command_draft_key: str = Field(default="result", description="Key of the draft in `json` output.")
+    command_draft_key: str = Field(
+        default="result",
+        title="Draft key",
+        description="The key of the draft in your own runner's JSON result.",
+        json_schema_extra={"x-expert": True},
+    )
     command_enforces_read_only: bool = Field(
         default=False,
-        description="The `command` runner refuses to run until this is true: set it once the configured command "
-        "restricts its agent to read-only tools itself.",
+        title="Command is read-only",
+        description="Your own runner refuses to run until this is on. Turn it on once your "
+        "command limits its agent to tools that can't change anything.",
+        json_schema_extra={"x-expert": True},
     )
     command_read_only_tools: list[str] = Field(
         default_factory=list,
-        description="Tools, in the command's naming, a tool profile may ask the `command` runner for; others "
-        "are refused.",
+        title="Read-only tools of the command",
+        description="Tools, as your command names them, that a profile may ask your own runner "
+        "for; any other is refused.",
+        json_schema_extra={"x-expert": True},
     )
     command_env: list[str] = Field(
         default_factory=list,
-        description="Environment variables passed to the command besides PATH, HOME, LANG, LC_* and TMPDIR, e.g. "
-        "the variable that holds its own login; HZ_CREDENTIAL_* variables are never passed.",
+        title="Variables passed to the command",
+        description="Environment variables your command gets besides PATH, HOME, LANG, LC_* and "
+        "TMPDIR, such as the one holding its own sign-in. Heinzelmännchen's "
+        "credential variables are never passed.",
+        json_schema_extra={"x-expert": True},
     )
 
     ask_max_usd: float = Field(
         default=0.25,
         gt=0,
         allow_inf_nan=False,
-        description="Most one answer of `hz system runner ask` or one message of `hz chat` may cost in US dollars.",
+        title="Most per answer",
+        description="The most one answer, or one chat message, may cost in US dollars.",
+        json_schema_extra={"x-unit": "usd"},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
