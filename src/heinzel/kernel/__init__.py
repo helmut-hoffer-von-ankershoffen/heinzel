@@ -51,6 +51,7 @@ from heinzel.kernel._lets import (
     schedule_problem,
 )
 from heinzel.kernel._module import Module
+from heinzel.kernel._playbooks import AssetType, ContractTemplate, DiscoveryHint, PlaybookLet, PlaybookSetup
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
@@ -93,6 +94,7 @@ __all__ = [
     "PROJECT_FILENAME",
     "AgentResult",
     "AgentRunner",
+    "AssetType",
     "Budget",
     "Calendar",
     "Capability",
@@ -105,10 +107,12 @@ __all__ = [
     "Config",
     "ConfigEditor",
     "ConfigFile",
+    "ContractTemplate",
     "CredentialBackend",
     "CredentialLet",
     "Credentials",
     "DeclaredCredential",
+    "DiscoveryHint",
     "Document",
     "Documents",
     "EnvironmentBackend",
@@ -135,6 +139,8 @@ __all__ = [
     "OperationLet",
     "Origin",
     "Participant",
+    "PlaybookLet",
+    "PlaybookSetup",
     "PostedMessage",
     "Progress",
     "Prompter",

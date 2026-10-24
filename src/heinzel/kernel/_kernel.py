@@ -210,9 +210,11 @@ class Kernel:
     def handle_for(self, requester: Requester, capability: str) -> object:
         """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.
 
-        The seam for jobs compiled from data, such as workflow contracts (ADR 0021): the compiler builds a
-        `Requester` from what the contract declares and asks here, getting only the read modes it declared and the
-        bound adapter serves. Writes come with approvals (`hz inbox`, ADR 0020), so a publishing requester is refused.
+        The seam for reads declared by data rather than code, made by the module that compiles jobs: workflow
+        contracts' inputs (ADR 0021), playbooks' discovery hints and the approved version of an asset (ADR 0037). The
+        module builds a `Requester` of kind `job` from what the data declares and asks here, getting only the read
+        modes it declared and the bound adapter serves. Writes come with approvals (`hz inbox`, ADR 0020), so a
+        publishing requester is refused.
 
         Raises:
             HeinzelError: If the capability is unknown; the requester isn't a job of the enabled module providing

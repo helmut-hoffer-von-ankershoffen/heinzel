@@ -6,15 +6,16 @@ A module is a package whose `__init__.py` declares `module = Module(...)`. Packa
 
 import inspect
 import re
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Literal, overload
 
 from pydantic import BaseModel
 from rich.console import RenderableType
 
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, Mode, Requirement, parse_requirements
-from heinzel.kernel._config import ModuleSettings
+from heinzel.kernel._config import ConfigEditor, ModuleSettings
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._lets import (
     NAME_PATTERN,
@@ -33,6 +34,8 @@ from heinzel.kernel._lets import (
     SetupLet,
     host_of,
 )
+from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, PlaybookSetup, templates_in
+from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._spec import hookimpl
 
 RESERVED_NAMES = frozenset({"hz", "capabilities", "setup"})
@@ -392,6 +395,59 @@ class Module:
             return target
 
         return decorate(func) if func is not None else decorate
+
+    def playbook(
+        self,
+        summary: str,
+        *,
+        assets: Iterable[AssetType] = (),
+        templates: Iterable[Path | ContractTemplate] = (),
+        defaults: Mapping[str, Any] | None = None,
+        setup: bool = True,
+    ) -> PlaybookLet:
+        """Advertise the module's playbook (ADR 0037): asset types, template contracts and recommended settings.
+
+        Data only, one per module: `hz workflow playbooks` lists it, `hz workflow discover` evaluates its hints
+        through read-only capability handles, and `hz workflow new --template <module>:<name>` writes its templates.
+        Unless `setup` is False, it also declares the module's setup step (ADR 0032): `hz <module> setup` and
+        `hz setup` propose the recommended settings, the assets the hints find and the templates, and apply only what
+        the person accepts. A module with its own setup step passes `setup=False` and asks for `PlaybookSetup` in it.
+
+        Args:
+            summary: What the playbook is for, in one sentence.
+            assets: The asset types it knows, with discovery hints.
+            templates: Template contracts: `ContractTemplate`s, `*.prose.md` files or directories of them, typically
+                `Path(__file__).parent / "templates"`; read now, at import.
+            defaults: Recommended settings by `<section>.<key>`, e.g. `{"capabilities.tracker": "github"}`.
+            setup: Declare the module's setup step that walks through the playbook.
+
+        Raises:
+            ValueError: If the playbook is malformed or the module already has one.
+            OSError: If a template file can't be read.
+        """
+        if setup and any(isinstance(existing, SetupLet) for existing in self._lets):
+            msg = (
+                f"Module {self.name!r} already has a setup step; pass module.playbook(..., setup=False) and ask "
+                "for heinzel.kernel.PlaybookSetup in it"
+            )
+            raise ValueError(msg)
+        let = PlaybookLet(
+            name=self.name,
+            summary=summary,
+            assets=tuple(assets),
+            templates=templates_in(templates),
+            defaults=dict(defaults or {}),
+        )
+        self.add(let)
+        if setup:
+
+            def walk(playbooks: PlaybookSetup, prompter: Prompter, editor: ConfigEditor) -> None:
+                playbooks.run(let, prompter, editor)
+
+            walk.__doc__ = f"Playbook: {let.summary}"
+            walk.__qualname__ = f"{self.name}.playbook_setup"
+            self.setup(walk)
+        return let
 
     @hookimpl
     def heinzel_lets(self) -> Sequence[Let]:
