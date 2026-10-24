@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/org/agenda": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the meeting you are in now and your next one, from your calendar, or how to connect one.
+         * @description Show the meeting you are in now and your next one, from your calendar, or how to connect one.
+         */
+        get: operations["org_agenda"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org/show": {
         parameters: {
             query?: never;
@@ -956,6 +976,37 @@ export interface components {
             module: string;
         };
         /**
+         * Agenda
+         * @description The meeting you are in now and your next one, or why they can't be read.
+         */
+        Agenda: {
+            /**
+             * Calendar
+             * @description The adapter bound to `calendar`, e.g. google; none when no calendar is connected.
+             */
+            calendar?: string | null;
+            /** @description The event in progress now, not all-day and not cancelled; the one that started last if several overlap; none if you are free. */
+            current?: components["schemas"]["Event"] | null;
+            /**
+             * Fix
+             * @description The command that connects a calendar when none is; none otherwise.
+             */
+            fix?: string | null;
+            /** @description The first event starting after now, not all-day and not cancelled, until the end of tomorrow; none if there is none. */
+            next?: components["schemas"]["Event"] | null;
+            /**
+             * Now
+             * Format: date-time
+             * @description When the agenda was read, in your time zone.
+             */
+            now: string;
+            /**
+             * Problem
+             * @description Why there is no agenda: no calendar is connected, or reading it failed (e.g. an expired sign-in); none when it was read.
+             */
+            problem?: string | null;
+        };
+        /**
          * AgentResult
          * @description The outcome of one agent session, for the job's result and its receipt.
          */
@@ -1205,6 +1256,12 @@ export interface components {
              * @description The modes declared.
              */
             modes: ("read" | "write")[];
+            /**
+             * Optional
+             * @description Whether the requester does without it when it is unmet, so that is no finding.
+             * @default false
+             */
+            optional: boolean;
             /**
              * Problem
              * @description Why the requirement is unmet; none when it is met.
@@ -1800,6 +1857,68 @@ export interface components {
          * @enum {string}
          */
         Disposition: "rendered" | "skipped" | "failed";
+        /**
+         * Event
+         * @description One occurrence of an entry in a calendar; a recurring entry is expanded into its occurrences.
+         */
+        Event: {
+            /**
+             * All Day
+             * @description Whether it is an all-day event.
+             * @default false
+             */
+            all_day: boolean;
+            /**
+             * Attendees
+             * @description Who is invited, the user included.
+             */
+            attendees?: components["schemas"]["Participant"][];
+            /**
+             * Conference Id
+             * @description Identifier of the conference it is held in, in the meeting tool's notation (a Zoom meeting number taken from the conferencing data, location or description; a Meet code), so that the `Meeting` with the same `conference_id` and an overlapping time is this event's meeting; none without conferencing.
+             */
+            conference_id?: string | null;
+            /**
+             * Conference Url
+             * @description Link to join the conference; none without one.
+             */
+            conference_url?: string | null;
+            /**
+             * End
+             * Format: date-time
+             * @description When it ends, exclusive; the next midnight for an all-day event.
+             */
+            end: string;
+            /**
+             * Id
+             * @description Identifier of this occurrence in the adapter's notation.
+             */
+            id: string;
+            /** @description Who organizes it; none if the vendor doesn't say. */
+            organizer?: components["schemas"]["Participant"] | null;
+            /**
+             * Start
+             * Format: date-time
+             * @description When it starts; midnight in the calendar's zone for an all-day event.
+             */
+            start: string;
+            /**
+             * Status
+             * @description State in the vendor's words, e.g. `confirmed`, `cancelled`.
+             * @default confirmed
+             */
+            status: string;
+            /**
+             * Title
+             * @description Title (summary) of the event.
+             */
+            title: string;
+            /**
+             * Url
+             * @description Where people open it; none if it has no web address.
+             */
+            url?: string | null;
+        };
         /**
          * ExpertMode
          * @description Whether expert mode is on, and who each operation is for.
@@ -2400,6 +2519,22 @@ export interface components {
              * @description The operation's name within its module, e.g. `graph`.
              */
             operation: string;
+        };
+        /**
+         * Participant
+         * @description Someone in a chat, a meeting or an event: how the vendor addresses them, nothing more (ADR 0024).
+         */
+        Participant: {
+            /**
+             * Email
+             * @description Email address, the key a directory of record joins on; none if the vendor hides it.
+             */
+            email?: string | null;
+            /**
+             * Name
+             * @description Display name as the vendor shows it; none if it doesn't.
+             */
+            name?: string | null;
         };
         /**
          * PlaybookList
@@ -3277,6 +3412,7 @@ export interface components {
     pathItems: never;
 }
 export type SchemaAdapterInfo = components['schemas']['AdapterInfo'];
+export type SchemaAgenda = components['schemas']['Agenda'];
 export type SchemaAgentResult = components['schemas']['AgentResult'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
@@ -3303,6 +3439,7 @@ export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
 export type SchemaDisposition = components['schemas']['Disposition'];
+export type SchemaEvent = components['schemas']['Event'];
 export type SchemaExpertMode = components['schemas']['ExpertMode'];
 export type SchemaGraphEdge = components['schemas']['GraphEdge'];
 export type SchemaGraphNode = components['schemas']['GraphNode'];
@@ -3324,6 +3461,7 @@ export type SchemaNotice = components['schemas']['Notice'];
 export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
 export type SchemaOperationAudience = components['schemas']['OperationAudience'];
+export type SchemaParticipant = components['schemas']['Participant'];
 export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
@@ -3352,6 +3490,26 @@ export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type $defs = Record<string, never>;
 export interface operations {
+    org_agenda: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agenda"];
+                };
+            };
+        };
+    };
     org_show: {
         parameters: {
             query?: never;

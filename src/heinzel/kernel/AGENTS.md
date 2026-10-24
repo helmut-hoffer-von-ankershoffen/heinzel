@@ -4,7 +4,8 @@ Every module and plugin depends on this package; its public API is `hz` and `hei
 change like a library release: an ADR for a new concept, unit tests for every branch.
 
 - `_module.py` — `Module` and its decorators (`operation`, `job`, `service`, `settings`, `info`, `health`,
-  `credential`, `provides`, `setup`, `playbook`, `layer`, `theme`; `requires=` on modules, operations and jobs).
+  `credential`, `provides`, `setup`, `playbook`, `layer`, `theme`; `requires=` on modules, operations and jobs;
+  `optional=True` on a read-only operation that degrades without its own requirements).
 - `_protocols.py` — integration capability protocols (`CodeHost`, `Tracker`, `Documents`, `Chat`, `Meetings`,
   `Calendar`, `Mail`, `Directory`; `MailQuery`, the mail query syntax) and their models; `_directory.py` —
   `draft_reporting_lines`, the seam setup steps and roster drafting call (fallback adapter:

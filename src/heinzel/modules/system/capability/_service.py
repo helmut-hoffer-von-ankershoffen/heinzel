@@ -27,6 +27,7 @@ class CapabilityService:
                 adapter=use.adapter,
                 hosts=list(use.hosts) or ([UNKNOWN_HOSTS] if use.adapter else []),
                 problem=use.problem,
+                optional=use.optional,
             )
             for use in self.capabilities.matrix()
         ]
@@ -61,7 +62,9 @@ class CapabilityService:
         """Where data can go, one entry per requirement: `requester → need` to `adapter → hosts`, or the problem."""
         return {
             f"{use.requester} → {use.requirement}": (
-                f"unmet: {use.problem}" if use.problem else f"{use.adapter} → {', '.join(use.hosts)}"
+                f"{'optional, ' if use.optional else ''}unmet: {use.problem}"
+                if use.problem
+                else f"{use.adapter} → {', '.join(use.hosts)}"
             )
             for use in self.uses()
         }
@@ -93,6 +96,9 @@ class CapabilityService:
             name = f"{use.requirement} for {use.requester}"
             if use.problem is None:
                 checks.append(Check(name=name, status=Status.UP, detail=f"served by {use.adapter}"))
+            elif use.optional:
+                detail = f"optional, unmet: {use.problem}; to use it: {self.capabilities.command(use.capability)}"
+                checks.append(Check(name=name, status=Status.UP, detail=detail))
             else:
                 checks.append(
                     Check(

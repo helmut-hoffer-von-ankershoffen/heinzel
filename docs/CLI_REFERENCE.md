@@ -208,8 +208,25 @@ $ hz org [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `agenda`: (expert) Show the meeting you are in now...
 * `show`: Show your profile: who you are, your role,...
 * `sync`: Show what your team recommends beside what...
+
+### `hz org agenda`
+
+(expert) Show the meeting you are in now and your next one, from your calendar, or how to connect one.
+
+**Usage**:
+
+```console
+$ hz org agenda [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
 
 ### `hz org show`
 

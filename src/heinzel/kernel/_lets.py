@@ -129,6 +129,10 @@ class OperationLet(Let):
     """Capabilities the operation asks for by type, besides its module's (ADR 0028); `write` only if not read-only.
 
     `write` doesn't imply `read`: a publish operation that also reads declares `documents:read,write`."""
+    optional: bool = False
+    """Whether it does without its own requirements when nothing serves them: it asks `CapabilityView.serves` and
+    degrades, so an unmet one is listed in the matrix but isn't a doctor finding, and its handle refuses only when
+    called. Read-only operations only (ADR 0028)."""
     audience: Audience = "expert"
     """Who it is for in heads people browse (CLI help and completion, the web app's navigation): `everyday`
     operations are always listed, `expert` ones only in expert mode (`[hz] expert`). Hidden is never disabled: every
@@ -144,6 +148,12 @@ class OperationLet(Let):
             msg = (
                 f"Operation {self.name!r} can't require {', '.join(writes)}: writes happen only in publish operations "
                 f"(read_only=False)"
+            )
+            raise ValueError(msg)
+        if self.optional and not self.read_only:
+            msg = (
+                f"Operation {self.name!r} can't make its requirements optional: a publish operation's are checked "
+                f"before it runs"
             )
             raise ValueError(msg)
         if self.audience not in AUDIENCES:

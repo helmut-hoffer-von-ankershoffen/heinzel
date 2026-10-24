@@ -9,10 +9,12 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Check, ConfigEditor, Module, Prompter, Status
+from heinzel import Calendar, Check, ConfigEditor, Module, Prompter, Status
+from heinzel.kernel import CapabilityView
+from heinzel.modules.org._agenda import Agenda, local_now, read_agenda
 from heinzel.modules.org._models import ROLES, OrgSettings, Profile
 from heinzel.modules.org._profile import ProfileService, ask_profile
-from heinzel.modules.org._render import render_profile
+from heinzel.modules.org._render import render_agenda, render_profile
 from heinzel.modules.org._sync import SyncItem, SyncReport, SyncService, render_sync
 
 module = Module("org", "Your profile, and the team, org and company you work with.")
@@ -27,6 +29,15 @@ module.service(SyncService)
 def show(service: ProfileService) -> Profile:
     """Show your profile: who you are, your role, time zone and working hours, and what is still missing."""
     return service.profile()
+
+
+# Your meetings, with their attendees, are as private as your profile: the CLI, MCP and the web head (its footer, behind
+# the session token) get it, never the unauthenticated REST head. Optional: without a calendar it says how to connect
+# one instead of failing, and doctor stays green for everyone who has none.
+@module.operation(render=render_agenda, heads={"cli", "mcp", "web"}, requires=["calendar:read"], optional=True)
+def agenda(calendar: Calendar, view: CapabilityView, settings: OrgSettings) -> Agenda:
+    """Show the meeting you are in now and your next one, from your calendar, or how to connect one."""
+    return read_agenda(calendar, view, local_now(settings.timezone))
 
 
 @module.health
@@ -71,4 +82,14 @@ def setup(settings: OrgSettings, prompter: Prompter, editor: ConfigEditor) -> No
     )
 
 
-__all__ = ["ROLES", "OrgSettings", "Profile", "ProfileService", "SyncItem", "SyncReport", "SyncService", "module"]
+__all__ = [
+    "ROLES",
+    "Agenda",
+    "OrgSettings",
+    "Profile",
+    "ProfileService",
+    "SyncItem",
+    "SyncReport",
+    "SyncService",
+    "module",
+]

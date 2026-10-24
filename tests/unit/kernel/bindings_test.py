@@ -329,6 +329,35 @@ def test_an_unbound_capability_fails_with_the_binding_to_write(make_kernel):
         run(kernel, "digest", "show")
 
 
+def test_an_unserved_optional_operation_is_injected_and_refused_only_when_it_calls(make_kernel):
+    module = Module("footer", "Degrades when nothing serves documents.")
+
+    @module.operation(requires=["documents:read"], optional=True)
+    def peek(documents: Documents, view: CapabilityView) -> str:
+        """Read a document if one is served."""
+        _, problem = view.serves(Requirement.parse("documents:read"))
+        return f"unserved: {problem}" if problem else documents.read("weekly").title
+
+    kernel = make_kernel(notes=notes_module(), footer=module, digest=digest_module())
+    assert run(kernel, "footer", "peek") == "unserved: no adapter bound"
+    assert repr(kernel._capabilities.handle(CAPABILITIES["documents"], operation(kernel, "footer", "peek").func)) == (
+        "<documents:unserved for footer peek>"
+    )
+    with pytest.raises(HeinzelError, match=r"digest count needs documents:read: no adapter bound"):
+        kernel._capabilities.handle(CAPABILITIES["documents"], operation(kernel, "digest", "count").func)
+    [use] = [use for use in kernel.resolve(CapabilityView).matrix() if use.requester == "footer peek"]
+    assert (use.optional, use.problem) == (True, "no adapter bound")
+
+
+def test_a_publish_operation_cant_be_optional():
+    with pytest.raises(ValueError, match="can't make its requirements optional"):
+
+        @Module("bad", "Publishes optionally.").operation(read_only=False, requires=["documents:write"], optional=True)
+        def publish(documents: Documents) -> str:
+            """Write."""
+            return documents.replace_section("weekly", "summary", "x").ref
+
+
 def test_a_binding_to_an_unknown_adapter_fails(make_kernel):
     kernel = make_kernel(digest=digest_module(), config=bind(documents="nowhere"))
     with pytest.raises(

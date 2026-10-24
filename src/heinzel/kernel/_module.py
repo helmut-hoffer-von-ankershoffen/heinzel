@@ -131,6 +131,7 @@ class Module:
         exit_code: Callable[[Any], int] | None = None,
         heads: Iterable[str] | None = None,
         requires: Iterable[str] = (),
+        optional: bool = False,
         audience: Audience = "expert",
     ) -> Callable[[F], F]: ...
 
@@ -145,6 +146,7 @@ class Module:
         exit_code: Callable[[Any], int] | None = None,
         heads: Iterable[str] | None = None,
         requires: Iterable[str] = (),
+        optional: bool = False,
         audience: Audience = "expert",
     ) -> F | Callable[[F], F]:
         """Advertise a function as an operation. Its docstring is required: it becomes the help text.
@@ -158,12 +160,15 @@ class Module:
             heads: Restrict the operation to these heads, e.g. `{"cli"}` for interactive ones; all heads by default.
             requires: Capabilities it asks for by type besides its module's (ADR 0028), e.g. `["tracker:read"]`;
                 `write` modes only with `read_only=False`.
+            optional: True if it does without its own `requires` when nothing serves them, asking
+                `CapabilityView.serves` first: an unmet one is then no doctor finding, and its handle refuses only
+                when called. Read-only operations only.
             audience: `everyday` to list it in help, completion and the web app's navigation for everyone; `expert`
                 (the default) lists it in expert mode only. It runs either way (ADR 0041).
 
         Raises:
-            ValueError: If the docstring is missing, the audience unknown, or a requirement is malformed or writes from
-                a read-only operation.
+            ValueError: If the docstring is missing, the audience unknown, a requirement is malformed or writes from
+                a read-only operation, or a publish operation is optional.
         """
         requirements = self._requirements(requires)
 
@@ -182,6 +187,7 @@ class Module:
                     exit_code=exit_code,
                     heads=frozenset(heads) if heads is not None else None,
                     requires=requirements,
+                    optional=optional,
                     audience=audience,
                 )
             )
