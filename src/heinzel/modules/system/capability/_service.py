@@ -5,7 +5,7 @@ from heinzel.kernel import CAPABILITIES, MODES, CapabilityView
 from heinzel.modules.system.capability._models import AdapterInfo, CapabilityInfo, CapabilityReport, CapabilityUse
 
 UNKNOWN_HOSTS = "unknown (configured)"
-"""What the matrix says for an adapter whose hosts depend on its configuration."""
+"""What the matrix says for an adapter whose hosts depend on its configuration and aren't known."""
 
 
 class CapabilityService:
@@ -48,7 +48,7 @@ class CapabilityService:
                     adapter=adapter.let.adapter,
                     capability=adapter.let.capability,
                     modes=[mode for mode in MODES if mode in adapter.let.modes],
-                    hosts=list(adapter.let.hosts) or [UNKNOWN_HOSTS],
+                    hosts=list(self.capabilities.hosts(adapter)[0]) or [UNKNOWN_HOSTS],
                     module=adapter.module,
                     distribution=adapter.distribution,
                 )
@@ -85,6 +85,19 @@ class CapabilityService:
                 fix=self.capabilities.fix(capability),
             )
             for capability, adapter in self.capabilities.unknown_bindings()
+        )
+        unknown_hosts = [(a, problem) for a in self.capabilities.adapters if (problem := self.capabilities.hosts(a)[1])]
+        checks.extend(
+            Check(
+                name=f"hosts of {adapter.let.name}",
+                status=Status.DEGRADED,
+                detail=f"{problem}; shown as {UNKNOWN_HOSTS}",
+                fix=(
+                    f"Check the settings of {adapter.module} with `hz system config show` and set a valid URL or "
+                    f"host name in your user configuration"
+                ),
+            )
+            for adapter, problem in unknown_hosts
         )
         for use in self.uses():
             name = f"{use.requirement} for {use.requester}"

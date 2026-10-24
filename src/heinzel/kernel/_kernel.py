@@ -34,6 +34,7 @@ from heinzel.kernel._lets import (
     ServiceLet,
     SettingsLet,
     SetupLet,
+    settings_parameters,
 )
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
@@ -147,6 +148,8 @@ class Kernel:
             self.call,
             unknown_keys=sorted(unknown),
             compiled=self._compiled_requesters,
+            # Settings only, not `call`: hosts are read from configuration, never from services or credentials.
+            settings_of=self.resolve,
         )
         # Modules get a view that reports; handles come only through declarations and injection (ADR 0028).
         self._instances[CapabilityView] = self._capabilities.view
@@ -363,6 +366,8 @@ class Kernel:
                 problem = f"another module already provides {let.capability} as {let.adapter!r}"
             elif missing := _missing_methods(let):
                 problem = f"adapter {let.name} lacks {', '.join(missing)} of {let.capability}"
+            elif foreign := self._foreign_settings(let, record):
+                problem = f"the hosts of adapter {let.name} read settings {record.qualname} doesn't declare: {foreign}"
             if problem is None:
                 adapters.append(Adapter(module=record.qualname, distribution=record.origin.distribution, let=let))
             elif record.origin.builtin:
@@ -372,6 +377,13 @@ class Kernel:
                 logger.warning("Skipping an adapter of %r: %s", record.qualname, problem)
                 self.errors[record.qualname] = f"Adapter skipped: {problem}"
         return adapters
+
+    def _foreign_settings(self, let: ProviderLet, record: ModuleRecord) -> str:
+        """Settings classes the adapter's hosts function reads that its own module doesn't declare, comma-separated."""
+        if let.configured_hosts is None:
+            return ""
+        models = settings_parameters(let.configured_hosts).values()
+        return ", ".join(m.__name__ for m in models if self._providers.get(m) != record.qualname)
 
     def _requesters(self) -> tuple[list[Requester], dict[Callable[..., Any], Requester]]:
         """Every requester, and every function that may ask for a capability with the requester it acts for."""

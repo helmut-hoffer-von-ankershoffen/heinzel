@@ -31,6 +31,7 @@ from heinzel.kernel._lets import (
     ServiceLet,
     SettingsLet,
     SetupLet,
+    host_of,
 )
 from heinzel.kernel._spec import hookimpl
 
@@ -259,7 +260,12 @@ class Module:
         return requirements
 
     def provides[F: Callable[..., Any]](
-        self, capability: str, *, modes: Iterable[Mode], hosts: Iterable[str] = (), name: str | None = None
+        self,
+        capability: str,
+        *,
+        modes: Iterable[Mode],
+        hosts: Iterable[str] | Callable[..., Iterable[str]] = (),
+        name: str | None = None,
     ) -> Callable[[F], F]:
         """Advertise a class (or factory) as an adapter of a capability (ADR 0028); usable as a class decorator.
 
@@ -269,12 +275,18 @@ class Module:
         Args:
             capability: The capability implemented, e.g. `tracker`; the factory's instances implement its protocol.
             modes: The modes served: `{"read"}` or `{"read", "write"}`.
-            hosts: Hosts the adapter sends data to, shown by `hz system info`; leave empty only when configuration
-                decides.
+            hosts: Hosts the adapter sends data to, shown by `hz system capability list`, `hz system info` and doctor:
+                host names (a URL is reduced to its host), or, when its settings decide them, a function that takes
+                this module's settings by type and returns host names or URLs, such as
+                `def hosts(settings: AcmeSettings) -> list[str]: return [settings.api_url]`. It is called when the
+                matrix is built, gets nothing but settings, and must not do I/O; when it fails or returns no valid
+                host, the hosts show as `unknown (configured)` and doctor says why. List a setting that decides
+                hosts in `ignored_in_project`, so a project `hz.toml` can't redirect data.
             name: Name bindings use (`[capabilities] tracker = "<name>"`); defaults to the module name.
 
         Raises:
-            ValueError: If the capability, a mode or the name is unknown or malformed.
+            ValueError: If the capability, a mode or the name is unknown or malformed, a host is not a host name or
+                URL, or the hosts function takes anything but settings.
         """
         spec = CAPABILITIES.get(capability)
         if spec is None:
@@ -288,6 +300,8 @@ class Module:
         if not NAME_PATTERN.fullmatch(adapter):
             msg = f"Adapter name {adapter!r} must match {NAME_PATTERN.pattern}"
             raise ValueError(msg)
+        configured = hosts if callable(hosts) else None
+        static = () if callable(hosts) else tuple(host_of(host) or host for host in hosts)
 
         def decorate(factory: F) -> F:
             self.add(
@@ -296,8 +310,9 @@ class Module:
                     adapter=adapter,
                     capability=capability,
                     modes=served,
-                    hosts=tuple(hosts),
+                    hosts=static,
                     factory=factory,
+                    configured_hosts=configured,
                 )
             )
             return factory
