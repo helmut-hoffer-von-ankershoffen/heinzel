@@ -20,9 +20,9 @@ def test_the_adapter_serves_code_host_and_tracker_read_only_on_hosts_its_setting
     ]
 
 
-def test_the_hosts_are_the_configured_api():
-    assert hosts(GithubSettings()) == ["https://api.github.com"]
-    assert hosts(GithubSettings(api_url="https://ghe.example.com/api/v3")) == ["https://ghe.example.com/api/v3"]
+def test_the_hosts_are_where_gh_sends_requests_for_the_configured_host():
+    assert hosts(GithubSettings()) == ["api.github.com"]
+    assert hosts(GithubSettings(host="ghe.example.com")) == ["ghe.example.com"]
 
 
 @pytest.mark.parametrize("provider", PROVIDERS, ids=lambda p: p.name)
