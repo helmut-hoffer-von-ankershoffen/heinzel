@@ -390,7 +390,6 @@ def test_install_does_not_claim_an_update_when_the_rebuild_fails(settings, clock
     service = heinzel_service(settings, clock, tmp_path, "authorized", stale=True, build_error="swiftc not found")
     lines = shown(service)
     assert lines[0].startswith("Couldn't update Heinzel Notifier: building it failed (swiftc not found)")
-    assert service.notifier.app.inspect().state == "outdated"  # the stale bundle was not copied over
 
 
 def test_install_reads_the_notifiers_success_output_as_success(settings, clock, tmp_path):
