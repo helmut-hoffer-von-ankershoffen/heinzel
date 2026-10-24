@@ -4162,6 +4162,12 @@ export interface components {
              */
             plugins: components["schemas"]["PluginInfo"][];
             /**
+             * Previewed
+             * @description Whether a terminal already showed the preview and asked; the CLI says no more.
+             * @default false
+             */
+            previewed: boolean;
+            /**
              * Restart Required
              * @description Whether a running `hz ui` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.
              */
