@@ -42,6 +42,7 @@ BADGES_START, BADGES_END = "<!-- badges:start -->", "<!-- badges:end -->"
 #: (instructions every agent session loads), not CHANGELOG.md (the release process writes it).
 BADGE_PAGES = ("README.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "INTENT.md")
 OWNER, REPOSITORY = "helmut-hoffer-von-ankershoffen", "heinzel"
+BEST_PRACTICES = 15863  # the OpenSSF Best Practices project id of this repository
 TEMPLATE = ROOT / "template"
 
 MODULES_HEADER = """\
@@ -191,8 +192,12 @@ def python_versions() -> list[str]:
     return [c.removeprefix("Programming Language :: Python :: ") for c in classifiers if c.startswith(prefix)]
 
 
-def badges(owner: str, repository: str) -> str:
-    """The badges of a repository, one per line: what it is checked with, how healthy it is, what it runs on."""
+def badges(owner: str, repository: str, best_practices: int | None = None) -> str:
+    """The badges of a repository, one per line: what it is checked with, how healthy it is, what it runs on.
+
+    `best_practices` is the repository's OpenSSF Best Practices project id; a plugin made from the template has none
+    until its maintainer registers it.
+    """
     github = f"https://github.com/{owner}/{repository}"
     scorecard = f"github.com/{owner}/{repository}"
     shield = "https://img.shields.io"
@@ -209,6 +214,17 @@ def badges(owner: str, repository: str) -> str:
             "OpenSSF Scorecard",
             f"https://api.scorecard.dev/projects/{scorecard}/badge",
             f"https://scorecard.dev/viewer/?uri={scorecard}",
+        ),
+        *(
+            [
+                (
+                    "OpenSSF Best Practices",
+                    f"https://www.bestpractices.dev/projects/{best_practices}/badge",
+                    f"https://www.bestpractices.dev/en/projects/{best_practices}/passing",
+                )
+            ]
+            if best_practices
+            else []
         ),
         ("Release", f"{shield}/github/v/release/{owner}/{repository}?sort=semver", f"{github}/releases"),
         ("Python", f"{shield}/badge/python-{versions}-blue", "pyproject.toml"),
@@ -257,7 +273,7 @@ def main() -> int:
         DOCS / "CONFIGURATION.md": configuration_reference(),
         DOCS / "schemas" / f"contract-frontmatter-{SCHEMA_VERSION}.json": contract_schema(),
     }
-    ours = badges(OWNER, REPOSITORY)
+    ours = badges(OWNER, REPOSITORY, BEST_PRACTICES)
     for page in BADGE_PAGES:
         text = with_block((ROOT / page).read_text(encoding="utf-8"), BADGES_START, BADGES_END, ours)
         outputs[ROOT / page] = readme_with_module_list(text) if page == README.name else text
