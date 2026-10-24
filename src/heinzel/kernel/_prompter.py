@@ -61,6 +61,10 @@ class Prompter:
         """Tell the person something: a heading, the options of a choice, why an answer was refused."""
         del text
 
+    def show(self, renderable: object) -> None:
+        """Show something richer than a line (a table, a preview) before asking; heads with a screen print it."""
+        del renderable
+
     def full_key(self, key: str) -> str:
         """`key` with the asking module's name in front: `role` asked by `org` is `org.role`."""
         return f"{self.scope}.{key}" if self.scope else key
