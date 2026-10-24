@@ -202,3 +202,12 @@ def test_codeql_runs_security_queries_only():
     ]
     assert inits
     assert all(init.get("queries", "") in {"", "security-extended"} for init in inits), "use security-extended"
+
+
+def test_the_release_regenerates_derived_files():
+    """A version bump changes files that other files are generated from; the release commit must include both."""
+    script = (REPO / "scripts" / "release.sh").read_text(encoding="utf-8")
+    bump, fix, commit = (
+        script.index(marker) for marker in ("bump-my-version bump", "make --no-print-directory fix", "git commit")
+    )
+    assert bump < fix < commit
