@@ -65,7 +65,7 @@ class Settings(ModuleSettings):
         default=frozenset(),
         description="Qualified names of modules to switch off, with their submodules. Comma-separated in the "
         "environment, a list in TOML.",
-        json_schema_extra={"x-options": {"source": "modules"}},  # chosen from the modules, never typed (ADR 0056)
+        json_schema_extra={"x-options": {"source": "modules"}},  # chosen from the modules, never typed (ADR 0055)
     )
 
     ui_port: int = Field(

@@ -25,7 +25,7 @@ class ThemeSettings(ModuleSettings):
         pattern=NAME_PATTERN,
         max_length=64,
         description="The theme of the web app, one `hz system theme list` shows, e.g. `acme`; `default` is built in.",
-        json_schema_extra={"x-options": {"source": "themes"}},  # a choice in the web app, never typed (ADR 0056)
+        json_schema_extra={"x-options": {"source": "themes"}},  # a choice in the web app, never typed (ADR 0055)
     )
 
 

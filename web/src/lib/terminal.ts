@@ -14,29 +14,31 @@ export function runsAsIs(command: string): boolean {
   return /^hz( +([\w./:=@,+-]+|'([^']|'\\'')*'))*$/.test(command);
 }
 
-/** Type `command` into the terminal, opening it; Enter only when `runsAsIs`. */
-export function runInTerminal(command: string): void {
-  // A line break or other control character inside would run what comes before it: they become spaces.
-  const line = [...command]
-    .map((char) => (char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 ? " " : char))
-    .join("");
-  const text = runsAsIs(line) ? `${line}\r` : line;
+/** `command` as one line: a line break, an escape or another control character inside would run or rewrite what
+ * comes before it, so each becomes a space. */
+function oneLine(command: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
+  return command.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+}
+
+function send(text: string): void {
   if (sender) sender(text);
   else pending.push(text);
   window.dispatchEvent(new Event(OPEN_TERMINAL));
 }
 
+/** Type `command` into the terminal, opening it; Enter only when `runsAsIs`. */
+export function runInTerminal(command: string): void {
+  const line = oneLine(command);
+  send(runsAsIs(line) ? `${line}\r` : line);
+}
+
 /**
  * Type `command` into the terminal, opening it, and never press Enter: the person reads it and runs it, as for a
- * connector's sign-in, whose text comes from a plugin (ADR 0056). Control characters are dropped, so a line break or
- * an escape sequence in it can't run anything either.
+ * connector's sign-in, whose text comes from a plugin (ADR 0055).
  */
 export function offerInTerminal(command: string): void {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
-  const text = command.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
-  if (sender) sender(text);
-  else pending.push(text);
-  window.dispatchEvent(new Event(OPEN_TERMINAL));
+  send(oneLine(command));
 }
 
 /** The connected terminal's sender, or null when it closes; waiting commands go out on connect. */

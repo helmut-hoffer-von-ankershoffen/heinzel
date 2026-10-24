@@ -1,4 +1,4 @@
-// Settings → Customize → Connectors (ADR 0056): a card per plugin that connects your tools, with whether it is signed
+// Settings → Customize → Connectors (ADR 0055): a card per plugin that connects your tools, with whether it is signed
 // in and serves something, a live test on demand, what hz can do through it, and Connect, which opens the terminal
 // with the vendor's own sign-in command (the tool asks for secrets itself; the app never sees them). Under the cards,
 // which connector serves what, one row per capability with a choice of the adapters that can serve it.

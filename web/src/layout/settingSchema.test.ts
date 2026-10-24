@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { controlFor, type JsonSchema } from "./settingSchema";
 
-// Every shape a setting with known values takes (ADR 0056): a choice, never a text field.
+// Every shape a setting with known values takes (ADR 0055): a choice, never a text field.
 const known: [string, JsonSchema][] = [
   ["a Literal", { type: "string", enum: ["text", "json"] }],
   ["an optional Literal", { anyOf: [{ type: "string", enum: ["a", "b"] }, { type: "null" }] }],

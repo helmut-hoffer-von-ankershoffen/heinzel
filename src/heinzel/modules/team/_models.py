@@ -114,7 +114,7 @@ class TeamSettings(ModuleSettings):
         default=None,
         description="Your team's layer plugin by module name, e.g. acme-payments-checkout (ADR 0040), when your team "
         "repository's hz.yaml names none or you want another; hz system layer show shows the stack it gives.",
-        json_schema_extra={"x-options": {"source": "layers"}},  # a choice in the web app, never typed (ADR 0056)
+        json_schema_extra={"x-options": {"source": "layers"}},  # a choice in the web app, never typed (ADR 0055)
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"repository", "checkout", "layer"})

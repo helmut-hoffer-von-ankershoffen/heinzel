@@ -1,5 +1,5 @@
 // A setting whose valid values the server knows but that change with what is installed (`x-options` in its schema,
-// ADR 0056): the adapters of a capability, the themes, the layers or the modules, offered as a choice; never typed.
+// ADR 0055): the adapters of a capability, the themes, the layers or the modules, offered as a choice; never typed.
 import { useConnectors, useLayers, useModules, useThemes } from "@/api/queries";
 import { t } from "@/i18n";
 import type { OptionsSource } from "./settingSchema";

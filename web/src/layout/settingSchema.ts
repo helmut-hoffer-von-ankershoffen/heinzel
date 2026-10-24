@@ -22,7 +22,7 @@ export type JsonSchema = {
   title?: string;
   deprecated?: boolean;
   description?: string;
-  /** Where the valid values come from when the server knows them but they change with what is installed (ADR 0056). */
+  /** Where the valid values come from when the server knows them but they change with what is installed (ADR 0055). */
   "x-options"?: OptionsSource;
 };
 
@@ -69,7 +69,7 @@ export function controlFor(raw: JsonSchema | undefined | null): Control {
   const schema = unwrap(raw ?? undefined);
   if (!schema) return { kind: "text" };
   const type = typeOf(schema);
-  // Known values that depend on what is installed: a choice the app fills in, never a text field (ADR 0056).
+  // Known values that depend on what is installed: a choice the app fills in, never a text field (ADR 0055).
   const from = raw?.["x-options"] ?? schema["x-options"];
   if (from) return { kind: "options", from, multiple: type === "array" };
   if (schema.enum?.every((value) => typeof value === "string" || typeof value === "number")) {

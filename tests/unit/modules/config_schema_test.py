@@ -108,7 +108,7 @@ def test_every_setting_reports_its_schema(make_kernel):
 
 
 def test_settings_whose_values_depend_on_what_is_installed_name_their_source():
-    """ADR 0056: the web app offers these as a choice; without `x-options` they would be free text."""
+    """ADR 0055: the web app offers these as a choice; without `x-options` they would be free text."""
     from heinzel import Settings
     from heinzel.kernel import CAPABILITIES
     from heinzel.kernel._bindings import CapabilitySettings
@@ -125,7 +125,7 @@ def test_settings_whose_values_depend_on_what_is_installed_name_their_source():
 
 
 KNOWN = Path(__file__).parents[3] / "web" / "src" / "test" / "fixtures" / "known-settings.json"
-"""The real schemas of settings with known values, which the web app's tests render (ADR 0056)."""
+"""The real schemas of settings with known values, which the web app's tests render (ADR 0055)."""
 
 
 def known_settings() -> dict[str, dict[str, object]]:

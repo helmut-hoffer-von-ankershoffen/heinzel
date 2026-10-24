@@ -49,7 +49,7 @@ def _exit_code(report: HealthReport) -> int:
 
 
 def _without_account(check: Check) -> Check:
-    """`check` without whom its sign-in is for, which only `hz system connector list` names (ADR 0056).
+    """`check` without whom its sign-in is for, which only `hz system connector list` names (ADR 0055).
 
     Doctor reaches every head, MCP and REST too; `list` only the CLI and the web app.
     """
