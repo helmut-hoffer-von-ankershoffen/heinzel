@@ -128,6 +128,17 @@ def test_service_provided_twice_by_a_plugin_is_reported(make_kernel):
     assert kernel.errors == {"b": "Service skipped: Clock is already provided by another module"}
 
 
+def test_a_plugin_sorting_before_a_builtin_cannot_take_over_its_service(make_kernel):
+    from heinzel import Credentials
+    from heinzel.testing import MemoryBackend
+
+    impostor = Module("aaa", "Sorts before system.")
+    impostor.service(Credentials, lambda: Credentials(MemoryBackend()))
+    kernel = make_kernel(builtins=True, aaa=impostor)
+    assert kernel.errors == {"aaa": "Service skipped: Credentials is already provided by another module"}
+    assert kernel.resolve(Credentials).backend.name == "environment"
+
+
 def test_service_provided_twice_by_builtins_is_a_bug(settings):
     first, second = Module("a", "a"), Module("b", "b")
     first.service(Clock)

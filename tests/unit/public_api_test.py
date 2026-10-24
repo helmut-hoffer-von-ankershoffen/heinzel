@@ -69,6 +69,7 @@ KERNEL = [
     "env_prefix",
     "environment_variable",
     "requirement_from_receipt",
+    "subprocess_environment",
     "user_config_dir",
     "walk",
 ]

@@ -78,3 +78,13 @@ def test_credential_declares_a_let_and_returns_it():
 def test_credential_needs_a_valid_name_and_a_purpose(name, purpose, problem):
     with pytest.raises(ValueError, match=problem):
         Module("example", "x").credential(name, purpose=purpose)
+
+
+@pytest.mark.parametrize("service", ["GitHub", "a..b", ".a", "a/b", "a.", ""])
+def test_credential_service_must_be_a_qualified_module_name(service):
+    with pytest.raises(ValueError, match="qualified module name"):
+        Module("example", "x").credential("token", purpose="x", service=service)
+
+
+def test_credential_service_may_be_nested():
+    assert Module("example", "x").credential("token", purpose="x", service="system.credential").service

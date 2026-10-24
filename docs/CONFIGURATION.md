@@ -34,7 +34,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `backend` | `HZ_SYSTEM_CREDENTIAL__BACKEND` | `'auto'` | Where credentials live: `keyring` (the OS keychain), `environment` (read-only HZ_CREDENTIAL_<SERVICE>_<NAME> variables), or `auto`: the keychain when one is usable, else the environment. |
+| `backend` | `HZ_SYSTEM_CREDENTIAL__BACKEND` | `'auto'` | Where credentials live. `auto`: the OS keychain when there is one, else the environment. `keyring`: whatever keyring backend is configured, even one that is not an OS keychain. `environment`: read-only HZ_CREDENTIAL_<SERVICE>_<NAME> variables. |
 
 ## `[system.plugin]`
 

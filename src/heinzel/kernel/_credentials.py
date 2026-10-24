@@ -4,11 +4,14 @@ Modules declare what they need with `module.credential(...)` and ask for `Creden
 writes values through a backend: the OS keychain (provided by `system.credential`), environment variables where no
 keychain exists, or memory in tests. Values never appear in anything the service returns besides `get` and `require`,
 nor in its error messages.
+
+Service names are a naming scheme, not an isolation boundary: every module and plugin runs in the same process with
+the user's rights and could read any credential. `get` taking only the let a module declared makes intent explicit.
 """
 
 import os
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -23,7 +26,7 @@ class CredentialBackend(Protocol):
 
     @property
     def name(self) -> str:
-        """What `hz system credential list` and doctor show, e.g. `keyring (macOS Keychain)` or `environment`."""
+        """What `hz system credential list` and doctor show, e.g. `keyring (macOS Keyring)` or `environment`."""
         ...
 
     def get(self, service: str, name: str) -> str | None:
@@ -42,6 +45,15 @@ class CredentialBackend(Protocol):
 def environment_variable(service: str, name: str) -> str:
     """The variable the environment backend reads: `HZ_CREDENTIAL_<SERVICE>_<NAME>`, upper case, others as `_`."""
     return ENVIRONMENT_PREFIX + re.sub(r"[^A-Z0-9]", "_", f"{service}_{name}".upper())
+
+
+def subprocess_environment(environment: Mapping[str, str] | None = None) -> dict[str, str]:
+    """The environment for a program Heinzelmännchen starts: the current one without `HZ_CREDENTIAL_*` variables.
+
+    uv, git, copier and the like never need a module's credentials, so they don't inherit them.
+    """
+    source = os.environ if environment is None else environment
+    return {key: value for key, value in source.items() if not key.startswith(ENVIRONMENT_PREFIX)}
 
 
 class EnvironmentBackend:
@@ -88,13 +100,18 @@ class DeclaredCredential:
     let: CredentialLet
 
     @property
+    def label(self) -> str:
+        """`service/name`, how doctor and messages name it."""
+        return f"{self.service}/{self.name}"
+
+    @property
     def fix(self) -> str:
         """The command that stores (or replaces) the value."""
         return f"hz system credential set {self.name} --service {self.service}"
 
 
 class Credentials:
-    """Secrets for modules and plugins, injected by type; only declared credentials can be read or written."""
+    """Secrets for modules and plugins, injected by type; a module reads only the credentials it declared."""
 
     def __init__(self, backend: CredentialBackend, declared: Iterable[tuple[str, CredentialLet]] = ()) -> None:
         """Serve the declared credentials from a backend.
@@ -111,72 +128,88 @@ class Credentials:
             for module, let in declared
         ]
 
-    def lookup(self, credential: CredentialLet | str, service: str | None = None) -> DeclaredCredential:
-        """Find a declared credential by its let, or by name and optionally service.
+    def _declared(self, credential: CredentialLet) -> DeclaredCredential:
+        found = next((d for d in self.declared if d.let is credential), None)
+        if found is None:
+            msg = (
+                f"The credential {credential.name} is not declared by a registered module; declare it with "
+                f"`module.credential(...)` and pass the let it returns."
+            )
+            raise HeinzelError(msg)
+        return found
+
+    def get(self, credential: CredentialLet) -> str | None:
+        """The value of a credential the module declared, or None if it isn't stored.
 
         Raises:
-            HeinzelError: If nobody declared it, or several services declare the name and none was given.
+            HeinzelError: If the let wasn't declared by a registered module, or the backend fails.
         """
-        if isinstance(credential, CredentialLet):
-            found = [d for d in self.declared if d.let is credential]
-            label = credential.name
-        else:
-            found = [d for d in self.declared if d.name == credential and service in {None, d.service}]
-            label = credential if service is None else f"{credential} (service {service})"
-        services = sorted({d.service for d in found})
-        if not found:
-            msg = f"No module declares the credential {label}; `hz system credential list` shows the declared ones."
-            raise HeinzelError(msg)
-        if len(services) > 1:
-            msg = f"Several services declare the credential {label}: {', '.join(services)}; pass --service."
-            raise HeinzelError(msg)
-        return found[0]
+        return self._read(self._declared(credential))
 
-    def get(self, credential: CredentialLet | str, service: str | None = None) -> str | None:
-        """The value of a declared credential, or None if it isn't stored."""
-        declared = self.lookup(credential, service)
-        return self.backend.get(declared.service, declared.name)
+    def _read(self, declared: DeclaredCredential) -> str | None:
+        try:
+            return self.backend.get(declared.service, declared.name)
+        except HeinzelError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - a backend's error text may hold the value, which we can't redact
+            msg = f"Could not read {declared.label} from {self.backend.name}: {type(exc).__name__}"
+            raise HeinzelError(msg) from None
 
-    def has(self, credential: CredentialLet | str, service: str | None = None) -> bool:
-        """Whether a declared credential has a value."""
-        return self.get(credential, service) is not None
+    def has(self, credential: CredentialLet) -> bool:
+        """Whether a credential the module declared has a value."""
+        return self.get(credential) is not None
 
-    def require(self, credential: CredentialLet | str, service: str | None = None) -> str:
-        """The value of a declared credential.
+    def require(self, credential: CredentialLet) -> str:
+        """The value of a credential the module declared.
 
         Raises:
             HeinzelError: If it isn't stored, with the command that stores it.
         """
-        declared = self.lookup(credential, service)
-        value = self.backend.get(declared.service, declared.name)
+        declared = self._declared(credential)
+        value = self._read(declared)
         if value is None:
-            msg = f"The credential {declared.name} ({declared.purpose}) is missing; store it with `{declared.fix}`."
+            msg = f"The credential {declared.label} ({declared.purpose}) is missing; store it with `{declared.fix}`."
             raise HeinzelError(msg)
         return value
 
-    def set(self, credential: CredentialLet | str, value: str, service: str | None = None) -> DeclaredCredential:
-        """Store the value of a declared credential.
+    def set(self, credential: CredentialLet, value: str) -> None:
+        """Store the value of a declared credential; `hz system credential set` does this for people.
 
         Raises:
-            HeinzelError: If the value is empty, or the backend can't store it.
+            HeinzelError: If the value is empty, or the backend can't store it; never with the value in the message.
         """
-        declared = self.lookup(credential, service)
+        declared = self._declared(credential)
         if not value.strip():
-            msg = f"The value for {declared.name} is empty; nothing was stored."
+            msg = f"The value for {declared.label} is empty; nothing was stored."
             raise HeinzelError(msg)
-        self.backend.set(declared.service, declared.name, value)
-        return declared
+        try:
+            self.backend.set(declared.service, declared.name, value)
+        except HeinzelError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - any backend's error text may echo the value; redact it
+            reason = f"{type(exc).__name__}: {str(exc).replace(value, '***')}"
+            msg = f"Could not store {declared.label} in {self.backend.name}: {reason}"
+            raise HeinzelError(msg) from None
 
-    def delete(self, credential: CredentialLet | str, service: str | None = None) -> DeclaredCredential:
-        """Remove the value of a declared credential; removing a missing one is fine."""
-        declared = self.lookup(credential, service)
-        self.backend.delete(declared.service, declared.name)
-        return declared
+    def delete(self, credential: CredentialLet) -> bool:
+        """Remove the value of a declared credential; whether there was one.
 
-    def attention(self, credential: CredentialLet | str, detail: str, service: str | None = None) -> Check:
+        Raises:
+            HeinzelError: If the backend can't remove it.
+        """
+        declared = self._declared(credential)
+        try:
+            return self.backend.delete(declared.service, declared.name)
+        except HeinzelError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - see _read
+            msg = f"Could not remove {declared.label} from {self.backend.name}: {type(exc).__name__}"
+            raise HeinzelError(msg) from None
+
+    def attention(self, credential: CredentialLet, detail: str) -> Check:
         """A degraded health check for a credential that is missing, expired or rejected, with the fix.
 
-        `detail` says what happened ("GitHub rejected the token: 401"); it must not contain the value.
+        `detail` says what happened ("the example service rejected the token: 401"); it must not contain the value.
         """
-        declared = self.lookup(credential, service)
-        return Check(name=f"credential {declared.name}", status=Status.DEGRADED, detail=detail, fix=declared.fix)
+        declared = self._declared(credential)
+        return Check(name=f"credential {declared.label}", status=Status.DEGRADED, detail=detail, fix=declared.fix)

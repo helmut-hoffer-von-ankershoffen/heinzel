@@ -20,6 +20,7 @@ from heinzel.kernel._credentials import (
     DeclaredCredential,
     EnvironmentBackend,
     environment_variable,
+    subprocess_environment,
 )
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._errors import HeinzelError
@@ -78,6 +79,7 @@ __all__ = [
     "env_prefix",
     "environment_variable",
     "requirement_from_receipt",
+    "subprocess_environment",
     "user_config_dir",
     "walk",
 ]

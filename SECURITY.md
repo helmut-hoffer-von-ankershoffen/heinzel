@@ -30,6 +30,8 @@ Only the latest release receives security fixes while the project is on 0.x.
 - Credentials that modules and plugins need are kept in your OS keychain (`hz system credential set NAME` reads
   the value from a hidden prompt or standard input) and are never shown, logged or returned; on Linux without a
   keychain they are read from `HZ_CREDENTIAL_<SERVICE>_<NAME>` variables, and `hz system doctor` warns about it.
+  Credentials are not isolated between plugins: every plugin runs in the same process with your rights and can read
+  all of them, which is one more reason to add only plugins you trust.
 
 ## How we keep the project secure
 

@@ -335,6 +335,12 @@ source_modules = ["heinzel.kernel"]
 forbidden_modules = ["heinzel.heads", "heinzel.modules"]
 
 [[tool.importlinter.contracts]]
+name = "The kernel never imports keyring: the keychain backend belongs to system.credential (ADR 0030)"
+type = "forbidden"
+source_modules = ["heinzel.kernel"]
+forbidden_modules = ["keyring"]
+
+[[tool.importlinter.contracts]]
 name = "Modules never import heads"
 type = "forbidden"
 source_modules = ["heinzel.modules"]
@@ -357,8 +363,13 @@ name = "Modules use only the kernel's public API, like plugins"
 type = "forbidden"
 source_modules = ["heinzel.modules"]
 forbidden_modules = [
+<<<<<<< HEAD
     "heinzel.kernel._boot", "heinzel.kernel._config", "heinzel.kernel._discovery", "heinzel.kernel._errors", "heinzel.kernel._installation",
     "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings",
+=======
+    "heinzel.kernel._boot", "heinzel.kernel._config", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._errors", "heinzel.kernel._installation",
+    "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._progress", "heinzel.kernel._settings",
+>>>>>>> e58493d (fix(system): harden credential storage after security review)
     "heinzel.kernel._spec",
 ]
 allow_indirect_imports = true # going through heinzel.kernel's public API is the point

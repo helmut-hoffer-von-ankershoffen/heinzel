@@ -5,10 +5,12 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import Check, Credentials, Module
-from heinzel.modules.system.credential._models import CredentialInfo, CredentialSettings
+from heinzel.modules.system.credential._models import CredentialInfo, CredentialSettings, RemovedCredential
 from heinzel.modules.system.credential._service import CredentialService, KeyringBackend, make_credentials
 
-module = Module("credential", "Store and check the credentials modules need, in the OS keychain.")
+# Essential, like system.config: `Credentials` is public API that plugins ask for, and without its provider every
+# operation that needs a credential would silently disappear.
+module = Module("credential", "Store and check the credentials modules need, in the OS keychain.", essential=True)
 module.settings(CredentialSettings)
 module.service(Credentials, make_credentials)
 module.service(CredentialService)
@@ -32,16 +34,16 @@ def set_(manager: CredentialService, name: Name, service: Service = None) -> Cre
     return manager.set(name, service)
 
 
-@module.operation(read_only=False)
-def remove(manager: CredentialService, name: Name, service: Service = None) -> CredentialInfo:
+@module.operation(read_only=False, heads={"cli"})  # so a web page can't remove credentials through the REST server
+def remove(manager: CredentialService, name: Name, service: Service = None) -> RemovedCredential:
     """Remove a credential's value from the keychain."""
     return manager.remove(name, service)
 
 
 @module.health
-def credential(service: CredentialService) -> list[Check]:
+def credential(manager: CredentialService) -> list[Check]:
     """The keychain in use and every declared credential that is missing."""
-    return service.checks()
+    return manager.checks()
 
 
-__all__ = ["CredentialInfo", "CredentialService", "CredentialSettings", "KeyringBackend", "module"]
+__all__ = ["CredentialInfo", "CredentialService", "CredentialSettings", "KeyringBackend", "RemovedCredential", "module"]

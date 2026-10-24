@@ -97,3 +97,18 @@ def test_commands_that_hang_time_out(tmp_path, monkeypatch):
     assert (result.returncode, result.stderr) == (124, f"uv timed out after {_installation.COMMAND_TIMEOUT}s")
     with pytest.raises(HeinzelError, match="did not finish within"):
         Installation(Progress(), prefix=tmp_path, uv="uv").hz("--version")
+
+
+def test_uv_and_hz_run_without_credential_variables(tmp_path, monkeypatch):
+    environments = []
+
+    def recording(command, **kwargs):
+        environments.append(kwargs["env"])
+        return subprocess.CompletedProcess(command, 0, "hz 9.9.9", "")
+
+    monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_API_TOKEN", "not-for-uv")
+    monkeypatch.setattr(subprocess, "run", recording)
+    _installation._run(["uv", "tool", "list"])
+    Installation(Progress(), prefix=tmp_path, uv="uv").hz("--version")
+    assert len(environments) == 2
+    assert all("HZ_CREDENTIAL_EXAMPLE_API_TOKEN" not in env and "PATH" in env for env in environments)

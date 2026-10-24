@@ -80,7 +80,7 @@ Store and check the credentials modules need, in the OS keychain.
 | --- | --- | --- | --- | --- |
 | List the credentials modules declare and whether each is stored, never their values. | `hz system credential list` | `system_credential_list` | `GET /system/credential/list` |  |
 | Store a credential, read from standard input or a hidden prompt, never from the command line. | `hz system credential set` | — | — | yes |
-| Remove a credential's value from the keychain. | `hz system credential remove` | `system_credential_remove` | `POST /system/credential/remove` | yes |
+| Remove a credential's value from the keychain. | `hz system credential remove` | — | — | yes |
 
 Settings: [`[system.credential]`](CONFIGURATION.md#systemcredential).
 

@@ -14,8 +14,9 @@ class CredentialSettings(ModuleSettings):
 
     backend: Backend = Field(
         default="auto",
-        description="Where credentials live: `keyring` (the OS keychain), `environment` (read-only "
-        "HZ_CREDENTIAL_<SERVICE>_<NAME> variables), or `auto`: the keychain when one is usable, else the environment.",
+        description="Where credentials live. `auto`: the OS keychain when there is one, else the environment. "
+        "`keyring`: whatever keyring backend is configured, even one that is not an OS keychain. "
+        "`environment`: read-only HZ_CREDENTIAL_<SERVICE>_<NAME> variables.",
     )
 
 
@@ -28,3 +29,9 @@ class CredentialInfo(BaseModel):
     module: str = Field(description="Qualified name of the module that declared it.")
     backend: str = Field(description="Where the value lives: a keyring backend or `environment`.")
     present: bool = Field(description="Whether a value is stored.")
+
+
+class RemovedCredential(CredentialInfo):
+    """A credential after `hz system credential remove`."""
+
+    removed: bool = Field(description="Whether there was a value to remove.")
