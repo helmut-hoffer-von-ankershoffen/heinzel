@@ -1,4 +1,4 @@
-// The status bar under the screen: Heinzelmännchen and its version on the left; the meeting running now or the next
+// The status bar under the screen: hz's version on the left; the meeting running now or the next
 // one, and a clock, on the right. The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
@@ -264,15 +264,12 @@ export function StatusBar() {
   return (
     <footer className="flex h-[60px] min-w-0 shrink-0 items-center gap-3 border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
       <span className="flex min-w-0 items-center gap-2">
-        <span aria-hidden className="shrink-0 text-xl leading-none">
-          🧝
-        </span>
-        <span className="truncate text-foreground">Heinzelmännchen</span>
+        {/* The branding is the sidebar's; here only the version, which opens what changed. */}
         {info.data && (
           <Link
             to="?panel=changelog"
             title={t("account.changelog")}
-            className="shrink-0 rounded px-1 text-ui-sm hover:bg-accent/60 hover:text-foreground max-sm:hidden"
+            className="shrink-0 rounded px-1 text-ui-sm hover:bg-accent/60 hover:text-foreground"
           >
             v{info.data.version}
           </Link>

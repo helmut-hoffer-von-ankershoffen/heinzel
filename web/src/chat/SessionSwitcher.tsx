@@ -67,7 +67,8 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
     return () => window.removeEventListener("mousedown", close);
   }, [open]);
   const groups = useMemo(() => switcherGroups(sessions.data ?? [], query.trim()), [sessions.data, query]);
-  const current = chat.session?.title || t("chat.workshop");
+  // A chat is named by its first message; until then it is a new chat, whatever it is about.
+  const current = chat.session?.messages?.length ? chat.session.title || t("chat.untitled") : t("chat.new");
   const choose = (item: SwitcherItem) => {
     setOpen(false);
     setQuery("");
@@ -92,8 +93,7 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={t("chat.switch", { title: current })}
-        disabled={chat.live != null}
-        className="flex max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-ui font-medium transition-colors hover:bg-accent/70 disabled:opacity-60"
+        className="flex max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-ui font-medium transition-colors hover:bg-accent/70 "
       >
         <span className="truncate">{current}</span>
         <ChevronDown aria-hidden className="size-4 shrink-0 text-icon" />

@@ -87,10 +87,16 @@ describe("Themes", () => {
     );
   });
 
-  it("shows no logo for a theme without one", async () => {
-    mockApi({ ...shell, "/api/system/theme/list": themeList("default") });
+  it("shows the Heinzel and the app's name for a theme without a logo, the built-in one included", async () => {
+    const logo = { light: "/theme-assets/default/light.svg", dark: "/x.svg", mark: null, alt: "x", height: "24px" };
+    mockApi({ ...shell, "/api/system/theme/list": themeList("default", [theme({ logo }), acmeTheme]) });
+    const user = userEvent.setup();
     renderAt("/doctor");
-    await screen.findByRole("button", { name: "Collapse navigation" });
-    expect(within(screen.getByRole("complementary", { name: "Main" })).queryByRole("img")).not.toBeInTheDocument();
+    const navigation = screen.getByRole("complementary", { name: "Main" });
+    expect(await within(navigation).findByText("Heinzelmännchen")).toBeInTheDocument();
+    expect(within(navigation).getByText("🧝")).toBeInTheDocument();
+    expect(within(navigation).queryByRole("img")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
+    expect(within(navigation).getByText("🧝")).toBeInTheDocument();
   });
 });

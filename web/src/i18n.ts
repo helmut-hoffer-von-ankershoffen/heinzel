@@ -301,6 +301,7 @@ const en = {
   "chat.costShort": "Up to {message} per message · this chat {spent}",
   "chat.costInfo": "About the costs",
   "chat.workshop": "Workshop",
+  "chat.isNew": "This is a new chat",
   "chat.workshopHelp": "A new general chat, about nothing in particular",
   "chat.untitled": "Untitled chat",
   "chat.start": "Start",

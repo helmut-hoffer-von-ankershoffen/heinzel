@@ -8,7 +8,7 @@ import { useLocation } from "react-router";
 import { useSharedChat } from "@/chat/ChatContext";
 import { Composer, Conversation, Costs } from "@/chat/Conversation";
 import { SessionSwitcher } from "@/chat/SessionSwitcher";
-import { HeinzelMark } from "@/components/HeinzelMark";
+import { HeinzelIcon } from "@/components/HeinzelIcon";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 
@@ -23,14 +23,16 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   useEffect(() => {
     end.current?.scrollIntoView?.({ block: "end" });
   }, [count, chat.live?.text]);
+  // An empty chat is already a new one: the button then just puts you in its composer.
+  const empty = !chat.session?.messages?.length && !chat.live;
   const fresh = () => {
-    chat.fresh();
+    if (!empty) chat.fresh();
     focus();
   };
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 pr-2 pl-3">
-        <HeinzelMark className="size-(--icon) shrink-0 text-icon" />
+        <HeinzelIcon className="text-base" />
         <h2 className="sr-only">{t("chat.title")}</h2>
         <SessionSwitcher chat={chat} onNew={fresh} />
         <Button
@@ -38,9 +40,8 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           size="icon"
           className="text-icon"
           onClick={fresh}
-          disabled={chat.live != null || !chat.session}
           aria-label={t("chat.new")}
-          title={t("chat.new")}
+          title={empty ? t("chat.isNew") : t("chat.new")}
         >
           <Plus aria-hidden />
         </Button>

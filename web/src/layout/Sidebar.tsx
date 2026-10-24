@@ -20,14 +20,16 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router";
-import { useContracts, useExpert, useProfile, useSetExpert } from "@/api/queries";
+import type { SchemaThemeLogoView } from "@/api/client";
+import { useContracts, useExpert, useProfile, useSetExpert, useThemes } from "@/api/queries";
+import { HeinzelIcon } from "@/components/HeinzelIcon";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { InstallApp } from "@/pwa/InstallApp";
 import { BellButton } from "./NotificationCenter";
 import { CONTRACTS_SECTION, contractPath, railItems, sections, visibleSections } from "./navigation";
-import { useDark, useSelectedTheme } from "./ThemeTokens";
+import { useDark } from "./ThemeTokens";
 import { useTheme } from "./theme";
 
 const link = ({ isActive }: { isActive: boolean }) =>
@@ -87,7 +89,7 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
           <PanelLeftClose aria-hidden />
         </Button>
       </div>
-      <div className={cn(HAIRLINE_BELOW, "h-12")}>
+      <div className={cn(HAIRLINE_BELOW, "h-12 justify-evenly")}>
         <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
           <Home aria-hidden />
         </NavLink>
@@ -232,11 +234,24 @@ function Rail({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
 
 /** The selected theme's logo (ADR 0044): its wordmark for the mode shown, or its square mark; nothing without one. */
 function ThemeLogo({ mark = false, className }: { mark?: boolean; className?: string }) {
-  const theme = useSelectedTheme();
+  const themes = useThemes();
   const dark = useDark();
-  const logo = theme?.logo;
-  const src = logo ? (mark ? logo.mark : dark ? logo.dark : logo.light) : null;
-  if (!logo || !src) return mark ? <PanelLeftOpen aria-hidden className={className} /> : null;
+  // The branding is always there: a plugin theme's logo, else the Heinzel and the app's name (the built-in theme too).
+  const selected = themes.data?.themes.find((theme) => theme.name === themes.data?.selected);
+  const pick = (logo: SchemaThemeLogoView | null | undefined) =>
+    logo ? (mark ? logo.mark : dark ? logo.dark : logo.light) : null;
+  const logo = selected && selected.name !== "default" ? selected.logo : null;
+  const src = pick(logo);
+  if (!logo || !src) {
+    return mark ? (
+      <HeinzelIcon className={cn("text-xl", className)} />
+    ) : (
+      <span className="flex min-w-0 items-center gap-2 text-ui font-medium">
+        <HeinzelIcon className="text-xl" />
+        <span className="truncate">{t("app.name")}</span>
+      </span>
+    );
+  }
   // An <img>, never inline SVG: a script in the file can't run, and the web head serves it under a strict CSP.
   return (
     <img

@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, Link2, RefreshCw, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { matchPath, useLocation } from "react-router";
-import { HeinzelMark } from "@/components/HeinzelMark";
+import { HeinzelIcon } from "@/components/HeinzelIcon";
 import { Button } from "@/components/ui/button";
 import type { MessageKey } from "@/i18n";
 import { t } from "@/i18n";
@@ -122,7 +122,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
         >
           <SquareTerminal aria-hidden />
         </Button>
-        {/* The chat is a conversation with your Heinzelmännchen, so its button is the Heinzel mark. */}
+        {/* The chat is a conversation with your Heinzelmännchen, so its button is the Heinzel; open, a pill behind it. */}
         <Button
           variant="ghost"
           size="icon"
@@ -131,9 +131,9 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           aria-pressed={chatOpen}
           aria-label={chatOpen ? t("chat.collapse") : t("chat.expand")}
           title={chatOpen ? t("chat.collapse") : t("chat.expand")}
-          className={cn("text-icon [&_svg]:size-(--icon)", chatOpen && "bg-accent text-accent-foreground")}
+          className={cn(chatOpen && "bg-accent")}
         >
-          <HeinzelMark />
+          <HeinzelIcon className="text-lg" />
         </Button>
       </div>
       <span className="sr-only" aria-live="polite">
