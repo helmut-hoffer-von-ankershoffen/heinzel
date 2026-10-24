@@ -470,7 +470,7 @@ def test_invalid_arguments_are_rejected_before_running(make_kernel):
 # Agent-ready: every operation's command takes --json. The servers are commands but no operations: they run until
 # stopped and print no result to format.
 SERVERS = {"hz system serve api", "hz system serve daemon", "hz system serve mcp"}
-SETUP = {"hz setup", "hz clock setup"}  # setup steps are interactive, not operations (ADR 0032)
+SETUP = {"hz setup", "hz clock setup", "hz org setup"}  # setup steps are interactive, not operations (ADR 0032)
 
 
 def leaves_without_json(command, path: str = "hz") -> list[str]:
