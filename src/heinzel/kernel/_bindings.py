@@ -29,6 +29,10 @@ class CapabilitySettings(ModuleSettings):
     `hz system capability list` shows them. A capability without a binding serves nobody.
     """
 
+    agent_runner: str | None = Field(
+        default="claude-code",
+        description="Adapter that serves `agent-runner`: `claude-code`, `command`, or one from a plugin.",
+    )
     code_host: str | None = Field(default=None, description="Adapter that serves `code-host`, e.g. `github`.")
     documents: str | None = Field(default=None, description="Adapter that serves `documents`.")
     tracker: str | None = Field(default=None, description="Adapter that serves `tracker`, e.g. `github`.")
@@ -234,7 +238,11 @@ class Capabilities:
             raise HeinzelError(msg)
         key = (adapter.let.capability, adapter.let.adapter)
         if key not in self._instances:
-            self._instances[key] = self._build(adapter.let.factory)
+            instance = self._build(adapter.let.factory)
+            if missing := [m for m in capability.methods if not callable(getattr(instance, m, None))]:
+                msg = f"Adapter {adapter.let.name} of {adapter.module} lacks {', '.join(missing)} of {capability.name}."
+                raise HeinzelError(msg)
+            self._instances[key] = instance
         return _Handle(self._instances[key], capability, modes, requirement.modes, requester.label)
 
     def fix(self, capability: str) -> str:

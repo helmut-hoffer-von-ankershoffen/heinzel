@@ -3,6 +3,7 @@
 The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets and decide how to expose them.
 """
 
+from heinzel.kernel._agents import AgentResult, AgentRunner, Budget, RunStatus, TokenUsage, ToolProfile
 from heinzel.kernel._bindings import (
     CAPABILITIES_SECTION,
     Adapter,
@@ -77,6 +78,9 @@ __all__ = [
     "MODES",
     "PROJECT_FILENAME",
     "Adapter",
+    "AgentResult",
+    "AgentRunner",
+    "Budget",
     "Capabilities",
     "Capability",
     "CapabilitySettings",
@@ -114,11 +118,14 @@ __all__ = [
     "Requester",
     "Requirement",
     "RequirementLet",
+    "RunStatus",
     "SectionReplacement",
     "ServiceLet",
     "Settings",
     "SettingsLet",
     "Status",
+    "TokenUsage",
+    "ToolProfile",
     "Tracker",
     "Window",
     "boot",

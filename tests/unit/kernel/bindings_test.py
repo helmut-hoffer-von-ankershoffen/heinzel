@@ -168,7 +168,7 @@ def test_a_binding_to_an_unknown_adapter_fails(make_kernel):
     kernel = make_kernel(digest=digest_module(), config=bind(documents="nowhere"))
     with pytest.raises(HeinzelError, match=r"no installed module provides documents as 'nowhere'.*Install a plugin"):
         run(kernel, "digest", "show")
-    assert kernel.capabilities.unknown_bindings() == [("documents", "nowhere")]
+    assert ("documents", "nowhere") in kernel.capabilities.unknown_bindings()
 
 
 def test_a_read_only_adapter_cannot_serve_a_write(make_kernel):
@@ -261,6 +261,22 @@ def test_an_adapter_class_missing_protocol_methods_is_skipped(make_kernel):
     kernel = make_kernel(broken=module)
     assert kernel.errors["broken"] == "Adapter skipped: adapter broken:documents lacks replace_section of documents"
     assert not kernel.capabilities.adapters
+
+
+def test_an_adapter_factory_returning_half_a_protocol_fails_when_built(make_kernel):
+    module = Module("half", "Provides half a protocol through a factory function.")
+
+    class Half:
+        def read(self, ref: str) -> Document:
+            return Document(ref=ref, title="", text="")
+
+    def make_half() -> Half:
+        return Half()
+
+    module.provides("documents", modes={"read"})(make_half)
+    kernel = make_kernel(half=module, digest=digest_module(), config=bind(documents="half"))
+    with pytest.raises(HeinzelError, match="Adapter half:documents of half lacks replace_section of documents"):
+        run(kernel, "digest", "show")
 
 
 def test_a_builtin_adapter_collision_is_a_bug(settings):

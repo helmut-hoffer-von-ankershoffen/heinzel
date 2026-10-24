@@ -313,7 +313,7 @@ def _builtins_first(pair: tuple[ModuleRecord, Let]) -> tuple[bool, tuple[str, ..
 
 
 def _missing_methods(let: ProviderLet) -> list[str]:
-    """Protocol methods a class-based adapter doesn't define; a factory function is checked when it is called."""
+    """Protocol methods a class-based adapter doesn't define; a factory's result is checked when it is built."""
     if not isinstance(let.factory, type):
         return []
     return [name for name in CAPABILITIES[let.capability].methods if not callable(getattr(let.factory, name, None))]

@@ -117,11 +117,12 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
     code, report = hz(kernel, "system", "capability", "list")
     assert code == 0
     assert {c["name"]: c["bound"] for c in report["capabilities"]} == {
+        "agent-runner": "claude-code",
         "code-host": None,
         "documents": "notes",
         "tracker": None,
     }
-    assert report["adapters"] == [
+    assert [a for a in report["adapters"] if a["capability"] == "documents"] == [
         {
             "adapter": "notes",
             "capability": "documents",

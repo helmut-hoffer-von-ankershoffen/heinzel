@@ -60,7 +60,9 @@ by kind with their owning module, and injects dependencies by type: `Kernel`, `S
 (head-provided progress reporting: operations never print). Services are singletons per kernel and may depend on other services.
 A capability protocol (`Tracker`, `Documents`, ...) is injected as a handle on the adapter bound in `[capabilities]`,
 limited to the modes the asking operation, job or module declared; `write` reaches only publish operations
-(`read_only=False`) ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)).
+(`read_only=False`) ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)). Agent sessions are the
+capability `agent-runner`; core ships its Claude Code and generic command adapters in `system.runner`
+([ADR 0029](adr/0029-agent-runners-are-capability-adapters.md)).
 
 **Head.** A view that boots the kernel and exposes operations ([ADR 0019](adr/0019-mcp-and-rest-heads.md)). All heads
 share one exposure rule (`heinzel.heads._exposure`): the same path, public parameters and `heads=` restrictions. The

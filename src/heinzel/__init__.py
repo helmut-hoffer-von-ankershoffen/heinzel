@@ -11,6 +11,9 @@ except PackageNotFoundError:  # pragma: no cover - only when importing from a so
     __version__ = "0.0.0"
 
 from heinzel.kernel import (
+    AgentResult,
+    AgentRunner,
+    Budget,
     CatchUp,
     Check,
     CodeHost,
@@ -39,11 +42,16 @@ from heinzel.kernel import (
     Settings,
     SettingsLet,
     Status,
+    TokenUsage,
+    ToolProfile,
     Tracker,
     Window,
 )
 
 __all__ = [
+    "AgentResult",
+    "AgentRunner",
+    "Budget",
     "CatchUp",
     "Check",
     "CodeHost",
@@ -72,6 +80,8 @@ __all__ = [
     "Settings",
     "SettingsLet",
     "Status",
+    "TokenUsage",
+    "ToolProfile",
     "Tracker",
     "Window",
     "__version__",

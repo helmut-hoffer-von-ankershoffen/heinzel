@@ -12,6 +12,9 @@ import heinzel.kernel
 pytestmark = pytest.mark.unit
 
 HEINZEL = [
+    "AgentResult",
+    "AgentRunner",
+    "Budget",
     "CatchUp",
     "Check",
     "CodeHost",
@@ -40,13 +43,18 @@ HEINZEL = [
     "Settings",
     "SettingsLet",
     "Status",
+    "TokenUsage",
+    "ToolProfile",
     "Tracker",
     "Window",
     "__version__",
 ]
 KERNEL = [
     "Adapter",
+    "AgentResult",
+    "AgentRunner",
     "BUILTIN_PACKAGE",
+    "Budget",
     "CAPABILITIES",
     "CAPABILITIES_SECTION",
     "CORE_DISTRIBUTION",
@@ -92,11 +100,14 @@ KERNEL = [
     "Requester",
     "Requirement",
     "RequirementLet",
+    "RunStatus",
     "SectionReplacement",
     "ServiceLet",
     "Settings",
     "SettingsLet",
     "Status",
+    "TokenUsage",
+    "ToolProfile",
     "Tracker",
     "Window",
     "boot",

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, cast
 
+from heinzel.kernel._agents import AgentRunner
 from heinzel.kernel._protocols import CodeHost, Documents, Tracker
 
 Mode = Literal["read", "write"]
@@ -38,6 +39,12 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
     {
         capability.name: capability
         for capability in (
+            Capability(
+                name="agent-runner",
+                protocol=AgentRunner,
+                summary="Bounded agent sessions with read-only tools, reporting draft, tool calls and cost.",
+                methods=MappingProxyType({"run": "read"}),
+            ),
             Capability(
                 name="code-host",
                 protocol=CodeHost,

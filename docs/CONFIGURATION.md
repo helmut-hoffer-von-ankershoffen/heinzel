@@ -23,6 +23,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
+| `agent_runner` | `HZ_CAPABILITIES__AGENT_RUNNER` | `'claude-code'` | Adapter that serves `agent-runner`: `claude-code`, `command`, or one from a plugin. |
 | `code_host` | `HZ_CAPABILITIES__CODE_HOST` | `None` | Adapter that serves `code-host`, e.g. `github`. |
 | `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | Adapter that serves `documents`. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | Adapter that serves `tracker`, e.g. `github`. |
@@ -57,3 +58,16 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `github_token` | `HZ_SYSTEM_PLUGIN__GITHUB_TOKEN` | `None` | GitHub token for `hz system plugin search`, which works without one at a lower rate limit; also read from GH_TOKEN or GITHUB_TOKEN. Sent to api.github.com only. |
+
+## `[system.runner]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `model` | `HZ_SYSTEM_RUNNER__MODEL` | `None` | Model for every run, e.g. `sonnet`; the agent's own default when not set. |
+| `claude_executable` | `HZ_SYSTEM_RUNNER__CLAUDE_EXECUTABLE` | `'claude'` | The Claude Code CLI, a name on PATH or a path. |
+| `read_only_tools` | `HZ_SYSTEM_RUNNER__READ_ONLY_TOOLS` | `['Read', 'Grep', 'Glob']` | Claude Code tools a run may use; a profile asking for anything else is refused. Add only tools that cannot change anything. |
+| `command` | `HZ_SYSTEM_RUNNER__COMMAND` | platform-specific | The `command` runner's command line, one argument per item, never through a shell. Placeholders: {prompt_file}, {contract_file}, {output_file}, {working_dir}, {tools}, {model}, {timeout_seconds}, {max_usd}; e.g. ["mytool", "ai", "run", "--prompt", "{prompt_file}"]. |
+| `command_output` | `HZ_SYSTEM_RUNNER__COMMAND_OUTPUT` | `'stdout'` | Where the `command` runner reads the result: stdout, or {output_file}. |
+| `command_format` | `HZ_SYSTEM_RUNNER__COMMAND_FORMAT` | `'text'` | `text`: the output is the draft. `json`: an object with the draft under `command_draft_key` and, optionally, `usage` (input_tokens, output_tokens) and `total_cost_usd`. |
+| `command_draft_key` | `HZ_SYSTEM_RUNNER__COMMAND_DRAFT_KEY` | `'result'` | Key of the draft in `json` output. |
+| `command_enforces_read_only` | `HZ_SYSTEM_RUNNER__COMMAND_ENFORCES_READ_ONLY` | `False` | Set to true once the configured command restricts its agent to read-only tools itself; until then doctor reports that the read-only profile is not enforced. |
