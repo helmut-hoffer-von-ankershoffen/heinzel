@@ -5,37 +5,56 @@
 
 /* Colours as tokens (shadcn/ui's names), light first; `.dark` on <html> switches them. */
 @theme {
-  --color-background: oklch(0.99 0.004 85);
-  --color-foreground: oklch(0.22 0.02 60);
-  --color-muted: oklch(0.955 0.008 85);
-  --color-muted-foreground: oklch(0.46 0.02 60);
-  --color-card: oklch(1 0 0);
-  --color-border: oklch(0.9 0.01 80);
-  --color-primary: oklch(0.52 0.16 45);
-  --color-primary-foreground: oklch(0.99 0.004 85);
-  --color-accent: oklch(0.94 0.03 70);
-  --color-ok: oklch(0.5 0.13 150);
-  --color-warn: oklch(0.55 0.13 75);
-  --color-bad: oklch(0.52 0.19 25);
-  --color-ring: oklch(0.52 0.16 45);
+  --color-background: #ffffff;
+  --color-foreground: #1a1a1a;
+  --color-muted: #f2f2f2;
+  --color-muted-foreground: #6b6b6b;
+  --color-card: #ffffff;
+  --color-border: #e4e4e4;
+  --color-primary: #b4532f;
+  --color-primary-foreground: #ffffff;
+  --color-accent: #ebebeb;
+  --color-ok: #1f7444;
+  --color-warn: #8a5c00;
+  --color-bad: #b4372d;
+  --color-ring: #b4532f;
+  --color-sidebar: #f3f3f3;
+  --color-popover: #ffffff;
+  --color-input: #ffffff;
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  /* The type scale, density and corners a theme may set (ADR 0044): `text-ui`, `text-ui-sm`, `size-(--icon)`,
+     `h-(--row)`, `rounded-lg` for controls and `rounded-xl` for cards and dialogs. */
+  --text-ui: 15px;
+  --text-ui-sm: 13px;
+  --icon: 18px;
+  --row: 36px;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --heading-tracking: 0;
+  --color-accent-foreground: #1a1a1a;
+  --color-icon: #5c5c5c;
 }
 
 .dark {
-  --color-background: oklch(0.18 0.012 60);
-  --color-foreground: oklch(0.93 0.01 80);
-  --color-muted: oklch(0.24 0.012 60);
-  --color-muted-foreground: oklch(0.72 0.015 70);
-  --color-card: oklch(0.21 0.012 60);
-  --color-border: oklch(0.32 0.012 60);
-  --color-primary: oklch(0.72 0.14 55);
-  --color-primary-foreground: oklch(0.18 0.012 60);
-  --color-accent: oklch(0.29 0.03 60);
-  --color-ok: oklch(0.74 0.14 150);
-  --color-warn: oklch(0.8 0.13 80);
-  --color-bad: oklch(0.72 0.16 25);
-  --color-ring: oklch(0.72 0.14 55);
+  --color-background: #181818;
+  --color-foreground: #ececec;
+  --color-muted: #272727;
+  --color-muted-foreground: #9b9b9b;
+  --color-card: #181818;
+  --color-border: #2c2c2c;
+  --color-primary: #d97757;
+  --color-primary-foreground: #ffffff;
+  --color-accent: #444444;
+  --color-ok: #7cc39a;
+  --color-warn: #e0b45f;
+  --color-bad: #e5806f;
+  --color-ring: #d97757;
+  --color-sidebar: #272727;
+  --color-popover: #2c2c2c;
+  --color-input: #303030;
+  --color-accent-foreground: #ececec;
+  --color-icon: #b3b3b3;
 }
 
 html,
@@ -48,6 +67,8 @@ body {
   background: var(--color-background);
   color: var(--color-foreground);
   font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
 }
 
 :focus-visible {

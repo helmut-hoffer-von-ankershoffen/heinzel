@@ -19,6 +19,10 @@ def test_shows_each_zone_with_its_working_hours(hz):
     ]
 
 
+def test_nobody_is_working_at_the_weekend(hz):
+    assert not any(zone["working"] for zone in hz("clock", "--at", "2026-10-24T14:00:00Z").json)
+
+
 def test_each_zone_has_its_own_hours(hz, monkeypatch):
     monkeypatch.setenv("HZ_CLOCK__ZONES", '[{"name": "America/New_York", "hours": [7, 15]}, "Asia/Tokyo"]')
     assert hz("clock", "--at", AT).json == [

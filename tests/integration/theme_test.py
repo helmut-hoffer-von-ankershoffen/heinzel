@@ -246,7 +246,7 @@ def test_the_list_carries_the_type_scale_density_icon_colours_and_fonts(acme):
     }
     assert (default["icon_size"], default["row_height"], default["spacing"]) == ("18px", "36px", "0.25rem")
     assert (default["heading_weight"], default["heading_tracking"], default["fonts"]) == (600, "0", [])
-    assert (default["dark"]["accent_foreground"], default["dark"]["icon"]) == ("#ececec", "#9b9b9b")
+    assert (default["dark"]["accent_foreground"], default["dark"]["icon"]) == ("#ececec", "#b3b3b3")
     assert (company["font_size"], company["heading_tracking"]) == ("14px", "-0.5px")
     assert company["light"]["accent_foreground"] == company["light"]["foreground"]  # derived when not given
     (shipped,) = company["fonts"]

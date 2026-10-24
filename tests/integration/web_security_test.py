@@ -100,7 +100,10 @@ def test_every_response_carries_the_csp_and_the_other_security_headers(client):
         assert response.headers["X-Frame-Options"] == "DENY"
         assert response.headers["Cross-Origin-Opener-Policy"] == "same-origin"
     assert "default-src 'none'" in web.CSP
-    assert "unsafe-inline" not in web.CSP
+    # Inline styles only, for the terminal (ADR 0045); scripts stay this origin's.
+    assert "script-src 'self';" in web.CSP
+    assert "style-src 'self' 'unsafe-inline';" in web.CSP
+    assert web.CSP.count("unsafe-inline") == 1
     assert "unsafe-eval" not in web.CSP
 
 

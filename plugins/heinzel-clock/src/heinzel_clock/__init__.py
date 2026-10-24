@@ -19,6 +19,8 @@ module = Module("clock", "What time it is for everyone on the team.")
 
 DEFAULT_HOURS = (9, 18)
 DEFAULT_ZONES = ("Europe/Berlin", "America/New_York", "America/Los_Angeles")
+SATURDAY = 5
+"""`datetime.weekday()` of Saturday: working days are Monday to Friday."""
 MAX_MATCHES = 15
 """More matches than this, and setup asks for more of the name instead of listing them."""
 EXAMPLE = "hz system config set clock.zones '[{ name = \"Europe/Berlin\", hours = [9, 18] }]'"
@@ -82,7 +84,7 @@ class ZoneTime(BaseModel):
     zone: str = Field(description="IANA time zone name, e.g. Europe/Berlin.")
     time: str = Field(description="Local weekday and time there, e.g. Mon 14:05.")
     hours: tuple[int, int] = Field(description="Start and end hour of a working day there.")
-    working: bool = Field(description="Whether it is within the working hours there.")
+    working: bool = Field(description="Whether it is within the working hours there, Monday to Friday.")
 
 
 def _render(times: list[ZoneTime]) -> Table:
@@ -113,7 +115,7 @@ def clock(
             zone=zone.name,
             time=local.strftime("%a %H:%M"),
             hours=zone.hours,
-            working=zone.hours[0] <= local.hour < zone.hours[1],
+            working=local.weekday() < SATURDAY and zone.hours[0] <= local.hour < zone.hours[1],
         )
         for zone in settings.zones
         for local in [moment.astimezone(ZoneInfo(zone.name))]
