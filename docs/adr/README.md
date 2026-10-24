@@ -61,6 +61,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0054](0054-observability-is-whether-each-team-promise-is-kept.md) | Observability is whether each team promise is kept: telemetry in, a graph out | proposed | 2026-10-24 |
 | [0055](0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md) | Connectors show their sign-in, test live on demand, and bind themselves when they are alone | accepted | 2026-10-24 |
 | [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) | AI access is a module: one choice like the theme, options are adapters of `ai-access` | proposed | 2026-10-24 |
+| [0058](0058-themes-follow-the-time-of-day-and-the-weather.md) | Themes follow the time of day and the weather: variants on a closed vocabulary of signals | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends

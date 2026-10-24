@@ -1,8 +1,11 @@
 // Applies the selected theme (ADR 0044) as CSS custom properties on <html>, for light or dark as the page shows.
 // The default theme sets nothing: index.css is its source, so the app looks right before the list arrives.
-import { useEffect, useState } from "react";
+// Its variant (ADR 0058) follows the signals; a change of variant fades over 1.5 s (`.theme-shift` in index.css), never
+// on the first paint or a switch of mode, and not at all with reduced motion.
+import { useEffect, useRef, useState } from "react";
 import type { SchemaThemeView } from "@/api/client";
-import { useThemes } from "@/api/queries";
+import { useThemeSignals, useThemes } from "@/api/queries";
+import { backdropCss, coloursOf, type Signals, variantOf } from "./variants";
 
 const DEFAULT = "default";
 
@@ -18,11 +21,13 @@ export function useDark(): boolean {
 }
 
 /** `muted_foreground` → `--color-muted-foreground`, plus the fonts. */
-export function tokens(theme: SchemaThemeView, dark: boolean): Record<string, string> {
-  // An optional colour the theme leaves out (`main_tint`) keeps the app's default.
-  const colours = Object.entries(dark ? theme.dark : theme.light)
-    .filter(([, value]) => typeof value === "string")
+export function tokens(theme: SchemaThemeView, dark: boolean, signals: Signals = {}): Record<string, string> {
+  // An optional colour the theme leaves out (`main_tint`) keeps the app's default; the backdrop is no colour.
+  const effective = coloursOf(theme, dark, signals);
+  const colours = Object.entries(effective)
+    .filter(([key, value]) => key !== "backdrop" && typeof value === "string")
     .map(([key, value]) => [`--color-${key.replaceAll("_", "-")}`, String(value)]);
+  colours.push(["--theme-backdrop", backdropCss(effective.backdrop)]);
   // Type scale, density and corners (ADR 0044); a field the server doesn't send keeps the app's default.
   const extra = theme as unknown as Record<string, unknown>;
   const scale: [string, string][] = [
@@ -48,14 +53,37 @@ export function useSelectedTheme(): SchemaThemeView | undefined {
   return themes.data?.themes.find((theme) => theme.name === themes.data?.selected);
 }
 
+/** The signals now, as the variants read them. */
+export function useSignals(): Signals {
+  const signals = useThemeSignals();
+  return { daypart: signals.data?.daypart, weather: signals.data?.weather };
+}
+
+const SHIFT = "theme-shift";
+const SHIFT_MS = 2000;
+
 export function ThemeTokens() {
   const themes = useThemes();
   const dark = useDark();
+  const signals = useSignals();
   const selected = themes.data?.themes.find((theme) => theme.name === themes.data?.selected);
+  const variant = selected ? `${selected.name}:${variantOf(selected, signals)}` : "";
+  const shown = useRef(variant);
+  // A new variant of the same theme fades in; a new theme or mode switches at once.
+  useEffect(() => {
+    const before = shown.current;
+    shown.current = variant;
+    if (!before || before === variant || before.split(":")[0] !== variant.split(":")[0]) return;
+    const html = document.documentElement;
+    html.classList.add(SHIFT);
+    const timer = window.setTimeout(() => html.classList.remove(SHIFT), SHIFT_MS);
+    return () => window.clearTimeout(timer);
+  }, [variant]);
+  const { daypart, weather } = signals;
   useEffect(() => {
     const root = document.documentElement.style;
     if (!selected || selected.name === DEFAULT) return;
-    const applied = tokens(selected, dark);
+    const applied = tokens(selected, dark, { daypart, weather });
     for (const [name, value] of Object.entries(applied)) root.setProperty(name, value);
     // Fonts the theme ships, served by hz from the plugin (same origin, as the CSP wants).
     const fonts = (
@@ -73,6 +101,6 @@ export function ThemeTokens() {
       for (const name of Object.keys(applied)) root.removeProperty(name);
       for (const font of fonts) document.fonts.delete(font);
     };
-  }, [selected, dark]);
+  }, [selected, dark, daypart, weather]);
   return null;
 }

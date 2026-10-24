@@ -1,10 +1,12 @@
 """Models and settings of the theme module."""
 
+from datetime import datetime
 from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
-from heinzel import ModuleSettings, ThemeColours
+from heinzel import ModuleSettings, ThemeColours, ThemeVariant
+from heinzel.kernel import Daypart, Weather
 
 NAME_PATTERN = r"^[a-z](?:-?[a-z0-9])*$"
 
@@ -73,6 +75,10 @@ class ThemeView(BaseModel):
         default_factory=list[ThemeFontView], description="Font files the theme ships, for the web app to load."
     )
     logo: ThemeLogoView | None = Field(default=None, description="The theme's logo; none if it ships none.")
+    variant: list[ThemeVariant] = Field(
+        default_factory=list[ThemeVariant],
+        description="Colours that apply when the signals match (ADR 0055); the one naming most signals wins.",
+    )
     shadows: list[str] = Field(
         default_factory=list[str],
         description="Modules that offer a theme of the same name, hidden by this one (layer order decides).",
@@ -90,3 +96,15 @@ class ThemeList(BaseModel):
     )
     note: str | None = Field(default=None, description="Why the theme in effect isn't the one configured.")
     next: list[str] = Field(default_factory=list[str], description="What to run next.")
+
+
+class ThemeSignalsView(BaseModel):
+    """The signals now, which pick a theme's variant (ADR 0055)."""
+
+    daypart: Daypart = Field(description="The time of day in your time zone, e.g. `evening`.")
+    weather: Weather | None = Field(description="The weather now, e.g. `rain`; none when no module publishes it.")
+    sunrise: datetime | None = Field(description="Today's sunrise, when a module knows it.")
+    sunset: datetime | None = Field(description="Today's sunset, when a module knows it.")
+    timezone: str = Field(description="The time zone the daypart is in, `[org] timezone` or this machine's.")
+    sources: list[str] = Field(description="The modules whose signals are known now.")
+    refresh: int = Field(description="How often to ask again, in seconds.")

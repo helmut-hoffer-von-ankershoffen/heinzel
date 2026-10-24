@@ -1,6 +1,10 @@
 """Service of the theme module: the themes plugins offer, ties decided by layer order, and `[system.theme] name`."""
 
+import logging
+import os
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import ValidationError
 
@@ -15,12 +19,31 @@ from heinzel import (
     ThemeFonts,
     ThemeLet,
 )
-from heinzel.kernel import DEFAULT_LOGO, DEFAULT_THEME, ThemeLogoFiles
-from heinzel.modules.system.theme._models import ThemeFontView, ThemeList, ThemeLogoView, ThemeSettings, ThemeView
+from heinzel.kernel import (
+    DEFAULT_LOGO,
+    DEFAULT_THEME,
+    OperationLet,
+    SignalLet,
+    ThemeLogoFiles,
+    ThemeSignals,
+    daypart,
+)
+from heinzel.modules.system.theme._models import (
+    ThemeFontView,
+    ThemeList,
+    ThemeLogoView,
+    ThemeSettings,
+    ThemeSignalsView,
+    ThemeView,
+)
+
+logger = logging.getLogger(__name__)
 
 SECTION = "system.theme"
 KEY = f"{SECTION}.name"
 VARIABLE = "HZ_SYSTEM_THEME__NAME"
+REFRESH = timedelta(minutes=1)
+"""How often the web app asks for the signals: the daypart moves on the minute."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +117,7 @@ class ThemeService(ThemeFonts):
         """Create the service; the kernel and the configuration editor are injected."""
         self._kernel = kernel
         self._editor = editor
+        self._read: dict[str, tuple[datetime, ThemeSignals | None]] = {}
 
     def available(self) -> Available:
         """Each theme by name; of several modules offering one name, the most specific layer of the stack wins.
@@ -192,6 +216,7 @@ class ThemeService(ThemeFonts):
                     spacing=offered.theme.spacing,
                     fonts=_fonts(offered),
                     logo=_logo(offered.logos),
+                    variant=list(offered.theme.variant),
                     shadows=offered.shadows,
                 )
                 for name, offered in available.themes.items()
@@ -237,6 +262,52 @@ class ThemeService(ThemeFonts):
         self._editor.write(KEY, name, "user")
         return self.listing()
 
+    def signals(self) -> ThemeSignalsView:
+        """The signals now (ADR 0055): the daypart in the person's time zone, and what the modules publish.
+
+        Each module's signals operation runs at most once per its interval; one that fails or returns something else
+        leaves its signals unknown until the next. Of several modules publishing one signal, the first by module
+        order wins.
+        """
+        zone, zone_name = _zone()
+        now = utc_now()
+        merged: dict[str, object] = {}
+        sources: list[str] = []
+        for record, let in self._kernel.lets(SignalLet):
+            published = self._published(record.qualname, let, now)
+            if published is None:
+                continue
+            values = published.model_dump(exclude_none=True)
+            if values:
+                sources.append(record.qualname)
+            for key, value in values.items():
+                merged.setdefault(key, value)
+        known = ThemeSignals.model_validate(merged)
+        return ThemeSignalsView(
+            daypart=daypart(now.astimezone(zone), known.sunrise, known.sunset),
+            weather=known.weather,
+            sunrise=known.sunrise,
+            sunset=known.sunset,
+            timezone=zone_name,
+            sources=sources,
+            refresh=int(REFRESH.total_seconds()),
+        )
+
+    def _published(self, qualname: str, let: SignalLet, now: datetime) -> ThemeSignals | None:
+        """What `let` of module `qualname` publishes, read again once its interval has passed."""
+        key = f"{qualname}:{let.name}"
+        if (cached := self._read.get(key)) and now - cached[0] < let.every:
+            return cached[1]
+        published: ThemeSignals | None = None
+        operation = next((op for _, op in self._kernel.lets(OperationLet) if op.func is let.func), None)
+        try:
+            result = self._kernel.invoke(operation) if operation else None
+            published = ThemeSignals.model_validate(result.model_dump() if isinstance(result, ThemeSignals) else result)
+        except Exception:
+            logger.warning("Signals %s failed; its signals stay unknown until %s", key, let.every, exc_info=True)
+        self._read[key] = (now, published)
+        return published
+
     @staticmethod
     def _from_files(config: Config) -> str:
         """The name the configuration files set, a project file aside (it can't set it); the default otherwise."""
@@ -245,3 +316,28 @@ class ThemeService(ThemeFonts):
             if file.scope != "project":
                 name = str(Config(files=(), data=content).section(SECTION).get("name", name))
         return name
+
+
+def utc_now() -> datetime:
+    """Now, aware, in UTC; a seam tests replace."""
+    return datetime.now(UTC)
+
+
+def _zone() -> tuple[tzinfo, str]:
+    """The person's time zone (`[org] timezone`, which a project file can't set), else this machine's, and its name."""
+    name: object = os.environ.get("HZ_ORG__TIMEZONE")
+    if name is None:
+        try:
+            layers = Config.load().layers
+        except HeinzelError:
+            layers = ()
+        for file, content in layers:
+            if file.scope != "project":
+                name = Config(files=(), data=content).section("org").get("timezone", name)
+    if isinstance(name, str):
+        try:
+            return ZoneInfo(name), name
+        except (ZoneInfoNotFoundError, ValueError):
+            pass
+    local = datetime.now().astimezone().tzinfo or ZoneInfo("UTC")
+    return local, str(local)
