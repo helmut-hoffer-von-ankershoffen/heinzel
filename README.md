@@ -27,7 +27,7 @@
 | src/heinzel/modules/workflow/\_models.py             |      317 |        2 |       62 |        2 |     99% |74, 94, 427-\>425 |
 | src/heinzel/modules/workflow/\_render.py             |      121 |        8 |       50 |        3 |     91% |94, 110, 181-191 |
 | src/heinzel/modules/workflow/\_service.py            |      452 |        5 |      136 |        2 |     99% |283, 350-353, 441-442 |
-| **TOTAL**                                            | **6062** |   **62** | **1390** |   **26** | **99%** |           |
+| **TOTAL**                                            | **6155** |   **62** | **1422** |   **26** | **99%** |           |
 
 60 files skipped due to complete coverage.
 
