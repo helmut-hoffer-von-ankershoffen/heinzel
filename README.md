@@ -23,7 +23,7 @@
 | src/heinzel/modules/system/daemon/\_schedule.py      |       65 |        3 |       20 |        1 |     95% |43-44, 102 |
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py    |       26 |        2 |        0 |        0 |     92% |    36, 64 |
 | src/heinzel/modules/system/plugin/\_service.py       |      124 |        5 |       28 |        2 |     95% |38-\>40, 115-116, 122, 129, 222 |
-| **TOTAL**                                            | **2910** |   **56** |  **570** |   **14** | **98%** |           |
+| **TOTAL**                                            | **2924** |   **56** |  **574** |   **14** | **98%** |           |
 
 40 files skipped due to complete coverage.
 
