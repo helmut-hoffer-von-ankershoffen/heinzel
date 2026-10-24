@@ -7,6 +7,8 @@ itself imports only `pydantic_ai`, never a vendor SDK. `status` reads configurat
 request, capped at one request and a few output tokens.
 """
 
+import asyncio
+import concurrent.futures
 import importlib.util
 import os
 import time
@@ -147,11 +149,14 @@ class PydanticAiAccess:
 
             pydantic_ai.BANNER_ENABLED = False  # hz owns its output: stdout may be the MCP head's protocol
             agent = pydantic_ai.Agent(self._build(model, key), instructions=TEST_INSTRUCTIONS)
-            result = agent.run_sync(
+            run = agent.run(
                 "Are you there?",
                 model_settings={"max_tokens": TEST_OUTPUT_TOKENS},
                 usage_limits=UsageLimits(request_limit=1, output_tokens_limit=TEST_OUTPUT_TOKENS * 2),
             )
+            # Its own thread and event loop: a head may call this from a thread whose loop is already running.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                result = pool.submit(asyncio.run, run).result()
         except Exception as exc:  # noqa: BLE001 - a vendor's or the library's error is a failed check
             text = f"{type(exc).__name__}: {exc}"
             variable = VENDOR_KEYS.get(model.partition(":")[0])
