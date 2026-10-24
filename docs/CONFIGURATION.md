@@ -84,6 +84,12 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `skill_dirs` | `HZ_SYSTEM_AGENT__SKILL_DIRS` | platform-specific | Directories `hz system agent install` copies Heinzelmännchen's skills into, one per coding agent. |
 
+## `[system.changelog]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `github_token` | `HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN` | `None` | GitHub token for `hz system changelog --newer`, which works without one at a lower rate limit; also read from GH_TOKEN or GITHUB_TOKEN. Sent to api.github.com only; the hourly release check never sends it. |
+
 ## `[system.credential]`
 
 | Key | Environment variable | Default | Description |

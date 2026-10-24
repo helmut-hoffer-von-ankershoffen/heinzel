@@ -201,9 +201,11 @@ def test_changelog_starts_with_a_header_naming_the_newer_release_and_its_notes(a
 def fake_releases(monkeypatch, answer: object) -> list[str]:
     """The GitHub releases API answering `answer` (raising it if it is an exception); the suite stays offline."""
     asked: list[str] = []
+    for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
 
     def get_json(url, token, timeout):
-        assert (token, timeout) == (None, system_service.RELEASE_TIMEOUT)  # never a token (ADR 0031)
+        assert (token, timeout) == (None, system_service.RELEASE_TIMEOUT)  # no token unless one is set (ADR 0031)
         asked.append(url)
         if isinstance(answer, Exception):
             raise answer

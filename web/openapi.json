@@ -3496,17 +3496,17 @@
     },
     "/system/changelog": {
       "get": {
-        "description": "Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.\n\nOnly `--newer` uses the network: unauthenticated GETs to the GitHub releases API of the repository in the uv tool\nreceipt (or the default repository) with only a `heinzel/<version>` User-Agent (ADR 0031), a few pages at most.\n\nRaises:\n    HeinzelError: If the changelog is not part of this installation, or, with `--newer`, GitHub can't be asked.",
+        "description": "Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.\n\nOnly `--newer` uses the network: GETs to the GitHub releases API of the repository in the uv tool receipt (or the\ndefault repository) with a `heinzel/<version>` User-Agent (ADR 0031), a few pages at most, and the GitHub token\nof the settings (GH_TOKEN, GITHUB_TOKEN) if one is set; unauthenticated otherwise.\n\nRaises:\n    HeinzelError: If the changelog is not part of this installation, or, with `--newer`, GitHub can't be asked.",
         "operationId": "system_changelog",
         "parameters": [
           {
-            "description": "Show what the releases newer than the installed version bring instead, newest first; asks GitHub, anonymously. As JSON: a list of {version, date, notes, url}.",
+            "description": "Show what the releases newer than the installed version bring instead, newest first; asks GitHub, with GH_TOKEN or GITHUB_TOKEN if set. As JSON: a list of {version, date, notes, url}.",
             "in": "query",
             "name": "newer",
             "required": false,
             "schema": {
               "default": false,
-              "description": "Show what the releases newer than the installed version bring instead, newest first; asks GitHub, anonymously. As JSON: a list of {version, date, notes, url}.",
+              "description": "Show what the releases newer than the installed version bring instead, newest first; asks GitHub, with GH_TOKEN or GITHUB_TOKEN if set. As JSON: a list of {version, date, notes, url}.",
               "title": "Newer",
               "type": "boolean"
             }

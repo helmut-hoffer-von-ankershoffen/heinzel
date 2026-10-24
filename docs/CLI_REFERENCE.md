@@ -413,7 +413,7 @@ $ hz system changelog [OPTIONS]
 
 **Options**:
 
-* `--newer / --no-newer`: Show what the releases newer than the installed version bring instead, newest first; asks GitHub, anonymously. As JSON: a list of {version, date, notes, url}.  [default: no-newer]
+* `--newer / --no-newer`: Show what the releases newer than the installed version bring instead, newest first; asks GitHub, with GH_TOKEN or GITHUB_TOKEN if set. As JSON: a list of {version, date, notes, url}.  [default: no-newer]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

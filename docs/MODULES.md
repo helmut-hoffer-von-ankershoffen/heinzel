@@ -147,6 +147,8 @@ Release notes of the installed version and of newer releases.
 | --- | --- | --- | --- | --- | --- | --- |
 | Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring. | `hz system changelog` | `system_changelog` | `GET /system/changelog` | `GET /api/system/changelog` |  | expert |
 
+Settings: [`[system.changelog]`](CONFIGURATION.md#systemchangelog).
+
 ## `system.config`
 
 Show, get, set and initialize configuration.

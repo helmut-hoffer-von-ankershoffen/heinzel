@@ -115,8 +115,9 @@ export interface paths {
          * Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.
          * @description Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.
          *
-         *     Only `--newer` uses the network: unauthenticated GETs to the GitHub releases API of the repository in the uv tool
-         *     receipt (or the default repository) with only a `heinzel/<version>` User-Agent (ADR 0031), a few pages at most.
+         *     Only `--newer` uses the network: GETs to the GitHub releases API of the repository in the uv tool receipt (or the
+         *     default repository) with a `heinzel/<version>` User-Agent (ADR 0031), a few pages at most, and the GitHub token
+         *     of the settings (GH_TOKEN, GITHUB_TOKEN) if one is set; unauthenticated otherwise.
          *
          *     Raises:
          *         HeinzelError: If the changelog is not part of this installation, or, with `--newer`, GitHub can't be asked.
@@ -3045,7 +3046,7 @@ export interface operations {
     system_changelog: {
         parameters: {
             query?: {
-                /** @description Show what the releases newer than the installed version bring instead, newest first; asks GitHub, anonymously. As JSON: a list of {version, date, notes, url}. */
+                /** @description Show what the releases newer than the installed version bring instead, newest first; asks GitHub, with GH_TOKEN or GITHUB_TOKEN if set. As JSON: a list of {version, date, notes, url}. */
                 newer?: boolean;
             };
             header?: never;
