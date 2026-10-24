@@ -49,5 +49,5 @@ One JSON object per line, nothing else:
 
 The ledger is public. A paraphrase has at most 15 words, in your own words; never quote verbatim, never copy names
 of organisations, people, customers or internal projects, never paths of transcripts. Before you return, run
-`uv run python scripts/check_confidentiality.py --text '<your output>'` and rewrite any line it flags without
+`uv run --script scripts/check_confidentiality.py --text '<your output>'` and rewrite any line it flags without
 repeating the term.

@@ -38,24 +38,24 @@ repos:
         pass_filenames: false
       - id: confidentiality
         name: confidential terms
-        entry: uv run python scripts/check_confidentiality.py
+        entry: uv run --script scripts/check_confidentiality.py
         language: system
       - id: confidentiality-identity
         name: confidential terms in the author and committer
-        entry: uv run python scripts/check_confidentiality.py --identity
+        entry: uv run --script scripts/check_confidentiality.py --identity
         language: system
         pass_filenames: false
         always_run: true
       - id: confidentiality-branch
         name: confidential terms in the branch name
-        entry: uv run python scripts/check_confidentiality.py --branch
+        entry: uv run --script scripts/check_confidentiality.py --branch
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-push]
       - id: confidentiality-commit-msg
         name: confidential terms in the commit message
-        entry: uv run python scripts/check_confidentiality.py --commit-msg
+        entry: uv run --script scripts/check_confidentiality.py --commit-msg
         language: system
         stages: [commit-msg]
       - id: check-fast

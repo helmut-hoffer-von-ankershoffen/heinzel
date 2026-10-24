@@ -7,7 +7,12 @@
 - The badges between `<!-- badges:start -->` and `<!-- badges:end -->`: one set on every top-level page GitHub renders
   (BADGE_PAGES), and the same set for a plugin's own repository in the template's README.md and SECURITY.md.
 - docs/schemas/contract-frontmatter-1.json: the JSON Schema of workflow contract frontmatter (ADR 0021).
+
+Usage: uv run python scripts/generate_docs.py [--check]
 """
+
+# Project-bound: runs in the project environment (`uv run python`), not as an inline-metadata script, because it
+# imports heinzel and its modules to read their operations, settings and schemas.
 
 import importlib
 import json

@@ -32,7 +32,7 @@ paraphrases of at most 15 words, never quotes, names or transcript paths. Create
    `raise-the-bar` does.
 4. **Select.** Drop findings whose fingerprint is open in the ledger, whose class was rejected twice, that are
    Unconfirmed, or that match a `do_not_codify` correction. Keep at most five; at most two become pull requests.
-5. **Propose** (skipped on dry-run). Titles and bodies pass `uv run python scripts/check_confidentiality.py --text`.
+5. **Propose** (skipped on dry-run). Titles and bodies pass `uv run --script scripts/check_confidentiality.py --text`.
    - A finding with a failing check: in a fresh worktree from `origin/main`, apply skill `codify` (a plugin without
      it adds the check under `tests/unit/`), fix the violations, then `DRAFT=1 make pr TITLE="test(dx): ..."`. Label
      it `audit` and put the fingerprint in the body. Never enable auto-merge, never mark it ready.

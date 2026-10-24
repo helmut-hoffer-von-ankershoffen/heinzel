@@ -13,6 +13,6 @@
 
 Pin actions to full SHAs with the tag as a comment (`gh api repos/<o>/<r>/commits/<tag> --jq .sha`), `permissions: {}`
 at the top and least privilege per job, `persist-credentials: false`, untrusted `${{ }}` into `run:` only via `env:`.
-Run scripts through an interpreter (`bash scripts/x.sh`, `uv run python scripts/x.py`), never by path: plugins get them
+Run scripts through an interpreter (`bash scripts/x.sh`, `uv run --script scripts/x.py`), never by path: plugins get them
 without the executable bit. `make lint` runs actionlint and zizmor. Workflows shared with plugins are symlinked into
 `template/`; the template's `ci.yml` is generated from ours (`make fix`).
