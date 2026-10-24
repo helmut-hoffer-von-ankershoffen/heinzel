@@ -26,6 +26,8 @@ def render_installed(result: Installed) -> RenderableType:
         )
     verb = "Would run" if result.dry_run else "Installed"
     parts.append(Text(f"{verb} {result.executable} system daemon tick every {result.interval_minutes} minutes."))
+    if result.hint:
+        parts.append(Text(result.hint, style="yellow"))
     return Group(*parts)
 
 
