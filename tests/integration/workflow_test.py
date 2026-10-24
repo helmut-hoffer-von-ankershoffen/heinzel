@@ -95,12 +95,18 @@ def hz(kernel: Kernel, *args: str, json_output: bool = True) -> tuple[int, objec
         return result.exit_code, result.output
 
 
-def test_list_shows_the_contract_as_scheduled(kernel):
+def unwrapped(text: object) -> str:
+    """Terminal output without any whitespace: the test terminal is 80 columns wide and wraps paths and commands."""
+    return "".join(str(text).split())
+
+
+def test_list_shows_the_contract_as_scheduled_and_the_directories(kernel, contracts):
     code, listed = hz(kernel, "workflow", "list")
     assert code == 0
-    assert [(c["namespace"], c["name"], c["scheduled"], c["valid"]) for c in listed] == [
+    assert [(c["namespace"], c["name"], c["scheduled"], c["valid"]) for c in listed["contracts"]] == [
         ("me", "weekly-digest", True, True)
     ]
+    assert listed["directories"] == [{"namespace": "me", "path": str(contracts), "exists": True}]
 
 
 def test_list_in_a_terminal_shows_contracts_and_their_problems(kernel, contracts, make_kernel, tmp_path):
@@ -116,11 +122,115 @@ def test_list_in_a_terminal_shows_contracts_and_their_problems(kernel, contracts
     code, text = hz(kernel, "workflow", "show", "broken", json_output=False)
     assert code == 0
     assert "HZC001" in str(text)
-    empty = make_kernel(builtins=True, config=Config(files=(), data={"workflow": {"user_dir": str(tmp_path / "x")}}))
+
+
+def test_first_contact_says_what_a_contract_is_where_it_goes_and_what_to_run(make_kernel, tmp_path):
+    """The empty states of `list` and `check`: a new user learns the directory and the next command from them."""
+    missing = tmp_path / "x"
+    empty = make_kernel(builtins=True, config=Config(files=(), data={"workflow": {"user_dir": str(missing)}}))
     code, text = hz(empty, "workflow", "list", json_output=False)
-    assert "No contracts found" in str(text)
+    flat = unwrapped(text)
+    assert code == 0
+    assert "No contracts yet" in str(text)
+    assert "A contract is a <name>.prose.md file" in str(text)
+    assert str(missing) in flat
+    assert "doesnotexistyet" in flat
+    assert "hz workflow new my-first-workflow" in str(text)
+    assert "docs/WORKFLOWS.md" in flat
     code, text = hz(empty, "workflow", "check", json_output=False)
-    assert (code, "0 contract(s) checked" in str(text)) == (0, True)
+    assert (code, "No contracts to check" in str(text), "doesnotexistyet" in unwrapped(text)) == (0, True, True)
+    assert "hz workflow new my-first-workflow" in str(text)
+    code, listed = hz(empty, "workflow", "list")
+    assert listed == {
+        "directories": [{"namespace": "me", "path": str(missing), "exists": False}],
+        "contracts": [],
+        "next": [
+            {"command": "hz workflow new my-first-workflow", "why": "write a starter contract, with comments"},
+            {"command": "hz workflow check", "why": "every problem by file and line"},
+        ],
+    }
+
+
+def test_new_writes_a_valid_starter_that_shows_as_ready_and_dry_runs(make_kernel, tmp_path):
+    """Write my first contract, then try it without spending: on a fresh installation with only the runner bound."""
+    missing = tmp_path / "x"
+    config = Config(files=(), data={"capabilities": {"agent_runner": "fake"}, "workflow": {"user_dir": str(missing)}})
+    fresh = make_kernel(builtins=True, fakes=fakes(), config=config)
+    code, text = hz(fresh, "workflow", "new", "standup-notes", json_output=False)
+    flat = unwrapped(text)
+    assert code == 0, text
+    assert f"Wrote{missing / 'standup-notes.prose.md'}" in flat
+    for command in (
+        "hz workflow check --path",
+        "hz workflow show me:standup-notes",
+        "hz workflow run me:standup-notes --dry-run",
+        "hz workflow run me:standup-notes",
+    ):
+        assert unwrapped(command) in flat
+    code, report = hz(fresh, "workflow", "check")
+    assert (code, report["diagnostics"]) == (0, [])
+    code, shown = hz(fresh, "workflow", "show", "standup-notes")
+    assert (code, shown["ready"], shown["schedule"], shown["draft_count"]) == (0, True, None, 0)
+    assert shown["next"][0]["command"] == "hz workflow run me:standup-notes --dry-run"
+    code, text = hz(fresh, "workflow", "show", "standup-notes", json_output=False)
+    assert "Ready" in str(text)
+    assert "yes: every requirement is served" in str(text)
+    code, text = hz(fresh, "workflow", "run", "standup-notes", "--dry-run", json_output=False)
+    assert code == 0, text
+    assert "nothing was spent" in " ".join(str(text).split())
+    assert "hzworkflowrunme:standup-notes" in unwrapped(text)
+    code, text = hz(fresh, "workflow", "new", "standup-notes", json_output=False)
+    assert code == 1
+    assert "hz workflow new standup-notes-2" in str(text)
+    code, text = hz(fresh, "workflow", "new", "Standup Notes", json_output=False)
+    assert code == 1
+    assert "hz workflow new standup-notes" in str(text)
+
+
+def test_new_for_the_team_writes_into_the_repository_and_says_how_to_contribute(make_kernel, tmp_path):
+    user = tmp_path / "me"
+    team = tmp_path / "team"
+    team.mkdir()
+    without = make_kernel(builtins=True, config=Config(files=(), data={"workflow": {"user_dir": str(user)}}))
+    code, text = hz(without, "workflow", "new", "retro-agenda", "--team", json_output=False)
+    assert code == 1
+    assert "hz system config set workflow.team_repository /path/to/checkout" in str(text)
+    table = {"user_dir": str(user), "team_repository": str(team)}
+    kernel = make_kernel(builtins=True, config=Config(files=(), data={"workflow": table}))
+    code, result = hz(kernel, "workflow", "new", "retro-agenda", "--team")
+    assert code == 0, result
+    assert result["file"] == str(team / "workflows" / "retro-agenda.prose.md")
+    commands = [s["command"] for s in result["next"]]
+    assert f"git -C {team} add workflows/retro-agenda.prose.md" in commands
+    assert "hz system config set workflow.schedule_team '[\"retro-agenda\"]'" in commands
+    code, shown = hz(kernel, "workflow", "show", "team:retro-agenda")
+    assert (code, shown["namespace"], shown["scheduled"]) == (0, "team", False)
+    code, listed = hz(kernel, "workflow", "list")
+    assert [(d["namespace"], d["exists"]) for d in listed["directories"]] == [("team", True), ("me", False)]
+    assert listed["next"] == [{"command": "hz workflow show team:retro-agenda", "why": "is it ready?"}]
+    code, text = hz(kernel, "workflow", "list", json_output=False)
+    assert "hz workflow show team:retro-agenda" in str(text)
+
+
+def test_drafts_lists_what_runs_saved_and_shows_the_latest(kernel, tmp_path):
+    code, text = hz(kernel, "workflow", "drafts", json_output=False)
+    assert code == 0
+    assert "No drafts yet under" in str(text)
+    assert "hz workflow run <name>" in str(text)
+    assert hz(kernel, "workflow", "run", "weekly-digest")[0] == 0
+    code, listed = hz(kernel, "workflow", "drafts")
+    assert code == 0
+    assert [d["contract"] for d in listed["drafts"]] == ["me:weekly-digest"]
+    assert Path(listed["drafts"][0]["record"]).is_file()
+    assert listed["next"][0]["command"] == "hz workflow drafts --name me:weekly-digest --latest"
+    code, text = hz(kernel, "workflow", "drafts", "--name", "weekly-digest", "--latest", json_output=False)
+    assert code == 0
+    assert str(text).startswith("# Digest")
+    assert hz(kernel, "workflow", "drafts", "--name", "other")[1]["drafts"] == []
+    code, text = hz(kernel, "workflow", "run", "weekly-digest", json_output=False)
+    assert "hzworkflowdrafts--nameme:weekly-digest" in unwrapped(text)
+    response = TestClient(api.build(kernel), base_url="http://localhost").get("/workflow/drafts")
+    assert response.status_code == 404  # drafts hold fetched data; the CLI and MCP list them, not a local web server
 
 
 def test_show_reports_the_compiled_view(kernel):
@@ -281,7 +391,9 @@ def test_a_project_file_cant_point_discovery_at_its_own_contracts(make_kernel, t
         encoding="utf-8",
     )
     kernel = make_kernel(builtins=True, fakes=fakes(), config=Config.load(repository))
-    assert hz(kernel, "workflow", "list") == (0, [])
+    code, listed = hz(kernel, "workflow", "list")
+    assert (code, listed["contracts"]) == (0, [])
+    assert listed["directories"][0]["path"] == str(user / "workflows")
     assert hz(kernel, "system", "daemon", "jobs") == (0, [])
     _, report = hz(kernel, "system", "doctor")
     ignored = sorted(c["name"] for c in report["checks"]["system.doctor"] if c["name"].startswith("project setting"))
