@@ -30,6 +30,8 @@ MAX_ERROR_BYTES = 64 * 1024
 GRACE = 1.0
 """Seconds the pipes may stay open after gh exited, or after SIGTERM, before its process group is killed."""
 VERSION_TIMEOUT = 10.0
+MAX_HOSTS_LINES = 10_000
+"""Lines of gh's hosts file read for the login; a file with one login per host is a few lines each."""
 MINIMUM_VERSION = (2, 40, 0)
 """The gh release whose `gh api` flags (`--hostname`, `--method`, `--header`, `--raw-field`) the adapter relies on."""
 INSTALL = "https://cli.github.com"
@@ -224,9 +226,13 @@ class Gh:
         """
         path = self._require()
         if path not in self._versions:
-            done = self._execute(path, ["--version"], min(VERSION_TIMEOUT, self._settings.timeout))
+            limit = min(VERSION_TIMEOUT, self._settings.timeout)
+            done = self._execute(path, ["--version"], limit)
             if done.returncode is None:
-                msg = f"`{path} --version` did not answer within {VERSION_TIMEOUT:g} seconds; reinstall gh ({INSTALL})."
+                msg = f"`{path} --version` did not answer within {limit:g} seconds; reinstall gh ({INSTALL})."
+                raise HeinzelError(msg)
+            if done.returncode != 0:
+                msg = f"`{path} --version` failed (exit code {done.returncode}); reinstall gh ({INSTALL})."
                 raise HeinzelError(msg)
             found = parse_version(done.stdout.decode(errors="replace") + done.stderr)
             if found is not None and found < MINIMUM_VERSION:
@@ -244,10 +250,16 @@ class Gh:
         if any(os.environ.get(name) for name in _token_variables(host)):
             return True
         try:
-            text = hosts_file().read_text(encoding="utf-8", errors="replace")
+            with hosts_file().open(encoding="utf-8", errors="replace") as lines:
+                # Line by line, top-level keys only: a token gh stored here in plain text is never kept or matched.
+                for number, line in enumerate(lines):
+                    if number >= MAX_HOSTS_LINES:
+                        return False
+                    if (found := _HOST_KEY.match(line)) and found[1].lower() == host:
+                        return True
         except OSError:
             return False
-        return any((found := _HOST_KEY.match(line)) and found[1].lower() == host for line in text.splitlines())
+        return False
 
     def run(self, args: list[str], *, host: str, timeout: float) -> GhResult:
         """Run `gh <args>` for `host`; past `timeout` seconds, or past `MAX_BYTES` of output, it is stopped.

@@ -175,9 +175,9 @@ class FakeGhCli:
         self.routes["api"][f"{path}?page={page}"] = answer
         self._save()
 
-    def version(self, output: str, sleep: float = 0) -> None:
-        """What `gh --version` prints, after `sleep` seconds."""
-        self.routes["version"] = {"stdout": output, "sleep": sleep}
+    def version(self, output: str, sleep: float = 0, exit: int = 0) -> None:  # noqa: A002 - as in the routes
+        """What `gh --version` prints, after `sleep` seconds, and its exit code."""
+        self.routes["version"] = {"stdout": output, "sleep": sleep, "exit": exit}
         self._save()
 
     def login(self, *hosts: str) -> None:

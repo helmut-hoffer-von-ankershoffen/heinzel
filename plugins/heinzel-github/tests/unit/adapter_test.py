@@ -243,5 +243,6 @@ def test_the_configured_host_and_timeout_are_used(fake_gh):
     fake_gh.serve(ISSUES, [])
     adapter(fake_gh, host="GHE.example.com", timeout=5).issues_updated("acme/widgets", OCTOBER)
     call = fake_gh.calls[0]
-    assert (call.host, call.timeout) == ("ghe.example.com", 5)
+    assert call.host == "ghe.example.com"
+    assert 4.0 < call.timeout <= 5
     assert call.args[:3] == ["api", "--hostname", "ghe.example.com"]

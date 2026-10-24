@@ -19,7 +19,9 @@ gh auth login                           # or: gh auth login --hostname ghe.examp
 ```
 
 The adapter acts with whatever that login may do, which is usually more than reading; it only ever sends GET
-requests. If you stored a token for an earlier version, remove it:
+requests. As for any `gh` command, a `GH_TOKEN` or `GITHUB_TOKEN` (`GH_ENTERPRISE_TOKEN` for a GitHub Enterprise
+Server) in your environment takes precedence over the stored login: it is gh's own variable, passed to gh and never
+read by Heinzelmännchen. If you stored a token for an earlier version, remove it:
 `hz system credential remove github-token --service github` (or unset `HZ_CREDENTIAL_GITHUB_GITHUB_TOKEN`).
 
 Bind the adapter in your user configuration, never in a project `hz.toml`, which Heinzelmännchen ignores for bindings:
@@ -83,8 +85,9 @@ def merged(code_host: CodeHost, since: datetime, until: datetime) -> list[PullRe
 | `issues_updated(project, window)` | `tracker:read` | `repos/{owner}/{repo}/issues?state=all&since=...&sort=updated&direction=asc`, without pull requests |
 
 Repositories and projects are written `owner/repo`; windows are half-open `[since, until)` with timezone-aware times;
-results are oldest first. A call reads at most 100 pages of 100 (10,000 items), then fails and says what to ask for
-instead: merged pull requests page through every pull request updated since `since`, even after `until`, so they need
+results are oldest first. The adapter pages with the API's `page` and `per_page` parameters rather than
+`gh api --paginate`, so it can stop as soon as the window is covered. A call reads at most 100 pages of 100 (10,000
+items), 50 MiB in all and ten times `github.timeout`, then fails and says what to ask for instead: merged pull requests page through every pull request updated since `since`, even after `until`, so they need
 a window that starts more recently; issues stop at `until`, so they need a shorter window. Why the pulls list and not
 the search API: [ADR 0033](../../docs/adr/0033-github-rest-api-over-urllib.md); why `gh`:
 [ADR 0035](../../docs/adr/0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md).

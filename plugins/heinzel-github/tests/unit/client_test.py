@@ -1,5 +1,5 @@
 import pytest
-from heinzel_github import GhResult
+from heinzel_github import GhResult, _client
 from heinzel_github._client import MAX_PAGES, MAX_SAID, GhClient, redact, said
 
 from heinzel import HeinzelError
@@ -43,7 +43,8 @@ def test_gh_api_is_called_with_an_argument_list_naming_host_method_headers_and_r
         "--raw-field",
         "page=1",
     ]
-    assert (call.host, call.timeout) == ("github.com", 7.0)
+    assert call.host == "github.com"
+    assert 6.0 < call.timeout <= 7.0
 
 
 def test_a_full_page_asks_for_the_next_one(fake_gh):
@@ -98,6 +99,33 @@ def test_a_rate_limit_says_to_wait_and_how_to_see_the_reset(fake_gh, status):
     text = message(fake_gh)
     assert "rate limit is reached" in text
     assert "gh api rate_limit --hostname github.com" in text
+
+
+def test_the_status_is_gh_s_last_one_not_one_github_s_message_quotes(fake_gh):
+    stderr = "gh: says (HTTP 401)\nmore text\ngh: Not Found (HTTP 404)\n"
+    fake_gh.fail(PATH, 1, stderr, {"message": "says (HTTP 401)"})
+    assert f"GitHub has no {PATH}" in message(fake_gh)
+
+
+def test_a_whole_read_has_one_byte_budget(fake_gh, monkeypatch):
+    monkeypatch.setattr(_client, "MAX_READ_BYTES", 5000)
+    fake_gh.serve(PATH, *([{"id": i} for i in range(100)] for _ in range(5)))
+    with pytest.raises(HeinzelError, match="more than 5000 bytes in all; ask for a shorter window"):
+        items(fake_gh)
+
+
+def test_a_whole_read_has_one_deadline(fake_gh, monkeypatch):
+    monkeypatch.setattr(_client, "READ_TIMEOUTS", 0)
+    fake_gh.serve(PATH, [])
+    with pytest.raises(HeinzelError, match="took more than 0 seconds; ask for a shorter window"):
+        items(fake_gh)
+    assert fake_gh.calls == []
+
+
+def test_each_call_gets_at_most_what_is_left_of_the_read(fake_gh):
+    fake_gh.serve(PATH, [])
+    items(fake_gh)
+    assert 0 < fake_gh.calls[0].timeout <= 7.0
 
 
 def test_another_status_is_shown_with_githubs_message(fake_gh):

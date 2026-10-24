@@ -8,6 +8,7 @@ bidirectional characters, and only then cut to length, so a cut can never leave 
 import json
 import logging
 import re
+import time
 from collections.abc import Iterator, Mapping
 from typing import Any, cast
 
@@ -19,12 +20,16 @@ API_VERSION = "2022-11-28"
 PER_PAGE = 100
 MAX_PAGES = 100
 """Pages read for one call (10,000 items at 100 a page) before asking for a narrower window."""
+READ_TIMEOUTS = 10
+"""A whole read, all its pages, may take this many times `github.timeout`."""
+MAX_READ_BYTES = 50 * 1024 * 1024
+"""Bytes a whole read may answer with, all its pages."""
 MAX_SAID = 300
 """Characters of GitHub's or `gh`'s own error message shown, after redaction."""
 NOT_LOGGED_IN = 4
 """`gh`'s exit code when it has no login for the host."""
 _LOG = logging.getLogger(__name__)
-_STATUS = re.compile(r"\(HTTP (\d{3})\)")
+_STATUS = re.compile(r"\(HTTP (\d{3})\)\s*$", re.MULTILINE)
 # Prefixed tokens anywhere, also glued to other text; a classic 40-hex token only as a word of its own.
 _TOKEN = re.compile(r"(?:gh[opsur]_|github_pat_)[A-Za-z0-9_]{16,}|\b[0-9a-f]{40}\b")
 
@@ -66,15 +71,25 @@ class GhClient:
             HeinzelError: If `gh` is missing or not logged in, GitHub refuses, rate-limits or answers unexpectedly,
                 or there are more than `MAX_PAGES` pages.
         """
+        # One budget for the whole read, not only per call (ADR 0028's window rule, ADR 0035 statement 4).
+        deadline = time.monotonic() + self._timeout * READ_TIMEOUTS
+        read = 0
         for page in range(1, MAX_PAGES + 1):
-            items = self._list(path, {**params, "per_page": str(PER_PAGE), "page": str(page)})
+            if (left := deadline - time.monotonic()) <= 0:
+                msg = f"Reading {path} took more than {self._timeout * READ_TIMEOUTS:g} seconds; {too_many}."
+                raise HeinzelError(msg)
+            items, size = self._list(path, {**params, "per_page": str(PER_PAGE), "page": str(page)}, left)
+            read += size
+            if read > MAX_READ_BYTES:
+                msg = f"{path} answered with more than {MAX_READ_BYTES} bytes in all; {too_many}."
+                raise HeinzelError(msg)
             yield items
             if len(items) < PER_PAGE:
                 return
         msg = f"{path} has {MAX_PAGES} or more full pages of results; {too_many}."
         raise HeinzelError(msg)
 
-    def _list(self, path: str, params: Mapping[str, str]) -> list[dict[str, Any]]:
+    def _list(self, path: str, params: Mapping[str, str], left: float) -> tuple[list[dict[str, Any]], int]:
         args = [
             "api",
             "--hostname",
@@ -89,10 +104,11 @@ class GhClient:
         ]
         for key, value in params.items():
             args += ["--raw-field", f"{key}={value}"]  # raw: a value is never read as @file or a number
-        result = self._gh.run(args, host=self._host, timeout=self._timeout)
+        timeout = min(self._timeout, left)
+        result = self._gh.run(args, host=self._host, timeout=timeout)
         if result.returncode is None:
             msg = (
-                f"`gh api {path}` did not finish within {self._timeout:g} seconds; check the network, or allow more "
+                f"`gh api {path}` did not finish within {timeout:g} seconds; check the network, or allow more "
                 "time with `hz system config set github.timeout 120`."
             )
             raise HeinzelError(msg)
@@ -107,14 +123,15 @@ class GhClient:
                 f"GitHub answered {path} with something other than a list of objects; is {self._host} a GitHub server?"
             )
             raise HeinzelError(msg)
-        return cast("list[dict[str, Any]]", items)  # checked above
+        return cast("list[dict[str, Any]]", items), len(result.stdout)  # checked above
 
     def _problem(self, path: str, result: GhResult) -> str:  # noqa: PLR0911 - one message per kind of failure
         """What went wrong, for a person: GitHub's or `gh`'s words, redacted and cleaned, plus what to do."""
         host, stderr = self._host, result.stderr
         _LOG.debug("gh api %s failed (exit %s): %s", path, result.returncode, clean_text(redact(stderr[-2000:])))
-        found = _STATUS.search(stderr)
-        status = int(found.group(1)) if found else None
+        # gh's own line ends with the status; GitHub's message before it could quote one: take the last.
+        statuses = _STATUS.findall(stderr)
+        status = int(statuses[-1]) if statuses else None
         text = said(_message(result.stdout) or _first_line(stderr))
         # gh adds "Try authenticating with: gh auth login" to a 401 too: the status decides first.
         if status == 401:  # noqa: PLR2004 - Unauthorized

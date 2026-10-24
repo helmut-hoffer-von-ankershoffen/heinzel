@@ -1,6 +1,7 @@
 """The real `Gh` runner starting a fake `gh` executable: arguments, environment, deadline, bounds, version, login."""
 
 import json
+import os
 import signal
 import subprocess
 import time
@@ -64,9 +65,34 @@ def test_an_error_keeps_the_exit_code_stderr_and_body(fake_gh_cli):
 
 def test_gh_is_stopped_at_the_deadline(fake_gh_cli):
     fake_gh_cli.answer(PATH, stdout="[]", sleep=30)
+    started = time.monotonic()
     result = gh().run(call(), host="github.com", timeout=1)
     assert result.returncode is None
+    assert time.monotonic() - started < 1 + 2 * _gh.GRACE + 2
     assert fake_gh_cli.api_calls()  # it had started
+
+
+def test_a_gh_that_ignores_sigterm_is_killed(fake_gh_cli):
+    fake_gh_cli.answer(PATH, stdout="[]", sleep=30, trap=True)
+    started = time.monotonic()
+    assert gh().run(call(), host="github.com", timeout=1).returncode is None
+    assert time.monotonic() - started < 1 + 2 * _gh.GRACE + 2
+
+
+def test_what_gh_started_is_stopped_with_it(fake_gh_cli, tmp_path):
+    pid_file = tmp_path / "child.pid"
+    fake_gh_cli.answer(PATH, stdout="[]", sleep=30, child=str(pid_file))
+    assert gh().run(call(), host="github.com", timeout=1).returncode is None
+    pid = int(pid_file.read_text(encoding="utf-8"))
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"gh's child {pid} is still running")
 
 
 def test_gh_is_stopped_when_its_output_passes_the_cap(fake_gh_cli, monkeypatch):
@@ -127,6 +153,15 @@ def test_a_version_gh_does_not_name_is_not_held_against_it(fake_gh_cli):
     assert runner.run(call(), host="github.com", timeout=10).returncode == 0
 
 
+def test_a_version_command_that_fails_is_refused_not_cached(fake_gh_cli):
+    fake_gh_cli.version("", exit=1)
+    runner = gh()
+    with pytest.raises(HeinzelError, match=r"--version` failed \(exit code 1\)"):
+        runner.version()
+    fake_gh_cli.version("gh version 2.103.2\n")
+    assert runner.version() == (2, 103, 2)
+
+
 def test_a_version_that_does_not_come_is_a_clear_error(fake_gh_cli, monkeypatch):
     monkeypatch.setattr(_gh, "VERSION_TIMEOUT", 0.5)
     fake_gh_cli.version("gh version 2.103.2\n", sleep=30)
@@ -161,6 +196,12 @@ def test_the_login_comes_from_the_hosts_file_or_a_token_variable_gh_reads(fake_g
 
 
 def test_without_a_hosts_file_there_is_no_login(no_gh_login):
+    assert not gh().logged_in()
+
+
+def test_a_huge_hosts_file_is_not_read_to_the_end(fake_gh_cli, monkeypatch):
+    monkeypatch.setattr(_gh, "MAX_HOSTS_LINES", 3)
+    (fake_gh_cli.config / "hosts.yml").write_text("a.example.com:\n" * 5 + "github.com:\n", encoding="utf-8")
     assert not gh().logged_in()
 
 

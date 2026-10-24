@@ -177,12 +177,15 @@ def test_a_project_file_can_neither_bind_nor_redirect_gh(github_kernel, github, 
     monkeypatch.setenv("HZ_CONFIG_HOME", str(user))
     project = tmp_path / "project"
     project.mkdir()
-    (project / "hz.toml").write_text('[github]\nhost = "evil.example"\n', encoding="utf-8")
+    (project / "hz.toml").write_text(
+        '[github]\nhost = "evil.example"\ngh = "/tmp/evil/gh"\ntimeout = 600\n', encoding="utf-8"
+    )
     kernel = github_kernel(Config.load(project), digest=digest())
     assert hz(kernel, "digest", "issues", "acme/widgets", SINCE, UNTIL)[0] == 0
     assert all(c["env"]["GH_HOST"] == "github.com" for c in github.api_calls())
     code, report = hz(kernel, "system", "doctor")
     assert code == 0
     names = [c["name"] for c in report["checks"]["system.doctor"]]
-    assert "project setting github.host" in names
+    assert {"project setting github.host", "project setting github.gh", "project setting github.timeout"} <= set(names)
+    assert all(c["argv"][0] in {"--version", "api"} for c in github.calls())  # the fake on PATH ran, not /tmp/evil
     assert "evil.example" not in json.dumps(report["checks"]["system.doctor"])
