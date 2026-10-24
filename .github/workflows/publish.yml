@@ -60,4 +60,7 @@ jobs:
           BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         run: |
           cp "$BUNDLE" "dist/provenance.sigstore.json"
+          # The bundles' DSSE envelopes are the signed in-toto SLSA provenance on its own, the format OpenSSF
+          # Scorecard (Signed-Releases) and SLSA verifiers look for as *.intoto.jsonl.
+          jq -c .dsseEnvelope "$BUNDLE" > "dist/provenance.intoto.jsonl"
           gh release create "$TAG" dist/* --title "$TAG" --notes-file release-notes.md --verify-tag

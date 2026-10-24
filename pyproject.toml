@@ -56,12 +56,15 @@ test = [
     "heinzel-clock>=0.2.0", # the workspace member; the release process bumps the bound
     "coverage>=7.12",
     "httpx>=0.28",
+    "hypothesis>=6.140",
     "jsonschema>=4.26",
     "prek>=0.2",
     "pytest>=9.0.3,<10",
     "pytest-timeout>=2.4.0,<3",
     "pytest-xdist>=3.8",
 ]
+# Fuzzing the contract parser (`make fuzz`, weekly in CI); atheris ships wheels for Linux and Python 3.12 to 3.14.
+fuzz = ["atheris>=3.1; sys_platform == 'linux' and python_version < '3.15'"]
 dev = [
     { include-group = "test" },
     "actionlint-py>=1.7.12",
@@ -138,6 +141,9 @@ ignore = [
     "S607",    # tools (uv, git, make) are resolved from PATH on purpose
     "T201",    # hooks talk to the agent through stdout/stderr
 ]
+"fuzz/*.py" = [
+    "INP001",  # fuzz targets are scripts, not a package
+]
 "scripts/*.py" = [
     "INP001",  # scripts are not a package
     "T201",    # scripts report on stdout/stderr
@@ -172,6 +178,10 @@ enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 plugins = ["pydantic.mypy"]
 files = ["src", "packages/*/src"]
 
+[[tool.mypy.overrides]]
+module = ["atheris"] # no type information; installed only for `make fuzz` on Linux
+ignore_missing_imports = true
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true
@@ -181,7 +191,7 @@ warn_required_dynamic_aliases = true
 minversion = "9.0"
 strict = true
 testpaths = ["tests", "packages"]
-norecursedirs = ["tests/fixtures"]
+norecursedirs = ["tests/fixtures", ".hypothesis"]
 addopts = ["-ra", "--import-mode=importlib"]
 filterwarnings = ["error"]
 log_level = "INFO"
@@ -323,6 +333,11 @@ typeCheckingMode = "strict"
 pythonVersion = "3.12"
 venvPath = "."
 venv = ".venv"
+
+[tool.typos.default.extend-words] # in pyproject.toml, so plugins get them with the shared files
+CPY = "CPY" # ruff rule prefix (flake8-copyright)
+Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-contracts.md
+intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
 
 [tool.importlinter]
 root_packages = ["heinzel", "heinzel_clock"]

@@ -8,6 +8,7 @@
 | `release-tag.yml` | push to `main` of a release commit | tags it and calls `publish.yml` |
 | `publish.yml` | tags `v*`, called | builds, attests provenance, creates the GitHub release |
 | `codeql.yml`, `scorecard.yml` | `main`, PRs, weekly | code scanning and supply-chain checks |
+| `fuzz.yml` | PRs touching the contract parser, weekly, dispatch | fuzzes the workflow contract parser with atheris (`make fuzz`, core only) |
 | `claude-review.yml` | PRs, opt-in (`vars.CLAUDE_REVIEW`) | reviewer agents comment GO / NO-GO |
 | `demo.yml` | push to `main` touching the tape, README, `src/` or clock; dispatch | re-records `docs/assets/demo.gif` with VHS and opens the PR `docs: regenerate the demo` if it changed (core only: it runs `hz` commands) |
 
