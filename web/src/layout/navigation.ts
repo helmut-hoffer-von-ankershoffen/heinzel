@@ -1,4 +1,4 @@
-// The navigation tree: sections and their screens. Contracts add one entry each, from `hz workflow list`.
+// The navigation tree: sections and their screens. Contracts add one entry each, from `hz heinzel list`.
 // A screen names the operation it shows; outside expert mode only screens of everyday operations are listed, the
 // same split `hz --help` makes (ADR 0041). A screen that isn't listed still opens by its URL.
 import { Boxes, type LucideIcon, Network, Shapes, Share2, Users, Workflow } from "lucide-react";

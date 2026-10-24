@@ -21,7 +21,7 @@ hz system plugin add github --confirm                              # pull reques
 hz system config set capabilities.code_host github
 hz system config set capabilities.tracker github
 hz team new checkout --github acme-example/hz-team-checkout --roster github:acme-example/checkout --yes
-hz workflow new weekly-report --team                     # the team's first contract, a commented starter
+hz heinzel new weekly-report --team                     # the team's first contract, a commented starter
 ```
 
 `--yes` creates the private repository and pushes it; drop it to see the plan first (step 5). Now open
@@ -30,9 +30,9 @@ hz workflow new weekly-report --team                     # the team's first cont
 explains each key. Then:
 
 ```bash
-hz workflow check                                        # every problem by file and line
-hz workflow run team:weekly-report --dry-run             # what the agent would get; nothing is spent
-hz workflow run team:weekly-report                       # the first draft, a local file
+hz heinzel check                                        # every problem by file and line
+hz heinzel wake team:weekly-report --dry-run             # what the agent would get; nothing is spent
+hz heinzel wake team:weekly-report                       # the first draft, a local file
 hz system doctor
 ```
 
@@ -212,17 +212,17 @@ for someone. Details: [TEAMS: what your team recommends](../TEAMS.md#what-your-t
 ## 7. The first contract: this week's report
 
 A **contract** keeps one asset true, in a `<name>.prose.md` file: frontmatter says what it reads and when, the body
-what the draft must be ([WORKFLOWS](../WORKFLOWS.md)). A **playbook** is what a plugin brings so you don't start
+what the draft must be ([WORKFLOWS](../HEINZELMAENNCHEN.md)). A **playbook** is what a plugin brings so you don't start
 blank: asset types, hints to find yours, template contracts, recommended settings
 ([PLAYBOOKS](../PLAYBOOKS.md), [ADR 0037](../adr/0037-plugins-bring-playbooks.md)).
 
 ```bash
-hz workflow playbooks                        # what the installed plugins offer
-hz workflow discover                         # candidates for each asset type, through what you have bound
-hz workflow new weekly-report --template <module>:weekly-report --asset weekly-report=<document-ref>
+hz heinzel playbooks                        # what the installed plugins offer
+hz heinzel discover                         # candidates for each asset type, through what you have bound
+hz heinzel new weekly-report --template <module>:weekly-report --asset weekly-report=<document-ref>
 ```
 
-What you should see: a table per playbook (asset types, templates with the `hz workflow new <name> --template <module>:<template>` command
+What you should see: a table per playbook (asset types, templates with the `hz heinzel new <name> --template <module>:<template>` command
 that uses them, recommended settings "only if you agree"), then the path of the new contract and what to run next.
 No first-party plugin brings a playbook yet, so today `playbooks` says "No playbooks yet."; the reference company's
 weekly report is the first and is **coming in the next release**. Meanwhile start from the starter contract, which is
@@ -231,18 +231,18 @@ valid as written and commented. The commands below write and run a personal cont
 appears below, since a bare name that exists in both namespaces is an error that asks for `me:` or `team:`.
 
 ```bash
-hz workflow new weekly-report                # writes weekly-report.prose.md into your workflows directory
-hz workflow check                            # every problem by file and line; empty when all is well
-hz workflow show weekly-report               # what it requires, what is bound, whether it is ready, what to run next
+hz heinzel new weekly-report                # writes weekly-report.prose.md into your workflows directory
+hz heinzel check                            # every problem by file and line; empty when all is well
+hz heinzel show weekly-report               # what it requires, what is bound, whether it is ready, what to run next
 ```
 
 Uncomment the inputs you want (merged pull requests through `code-host`, changed items through `tracker`, last
 week's report through `documents`), write the Goal and Done-when sections, then:
 
 ```bash
-hz workflow run weekly-report --dry-run      # fetches the inputs and prints the packet; no agent runs, nothing spent
-hz workflow run weekly-report                # drafts it now, within `[workflow] max_usd` (1 USD by default)
-hz workflow drafts --name weekly-report --latest
+hz heinzel wake weekly-report --dry-run      # fetches the inputs and prints the packet; no agent runs, nothing spent
+hz heinzel wake weekly-report                # drafts it now, within `[heinzel] max_usd` (1 USD by default)
+hz heinzel drafts --name weekly-report --latest
 ```
 
 What you should see: the dry run prints the instructions and the inputs as the agent would get them; the run reports
@@ -254,7 +254,7 @@ runner (Claude Code by default) isn't found.
 at its first tick after, so schedule a little earlier to have it waiting at 17:00), then:
 
 ```bash
-hz workflow show weekly-report               # now names the daemon job, workflow:me-weekly-report
+hz heinzel show weekly-report               # now names the daemon job, workflow:me-weekly-report
 hz system daemon status                      # installed? If not:
 hz system daemon install                     # launchd or systemd runs `hz system daemon tick` every few minutes
 hz system daemon tick --job workflow:me-weekly-report   # run it once as the daemon would, with a receipt
@@ -275,9 +275,9 @@ Then tell hz what you sent, so the slice can prove itself after three Fridays
 ([INTENT: thin slice first](../../INTENT.md#where-we-are)):
 
 ```bash
-hz workflow sent weekly-report --file ~/reports/week-44.md --edit-minutes 10
-hz workflow sent weekly-report --ref <document-ref>       # or the approved version where it lives, through documents
-hz workflow show weekly-report                            # the Success test table
+hz heinzel sent weekly-report --file ~/reports/week-44.md --edit-minutes 10
+hz heinzel sent weekly-report --ref <document-ref>       # or the approved version where it lives, through documents
+hz heinzel show weekly-report                            # the Success test table
 ```
 
 What you should see: `sent` reports the share of words changed and both word counts; `show` gains a **Success test**
@@ -289,12 +289,12 @@ everyone's to run by hand and each person's to schedule, and it is what a joiner
 path wrote it there already; from a personal contract, do it now:
 
 ```bash
-hz workflow new weekly-report --team         # writes <checkout>/workflows/weekly-report.prose.md
-hz workflow show team:weekly-report          # prints its SHA-256; members pin it with `hz org sync --accept contract:weekly-report`
+hz heinzel new weekly-report --team         # writes <checkout>/workflows/weekly-report.prose.md
+hz heinzel show team:weekly-report          # prints its SHA-256; members pin it with `hz org sync --accept contract:weekly-report`
 ```
 
 Commit and push it (or open a pull request, when `main` is protected); the repository's Actions workflow runs
-`hz workflow check`. Add it to `recommend.contracts` (step 6) and `hz org sync` offers it to every member, pinned to
+`hz heinzel check`. Add it to `recommend.contracts` (step 6) and `hz org sync` offers it to every member, pinned to
 the content they read.
 
 ## 9. Invite the team: one line in chat
@@ -349,7 +349,7 @@ site that disagree while the team is silent, each with its fix. Your layer is th
 - Every command takes `--json`, and `hz system serve mcp` gives coding agents the same operations as MCP tools.
 - Expert mode: `hz expert on` is **coming in the next release**. By default `hz` will then show only the everyday
   commands (join, setup, ui, team show, org, workflow list/show/drafts/run, doctor, update), and expert mode the
-  rest. The manager's commands on this page beyond those (`hz team new` and `add`, `hz workflow new`, `playbooks`
+  rest. The manager's commands on this page beyond those (`hz team new` and `add`, `hz heinzel new`, `playbooks`
   and `discover`, `hz system plugin`, `config` and `daemon`) will need it once; today every command shows.
 - All commands: [CLI_REFERENCE](../CLI_REFERENCE.md); every setting: [CONFIGURATION](../CONFIGURATION.md); the
   decisions: [ADRs](../adr/README.md).

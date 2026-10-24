@@ -25,7 +25,7 @@
             }
           ],
           "default": null,
-          "description": "Most one run may cost in US dollars; your `[workflow] max_usd` caps it whatever it says.",
+          "description": "Most one run may cost in US dollars; your `[heinzel] max_usd` caps it whatever it says.",
           "title": "Max Usd"
         }
       },
@@ -66,7 +66,7 @@
             }
           ],
           "default": null,
-          "description": "When the daemon runs it: five cron fields in local time, e.g. `0 7 * * MON`. Without one it runs only with `hz workflow run`.",
+          "description": "When the daemon runs it: five cron fields in local time, e.g. `0 7 * * MON`. Without one it runs only with `hz heinzel wake`.",
           "title": "Schedule"
         },
         "requires": {

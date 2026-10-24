@@ -8,22 +8,22 @@ from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
-from heinzel.modules.workflow._measure import Measurements, Sent
-from heinzel.modules.workflow._models import (
+from heinzel.modules.heinzel._measure import Measurements, Sent
+from heinzel.modules.heinzel._models import (
     GUIDE,
     CheckReport,
     CompiledContract,
     ContractGraph,
-    ContractList,
     Diagnostic,
     Directory,
     DraftList,
+    HeinzelList,
     NewContract,
     PruneReport,
     RunResult,
     Step,
 )
-from heinzel.modules.workflow._playbooks import Discovery, PlaybookList
+from heinzel.modules.heinzel._playbooks import Discovery, PlaybookList
 
 WHAT_A_CONTRACT_IS = (
     "A contract is a <name>.prose.md file: YAML frontmatter says what it reads and when it runs, and a Markdown body "
@@ -32,29 +32,34 @@ WHAT_A_CONTRACT_IS = (
 )
 
 
-def render_list(listing: ContractList) -> RenderableType:
-    """One row per contract: where it is from, its schedule and whether it is valid and scheduled."""
-    if not listing.contracts:
+STATE_STYLE = {"scheduled": "green", "manual": "", "blocked": "yellow", "broken": "red"}
+
+
+def render_list(listing: HeinzelList) -> RenderableType:
+    """One row per Heinzelmännchen: its contract, owner, state, and its last and next run."""
+    if not listing.heinzelmaennchen:
+        if listing.filtered:
+            return Group(Text("No Heinzelmännchen match the filters.\n", style="bold"), _next(listing.next))
         return Group(
-            Text("No contracts yet.\n", style="bold"),
+            Text("No Heinzelmännchen yet.\n", style="bold"),
             Text(WHAT_A_CONTRACT_IS + "\n"),
             _directories("Searched", listing.directories),
             _next(listing.next),
             Text(f"Guide: {GUIDE}"),
         )
-    table = Table(title="Workflow contracts")
-    for column in ("Contract", "Title", "Schedule", "Daemon", "Problems"):
+    table = Table(title="Your Heinzelmännchen")
+    for column in ("Heinzelmännchen", "Owner", "State", "Last run", "Next run"):
         table.add_column(column, overflow="fold")
-    for contract in listing.contracts:
-        problems = f"{contract.errors} error(s)" if contract.errors else ""
-        if contract.warnings:
-            problems = ", ".join(filter(None, [problems, f"{contract.warnings} warning(s)"]))
+    for heinzel in listing.heinzelmaennchen:
+        detail = [f"{heinzel.errors} error(s)"] if heinzel.errors else list(heinzel.unmet)
+        state = heinzel.state + (f" ({', '.join(detail)})" if detail else "")
+        style = STATE_STYLE[heinzel.state]
         table.add_row(
-            escape(f"{contract.namespace}:{contract.name}"),
-            escape(contract.title or "-"),
-            escape(contract.schedule or "by hand"),
-            "scheduled" if contract.scheduled else "-",
-            f"[red]{problems}[/red]" if contract.errors else problems,
+            escape(f"{heinzel.namespace}:{heinzel.name}") + (f"\n{escape(heinzel.title)}" if heinzel.title else ""),
+            "team" if heinzel.namespace == "team" else "you",
+            f"[{style}]{escape(state)}[/{style}]" if style else escape(state),
+            f"{heinzel.last_run:%Y-%m-%d %H:%M}" if heinzel.last_run else "never",
+            f"{heinzel.next_run:%Y-%m-%d %H:%M}" if heinzel.next_run else escape(heinzel.schedule or "when woken"),
         )
     return Group(table, _directories("Directories", listing.directories), _next(listing.next))
 
@@ -65,7 +70,7 @@ def _directories(title: str, directories: list[Directory]) -> Table:
     grid.add_column()
     grid.add_column(overflow="fold")
     for directory in directories:
-        note = "" if directory.exists else "(does not exist yet; `hz workflow new <name>` creates it)"
+        note = "" if directory.exists else "(does not exist yet; `hz heinzel new <name>` creates it)"
         grid.add_row(
             title if directory is directories[0] else "", directory.namespace, Text(f"{directory.path} {note}")
         )
@@ -95,7 +100,7 @@ def render_show(contract: CompiledContract) -> RenderableType:
     overview.add_row("Ready", _ready(contract))
     overview.add_row("SHA-256", contract.sha256)
     if contract.approve:
-        overview.add_row("Approve", escape(f'[workflow] schedule_team = ["{contract.approve}"]'))
+        overview.add_row("Approve", escape(f'[heinzel] schedule_team = ["{contract.approve}"]'))
     parts: list[RenderableType] = [overview]
     if contract.requirements:
         parts.append(_requirements(contract))
@@ -161,7 +166,7 @@ def _measurements(measurements: Measurements, qualified: str) -> RenderableType:
     if measurements.mean_changed is not None:
         parts.append(f"{measurements.sent} sent, {measurements.mean_changed:.0%} of words changed on average")
     else:
-        parts.append(f"none sent yet: `hz workflow sent {qualified} --file <what you sent>` records it")
+        parts.append(f"none sent yet: `hz heinzel sent {qualified} --file <what you sent>` records it")
     if measurements.total_edit_minutes is not None:
         parts.append(f"{measurements.total_edit_minutes:g} min editing in all")
     return Group(table, Text("; ".join(parts)))
@@ -181,7 +186,7 @@ def render_check(report: CheckReport) -> RenderableType:
         return Group(
             Text("No contracts to check.", style="bold"),
             _directories("Searched", report.searched),
-            _next([Step(command="hz workflow new my-first-workflow", why="write a starter contract, with comments")]),
+            _next([Step(command="hz heinzel new my-first-heinzel", why="write a starter contract, with comments")]),
         )
     summary = Text(
         f"{len(report.files)} contract(s) checked: {errors} error(s), {len(report.diagnostics) - errors} warning(s)",
@@ -197,7 +202,7 @@ def render_new(result: NewContract) -> RenderableType:
     elif result.unfilled:
         note = (
             f"From {result.template}. Fill the placeholders left ({', '.join(result.unfilled)}) where it says "
-            "{{asset:...}}; `hz workflow check` lists them. It has no schedule until you add one."
+            "{{asset:...}}; `hz heinzel check` lists them. It has no schedule until you add one."
         )
     else:
         note = f"From {result.template}, with every asset filled in. It has no schedule until you add one."
@@ -219,7 +224,7 @@ def render_sent(result: Sent) -> RenderableType:
             style="bold",
         ),
         Text(f"Draft: {result.draft}\nRecorded: {result.record} (the sent text isn't copied, only its hash)"),
-        _next([Step(command=f"hz workflow show {result.contract}", why="drafting time and changes across the weeks")]),
+        _next([Step(command=f"hz heinzel show {result.contract}", why="drafting time and changes across the weeks")]),
     )
 
 
@@ -331,7 +336,7 @@ def render_run(result: RunResult) -> RenderableType:
 def render_prune(report: PruneReport) -> RenderableType:
     """What was deleted, or would be in a dry run, with the cutoff; that nothing is when drafts are kept forever."""
     if report.cutoff is None:
-        return Group(Text("Drafts and records are kept forever ([workflow] retention_days = 0).\n"), _next(report.next))
+        return Group(Text("Drafts and records are kept forever ([heinzel] retention_days = 0).\n"), _next(report.next))
     verb = "Would delete" if report.dry_run else "Deleted"
     summary = Text(
         f"{verb} {report.drafts} draft(s) and {report.records} record(s), {report.bytes} bytes, rendered before "

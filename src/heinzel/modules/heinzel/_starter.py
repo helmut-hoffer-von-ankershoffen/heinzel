@@ -1,4 +1,4 @@
-"""The starter contract `hz workflow new` writes: valid as written, with comments saying what each part is for.
+"""The starter contract `hz heinzel new` writes: valid as written, with comments saying what each part is for.
 
 It declares no inputs, so it checks and dry-runs on a fresh installation, where only the agent runner is bound; the
 inputs, requirements and publishes are commented examples. The schedule is commented out too: a contract written
@@ -8,7 +8,7 @@ through any head never schedules a daemon job by itself.
 import re
 
 from heinzel.kernel import ContractTemplate
-from heinzel.modules.workflow._models import GUIDE, NAME, SUFFIX
+from heinzel.modules.heinzel._models import GUIDE, NAME, SUFFIX
 
 MAX_NAME = 64
 """The frontmatter's limit on a name's length."""
@@ -42,8 +42,8 @@ def starter(name: str, namespace: str = "me") -> str:
 # A contract keeps one thing true: "keep this asset (the output) true, given these inputs".
 # This YAML frontmatter says what it reads and when it runs; the Markdown body says what the
 # asset must be. There are no workflow files: contracts that read each other's outputs make
-# the workflow, and `hz workflow graph` draws it. Lines starting with # are comments.
-# `hz workflow check` lists every problem by file and line. The guide: {GUIDE}
+# the workflow, and `hz heinzel graph` draws it. Lines starting with # are comments.
+# `hz heinzel check` lists every problem by file and line. The guide: {GUIDE}
 name: {name}
 kind: responsibility
 version: 0.1.0
@@ -54,7 +54,7 @@ hz:
   # Shown in lists and as the daemon job's summary; at most 80 characters.
   title: {title}
   # When your daemon runs it: five cron fields in local time. Without a schedule it runs
-  # only by hand (`hz workflow run {name}`). Uncomment once you like the drafts:
+  # only by hand (`hz heinzel wake {name}`). Uncomment once you like the drafts:
   # schedule: "0 7 * * MON"
   # The capabilities it reads, never vendors: configuration binds an adapter to each
   # (`hz system capability list`). Every input below needs its capability here.
@@ -80,7 +80,7 @@ hz:
   #   - action: notes.publish
   #     output: draft
   agent:
-    # The most one run may cost; your `[workflow] max_usd` caps it whatever it says.
+    # The most one run may cost; your `[heinzel] max_usd` caps it whatever it says.
     max_usd: 0.5
   # How long the agent session may take, at most 2h.
   timeout: 10m

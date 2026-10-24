@@ -35,7 +35,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
-| [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
+| [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz heinzel new` starts one). |
 | [`zoom`](#zoom) | Read meetings from Zoom's meeting-summary emails: the meetings capability. |
 
 ## `ai`
@@ -377,7 +377,7 @@ Your team's repository: create one (`hz team new`), join one by its URL (`hz tea
 | Clone a team repository with your own access, find you in its roster, and make it your team. | `hz team join` | `team_join` | — | — | yes |  |
 | Add someone to your team's roster, as one of its owners: a pull request the other owners see. | `hz team add` | `team_add` | — | — | yes |  |
 | Show your team: its repository, checkout and members, and what is wrong with them. | `hz team show` | `team_show` | `GET /team/show` | `GET /api/team/show` |  |  |
-| Make an existing checkout your team repository; replaces the deprecated `workflow.team_repository`. | `hz team adopt` | `team_adopt` | — | — | yes | expert |
+| Make an existing checkout your team repository; replaces the deprecated `heinzel.team_repository`. | `hz team adopt` | `team_adopt` | — | — | yes | expert |
 
 Settings: [`[team]`](CONFIGURATION.md#team).
 
@@ -385,23 +385,23 @@ Health checks: reported by `hz system doctor`.
 
 ## `workflow`
 
-Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one).
+Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz heinzel new` starts one).
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| List the contracts in your and your team's workflows directories, with their schedule and problems. | `hz workflow list` | `workflow_list` | `GET /workflow/list` | `GET /api/workflow/list` |  |  |
-| Write a starter contract, or a playbook's template (--template), into your workflows directory. | `hz workflow new` | `workflow_new` | — | — | yes |  |
-| List the playbooks plugins contribute: asset types, template contracts and recommended settings. | `hz workflow playbooks` | `workflow_playbooks` | `GET /workflow/playbooks` | `GET /api/workflow/playbooks` |  | expert |
-| Find candidates for each playbook's asset types through the capabilities you have bound; reads only. | `hz workflow discover` | `workflow_discover` | — | `GET /api/workflow/discover` |  | expert |
-| Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps. | `hz workflow show` | `workflow_show` | `GET /workflow/show` | `GET /api/workflow/show` |  |  |
-| List the drafts runs saved locally, newest first, with their paths and records, or show the newest. | `hz workflow drafts` | `workflow_drafts` | — | — |  |  |
-| Record how much of a draft you changed before sending it; `hz workflow show` reports it. | `hz workflow sent` | `workflow_sent` | — | — | yes | expert |
-| Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs. | `hz workflow graph` | `workflow_graph` | `GET /workflow/graph` | `GET /api/workflow/graph` |  | expert |
-| Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate. | `hz workflow check` | `workflow_check` | `GET /workflow/check` | `GET /api/workflow/check` |  | expert |
-| Render a contract now: fetch its inputs, run the agent and save the draft; nothing is published. | `hz workflow run` | `workflow_run` | — | — | yes |  |
-| Delete drafts and records older than `[workflow] retention_days` (default 90); receipts are kept. | `hz workflow prune` | `workflow_prune` | — | — | yes | expert |
+| List the contracts in your and your team's workflows directories, with their schedule and problems. | `hz heinzel list` | `heinzel_list` | `GET /workflow/list` | `GET /api/workflow/list` |  |  |
+| Write a starter contract, or a playbook's template (--template), into your workflows directory. | `hz heinzel new` | `heinzel_new` | — | — | yes |  |
+| List the playbooks plugins contribute: asset types, template contracts and recommended settings. | `hz heinzel playbooks` | `heinzel_playbooks` | `GET /workflow/playbooks` | `GET /api/workflow/playbooks` |  | expert |
+| Find candidates for each playbook's asset types through the capabilities you have bound; reads only. | `hz heinzel discover` | `heinzel_discover` | — | `GET /api/workflow/discover` |  | expert |
+| Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps. | `hz heinzel show` | `heinzel_show` | `GET /workflow/show` | `GET /api/workflow/show` |  |  |
+| List the drafts runs saved locally, newest first, with their paths and records, or show the newest. | `hz drafts` | `drafts` | — | — |  |  |
+| Record how much of a draft you changed before sending it; `hz heinzel show` reports it. | `hz heinzel sent` | `heinzel_sent` | — | — | yes | expert |
+| Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs. | `hz heinzel graph` | `heinzel_graph` | `GET /workflow/graph` | `GET /api/workflow/graph` |  | expert |
+| Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate. | `hz heinzel check` | `heinzel_check` | `GET /workflow/check` | `GET /api/workflow/check` |  | expert |
+| Render a contract now: fetch its inputs, run the agent and save the draft; nothing is published. | `hz heinzel wake` | `heinzel_wake` | — | — | yes |  |
+| Delete drafts and records older than `[heinzel] retention_days` (default 90); receipts are kept. | `hz heinzel prune` | `heinzel_prune` | — | — | yes | expert |
 
-Settings: [`[workflow]`](CONFIGURATION.md#workflow).
+Settings: [`[heinzel]`](CONFIGURATION.md#workflow).
 
 Health checks: reported by `hz system doctor`.
 

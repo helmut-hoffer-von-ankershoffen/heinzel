@@ -2053,7 +2053,7 @@ $ hz team add [OPTIONS] {handle}
 
 ### `hz team adopt`
 
-(expert) Make an existing checkout your team repository; replaces the deprecated `workflow.team_repository`.
+(expert) Make an existing checkout your team repository; replaces the deprecated `heinzel.team_repository`.
 
 **Usage**:
 
@@ -2156,14 +2156,14 @@ $ hz ui [OPTIONS]
 * `--revoke <str>`: Unpair a device by its id from --devices, or `all`, then stop.
 * `--help`: Show this message and exit.
 
-## `hz workflow`
+## `hz heinzel`
 
-Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon&#x27;s schedule (`hz workflow new` starts one).
+Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon&#x27;s schedule (`hz heinzel new` starts one).
 
 **Usage**:
 
 ```console
-$ hz workflow [OPTIONS] COMMAND [ARGS]...
+$ hz heinzel [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Options**:
@@ -2184,14 +2184,14 @@ $ hz workflow [OPTIONS] COMMAND [ARGS]...
 * `sent`: (expert) Record how much of a draft you...
 * `show`: Show a contract as the daemon runs it:...
 
-### `hz workflow check`
+### `hz heinzel check`
 
 (expert) Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
 
 **Usage**:
 
 ```console
-$ hz workflow check [OPTIONS]
+$ hz heinzel check [OPTIONS]
 ```
 
 **Options**:
@@ -2201,14 +2201,14 @@ $ hz workflow check [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz workflow discover`
+### `hz heinzel discover`
 
 (expert) Find candidates for each playbook&#x27;s asset types through the capabilities you have bound; reads only.
 
 **Usage**:
 
 ```console
-$ hz workflow discover [OPTIONS]
+$ hz heinzel discover [OPTIONS]
 ```
 
 **Options**:
@@ -2218,14 +2218,14 @@ $ hz workflow discover [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz workflow drafts`
+### `hz drafts`
 
 List the drafts runs saved locally, newest first, with their paths and records, or show the newest.
 
 **Usage**:
 
 ```console
-$ hz workflow drafts [OPTIONS]
+$ hz drafts [OPTIONS]
 ```
 
 **Options**:
@@ -2236,14 +2236,14 @@ $ hz workflow drafts [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz workflow graph`
+### `hz heinzel graph`
 
 (expert) Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
 
 **Usage**:
 
 ```console
-$ hz workflow graph [OPTIONS]
+$ hz heinzel graph [OPTIONS]
 ```
 
 **Options**:
@@ -2253,14 +2253,14 @@ $ hz workflow graph [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz workflow list`
+### `hz heinzel list`
 
 List the contracts in your and your team&#x27;s workflows directories, with their schedule and problems.
 
 **Usage**:
 
 ```console
-$ hz workflow list [OPTIONS]
+$ hz heinzel list [OPTIONS]
 ```
 
 **Options**:
@@ -2269,14 +2269,14 @@ $ hz workflow list [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz workflow new`
+### `hz heinzel new`
 
 Write a starter contract, or a playbook&#x27;s template (--template), into your workflows directory.
 
 **Usage**:
 
 ```console
-$ hz workflow new [OPTIONS] {name}
+$ hz heinzel new [OPTIONS] {name}
 ```
 
 **Arguments**:
@@ -2286,20 +2286,20 @@ $ hz workflow new [OPTIONS] {name}
 **Options**:
 
 * `--team / --no-team`: Write it into the team repository&#x27;s workflows/ instead of your own directory.  [default: no-team]
-* `--template <str>`: Start from a playbook&#x27;s template contract, `&lt;module&gt;:&lt;name&gt;` (`hz workflow playbooks` lists them), instead of the blank starter.
-* `--asset <str>`: Fill a template&#x27;s asset placeholder as type=reference, e.g. weekly-report=doc-123 (`hz workflow discover` finds candidates); repeat for each.
+* `--template <str>`: Start from a playbook&#x27;s template contract, `&lt;module&gt;:&lt;name&gt;` (`hz heinzel playbooks` lists them), instead of the blank starter.
+* `--asset <str>`: Fill a template&#x27;s asset placeholder as type=reference, e.g. weekly-report=doc-123 (`hz heinzel discover` finds candidates); repeat for each.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz workflow playbooks`
+### `hz heinzel playbooks`
 
 (expert) List the playbooks plugins contribute: asset types, template contracts and recommended settings.
 
 **Usage**:
 
 ```console
-$ hz workflow playbooks [OPTIONS]
+$ hz heinzel playbooks [OPTIONS]
 ```
 
 **Options**:
@@ -2308,14 +2308,14 @@ $ hz workflow playbooks [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz workflow prune`
+### `hz heinzel prune`
 
 (expert) Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
 
 **Usage**:
 
 ```console
-$ hz workflow prune [OPTIONS]
+$ hz heinzel prune [OPTIONS]
 ```
 
 **Options**:
@@ -2325,14 +2325,14 @@ $ hz workflow prune [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz workflow run`
+### `hz heinzel wake`
 
 Render a contract now: fetch its inputs, run the agent and save the draft; nothing is published.
 
 **Usage**:
 
 ```console
-$ hz workflow run [OPTIONS] {name}
+$ hz heinzel wake [OPTIONS] {name}
 ```
 
 **Arguments**:
@@ -2346,14 +2346,14 @@ $ hz workflow run [OPTIONS] {name}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz workflow sent`
+### `hz heinzel sent`
 
-(expert) Record how much of a draft you changed before sending it; `hz workflow show` reports it.
+(expert) Record how much of a draft you changed before sending it; `hz heinzel show` reports it.
 
 **Usage**:
 
 ```console
-$ hz workflow sent [OPTIONS] {name}
+$ hz heinzel sent [OPTIONS] {name}
 ```
 
 **Arguments**:
@@ -2370,14 +2370,14 @@ $ hz workflow sent [OPTIONS] {name}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
-### `hz workflow show`
+### `hz heinzel show`
 
 Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
 
 **Usage**:
 
 ```console
-$ hz workflow show [OPTIONS] {name}
+$ hz heinzel show [OPTIONS] {name}
 ```
 
 **Arguments**:

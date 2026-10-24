@@ -154,7 +154,7 @@ export function buildWorkflow({
     const to = graphIds.get(item.target);
     if (from && to) edge(from, to, item.kind, false, item.input ?? undefined);
   }
-  // Contracts `hz workflow list` has and the graph lacks (one with errors, say) still belong on it.
+  // Contracts `hz heinzel list` has and the graph lacks (one with errors, say) still belong on it.
   for (const [qualified, summary] of summaries) {
     const id = `contract:${qualified}`;
     if (!nodes.has(id)) {

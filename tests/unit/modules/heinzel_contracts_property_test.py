@@ -12,7 +12,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from heinzel.modules.workflow._contracts import CONTROLS, MAX_DEPTH, read_contract
+from heinzel.modules.heinzel._contracts import CONTROLS, MAX_DEPTH, read_contract
 
 pytestmark = pytest.mark.unit
 

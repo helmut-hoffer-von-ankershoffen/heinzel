@@ -2,11 +2,11 @@
 
 A **contract** keeps one thing true: "keep this asset true, given these inputs". It is a `<name>.prose.md` file whose
 YAML frontmatter says what it reads and when it runs, and whose Markdown body says what the asset must be. You write
-it, `hz workflow check` checks it, `hz workflow run` drafts it, and your daemon drafts it on its schedule. Drafts are
+it, `hz heinzel check` checks it, `hz heinzel wake` drafts it, and your daemon drafts it on its schedule. Drafts are
 saved locally; nothing is published by itself.
 
 There are no workflow files. A **workflow** is what your contracts make together: a contract that reads another's
-output depends on it, and `hz workflow graph` draws the graph those inputs and outputs form. To add a step, add a
+output depends on it, and `hz heinzel graph` draws the graph those inputs and outputs form. To add a step, add a
 contract. A contract runs on its schedule or when you run it; later, also when one of its inputs changes.
 
 This page is the journey from nothing to a scheduled contract, then the reference. The decisions behind it are in
@@ -17,15 +17,15 @@ every setting in [CONFIGURATION.md](CONFIGURATION.md#workflow).
 
 ```mermaid
 flowchart LR
-    You(["you, or your team's repository"]) -- "<name>.prose.md" --> Check["hz workflow check"]
-    Check --> Run["hz workflow run<br/>or the daemon on its schedule"]
+    You(["you, or your team's repository"]) -- "<name>.prose.md" --> Check["hz heinzel check"]
+    Check --> Run["hz heinzel wake<br/>or the daemon on its schedule"]
     Run -- "inputs, through capabilities" --> Agent["one bounded agent session<br/>(no hz tools)"]
-    Agent -- "draft + .record.json" --> Drafts["hz workflow drafts"]
+    Agent -- "draft + .record.json" --> Drafts["hz heinzel drafts"]
     Drafts -. "hz inbox (later)" .-> Publish["publish operation"]
 ```
 
 1. **Found**: contracts are read from your workflows directory (`me`) and, when configured, from `workflows/` in a
-   checkout of your team's state repository (`team`). `hz workflow list` shows both directories.
+   checkout of your team's state repository (`team`). `hz heinzel list` shows both directories.
 2. **Checked**: the frontmatter against the schema, the body against the required sections, and both against the
    installed modules. Every problem has a file, a line, a stable `HZC` code and a hint.
 3. **Rendered**: the inputs are fetched through the capabilities the contract names (never vendors; configuration binds
@@ -40,14 +40,14 @@ flowchart LR
 ### First contact
 
 ```bash
-hz workflow list      # what a contract is, the directories searched (and whether they exist yet), what to run
-hz workflow check     # every problem by file and line; the same empty state when there is nothing yet
+hz heinzel list      # what a contract is, the directories searched (and whether they exist yet), what to run
+hz heinzel check     # every problem by file and line; the same empty state when there is nothing yet
 ```
 
 ### Write your first contract
 
 ```bash
-hz workflow new weekly-digest
+hz heinzel new weekly-digest
 ```
 
 This writes `weekly-digest.prose.md` into your workflows directory (creating it) and prints what to do next. The
@@ -56,33 +56,33 @@ checks and dry-runs on a fresh installation, where only the agent runner is boun
 the schedule are commented examples to uncomment as you go. A name must be lowercase words joined by dashes; the
 error for anything else shows the name that works.
 
-To start from a complete contract instead, use a plugin's **playbook**: `hz workflow playbooks` lists the template
-contracts installed plugins offer, and `hz workflow new <name> --template <plugin>:<template>` writes one. The
+To start from a complete contract instead, use a plugin's **playbook**: `hz heinzel playbooks` lists the template
+contracts installed plugins offer, and `hz heinzel new <name> --template <plugin>:<template>` writes one. The
 walkthrough, with a weekly report as the example: [Playbooks: your first contract from a plugin](PLAYBOOKS.md).
 
 Edit it in any editor, then:
 
 ```bash
-hz workflow check --path ~/path/to/weekly-digest.prose.md   # after each edit
-hz workflow show weekly-digest                              # is it ready? what does it require?
+hz heinzel check --path ~/path/to/weekly-digest.prose.md   # after each edit
+hz heinzel show weekly-digest                              # is it ready? what does it require?
 ```
 
 ### Try it without spending
 
 ```bash
-hz workflow run weekly-digest --dry-run
+hz heinzel wake weekly-digest --dry-run
 ```
 
 A dry run fetches the inputs and prints the packet exactly as the agent would get it: the instructions (the body) and
 the prompt with the inputs as data. No agent runs and nothing is spent. When the packet reads right:
 
 ```bash
-hz workflow run weekly-digest        # drafts it now; at most `[workflow] max_usd` (default 1 USD) or the contract's own cap
+hz heinzel wake weekly-digest        # drafts it now; at most `[heinzel] max_usd` (default 1 USD) or the contract's own cap
 ```
 
 ### Bind what it requires
 
-`hz workflow show <name>` lists every requirement with the adapter bound to it, and a command for each unmet one:
+`hz heinzel show <name>` lists every requirement with the adapter bound to it, and a command for each unmet one:
 
 - an installed adapter: `hz system config set capabilities.tracker <adapter>`;
 - none installed: `hz system plugin search --text tracker` finds a plugin that provides the capability.
@@ -92,7 +92,7 @@ hz workflow run weekly-digest        # drafts it now; at most `[workflow] max_us
 
 ### Schedule it
 
-Uncomment `schedule:` in the frontmatter (five cron fields in local time, e.g. `"0 7 * * MON"`). `hz workflow show`
+Uncomment `schedule:` in the frontmatter (five cron fields in local time, e.g. `"0 7 * * MON"`). `hz heinzel show`
 then names the daemon job, `workflow:me-<name>`, and:
 
 ```bash
@@ -107,8 +107,8 @@ only by hand. See [ADR 0020](adr/0020-daemon-head.md) and [SECURITY.md](../SECUR
 ### Find and read your drafts
 
 ```bash
-hz workflow drafts                                  # every draft, newest first, with its path and record
-hz workflow drafts --name weekly-digest --latest    # the newest draft of one contract, as text
+hz heinzel drafts                                  # every draft, newest first, with its path and record
+hz heinzel drafts --name weekly-digest --latest    # the newest draft of one contract, as text
 ```
 
 A manual run has no receipt, only its record; daemon runs write a receipt that names the draft and its record and holds
@@ -119,12 +119,12 @@ the draft's hash, the input hashes and the agent's report, but not the draft's t
 Drafts and their records (which hold the fetched inputs) are deleted 90 days after their render; receipts are kept.
 
 ```bash
-hz workflow prune --dry-run                          # what would be deleted now, deleting nothing
-hz workflow prune                                    # delete it; running it again deletes nothing more
-hz system config set workflow.retention_days 30      # keep them 30 days; 0 keeps them forever
+hz heinzel prune --dry-run                          # what would be deleted now, deleting nothing
+hz heinzel prune                                    # delete it; running it again deletes nothing more
+hz system config set heinzel.retention_days 30      # keep them 30 days; 0 keeps them forever
 ```
 
-The daemon runs the job `workflow:prune` daily, so with the daemon installed you don't run it yourself; `hz system
+The daemon runs the job `heinzel:prune` daily, so with the daemon installed you don't run it yourself; `hz system
 doctor` says how much would be deleted, and degrades when expired drafts are more than two days overdue. Reading drafts
 never deletes them. Only files a render wrote below `<data dir>/workflow/drafts/` are deleted, never through a symbolic
 link. Receipts the daemon wrote before this change, with 0.2.0, hold the draft's text too; they are never rewritten,
@@ -134,9 +134,9 @@ its chain again ([ADR 0020](adr/0020-daemon-head.md)).
 ### Measure whether it pays off
 
 ```bash
-hz workflow sent weekly-digest --file ~/sent/digest.md --edit-minutes 5   # how much of the newest draft you changed
-hz workflow sent weekly-digest --ref <document>        # or the approved version where it lives, through `documents`
-hz workflow show weekly-digest                         # the success test: drafting time, share changed
+hz heinzel sent weekly-digest --file ~/sent/digest.md --edit-minutes 5   # how much of the newest draft you changed
+hz heinzel sent weekly-digest --ref <document>        # or the approved version where it lives, through `documents`
+hz heinzel show weekly-digest                         # the success test: drafting time, share changed
 ```
 
 `sent` compares what you finally sent with the draft and saves the share of words changed, both word counts and the
@@ -147,21 +147,21 @@ change. It stays local and is about the draft, never about people.
 
 ```bash
 hz team join https://github.com/acme-example/hz-team-payments.git --yes   # or: hz team adopt /path/to/checkout
-hz workflow new retro-agenda --team      # writes <checkout>/workflows/retro-agenda.prose.md
+hz heinzel new retro-agenda --team      # writes <checkout>/workflows/retro-agenda.prose.md
 ```
 
 `hz team join` clones your team's repository and makes it your team; `hz team new` creates one ([TEAMS](TEAMS.md)).
-`[workflow] team_repository` still works but is deprecated: `hz team adopt <its path>` moves it to `[team]`, and
+`[heinzel] team_repository` still works but is deprecated: `hz team adopt <its path>` moves it to `[team]`, and
 `hz system doctor` says so until you do.
 
-Commit it on a branch and open a pull request; the repository's CI can gate with `hz workflow check --path workflows`
+Commit it on a branch and open a pull request; the repository's CI can gate with `hz heinzel check --path workflows`
 (it exits with 1 on errors). Once merged, everyone with the checkout sees it as `team:retro-agenda` and can run it by
 hand. It runs on **your** daemon only when you say so:
 
 ```bash
-hz workflow show team:retro-agenda      # prints the SHA-256 and the approval entry
-hz system config set workflow.schedule_team '["retro-agenda"]'                  # run whatever the file says
-hz system config set workflow.schedule_team '["retro-agenda@sha256:<hex>"]'     # run exactly this content
+hz heinzel show team:retro-agenda      # prints the SHA-256 and the approval entry
+hz system config set heinzel.schedule_team '["retro-agenda"]'                  # run whatever the file says
+hz system config set heinzel.schedule_team '["retro-agenda@sha256:<hex>"]'     # run exactly this content
 ```
 
 A pinned contract whose file changed doesn't run, and `hz system doctor` says so until you approve the new content.
@@ -180,9 +180,9 @@ It gets the newest draft of that output, as text (or JSON for a `json` output). 
 is published yet, so drafts are all there is. Then see the workflow your contracts make:
 
 ```bash
-hz workflow graph            # each contract, what it maintains and what it reads
-hz workflow graph --mermaid  # the same as a Mermaid flowchart, for a document or a pull request
-hz workflow graph --json     # nodes, edges, cycles and inputs nobody maintains
+hz heinzel graph            # each contract, what it maintains and what it reads
+hz heinzel graph --mermaid  # the same as a Mermaid flowchart, for a document or a pull request
+hz heinzel graph --json     # nodes, edges, cycles and inputs nobody maintains
 ```
 
 A contract that depends on itself, directly or through others, is an error and doesn't run (`HZC030`). An input that
@@ -191,7 +191,7 @@ A team contract can't read a personal one's output (`HZC032`).
 
 ### Fix an error
 
-`hz workflow check` prints every problem as `file:line  CODE  field  message` with a hint on the next line; `show` and
+`hz heinzel check` prints every problem as `file:line  CODE  field  message` with a hint on the next line; `show` and
 `run` repeat a contract's errors and name the `check` command that rechecks it. The codes:
 
 | Code | Means |
@@ -244,7 +244,7 @@ The top level is OpenProse-compatible; everything Heinzelmännchen reads is unde
 | `hz.outputs` | yes | Exactly one, by name: `format: markdown` (default) or `json` |
 | `hz.publishes` | no | Where the draft is meant to go: `action` (a publish operation, `<module>.<operation>`) and `output`; recorded, never run by itself |
 | `hz.agent.tools` | no | Read-only tools the agent may use, in the runner's naming; empty for the runner's default |
-| `hz.agent.max_usd` | no | Most one run may cost; `[workflow] max_usd` caps it whatever it says |
+| `hz.agent.max_usd` | no | Most one run may cost; `[heinzel] max_usd` caps it whatever it says |
 | `hz.timeout` | no | The agent session's limit, default `10m`, at most `2h` |
 | `hz.retries` | no | 0 to 3 retries within a daemon tick; they share the cost cap |
 | `hz.catch_up` | no | Missed slots: `latest` (default) or `skip` |
@@ -272,16 +272,16 @@ inputs as data in `<input>` elements, framed as never being instructions.
 
 | What | Where | Setting |
 | --- | --- | --- |
-| Your contracts (`me`) | `<user config dir>/workflows/` (`hz workflow list` prints it) | `[workflow] user_dir` |
-| Team contracts (`team`) | `<team checkout>/workflows/` | `[team] checkout` (`hz team join`), `[workflow] schedule_team` |
-| Drafts and records | `<data dir>/workflow/drafts/<namespace>-<name>/`, kept 90 days by default | `[hz] data_dir`, `[workflow] retention_days` |
-| Cost cap | 1 USD a run by default, in every head | `[workflow] max_usd` |
+| Your contracts (`me`) | `<user config dir>/workflows/` (`hz heinzel list` prints it) | `[heinzel] user_dir` |
+| Team contracts (`team`) | `<team checkout>/workflows/` | `[team] checkout` (`hz team join`), `[heinzel] schedule_team` |
+| Drafts and records | `<data dir>/workflow/drafts/<namespace>-<name>/`, kept 90 days by default | `[hz] data_dir`, `[heinzel] retention_days` |
+| Cost cap | 1 USD a run by default, in every head | `[heinzel] max_usd` |
 
-A project `hz.toml` can't set any `[workflow]` key: a repository someone else controls must not decide which prompts
+A project `hz.toml` can't set any `[heinzel]` key: a repository someone else controls must not decide which prompts
 your daemon runs or what they cost; `hz system doctor` names the keys it ignored. Symbolic links are never followed, in
 the directories or for drafts. A bare name that exists in both namespaces is an error that asks for `me:` or `team:`.
 
 ### What 0.2 does not do yet
 
 No `hz inbox` and no publishing, so contract inputs read drafts; no fingerprints or memo keys; no input wakes (`on`);
-no team scope with leases, no embedded contracts, no `hz workflow migrate`. ADR 0021 lists each with the version it is planned for.
+no team scope with leases, no embedded contracts, no `hz heinzel migrate`. ADR 0021 lists each with the version it is planned for.

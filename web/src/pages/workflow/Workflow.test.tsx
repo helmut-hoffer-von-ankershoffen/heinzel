@@ -30,7 +30,7 @@ const playbooks: SchemaPlaybookList = {
       templates: [
         {
           template: "teamwork:weekly-report",
-          command: "hz workflow new weekly-report --template teamwork:weekly-report",
+          command: "hz heinzel new weekly-report --template teamwork:weekly-report",
           assets: ["weekly-report", "team-project"],
           keeps: ["weekly-report"],
         },
@@ -91,7 +91,7 @@ describe("the workflow model", () => {
   it("fills a template's placeholders with what discovery found once", () => {
     const [template] = playbooks.playbooks[0]?.templates ?? [];
     expect(template && templateCommand(template, discovery.candidates)).toBe(
-      "hz workflow new weekly-report --template teamwork:weekly-report --asset weekly-report=doc-123",
+      "hz heinzel new weekly-report --template teamwork:weekly-report --asset weekly-report=doc-123",
     );
   });
 
@@ -107,7 +107,7 @@ describe("the Workflow screen", () => {
     mockApi({ ...shell, "/api/workflow/list": noContracts, "/api/workflow/graph": emptyGraph });
     const { container } = renderAt("/contracts");
     expect(await screen.findByText("Your workflow starts with a contract")).toBeInTheDocument();
-    expect(screen.getByText("hz workflow new weekly-digest")).toBeInTheDocument();
+    expect(screen.getByText("hz heinzel new weekly-digest")).toBeInTheDocument();
     expect(screen.getByText("hz system plugin search --text playbook")).toBeInTheDocument();
     await expectAccessible(container);
   });
@@ -175,9 +175,9 @@ describe("the Workflow screen", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^weekly-report.*, Suggested contract$/ }));
     const panel = await screen.findByRole("complementary", { name: "weekly-report" });
     expect(
-      within(panel).getByText("hz workflow new weekly-report --template teamwork:weekly-report"),
+      within(panel).getByText("hz heinzel new weekly-report --template teamwork:weekly-report"),
     ).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: /Run hz workflow new weekly-report/ })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: /Run hz heinzel new weekly-report/ })).toBeInTheDocument();
     await expectAccessible(container);
     await userEvent.click(within(panel).getByRole("button", { name: "Close details" }));
     await waitFor(() => expect(screen.queryByRole("complementary", { name: "weekly-report" })).toBeNull());
@@ -188,7 +188,7 @@ describe("the Workflow screen", () => {
     renderAt("/contracts");
     fireEvent.click(await screen.findByRole("button", { name: /^Weekly digest.*, Contract$/ }));
     const panel = await screen.findByRole("complementary", { name: "Weekly digest" });
-    expect(within(panel).getByText("hz workflow show me:weekly-digest")).toBeInTheDocument();
+    expect(within(panel).getByText("hz heinzel show me:weekly-digest")).toBeInTheDocument();
     expect(within(panel).getByRole("link", { name: "Open the contract" })).toHaveAttribute(
       "href",
       "/contracts/me%3Aweekly-digest",
