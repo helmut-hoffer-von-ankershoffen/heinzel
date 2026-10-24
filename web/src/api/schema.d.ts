@@ -5273,7 +5273,7 @@ export interface components {
         };
         /**
          * ThemeSignalsView
-         * @description The signals now, which pick a theme's variant (ADR 0055).
+         * @description The signals now, which pick a theme's variant (ADR 0058).
          */
         ThemeSignalsView: {
             /**
@@ -5315,7 +5315,7 @@ export interface components {
         };
         /**
          * ThemeVariant
-         * @description A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0055).
+         * @description A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0058).
          */
         ThemeVariant: {
             /** @description What changes in dark mode. */
@@ -5433,7 +5433,7 @@ export interface components {
             title: string;
             /**
              * Variant
-             * @description Colours that apply when the signals match (ADR 0055); the one naming most signals wins.
+             * @description Colours that apply when the signals match (ADR 0058); the one naming most signals wins.
              */
             variant?: components["schemas"]["ThemeVariant"][];
         };
@@ -5441,7 +5441,7 @@ export interface components {
          * ThemeWhen
          * @description When a variant applies, e.g. `when = { daypart = "night", weather = ["rain", "drizzle"] }`.
          *
-         *     Every signal it names has one of its values. Signals are a closed vocabulary (ADR 0055), so a misspelt one is
+         *     Every signal it names has one of its values. Signals are a closed vocabulary (ADR 0058), so a misspelt one is
          *     refused at import.
          */
         ThemeWhen: {

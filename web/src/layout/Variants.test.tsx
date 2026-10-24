@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaThemeVariant } from "@/api/client";
 import { acmeTheme, shell, themeList } from "@/test/fixtures";
 import { mockApi, renderAt } from "@/test/render";
@@ -85,6 +85,28 @@ describe("Variants", () => {
     expect(document.documentElement.classList.contains("theme-shift")).toBe(true);
   });
 
+  it("applies the first variant at once when the signals arrive after the list, and a new theme never fades", async () => {
+    let release: (value: unknown) => void = () => undefined;
+    const late = new Promise((resolve) => {
+      release = resolve;
+    });
+    const mocked = mockApi({ ...shell, "/api/system/theme/list": themeList("acme", [weatherTheme]) });
+    void mocked;
+    const fetcher = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: Request) => {
+      if (new URL(input.url).pathname === "/api/system/theme/signals") {
+        await late;
+        return Response.json(signals("night", "rain"));
+      }
+      return fetcher(input);
+    });
+    renderAt("/doctor");
+    await waitFor(() => expect(root().getPropertyValue("--color-main-tint")).toBe("#f7f4ee"));
+    release(undefined);
+    await waitFor(() => expect(root().getPropertyValue("--color-main-tint")).toBe("#dde3ea"));
+    expect(document.documentElement.classList.contains("theme-shift")).toBe(false);
+  });
+
   it("fades only through registered colours, and reduced motion stops every transition", () => {
     const css = readFileSync("src/index.css", "utf8");
     expect(css).toMatch(/@property --color-background \{\s*syntax: "<color>";/);
@@ -109,6 +131,8 @@ describe("Variants", () => {
     expect(preview().style.getPropertyValue("--color-main-tint")).toBe("#dde3ea");
     expect(preview().style.getPropertyValue("--theme-backdrop")).toMatch(/^linear-gradient/);
     expect(root().getPropertyValue("--color-main-tint")).toBe("");
+    await user.click(screen.getByRole("button", { name: "Now" }));
+    expect(preview().style.getPropertyValue("--color-main-tint")).toBe("#f7f4ee");
     expect(within(screen.getByRole("radiogroup", { name: "Theme" })).getAllByRole("radio")).toHaveLength(2);
   });
 });

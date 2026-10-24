@@ -1,4 +1,4 @@
-"""Signals: the few facts about now a theme's variants follow, the time of day and the weather (ADR 0055).
+"""Signals: the few facts about now a theme's variants follow, the time of day and the weather (ADR 0058).
 
 The vocabulary is closed: `daypart` (computed by `system.theme` from the person's time zone and, when a module knows
 them, sunrise and sunset) and `weather` (published by a module). A module publishes signals with
@@ -34,6 +34,7 @@ _DUSK_BEFORE = timedelta(minutes=60)
 _DUSK_AFTER = timedelta(minutes=30)
 _MORNING_UNTIL = time(11, 0)
 _NIGHT_FROM = time(22, 30)
+_EVENING = timedelta(minutes=30)
 
 
 class ThemeSignals(BaseModel):
@@ -73,17 +74,20 @@ def _at(day: datetime, moment: time) -> datetime:
 def daypart(now: datetime, sunrise: datetime | None = None, sunset: datetime | None = None) -> Daypart:
     """The daypart of `now` (aware, in the person's zone), from today's sunrise and sunset or the defaults.
 
-    Dawn is 45 minutes either side of sunrise, morning until 11:00, day until an hour before sunset, dusk until half an
-    hour after it, evening until 22:30, night until dawn. Sun times that don't fit that order (a polar day, a
-    provider's mistake) fall back to the defaults.
+    Dawn is 45 minutes either side of sunrise, morning until 11:00 (or dawn's end), day until an hour before sunset,
+    dusk until half an hour after it, evening until 22:30 (or half an hour more), night until dawn. Sun times that
+    don't fit that order within the day (a polar day, a provider's mistake) fall back to the defaults.
     """
     rise = sunrise.astimezone(now.tzinfo) if sunrise else None
     down = sunset.astimezone(now.tzinfo) if sunset else None
     rise = _at(now, rise.time()) if rise else _at(now, DEFAULT_SUNRISE)
     down = _at(now, down.time()) if down else _at(now, DEFAULT_SUNSET)
-    edges = [rise - _DAWN, rise + _DAWN, _at(now, _MORNING_UNTIL), down - _DUSK_BEFORE, down + _DUSK_AFTER]
-    night = _at(now, _NIGHT_FROM)
-    if edges != sorted(edges) or edges[-1] > night or edges[0].date() != now.date():
+    # In a northern summer the sun sets late and rises early: the day stretches, night starts after the evening.
+    start_day = max(_at(now, _MORNING_UNTIL), rise + _DAWN)
+    evening = down + _DUSK_AFTER
+    night = max(_at(now, _NIGHT_FROM), evening + _EVENING)
+    edges = [rise - _DAWN, rise + _DAWN, start_day, down - _DUSK_BEFORE, evening]
+    if edges != sorted(edges) or night.date() != now.date() or edges[0].date() != now.date():
         return daypart(now)
     start_dawn, start_morning, start_day, start_dusk, start_evening = edges
     if now < start_dawn or now >= night:

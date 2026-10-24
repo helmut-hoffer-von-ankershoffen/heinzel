@@ -72,7 +72,7 @@ def render_signals(result: ThemeSignalsView) -> RenderableType:
     """The signals now and where they come from."""
     lines = [f"Daypart: {result.daypart} ({result.timezone})", f"Weather: {result.weather or 'unknown'}"]
     if result.sunrise and result.sunset:
-        lines.append(f"Sun: {result.sunrise:%H:%M} to {result.sunset:%H:%M}")
+        lines.append(f"Sun: {result.sunrise:%H:%M} to {result.sunset:%H:%M}")  # in the person's zone already
     lines.append(f"From: {', '.join(result.sources) or 'the clock only'}")
     return Text("\n".join(lines))
 

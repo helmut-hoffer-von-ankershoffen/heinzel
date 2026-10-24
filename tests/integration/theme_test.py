@@ -512,14 +512,15 @@ def test_signals_carry_the_daypart_in_the_persons_zone_and_what_a_plugin_publish
     assert signals == {
         "daypart": "night",
         "weather": "rain",
-        "sunrise": "2026-04-01T04:50:00Z",
-        "sunset": "2026-04-01T17:40:00Z",
+        "sunrise": "2026-04-01T05:50:00+01:00",
+        "sunset": "2026-04-01T18:40:00+01:00",
         "timezone": "Europe/Lisbon",
         "sources": ["acme"],
         "refresh": 60,
     }
     _, rendered = hz(acme("heinzel_acme"), "system", "theme", "signals", json_output=False)
     assert "Weather: rain" in str(rendered)
+    assert "Sun: 05:50 to 18:40" in str(rendered)  # in Lisbon's time, not the publisher's UTC
 
 
 def test_without_a_plugin_the_daypart_still_moves_and_the_weather_is_unknown(acme, monkeypatch):
@@ -580,7 +581,7 @@ def test_the_first_module_publishing_a_signal_wins(acme):
 
     module, _ = weather_plugin([ThemeSignals(weather="snow")])
     signals = acme("heinzel_acme", extra=(module,)).resolve(ThemeFonts).signals()  # type: ignore[attr-defined]
-    assert (signals.weather, signals.sources) == ("rain", ["acme", "skies"])
+    assert (signals.weather, signals.sources) == ("rain", ["acme"])  # skies' snow is shadowed: not a source
 
 
 def test_the_web_head_serves_the_signals(acme):
@@ -590,3 +591,51 @@ def test_the_web_head_serves_the_signals(acme):
     answer = client.get("/api/system/theme/signals", headers=AUTH)
     assert answer.status_code == 200
     assert answer.json()["weather"] == "rain"
+
+
+def test_a_failing_plugin_is_not_called_again_within_its_interval(acme, monkeypatch):
+    from heinzel.kernel import ThemeFonts
+    from heinzel.modules.system.theme import _service
+
+    clock = [datetime(2026, 6, 21, 10, 0, tzinfo=UTC)]
+    monkeypatch.setattr(_service, "utc_now", lambda: clock[0])
+    module, calls = weather_plugin([RuntimeError("offline"), ThemeSignals(weather="fog")])
+    service = acme("heinzel_acme_lisbon", extra=(module,)).resolve(ThemeFonts)
+    assert service.signals().weather is None  # type: ignore[attr-defined]
+    clock[0] += timedelta(minutes=9)
+    assert (service.signals().weather, len(calls)) == (None, 1)  # type: ignore[attr-defined]
+    clock[0] += timedelta(minutes=2)
+    assert (service.signals().weather, len(calls)) == ("fog", 2)  # type: ignore[attr-defined]
+
+
+def test_a_hanging_plugin_leaves_its_signals_unknown_and_holds_up_nobody(acme, monkeypatch):
+    import threading
+    import time
+
+    from heinzel.kernel import ThemeFonts
+    from heinzel.modules.system.theme import _service
+
+    monkeypatch.setattr(_service, "DEADLINE", timedelta(milliseconds=50))
+    release = threading.Event()
+    module = Module("stuck", "Made-up weather that never answers.")
+    calls: list[int] = []
+
+    @module.signals(every="10m")
+    def now() -> ThemeSignals:
+        """Hangs."""
+        calls.append(1)
+        release.wait(5)
+        return ThemeSignals(weather="clear")
+
+    service = acme("heinzel_acme_lisbon", extra=(module,)).resolve(ThemeFonts)
+    started = time.monotonic()
+    answers = []
+    threads = [threading.Thread(target=lambda: answers.append(service.signals().weather)) for _ in range(4)]  # type: ignore[attr-defined]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(2)
+    release.set()
+    assert answers == [None] * 4
+    assert time.monotonic() - started < 4  # the 5 s hang held up nobody
+    assert len(calls) == 1  # one call in flight; the others got the last values, unknown

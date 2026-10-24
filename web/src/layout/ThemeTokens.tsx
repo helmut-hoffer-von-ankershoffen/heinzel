@@ -66,8 +66,10 @@ export function ThemeTokens() {
   const themes = useThemes();
   const dark = useDark();
   const signals = useSignals();
+  const known = useThemeSignals().data !== undefined;
   const selected = themes.data?.themes.find((theme) => theme.name === themes.data?.selected);
-  const variant = selected ? `${selected.name}:${variantOf(selected, signals)}` : "";
+  // Until the signals first arrive there is no variant to fade from: the first one applies at once.
+  const variant = selected && known ? `${selected.name}:${variantOf(selected, signals)}` : "";
   const shown = useRef(variant);
   // A new variant of the same theme fades in; a new theme or mode switches at once.
   useEffect(() => {
@@ -77,7 +79,10 @@ export function ThemeTokens() {
     const html = document.documentElement;
     html.classList.add(SHIFT);
     const timer = window.setTimeout(() => html.classList.remove(SHIFT), SHIFT_MS);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      html.classList.remove(SHIFT);
+    };
   }, [variant]);
   const { daypart, weather } = signals;
   useEffect(() => {

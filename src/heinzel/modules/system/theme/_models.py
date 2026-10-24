@@ -77,7 +77,7 @@ class ThemeView(BaseModel):
     logo: ThemeLogoView | None = Field(default=None, description="The theme's logo; none if it ships none.")
     variant: list[ThemeVariant] = Field(
         default_factory=list[ThemeVariant],
-        description="Colours that apply when the signals match (ADR 0055); the one naming most signals wins.",
+        description="Colours that apply when the signals match (ADR 0058); the one naming most signals wins.",
     )
     shadows: list[str] = Field(
         default_factory=list[str],
@@ -99,7 +99,7 @@ class ThemeList(BaseModel):
 
 
 class ThemeSignalsView(BaseModel):
-    """The signals now, which pick a theme's variant (ADR 0055)."""
+    """The signals now, which pick a theme's variant (ADR 0058)."""
 
     daypart: Daypart = Field(description="The time of day in your time zone, e.g. `evening`.")
     weather: Weather | None = Field(description="The weather now, e.g. `rain`; none when no module publishes it.")

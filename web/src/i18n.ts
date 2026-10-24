@@ -163,6 +163,7 @@ const en = {
   "settings.previewConditions": "Preview conditions",
   "settings.previewDaypart": "Daypart",
   "settings.previewWeather": "Weather",
+  "settings.previewNow": "Now",
   "settings.previewButton": "Confirm",
   "settings.expertOn":
     "On: the navigation, search and `hz --help` list every screen and command. Your choice, in your user configuration.",

@@ -118,8 +118,9 @@ amends [0028](0028-integrations-are-capability-adapters.md) (a sole installed ad
 automatically);
 [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) amends
 [0029](0029-agent-runners-are-capability-adapters.md) (an AI access option names the agent runner that serves it) and
-[0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (`[heinzel] model` gives way to `[ai]` routing).
-ADRs 0021–0024 are
+[0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (`[heinzel] model` gives way to `[ai]` routing);
+[0058](0058-themes-follow-the-time-of-day-and-the-weather.md) amends [0044](0044-themes-are-data-a-plugin-ships.md)
+(variants that follow signals; a base theme is checked for contrast too). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 

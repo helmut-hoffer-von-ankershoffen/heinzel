@@ -88,3 +88,15 @@ def test_signals_refresh_every_minute_to_a_day(every):
         def now() -> ThemeSignals:
             """The weather now."""
             return ThemeSignals()
+
+
+def test_a_northern_summer_stretches_the_day_instead_of_dropping_the_sun():
+    sunrise = datetime(2026, 6, 21, 3, 50, tzinfo=BERLIN)
+    sunset = datetime(2026, 6, 21, 22, 15, tzinfo=BERLIN)
+    assert daypart(at(11, 0), sunrise, sunset) == "day"
+    assert daypart(at(20, 0), sunrise, sunset) == "day"
+    assert daypart(at(21, 30), sunrise, sunset) == "dusk"
+    assert daypart(at(22, 50), sunrise, sunset) == "evening"
+    assert daypart(at(23, 20), sunrise, sunset) == "night"
+    late = datetime(2026, 6, 21, 23, 50, tzinfo=BERLIN)  # night would start tomorrow: the defaults apply
+    assert daypart(at(20, 0), sunrise, late) == daypart(at(20, 0))

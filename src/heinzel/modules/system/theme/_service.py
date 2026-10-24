@@ -2,9 +2,13 @@
 
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta, tzinfo
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from pathlib import Path
+from threading import Lock
+from zoneinfo import ZoneInfo, available_timezones
 
 from pydantic import ValidationError
 
@@ -26,6 +30,7 @@ from heinzel.kernel import (
     SignalLet,
     ThemeLogoFiles,
     ThemeSignals,
+    Weather,
     daypart,
 )
 from heinzel.modules.system.theme._models import (
@@ -42,6 +47,9 @@ logger = logging.getLogger(__name__)
 SECTION = "system.theme"
 KEY = f"{SECTION}.name"
 VARIABLE = "HZ_SYSTEM_THEME__NAME"
+DEADLINE = timedelta(seconds=2)
+"""How long a module's signals operation may take before its signals stay unknown for the interval."""
+LOCALTIME = Path("/etc/localtime")
 REFRESH = timedelta(minutes=1)
 """How often the web app asks for the signals: the daypart moves on the minute."""
 
@@ -118,6 +126,9 @@ class ThemeService(ThemeFonts):
         self._kernel = kernel
         self._editor = editor
         self._read: dict[str, tuple[datetime, ThemeSignals | None]] = {}
+        self._lock = Lock()
+        # Few workers: a hanging plugin holds one of them, never the web head's request threads.
+        self._workers = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hz-signals")
 
     def available(self) -> Available:
         """Each theme by name; of several modules offering one name, the most specific layer of the stack wins.
@@ -263,49 +274,68 @@ class ThemeService(ThemeFonts):
         return self.listing()
 
     def signals(self) -> ThemeSignalsView:
-        """The signals now (ADR 0055): the daypart in the person's time zone, and what the modules publish.
+        """The signals now (ADR 0058): the daypart in the person's time zone, and what the modules publish.
 
-        Each module's signals operation runs at most once per its interval; one that fails or returns something else
-        leaves its signals unknown until the next. Of several modules publishing one signal, the first by module
-        order wins.
+        Each module's signals operation runs at most once per its interval, on a worker of its own with a deadline of
+        `DEADLINE`: one that fails, hangs or returns something else leaves its signals unknown until the next
+        interval, and never holds up the answer. Of several modules publishing one signal, the first by module order
+        wins; sunrise and sunset come as a pair from the first module that publishes both.
         """
         zone, zone_name = _zone()
         now = utc_now()
-        merged: dict[str, object] = {}
+        weather: Weather | None = None
+        sun: tuple[datetime, datetime] | None = None
         sources: list[str] = []
         for record, let in self._kernel.lets(SignalLet):
             published = self._published(record.qualname, let, now)
             if published is None:
                 continue
-            values = published.model_dump(exclude_none=True)
-            if values:
+            contributed = False
+            if weather is None and published.weather is not None:
+                weather, contributed = published.weather, True
+            if sun is None and published.sunrise is not None and published.sunset is not None:
+                sun, contributed = (published.sunrise, published.sunset), True
+            if contributed:
                 sources.append(record.qualname)
-            for key, value in values.items():
-                merged.setdefault(key, value)
-        known = ThemeSignals.model_validate(merged)
+        sunrise, sunset = (sun[0].astimezone(zone), sun[1].astimezone(zone)) if sun else (None, None)
         return ThemeSignalsView(
-            daypart=daypart(now.astimezone(zone), known.sunrise, known.sunset),
-            weather=known.weather,
-            sunrise=known.sunrise,
-            sunset=known.sunset,
+            daypart=daypart(now.astimezone(zone), sunrise, sunset),
+            weather=weather,
+            sunrise=sunrise,
+            sunset=sunset,
             timezone=zone_name,
             sources=sources,
             refresh=int(REFRESH.total_seconds()),
         )
 
     def _published(self, qualname: str, let: SignalLet, now: datetime) -> ThemeSignals | None:
-        """What `let` of module `qualname` publishes, read again once its interval has passed."""
+        """What `let` of module `qualname` publishes, read again once its interval has passed.
+
+        One caller reads at a time per service; the attempt is recorded before the call, so callers meanwhile and
+        after a failure get the last values (or unknown) instead of calling again.
+        """
         key = f"{qualname}:{let.name}"
-        if (cached := self._read.get(key)) and now - cached[0] < let.every:
-            return cached[1]
-        published: ThemeSignals | None = None
+        with self._lock:
+            cached = self._read.get(key)
+            if cached and now - cached[0] < let.every:
+                return cached[1]
+            self._read[key] = (now, cached[1] if cached else None)
         operation = next((op for _, op in self._kernel.lets(OperationLet) if op.func is let.func), None)
+        if operation is None:
+            logger.warning("Signals %s have no operation; they stay unknown", key)
+            return None
+        published: ThemeSignals | None = None
         try:
-            result = self._kernel.invoke(operation) if operation else None
+            result = self._workers.submit(self._kernel.invoke, operation).result(timeout=DEADLINE.total_seconds())
             published = ThemeSignals.model_validate(result.model_dump() if isinstance(result, ThemeSignals) else result)
+        except FutureTimeout:
+            logger.warning("Signals %s took longer than %s; they stay unknown until %s", key, DEADLINE, let.every)
+        except ValidationError as exc:
+            logger.warning("Signals %s aren't ThemeSignals (%s); they stay unknown until %s", key, exc, let.every)
         except Exception:
-            logger.warning("Signals %s failed; its signals stay unknown until %s", key, let.every, exc_info=True)
-        self._read[key] = (now, published)
+            logger.warning("Signals %s failed; they stay unknown until %s", key, let.every, exc_info=True)
+        with self._lock:
+            self._read[key] = (now, published)
         return published
 
     @staticmethod
@@ -324,7 +354,10 @@ def utc_now() -> datetime:
 
 
 def _zone() -> tuple[tzinfo, str]:
-    """The person's time zone (`[org] timezone`, which a project file can't set), else this machine's, and its name."""
+    """The person's time zone (`[org] timezone`, which a project file can't set), else this machine's, and its name.
+
+    A name that isn't an IANA time zone is ignored, as `hz setup` would refuse it.
+    """
     name: object = os.environ.get("HZ_ORG__TIMEZONE")
     if name is None:
         try:
@@ -334,10 +367,17 @@ def _zone() -> tuple[tzinfo, str]:
         for file, content in layers:
             if file.scope != "project":
                 name = Config(files=(), data=content).section("org").get("timezone", name)
-    if isinstance(name, str):
-        try:
-            return ZoneInfo(name), name
-        except (ZoneInfoNotFoundError, ValueError):
-            pass
-    local = datetime.now().astimezone().tzinfo or ZoneInfo("UTC")
-    return local, str(local)
+    for candidate in (name, local_timezone()):
+        if isinstance(candidate, str) and candidate in available_timezones():
+            return ZoneInfo(candidate), candidate
+    return ZoneInfo("UTC"), "UTC"
+
+
+def local_timezone() -> str | None:
+    """The IANA name of this machine's time zone, from where /etc/localtime points; a seam tests replace."""
+    try:
+        target = str(LOCALTIME.resolve(strict=True))
+    except OSError:
+        return None
+    _, found, zone = target.partition("zoneinfo/")
+    return zone or None if found else None

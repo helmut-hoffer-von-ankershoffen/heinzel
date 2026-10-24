@@ -360,7 +360,7 @@ def _words(value: object) -> object:
 class ThemeWhen(BaseModel):
     """When a variant applies, e.g. `when = { daypart = "night", weather = ["rain", "drizzle"] }`.
 
-    Every signal it names has one of its values. Signals are a closed vocabulary (ADR 0055), so a misspelt one is
+    Every signal it names has one of its values. Signals are a closed vocabulary (ADR 0058), so a misspelt one is
     refused at import.
     """
 
@@ -401,7 +401,7 @@ type Signals = dict[str, str | None]
 
 
 class ThemeVariant(BaseModel):
-    """A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0055)."""
+    """A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0058)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
@@ -456,6 +456,7 @@ def contrast(first: str, second: str) -> float:
 
 
 def _blend(top: str, bottom: str, opacity: float) -> str:
+    opacity = round(opacity * 100) / 100  # as the web app draws it: `color-mix` at a whole percent
     mixed = (t * opacity + b * (1 - opacity) for t, b in zip(_rgb(top), _rgb(bottom), strict=True))
     return "#" + "".join(f"{round(part):02x}" for part in mixed)
 
@@ -475,9 +476,13 @@ def _surfaces(colours: ThemeColours) -> list[tuple[str, str]]:
 def contrast_problems(colours: ThemeColours) -> list[str]:
     """Where text in `colours` falls under 4.5:1, in words.
 
-    `foreground` is checked on cards and on every main surface, `muted_foreground` on every main surface.
+    `foreground` is checked on cards, the sidebar, popovers and every main surface, `muted_foreground` on every main
+    surface.
     """
-    pairs = [("foreground", "card", colours.foreground, colours.card)]
+    pairs = [
+        ("foreground", surface, colours.foreground, getattr(colours, surface))
+        for surface in ("card", "sidebar", "popover")
+    ]
     for surface, value in _surfaces(colours):
         pairs += [
             ("foreground", surface, colours.foreground, value),
@@ -534,12 +539,12 @@ class Theme(BaseModel):
     variant: tuple[ThemeVariant, ...] = Field(
         default=(),
         max_length=MAX_VARIANTS,
-        description="Colours that follow the time of day and the weather (`[[variant]]` in its file, ADR 0055).",
+        description="Colours that follow the time of day and the weather (`[[variant]]` in its file, ADR 0058).",
     )
 
     @model_validator(mode="after")
     def _readable(self) -> "Theme":
-        """Refuse a theme whose text is hard to read, in either mode, as it is or in any variant (ADR 0055).
+        """Refuse a theme whose text is hard to read, in either mode, as it is or in any variant (ADR 0058).
 
         Raises:
             ValueError: If text falls under 4.5:1 on a surface it sits on.

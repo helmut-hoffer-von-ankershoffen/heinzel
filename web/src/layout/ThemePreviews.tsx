@@ -76,7 +76,7 @@ export function ThemePreviews() {
 }
 
 /** Expert mode: the daypart and weather the previews show, instead of the signals now. */
-function Conditions({ signals, onChange }: { signals: Signals; onChange: (signals: Signals) => void }) {
+function Conditions({ signals, onChange }: { signals: Signals; onChange: (signals: Signals | null) => void }) {
   return (
     <fieldset className="mt-2 flex flex-wrap items-center gap-2 text-ui-sm text-muted-foreground">
       <legend className="sr-only">{t("settings.previewConditions")}</legend>
@@ -107,6 +107,9 @@ function Conditions({ signals, onChange }: { signals: Signals; onChange: (signal
           </option>
         ))}
       </select>
+      <button type="button" className="rounded-lg px-2 py-1 hover:bg-accent" onClick={() => onChange(null)}>
+        {t("settings.previewNow")}
+      </button>
     </fieldset>
   );
 }
