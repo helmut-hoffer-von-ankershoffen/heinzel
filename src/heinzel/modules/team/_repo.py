@@ -10,8 +10,11 @@ Repository content is someone else's, so every git command runs with the hardeni
 caller's `GIT_DIR`-style variables, so `git -C <checkout>` acts on the checkout and nothing else.
 """
 
+import contextlib
+import os
 import re
 import shutil
+import signal
 import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -53,6 +56,31 @@ DROPPED = frozenset(
     {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR", "GIT_NAMESPACE"}
 )
 """Variables that would point `git -C <checkout>` at another repository, e.g. when hz runs inside a git hook."""
+ALLOWED = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "LANG",
+        "TMPDIR",
+        "TERM",
+        "XDG_CONFIG_HOME",
+        "SSH_AUTH_SOCK",
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "NO_PROXY",
+        "https_proxy",
+        "http_proxy",
+        "no_proxy",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+    }
+)
+ALLOWED_PREFIXES = ("LC_", "GIT_", "GH_", "GITHUB_")
+"""What git and gh get of the environment (ADR 0035): the basics, ssh's agent, proxies, and their own variables."""
+GRACE = 2.0
+MAX_STDERR = 64 * 1024
 
 
 def git(*parts: str | Path) -> list[str]:
@@ -186,24 +214,43 @@ class Runner:
             hint = "https://cli.github.com" if command[0] == "gh" else "https://git-scm.com"
             msg = f"`{command[0]}` isn't installed or not on PATH; install it ({hint}) and try again"
             raise HeinzelError(msg)
+        # Its own session, so that a timeout stops the whole group: an ssh or credential helper git started too.
+        process = subprocess.Popen(  # noqa: S603 - an argument list, executable resolved, URLs checked and after `--`
+            [executable, *command[1:]],
+            cwd=cwd,
+            env=_environment(),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
         try:
-            done = subprocess.run(  # noqa: S603 - an argument list, executable resolved, URLs checked and after `--`
-                [executable, *command[1:]],
-                cwd=cwd,
-                env=_environment(),
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-                check=False,
-                stdin=subprocess.DEVNULL,
-            )
+            stdout, stderr = process.communicate(timeout=self.timeout)
         except subprocess.TimeoutExpired as exc:
+            _stop(process)
             raise CommandFailed(command, f"took longer than {self.timeout:.0f} s") from exc
-        if done.returncode != 0:
-            raise CommandFailed(command, (done.stderr or done.stdout).strip())
-        return done.stdout
+        if process.returncode != 0:
+            raise CommandFailed(command, (stderr or stdout)[-MAX_STDERR:].strip())
+        return stdout
+
+
+def _stop(process: "subprocess.Popen[str]") -> None:
+    """SIGTERM to the process group, then SIGKILL to whatever is still running after a grace period."""
+    for signum in (signal.SIGTERM, signal.SIGKILL):
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(process.pid, signum)
+        try:
+            process.communicate(timeout=GRACE)
+        except subprocess.TimeoutExpired:
+            continue
+        return
 
 
 def _environment() -> dict[str, str]:
-    """The environment for git and gh: no credentials, no other repository, no prompts."""
-    return {key: value for key, value in subprocess_environment().items() if key not in DROPPED} | QUIET
+    """The environment for git and gh: an allowlist (ADR 0035), no hz credentials, no other repository, no prompts."""
+    return {
+        key: value
+        for key, value in subprocess_environment().items()
+        if (key in ALLOWED or key.startswith(ALLOWED_PREFIXES)) and key not in DROPPED
+    } | QUIET

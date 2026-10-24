@@ -28,17 +28,17 @@ TOKEN = "ghp_exampleexampleexampleexample0000"
 FAKE_GH = """\
 import json, os, pathlib, subprocess, sys
 args = sys.argv[1:]
-with open(os.environ["FAKE_GH_LOG"], "a") as log:
+with open(os.environ["GH_FAKE_LOG"], "a") as log:
     log.write(json.dumps(args) + "\\n")
 if args[:2] == ["api", "user"]:
-    login = os.environ.get("FAKE_GH_LOGIN")
+    login = os.environ.get("GH_FAKE_LOGIN")
     if not login:
         sys.exit("not signed in")
     print(login)
 elif args[:2] == ["api", "--paginate"]:
-    print("\\n".join(os.environ["FAKE_GH_TEAM"].split(",")))
+    print("\\n".join(os.environ["GH_FAKE_TEAM"].split(",")))
 elif args[:2] == ["repo", "create"]:
-    bare = pathlib.Path(os.environ["FAKE_GH_HOME"]) / (args[2] + ".git")
+    bare = pathlib.Path(os.environ["GH_FAKE_HOME"]) / (args[2] + ".git")
     bare.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "--quiet", "--bare", "--initial-branch=main", str(bare)], check=True, timeout=30)
     source = args[args.index("--source") + 1]
@@ -73,9 +73,9 @@ def github(tmp_path, monkeypatch) -> Path:
     for who in ("AUTHOR", "COMMITTER"):
         monkeypatch.setenv(f"GIT_{who}_NAME", "Test Person")
         monkeypatch.setenv(f"GIT_{who}_EMAIL", "person@example.invalid")
-    monkeypatch.setenv("FAKE_GH_HOME", str(home))
-    monkeypatch.setenv("FAKE_GH_LOG", str(tmp_path / "gh.log"))
-    monkeypatch.setenv("FAKE_GH_TEAM", "mira-example,Theo-Example")
+    monkeypatch.setenv("GH_FAKE_HOME", str(home))
+    monkeypatch.setenv("GH_FAKE_LOG", str(tmp_path / "gh.log"))
+    monkeypatch.setenv("GH_FAKE_TEAM", "mira-example,Theo-Example")
     monkeypatch.setenv("GH_TOKEN", TOKEN)
     monkeypatch.setenv("HZ_CREDENTIAL_GITHUB_TOKEN", TOKEN)
     monkeypatch.chdir(tmp_path)
@@ -90,9 +90,9 @@ def person(monkeypatch, tmp_path: Path, login: str | None) -> None:
     monkeypatch.setenv("HZ_CONFIG_HOME", str(root / "config"))
     monkeypatch.setenv("HZ_DATA_DIR", str(root / "data"))
     if login:
-        monkeypatch.setenv("FAKE_GH_LOGIN", login)
+        monkeypatch.setenv("GH_FAKE_LOGIN", login)
     else:
-        monkeypatch.delenv("FAKE_GH_LOGIN", raising=False)
+        monkeypatch.delenv("GH_FAKE_LOGIN", raising=False)
 
 
 def hz(*args: str) -> tuple[int, dict]:

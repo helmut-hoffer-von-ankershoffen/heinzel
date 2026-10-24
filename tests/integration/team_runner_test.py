@@ -33,3 +33,10 @@ def test_programs_get_no_credentials_never_prompt_and_act_on_no_other_repository
         "e['GIT_TERMINAL_PROMPT'], e['GIT_LFS_SKIP_SMUDGE'])"
     )
     assert Runner()([sys.executable, "-c", script], None) == "None None 0 1\n"
+
+
+def test_programs_get_only_the_allowlisted_environment(monkeypatch):
+    monkeypatch.setenv("CLOUD_SECRET_KEY", "secret")
+    monkeypatch.setenv("GH_HOST", "github.com")
+    script = "import os; print(os.environ.get('CLOUD_SECRET_KEY'), os.environ.get('GH_HOST'))"
+    assert Runner()([sys.executable, "-c", script], None) == "None github.com\n"
