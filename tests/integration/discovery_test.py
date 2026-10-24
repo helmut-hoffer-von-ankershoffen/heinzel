@@ -14,6 +14,7 @@ pytestmark = pytest.mark.integration
 def test_discovers_builtin_modules_and_submodules():
     records, errors = discover(plugins=False)
     assert [r.qualname for r in records] == [
+        "graph",
         "org",
         "system",
         "system.agent",
@@ -32,6 +33,7 @@ def test_discovers_builtin_modules_and_submodules():
         "system.runner.chat",
         "system.theme",
         "team",
+        "report",  # the package telemetry, named for what a Heinzelmännchen does with it
         "workflow",
     ]
     assert all(r.origin.builtin for r in records)

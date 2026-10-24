@@ -67,7 +67,7 @@ from heinzel.kernel._lets import (
 )
 from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
-from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind
+from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, DiscoveryHint, PlaybookLet, PlaybookSetup
 from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
@@ -93,6 +93,7 @@ from heinzel.kernel._protocols import (
     PullRequest,
     Relation,
     SectionReplacement,
+    TeamGraph,
     Tracker,
     Transcript,
     TranscriptSegment,
@@ -100,6 +101,15 @@ from heinzel.kernel._protocols import (
 )
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
 from heinzel.kernel._settings import Settings
+from heinzel.kernel._telemetry import (
+    HEINZEL_ID,
+    VERBS,
+    TelemetryEntry,
+    TelemetryLog,
+    TelemetryRead,
+    Verb,
+    check_target,
+)
 from heinzel.kernel._text import clean_text, redact_emails
 from heinzel.kernel._themes import (
     DEFAULT_THEME,
@@ -120,12 +130,14 @@ __all__ = [
     "ENTRY_POINT_GROUP",
     "FILENAME",
     "FONT_ROUTE",
+    "HEINZEL_ID",
     "INTERRUPT",
     "KERNEL_SECTION",
     "MAX_WINDOW",
     "MODES",
     "PROJECT_FILENAME",
     "SETUP_PHASES",
+    "VERBS",
     "WINDOW_PATTERN",
     "ActionGate",
     "AgentResult",
@@ -222,6 +234,12 @@ __all__ = [
     "SetupPhase",
     "Span",
     "Status",
+    "TeamGraph",
+    "TeamPromise",
+    "TeamPromises",
+    "TelemetryEntry",
+    "TelemetryLog",
+    "TelemetryRead",
     "Theme",
     "ThemeColours",
     "ThemeFont",
@@ -232,8 +250,10 @@ __all__ = [
     "Tracker",
     "Transcript",
     "TranscriptSegment",
+    "Verb",
     "Window",
     "boot",
+    "check_target",
     "clean_text",
     "discover",
     "draft_reporting_lines",

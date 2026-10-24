@@ -21,7 +21,7 @@ recipients are participants too, so the workflow packet builder drops their addr
 
 import re
 from datetime import datetime
-from typing import Protocol, Self
+from typing import Any, Protocol, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -485,4 +485,18 @@ class Directory(Protocol):
 
     def reports(self, person: str) -> list[Person]:
         """The direct reports of the person whose login or email is `person`, by name; empty if none. Mode: read."""
+        ...
+
+
+class TeamGraph(Protocol):
+    """The team's graph of kept promises (capability `team-graph`, ADR 0054), as a JSON Graph Format document.
+
+    Served by the core's `hz-graph` adapter (`graph`), which builds it from the team's contracts and the telemetry its
+    Heinzelmännchen report. It is how a contract reads the graph: the team graph keeper's input. The document follows
+    `docs/schemas/team-graph-1.json`; it is metadata only, and the packet builder drops its email addresses like every
+    other input's.
+    """
+
+    def snapshot(self) -> dict[str, Any]:
+        """The current graph: nodes, edges, each promise's state, kept-on-time per week and where the flow waits."""
         ...

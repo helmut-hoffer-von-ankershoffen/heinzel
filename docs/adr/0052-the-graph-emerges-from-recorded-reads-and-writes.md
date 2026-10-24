@@ -4,6 +4,7 @@ date: 2026-10-24
 decision-makers: maintainer (decisions and the open design), architect (shape)
 amends: 0021, 0023, 0038, 0049
 related: 0019, 0020, 0024, 0027, 0028, 0035, 0043, 0050, 0051
+amended-by: 0054
 ---
 
 # 0052: The graph emerges from recorded reads and writes

@@ -31,14 +31,23 @@ UV_PYTHON_DIR = subprocess.run(
 MODULES_DIR = REPO / "src" / "heinzel" / "modules"
 
 
+def declared_name(package: Path) -> str | None:
+    """The name a package's `module = Module("<name>", ...)` declares, or None if it declares none."""
+    text = (package / "__init__.py").read_text(encoding="utf-8")
+    match = re.search(r'^module = Module\(\s*"([a-z][a-z0-9-]*)"', text, re.MULTILINE)
+    return match[1] if match else None
+
+
 def builtin_modules() -> set[str]:
-    """The built-in modules in the checkout: packages whose `__init__.py` declares `module = Module(...)`."""
-    return {
-        ".".join(init.parent.relative_to(MODULES_DIR).parts)
-        for init in MODULES_DIR.rglob("__init__.py")
-        if init.parent != MODULES_DIR
-        and re.search(r"^module = Module\(", init.read_text(encoding="utf-8"), re.MULTILINE)
-    }
+    """The built-in modules in the checkout, by the names they declare (the package `telemetry` is `report`)."""
+    found: set[str] = set()
+    for init in MODULES_DIR.rglob("__init__.py"):
+        if init.parent == MODULES_DIR or declared_name(init.parent) is None:
+            continue
+        chain = [init.parent, *init.parent.parents]
+        names = [declared_name(p) for p in reversed(chain[: chain.index(MODULES_DIR)])]
+        found.add(".".join(name for name in names if name))
+    return found
 
 
 BUILTIN_MODULES = builtin_modules()

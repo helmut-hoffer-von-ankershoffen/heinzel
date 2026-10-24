@@ -144,7 +144,9 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`clock`](docs/MODULES.md#clock) — What time it is for everyone on the team. *First-party plugin: `hz system plugin add clock --confirm`.*
 - [`github`](docs/MODULES.md#github) — Read pull requests and issues from GitHub: the code-host and tracker capabilities. *First-party plugin: `hz system plugin add github --confirm`.*
 - [`google`](docs/MODULES.md#google) — Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. *First-party plugin: `hz system plugin add google --confirm`.*
+- [`graph`](docs/MODULES.md#graph) — Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.
 - [`org`](docs/MODULES.md#org) — Your profile, and the team, org and company you work with.
+- [`report`](docs/MODULES.md#report) — Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
 - [`system.capability`](docs/MODULES.md#systemcapability) — Show which adapters serve which capabilities, and who reads and writes what.
