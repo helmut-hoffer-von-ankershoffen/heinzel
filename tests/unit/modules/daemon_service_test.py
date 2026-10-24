@@ -106,7 +106,9 @@ def bin_dir(tmp_path) -> Path:
 
 @pytest.fixture
 def make(make_kernel, settings, tmp_path, bin_dir):
-    def build(*modules: Module, platform="darwin", runner=None, clock=None, time_limit=within) -> DaemonService:
+    def build(
+        *modules: Module, platform="darwin", runner=None, clock=None, time_limit=within, notifier=True
+    ) -> DaemonService:
         return DaemonService(
             make_kernel(**{m.name: m for m in modules}),
             settings,
@@ -118,6 +120,7 @@ def make(make_kernel, settings, tmp_path, bin_dir):
             which=lambda name: f"/bin/{name}",
             time_limit=time_limit,
             zone=BERLIN,
+            notifier_installed=lambda: notifier,
         )
 
     return build
@@ -135,6 +138,14 @@ def test_install_on_macos_writes_and_bootstraps_the_launch_agent(make, bin_dir, 
     assert runner.verbs() == [f"bootout gui/501/{LABEL}", f"bootstrap gui/501 {plist}"]
     assert result.commands == [["/bin/launchctl", "bootstrap", "gui/501", str(plist)]]
     assert (result.interval_minutes, result.dry_run) == (10, False)
+
+
+def test_install_hints_at_the_notifier_for_login_items_while_it_is_missing(make):
+    assert make(notifier=False).install(timedelta(minutes=10)).hint == (
+        "Install the notifier to show Heinzelmännchen with its icon in Login Items: hz system notify install"
+    )
+    assert make(notifier=True).install(timedelta(minutes=10)).hint is None
+    assert make(platform="linux", notifier=False).install(timedelta(minutes=10)).hint is None
 
 
 def test_install_on_linux_writes_and_enables_the_timer(make, bin_dir, tmp_path):
