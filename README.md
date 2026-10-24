@@ -24,15 +24,21 @@
 | src/heinzel/modules/system/directory/\_guess.py               |       82 |        0 |       24 |        1 |     99% |  98-\>104 |
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py             |       26 |        2 |        0 |        0 |     92% |    36, 64 |
 | src/heinzel/modules/system/plugin/\_service.py                |      125 |        5 |       28 |        2 |     95% |45-\>47, 124-125, 131, 138, 231 |
+| src/heinzel/modules/team/\_\_init\_\_.py                      |       41 |        1 |        4 |        0 |     98% |       112 |
+| src/heinzel/modules/team/\_models.py                          |      161 |        2 |       16 |        1 |     98% |  131, 152 |
+| src/heinzel/modules/team/\_render.py                          |       61 |        0 |       28 |        6 |     93% |18-\>20, 30-\>32, 32-\>34, 34-\>36, 37-\>39, 54-\>56 |
+| src/heinzel/modules/team/\_repo.py                            |      136 |        2 |       40 |        1 |     98% |240-\>exit, 245-246 |
+| src/heinzel/modules/team/\_service.py                         |      546 |        4 |      140 |        2 |     99% |334-\>336, 839-841, 893 |
+| src/heinzel/modules/team/\_yaml.py                            |      103 |        2 |       36 |        0 |     99% |     81-82 |
 | src/heinzel/modules/workflow/\_\_init\_\_.py                  |       81 |        2 |        8 |        1 |     97% |   128-129 |
-| src/heinzel/modules/workflow/\_contracts.py                   |      340 |        2 |      132 |        1 |     99% |   462-463 |
+| src/heinzel/modules/workflow/\_contracts.py                   |      342 |        2 |      132 |        1 |     99% |   464-465 |
 | src/heinzel/modules/workflow/\_models.py                      |      351 |        2 |       66 |        2 |     99% |83, 103, 457-\>455 |
 | src/heinzel/modules/workflow/\_render.py                      |      194 |       14 |       92 |        9 |     90% |97, 115, 158-\>160, 163, 164-\>166, 196-202, 228, 262, 283-293 |
 | src/heinzel/modules/workflow/\_retention.py                   |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
-| src/heinzel/modules/workflow/\_service.py                     |      623 |       10 |      202 |        3 |     98% |316, 406-407, 512-513, 872-873, 889-891 |
-| **TOTAL**                                                     | **9200** |   **74** | **2288** |   **44** | **99%** |           |
+| src/heinzel/modules/workflow/\_service.py                     |      632 |       10 |      206 |        3 |     98% |324, 412-413, 518-519, 878-879, 895-897 |
+| **TOTAL**                                                     | **10361** |   **85** | **2568** |   **54** | **99%** |           |
 
-93 files skipped due to complete coverage.
+97 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
