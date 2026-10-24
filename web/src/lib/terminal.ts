@@ -16,7 +16,11 @@ export function runsAsIs(command: string): boolean {
 
 /** Type `command` into the terminal, opening it; Enter only when `runsAsIs`. */
 export function runInTerminal(command: string): void {
-  const text = runsAsIs(command) ? `${command}\r` : command;
+  // A line break or other control character inside would run what comes before it: they become spaces.
+  const line = [...command]
+    .map((char) => (char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 ? " " : char))
+    .join("");
+  const text = runsAsIs(line) ? `${line}\r` : line;
   if (sender) sender(text);
   else pending.push(text);
   window.dispatchEvent(new Event(OPEN_TERMINAL));
