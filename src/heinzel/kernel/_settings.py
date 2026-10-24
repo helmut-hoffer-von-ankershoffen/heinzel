@@ -56,6 +56,11 @@ class Settings(ModuleSettings):
         "you. A failed check waits an hour too. Never in JSON, MCP or REST output, and off in CI. Set to false to "
         "turn the check and the notice off; not settable in a project's hz.toml.",
     )
+    update_channel: Literal["release", "main"] = Field(
+        default="release",
+        description="What `hz system update` follows: `release` moves to the newest release, `main` to the newest "
+        "commit of the default branch. An installation on `main` moves to releases once one is as new as it.",
+    )
     disabled_modules: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset(),
         description="Qualified names of modules to switch off, with their submodules. Comma-separated in the "
