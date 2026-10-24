@@ -119,7 +119,20 @@ class Config:
         Raises:
             HeinzelError: If a configuration file is not valid TOML.
         """
-        files = config_files(cwd or Path.cwd())
+        return cls._read(config_files(cwd or Path.cwd()))
+
+    def reread(self) -> "Config":
+        """The same files read again now, so a long-running head sees what was written since.
+
+        A configuration none of whose files exists (one built in code, as tests do) is kept as it is.
+
+        Raises:
+            HeinzelError: If a configuration file is not valid TOML.
+        """
+        return self._read(self.files) if any(file.exists for file in self.files) else self
+
+    @classmethod
+    def _read(cls, files: tuple[ConfigFile, ...]) -> "Config":
         data: dict[str, Any] = {}
         layers: list[tuple[ConfigFile, Mapping[str, Any]]] = []
         for file in files:

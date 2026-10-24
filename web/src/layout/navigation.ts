@@ -1,7 +1,7 @@
 // The navigation tree: sections and their screens. Contracts add one entry each, from `hz workflow list`.
 // A screen names the operation it shows; outside expert mode only screens of everyday operations are listed, the
 // same split `hz --help` makes (ADR 0041). A screen that isn't listed still opens by its URL.
-import { Boxes, Home, type LucideIcon, Network, Shapes, Share2, Stethoscope, Users, Workflow } from "lucide-react";
+import { Boxes, type LucideIcon, Network, Shapes, Share2, Stethoscope, Users, Workflow } from "lucide-react";
 import type { SchemaExpertMode } from "@/api/client";
 import type { MessageKey } from "@/i18n";
 
@@ -63,10 +63,8 @@ export function visibleSections(all: NavSection[], mode: SchemaExpertMode | unde
 /** The route of a contract, by its qualified name (`me:weekly-digest`). */
 export const contractPath = (qualified: string) => `/contracts/${encodeURIComponent(qualified)}`;
 
-/** Every listed screen with an icon, flattened: the collapsed sidebar shows these as a rail. */
-export const railItems = (listedSections: NavSection[]): NavItem[] => [
-  { to: "/", label: "nav.home", icon: Home },
-  ...listedSections.flatMap((section) =>
+/** Every listed screen with an icon, flattened: the collapsed sidebar shows these as a rail, under Home. */
+export const railItems = (listedSections: NavSection[]): NavItem[] =>
+  listedSections.flatMap((section) =>
     section.to && section.icon ? [{ to: section.to, label: section.label, icon: section.icon }] : section.items,
-  ),
-];
+  );

@@ -1,6 +1,6 @@
 // What a chat shows wherever it is (Home, the right sidebar): the messages, the answer as it streams with the tools
 // it calls, every proposed action as a card that runs only on Confirm, the costs, and the composer.
-import { Check, Send, X } from "lucide-react";
+import { Check, Info, Send, X } from "lucide-react";
 import { type FormEvent, type RefObject, useId, useState } from "react";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
 import { useConfig } from "@/api/queries";
@@ -121,13 +121,20 @@ export function Costs({ chat, className }: { chat: Chat; className?: string }) {
   };
   const message = chat.session?.costs.message_max_usd ?? value("system.runner", "ask_max_usd");
   const session = chat.session?.costs.session_max_usd ?? value("system.runner.chat", "session_max_usd");
+  const values = {
+    message: message == null ? "…" : format.usd(message),
+    session: session == null ? "…" : format.usd(session),
+    spent: format.usd(chat.session?.costs.spent_usd ?? 0),
+  };
+  const full = t("chat.cost", values);
+  // One short line; the whole explanation is the info icon's tooltip, and read out to screen readers.
   return (
-    <p className={cn("text-xs text-muted-foreground", className)}>
-      {t("chat.cost", {
-        message: message == null ? "…" : format.usd(message),
-        session: session == null ? "…" : format.usd(session),
-        spent: format.usd(chat.session?.costs.spent_usd ?? 0),
-      })}
+    <p className={cn("flex items-center gap-1 text-xs text-muted-foreground", className)}>
+      <span className="truncate">{t("chat.costShort", values)}</span>
+      <span title={full} className="inline-flex shrink-0 cursor-help text-icon">
+        <Info aria-hidden className="size-3.5" />
+        <span className="sr-only">{full}</span>
+      </span>
     </p>
   );
 }

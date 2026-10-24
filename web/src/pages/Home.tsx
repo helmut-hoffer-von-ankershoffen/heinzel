@@ -1,13 +1,11 @@
-// Home is the chat (ADR 0045): a "Today" strip of what needs you on top, the conversation below, the composer pinned
-// at the bottom. A card opens its screen, starts a chat about it, or goes away; `?card=<id>` focuses one (a
-// notification's link), `?chat-context=event:<id>` opens the chat about that event. Other screens have the same chat
-// in their right sidebar.
-import { MessageSquarePlus, Plus, X } from "lucide-react";
+// Home is "Today" (ADR 0045): cards of what needs you. The chat is the shell's panel, beside Home when the window is
+// wide and below it when narrow, as on every screen. A card opens its screen, starts a chat about it, or goes away;
+// `?card=<id>` focuses one (a notification's link), `?chat-context=event:<id>` opens the chat about that event.
+import { MessageSquarePlus, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Link, useSearchParams } from "react-router";
-import { Composer, Conversation, Costs } from "@/chat/Conversation";
+import { useSharedChat } from "@/chat/ChatContext";
 import { type TodayCard, useToday } from "@/chat/today";
-import { useChat } from "@/chat/useChat";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -71,49 +69,22 @@ function Card({
 }
 
 export function Home() {
-  const chat = useChat();
+  const { chat, focus } = useSharedChat();
   const today = useToday();
   const [params] = useSearchParams();
   const focused = params.get("card");
-  const input = useRef<HTMLTextAreaElement>(null);
-  const end = useRef<HTMLDivElement>(null);
-  const count = (chat.session?.messages?.length ?? 0) + (chat.live ? 1 : 0);
-
-  useEffect(() => {
-    input.current?.focus();
-  }, []);
-  // Keep the newest message in view as the conversation grows or the answer streams.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: scrolls when the conversation changes
-  useEffect(() => {
-    end.current?.scrollIntoView?.({ block: "end" });
-  }, [count, chat.live?.text]);
 
   const ask = async (card: TodayCard) => {
     await chat.openAbout(card.context, card.detail ? `${card.title}: ${card.detail}` : card.title);
-    input.current?.focus();
+    focus();
   };
 
   return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col">
-      <section aria-labelledby="today" className="px-4 pt-6 sm:px-6">
-        <div className="flex items-center gap-2">
-          <h1 id="today" className="text-2xl font-semibold">
-            {t("today.title")}
-          </h1>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            onClick={() => {
-              chat.fresh();
-              input.current?.focus();
-            }}
-            disabled={chat.live != null || !chat.session}
-          >
-            <Plus aria-hidden />
-            {t("chat.new")}
-          </Button>
-        </div>
+    <div className="mx-auto max-w-3xl">
+      <section aria-labelledby="today" className="px-4 pt-6 pb-4 sm:px-6">
+        <h1 id="today" className="text-2xl font-semibold">
+          {t("today.title")}
+        </h1>
         {today.cards.length ? (
           <ul className="-mx-1 mt-3 flex snap-x gap-3 overflow-x-auto px-1 pb-2">
             {today.cards.map((card) => (
@@ -131,19 +102,6 @@ export function Home() {
           <p className="mt-2 text-sm text-muted-foreground">{today.loading ? t("state.loading") : t("today.quiet")}</p>
         )}
       </section>
-      <section aria-label={t("chat.title")} className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-        {chat.session?.context && (
-          <p className="mb-3 text-xs text-muted-foreground">
-            {t("chat.context", { about: `${chat.session.context.kind} ${chat.session.context.ref}`.trim() })}
-          </p>
-        )}
-        <Conversation chat={chat} empty={t("today.empty")} />
-        <div ref={end} />
-      </section>
-      <div className="sticky bottom-0 border-t border-border bg-background px-4 py-3 sm:px-6">
-        <Composer chat={chat} context="route:/" inputRef={input} />
-        <Costs chat={chat} className="mt-2" />
-      </div>
     </div>
   );
 }

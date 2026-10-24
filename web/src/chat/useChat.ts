@@ -129,6 +129,23 @@ export function useChat() {
     setError(null);
   };
 
+  /** The Workshop: a new session about nothing in particular. */
+  const openGeneral = async () => {
+    setError(null);
+    try {
+      adopt(await openChat(null));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  /** Continue a session hz keeps (from the switcher), as a `?chat=<id>` link would. */
+  const select = (id: string) => {
+    setSessionId(id);
+    remember(id);
+    setError(null);
+  };
+
   const decideAction = (action: string, confirm: boolean) => {
     if (chat.data) decide.mutate({ session: chat.data.id, action, confirm });
   };
@@ -141,6 +158,8 @@ export function useChat() {
     loading,
     send,
     fresh,
+    select,
+    openGeneral,
     openAbout,
     decide: decideAction,
   };

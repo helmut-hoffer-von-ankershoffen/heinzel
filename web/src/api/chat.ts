@@ -14,6 +14,16 @@ export const useChatSession = (id: string | null) =>
     retry: false,
   });
 
+export const chatListKey = ["system", "runner", "chat", "list"] as const;
+
+/** `hz chat list`: the sessions hz keeps, most recent first; read when the switcher opens. */
+export const useChatSessions = (enabled: boolean) =>
+  useQuery({
+    queryKey: chatListKey,
+    queryFn: () => unwrap(api.GET("/system/runner/chat/list")),
+    enabled,
+  });
+
 /** A new session about `context` (`event:<id>`, `route:/doctor`); `detail` is what the opener knows, in words. */
 export async function openChat(context: string | null, detail?: string): Promise<SchemaChatSession> {
   return unwrap(api.POST("/system/runner/chat/open", { params: { query: { context, detail: detail || null } } }));

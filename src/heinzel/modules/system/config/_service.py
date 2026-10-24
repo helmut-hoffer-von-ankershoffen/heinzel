@@ -50,9 +50,12 @@ class ConfigService(ConfigEditor):
 
     def report(self) -> ConfigReport:
         """The files Heinzelmännchen reads, every setting in effect, and whether a file can be revealed here."""
-        schemas = {type(settings): setting_schemas(type(settings)) for _, settings in self._kernel.settings_of()}
+        # Read now, not as booted: `hz ui` keeps running while it and terminals change the files.
+        config = self._kernel.config.reread()
+        sections = [(section, _fresh(config, section, settings)) for section, settings in self._kernel.settings_of()]
+        schemas = {type(settings): setting_schemas(type(settings)) for _, settings in sections}
         return ConfigReport(
-            files=[self._file(file) for file in self._kernel.config.files],
+            files=[self._file(file) for file in config.files],
             can_reveal=self.revealer.unsupported() is None,
             file_manager=self.revealer.file_manager,
             settings=[
@@ -63,20 +66,21 @@ class ConfigService(ConfigEditor):
                     env=f"{env_prefix(section)}{key.upper()}",
                     description=field.description or "",
                     default=_default(field),
-                    source=self._source(section, key, type(settings).ignored_in_project),
+                    source=self._source(config, section, key, type(settings).ignored_in_project),
                     json_schema=schemas[type(settings)].get(key),
                 )
-                for section, settings in self._kernel.settings_of()
+                for section, settings in sections
                 for key, field in type(settings).model_fields.items()
             ],
         )
 
-    def _source(self, section: str, key: str, ignored_in_project: frozenset[str]) -> str:
+    @staticmethod
+    def _source(config: Config, section: str, key: str, ignored_in_project: frozenset[str]) -> str:
         """Which layer the value in effect comes from: the environment, the last file that sets it, or the default."""
         # pydantic-settings matches variable names regardless of case.
         if f"{env_prefix(section)}{key}".upper() in {name.upper() for name in os.environ}:
             return "env"
-        for file, content in reversed(self._kernel.config.layers):
+        for file, content in reversed(config.layers):
             if file.scope == "project" and key in ignored_in_project:
                 continue  # ignored there (ADR 0028), so another layer decides
             table = Config(files=(), data=content).section(section)
@@ -158,7 +162,7 @@ class ConfigService(ConfigEditor):
         if parsed is None:
             msg = f"TOML has no null; to let {key} take its default, run `hz system config unset {key}`."
             raise HeinzelError(msg)
-        table = {**self._kernel.config.section(section), name: parsed}
+        table = {**self._kernel.config.reread().section(section), name: parsed}
         try:
             Config(files=(), data=_nest(section, table)).settings(model, section)
         except ValidationError as exc:
@@ -228,6 +232,14 @@ class ConfigService(ConfigEditor):
     @staticmethod
     def _file(file: ConfigFile) -> ConfigFileInfo:
         return ConfigFileInfo(scope=file.scope, path=file.path, exists=file.exists)
+
+
+def _fresh(config: Config, section: str, booted: ModuleSettings) -> ModuleSettings:
+    """`section`'s settings as the files say now; as booted when a file now holds a value they don't accept."""
+    try:
+        return config.settings(type(booted), section)
+    except ValidationError:
+        return booted
 
 
 def _parse_value(value: str) -> Any:  # noqa: ANN401 - any TOML value

@@ -6,7 +6,8 @@ import { useThemes } from "@/api/queries";
 
 const DEFAULT = "default";
 
-function useDark(): boolean {
+/** Whether the page shows dark mode now (`.dark` on <html>), following every switch. */
+export function useDark(): boolean {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains("dark"));
   useEffect(() => {
     const observer = new MutationObserver(() => setDark(document.documentElement.classList.contains("dark")));
@@ -18,10 +19,10 @@ function useDark(): boolean {
 
 /** `muted_foreground` → `--color-muted-foreground`, plus the fonts. */
 export function tokens(theme: SchemaThemeView, dark: boolean): Record<string, string> {
-  const colours = Object.entries(dark ? theme.dark : theme.light).map(([key, value]) => [
-    `--color-${key.replaceAll("_", "-")}`,
-    String(value),
-  ]);
+  // An optional colour the theme leaves out (`main_tint`) keeps the app's default.
+  const colours = Object.entries(dark ? theme.dark : theme.light)
+    .filter(([, value]) => typeof value === "string")
+    .map(([key, value]) => [`--color-${key.replaceAll("_", "-")}`, String(value)]);
   // Type scale, density and corners (ADR 0044); a field the server doesn't send keeps the app's default.
   const extra = theme as unknown as Record<string, unknown>;
   const scale: [string, string][] = [
@@ -39,6 +40,12 @@ export function tokens(theme: SchemaThemeView, dark: boolean): Record<string, st
     typeof extra[field] === "string" || typeof extra[field] === "number" ? [[name, String(extra[field])]] : [],
   );
   return Object.fromEntries([...colours, ...sized, ["--font-sans", theme.font_sans], ["--font-mono", theme.font_mono]]);
+}
+
+/** The theme in effect, once the list arrived. */
+export function useSelectedTheme(): SchemaThemeView | undefined {
+  const themes = useThemes();
+  return themes.data?.themes.find((theme) => theme.name === themes.data?.selected);
 }
 
 export function ThemeTokens() {

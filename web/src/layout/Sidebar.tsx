@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { InstallApp } from "@/pwa/InstallApp";
 import { BellButton } from "./NotificationCenter";
 import { CONTRACTS_SECTION, contractPath, railItems, sections, visibleSections } from "./navigation";
+import { useDark, useSelectedTheme } from "./ThemeTokens";
 import { useTheme } from "./theme";
 
 const link = ({ isActive }: { isActive: boolean }) =>
@@ -37,15 +38,18 @@ const link = ({ isActive }: { isActive: boolean }) =>
 
 const topButton = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "flex size-9 items-center justify-center rounded-lg text-foreground/85 transition-colors hover:bg-accent/70 hover:text-foreground [&_svg]:size-(--icon) [&_svg]:stroke-[1.75] [&_svg]:text-icon",
-    isActive && "bg-accent text-foreground",
+    "flex size-9 items-center justify-center rounded-lg text-icon transition-colors hover:bg-accent/70 [&_svg]:size-(--icon) [&_svg]:stroke-[1.75]",
+    isActive && "bg-accent text-accent-foreground",
   );
 
 const railLink = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "flex size-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&_svg]:size-(--icon)",
-    isActive && "bg-accent text-foreground",
+    "flex size-9 items-center justify-center rounded-lg text-icon transition-colors hover:bg-accent/70 [&_svg]:size-(--icon) [&_svg]:stroke-[1.75]",
+    isActive && "bg-accent text-accent-foreground",
   );
+
+/** A line of the sidebar with a full-width hairline under it, like the account line's above it. */
+const HAIRLINE_BELOW = "-mx-2 flex shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3";
 
 type Props = { collapsed: boolean; onToggle: () => void; onSearch: () => void; onNotifications: () => void };
 
@@ -67,8 +71,23 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
       section.label !== CONTRACTS_SECTION || section.items.length > 0 || Boolean(contracts.data?.contracts.length),
   );
   return (
-    <div className="flex h-full flex-col px-2 pt-2">
-      <div className="flex h-10 items-center gap-1 px-1">
+    <div className="flex h-full flex-col px-2">
+      {/* The same height and hairline as the main column's top bar, so both lines run across the window. */}
+      <div className={cn(HAIRLINE_BELOW, "h-12")}>
+        <ThemeLogo />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onToggle}
+          aria-expanded
+          aria-label={t("nav.collapse")}
+          title={t("nav.collapse")}
+          className="ml-auto text-icon"
+        >
+          <PanelLeftClose aria-hidden />
+        </Button>
+      </div>
+      <div className={cn(HAIRLINE_BELOW, "h-12")}>
         <NavLink to="/" end className={topButton} aria-label={t("nav.home")} title={t("nav.home")}>
           <Home aria-hidden />
         </NavLink>
@@ -83,19 +102,8 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
         >
           <Search aria-hidden />
         </button>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggle}
-          aria-expanded
-          aria-label={t("nav.collapse")}
-          title={t("nav.collapse")}
-          className="ml-auto text-muted-foreground"
-        >
-          <PanelLeftClose aria-hidden />
-        </Button>
       </div>
-      <nav aria-label={t("nav.label")} className="mt-1 min-h-0 flex-1 overflow-y-auto">
+      <nav aria-label={t("nav.label")} className="mt-2 min-h-0 flex-1 overflow-y-auto">
         <ul className="flex flex-col gap-0.5">
           {listedSections.map((section) => (
             <li key={section.label}>
@@ -179,30 +187,38 @@ function useFolded(): [Set<string>, (label: string) => void] {
 function Rail({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">) {
   const expert = useExpert();
   return (
-    <div className="flex h-full flex-col items-center gap-1 pt-2 pb-3">
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onToggle}
-        aria-expanded={false}
-        aria-label={t("nav.expand")}
-        title={t("nav.expand")}
-        className="mb-2 text-muted-foreground"
-      >
-        <PanelLeftOpen aria-hidden />
-      </Button>
-      <BellButton onOpen={onNotifications} className={railLink({ isActive: false })} />
-      <button
-        type="button"
-        onClick={onSearch}
-        aria-keyshortcuts="Meta+K Control+K"
-        aria-label={t("search.open")}
-        title={`${t("search.open")} (⌘K)`}
-        className={railLink({ isActive: false })}
-      >
-        <Search aria-hidden />
-      </button>
-      <nav aria-label={t("nav.label")} className="flex flex-col items-center gap-1">
+    <div className="flex h-full flex-col items-center">
+      <div className="flex h-12 w-full shrink-0 items-center justify-center border-b-[0.5px] border-foreground/20">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={false}
+          aria-label={t("nav.expand")}
+          title={t("nav.expand")}
+          className="group flex size-9 items-center justify-center rounded-lg text-icon transition-colors hover:bg-accent/70 [&_svg]:size-(--icon)"
+        >
+          {/* The theme's mark until the pointer or focus is on it; then what a click does. */}
+          <ThemeLogo mark className="size-7 group-hover:hidden group-focus-visible:hidden" />
+          <PanelLeftOpen aria-hidden className="hidden group-hover:block group-focus-visible:block" />
+        </button>
+      </div>
+      <div className="flex w-full shrink-0 flex-col items-center gap-1 border-b-[0.5px] border-foreground/20 py-2">
+        <NavLink to="/" end className={railLink} aria-label={t("nav.home")} title={t("nav.home")}>
+          <Home aria-hidden />
+        </NavLink>
+        <BellButton onOpen={onNotifications} className={railLink({ isActive: false })} />
+        <button
+          type="button"
+          onClick={onSearch}
+          aria-keyshortcuts="Meta+K Control+K"
+          aria-label={t("search.open")}
+          title={`${t("search.open")} (⌘K)`}
+          className={railLink({ isActive: false })}
+        >
+          <Search aria-hidden />
+        </button>
+      </div>
+      <nav aria-label={t("nav.label")} className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto py-2">
         {railItems(visibleSections(sections, expert.data)).map((item) => (
           <NavLink key={item.to} to={item.to} end className={railLink} aria-label={t(item.label)} title={t(item.label)}>
             <item.icon aria-hidden />
@@ -211,6 +227,24 @@ function Rail({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
       </nav>
       <Footer compact />
     </div>
+  );
+}
+
+/** The selected theme's logo (ADR 0044): its wordmark for the mode shown, or its square mark; nothing without one. */
+function ThemeLogo({ mark = false, className }: { mark?: boolean; className?: string }) {
+  const theme = useSelectedTheme();
+  const dark = useDark();
+  const logo = theme?.logo;
+  const src = logo ? (mark ? logo.mark : dark ? logo.dark : logo.light) : null;
+  if (!logo || !src) return mark ? <PanelLeftOpen aria-hidden className={className} /> : null;
+  // An <img>, never inline SVG: a script in the file can't run, and the web head serves it under a strict CSP.
+  return (
+    <img
+      src={src}
+      alt={logo.alt}
+      style={mark ? undefined : { height: logo.height }}
+      className={cn(mark ? "object-contain" : "w-auto max-w-44 object-contain object-left", className)}
+    />
   );
 }
 
@@ -253,7 +287,9 @@ function Footer({ compact = false }: { compact?: boolean }) {
       ref={ref}
       className={cn(
         "relative flex items-center gap-1",
-        compact ? "mt-auto flex-col" : "-mx-2 mt-2 h-[60px] shrink-0 border-t-[0.5px] border-foreground/20 px-2",
+        // 60px like the status bar, so the hairlines above both line up across the window.
+        "h-[60px] shrink-0 border-t-[0.5px] border-foreground/20",
+        compact ? "w-full flex-col justify-center gap-0.5" : "-mx-2 mt-2 px-2",
       )}
     >
       {open && (
@@ -290,7 +326,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
           </MenuLink>
         </div>
       )}
-      {compact && <ThemeButton />}
+      {compact && <ThemeButton compact />}
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -300,12 +336,12 @@ function Footer({ compact = false }: { compact?: boolean }) {
         title={[me?.name, me?.role?.replaceAll("-", " ")].filter(Boolean).join(" · ") || undefined}
         className={cn(
           "flex min-w-0 items-center gap-2 rounded-lg text-left transition-colors hover:bg-accent/70",
-          compact ? "size-9 justify-center" : "flex-1 px-1.5 py-1.5",
+          compact ? "size-7 justify-center" : "flex-1 px-1.5 py-1.5",
         )}
       >
         <span
           aria-hidden
-          className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#3c3c3c] text-[11px] font-medium text-foreground"
+          className="flex size-6 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-medium text-accent-foreground"
         >
           {initial}
         </span>
@@ -373,7 +409,7 @@ function ExpertItem() {
       {t("settings.expert")}
       <span
         aria-hidden
-        className={cn("relative ml-auto h-4 w-7 rounded-full transition-colors", on ? "bg-[#2f7bf6]" : "bg-accent")}
+        className={cn("relative ml-auto h-4 w-7 rounded-full transition-colors", on ? "bg-switch" : "bg-accent")}
       >
         <span
           className={cn(
@@ -386,7 +422,7 @@ function ExpertItem() {
   );
 }
 
-function ThemeButton() {
+function ThemeButton({ compact = false }: { compact?: boolean }) {
   const [theme, toggleTheme] = useTheme();
   return (
     <Button
@@ -395,7 +431,7 @@ function ThemeButton() {
       onClick={toggleTheme}
       aria-label={t("theme.toggle")}
       title={t("theme.toggle")}
-      className="text-muted-foreground"
+      className={cn("text-icon", compact && "size-7")}
     >
       {theme === "dark" ? <Sun aria-hidden /> : <Moon aria-hidden />}
     </Button>
