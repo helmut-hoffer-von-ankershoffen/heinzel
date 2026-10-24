@@ -88,7 +88,8 @@ How the pieces fit — more in [ARCHITECTURE.md](docs/ARCHITECTURE.md):
 flowchart TB
     People(["People"]) --> CLI
     Scripts(["Scripts"]) -- "--json" --> CLI
-    Agents(["Coding agents"]) --> MCP
+    Agents(["Coding agents"]) -- "--json" --> CLI
+    Agents --> MCP
     subgraph Heads["Heads: views on the same operations"]
         CLI["CLI<br/>hz …"]
         MCP["MCP server"]
@@ -109,8 +110,9 @@ flowchart TB
 
 ## What's inside
 
-Every module is a set of operations, and every operation is a `hz` command, an MCP tool for coding agents
-(`hz system serve mcp`) and a REST endpoint (`hz system serve api`) at once. Modules can also advertise jobs that
+Every module is a set of operations, and every operation is a `hz` command, an MCP tool (`hz system serve mcp`)
+and a REST endpoint (`hz system serve api`) at once. Coding agents use whichever suits them: the CLI with `--json`,
+or the MCP tools. Modules can also advertise jobs that
 `hz system daemon install` runs in the background on a schedule, under launchd or systemd, unattended and with your
 rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)). Built in today:
 
