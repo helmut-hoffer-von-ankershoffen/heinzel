@@ -100,20 +100,28 @@ class TeamSettings(ModuleSettings):
     daemon reads contracts from (ADR 0021 §10).
     """
 
+    section_title: ClassVar[str | None] = "Team"  # the heading in Settings
+
     repository: str | None = Field(
         default=None,
-        description="Your team repository's URL, the invite others join with (`hz team join <url>`); none for a team "
-        "repository that exists only on this machine.",
+        title="Team repository",
+        description="Your team repository's address, the invite others join with; empty for a "
+        "team repository that exists only on this computer.",
+        examples=["https://github.com/example/team.git"],
     )
     checkout: Path | None = Field(
         default=None,
-        description="The local checkout of your team repository; its `workflows/` holds the `team:` contracts.",
+        title="Team checkout",
+        description="The folder your team repository is checked out in; its workflows folder "
+        "holds the team's contracts.",
     )
 
     layer: str | None = Field(
         default=None,
-        description="Your team's layer plugin by module name, e.g. acme-payments-checkout (ADR 0040), when your team "
-        "repository's hz.yaml names none or you want another; hz system layer show shows the stack it gives.",
+        title="Team layer",
+        description="The layer plugin your team uses, by module name, when your team repository "
+        "names none or you want another.",
+        json_schema_extra={"x-expert": True},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"repository", "checkout", "layer"})

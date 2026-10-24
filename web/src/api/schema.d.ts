@@ -318,6 +318,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/config/reveal-setting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show the file or folder a path setting names, such as hz.log_dir, in your file manager.
+         * @description Show the file or folder a path setting names, such as hz.log_dir, in your file manager.
+         *
+         *     A folder opens; a file is selected, never opened. On Linux without a desktop session nothing opens and the
+         *     message names the path.
+         */
+        post: operations["system_config_reveal_setting"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/config/set": {
         parameters: {
             query?: never;
@@ -4627,7 +4650,7 @@ export interface components {
             default?: unknown;
             /**
              * Description
-             * @description What the setting controls.
+             * @description What the setting controls, in plain words.
              */
             description: string;
             /**
@@ -4653,6 +4676,11 @@ export interface components {
              */
             section: string;
             /**
+             * Section Title
+             * @description What Settings calls the setting's section: its settings model's section_title; none without one.
+             */
+            section_title?: string | null;
+            /**
              * Source
              * @description Where the value in effect comes from: `default`, a file's scope (`site`, `user`, `project`, `explicit`) or `env`.
              * @default default
@@ -4663,6 +4691,38 @@ export interface components {
              * @description Value in effect.
              */
             value: unknown;
+        };
+        /**
+         * SettingRevealed
+         * @description What `hz system config reveal-setting` did.
+         */
+        SettingRevealed: {
+            /**
+             * Key
+             * @description The setting, as section.key.
+             */
+            key: string;
+            /**
+             * Message
+             * @description What happened, or why nothing did, with the path.
+             */
+            message: string;
+            /**
+             * Opened
+             * @description Whether the file manager was opened.
+             */
+            opened: boolean;
+            /**
+             * Path
+             * Format: path
+             * @description The file or folder it names.
+             */
+            path: string;
+            /**
+             * Supported
+             * @description Whether this machine has a file manager hz can open.
+             */
+            supported: boolean;
         };
         /**
          * Skill
@@ -5525,6 +5585,7 @@ export type SchemaRequirementStatus = components['schemas']['RequirementStatus']
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
+export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
 export type SchemaSkill = components['schemas']['Skill'];
 export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStatus = components['schemas']['Status'];
@@ -5928,6 +5989,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConfigRevealed"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_config_reveal_setting: {
+        parameters: {
+            query: {
+                /** @description Setting as section.key, e.g. hz.log_level or example.greeting. */
+                key: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingRevealed"];
                 };
             };
             /** @description Validation Error */

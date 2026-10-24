@@ -214,6 +214,7 @@ Show, get, set and initialize configuration.
 | Change a setting in the user or project configuration file, after validating it. | `hz system config set` | `system_config_set` | `POST /system/config/set` | `POST /api/system/config/set` | yes | expert |
 | Remove a setting from the user or project configuration file, so its default applies again. | `hz system config unset` | `system_config_unset` | `POST /system/config/unset` | `POST /api/system/config/unset` | yes | expert |
 | Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created. | `hz system config reveal` | — | — | `POST /api/system/config/reveal` | yes | expert |
+| Show the file or folder a path setting names, such as hz.log_dir, in your file manager. | `hz system config reveal-setting` | — | — | `POST /api/system/config/reveal-setting` | yes | expert |
 
 ## `system.connector`
 

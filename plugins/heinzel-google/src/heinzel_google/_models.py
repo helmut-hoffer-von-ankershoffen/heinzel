@@ -39,11 +39,18 @@ class GoogleSettings(ModuleSettings):
 
     gws_path: str | None = Field(
         default=None,
-        description="Absolute path of the Google Workspace CLI (`gws`) executable; `gws` on PATH when not set. Only "
-        "the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml.",
+        title="Google Workspace CLI",
+        description="The full path to the Google Workspace CLI; the one on your PATH when not "
+        "set. Only your own settings can set it, never a project's.",
+        json_schema_extra={"x-expert": True, "format": "path"},
     )
     timeout: float = Field(
-        default=60.0, gt=0, le=600, description="Seconds to wait for each `gws` run before stopping it."
+        default=60.0,
+        gt=0,
+        le=600,
+        title="Time limit",
+        description="How long to wait for each Google Workspace CLI run before stopping it.",
+        json_schema_extra={"x-expert": True, "x-unit": "seconds"},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"gws_path", "timeout"})

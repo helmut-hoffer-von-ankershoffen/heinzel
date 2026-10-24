@@ -1,6 +1,7 @@
 """Models of the agent module."""
 
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
@@ -10,9 +11,14 @@ from heinzel import ModuleSettings
 class AgentSettings(ModuleSettings):
     """Settings of the agent module: the `[system.agent]` table or `HZ_SYSTEM_AGENT__*` variables."""
 
+    section_title: ClassVar[str | None] = "Agent skills"  # the heading in Settings
+
     skill_dirs: list[Path] = Field(
         default_factory=lambda: [Path("~/.claude/skills")],
-        description="Directories `hz system agent install` copies Heinzelmännchen's skills into, one per coding agent.",
+        title="Skill folders",
+        description="Folders Heinzelmännchen's skills are copied into when you install them for "
+        "your coding agents, one per agent.",
+        json_schema_extra={"x-expert": True},
     )
 
 

@@ -34,9 +34,16 @@ class Zone(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     name: str = Field(
-        description="IANA time zone name, e.g. Europe/Berlin.", json_schema_extra={"format": "iana-timezone"}
+        title="Time zone",
+        description="The time zone, such as Europe/Berlin.",
+        json_schema_extra={"format": "iana-timezone"},
     )
-    hours: tuple[Hour, Hour] = Field(default=DEFAULT_HOURS, description="Start and end hour of a working day there.")
+    hours: tuple[Hour, Hour] = Field(
+        default=DEFAULT_HOURS,
+        title="Working hours",
+        description="When a working day starts and ends there.",
+        json_schema_extra={"x-unit": "hour-of-day"},
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -58,8 +65,9 @@ class ClockSettings(ModuleSettings):
 
     zones: list[Zone] = Field(
         default=[Zone(name=name) for name in DEFAULT_ZONES],
-        description="The team's time zones, yours first: IANA names, or tables with hours, e.g. "
-        '{ name = "Asia/Tokyo", hours = [10, 19] }. The first zone is your own (primary) one.',
+        title="Time zones",
+        description="The time zones your team works in, with the working hours in each. The first one is yours.",
+        examples=[[{"name": "Asia/Tokyo", "hours": [10, 19]}]],
     )
     working_hours: tuple[int, int] | None = Field(
         default=None,
