@@ -52,8 +52,8 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `api_url` | `HZ_GITHUB__API_URL` | `'https://api.github.com'` | Base URL of the GitHub REST API: `https://api.github.com`, or for GitHub Enterprise Server `https://<host>/api/v3`. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml, because the token goes there. `hz system capability list` shows its host as the adapter's. |
-| `timeout` | `HZ_GITHUB__TIMEOUT` | `30.0` | Seconds to wait for each answer from GitHub before giving up. |
+| `host` | `HZ_GITHUB__HOST` | `'github.com'` | The GitHub host `gh` talks to: `github.com`, or the host name of a GitHub Enterprise Server such as `ghe.example.com`; passed to `gh` as `--hostname` and `GH_HOST`, so `gh` uses its login for that host. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml. |
+| `timeout` | `HZ_GITHUB__TIMEOUT` | `30.0` | Seconds to wait for each `gh` call before stopping it. |
 
 ## `[org]`
 

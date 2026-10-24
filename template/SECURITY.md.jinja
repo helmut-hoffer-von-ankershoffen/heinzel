@@ -45,7 +45,8 @@ Only the latest release receives security fixes while the project is on 0.x.
   `localhost`, `127.0.0.1` or `[::1]` on its port (or names you list in `[hz] api_allowed_hosts`) and refuses
   requests another site made, so a web page can't call it; `hz workflow run` and `hz system daemon tick` aren't
   REST endpoints at all.
-- External commands (uv, git, copier) run without a shell, from argument lists, with timeouts.
+- External commands (uv, git, copier, and `gh` for the GitHub plugin) run without a shell, from argument lists,
+  with timeouts.
 - **The daemon runs jobs unattended.** Once you run `hz system daemon install`, launchd or systemd start
   `hz system daemon tick` every few minutes, at login too, and it runs the jobs your modules and plugins declare,
   with your rights, without asking. Nothing is installed unless you run that command on the command line (it is

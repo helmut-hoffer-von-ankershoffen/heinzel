@@ -1,229 +1,148 @@
-import http.client
-import urllib.error
-
 import pytest
-from heinzel_github import GITHUB_API, Response
-from heinzel_github._client import MAX_PAGES, TOKEN_FIX, GitHubClient, next_link
-from heinzel_github._transport import MAX_BYTES
+from heinzel_github import GhResult
+from heinzel_github._client import MAX_PAGES, MAX_SAID, GhClient, redact, said
 
 from heinzel import HeinzelError
 
 pytestmark = pytest.mark.unit
 
-PATH = "/repos/acme/widgets/issues"
-SECRET = "ghp_secret-value"
+PATH = "repos/acme/widgets/issues"
+TOKEN = "ghp_" + "A1b2C3d4" * 5  # shaped like a classic token; made up
 
 
-def chained() -> OSError:
-    """What Transport raises for a broken answer: an OSError caused by http.client's exception."""
-    error = OSError(http.client.IncompleteRead(b""))
-    error.__cause__ = http.client.IncompleteRead(b"")
-    return error
+def items(fake, host: str = "github.com") -> list:
+    client = GhClient(fake, host, 7.0)
+    return [item for page in client.pages(PATH, {"state": "all"}) for item in page]
 
 
-def items(fake, token: str | None = None) -> list:
-    client = GitHubClient(GITHUB_API, token, fake, 7.0)
-    return [item for page in client.pages(PATH, {"per_page": "100"}) for item in page]
-
-
-def message(fake, token: str | None = None) -> str:
+def message(fake, host: str = "github.com") -> str:
     with pytest.raises(HeinzelError) as caught:
-        items(fake, token)
+        items(fake, host)
     return str(caught.value)
 
 
-def test_requests_name_the_api_version_and_the_plugin(fake_github):
-    fake_github.serve(PATH, [{"id": 1}])
-    assert items(fake_github) == [{"id": 1}]
-    headers = fake_github.requests[0].headers
-    assert headers["Accept"] == "application/vnd.github+json"
-    assert headers["X-GitHub-Api-Version"] == "2022-11-28"
-    assert headers["User-Agent"].startswith("heinzel-github/")
-    assert fake_github.requests[0].timeout == 7.0
-
-
-def test_the_rate_limit_says_when_it_resets_and_suggests_a_token_when_anonymous(fake_github):
-    fake_github.fail(
+def test_gh_api_is_called_with_an_argument_list_naming_host_method_headers_and_raw_fields(fake_gh):
+    fake_gh.serve(PATH, [{"id": 1}])
+    assert items(fake_gh) == [{"id": 1}]
+    call = fake_gh.calls[0]
+    assert call.args == [
+        "api",
+        "--hostname",
+        "github.com",
+        "--method",
+        "GET",
+        "--header",
+        "Accept: application/vnd.github+json",
+        "--header",
+        "X-GitHub-Api-Version: 2022-11-28",
         PATH,
-        403,
-        {"message": "API rate limit exceeded"},
-        {"x-ratelimit-remaining": "0", "x-ratelimit-reset": "1793534400"},
+        "--raw-field",
+        "state=all",
+        "--raw-field",
+        "per_page=100",
+        "--raw-field",
+        "page=1",
+    ]
+    assert (call.host, call.timeout) == ("github.com", 7.0)
+
+
+def test_a_full_page_asks_for_the_next_one(fake_gh):
+    fake_gh.serve(PATH, [{"id": i} for i in range(100)], [{"id": 100}])
+    assert len(items(fake_gh)) == 101
+    assert [c.fields["page"] for c in fake_gh.calls] == ["1", "2"]
+
+
+def test_more_than_the_page_limit_asks_for_a_shorter_window(fake_gh):
+    fake_gh.serve(PATH, *([{"id": i} for i in range(100)] for _ in range(MAX_PAGES)))
+    with pytest.raises(HeinzelError, match=f"more than {MAX_PAGES} pages"):
+        items(fake_gh)
+
+
+def test_not_logged_in_names_gh_auth_login_for_the_host(fake_gh):
+    fake_gh.fail(PATH, 4, "To get started with GitHub CLI, please run:  gh auth login\n")
+    assert message(fake_gh, "ghe.example.com") == (
+        "`gh` is not logged in to ghe.example.com; run `gh auth login --hostname ghe.example.com`, then try again."
     )
-    text = message(fake_github)
+
+
+def test_a_rejected_login_says_to_log_in_again(fake_gh):
+    fake_gh.fail(PATH, 1, "gh: Bad credentials (HTTP 401)\n", {"message": "Bad credentials"})
+    text = message(fake_gh)
+    assert "rejected gh's login for github.com (401: Bad credentials)" in text
+    assert "gh auth login --hostname github.com" in text
+
+
+def test_not_found_says_to_check_spelling_and_access(fake_gh):
+    fake_gh.fail(PATH, 1, "gh: Not Found (HTTP 404)\n", {"message": "Not Found"})
+    text = message(fake_gh)
+    assert f"GitHub has no {PATH}" in text
+    assert "gh auth status --hostname github.com" in text
+
+
+def test_forbidden_says_which_access_is_needed(fake_gh):
+    fake_gh.fail(PATH, 1, "gh: Resource not accessible (HTTP 403)\n", {"message": "Resource not accessible"})
+    assert "needs read access to its pull requests and issues" in message(fake_gh)
+
+
+@pytest.mark.parametrize("status", [403, 429])
+def test_a_rate_limit_says_to_wait_and_how_to_see_the_reset(fake_gh, status):
+    fake_gh.fail(PATH, 1, f"gh: API rate limit exceeded (HTTP {status})\n", {"message": "API rate limit exceeded"})
+    text = message(fake_gh)
     assert "rate limit is reached" in text
-    assert "2026-11-01 12:00 UTC" in text
-    assert "hz system credential set github-token" in text
+    assert "gh api rate_limit --hostname github.com" in text
 
 
-def test_the_rate_limit_with_a_token_does_not_suggest_one(fake_github):
-    fake_github.fail(PATH, 429, {}, {"x-ratelimit-remaining": "0", "x-ratelimit-reset": "soon"})
-    text = message(fake_github, SECRET)
-    assert "resets at an unknown time" in text
-    assert "credential set" not in text
+def test_another_status_is_shown_with_githubs_message(fake_gh):
+    fake_gh.fail(PATH, 1, "gh: Server Error (HTTP 502)\n", {"message": "Server Error"})
+    assert message(fake_gh) == f"GitHub answered {PATH} with 502: Server Error."
 
 
-def test_a_secondary_rate_limit_says_when_to_retry(fake_github):
-    fake_github.fail(PATH, 403, {"message": "secondary rate limit"}, {"retry-after": "60"})
-    assert "retry after 60 seconds" in message(fake_github, SECRET)
+def test_a_failure_without_a_status_shows_gh_s_first_line(fake_gh):
+    fake_gh.fail(PATH, 1, "\nerror connecting to api.github.com\ncheck your internet connection\n")
+    text = message(fake_gh)
+    assert "failed (exit code 1): error connecting to api.github.com." in text
+    assert "check your internet connection" not in text
 
 
-def test_a_secondary_rate_limit_without_headers_is_recognised_by_its_message(fake_github):
-    fake_github.fail(PATH, 403, {"message": "You have exceeded a secondary Rate Limit."})
-    text = message(fake_github, SECRET)
-    assert "rate limit is reached" in text
-    assert "wait at least a minute" in text
+def test_a_timeout_names_the_setting_that_allows_more_time(fake_gh):
+    fake_gh.fail(PATH, None)
+    text = message(fake_gh)
+    assert "did not finish within 7 seconds" in text
+    assert "hz system config set github.timeout 60" in text
 
 
-def test_too_many_requests_is_a_rate_limit_even_without_headers(fake_github):
-    fake_github.fail(PATH, 429, {})
-    assert "rate limit is reached" in message(fake_github, SECRET)
+def test_an_answer_over_the_limit_is_refused(fake_gh):
+    fake_gh.routes[PATH] = [GhResult(0, b"[", "", truncated=True)]
+    assert "is larger than" in message(fake_gh)
 
 
-def test_a_rejected_token_is_named_never_shown(fake_github):
-    fake_github.fail(PATH, 401, {"message": f"Bad credentials: {SECRET}"})
-    text = message(fake_github, SECRET)
-    assert "rejected the token" in text
-    assert "hz system credential set github-token" in text
-    assert SECRET not in text
-    assert "Bad credentials: ***" in text
+@pytest.mark.parametrize("body", [b"not json", b'{"message": "an object"}', b"[1, 2]"])
+def test_an_answer_that_is_not_a_list_of_objects_is_a_clear_error(fake_gh, body):
+    fake_gh.routes[PATH] = [GhResult(0, body, "")]
+    assert "GitHub" in message(fake_gh) or "not JSON" in message(fake_gh)
 
 
-def test_redaction_covers_a_token_that_straddles_the_cut(fake_github):
-    fake_github.fail(PATH, 401, {"message": "x" * 295 + SECRET + " tail"})
-    text = message(fake_github, SECRET)
-    assert SECRET[:6] not in text
-    assert "x***" in text
+def test_messages_never_carry_a_token_even_where_they_are_cut(fake_gh):
+    # The token straddles the cut: redacting after cutting would leave its first part behind.
+    text = "x" * (MAX_SAID - 10) + TOKEN
+    fake_gh.fail(PATH, 1, "gh: Server Error (HTTP 500)\n", {"message": text})
+    shown = message(fake_gh)
+    assert TOKEN[:10] not in shown
+    assert "ghp_" not in shown
 
 
-def test_a_token_is_stripped_of_surrounding_whitespace_before_use(fake_github):
-    fake_github.serve(PATH, [])
-    items(fake_github, "tok\r\n")
-    assert fake_github.requests[0].headers["Authorization"] == "Bearer tok"
-
-
-def test_a_blank_token_means_anonymous(fake_github):
-    fake_github.serve(PATH, [])
-    items(fake_github, " \n")
-    assert "Authorization" not in fake_github.requests[0].headers
-
-
-@pytest.mark.parametrize("token", ["to\rk", "tok\r\nX-Injected: 1", "tok\x00", "tök", "tok\tx"])
-def test_a_token_that_is_not_one_line_of_printable_ascii_is_refused_without_showing_it(fake_github, token):
-    with pytest.raises(HeinzelError) as caught:
-        GitHubClient(GITHUB_API, token, fake_github, 7.0)
-    text = str(caught.value)
-    assert TOKEN_FIX in text
-    assert "printable ASCII" in text
-    assert token not in text
-    assert repr(token) not in text
-    assert "tok" not in text.replace("token", "")
-    assert fake_github.requests == []
-
-
-def test_not_found_suggests_a_token_when_anonymous_and_access_when_not(fake_github):
-    fake_github.fail(PATH, 404, {"message": "Not Found"})
-    assert "private repositories need a token" in message(fake_github)
-    assert "grant it access" in message(fake_github, SECRET)
-
-
-def test_forbidden_names_the_permissions_needed(fake_github):
-    fake_github.fail(PATH, 403, {"message": "Resource not accessible by personal access token"})
-    text = message(fake_github, SECRET)
-    assert "metadata, pull requests and issues" in text
-    assert "Resource not accessible" in text
-
-
-def test_forbidden_without_a_token_says_none_is_stored(fake_github):
-    fake_github.fail(PATH, 403, {"message": "Forbidden"})
-    text = message(fake_github)
-    assert "no token is stored" in text
-    assert TOKEN_FIX in text
-    assert "the token needs" not in text
+def test_messages_lose_control_and_bidirectional_characters(fake_gh):
+    fake_gh.fail(PATH, 1, "gh: Server Error (HTTP 500)\n", {"message": "evil\x1b[31m\u202eoops\u2066"})
+    assert message(fake_gh) == f"GitHub answered {PATH} with 500: evil[31moops."
 
 
 @pytest.mark.parametrize(
-    ("location", "shown"),
-    [
-        ("https://user:pw@evil.example:8443/x?page=2", "https://evil.example:8443"),
-        ("http://api.github.com/x", "http://api.github.com"),
-        ("", "another address"),
-        ("https://evil.example:bad/x", "https://evil.example"),
-    ],
+    "token",
+    [TOKEN, "gho_" + "x" * 36, "ghs_" + "y" * 36, "github_pat_" + "Z9" * 20, "0123456789abcdef" * 2 + "01234567"],
 )
-def test_a_refused_redirect_says_it_left_the_origin(fake_github, location, shown):
-    fake_github.fail(PATH, 302, {}, {"location": location} if location else {})
-    text = message(fake_github, SECRET)
-    assert f"redirected {PATH} to {shown}, away from https://api.github.com" in text
-    assert "pw" not in text
-    assert "page=2" not in text
+def test_redact_hides_every_github_token_shape(token):
+    assert redact(f"before {token} after") == "before *** after"
 
 
-@pytest.mark.parametrize(("body", "said"), [(b"<html>oops</html>", "no details"), (b"[1]", "no details")])
-def test_other_errors_show_the_status_and_no_raw_body(fake_github, body, said):
-    fake_github.routes[PATH] = [Response(502, {}, body)]
-    text = message(fake_github)
-    assert "502" in text
-    assert said in text
-    assert "oops" not in text
-
-
-@pytest.mark.parametrize(
-    ("error", "said"),
-    [
-        (TimeoutError("timed out"), "TimeoutError: timed out"),
-        (TimeoutError(), "TimeoutError."),
-        (urllib.error.URLError("no route"), "URLError: no route"),
-        (urllib.error.URLError(ConnectionRefusedError(61, "refused")), "ConnectionRefusedError: [Errno 61] refused"),
-        (chained(), "IncompleteRead: IncompleteRead(0 bytes read)"),
-    ],
-)
-def test_an_unreachable_host_names_the_original_error(fake_github, error, said):
-    fake_github.error = error
-    assert f"Could not reach https://api.github.com: {said}" in message(fake_github)
-
-
-def test_an_answer_that_is_not_a_list_of_objects_is_refused(fake_github):
-    fake_github.routes[PATH] = [Response(200, {}, b'{"message": "hi"}')]
-    assert "something other than a list" in message(fake_github)
-    fake_github.routes[PATH] = [Response(200, {}, b"not json")]
-    assert "not JSON" in message(fake_github)
-
-
-def test_an_oversized_answer_is_refused(fake_github):
-    fake_github.routes[PATH] = [Response(200, {}, b" " * (MAX_BYTES + 1))]
-    assert "larger than" in message(fake_github)
-
-
-@pytest.mark.parametrize(
-    "link", ["https://evil.example/x?page=2", "https://api.github.com.evil.example/repos/acme/widgets/issues?page=2"]
-)
-def test_a_next_link_to_another_host_is_not_followed(fake_github, link):
-    fake_github.routes[PATH] = [Response(200, {"link": f'<{link}>; rel="next"'}, b"[]")]
-    assert "refusing to follow" in message(fake_github, SECRET)
-    assert len(fake_github.requests) == 1
-
-
-def test_too_many_pages_ask_for_a_shorter_window(fake_github):
-    fake_github.serve(PATH, *([{"id": n}] for n in range(MAX_PAGES + 1)))
-    assert "shorter window" in message(fake_github)
-    assert len(fake_github.requests) == MAX_PAGES
-
-
-def test_exactly_the_maximum_number_of_pages_is_fine(fake_github):
-    fake_github.serve(PATH, *([{"id": n}] for n in range(MAX_PAGES)))
-    assert len(items(fake_github)) == MAX_PAGES
-
-
-@pytest.mark.parametrize(
-    ("header", "expected"),
-    [
-        (None, None),
-        ('<https://api.github.com/x?page=3>; rel="last"', None),
-        (
-            '<https://api.github.com/x?page=1>; rel="prev", <https://api.github.com/x?page=3>; rel="next"',
-            "https://api.github.com/x?page=3",
-        ),
-    ],
-)
-def test_next_link(header, expected):
-    assert next_link(header) == expected
+def test_said_has_a_placeholder_for_nothing():
+    assert said("\u200b ") == "no details"

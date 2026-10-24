@@ -1,13 +1,15 @@
 """Settings and the models the plugin's own operations return."""
 
+import re
 from typing import ClassVar
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator
 
 from heinzel import ModuleSettings
 
-GITHUB_API = "https://api.github.com"
+GITHUB_HOST = "github.com"
+_LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+_HOST = re.compile(rf"^(?=.{{1,253}}$){_LABEL}(?:\.{_LABEL})+$")
 
 
 class GithubAbout(BaseModel):
@@ -17,44 +19,39 @@ class GithubAbout(BaseModel):
     version: str = Field(description="Installed version of the plugin.")
     heinzel_version: str = Field(description="Version of the Heinzelmännchen it runs in.")
     modules: list[str] = Field(description="Qualified names of the modules the plugin provides.")
-    api_url: str = Field(description="The GitHub REST API the adapter sends requests to.")
+    host: str = Field(description="The GitHub host the adapter reads, through the GitHub CLI `gh`.")
 
 
 class GithubSettings(ModuleSettings):
     """Settings of the GitHub adapter: the `[github]` table of the `hz` config files, or `HZ_GITHUB__<FIELD>`."""
 
-    api_url: str = Field(
-        default=GITHUB_API,
-        description="Base URL of the GitHub REST API: `https://api.github.com`, or for GitHub Enterprise Server "
-        "`https://<host>/api/v3`. Only the site, user and HZ_CONFIG files and the environment can set it, never a "
-        "project hz.toml, because the token goes there. `hz system capability list` shows its host as the adapter's.",
+    host: str = Field(
+        default=GITHUB_HOST,
+        description="The GitHub host `gh` talks to: `github.com`, or the host name of a GitHub Enterprise Server "
+        "such as `ghe.example.com`; passed to `gh` as `--hostname` and `GH_HOST`, so `gh` uses its login for that "
+        "host. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml.",
     )
     timeout: float = Field(
-        default=30.0, gt=0, le=300, description="Seconds to wait for each answer from GitHub before giving up."
+        default=30.0, gt=0, le=300, description="Seconds to wait for each `gh` call before stopping it."
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"api_url"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"host"})
 
-    @field_validator("api_url")
+    @field_validator("host")
     @classmethod
-    def _https_without_trailing_slash(cls, value: str) -> str:
-        url = value.strip().rstrip("/")
-        parts = urlsplit(url)
-        try:
-            parts.port  # noqa: B018 - raises ValueError on a malformed port
-        except ValueError:
-            valid = False
-        else:
-            valid = (
-                parts.scheme == "https"
-                and bool(parts.hostname)
-                and "@" not in parts.netloc  # no user or password: the token goes to the host alone
-                and not any(mark in url for mark in "?#")  # a query or fragment would break every request URL
-            )
-        if not valid:
+    def _host_name(cls, value: str) -> str:
+        host = value.strip().lower()
+        if not _HOST.fullmatch(host):
             msg = (
-                f"api_url must be an https URL without user, query or fragment, such as {GITHUB_API} or "
-                f"https://ghe.example.com/api/v3, not {value!r}"
+                f"host must be a host name such as {GITHUB_HOST} or ghe.example.com, without scheme, port or path, "
+                f"not {value!r}"
             )
             raise ValueError(msg)
-        return url
+        return host
+
+
+def api_host(host: str) -> str:
+    """The host `gh` sends API requests to for `host`: `api.github.com` and `api.<name>.ghe.com`, else `host`."""
+    if host == GITHUB_HOST or host.endswith(".ghe.com"):
+        return f"api.{host}"
+    return host

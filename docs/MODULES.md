@@ -60,7 +60,7 @@ First-party plugin `heinzel-github`: `hz system plugin add github`.
 
 | Operation | CLI | MCP tool | REST | Changes state |
 | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and the GitHub API it uses. | `hz github info` | `github_info` | `GET /github/info` |  |
+| Show this plugin's version, the Heinzelmännchen it runs on and the GitHub host it reads. | `hz github info` | `github_info` | `GET /github/info` |  |
 
 Settings: [`[github]`](CONFIGURATION.md#github).
 

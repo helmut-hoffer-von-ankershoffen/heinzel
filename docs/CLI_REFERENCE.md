@@ -114,7 +114,7 @@ $ hz github [OPTIONS] COMMAND [ARGS]...
 
 ### `hz github info`
 
-Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the GitHub API it uses.
+Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the GitHub host it reads.
 
 **Usage**:
 
