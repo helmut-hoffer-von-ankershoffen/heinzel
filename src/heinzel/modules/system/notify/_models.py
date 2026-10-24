@@ -1,6 +1,6 @@
 """Models of the notify module: its settings and what its operations return."""
 
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
@@ -74,13 +74,49 @@ class Delivered(BaseModel):
     delivered: list[str] = Field(description="Ids of the notices that weren't marked as shown before.")
 
 
+ChannelName = Literal["web", "native", "daemon"]
+ChannelState = Literal["shown", "ready", "closed", "blocked", "missing", "off", "unknown"]
+ChannelFix = Literal["open-settings", "install-notifier", "install-daemon", "turn-on"]
+
+
+class Channel(BaseModel):
+    """One way a notice can reach you, and whether it can now."""
+
+    name: ChannelName = Field(
+        description="`web`: the open web app; `native`: the system's pop-ups (Heinzel Notifier on macOS); `daemon`: "
+        "the background ticks that hand due notices to the native notifier when no web app is open."
+    )
+    state: ChannelState = Field(
+        description="`shown`: it popped the test up now; `ready`: it can; `closed`: no web app is open; `blocked`: the "
+        "system refuses it; `missing`: not installed; `off`: turned off in the settings; `unknown`: can't tell."
+    )
+    detail: str = Field(description="Why, in words, with the system's own reason when it gave one.")
+    fix: ChannelFix | None = Field(default=None, description="What fixes it, for a button; none when nothing must.")
+    command: str | None = Field(default=None, description="The command that fixes it in a terminal, if one does.")
+
+
 class Tested(BaseModel):
-    """What `test` recorded, and how the native pop-up went when it was asked for."""
+    """What `test` recorded, how each way of reaching you stands, and whether anything can pop it up."""
 
     notice: Notice = Field(description="The test notice.")
     native: str | None = Field(
         description="`shown` when the native notifier popped it up now, else why not; none when not asked to."
     )
+    channels: list[Channel] = Field(
+        default_factory=list[Channel], description="The web app, the native notifier, the daemon."
+    )
+    pops_up: bool = Field(
+        default=True,
+        description="Whether anything pops the test up: it was shown, a web app is open, or the daemon hands it to a "
+        "native notifier that may show it. False means nothing will: see the channels' fixes.",
+    )
+
+
+class Opened(BaseModel):
+    """Whether the system's notification settings were opened."""
+
+    opened: bool = Field(description="Whether they were opened on this machine.")
+    message: str = Field(description="What happened, or what to open by hand.")
 
 
 class Installed(BaseModel):

@@ -56,9 +56,20 @@ def render_installed(result: Installed) -> RenderableType:
 
 def render_tested(result: Tested) -> RenderableType:
     """What was recorded, and how the native pop-up went."""
-    lines = [Text(f"Recorded {result.notice.id}: the open web app or the daemon's next tick pops it up.")]
+    lines = [Text(f"Recorded {result.notice.id}.")]
+    for channel in result.channels:
+        mark = "✓" if channel.state in {"shown", "ready"} else "✗"
+        line = Text(f"{mark} {CHANNELS[channel.name]}: {channel.state}, {channel.detail}")
+        if channel.command:
+            line.append(f" → {channel.command}", style="bold")
+        lines.append(line)
     if result.native == "shown":
-        lines = [Text("A test notification is on its way.")]
-    elif result.native is not None:
-        lines.append(Text(f"No native pop-up: {result.native}"))
+        lines.append(Text("A test notification is on its way."))
+    elif not result.pops_up:
+        lines.append(Text("Nothing will pop it up: fix one of the above, then try again.", style="bold red"))
+    else:
+        lines.append(Text("The open web app or the daemon's next tick pops it up."))
     return Group(*lines)
+
+
+CHANNELS = {"web": "Web app", "native": "Native pop-ups", "daemon": "Daemon"}

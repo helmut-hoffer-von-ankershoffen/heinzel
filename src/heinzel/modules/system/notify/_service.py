@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 import shutil
+import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
@@ -21,11 +22,19 @@ from pathlib import Path
 from heinzel import Check, Config, Delivery, HeinzelError, Kernel, Notice, NoticeKind, Notifications, Settings, Status
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.modules.system.notify import _policy as policy
+from heinzel.modules.system.notify._channels import (
+    SHOWN,
+    DaemonState,
+    daemon_channel,
+    native_channel,
+    pops_up,
+    web_channel,
+)
 from heinzel.modules.system.notify._macos import QUARANTINE, NotifierApp
-from heinzel.modules.system.notify._models import Delivered, Installed, NoticeList, NotifySettings, Tested
+from heinzel.modules.system.notify._models import Delivered, Installed, NoticeList, NotifySettings, Opened, Tested
 from heinzel.modules.system.notify._native import ALLOW, DENIED_DETAIL, DENIED_FIX, HEINZEL, Native, native
 from heinzel.modules.system.notify._store import Store
-from heinzel.modules.system.notify._watch import watch
+from heinzel.modules.system.notify._watch import daemon_state, watch
 
 logger = logging.getLogger(__name__)
 MODULE_SECTION = "system.notify"
@@ -35,6 +44,8 @@ ROUTE = re.compile(r"/(?:[A-Za-z0-9._~%!$&'()*+,;=:@?-][A-Za-z0-9._~%!$&'()*+,;=
 """A path of the web app: one leading slash, then only URL characters; no `//host`, backslash or whitespace."""
 LOOK_EVERY = timedelta(hours=1)
 """How often the daemon runs doctor to look for problems no one asked about."""
+SETTINGS_URL = "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+"""macOS's System Settings > Notifications."""
 STALE = timedelta(hours=12)
 """A notice that waited longer than this to be shown doesn't pop up any more; it stays in the list."""
 
@@ -70,6 +81,11 @@ class NotifyService(Notifications):
         self._ui_url: Callable[[str], str | None] = ui_url or _no_url
         self.watcher: Callable[[], int] | None = None
         """What `look` runs once an hour; set by `for_user`."""
+        self.daemon: Callable[[], DaemonState | None] = lambda: None
+        """How the daemon stands, for a test; set by `for_user`."""
+        self.opener: Callable[[list[str]], None] = _open
+        """Starts a program and doesn't wait (`open` on macOS); tests replace it so nothing opens."""
+        self.platform = sys.platform
 
     @classmethod
     def for_user(cls, kernel: Kernel) -> "NotifyService":
@@ -83,6 +99,7 @@ class NotifyService(Notifications):
             ui_url=lambda route: f"http://127.0.0.1:{settings.ui_port}{route}",  # `hz ui`'s fixed port (ADR 0046)
         )
         service.watcher = lambda: watch(kernel, service, service.wanted)
+        service.daemon = lambda: daemon_state(kernel)
         return service
 
     @property
@@ -262,18 +279,39 @@ class NotifyService(Notifications):
         if not notice.popup:
             msg = f"Recorded, but it won't pop up: {notice.held}"
             raise HeinzelError(msg)
-        if not native:
-            return Tested(notice=notice, native=None)
+        result = self._post_test(notice) if native else None
+        channels = [
+            web_channel(watched=self.is_watched()),
+            native_channel(self.settings, self.notifier, result),
+            daemon_channel(self.daemon()),
+        ]
+        return Tested(notice=notice, native=result, channels=channels, pops_up=pops_up(channels))
+
+    def _post_test(self, notice: Notice) -> str:
+        """Pop the test up natively now: `shown`, or why not."""
         notifier = self.notifier
         if notifier.name is None:
-            return Tested(notice=notice, native=notifier.detail)
+            return notifier.detail
         url = self._ui_url(event_route(notice)) if notifier.clicks else None
         body = notice.body if url is not None else _with_command(notice.body, notice.command)
         problem = notifier.post(notice.title, body, url=url, asking=True)  # someone pressed the button
         self.store.native_result(self._clock(), problem)
         if problem is None:
             self.deliver([notice.id], Delivery.DAEMON)
-        return Tested(notice=notice, native=problem or "shown")
+        return problem or SHOWN
+
+    def open_settings(self) -> Opened:
+        """Open the system's notification settings, where a person allows Heinzel Notifier's pop-ups.
+
+        Raises:
+            HeinzelError: If macOS's `open` isn't there.
+        """
+        if self.platform != "darwin":
+            return Opened(opened=False, message="Open your desktop's notification settings and allow hz there.")
+        self.opener(["open", SETTINGS_URL])
+        return Opened(
+            opened=True, message="System Settings > Notifications is open: allow Heinzel Notifier's notifications."
+        )
 
     def install(self) -> Installed:
         """Install the native notifier where that is needed and pop up a test now, bypassing the policy.
@@ -402,6 +440,19 @@ def _app_checks(app: NotifierApp) -> list[Check]:
 def event_route(notice: Notice) -> str:
     """The notice's route with its id, so the app can open on the notice (`?event=<id>`)."""
     return f"{notice.route}{'&' if '?' in notice.route else '?'}event={notice.id}"
+
+
+def _open(command: list[str]) -> None:
+    """Start `command` (an argument list, no shell) without waiting for it.
+
+    Raises:
+        HeinzelError: If its program isn't on this machine's PATH.
+    """
+    executable = shutil.which(command[0])
+    if executable is None:
+        msg = f"{command[0]} isn't on this machine's PATH"
+        raise HeinzelError(msg)
+    subprocess.Popen([executable, *command[1:]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # noqa: S603 - a fixed program and URL, no shell
 
 
 def _no_url(route: str) -> str | None:  # noqa: ARG001 - the web app has no stable address yet
