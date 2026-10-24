@@ -317,6 +317,64 @@ def test_the_daemon_prunes_on_its_tick_and_the_receipt_counts_without_naming_fil
     assert "files" not in receipt["result"]
 
 
+def test_graph_shows_how_contracts_link_as_text_json_and_mermaid(kernel, contracts):
+    reader = (
+        EXAMPLE.read_text()
+        .replace("weekly-digest", "newsletter")
+        .replace("  outputs:\n", '    digest: {read: "contract:me/weekly-digest#digest", stage: draft}\n  outputs:\n')
+        .replace("### Requires\n\n", "### Requires\n\n- `digest`: the newest digest.\n")
+        .replace("    digest: {format: markdown}", "    issue: {format: markdown}")
+        .replace("      output: digest", "      output: issue")
+        .replace("- `digest`: at most", "- `issue`: at most")
+    )
+    (contracts / "newsletter.prose.md").write_text(reader)
+    assert hz(kernel, "workflow", "check")[1]["diagnostics"] == []
+    code, graph = hz(kernel, "workflow", "graph")
+    assert code == 0
+    assert {
+        "source": "contract:me/weekly-digest#digest",
+        "target": "me:newsletter",
+        "kind": "reads",
+        "input": "digest",
+    } in (graph["edges"])
+    assert (graph["cycles"], graph["unmaintained"]) == ([], [])
+    assert "mermaid_only" not in graph
+    code, text = hz(kernel, "workflow", "graph", json_output=False)
+    assert code == 0
+    assert "Contract graph" in str(text)
+    assert "me:newsletter" in str(text)
+    code, chart = hz(kernel, "workflow", "graph", "--mermaid", json_output=False)
+    assert code == 0
+    assert str(chart).startswith("flowchart LR\n")
+    (contracts / "weekly-digest.prose.md").unlink()
+    code, text = hz(kernel, "workflow", "graph", json_output=False)
+    assert "nobody maintains contract:me/weekly-digest#digest" in " ".join(str(text).split())
+
+
+def test_a_cycle_fails_check_while_graph_shows_it_and_mermaid_lines_stay_whole(kernel, contracts):
+    """`check` gates CI on a cycle; `graph --mermaid` piped at 80 columns keeps each long line in one piece."""
+    name = "a-contract-whose-name-is-long-enough-to-pass-eighty-columns"
+    looped = (
+        EXAMPLE.read_text()
+        .replace("weekly-digest", name)
+        .replace("  outputs:\n", f'    loop: {{read: "contract:me/{name}#digest", stage: draft}}\n  outputs:\n')
+        .replace("### Requires\n\n", "### Requires\n\n- `loop`: its own last draft.\n")
+    )
+    (contracts / f"{name}.prose.md").write_text(looped)
+    code, report = hz(kernel, "workflow", "check")
+    assert code == 1
+    assert "HZC030" in {d["code"] for d in report["diagnostics"]}
+    code, graph = hz(kernel, "workflow", "graph")
+    assert code == 0
+    assert graph["cycles"] == [[f"me:{name}"]]
+    code, text = hz(kernel, "workflow", "graph", json_output=False)
+    assert "Cycle, so none of these runs" in str(text)
+    code, chart = hz(kernel, "workflow", "graph", "--mermaid", json_output=False)
+    lines = str(chart).splitlines()
+    assert max(len(line) for line in lines) > 80
+    assert all(line == "flowchart LR" or line.startswith("  ") for line in lines), lines
+
+
 def test_show_reports_the_compiled_view(kernel):
     code, shown = hz(kernel, "workflow", "show", "weekly-digest")
     assert code == 0

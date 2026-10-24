@@ -160,6 +160,10 @@ markers = [
 source = ["[[ package_name ]]"]
 branch = true
 relative_files = true
+# make test runs the suite on xdist workers: subprocesses, measured through coverage's .pth hook into a data file each
+# (parallel) and merged by `coverage combine`. Python subprocesses the tests start (`python -m heinzel`) count too.
+parallel = true
+patch = ["subprocess"]
 
 [tool.coverage.report]
 fail_under = 90

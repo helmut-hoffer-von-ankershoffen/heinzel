@@ -26,6 +26,9 @@ LINT := \
 TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Unit, then integration (the suite orders them), on 4 workers, stopping at the first failure; coverage is in make test.
 TESTS := "&tests=uv run pytest -m 'unit or integration' -n 4 -x -q --session-timeout=120"
+# The same suite measured, on the same 4 workers: each xdist worker is a Python subprocess, which coverage measures
+# ([tool.coverage.run] patch = ["subprocess"]) into its own data file; `coverage combine` merges them afterwards.
+COVERED := uv run coverage erase && uv run coverage run -m pytest -m 'unit or integration' -n 4 -q --session-timeout=300
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -59,7 +62,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	$(STEPS) $(GATE) $(LINT) $(TYPES) \
-		"&tests=uv run coverage run -m pytest -m 'unit or integration' -x -q --session-timeout=300 && uv run coverage report --format=total --fail-under=90" \
+		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
 		"&template=TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" \
 		"&build=uv build --all-packages --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
 		"&commits=$(MAKE) --no-print-directory commits"
@@ -85,9 +88,9 @@ format: ## Format and autofix
 typecheck: ## Type-check with mypy and pyright (both strict)
 	$(STEPS) "mypy=uv run mypy" "&pyright=uv run pyright"
 
-test: ## Run unit and integration tests with coverage (offline)
+test: ## Run unit and integration tests with coverage on 4 workers (offline; what the CI Coverage job runs)
 	$(STEPS) \
-		"tests=uv run coverage run -m pytest -m 'unit or integration' -q --session-timeout=300 --junitxml=reports/junit.xml" \
+		"tests=$(COVERED) --junitxml=reports/junit.xml && uv run coverage combine --quiet" \
 		"coverage=uv run coverage report --skip-covered --skip-empty" \
 		"coverage-xml=uv run coverage xml -q"
 	@uv run --quiet coverage report --format=total | xargs printf '  coverage %s%%\n'
@@ -123,8 +126,8 @@ secrets: ## Scan the whole git history for credentials with gitleaks (the pre-co
 licenses: ## Check that runtime dependencies' licenses are on .license-allowlist, so releases stay MIT-compatible
 	bash scripts/check_licenses.sh
 
-template-test: ## Render the plugin template and run its checks against this checkout (KEEP=dir keeps it; AUDIT=1 adds make audit, which needs network)
-	TEMPLATE_AUDIT=$(AUDIT) bash scripts/template-test.sh $(KEEP)
+template-test: ## Render the plugin template, run its checks and audit against this checkout (KEEP=dir keeps it; AUDIT=0 skips the audit, which needs network)
+	TEMPLATE_AUDIT=$(if $(filter 0,$(AUDIT)),,1) bash scripts/template-test.sh $(KEEP)
 
 docs: ## Regenerate docs/CLI_REFERENCE.md from the code
 	uv run python scripts/generate_docs.py

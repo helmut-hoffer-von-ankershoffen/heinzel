@@ -18,6 +18,7 @@ from pydantic import (
     Field,
     JsonValue,
     PlainSerializer,
+    PlainValidator,
     StrictInt,
     StringConstraints,
     TypeAdapter,
@@ -29,7 +30,18 @@ from pydantic import (
 from pydantic_core import PydanticCustomError
 
 from heinzel import AgentResult, ModuleSettings, Window
-from heinzel.kernel import CAPABILITIES, Capability, Requirement, parse_duration, schedule_problem, user_config_dir
+from heinzel.kernel import (
+    CAPABILITIES,
+    WINDOW_PATTERN,
+    Capability,
+    Requirement,
+    Span,
+    format_duration,
+    parse_duration,
+    parse_window,
+    schedule_problem,
+    user_config_dir,
+)
 from heinzel.modules.workflow._measure import Measurements
 
 SCHEMA_VERSION = 1
@@ -45,7 +57,7 @@ DRAFTS = ("workflow", "drafts")
 """Where drafts are saved, below the data directory: one directory per contract, `<namespace>-<name>`."""
 DRAFT_STAMP = "%Y%m%dT%H%M%SZ"
 """Draft file names start with the render's time, so a listing sorts by it and retention ages by it."""
-DRAFT_NAME = re.compile(r"(?P<stamp>\d{8}T\d{6}Z)(?:-[1-9]\d*)?(?P<suffix>\.record\.json|\.md|\.json)")
+DRAFT_NAME = re.compile(r"(?P<stamp>\d{8}T\d{6}Z)(?:-(?P<n>[1-9]\d*))?(?P<suffix>\.record\.json|\.md|\.json)")
 """The names a render gives drafts and records: `<stamp>[-<n>]` and the suffix; only these are ever pruned."""
 RUNNER_IS_CONFIGURATION = (
     "the runner and model are configuration: `[capabilities] agent_runner`, `[system.runner] model`"
@@ -57,22 +69,15 @@ NAME = r"^[a-z](?:-?[a-z0-9])*$"
 """Contract names: lowercase words joined by single dashes; a subset of the kernel's job names."""
 APPROVAL = r"^[a-z](?:-?[a-z0-9])*(?:@sha256:[0-9a-f]{64})?$"
 IDENT = r"^[a-z][a-z0-9_]*$"
-Slug = Annotated[str, StringConstraints(pattern=NAME, max_length=64)]
+MAX_NAME_LENGTH = 64
+Slug = Annotated[str, StringConstraints(pattern=NAME, max_length=MAX_NAME_LENGTH)]
 Ident = Annotated[str, StringConstraints(pattern=IDENT, max_length=64)]
-
-
-def _format_duration(value: timedelta) -> str:
-    seconds = int(value.total_seconds())
-    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
-        if seconds % size == 0:
-            return f"{seconds // size}{unit}"
-    return f"{seconds}s"
 
 
 Duration = Annotated[
     timedelta,
     BeforeValidator(parse_duration),
-    PlainSerializer(_format_duration, return_type=str),
+    PlainSerializer(format_duration, return_type=str),
     WithJsonSchema({"type": "string", "pattern": r"^[1-9][0-9]*[smhd]$", "examples": ["7d", "10m"]}),
 ]
 """A duration as people write it: `30s`, `10m`, `2h`, `7d`."""
@@ -104,43 +109,79 @@ class _Strict(BaseModel):
         return data  # pyright: ignore[reportUnknownVariableType] - raw YAML, validated next
 
 
+WindowSpan = Annotated[
+    Span,
+    PlainValidator(parse_window),
+    PlainSerializer(str, return_type=str),
+    WithJsonSchema({"type": "string", "pattern": WINDOW_PATTERN, "examples": ["7d", "next 7d"]}),
+]
+"""A window as people write it: `7d` or `last 7d` looks back from the run, `next 7d` ahead (a calendar's week)."""
+CONTRACT_INPUT = re.compile(
+    r"contract:(?P<namespace>me|team)/(?P<name>[a-z](?:-?[a-z0-9])*)#(?P<output>[a-z][a-z0-9_]*)"
+)
+"""An input that reads another contract's output, `contract:<namespace>/<name>#<output>`: an edge of the graph."""
+
+
 class Input(_Strict):
-    """Data fetched through a capability's read method before the agent session starts (ADR 0029, option a)."""
+    """Data fetched before the agent session starts: a capability's read method, or another contract's output.
+
+    Inputs are how contracts link: a contract maintains its outputs, and one that reads another's output depends on it,
+    so the workflow is the graph of contracts these inputs draw (ADR 0021).
+    """
 
     deferred_keys: ClassVar[dict[str, str]] = {
         "source": "inputs name a capability read method (`read`), never a vendor URI (ADR 0028)",
         "query": "pass the method's arguments in `args`",
         "facets": "input facets come with fingerprints and memo keys",
-        "stage": "contract-to-contract inputs come with the contract graph",
         "required": "every input is required in this version",
     }
 
     read: str = Field(
-        pattern=r"^[a-z][a-z0-9-]*\.[a-z][a-z0-9_]*$",
-        description="The capability read method that fetches it, `<capability>.<method>`, e.g. "
-        "`tracker.issues_updated`; `hz system capability list` shows the capabilities.",
+        pattern=r"^(?:[a-z][a-z0-9-]*\.[a-z][a-z0-9_]*|contract:(?:me|team)/[a-z](?:-?[a-z0-9])*#[a-z][a-z0-9_]*)$",
+        description="What fetches it: a capability read method, `<capability>.<method>`, e.g. "
+        "`tracker.issues_updated` (`hz system capability list` shows them), or another contract's output, "
+        "`contract:<namespace>/<name>#<output>`, e.g. `contract:me/weekly-digest#digest`.",
     )
     args: dict[str, JsonValue] = Field(
         default_factory=dict,
         description="Arguments of the method besides its time window, e.g. `{project: APP}`.",
     )
-    window: Duration | None = Field(
+    window: WindowSpan | None = Field(
         default=None,
-        description="For methods that take a time window: how far back from the run, e.g. `7d`.",
+        description="For methods that take a time window: back from the run, `7d` or `last 7d`, or ahead of it, "
+        "`next 7d` (e.g. a calendar's coming week); at most 366d.",
+    )
+    stage: Literal["draft"] | None = Field(
+        default=None,
+        description="For a contract's output: `draft` reads its newest local draft. Required, since nothing is "
+        "published yet; published truth comes with `hz inbox`.",
     )
 
     @property
+    def upstream(self) -> tuple[str, str, str] | None:
+        """The contract output it reads, `(namespace, name, output)`, or None for a capability read."""
+        match = CONTRACT_INPUT.fullmatch(self.read)
+        return (match["namespace"], match["name"], match["output"]) if match else None
+
+    @property
     def capability(self) -> str:
-        """The capability it reads, e.g. `tracker`."""
-        return self.read.partition(".")[0]
+        """The capability it reads, e.g. `tracker`; `contract` for another contract's output."""
+        return "contract" if self.upstream else self.read.partition(".")[0]
 
     @property
     def method(self) -> str:
-        """The method it calls, e.g. `issues_updated`."""
-        return self.read.partition(".")[2]
+        """The method it calls, e.g. `issues_updated`; empty for another contract's output."""
+        return "" if self.upstream else self.read.partition(".")[2]
 
     @model_validator(mode="after")
     def _method_and_arguments(self) -> Self:
+        if (upstream := self.upstream) is not None:
+            return self._contract_input(upstream)
+        if self.stage is not None:
+            raise at(("stage",), "only an input that reads a contract's output has a stage: remove `stage`")
+        return self._capability_input()
+
+    def _capability_input(self) -> Self:
         spec = CAPABILITIES.get(self.capability)
         if spec is None or self.capability == RUNNER:
             known = ", ".join(sorted(name for name in CAPABILITIES if name != RUNNER))
@@ -181,14 +222,30 @@ class Input(_Strict):
                 return at(("args", name), f"{name}: {exc}")
         return None
 
-    def arguments(self, until: datetime) -> dict[str, Any]:
-        """The method's keyword arguments for a run at `until`: `args`, plus the window ending then."""
+    def _contract_input(self, upstream: tuple[str, str, str]) -> Self:
+        if len(upstream[1]) > MAX_NAME_LENGTH:
+            raise at(("read",), f"contract names are at most {MAX_NAME_LENGTH} characters")
+        if self.args or self.window is not None:
+            key = "args" if self.args else "window"
+            raise at((key,), f"{self.read} is a contract's output: it takes no `{key}`; remove it")
+        if self.stage != "draft":
+            raise at(
+                ("stage",),
+                f"{self.read}: nothing is published yet, so set `stage: draft` to read its newest draft; "
+                "published truth comes with `hz inbox`",
+            )
+        return self
+
+    def arguments(self, run: datetime) -> dict[str, Any]:
+        """The method's keyword arguments for a run at `run`: `args`, plus the window back from or ahead of it."""
+        if self.upstream is not None:
+            return {}
         spec = CAPABILITIES[self.capability]
         hints = get_type_hints(getattr(spec.protocol, self.method))
         arguments: dict[str, Any] = dict(self.args)
         for name, hint in hints.items():
             if hint is Window and self.window is not None:
-                arguments[name] = Window(since=until - self.window, until=until)
+                arguments[name] = self.window.at(run)
         return arguments
 
 
@@ -312,10 +369,10 @@ class Hz(_Strict):
         if self.schedule is not None and (problem := cron_problem(self.schedule)):
             raise at(("schedule",), problem)
         if not timedelta(0) < self.timeout <= MAX_TIMEOUT:
-            raise at(("timeout",), f"timeout must be at most {_format_duration(MAX_TIMEOUT)}")
+            raise at(("timeout",), f"timeout must be at most {format_duration(MAX_TIMEOUT)}")
         granted = self.requirements()
         for name, spec in self.inputs.items():
-            if spec.capability not in granted:
+            if spec.upstream is None and spec.capability not in granted:
                 raise at(("inputs", name, "read"), f"{spec.read} needs `{spec.capability}:read` in `hz.requires`")
         if len(self.outputs) != 1:
             raise at(("outputs",), "name exactly one output; several outputs come with output facets")
@@ -633,6 +690,51 @@ class CheckReport(BaseModel):
     def errors(self) -> int:
         """How many errors were found."""
         return sum(d.severity == "error" for d in self.diagnostics)
+
+
+class GraphNode(BaseModel):
+    """A contract, an output it maintains (an asset), or a capability read it takes as input (a source)."""
+
+    id: str = Field(
+        description="`<namespace>:<name>` for a contract, `contract:<namespace>/<name>#<output>` for an asset, the "
+        "read method and its arguments for a source."
+    )
+    kind: Literal["contract", "asset", "source"] = Field(description="What it is.")
+    maintained: bool = Field(
+        default=True, description="For an asset: whether a contract maintains it; false for an input nobody does."
+    )
+
+
+class GraphEdge(BaseModel):
+    """A contract maintaining an asset, or a contract reading an asset or a source as one of its inputs."""
+
+    source: str = Field(description="The id it starts at: a contract that maintains, or what is read.")
+    target: str = Field(description="The id it ends at: the asset maintained, or the contract that reads.")
+    kind: Literal["maintains", "reads"] = Field(description="`maintains` or `reads`.")
+    input: str | None = Field(default=None, description="For `reads`: the reading contract's input name.")
+
+
+class Unmaintained(BaseModel):
+    """An input that reads a contract's output no contract maintains."""
+
+    contract: str = Field(description="The contract with the input, `<namespace>:<name>`.")
+    input: str = Field(description="The input's name.")
+    asset: str = Field(description="What it reads, `contract:<namespace>/<name>#<output>`.")
+    why: str = Field(description="No such contract, or it has no such output.")
+
+
+class ContractGraph(BaseModel):
+    """`hz workflow graph`: contracts linked by what they read and maintain; the workflow nobody writes down."""
+
+    nodes: list[GraphNode] = Field(description="Contracts, assets and sources.")
+    edges: list[GraphEdge] = Field(description="Who maintains what, and who reads what.")
+    cycles: list[list[str]] = Field(
+        description="Contracts that depend on themselves, alone or through others, by cycle; they don't run."
+    )
+    unmaintained: list[Unmaintained] = Field(description="Inputs that read an output no contract maintains.")
+    mermaid: str = Field(description="The graph as a Mermaid flowchart, for documents and pull requests.")
+    next: list[Step] = Field(description="What to do next, as commands.")
+    mermaid_only: bool = Field(default=False, exclude=True, description="Print only the flowchart in a terminal.")
 
 
 class FetchedInput(BaseModel):

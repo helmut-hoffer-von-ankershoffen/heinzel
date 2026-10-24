@@ -55,14 +55,19 @@ from heinzel.kernel import (
 )
 from heinzel.modules.workflow import _measure, _playbooks
 from heinzel.modules.workflow._contracts import Contract, collect, read_contract
+from heinzel.modules.workflow._graph import CODES as GRAPH_CODES
+from heinzel.modules.workflow._graph import build as build_graph
+from heinzel.modules.workflow._graph import problems as graph_problems
 from heinzel.modules.workflow._measure import Sent
 from heinzel.modules.workflow._models import (
+    DRAFT_NAME,
     DRAFT_STAMP,
     DRAFTS,
     RUNNER,
     SUFFIX,
     CheckReport,
     CompiledContract,
+    ContractGraph,
     ContractList,
     ContractSummary,
     Diagnostic,
@@ -71,6 +76,7 @@ from heinzel.modules.workflow._models import (
     DraftList,
     FetchedInput,
     Frontmatter,
+    Input,
     Namespace,
     NewContract,
     Packet,
@@ -180,7 +186,12 @@ class WorkflowService:
                 found.append(Contract(directory, namespace, directory.name, None, "", (problem,)))
                 continue
             found += [self._safely_checked(read_contract(path, namespace)) for path in paths]
-        return found
+        linked = graph_problems(found)  # what only the whole set shows: cycles, unmaintained inputs
+        return [c.adding(*linked.get(c.qualified, ())) for c in found]
+
+    def graph(self) -> ContractGraph:
+        """The contracts found, linked by the outputs they maintain and the inputs that read them (ADR 0021)."""
+        return build_graph(self.contracts())
 
     def _paths(self, namespace: Namespace, directory: Path) -> list[Path]:
         """The contract files of a namespace.
@@ -400,7 +411,7 @@ class WorkflowService:
         if path.exists():
             msg = f"{path} exists; edit it, or write another: hz workflow new {name}-2{' --team' if team else ''}"
             raise HeinzelError(msg)
-        text = starter(name) if chosen is None else from_template(chosen[1], name, assets)
+        text = starter(name, namespace) if chosen is None else from_template(chosen[1], name, assets)
         checked = self._checked(read_contract(path, namespace, text=text))
         refused = [d for d in checked.diagnostics if d.code != PLACEHOLDER_LEFT]  # those are left to fill in
         if problems := [d for d in refused if d.severity == "error" or chosen is None]:
@@ -1113,6 +1124,57 @@ class WorkflowService:
         )
         return RunResult(dry_run=False, rendered=rendered, note=note)
 
+    def _upstream_draft(self, contract: Contract, name: str, spec: Input) -> JsonValue:
+        """The newest draft of the contract output `spec` reads (`stage: draft`): its text, or its JSON.
+
+        Raises:
+            HeinzelError: If no contract maintains that output, it has no draft yet, its drafts directory is a symbolic
+                link, or the newest draft is too large or can't be read.
+        """
+        if (found := spec.upstream) is None:
+            msg = f"{contract.qualified}: input {name!r} reads a capability, not a contract's output"
+            raise HeinzelError(msg)
+        namespace, upstream, output = found
+        maintainer = next((c for c in self.contracts() if (c.namespace, c.name) == (namespace, upstream)), None)
+        if maintainer is None or maintainer.frontmatter is None or output not in maintainer.frontmatter.hz.outputs:
+            msg = f"{contract.qualified}: input {name!r} reads {spec.read}, which no contract maintains"
+            raise HeinzelError(msg)
+        outputs = maintainer.frontmatter.hz.outputs
+        directory = self._drafts_of(maintainer)
+        if self.drafts_dir.is_symlink() or directory.is_symlink():
+            msg = f"{contract.qualified}: input {name!r} reads {spec.read}, but {directory} is a symbolic link"
+            raise HeinzelError(msg)
+        drafts = [
+            (d.created, int(match["n"] or 1), d.draft)
+            for d in self._draft_files(directory)
+            if not d.draft.is_symlink() and (match := DRAFT_NAME.fullmatch(d.draft.name))
+        ]
+        if not drafts:
+            msg = (
+                f"{contract.qualified}: input {name!r} reads {spec.read}, which has no draft yet; "
+                f"draft it first: hz workflow run {namespace}:{upstream}"
+            )
+            raise HeinzelError(msg)
+        newest = max(drafts)[2]  # `<stamp>-2.md` is newer than `<stamp>.md`
+        try:
+            if newest.stat().st_size > MAX_INPUT_BYTES:
+                msg = (
+                    f"{contract.qualified}: {newest}, the newest draft of {spec.read}, is larger than the "
+                    f"{MAX_INPUT_BYTES // 1024} KiB an input may have"
+                )
+                raise HeinzelError(msg)
+            text = newest.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            msg = f"{contract.qualified}: can't read {newest} for input {name!r}: {exc.strerror or exc}"
+            raise HeinzelError(msg) from exc
+        if outputs[output].format == "json":
+            try:
+                return cast("JsonValue", json.loads(text))
+            except json.JSONDecodeError as exc:
+                msg = f"{contract.qualified}: {newest}, the newest draft of {spec.read}, isn't JSON: {exc}"
+                raise HeinzelError(msg) from exc
+        return text
+
     def packet(self, contract: Contract, *, scheduled: bool) -> tuple[Packet, AgentRunner]:
         """Check the runner, fetch the inputs through the contract's handles and build what the agent session gets.
 
@@ -1128,16 +1190,19 @@ class WorkflowService:
         as_of = self._clock()
         inputs: dict[str, FetchedInput] = {}
         for name, spec in hz.inputs.items():
-            handle = self._kernel.handle_for(requester, spec.capability)
             arguments = spec.arguments(as_of)
-            try:
-                result = getattr(handle, spec.method)(**arguments)
-            except HeinzelError:
-                raise
-            except Exception as exc:  # isolation boundary: an adapter's failure becomes the run's error, not a crash
-                why = clean_text(f"{type(exc).__name__}: {exc}")
-                msg = f"{contract.qualified}: input {name!r} ({spec.read}) failed: {why}"
-                raise HeinzelError(msg) from exc
+            if spec.upstream is not None:
+                result = self._upstream_draft(contract, name, spec)
+            else:
+                handle = self._kernel.handle_for(requester, spec.capability)
+                try:
+                    result = getattr(handle, spec.method)(**arguments)
+                except HeinzelError:
+                    raise
+                except Exception as exc:  # isolation boundary: an adapter's failure is the run's error, not a crash
+                    why = clean_text(f"{type(exc).__name__}: {exc}")
+                    msg = f"{contract.qualified}: input {name!r} ({spec.read}) failed: {why}"
+                    raise HeinzelError(msg) from exc
             data = cast("JsonValue", _minimised(to_jsonable_python(_without_emails(result))))
             size = len(json.dumps(data, ensure_ascii=False).encode())
             if size > MAX_INPUT_BYTES:
@@ -1304,7 +1369,13 @@ def _valid(contract: Contract) -> Frontmatter:
 
 
 def _recheck(contract: Contract) -> str:
-    """The command that checks one contract file; quoted, since the default directory has a space on macOS."""
+    """The command that checks one contract file; quoted, since the default directory has a space on macOS.
+
+    The graph's errors (a cycle, a team contract reading a personal one) show only in the whole set, so a contract with
+    one is rechecked with every contract, not by its path.
+    """
+    if any(d.code in GRAPH_CODES for d in contract.diagnostics if d.severity == "error"):
+        return "hz workflow check"
     return f"hz workflow check --path {shlex.quote(str(contract.path))}"
 
 

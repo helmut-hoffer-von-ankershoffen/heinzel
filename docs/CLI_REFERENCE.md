@@ -1134,6 +1134,7 @@ $ hz workflow [OPTIONS] COMMAND [ARGS]...
 * `check`: Check contracts and list every problem...
 * `discover`: Find candidates for each playbook&#x27;s asset...
 * `drafts`: List the drafts runs saved locally, newest...
+* `graph`: Show the workflow your contracts make:...
 * `list`: List the contracts in your and your team&#x27;s...
 * `new`: Write a starter contract, or a playbook&#x27;s...
 * `playbooks`: List the playbooks plugins contribute:...
@@ -1190,6 +1191,23 @@ $ hz workflow drafts [OPTIONS]
 
 * `--name <str>`: Only this contract&#x27;s drafts; every contract&#x27;s if omitted.
 * `--latest / --no-latest`: Print the newest draft instead of the list.  [default: no-latest]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz workflow graph`
+
+Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
+
+**Usage**:
+
+```console
+$ hz workflow graph [OPTIONS]
+```
+
+**Options**:
+
+* `--mermaid / --no-mermaid`: Print only the Mermaid flowchart, to paste into a document or a pull request.  [default: no-mermaid]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
