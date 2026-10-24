@@ -41,6 +41,8 @@ MAX_TIMEOUT = timedelta(hours=2)
 RUNNER_IS_CONFIGURATION = (
     "the runner and model are configuration: `[capabilities] agent_runner`, `[system.runner] model`"
 )
+GUIDE = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/WORKFLOWS.md"
+"""The guide every empty state and starter contract points at: the journey and the contract reference."""
 
 NAME = r"^[a-z](?:-?[a-z0-9])*$"
 """Contract names: lowercase words joined by single dashes; a subset of the kernel's job names."""
@@ -448,6 +450,21 @@ class Diagnostic(BaseModel):
         return f"{text}\n  hint: {self.hint}" if self.hint else text
 
 
+class Directory(BaseModel):
+    """A directory contracts are read from."""
+
+    namespace: Namespace = Field(description="`me` (your workflows directory) or `team` (the team repository's).")
+    path: Path = Field(description="The directory.")
+    exists: bool = Field(description="Whether it exists; `hz workflow new` creates it.")
+
+
+class Step(BaseModel):
+    """Something to do next: a command that works, and why."""
+
+    command: str = Field(description="The command line to run.")
+    why: str = Field(description="What it does for you.")
+
+
 class ContractSummary(BaseModel):
     """One contract in `hz workflow list`."""
 
@@ -460,6 +477,42 @@ class ContractSummary(BaseModel):
     valid: bool = Field(description="Whether it has no errors, so it is compiled.")
     errors: int = Field(description="How many errors it has.")
     warnings: int = Field(description="How many warnings it has.")
+
+
+class ContractList(BaseModel):
+    """`hz workflow list`: the directories searched and every contract found in them."""
+
+    directories: list[Directory] = Field(description="Where contracts are read from, team first.")
+    contracts: list[ContractSummary] = Field(description="Every contract found, team ones first.")
+    next: list[Step] = Field(description="What to do next, as commands.")
+
+
+class NewContract(BaseModel):
+    """`hz workflow new`: the starter contract written, and what to do with it."""
+
+    file: Path = Field(description="The contract file written.")
+    namespace: Namespace = Field(description="Where it was written: `me` or `team`.")
+    name: str = Field(description="The contract's name.")
+    next: list[Step] = Field(description="What to do next, as commands.")
+
+
+class Draft(BaseModel):
+    """A draft a render saved locally."""
+
+    contract: str = Field(description="The qualified contract, `<namespace>:<name>`.")
+    created: datetime = Field(description="When the render fetched its inputs (from the file name).")
+    draft: Path = Field(description="The draft file.")
+    record: Path | None = Field(description="Its record: packet, input hashes and the agent's report; none if lost.")
+    bytes: int = Field(description="The draft's size.")
+
+
+class DraftList(BaseModel):
+    """`hz workflow drafts`: the drafts saved so far, newest first."""
+
+    directory: Path = Field(description="Where drafts are saved, one directory per contract.")
+    drafts: list[Draft] = Field(description="The drafts, newest first.")
+    latest: str | None = Field(default=None, description="The newest draft's text, when asked for.")
+    next: list[Step] = Field(description="What to do next, as commands.")
 
 
 class RequirementStatus(BaseModel):
@@ -505,6 +558,10 @@ class CompiledContract(BaseModel):
     approve: str | None = Field(
         description="For team contracts: the `schedule_team` entry that runs exactly this content on your daemon."
     )
+    drafts: Path = Field(description="Where its drafts are saved.")
+    draft_count: int = Field(description="How many drafts it has so far.")
+    ready: bool = Field(description="Whether a run can start: no errors and every requirement served.")
+    next: list[Step] = Field(description="What to do next, as commands: fixes while not ready, then how to run it.")
 
 
 class CheckReport(BaseModel):
@@ -512,6 +569,9 @@ class CheckReport(BaseModel):
 
     files: list[Path] = Field(description="The contract files checked.")
     diagnostics: list[Diagnostic] = Field(description="Every error and warning, by file and line.")
+    searched: list[Directory] = Field(
+        default_factory=list[Directory], description="The directories searched, when no path was given."
+    )
 
     @property
     def errors(self) -> int:

@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Run named steps quietly: one line per passing step, the tail of the output of a failing one.
 
 Make targets call this so that people and agents read `✓ lint 3.1s` instead of pages of tool output, and so that a
@@ -7,7 +11,7 @@ A step prefixed with `&` runs concurrently with the step before it, so `"a=…" 
 together, then d. Results print in the declared order; the first failure cancels the rest of its group and stops.
 Every step is killed after `STEP_TIMEOUT` seconds (default 600). `VERBOSE=1` runs everything in order and streams.
 
-Usage: python scripts/steps.py "name=command" ["&name=command" ...]
+Usage: uv run --script scripts/steps.py "name=command" ["&name=command" ...]
 """
 
 import contextlib
@@ -25,7 +29,13 @@ from typing import IO
 TAIL = 40
 POLL = 0.05
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
-ENV = os.environ | {"NO_COLOR": "1", "FORCE_COLOR": "", "UV_NO_PROGRESS": "1"}
+# `uv run --script` points VIRTUAL_ENV at this script's own environment; steps run project commands (`uv run ...`),
+# which would warn on every step that it doesn't match the project's .venv.
+ENV = {key: value for key, value in os.environ.items() if key != "VIRTUAL_ENV"} | {
+    "NO_COLOR": "1",
+    "FORCE_COLOR": "",
+    "UV_NO_PROGRESS": "1",
+}
 
 
 @dataclass

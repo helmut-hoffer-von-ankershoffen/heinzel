@@ -70,7 +70,7 @@ jobs:
         if: github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
-        run: uv run python scripts/check_confidentiality.py --require --text ""
+        run: uv run --script scripts/check_confidentiality.py --require --text ""
       - run: make lint
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}

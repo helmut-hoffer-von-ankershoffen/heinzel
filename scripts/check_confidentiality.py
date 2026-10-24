@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Fail when a confidential term appears in files or commit messages.
 
 The terms never live in the repository: a list in a public repository, even hashed, gives them away. They come from
@@ -14,15 +18,14 @@ strings, as `strings` would show them.
 `--identity` also refuses an email git made up from the machine's name (`name@Some-MacBook-Air.local`), with or
 without terms: it names a machine, not a mailbox, and would be published with every commit.
 
-Usage:
-    python scripts/check_confidentiality.py [FILE ...]          files, or every tracked file
-    python scripts/check_confidentiality.py --commit-msg FILE   a commit message (commit-msg hook)
-    python scripts/check_confidentiality.py --messages A..B     the messages of a range of commits
-    python scripts/check_confidentiality.py --text TEXT         a string, such as a pull request title or branch
-    python scripts/check_confidentiality.py --identity          the author and committer git will record, and that
-                                                                their emails are not machine hostnames
-    python scripts/check_confidentiality.py --branch            the current branch's name (pre-push hook)
-    --require                                                   fail instead of skipping when no terms are set
+Usage: uv run --script scripts/check_confidentiality.py [OPTION] [FILE ...]
+    [FILE ...]          files, or every tracked file
+    --commit-msg FILE   a commit message (commit-msg hook)
+    --messages A..B     the messages of a range of commits
+    --text TEXT         a string, such as a pull request title or branch
+    --identity          the author and committer git will record, and that their emails are not machine hostnames
+    --branch            the current branch's name (pre-push hook)
+    --require           fail instead of skipping when no terms are set
 """
 
 import argparse

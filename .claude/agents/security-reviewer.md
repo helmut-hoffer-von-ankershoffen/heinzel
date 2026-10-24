@@ -29,7 +29,7 @@ Get the change with `git diff` / `git diff origin/main...HEAD` and read the chan
 8. **Confidentiality:** the repository is public and the core stays generic (INTENT tenet 9). Flag anything that
    reveals non-public context: names of employers, customers or colleagues, internal tools, projects, channels or
    meetings, and examples, ADRs or commit messages that only make sense inside one company. Public products and
-   projects may be cited as prior art when the citation adds something. Run `uv run python
+   projects may be cited as prior art when the citation adds something. Run `uv run --script
    scripts/check_confidentiality.py` (the private term list; it reports term numbers only) and report its findings.
    **Never quote a confidential term in your report** — reviews are posted publicly; give `file:line` and say what
    kind of information it is.

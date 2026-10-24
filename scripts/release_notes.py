@@ -1,8 +1,12 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Print one release's section of CHANGELOG.md, for the GitHub release notes.
 
 The notes come from the changelog as merged in the release pull request, so edits made during review are published.
 
-Usage: python scripts/release_notes.py v1.2.3 [CHANGELOG.md]
+Usage: uv run --script scripts/release_notes.py v1.2.3 [CHANGELOG.md]
 """
 
 import re
