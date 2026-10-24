@@ -3390,6 +3390,275 @@
         "title": "TemplateView",
         "type": "object"
       },
+      "ThemeColours": {
+        "additionalProperties": false,
+        "description": "The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes).",
+        "properties": {
+          "accent": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Accent",
+            "type": "string"
+          },
+          "background": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Background",
+            "type": "string"
+          },
+          "bad": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Bad",
+            "type": "string"
+          },
+          "border": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Border",
+            "type": "string"
+          },
+          "card": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Card",
+            "type": "string"
+          },
+          "foreground": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Foreground",
+            "type": "string"
+          },
+          "input": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Input",
+            "type": "string"
+          },
+          "muted": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Muted",
+            "type": "string"
+          },
+          "muted_foreground": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Muted Foreground",
+            "type": "string"
+          },
+          "ok": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Ok",
+            "type": "string"
+          },
+          "popover": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Popover",
+            "type": "string"
+          },
+          "primary": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Primary",
+            "type": "string"
+          },
+          "primary_foreground": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Primary Foreground",
+            "type": "string"
+          },
+          "ring": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Ring",
+            "type": "string"
+          },
+          "sidebar": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Sidebar",
+            "type": "string"
+          },
+          "warn": {
+            "description": "A hex colour, `#rgb` or `#rrggbb`.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Warn",
+            "type": "string"
+          }
+        },
+        "required": [
+          "background",
+          "foreground",
+          "muted",
+          "muted_foreground",
+          "card",
+          "border",
+          "primary",
+          "primary_foreground",
+          "accent",
+          "ok",
+          "warn",
+          "bad",
+          "ring",
+          "sidebar",
+          "input",
+          "popover"
+        ],
+        "title": "ThemeColours",
+        "type": "object"
+      },
+      "ThemeList": {
+        "description": "Every available theme and which one is in effect.",
+        "properties": {
+          "conflicts": {
+            "description": "Names an org and the site both offer with nothing more specific deciding; left out until one is.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "next": {
+            "description": "What to run next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the theme in effect isn't the one configured.",
+            "title": "Note"
+          },
+          "selected": {
+            "description": "The name of the theme in effect.",
+            "title": "Selected",
+            "type": "string"
+          },
+          "themes": {
+            "description": "The built-in `default` first, then the plugins' themes.",
+            "items": {
+              "$ref": "#/components/schemas/ThemeView"
+            },
+            "title": "Themes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "selected",
+          "themes"
+        ],
+        "title": "ThemeList",
+        "type": "object"
+      },
+      "ThemeView": {
+        "description": "One available theme with every token value, ready to become the web app's CSS custom properties.",
+        "properties": {
+          "border_width": {
+            "description": "The width of borders (`--border-width`), a CSS length, e.g. `1px`.",
+            "title": "Border Width",
+            "type": "string"
+          },
+          "dark": {
+            "$ref": "#/components/schemas/ThemeColours",
+            "description": "Colours in dark mode; each field is the token `--color-<field>`."
+          },
+          "font_mono": {
+            "description": "The font-family stack of code (`--font-mono`), installed fonts only.",
+            "title": "Font Mono",
+            "type": "string"
+          },
+          "font_sans": {
+            "description": "The font-family stack of text (`--font-sans`), installed fonts only.",
+            "title": "Font Sans",
+            "type": "string"
+          },
+          "light": {
+            "$ref": "#/components/schemas/ThemeColours",
+            "description": "Colours in light mode; each field is the token `--color-<field>`."
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The qualified name of the module offering it; none for the built-in one.",
+            "title": "Module"
+          },
+          "name": {
+            "description": "What `hz system theme use` takes, e.g. `acme`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, e.g. `heinzel-acme`; none for the built-in one.",
+            "title": "Plugin"
+          },
+          "radius": {
+            "description": "The corner radius (`--radius`), a CSS length, e.g. `0.5rem`.",
+            "title": "Radius",
+            "type": "string"
+          },
+          "selected": {
+            "description": "Whether it is the theme in effect.",
+            "title": "Selected",
+            "type": "boolean"
+          },
+          "shadows": {
+            "description": "Modules that offer a theme of the same name, hidden by this one (layer order decides).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Shadows",
+            "type": "array"
+          },
+          "title": {
+            "description": "What people pick it by, e.g. `Acme`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "module",
+          "plugin",
+          "selected",
+          "light",
+          "dark",
+          "font_sans",
+          "font_mono",
+          "radius",
+          "border_width"
+        ],
+        "title": "ThemeView",
+        "type": "object"
+      },
       "Toggled": {
         "description": "The pause flag after `pause` or `resume`.",
         "properties": {
@@ -4754,6 +5023,73 @@
           }
         },
         "summary": "Ask the bound agent runner, read-only and within a cost cap; this may cost money.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/theme/list": {
+      "get": {
+        "description": "List the themes of the web app, with every colour, font and size, and which one is in effect.",
+        "operationId": "system_theme_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the themes of the web app, with every colour, font and size, and which one is in effect.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/theme/use": {
+      "post": {
+        "description": "Use a theme in the web app: writes `[system.theme] name` to your configuration file.",
+        "operationId": "system_theme_use",
+        "parameters": [
+          {
+            "description": "The theme to use, one `hz system theme list` shows, e.g. `default`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The theme to use, one `hz system theme list` shows, e.g. `default`.",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Use a theme in the web app: writes `[system.theme] name` to your configuration file.",
         "tags": [
           "system"
         ]

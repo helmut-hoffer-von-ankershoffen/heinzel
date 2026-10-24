@@ -27,6 +27,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.notify`](#systemnotify) | Pop up what deserves your attention: in the web app while it is open, else natively. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
+| [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
 | [`zoom`](#zoom) | Read meetings from Zoom's meeting-summary emails: the meetings capability. |
@@ -272,6 +273,17 @@ Run bounded agent sessions with Claude Code or a configured command.
 Settings: [`[system.runner]`](CONFIGURATION.md#systemrunner).
 
 Health checks: reported by `hz system doctor`.
+
+## `system.theme`
+
+Pick how the web app looks: the built-in theme or one a plugin offers.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the themes of the web app, with every colour, font and size, and which one is in effect. | `hz system theme list` | `system_theme_list` | `GET /system/theme/list` | `GET /api/system/theme/list` |  | expert |
+| Use a theme in the web app: writes `[system.theme] name` to your configuration file. | `hz system theme use` | `system_theme_use` | `POST /system/theme/use` | `POST /api/system/theme/use` | yes | expert |
+
+Settings: [`[system.theme]`](CONFIGURATION.md#systemtheme).
 
 ## `team`
 

@@ -710,6 +710,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/theme/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the themes of the web app, with every colour, font and size, and which one is in effect.
+         * @description List the themes of the web app, with every colour, font and size, and which one is in effect.
+         */
+        get: operations["system_theme_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/theme/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Use a theme in the web app: writes `[system.theme] name` to your configuration file.
+         * @description Use a theme in the web app: writes `[system.theme] name` to your configuration file.
+         */
+        post: operations["system_theme_use"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/update": {
         parameters: {
             query?: never;
@@ -2972,6 +3012,183 @@ export interface components {
             template: string;
         };
         /**
+         * ThemeColours
+         * @description The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes).
+         */
+        ThemeColours: {
+            /**
+             * Accent
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            accent: string;
+            /**
+             * Background
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            background: string;
+            /**
+             * Bad
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            bad: string;
+            /**
+             * Border
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            border: string;
+            /**
+             * Card
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            card: string;
+            /**
+             * Foreground
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            foreground: string;
+            /**
+             * Input
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            input: string;
+            /**
+             * Muted
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            muted: string;
+            /**
+             * Muted Foreground
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            muted_foreground: string;
+            /**
+             * Ok
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            ok: string;
+            /**
+             * Popover
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            popover: string;
+            /**
+             * Primary
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            primary: string;
+            /**
+             * Primary Foreground
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            primary_foreground: string;
+            /**
+             * Ring
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            ring: string;
+            /**
+             * Sidebar
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            sidebar: string;
+            /**
+             * Warn
+             * @description A hex colour, `#rgb` or `#rrggbb`.
+             */
+            warn: string;
+        };
+        /**
+         * ThemeList
+         * @description Every available theme and which one is in effect.
+         */
+        ThemeList: {
+            /**
+             * Conflicts
+             * @description Names an org and the site both offer with nothing more specific deciding; left out until one is.
+             */
+            conflicts?: string[];
+            /**
+             * Next
+             * @description What to run next.
+             */
+            next?: string[];
+            /**
+             * Note
+             * @description Why the theme in effect isn't the one configured.
+             */
+            note?: string | null;
+            /**
+             * Selected
+             * @description The name of the theme in effect.
+             */
+            selected: string;
+            /**
+             * Themes
+             * @description The built-in `default` first, then the plugins' themes.
+             */
+            themes: components["schemas"]["ThemeView"][];
+        };
+        /**
+         * ThemeView
+         * @description One available theme with every token value, ready to become the web app's CSS custom properties.
+         */
+        ThemeView: {
+            /**
+             * Border Width
+             * @description The width of borders (`--border-width`), a CSS length, e.g. `1px`.
+             */
+            border_width: string;
+            /** @description Colours in dark mode; each field is the token `--color-<field>`. */
+            dark: components["schemas"]["ThemeColours"];
+            /**
+             * Font Mono
+             * @description The font-family stack of code (`--font-mono`), installed fonts only.
+             */
+            font_mono: string;
+            /**
+             * Font Sans
+             * @description The font-family stack of text (`--font-sans`), installed fonts only.
+             */
+            font_sans: string;
+            /** @description Colours in light mode; each field is the token `--color-<field>`. */
+            light: components["schemas"]["ThemeColours"];
+            /**
+             * Module
+             * @description The qualified name of the module offering it; none for the built-in one.
+             */
+            module: string | null;
+            /**
+             * Name
+             * @description What `hz system theme use` takes, e.g. `acme`.
+             */
+            name: string;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. `heinzel-acme`; none for the built-in one.
+             */
+            plugin: string | null;
+            /**
+             * Radius
+             * @description The corner radius (`--radius`), a CSS length, e.g. `0.5rem`.
+             */
+            radius: string;
+            /**
+             * Selected
+             * @description Whether it is the theme in effect.
+             */
+            selected: boolean;
+            /**
+             * Shadows
+             * @description Modules that offer a theme of the same name, hidden by this one (layer order decides).
+             */
+            shadows?: string[];
+            /**
+             * Title
+             * @description What people pick it by, e.g. `Acme`.
+             */
+            title: string;
+        };
+        /**
          * Toggled
          * @description The pause flag after `pause` or `resume`.
          */
@@ -3126,6 +3343,9 @@ export type SchemaStep = components['schemas']['Step'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
 export type SchemaTeamShow = components['schemas']['TeamShow'];
 export type SchemaTemplateView = components['schemas']['TemplateView'];
+export type SchemaThemeColours = components['schemas']['ThemeColours'];
+export type SchemaThemeList = components['schemas']['ThemeList'];
+export type SchemaThemeView = components['schemas']['ThemeView'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
@@ -3974,6 +4194,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AgentResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_theme_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemeList"];
+                };
+            };
+        };
+    };
+    system_theme_use: {
+        parameters: {
+            query: {
+                /** @description The theme to use, one `hz system theme list` shows, e.g. `default`. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemeList"];
                 };
             };
             /** @description Validation Error */

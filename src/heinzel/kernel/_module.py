@@ -41,6 +41,7 @@ from heinzel.kernel._lets import (
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, PlaybookSetup, templates_in
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._spec import hookimpl
+from heinzel.kernel._themes import Theme, ThemeLet, themes_in
 
 RESERVED_NAMES = frozenset({"hz", "capabilities", "setup", "join"})
 """Names a module can't take: the kernel's and the capability bindings' tables, `hz setup` and `hz join`."""
@@ -500,6 +501,30 @@ class Module:
         let = LayerLet(name=self.name, parent=parent, site=site, roles=tuple(roles))
         self.add(let)
         return let
+
+    def theme(self, source: Path | Theme) -> tuple[ThemeLet, ...]:
+        """Offer themes for the web app (ADR 0044): a `Theme`, a `*.toml` file of one, or a directory of them.
+
+        Data only, read and checked now, at import: `hz system theme list` lists them and `hz system theme use <name>`
+        picks one. Two modules offering a theme of the same name: the more specific layer of the person's stack wins
+        (ADR 0040), then a layer in the stack over a module outside it, then the first module by name.
+
+        Example:
+            ```python
+            module.theme(Path(__file__).parent / "themes")
+            ```
+
+        Raises:
+            ValueError: If a theme is malformed, is called `default` (the built-in one), or the module already offers
+                a theme of that name.
+            OSError: If a theme file can't be read.
+        """
+        lets: list[ThemeLet] = []
+        for theme in themes_in(source):
+            let = ThemeLet(name=theme.name, theme=theme)
+            self.add(let)
+            lets.append(let)
+        return tuple(lets)
 
     @hookimpl
     def heinzel_lets(self) -> Sequence[Let]:

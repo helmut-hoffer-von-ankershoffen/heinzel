@@ -4,7 +4,7 @@ Every module and plugin depends on this package; its public API is `hz` and `hei
 change like a library release: an ADR for a new concept, unit tests for every branch.
 
 - `_module.py` — `Module` and its decorators (`operation`, `job`, `service`, `settings`, `info`, `health`,
-  `credential`, `provides`, `setup`, `playbook`, `layer`; `requires=` on modules, operations and jobs).
+  `credential`, `provides`, `setup`, `playbook`, `layer`, `theme`; `requires=` on modules, operations and jobs).
 - `_protocols.py` — integration capability protocols (`CodeHost`, `Tracker`, `Documents`, `Chat`, `Meetings`,
   `Calendar`, `Mail`, `Directory`; `MailQuery`, the mail query syntax) and their models; `_directory.py` —
   `draft_reporting_lines`, the seam setup steps and roster drafting call (fallback adapter:
@@ -17,7 +17,9 @@ change like a library release: an ADR for a new concept, unit tests for every br
 - `_credentials.py` — `Credentials`, the only way to secrets (ADR 0030), and the environment backend.
 - `_lets.py` — let types, `Check`/`Status` and `CatchUp`. A new let kind needs a head, the kernel, a `system`
   submodule or the built-in module that owns the concept to consume it (`JobLet`: `system.daemon`; `PlaybookLet`:
-  `workflow`, ADR 0037).
+  `workflow`, ADR 0037; `ThemeLet`: `system.theme`, ADR 0044).
+- `_themes.py` — `Theme`, `ThemeColours` and `ThemeLet` (`module.theme`), the grammar every value passes before it
+  becomes a CSS custom property, and `DEFAULT_THEME`, the built-in look: data plugins ship (ADR 0044).
 - `_playbooks.py` — `PlaybookLet` (`module.playbook`), `AssetType`, `DiscoveryHint`, `ContractTemplate` and the
   `PlaybookSetup` service: data plugins contribute, consumed by `workflow` (ADR 0037).
 - `_layers.py` — `LayerLet` (`module.layer`), the checked tree `Layers` (`Kernel.layers()`), the person's

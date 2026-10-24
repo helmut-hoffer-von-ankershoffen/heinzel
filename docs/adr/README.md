@@ -48,6 +48,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0041](0041-expert-mode-newcomers-see-the-everyday-commands.md) | Expert mode: newcomers see the everyday commands, `hz system expert on` shows all | proposed | 2026-10-24 |
 | [0042](0042-google-workspace-through-the-gws-cli.md) | Read Google Workspace through the Google Workspace CLI (`gws`) | accepted | 2026-10-24 |
 | [0043](0043-desktop-notifications-one-policy-shown-once.md) | Desktop notifications: one policy in the core, shown once, by hz's own macOS app | proposed | 2026-10-24 |
+| [0044](0044-themes-are-data-a-plugin-ships.md) | Themes are data a plugin ships: `module.theme(...)` offers them, `hz system theme use` picks one | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
