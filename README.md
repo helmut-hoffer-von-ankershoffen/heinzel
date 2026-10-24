@@ -24,12 +24,13 @@
 | src/heinzel/modules/system/daemon/\_schedule.py               |       65 |        3 |       20 |        1 |     95% |43-44, 102 |
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py             |       26 |        2 |        0 |        0 |     92% |    36, 64 |
 | src/heinzel/modules/system/plugin/\_service.py                |      125 |        5 |       28 |        2 |     95% |44-\>46, 123-124, 130, 137, 230 |
-| src/heinzel/modules/workflow/\_\_init\_\_.py                  |       68 |        2 |        6 |        1 |     96% |   122-123 |
+| src/heinzel/modules/workflow/\_\_init\_\_.py                  |       81 |        2 |        8 |        1 |     97% |   128-129 |
 | src/heinzel/modules/workflow/\_contracts.py                   |      340 |        2 |      132 |        1 |     99% |   462-463 |
-| src/heinzel/modules/workflow/\_models.py                      |      331 |        2 |       66 |        2 |     99% |75, 95, 439-\>437 |
-| src/heinzel/modules/workflow/\_render.py                      |      186 |       14 |       90 |        9 |     89% |96, 114, 157-\>159, 162, 163-\>165, 195-201, 227, 261, 282-292 |
-| src/heinzel/modules/workflow/\_service.py                     |      589 |       10 |      190 |        3 |     98% |310, 400-401, 506-507, 864-865, 881-883 |
-| **TOTAL**                                                     | **8312** |   **74** | **2048** |   **39** | **99%** |           |
+| src/heinzel/modules/workflow/\_models.py                      |      351 |        2 |       66 |        2 |     99% |83, 103, 457-\>455 |
+| src/heinzel/modules/workflow/\_render.py                      |      194 |       14 |       92 |        9 |     90% |97, 115, 158-\>160, 163, 164-\>166, 196-202, 228, 262, 283-293 |
+| src/heinzel/modules/workflow/\_retention.py                   |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
+| src/heinzel/modules/workflow/\_service.py                     |      623 |       10 |      202 |        3 |     98% |316, 406-407, 512-513, 872-873, 889-891 |
+| **TOTAL**                                                     | **8489** |   **74** | **2090** |   **42** | **99%** |           |
 
 82 files skipped due to complete coverage.
 
