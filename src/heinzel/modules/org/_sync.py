@@ -52,7 +52,7 @@ class SyncItem(BaseModel):
 class SyncReport(BaseModel):
     """Your team's recommendations and what became of them."""
 
-    team: bool = Field(description="Whether you are in a team that could recommend anything.")
+    team: bool = Field(description="Whether a team you joined or your layers recommend anything to you.")
     items: list[SyncItem] = Field(description="Every recommendation, in the manifest's order.")
     next: list[str] = Field(description="What to do next.")
 
@@ -92,7 +92,7 @@ class SyncService:
         known = {item.id for item in report.items}
         if unknown := sorted(wanted - known - {"all"}):
             ids = ", ".join(sorted(known)) or "none"
-            msg = f"Your team recommends no {', '.join(unknown)}; its recommendations: {ids}. See them: hz org sync"
+            msg = f"Nothing recommends {', '.join(unknown)} to you; the recommendations: {ids}. See them: hz org sync"
             raise HeinzelError(msg)
         chosen = [
             i
@@ -121,7 +121,7 @@ class SyncService:
         if not waiting:
             detail = f"{len(report.items)} recommended, none waiting"
             return [Check(name="recommendations", status=Status.UP, detail=detail)]
-        detail = f"your team recommends {', '.join(i.id for i in waiting)}, which you don't have yet"
+        detail = f"your team or its layers recommend {', '.join(i.id for i in waiting)}, which you don't have yet"
         return [Check(name="recommendations", status=Status.DEGRADED, detail=detail, fix="hz org sync")]
 
     # Comparing and applying ------------------------------------------------------------------------------------------
@@ -230,6 +230,7 @@ def layer_bindings(stack: LayerStack, taken: set[str]) -> list[Recommendation]:
             continue
         origin = f"layer {recommendation.layer} ({plugins[recommendation.layer]}), its playbook"
         found.append(Recommendation(kind="binding", name=capability, value=recommendation.value, origin=origin))
+        taken = taken | {capability}  # the stack offers one value per capability; never two rows for one id
     return found
 
 
@@ -252,7 +253,7 @@ def _next(items: list[SyncItem]) -> list[str]:
     if pending := [i.id for i in items if i.state == "pending"]:
         steps.append(f"Accept them: hz org sync --accept {shlex.quote(','.join(pending))}")
     steps += [f"{i.id}: {i.action}" for i in items if i.state in {"differs", "by-hand", "missing"}]
-    return steps or ["You have everything your team recommends."]
+    return steps or ["You have everything your team and its layers recommend."]
 
 
 def _why_not(item: SyncItem) -> str:

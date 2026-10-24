@@ -380,6 +380,15 @@ def _cycles(parents: Mapping[str, str | None]) -> list[list[str]]:
     return found
 
 
+def canonical_key(key: str) -> str:
+    """A recommended setting's key as configuration spells it: `capabilities.code-host` is `capabilities.code_host`.
+
+    Playbooks may spell a capability either way; two layers spelling it differently still recommend one setting.
+    """
+    section, _, rest = key.partition(".")
+    return f"{section}.{rest.replace('-', '_')}" if section == "capabilities" else key
+
+
 @dataclass(frozen=True, kw_only=True, slots=True)
 class LayerRecommendation:
     """A setting the stack recommends: the most specific layer's value, with what more general layers said."""
@@ -497,7 +506,7 @@ class LayerStack:
         for layer in self.layers:
             if layer.playbook is not None:
                 for key, value in layer.playbook.defaults.items():
-                    by_key.setdefault(key, []).append((layer, value))
+                    by_key.setdefault(canonical_key(key), []).append((layer, value))
         offered: list[LayerRecommendation] = []
         conflicts: list[LayerConflict] = []
         for key, values in by_key.items():

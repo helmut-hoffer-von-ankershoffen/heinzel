@@ -194,7 +194,7 @@ def test_a_binding_whose_adapter_is_not_installed_is_never_written(make):
 
 
 def test_an_unknown_id_names_the_recommendations_there_are(make):
-    with pytest.raises(HeinzelError, match="recommends no binding:mail; its recommendations: binding:chat"):
+    with pytest.raises(HeinzelError, match="Nothing recommends binding:mail to you; the recommendations: binding:chat"):
         make().sync("binding:mail")
 
 
@@ -295,3 +295,11 @@ def test_layers_recommend_even_before_you_join_a_team(make_kernel):
 def test_a_binding_that_isnt_a_name_is_left_out(make_kernel):
     kernel = make_kernel(builtins=True, acme=layer_module("acme", **{"capabilities.tracker": ["jira"]}))
     assert kernel.resolve(SyncService).report().items == []
+
+
+def test_two_spellings_of_one_capability_are_one_recommendation_the_most_specific_layers(make_kernel):
+    company = layer_module("acme", **{"capabilities.code_host": "github"})
+    team = layer_module("acme-ops", "acme", **{"capabilities.code-host": "forge"})
+    kernel = make_kernel(builtins=True, vendors=vendors(), acme=company, **{"acme-ops": team})
+    items = kernel.resolve(SyncService).report().items
+    assert [(i.id, i.recommended) for i in items] == [("binding:code-host", "forge")]

@@ -839,9 +839,13 @@ class WorkflowService:
         disputed = {c.key: c for c in conflicts}
         offered: dict[str, object] = {}
         for key, value in playbook.defaults.items():
-            winner = winners.get(key)
-            if key in disputed:
-                said = ", ".join(f"{name} recommends {toml_value(v)}" for name, v in disputed[key].values)
+            # The stack spells a capability as configuration does: `capabilities.code-host` is `code_host`.
+            stacked = (
+                f"capabilities.{key.partition('.')[2].replace('-', '_')}" if key.startswith("capabilities.") else key
+            )
+            winner = winners.get(stacked)
+            if stacked in disputed:
+                said = ", ".join(f"{name} recommends {toml_value(v)}" for name, v in disputed[stacked].values)
                 decider = stack.layer or "your layer"
                 prompter.say(f"{key}: {said}; {decider} decides, so neither is offered (`hz system layer show`).")
             elif winner is not None and winner.layer != layer.name:
