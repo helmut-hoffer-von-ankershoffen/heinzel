@@ -56,6 +56,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `agent`: Install the Heinzelmännchen skills for...
 * `changelog`: Show the changelog of the installed...
 * `config`: Show, get, set and initialize configuration.
+* `daemon`: Run modules&#x27; jobs in the background,...
 * `doctor`: Run every module&#x27;s health checks; exits...
 * `info`: Show versions, interpreter, settings,...
 * `modules`: List every module and the lets it advertises.
@@ -262,6 +263,164 @@ $ hz system config unset [OPTIONS] {key}
 **Options**:
 
 * `--scope <user|project>`: Which file to change: user, or the project&#x27;s hz.toml.  [default: user]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system daemon`
+
+Run modules&#x27; jobs in the background, supervised by launchd or systemd.
+
+**Usage**:
+
+```console
+$ hz system daemon [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `install`: Install and load the launchd agent or...
+* `jobs`: List every job with its schedule, next...
+* `logs`: Show the latest lines of the daemon&#x27;s log.
+* `pause`: Pause the daemon: ticks run no job until...
+* `resume`: Resume a paused daemon.
+* `status`: Show whether the daemon is installed,...
+* `tick`: Run the jobs that are due and write a...
+* `uninstall`: Unload and remove the daemon&#x27;s unit;...
+
+#### `hz system daemon install`
+
+Install and load the launchd agent or systemd timer that ticks every few minutes.
+
+**Usage**:
+
+```console
+$ hz system daemon install [OPTIONS]
+```
+
+**Options**:
+
+* `--interval <str>`: Minutes between ticks, dividing an hour: 1m … 30m, or 1h.  [default: 5m]
+* `--dry-run / --no-dry-run`: Only show the unit that would be written.  [default: no-dry-run]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system daemon jobs`
+
+List every job with its schedule, next slot and last run.
+
+**Usage**:
+
+```console
+$ hz system daemon jobs [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system daemon logs`
+
+Show the latest lines of the daemon&#x27;s log.
+
+**Usage**:
+
+```console
+$ hz system daemon logs [OPTIONS]
+```
+
+**Options**:
+
+* `--lines <int>`: How many of the latest lines to show.  [default: 50]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system daemon pause`
+
+Pause the daemon: ticks run no job until resumed.
+
+**Usage**:
+
+```console
+$ hz system daemon pause [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system daemon resume`
+
+Resume a paused daemon.
+
+**Usage**:
+
+```console
+$ hz system daemon resume [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system daemon status`
+
+Show whether the daemon is installed, loaded and paused, its last tick and failing jobs.
+
+**Usage**:
+
+```console
+$ hz system daemon status [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system daemon tick`
+
+Run the jobs that are due and write a receipt for each; launchd or systemd call this.
+
+**Usage**:
+
+```console
+$ hz system daemon tick [OPTIONS]
+```
+
+**Options**:
+
+* `--dry-run / --no-dry-run`: Only show which jobs are due; run nothing.  [default: no-dry-run]
+* `--job <str>`: Run this job now, as `&lt;module&gt;:&lt;job&gt;` from `hz system daemon jobs`.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system daemon uninstall`
+
+Unload and remove the daemon&#x27;s unit; receipts and logs stay.
+
+**Usage**:
+
+```console
+$ hz system daemon uninstall [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

@@ -92,7 +92,7 @@ flowchart TB
         CLI["CLI<br/>hz …"]
         MCP["MCP server"]
         REST["REST API"]
-        Daemon["Daemon<br/>(next)"]
+        Daemon["Daemon<br/>local jobs"]
     end
     subgraph Kernel["Kernel"]
         Core["discovery · lets<br/>injection · config"]
@@ -109,7 +109,8 @@ flowchart TB
 ## What's inside
 
 Every module is a set of operations, and every operation is a `hz` command, an MCP tool for coding agents
-(`hz system serve mcp`) and a REST endpoint (`hz system serve api`) at once. Built in today:
+(`hz system serve mcp`) and a REST endpoint (`hz system serve api`) at once. Modules can also advertise jobs that
+`hz system daemon install` runs in the background on a schedule, under launchd or systemd. Built in today:
 
 <!-- modules:start -->
 - [`clock`](docs/MODULES.md#clock) — What time it is for everyone on the team. *First-party plugin: `hz system plugin add clock`.*
@@ -117,6 +118,7 @@ Every module is a set of operations, and every operation is a `hz` command, an M
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
 - [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version.
 - [`system.config`](docs/MODULES.md#systemconfig) — Show, get, set and initialize configuration.
+- [`system.daemon`](docs/MODULES.md#systemdaemon) — Run modules' jobs in the background, supervised by launchd or systemd.
 - [`system.doctor`](docs/MODULES.md#systemdoctor) — Check that Heinzelmännchen and its modules are healthy.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, list and scaffold plugins.
 <!-- modules:end -->

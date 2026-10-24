@@ -22,6 +22,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
+    "croniter>=6.2.4",
     "fastapi>=0.161",
     "mcp>=2.3",
     "packaging>=25.0",
@@ -72,6 +73,7 @@ dev = [
     "pyright>=1.1.408",
     "ruff>=0.14.8,<1",
     "shellcheck-py>=0.10",
+    "types-croniter>=6.2.4",
     "typos>=1.51",
     "zizmor>=1.31",
 ]
@@ -346,6 +348,7 @@ modules = [
     "heinzel.modules.system.agent",
     "heinzel.modules.system.changelog",
     "heinzel.modules.system.config",
+    "heinzel.modules.system.daemon",
     "heinzel.modules.system.doctor",
     "heinzel.modules.system.plugin",
 ]

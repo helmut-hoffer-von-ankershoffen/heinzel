@@ -20,6 +20,7 @@ def _isolated_environment(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pyt
     monkeypatch.setenv("HZ_CACHE_DIR", str(tmp_path_factory.mktemp("hz-cache")))
     monkeypatch.setenv("HZ_STATE_DIR", str(tmp_path_factory.mktemp("hz-state")))
     monkeypatch.setenv("HZ_LOG_DIR", str(tmp_path_factory.mktemp("hz-log")))
+    monkeypatch.setenv("HZ_SYSTEM_DAEMON__UNIT_DIR", str(tmp_path_factory.mktemp("hz-units")))
 
 
 @pytest.fixture

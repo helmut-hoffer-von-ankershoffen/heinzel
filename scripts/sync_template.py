@@ -55,7 +55,9 @@ def pyproject() -> str:
     """The plugin's project metadata plus Heinzelmännchen's dev dependencies and tool configuration."""
     source = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     dev = source[source.index("[dependency-groups]") : source.index("[build-system]")]
-    dev = re.sub(r'\n    "(copier|import-linter|heinzel-clock)[^\n]*', "", dev)
+    # Only Heinzelmännchen itself needs these: the template renderer, its import contracts, its first-party plugin and
+    # the type stubs of its own dependencies.
+    dev = re.sub(r'\n    "(copier|import-linter|heinzel-clock|types-croniter)[^\n]*', "", dev)
     # The Heinzelmännchen the plugin is developed against: a direct URL in the test group, never in
     # [tool.uv.sources], because uv applies a plugin's sources when `hz system plugin add` installs it from a path or
     # git and would fetch this Heinzelmännchen then.

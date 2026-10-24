@@ -35,6 +35,9 @@ for s in report["settings"]:
 ')
 fi
 
+echo "==> Removing the background daemon, if installed"
+"$hz" system daemon uninstall || echo "This hz has no daemon to remove." >&2
+
 echo "==> Removing agent skills"
 "$hz" system agent uninstall
 

@@ -31,6 +31,12 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `skill_dirs` | `HZ_SYSTEM_AGENT__SKILL_DIRS` | platform-specific | Directories `hz system agent install` copies Heinzelmännchen's skills into, one per coding agent. |
 
+## `[system.daemon]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `unit_dir` | `HZ_SYSTEM_DAEMON__UNIT_DIR` | platform-specific | Where `install` writes the launchd LaunchAgent (macOS) or the systemd user units (Linux). |
+
 ## `[system.plugin]`
 
 | Key | Environment variable | Default | Description |

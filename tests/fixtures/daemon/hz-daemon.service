@@ -1,0 +1,10 @@
+[Unit]
+Description=Heinzelmännchen daemon tick
+Documentation=https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0020-daemon-head.md
+
+[Service]
+Type=oneshot
+ExecStart=/home/ada/.local/bin/hz system daemon tick
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=30min

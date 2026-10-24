@@ -64,6 +64,7 @@ class Sandbox:
                 "HZ_CACHE_DIR": str(self.root / "cache"),
                 "HZ_STATE_DIR": str(self.root / "state"),
                 "HZ_LOG_DIR": str(self.root / "log"),
+                "HZ_SYSTEM_DAEMON__UNIT_DIR": str(self.root / "units"),
             }
         return env
 
