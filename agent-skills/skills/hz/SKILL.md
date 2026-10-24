@@ -17,6 +17,10 @@ hz <module> --help            # its commands; parameters and their descriptions
 hz system info --json         # versions, settings, plugins, plugin errors
 ```
 
+`--help` lists the everyday commands unless the user turned expert mode on; `HZ_EXPERT=1 hz --help` lists every
+command for you without changing their setting. Every command runs either way. Don't run `hz system expert on|off`
+unless the user asks: it is their choice of what their help shows.
+
 ## Call
 
 - Pass `--json`, parse stdout. Exit code 0 is success; 1 is an expected error with a readable message on stderr;

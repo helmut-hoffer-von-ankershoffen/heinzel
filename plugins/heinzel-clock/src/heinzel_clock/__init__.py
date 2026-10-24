@@ -94,7 +94,7 @@ def _render(times: list[ZoneTime]) -> Table:
     return table
 
 
-@module.operation(render=_render)
+@module.operation(render=_render, audience="everyday")
 def clock(
     settings: ClockSettings,
     at: Annotated[datetime | None, Field(description="Moment to show instead of now (ISO 8601).")] = None,

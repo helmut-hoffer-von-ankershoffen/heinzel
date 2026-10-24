@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { doctor, noTeam, shell } from "@/test/fixtures";
+import { doctor, expert, noTeam, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
 const answers = {
@@ -12,13 +12,15 @@ const answers = {
 };
 
 describe("Shell", () => {
-  it("has the three landmarks, a skip link and every section in the navigation tree", async () => {
-    mockApi(answers);
+  it("has the three landmarks, a skip link and every section in the navigation tree in expert mode", async () => {
+    mockApi({ ...answers, "/api/system/expert": expert });
     const { container } = renderAt("/");
     const navigation = screen.getByRole("navigation", { name: "Main" });
-    for (const name of ["Home", "Settings", "Graph", "Org chart", "Team roster", "Asset types", "Assets", "Doctor"]) {
-      expect(within(navigation).getByRole("link", { name })).toBeInTheDocument();
+    for (const name of ["Graph", "Org chart", "Team roster", "Asset types", "Assets", "Doctor"]) {
+      expect(await within(navigation).findByRole("link", { name })).toBeInTheDocument();
     }
+    expect(within(navigation).getByRole("link", { name: "Home" })).toBeInTheDocument();
+    expect(within(navigation).getByRole("link", { name: "Settings" })).toBeInTheDocument();
     expect(await within(navigation).findByRole("link", { name: "Weekly digest" })).toHaveAttribute(
       "href",
       "/contracts/me%3Aweekly-digest",
@@ -28,6 +30,23 @@ describe("Shell", () => {
     expect(screen.getByRole("link", { name: "Skip to content" })).toHaveAttribute("href", "#content");
     expect(await screen.findByRole("link", { name: /mira/ })).toBeInTheDocument();
     await expectAccessible(container);
+  });
+
+  it("lists the everyday screens outside expert mode, in the navigation and in search", async () => {
+    mockApi(answers);
+    const user = userEvent.setup();
+    renderAt("/");
+    const navigation = screen.getByRole("navigation", { name: "Main" });
+    expect(await within(navigation).findByRole("link", { name: "Doctor" })).toBeInTheDocument();
+    expect(within(navigation).getByRole("link", { name: "Team roster" })).toBeInTheDocument();
+    expect(await within(navigation).findByRole("link", { name: "Weekly digest" })).toBeInTheDocument();
+    for (const name of ["Graph", "Org chart", "Asset types", "Assets"]) {
+      expect(within(navigation).queryByRole("link", { name })).not.toBeInTheDocument();
+    }
+    expect(within(navigation).queryByText("Inventory")).not.toBeInTheDocument();
+    await user.keyboard("{Meta>}k{/Meta}");
+    await user.type(await screen.findByRole("combobox", { name: /Search/ }), "Graph");
+    expect(screen.getByText("Nothing matches.")).toBeInTheDocument();
   });
 
   it("searches settings, contracts and screens with ⌘K and goes to the one chosen", async () => {

@@ -2,11 +2,11 @@
 import { useId } from "react";
 import { useSearchParams } from "react-router";
 import type { SchemaSettingInfo } from "@/api/client";
-import { useConfig } from "@/api/queries";
+import { useConfig, useExpert, useSetExpert } from "@/api/queries";
 import { CopyCommand, Loaded, Page } from "@/components/common";
 import { Badge, Card } from "@/components/ui/card";
 import { t } from "@/i18n";
-import { configValue } from "@/lib/utils";
+import { cn, configValue } from "@/lib/utils";
 
 function shown(value: unknown): string {
   if (value === null || value === undefined) return t("settings.notSet");
@@ -44,6 +44,55 @@ function Setting({ setting }: { setting: SchemaSettingInfo }) {
   );
 }
 
+/** `hz system expert`: a switch that runs `hz system expert on` or `off` through the API (ADR 0041). */
+function ExpertSwitch() {
+  const expert = useExpert();
+  const change = useSetExpert();
+  const labelId = useId();
+  const on = expert.data?.expert ?? false;
+  return (
+    <Card>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          aria-labelledby={labelId}
+          disabled={!expert.data || change.isPending}
+          onClick={() => change.mutate(!on)}
+          className={cn(
+            "relative h-6 w-11 shrink-0 rounded-full border border-border transition-colors disabled:opacity-50",
+            on ? "bg-primary" : "bg-muted",
+          )}
+        >
+          <span
+            aria-hidden
+            className={cn(
+              "absolute top-0.5 left-0.5 size-4 rounded-full bg-background shadow transition-transform",
+              on && "translate-x-5",
+            )}
+          />
+        </button>
+        <h2 id={labelId} className="text-sm font-semibold">
+          {t("settings.expert")}
+        </h2>
+        <CopyCommand command={on ? "hz system expert off" : "hz system expert on"} />
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">{on ? t("settings.expertOn") : t("settings.expertOff")}</p>
+      {expert.data?.note && (
+        <p role="alert" className="mt-1 text-xs text-warn">
+          {expert.data.note}
+        </p>
+      )}
+      {change.error && (
+        <p role="alert" className="mt-1 text-xs text-bad">
+          {t("settings.expertFailed", { problem: change.error.message })}
+        </p>
+      )}
+    </Card>
+  );
+}
+
 export function Settings() {
   const config = useConfig();
   const [params, setParams] = useSearchParams();
@@ -51,6 +100,7 @@ export function Settings() {
   const filterId = useId();
   return (
     <Page title={t("settings.title")} intro={t("settings.intro")}>
+      <ExpertSwitch />
       <Loaded query={config}>
         {(report) => {
           const needle = filter.toLowerCase();

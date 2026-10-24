@@ -23,7 +23,7 @@ module.service(SyncService)
 
 # Your name and email are in it; a web page can reach a local REST server, so the CLI, MCP and the web head (which
 # needs its session token) get it, like drafts.
-@module.operation(render=render_profile, heads={"cli", "mcp", "web"})
+@module.operation(render=render_profile, heads={"cli", "mcp", "web"}, audience="everyday")
 def show(service: ProfileService) -> Profile:
     """Show your profile: who you are, your role, time zone and working hours, and what is still missing."""
     return service.profile()
@@ -49,7 +49,7 @@ def profile(service: ProfileService, recommendations: SyncService) -> list[Check
 
 
 # It writes your configuration on your say-so; a web page can reach a local REST server, so the CLI and MCP get it.
-@module.operation(read_only=False, render=render_sync, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_sync, heads={"cli", "mcp"}, audience="everyday")
 def sync(
     service: SyncService,
     accept: Annotated[

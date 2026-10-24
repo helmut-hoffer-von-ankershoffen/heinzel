@@ -471,6 +471,7 @@ modules = [
     "heinzel.modules.system.daemon",
     "heinzel.modules.system.directory",
     "heinzel.modules.system.doctor",
+    "heinzel.modules.system.expert",
     "heinzel.modules.system.layer",
     "heinzel.modules.system.plugin",
     "heinzel.modules.system.runner",

@@ -2,10 +2,10 @@
 // (focus trap, Escape, inert background) rather than a library one: those inject <style>, which the CSP refuses.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { useConfig, useContracts, usePlaybooks } from "@/api/queries";
+import { useConfig, useContracts, useExpert, usePlaybooks } from "@/api/queries";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { contractPath, sections } from "./navigation";
+import { contractPath, listed, sections, visibleSections } from "./navigation";
 
 type Entry = { label: string; hint: string; to: string };
 
@@ -13,9 +13,11 @@ function useEntries(): Entry[] {
   const config = useConfig();
   const contracts = useContracts();
   const playbooks = usePlaybooks();
+  const expert = useExpert();
   return useMemo(() => {
     const entries: Entry[] = [];
-    for (const section of sections) {
+    // The same screens the navigation lists: outside expert mode, the everyday ones (ADR 0041).
+    for (const section of visibleSections(sections, expert.data)) {
       if (section.to) entries.push({ label: t(section.label), hint: "", to: section.to });
       for (const item of section.items) entries.push({ label: t(item.label), hint: t(section.label), to: item.to });
     }
@@ -28,7 +30,8 @@ function useEntries(): Entry[] {
       const key = `${setting.section}.${setting.key}`;
       entries.push({ label: key, hint: setting.description, to: `/settings?q=${encodeURIComponent(key)}` });
     }
-    for (const playbook of playbooks.data?.playbooks ?? []) {
+    const assetTypes = listed("workflow:playbooks", expert.data) ? (playbooks.data?.playbooks ?? []) : [];
+    for (const playbook of assetTypes) {
       for (const asset of playbook.assets) {
         entries.push({
           label: asset.name,
@@ -38,7 +41,7 @@ function useEntries(): Entry[] {
       }
     }
     return entries;
-  }, [config.data, contracts.data, playbooks.data]);
+  }, [config.data, contracts.data, playbooks.data, expert.data]);
 }
 
 export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {

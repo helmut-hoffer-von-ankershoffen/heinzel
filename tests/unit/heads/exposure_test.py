@@ -41,3 +41,20 @@ def test_heads_restrict_exposure(make_kernel):
     kernel = make_kernel(**_modules())
     assert "tools_wizard" in {item.name for item in exposed(kernel, "cli")}
     assert "tools_wizard" not in {item.name for item in exposed(kernel, "api")}
+
+
+def test_an_operation_named_like_its_module_beside_others_takes_the_module_path(make_kernel):
+    mode = Module("mode", "A mode.")
+
+    @mode.operation
+    def mode_() -> str:
+        """Show it."""
+        return "off"
+
+    @mode.operation(read_only=False)
+    def on() -> str:
+        """Turn it on."""
+        return "on"
+
+    paths = {item.name: item.path for item in exposed(make_kernel(mode=mode), "api")}
+    assert paths == {"mode": ("mode",), "mode_on": ("mode", "on")}

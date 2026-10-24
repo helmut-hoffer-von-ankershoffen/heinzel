@@ -1,6 +1,6 @@
 # CLI reference
 
-🧝 Heinzelmännchen: open-source helpers that keep product teams running. Every operation accepts --json.
+🧝 Heinzelmännchen: open-source helpers that keep product teams running. Every operation accepts --json. Commands marked (expert) run like any other but are listed in help and completion only in expert mode: hz system expert on.
 
 **Usage**:
 
@@ -17,10 +17,10 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `atlassian`: Read Jira issues and Confluence pages...
+* `atlassian`: (expert) Read Jira issues and Confluence...
 * `clock`: Show the time in each of the team&#x27;s time...
-* `github`: Read pull requests and issues from GitHub:...
-* `google`: Read Google Docs, Sheets, Drive, Calendar...
+* `github`: (expert) Read pull requests and issues...
+* `google`: (expert) Read Google Docs, Sheets, Drive,...
 * `join`: Join a team from its invite line: finds...
 * `org`: Your profile, and the team, org and...
 * `setup`: Set up what is still missing, wizard...
@@ -28,11 +28,11 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `team`: Your team&#x27;s repository: create one (`hz...
 * `ui`: Open the web app in your browser, served...
 * `workflow`: Workflow contracts: Markdown files an...
-* `zoom`: Read meetings from Zoom&#x27;s meeting-summary...
+* `zoom`: (expert) Read meetings from Zoom&#x27;s...
 
 ## `hz atlassian`
 
-Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.
+(expert) Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.
 
 **Usage**:
 
@@ -46,11 +46,11 @@ $ hz atlassian [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `info`: Show this plugin&#x27;s version, the Atlassian...
+* `info`: (expert) Show this plugin&#x27;s version, the...
 
 ### `hz atlassian info`
 
-Show this plugin&#x27;s version, the Atlassian site and the acli commands it runs.
+(expert) Show this plugin&#x27;s version, the Atlassian site and the acli commands it runs.
 
 **Usage**:
 
@@ -83,7 +83,7 @@ $ hz clock [OPTIONS]
 
 ## `hz github`
 
-Read pull requests and issues from GitHub: the code-host and tracker capabilities.
+(expert) Read pull requests and issues from GitHub: the code-host and tracker capabilities.
 
 **Usage**:
 
@@ -97,11 +97,11 @@ $ hz github [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `info`: Show this plugin&#x27;s version, the...
+* `info`: (expert) Show this plugin&#x27;s version, the...
 
 ### `hz github info`
 
-Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the GitHub host it reads.
+(expert) Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the GitHub host it reads.
 
 **Usage**:
 
@@ -117,7 +117,7 @@ $ hz github info [OPTIONS]
 
 ## `hz google`
 
-Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
+(expert) Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
 
 **Usage**:
 
@@ -131,12 +131,12 @@ $ hz google [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `files`: List the Google Docs and Sheets you can...
-* `info`: Show this plugin&#x27;s version, the...
+* `files`: (expert) List the Google Docs and Sheets...
+* `info`: (expert) Show this plugin&#x27;s version, the...
 
 ### `hz google files`
 
-List the Google Docs and Sheets you can open that changed recently, newest first.
+(expert) List the Google Docs and Sheets you can open that changed recently, newest first.
 
 **Usage**:
 
@@ -154,7 +154,7 @@ $ hz google files [OPTIONS]
 
 ### `hz google info`
 
-Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the gws, scopes and APIs it uses.
+(expert) Show this plugin&#x27;s version, the Heinzelmännchen it runs on and the gws, scopes and APIs it uses.
 
 **Usage**:
 
@@ -282,25 +282,26 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `agent`: Install the Heinzelmännchen skills for...
-* `capability`: Show which adapters serve which...
-* `changelog`: Show the installed version&#x27;s changelog as...
-* `config`: Show, get, set and initialize configuration.
-* `credential`: Store and check the credentials modules...
-* `daemon`: Run modules&#x27; jobs in the background,...
+* `agent`: (expert) Install the Heinzelmännchen...
+* `capability`: (expert) Show which adapters serve which...
+* `changelog`: (expert) Show the installed version&#x27;s...
+* `config`: (expert) Show, get, set and initialize...
+* `credential`: (expert) Store and check the credentials...
+* `daemon`: (expert) Run modules&#x27; jobs in the...
 * `doctor`: Run every module&#x27;s health checks; exits...
-* `info`: Show versions, interpreter, settings,...
-* `layer`: Show the layer plugins installed and the...
-* `modules`: List every module and the lets it advertises.
-* `plugin`: Find, add, remove, list and scaffold plugins.
-* `release`: Ask where Heinzelmännchen was installed...
-* `runner`: Run bounded agent sessions with Claude...
-* `serve`: Serve every operation to coding agents...
+* `expert`: Expert mode: list every command, or just...
+* `info`: (expert) Show versions, interpreter,...
+* `layer`: (expert) Show the layer plugins installed...
+* `modules`: (expert) List every module and the lets it...
+* `plugin`: (expert) Find, add, remove, list and...
+* `release`: (expert) Ask where Heinzelmännchen was...
+* `runner`: (expert) Run bounded agent sessions with...
+* `serve`: (expert) Serve every operation to coding...
 * `update`: Update Heinzelmännchen, keeping plugins;...
 
 ### `hz system agent`
 
-Install the Heinzelmännchen skills for coding agents.
+(expert) Install the Heinzelmännchen skills for coding agents.
 
 **Usage**:
 
@@ -314,13 +315,13 @@ $ hz system agent [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `install`: Copy Heinzelmännchen&#x27;s skills into each...
-* `skills`: List the Agent Skills that ship with...
-* `uninstall`: Remove Heinzelmännchen&#x27;s skills from each...
+* `install`: (expert) Copy Heinzelmännchen&#x27;s skills...
+* `skills`: (expert) List the Agent Skills that ship...
+* `uninstall`: (expert) Remove Heinzelmännchen&#x27;s skills...
 
 #### `hz system agent install`
 
-Copy Heinzelmännchen&#x27;s skills into each configured agent skill directory.
+(expert) Copy Heinzelmännchen&#x27;s skills into each configured agent skill directory.
 
 **Usage**:
 
@@ -336,7 +337,7 @@ $ hz system agent install [OPTIONS]
 
 #### `hz system agent skills`
 
-List the Agent Skills that ship with Heinzelmännchen.
+(expert) List the Agent Skills that ship with Heinzelmännchen.
 
 **Usage**:
 
@@ -352,7 +353,7 @@ $ hz system agent skills [OPTIONS]
 
 #### `hz system agent uninstall`
 
-Remove Heinzelmännchen&#x27;s skills from each configured agent skill directory.
+(expert) Remove Heinzelmännchen&#x27;s skills from each configured agent skill directory.
 
 **Usage**:
 
@@ -368,7 +369,7 @@ $ hz system agent uninstall [OPTIONS]
 
 ### `hz system capability`
 
-Show which adapters serve which capabilities, and who reads and writes what.
+(expert) Show which adapters serve which capabilities, and who reads and writes what.
 
 **Usage**:
 
@@ -382,11 +383,11 @@ $ hz system capability [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `list`: List capabilities, their bindings and...
+* `list`: (expert) List capabilities, their bindings...
 
 #### `hz system capability list`
 
-List capabilities, their bindings and adapters, and every requirement with its adapter and hosts.
+(expert) List capabilities, their bindings and adapters, and every requirement with its adapter and hosts.
 
 **Usage**:
 
@@ -402,7 +403,7 @@ $ hz system capability list [OPTIONS]
 
 ### `hz system changelog`
 
-Show the installed version&#x27;s changelog as Markdown, or with `--newer` what newer releases bring.
+(expert) Show the installed version&#x27;s changelog as Markdown, or with `--newer` what newer releases bring.
 
 **Usage**:
 
@@ -419,7 +420,7 @@ $ hz system changelog [OPTIONS]
 
 ### `hz system config`
 
-Show, get, set and initialize configuration.
+(expert) Show, get, set and initialize configuration.
 
 **Usage**:
 
@@ -433,15 +434,15 @@ $ hz system config [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `get`: Show one setting in effect, with its...
-* `init`: Write a configuration file with every...
-* `set`: Change a setting in the user or project...
-* `show`: Show the configuration files...
-* `unset`: Remove a setting from the user or project...
+* `get`: (expert) Show one setting in effect, with...
+* `init`: (expert) Write a configuration file with...
+* `set`: (expert) Change a setting in the user or...
+* `show`: (expert) Show the configuration files...
+* `unset`: (expert) Remove a setting from the user or...
 
 #### `hz system config get`
 
-Show one setting in effect, with its environment variable.
+(expert) Show one setting in effect, with its environment variable.
 
 **Usage**:
 
@@ -461,7 +462,7 @@ $ hz system config get [OPTIONS] {key}
 
 #### `hz system config init`
 
-Write a configuration file with every setting commented out, ready to edit.
+(expert) Write a configuration file with every setting commented out, ready to edit.
 
 **Usage**:
 
@@ -479,7 +480,7 @@ $ hz system config init [OPTIONS]
 
 #### `hz system config set`
 
-Change a setting in the user or project configuration file, after validating it.
+(expert) Change a setting in the user or project configuration file, after validating it.
 
 **Usage**:
 
@@ -501,7 +502,7 @@ $ hz system config set [OPTIONS] {key} {value}
 
 #### `hz system config show`
 
-Show the configuration files Heinzelmännchen reads and every setting in effect.
+(expert) Show the configuration files Heinzelmännchen reads and every setting in effect.
 
 **Usage**:
 
@@ -517,7 +518,7 @@ $ hz system config show [OPTIONS]
 
 #### `hz system config unset`
 
-Remove a setting from the user or project configuration file, so its default applies again.
+(expert) Remove a setting from the user or project configuration file, so its default applies again.
 
 **Usage**:
 
@@ -538,7 +539,7 @@ $ hz system config unset [OPTIONS] {key}
 
 ### `hz system credential`
 
-Store and check the credentials modules need, in the OS keychain.
+(expert) Store and check the credentials modules need, in the OS keychain.
 
 **Usage**:
 
@@ -552,13 +553,13 @@ $ hz system credential [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `list`: List the credentials modules declare and...
-* `remove`: Remove a credential&#x27;s value from the...
-* `set`: Store a credential, read from standard...
+* `list`: (expert) List the credentials modules...
+* `remove`: (expert) Remove a credential&#x27;s value from...
+* `set`: (expert) Store a credential, read from...
 
 #### `hz system credential list`
 
-List the credentials modules declare and whether each is stored, never their values.
+(expert) List the credentials modules declare and whether each is stored, never their values.
 
 **Usage**:
 
@@ -574,7 +575,7 @@ $ hz system credential list [OPTIONS]
 
 #### `hz system credential remove`
 
-Remove a credential&#x27;s value from the keychain.
+(expert) Remove a credential&#x27;s value from the keychain.
 
 **Usage**:
 
@@ -595,7 +596,7 @@ $ hz system credential remove [OPTIONS] {name}
 
 #### `hz system credential set`
 
-Store a credential, read from standard input or a hidden prompt, never from the command line.
+(expert) Store a credential, read from standard input or a hidden prompt, never from the command line.
 
 **Usage**:
 
@@ -616,7 +617,7 @@ $ hz system credential set [OPTIONS] {name}
 
 ### `hz system daemon`
 
-Run modules&#x27; jobs in the background, supervised by launchd or systemd.
+(expert) Run modules&#x27; jobs in the background, supervised by launchd or systemd.
 
 **Usage**:
 
@@ -630,18 +631,18 @@ $ hz system daemon [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `install`: Install and load the launchd agent or...
-* `jobs`: List every job with its schedule, next...
-* `logs`: Show the latest lines of the daemon&#x27;s log.
-* `pause`: Pause the daemon: ticks run no job until...
-* `resume`: Resume a paused daemon.
-* `status`: Show whether the daemon is installed,...
-* `tick`: Run the jobs that are due and write a...
-* `uninstall`: Unload and remove the daemon&#x27;s unit;...
+* `install`: (expert) Install and load the launchd...
+* `jobs`: (expert) List every job with its schedule,...
+* `logs`: (expert) Show the latest lines of the...
+* `pause`: (expert) Pause the daemon: ticks run no...
+* `resume`: (expert) Resume a paused daemon.
+* `status`: (expert) Show whether the daemon is...
+* `tick`: (expert) Run the jobs that are due and...
+* `uninstall`: (expert) Unload and remove the daemon&#x27;s...
 
 #### `hz system daemon install`
 
-Install and load the launchd agent or systemd timer that ticks every few minutes.
+(expert) Install and load the launchd agent or systemd timer that ticks every few minutes.
 
 **Usage**:
 
@@ -659,7 +660,7 @@ $ hz system daemon install [OPTIONS]
 
 #### `hz system daemon jobs`
 
-List every job with its schedule, next slot and last run.
+(expert) List every job with its schedule, next slot and last run.
 
 **Usage**:
 
@@ -675,7 +676,7 @@ $ hz system daemon jobs [OPTIONS]
 
 #### `hz system daemon logs`
 
-Show the latest lines of the daemon&#x27;s log.
+(expert) Show the latest lines of the daemon&#x27;s log.
 
 **Usage**:
 
@@ -692,7 +693,7 @@ $ hz system daemon logs [OPTIONS]
 
 #### `hz system daemon pause`
 
-Pause the daemon: ticks run no job until resumed.
+(expert) Pause the daemon: ticks run no job until resumed.
 
 **Usage**:
 
@@ -708,7 +709,7 @@ $ hz system daemon pause [OPTIONS]
 
 #### `hz system daemon resume`
 
-Resume a paused daemon.
+(expert) Resume a paused daemon.
 
 **Usage**:
 
@@ -724,7 +725,7 @@ $ hz system daemon resume [OPTIONS]
 
 #### `hz system daemon status`
 
-Show whether the daemon is installed, loaded and paused, its last tick and failing jobs.
+(expert) Show whether the daemon is installed, loaded and paused, its last tick and failing jobs.
 
 **Usage**:
 
@@ -740,7 +741,7 @@ $ hz system daemon status [OPTIONS]
 
 #### `hz system daemon tick`
 
-Run the jobs that are due and write a receipt for each; exits with 1 if any job failed.
+(expert) Run the jobs that are due and write a receipt for each; exits with 1 if any job failed.
 
 **Usage**:
 
@@ -758,7 +759,7 @@ $ hz system daemon tick [OPTIONS]
 
 #### `hz system daemon uninstall`
 
-Unload and remove the daemon&#x27;s unit; receipts and logs stay.
+(expert) Unload and remove the daemon&#x27;s unit; receipts and logs stay.
 
 **Usage**:
 
@@ -788,9 +789,62 @@ $ hz system doctor [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz system expert`
+
+Expert mode: list every command, or just the everyday ones.
+
+**Usage**:
+
+```console
+$ hz system expert [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `off`: Turn expert mode off: help, completion and...
+* `on`: Turn expert mode on: help, completion and...
+
+#### `hz system expert off`
+
+Turn expert mode off: help, completion and the web app list the everyday commands.
+
+**Usage**:
+
+```console
+$ hz system expert off [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system expert on`
+
+Turn expert mode on: help, completion and the web app list every command.
+
+**Usage**:
+
+```console
+$ hz system expert on [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz system info`
 
-Show versions, interpreter, settings, modules and what modules report.
+(expert) Show versions, interpreter, settings, modules and what modules report.
 
 **Usage**:
 
@@ -806,7 +860,7 @@ $ hz system info [OPTIONS]
 
 ### `hz system layer`
 
-Show the layer plugins installed and the stack you are in, general to specific.
+(expert) Show the layer plugins installed and the stack you are in, general to specific.
 
 **Usage**:
 
@@ -820,12 +874,12 @@ $ hz system layer [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `list`: List the installed layer plugins: where...
-* `show`: Show your stack: company, org and site,...
+* `list`: (expert) List the installed layer plugins:...
+* `show`: (expert) Show your stack: company, org and...
 
 #### `hz system layer list`
 
-List the installed layer plugins: where each sits, what it brings and what is wrong with the tree.
+(expert) List the installed layer plugins: where each sits, what it brings and what is wrong with the tree.
 
 **Usage**:
 
@@ -841,7 +895,7 @@ $ hz system layer list [OPTIONS]
 
 #### `hz system layer show`
 
-Show your stack: company, org and site, team; what the layers bring and the settings they recommend.
+(expert) Show your stack: company, org and site, team; what the layers bring and the settings they recommend.
 
 **Usage**:
 
@@ -858,7 +912,7 @@ $ hz system layer show [OPTIONS]
 
 ### `hz system modules`
 
-List every module and the lets it advertises.
+(expert) List every module and the lets it advertises.
 
 **Usage**:
 
@@ -874,7 +928,7 @@ $ hz system modules [OPTIONS]
 
 ### `hz system plugin`
 
-Find, add, remove, list and scaffold plugins.
+(expert) Find, add, remove, list and scaffold plugins.
 
 **Usage**:
 
@@ -888,15 +942,15 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `add`: Add a plugin; adding one again replaces...
-* `list`: List installed plugins and the modules...
-* `new`: Scaffold a plugin repository from the...
-* `remove`: Remove a plugin.
-* `search`: Find plugins to install: first-party ones,...
+* `add`: (expert) Add a plugin; adding one again...
+* `list`: (expert) List installed plugins and the...
+* `new`: (expert) Scaffold a plugin repository from...
+* `remove`: (expert) Remove a plugin.
+* `search`: (expert) Find plugins to install:...
 
 #### `hz system plugin add`
 
-Add a plugin; adding one again replaces the installed version.
+(expert) Add a plugin; adding one again replaces the installed version.
 
 **Usage**:
 
@@ -916,7 +970,7 @@ $ hz system plugin add [OPTIONS] {spec}
 
 #### `hz system plugin list`
 
-List installed plugins and the modules they bring.
+(expert) List installed plugins and the modules they bring.
 
 **Usage**:
 
@@ -932,7 +986,7 @@ $ hz system plugin list [OPTIONS]
 
 #### `hz system plugin new`
 
-Scaffold a plugin repository from the Heinzelmännchen template, asking for answers not given.
+(expert) Scaffold a plugin repository from the Heinzelmännchen template, asking for answers not given.
 
 **Usage**:
 
@@ -955,7 +1009,7 @@ $ hz system plugin new [OPTIONS] {destination}
 
 #### `hz system plugin remove`
 
-Remove a plugin.
+(expert) Remove a plugin.
 
 **Usage**:
 
@@ -975,7 +1029,7 @@ $ hz system plugin remove [OPTIONS] {distribution}
 
 #### `hz system plugin search`
 
-Find plugins to install: first-party ones, and community ones by querying the GitHub API.
+(expert) Find plugins to install: first-party ones, and community ones by querying the GitHub API.
 
 **Usage**:
 
@@ -992,7 +1046,7 @@ $ hz system plugin search [OPTIONS]
 
 ### `hz system release`
 
-Ask where Heinzelmännchen was installed from for its latest release, and whether to update.
+(expert) Ask where Heinzelmännchen was installed from for its latest release, and whether to update.
 
 **Usage**:
 
@@ -1008,7 +1062,7 @@ $ hz system release [OPTIONS]
 
 ### `hz system runner`
 
-Run bounded agent sessions with Claude Code or a configured command.
+(expert) Run bounded agent sessions with Claude Code or a configured command.
 
 **Usage**:
 
@@ -1022,11 +1076,11 @@ $ hz system runner [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `ask`: Ask the bound agent runner, read-only and...
+* `ask`: (expert) Ask the bound agent runner,...
 
 #### `hz system runner ask`
 
-Ask the bound agent runner, read-only and within a cost cap; this may cost money.
+(expert) Ask the bound agent runner, read-only and within a cost cap; this may cost money.
 
 **Usage**:
 
@@ -1047,7 +1101,7 @@ $ hz system runner ask [OPTIONS] {prompt}
 
 ### `hz system serve`
 
-Serve every operation to coding agents (MCP) or over HTTP (REST), or run the daemon in the foreground.
+(expert) Serve every operation to coding agents (MCP) or over HTTP (REST), or run the daemon in the foreground.
 
 **Usage**:
 
@@ -1061,13 +1115,13 @@ $ hz system serve [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `api`: Serve every operation as a REST endpoint;...
-* `daemon`: Run the daemon&#x27;s tick in the foreground...
-* `mcp`: Serve every operation as an MCP tool, e.g.
+* `api`: (expert) Serve every operation as a REST...
+* `daemon`: (expert) Run the daemon&#x27;s tick in the...
+* `mcp`: (expert) Serve every operation as an MCP...
 
 #### `hz system serve api`
 
-Serve every operation as a REST endpoint; OpenAPI docs at /docs.
+(expert) Serve every operation as a REST endpoint; OpenAPI docs at /docs.
 
 **Usage**:
 
@@ -1083,7 +1137,7 @@ $ hz system serve api [OPTIONS]
 
 #### `hz system serve daemon`
 
-Run the daemon&#x27;s tick in the foreground every interval, printing each result as a JSON line.
+(expert) Run the daemon&#x27;s tick in the foreground every interval, printing each result as a JSON line.
 
 **Usage**:
 
@@ -1098,7 +1152,7 @@ $ hz system serve daemon [OPTIONS]
 
 #### `hz system serve mcp`
 
-Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
+(expert) Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
 
 **Usage**:
 
@@ -1146,15 +1200,15 @@ $ hz team [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `add`: Add someone to your team&#x27;s roster, as one...
-* `adopt`: Make an existing checkout your team...
+* `add`: (expert) Add someone to your team&#x27;s...
+* `adopt`: (expert) Make an existing checkout your...
 * `join`: Clone a team repository with your own...
 * `new`: Create a team repository from the...
 * `show`: Show your team: its repository, checkout...
 
 ### `hz team add`
 
-Add someone to your team&#x27;s roster, as one of its owners: a pull request the other owners see.
+(expert) Add someone to your team&#x27;s roster, as one of its owners: a pull request the other owners see.
 
 **Usage**:
 
@@ -1179,7 +1233,7 @@ $ hz team add [OPTIONS] {handle}
 
 ### `hz team adopt`
 
-Make an existing checkout your team repository; replaces the deprecated `workflow.team_repository`.
+(expert) Make an existing checkout your team repository; replaces the deprecated `workflow.team_repository`.
 
 **Usage**:
 
@@ -1296,21 +1350,21 @@ $ hz workflow [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `check`: Check contracts and list every problem...
-* `discover`: Find candidates for each playbook&#x27;s asset...
+* `check`: (expert) Check contracts and list every...
+* `discover`: (expert) Find candidates for each...
 * `drafts`: List the drafts runs saved locally, newest...
-* `graph`: Show the workflow your contracts make:...
+* `graph`: (expert) Show the workflow your contracts...
 * `list`: List the contracts in your and your team&#x27;s...
-* `new`: Write a starter contract, or a playbook&#x27;s...
-* `playbooks`: List the playbooks plugins contribute:...
-* `prune`: Delete drafts and records older than...
+* `new`: (expert) Write a starter contract, or a...
+* `playbooks`: (expert) List the playbooks plugins...
+* `prune`: (expert) Delete drafts and records older...
 * `run`: Render a contract now: fetch its inputs,...
-* `sent`: Record how much of a draft you changed...
+* `sent`: (expert) Record how much of a draft you...
 * `show`: Show a contract as the daemon runs it:...
 
 ### `hz workflow check`
 
-Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
+(expert) Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
 
 **Usage**:
 
@@ -1327,7 +1381,7 @@ $ hz workflow check [OPTIONS]
 
 ### `hz workflow discover`
 
-Find candidates for each playbook&#x27;s asset types through the capabilities you have bound; reads only.
+(expert) Find candidates for each playbook&#x27;s asset types through the capabilities you have bound; reads only.
 
 **Usage**:
 
@@ -1362,7 +1416,7 @@ $ hz workflow drafts [OPTIONS]
 
 ### `hz workflow graph`
 
-Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
+(expert) Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
 
 **Usage**:
 
@@ -1395,7 +1449,7 @@ $ hz workflow list [OPTIONS]
 
 ### `hz workflow new`
 
-Write a starter contract, or a playbook&#x27;s template (--template), into your workflows directory.
+(expert) Write a starter contract, or a playbook&#x27;s template (--template), into your workflows directory.
 
 **Usage**:
 
@@ -1418,7 +1472,7 @@ $ hz workflow new [OPTIONS] {name}
 
 ### `hz workflow playbooks`
 
-List the playbooks plugins contribute: asset types, template contracts and recommended settings.
+(expert) List the playbooks plugins contribute: asset types, template contracts and recommended settings.
 
 **Usage**:
 
@@ -1434,7 +1488,7 @@ $ hz workflow playbooks [OPTIONS]
 
 ### `hz workflow prune`
 
-Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
+(expert) Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
 
 **Usage**:
 
@@ -1472,7 +1526,7 @@ $ hz workflow run [OPTIONS] {name}
 
 ### `hz workflow sent`
 
-Record how much of a draft you changed before sending it; `hz workflow show` reports it.
+(expert) Record how much of a draft you changed before sending it; `hz workflow show` reports it.
 
 **Usage**:
 
@@ -1516,7 +1570,7 @@ $ hz workflow show [OPTIONS] {name}
 
 ## `hz zoom`
 
-Read meetings from Zoom&#x27;s meeting-summary emails: the meetings capability.
+(expert) Read meetings from Zoom&#x27;s meeting-summary emails: the meetings capability.
 
 **Usage**:
 
@@ -1530,11 +1584,11 @@ $ hz zoom [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `info`: Show this plugin&#x27;s version, the...
+* `info`: (expert) Show this plugin&#x27;s version, the...
 
 ### `hz zoom info`
 
-Show this plugin&#x27;s version, the Heinzelmännchen it runs on and where its meetings come from.
+(expert) Show this plugin&#x27;s version, the Heinzelmännchen it runs on and where its meetings come from.
 
 **Usage**:
 

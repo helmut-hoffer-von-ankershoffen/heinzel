@@ -30,19 +30,21 @@ def exposed(kernel: Kernel, head: str) -> list[Exposed]:
     """Every operation `head` should expose, in module order.
 
     An operation is left out when it needs a service only a disabled module provides, or when its `heads` restrict it
-    to other heads. A module whose only operation shares its name and has no submodules collapses onto its own path.
+    to other heads. An operation that shares its module's name takes the module's own path: a module whose only
+    operation it is (and that has no submodules) collapses into it, and beside other operations it is what the
+    module's path does by itself (`hz system expert`, `GET /system/expert`, next to `hz system expert on`).
     """
     result: list[Exposed] = []
     for record, operation in kernel.lets(OperationLet):
         if not kernel.available(operation.func) or (operation.heads is not None and head not in operation.heads):
             continue
-        collapsed = collapses(kernel, record)
+        own = operation.name == record.module.name
         signature = operation.signature()
         result.append(
             Exposed(
                 record=record,
                 operation=operation,
-                path=record.path if collapsed else (*record.path, operation.name),
+                path=record.path if own else (*record.path, operation.name),
                 parameters=tuple(
                     p
                     for p in signature.parameters.values()

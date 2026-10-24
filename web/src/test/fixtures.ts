@@ -3,6 +3,7 @@ import type {
   SchemaConfigReport,
   SchemaContractGraph,
   SchemaContractList,
+  SchemaExpertMode,
   SchemaHealthReport,
   SchemaProfile,
   SchemaTeamShow,
@@ -113,7 +114,23 @@ export const noTeam: SchemaTeamShow = {
 };
 
 /** Every read the shell makes, so a screen renders without unanswered calls. */
+const audiences: SchemaExpertMode["operations"] = [
+  { module: "system.doctor", operation: "doctor", audience: "everyday" },
+  { module: "team", operation: "show", audience: "everyday" },
+  { module: "workflow", operation: "list", audience: "everyday" },
+  { module: "workflow", operation: "graph", audience: "expert" },
+  { module: "workflow", operation: "playbooks", audience: "expert" },
+  { module: "workflow", operation: "discover", audience: "expert" },
+  { module: "system.capability", operation: "list", audience: "expert" },
+];
+
+/** `hz system expert` by default: the everyday screens only. */
+export const everyday: SchemaExpertMode = { expert: false, operations: audiences, next: ["hz system expert on"] };
+/** `hz system expert` after `hz system expert on`: every screen. */
+export const expert: SchemaExpertMode = { expert: true, operations: audiences, next: ["hz system expert off"] };
+
 export const shell = {
+  "/api/system/expert": everyday,
   "/api/workflow/list": contracts,
   "/api/org/show": profile,
   "/api/system/config/show": config,

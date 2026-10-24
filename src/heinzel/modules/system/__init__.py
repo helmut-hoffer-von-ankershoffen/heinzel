@@ -40,7 +40,7 @@ def release(service: SystemService, installation: Installation) -> ReleaseCheck:
     return service.release(requirements[0] if requirements else None)
 
 
-@module.operation(read_only=False)
+@module.operation(read_only=False, audience="everyday")
 def update(
     installation: Installation,
     source: Annotated[
