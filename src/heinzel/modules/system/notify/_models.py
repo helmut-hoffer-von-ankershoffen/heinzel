@@ -102,7 +102,9 @@ class Tested(BaseModel):
     native: str | None = Field(
         description="`shown` when the native notifier popped it up now, else why not; none when not asked to."
     )
-    channels: list[Channel] = Field(default_factory=list, description="The web app, the native notifier, the daemon.")
+    channels: list[Channel] = Field(
+        default_factory=list[Channel], description="The web app, the native notifier, the daemon."
+    )
     pops_up: bool = Field(
         default=True,
         description="Whether anything pops the test up: it was shown, a web app is open, or the daemon hands it to a "
