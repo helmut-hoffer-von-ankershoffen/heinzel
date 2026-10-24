@@ -19,18 +19,31 @@ class ChatSettings(ModuleSettings):
     Each message may cost at most `[system.runner] ask_max_usd`; a session at most `session_max_usd` in all.
     """
 
+    section_title: ClassVar[str | None] = "Chat"  # the heading in Settings
+
     session_max_usd: float = Field(
         default=2.0,
         gt=0,
         allow_inf_nan=False,
-        description="Most one chat session may cost in US dollars, all its messages together; a message never "
-        "costs more than system.runner.ask_max_usd.",
+        title="Most per chat",
+        description="The most one chat may cost in US dollars, all its messages together. One "
+        "message never costs more than the most per answer.",
+        json_schema_extra={"x-unit": "usd"},
     )
     keep_days: int = Field(
-        default=30, ge=1, le=3650, description="Days a chat session is kept after its last message, then removed."
+        default=30,
+        ge=1,
+        le=3650,
+        title="Keep chats for",
+        description="How long a chat is kept after its last message, then removed.",
+        json_schema_extra={"x-unit": "days"},
     )
     keep_sessions: int = Field(
-        default=50, ge=1, le=1000, description="Chat sessions kept at most; the oldest beyond are removed."
+        default=50,
+        ge=1,
+        le=1000,
+        title="Chats kept",
+        description="How many chats are kept at most; the oldest beyond that are removed.",
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"session_max_usd"})

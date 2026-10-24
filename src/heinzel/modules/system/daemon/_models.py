@@ -4,6 +4,7 @@ import sys
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import BaseModel, Field, JsonValue
 
@@ -20,9 +21,13 @@ def unit_dir(platform: str) -> Path:
 class DaemonSettings(ModuleSettings):
     """Settings of the daemon module: the `[system.daemon]` table or `HZ_SYSTEM_DAEMON__*` variables."""
 
+    section_title: ClassVar[str | None] = "Daemon"  # the heading in Settings
+
     unit_dir: Path = Field(
         default_factory=lambda: unit_dir(sys.platform),
-        description="Where `install` writes the launchd LaunchAgent (macOS) or the systemd user units (Linux).",
+        title="Service folder",
+        description="Where installing the daemon writes its LaunchAgent on macOS, or its systemd user units on Linux.",
+        json_schema_extra={"x-expert": True},
     )
 
 

@@ -16,9 +16,16 @@ from tomlkit.exceptions import ParseError
 
 from heinzel import Config, ConfigEditor, HeinzelError, Kernel, ModuleSettings
 from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, toml_value, user_config_dir
-from heinzel.modules.system.config._models import ConfigFileInfo, ConfigReport, ConfigRevealed, RevealScope, SettingInfo
+from heinzel.modules.system.config._models import (
+    ConfigFileInfo,
+    ConfigReport,
+    ConfigRevealed,
+    RevealScope,
+    SettingInfo,
+    SettingRevealed,
+)
 from heinzel.modules.system.config._reveal import Revealer
-from heinzel.modules.system.config._schema import setting_schemas
+from heinzel.modules.system.config._schema import reference_hints, setting_schemas
 
 HEADER = """\
 # Heinzelmännchen configuration.
@@ -65,6 +72,7 @@ class ConfigService(ConfigEditor):
                     value=to_jsonable_python(getattr(settings, key)),
                     env=f"{env_prefix(section)}{key.upper()}",
                     description=field.description or "",
+                    section_title=type(settings).section_title,
                     default=_default(field),
                     source=self._source(config, section, key, type(settings).ignored_in_project),
                     json_schema=schemas[type(settings)].get(key),
@@ -107,6 +115,35 @@ class ConfigService(ConfigEditor):
             scope=scope, path=path, supported=done.supported, opened=done.opened, message=done.message
         )
 
+    def reveal_setting(self, key: str) -> SettingRevealed:
+        """Show the file or folder a path setting names, such as `hz.log_dir`, in this machine's file manager.
+
+        Raises:
+            HeinzelError: If the setting isn't a path, or is not set.
+        """
+        setting = self.get(key)
+        schema = setting.json_schema or {}
+        # A path, or `Path | None`: the format is on the schema or on its one branch that isn't null.
+        branches = cast("list[dict[str, Any]]", [schema, *schema.get("anyOf", [])])
+        if not any(branch.get("format") == "path" for branch in branches):
+            several = cast("dict[str, Any]", schema.get("items") or {}).get("format") == "path"
+            msg = (
+                f"{key} holds several paths; open them one by one in your file manager."
+                if several
+                else f"{key} isn't a file or folder setting; only those can be shown in a file manager."
+            )
+            raise HeinzelError(msg)
+        if not isinstance(setting.value, str) or not setting.value:
+            msg = f"{key} is not set, so there is nothing to show."
+            raise HeinzelError(msg)
+        path = Path(setting.value).expanduser()
+        if not path.is_absolute():
+            # Relative to whichever directory hz runs in, which is not what the file that set it meant.
+            msg = f"{key} is the relative path {path}; set it to a full path to show it."
+            raise HeinzelError(msg)
+        done = self.revealer.reveal(path)
+        return SettingRevealed(key=key, path=path, supported=done.supported, opened=done.opened, message=done.message)
+
     def init(self, path: Path | None = None, *, force: bool = False) -> Path:
         """Write a configuration file listing every setting, commented out, with its description and default.
 
@@ -123,7 +160,7 @@ class ConfigService(ConfigEditor):
             if setting.section != current:
                 current = setting.section
                 lines.append(f"\n[{current}]")
-            lines.append(f"# {setting.description}")
+            lines.append(f"# {setting.description}{reference_hints(setting.json_schema)}")
             # TOML has no null: a setting without a default gets a hint instead of an assignment that wouldn't parse.
             if setting.value is None:
                 lines.append(f"# {setting.key}: not set by default")

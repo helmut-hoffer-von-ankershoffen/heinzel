@@ -18,11 +18,15 @@ class TelemetrySettings(ModuleSettings):
     Heinzelmännchen report under.
     """
 
+    section_title: ClassVar[str | None] = "Reporting"  # the heading in Settings
+
     user: str | None = Field(
         default=None,
         pattern=HANDLE_PATTERN,
         max_length=39,
-        description="Your handle in your team's roster, which every entry you report carries; e.g. costas.",
+        title="Roster handle",
+        description="Your handle in your team's roster; every entry you report carries it.",
+        examples=["mira"],
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"user"})

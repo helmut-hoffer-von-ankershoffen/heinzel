@@ -23,17 +23,29 @@ Relation = Literal["reads", "writes"]
 class GraphSettings(ModuleSettings):
     """The team graph: the `[graph]` table or `HZ_GRAPH__*` variables."""
 
+    section_title: ClassVar[str | None] = "Team graph"  # the heading in Settings
+
     time_zone: str | None = Field(
         default=None,
-        description="The IANA time zone team contracts' schedules are read in, e.g. Europe/Lisbon; your system's "
-        "when unset.",
+        title="Schedule time zone",
+        description="The time zone your team's contract schedules are read in; your computer's when not set.",
+        json_schema_extra={"format": "iana-timezone"},
     )
     offline_after: str = Field(
         default="2d",
-        description="How long a Heinzelmännchen may be silent (no entry, not even a heartbeat) before it shows as "
-        "offline, e.g. 36h.",
+        title="Offline after",
+        description="How long a Heinzelmännchen may stay silent, without even a heartbeat, before "
+        "it shows as offline: a number with m, h or d, such as 36h.",
+        json_schema_extra={"format": "duration"},
     )
-    weeks: int = Field(default=4, ge=1, le=26, description="How many weeks of kept promises the graph counts.")
+    weeks: int = Field(
+        default=4,
+        ge=1,
+        le=26,
+        title="Weeks counted",
+        description="How many weeks of kept promises the team graph counts.",
+        json_schema_extra={"x-unit": "weeks"},
+    )
 
     @field_validator("offline_after")
     @classmethod
