@@ -2,7 +2,7 @@
 
 import base64
 import hashlib
-import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -113,8 +113,34 @@ def test_every_response_carries_the_csp_and_the_other_security_headers(client):
     assert "unsafe-eval" not in web.CSP
 
 
-INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", flags=re.DOTALL)
-"""Every script element without a `src`: an inline script, whatever its attributes."""
+class InlineScripts(HTMLParser):
+    """The text of every script element without a `src`, whatever its other attributes, as a browser parses them."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)  # a script's text is raw: the hash covers it as written
+        self.scripts: list[str] = []
+        self._inside = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        # HTMLParser lowercases tag and attribute names, so `SRC=` and `src = "…"` count as a src too.
+        if tag == "script" and not any(name == "src" for name, _ in attrs):
+            self._inside = True
+            self.scripts.append("")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script":
+            self._inside = False
+
+    def handle_data(self, data: str) -> None:
+        if self._inside:
+            self.scripts[-1] += data
+
+
+def inline_scripts(page: str) -> list[str]:
+    parser = InlineScripts()
+    parser.feed(page)
+    parser.close()
+    return parser.scripts
 
 
 def script_hash(source: str) -> str:
@@ -129,12 +155,15 @@ def script_sources(csp: str) -> list[str]:
 
 def test_the_csp_allows_the_splash_script_by_its_hash_and_no_other_inline_script():
     page = (REPO / "web" / "index.html").read_text(encoding="utf-8")
-    inline = INLINE_SCRIPT.findall(page)
+    inline = inline_scripts(page)
     assert len(inline) == 1, "web/index.html has one inline script, the splash's"
     assert script_hash(inline[0]) == web.SPLASH_SCRIPT, f"update SPLASH_SCRIPT to {script_hash(inline[0])}"
     assert script_sources(web.CSP) == ["'self'", web.SPLASH_SCRIPT]
     for other in ("alert(1)", inline[0] + " ", inline[0].replace("hz.splash", "hz.other")):
         assert script_hash(other) not in web.CSP
+    assert inline_scripts('<script SRC="/a.js"></script><script src = "/b.js"></script><SCRIPT type=x>y</SCRIPT>') == [
+        "y"
+    ]
     assert not any(source in web.CSP for source in ("'unsafe-hashes'", "'strict-dynamic'", "'nonce-"))
 
 
@@ -142,7 +171,7 @@ def test_the_built_page_keeps_the_splash_script_as_written():
     built = web.STATIC / "index.html"
     if not built.is_file():
         pytest.skip("the web app isn't built (make web-build)")
-    inline = INLINE_SCRIPT.findall(built.read_text(encoding="utf-8"))
+    inline = inline_scripts(built.read_text(encoding="utf-8"))
     assert [script_hash(source) for source in inline] == [web.SPLASH_SCRIPT], "the build is stale: make web-build"
 
 
