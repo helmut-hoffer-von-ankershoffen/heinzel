@@ -25,6 +25,10 @@ export function displayName(name: string, summary = ""): string {
   return BRANDS[name.toLowerCase()] ?? words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/** A plugin's summary without the "…: a Heinzelmännchen plugin." its template ends it with; the header says so. */
+export const plainSummary = (summary: string) =>
+  summary.replace(/\s*[:;,–—-]\s*an? Heinzelmännchen plugin\.?\s*$/i, ".");
+
 export type SettingsEntry = { id: string; title: string; plugin?: SchemaPluginInfo };
 
 export type SettingsNav = {

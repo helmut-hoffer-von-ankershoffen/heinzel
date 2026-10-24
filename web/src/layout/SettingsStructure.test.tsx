@@ -96,6 +96,16 @@ const report: SchemaConfigReport = {
       description: "The team's time zones.",
       json_schema: zonesSchema,
     },
+    {
+      section: "clock",
+      key: "working_hours",
+      value: [8, 16],
+      default: null,
+      source: "user",
+      env: "HZ_CLOCK__WORKING_HOURS",
+      description: "Deprecated: the hours of every zone given by name only.",
+      json_schema: { anyOf: [{ type: "array" }, { type: "null" }], deprecated: true },
+    },
   ],
 };
 
@@ -142,15 +152,42 @@ describe("Settings: Preferences, Customize, This computer", () => {
     await expectAccessible(container);
   });
 
-  it("says which plugin a module's settings come from, linking to Plugins", async () => {
-    mockApi({ ...answers, "/api/system/plugin/search": { plugins: [], warnings: [] } });
+  it("heads a plugin module's settings with where they come from, as its row under Plugins does", async () => {
+    const sourced = {
+      ...clock,
+      summary: "What time it is for everyone on the team: a Heinzelmännchen plugin.",
+      source_url: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/v0.3.0/plugins/heinzel-clock",
+    };
+    mockApi({
+      ...answers,
+      "/api/system/plugin/list": [github, sourced],
+      "/api/system/plugin/search": { plugins: [], warnings: [] },
+    });
     const user = userEvent.setup();
-    renderAt("/doctor?settings=clock");
+    const { container } = renderAt("/doctor?settings=clock");
     const nav = await screen.findByRole("navigation", { name: "Settings" });
     expect(await within(nav).findByRole("button", { name: "Clock" })).toHaveAttribute("aria-current", "page");
-    const from = (await screen.findByText(/From the plugin/)).closest("p") as HTMLElement;
-    await user.click(within(from).getByRole("button", { name: "Clock" }));
+    const plugin = await screen.findByTitle("Show it under Plugins");
+    const header = plugin.closest("div") as HTMLElement;
+    expect(within(header).getByTitle("Capability: hz clock")).toBeInTheDocument();
+    expect(header).toHaveTextContent("First-party");
+    expect(header).toHaveTextContent("v0.3.0");
+    expect(
+      within(header).getByRole("link", { name: "github.com/helmut-hoffer-von-ankershoffen/heinzel" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("What time it is for everyone on the team.")).toBeInTheDocument();
+    await expectAccessible(container);
+    await user.click(plugin);
     expect(within(nav).getByRole("button", { name: "Plugins" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("heads a built-in module's settings with hz and its version", async () => {
+    mockApi({ ...answers, "/api/system/info": { version: "0.4.0", modules: [] } });
+    renderAt("/doctor?settings=org");
+    expect(await screen.findByRole("link", { name: "Built in · heinzel v0.4.0" })).toHaveAttribute(
+      "href",
+      "https://github.com/helmut-hoffer-von-ankershoffen/heinzel",
+    );
   });
 
   it("lists connectors as cards with what they connect, and opens one's settings inside Connectors", async () => {
@@ -221,6 +258,16 @@ describe("The time zones editor (a list of tables by its schema)", () => {
     await user.click(within(zones).getByRole("button", { name: "Add to Zones" }));
     const own = Intl.DateTimeFormat().resolvedOptions().timeZone;
     await waitFor(() => expect(lastSet(calls)).toContain(`{ name = "${own}", hours = [9, 18] }`));
+  });
+
+  it("never shows a deprecated setting, even one that is set, nor finds it by search", async () => {
+    mockApi(answers);
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=clock");
+    await screen.findByRole("group", { name: "Zones" });
+    expect(screen.queryByText("Working hours")).not.toBeInTheDocument();
+    await user.type(screen.getByRole("searchbox"), "working_hours");
+    expect(await screen.findByText("No setting matches.")).toBeInTheDocument();
   });
 
   it("marks the first zone as yours, reorders rows, and puts your own zone on top", async () => {

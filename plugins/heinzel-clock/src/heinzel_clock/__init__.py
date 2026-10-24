@@ -64,6 +64,7 @@ class ClockSettings(ModuleSettings):
     working_hours: tuple[int, int] | None = Field(
         default=None,
         description="Deprecated: the hours of every zone given by name only. Give each zone its hours instead.",
+        json_schema_extra={"deprecated": True},  # the web app's Settings leave it out; doctor reports it when set
     )
 
     @model_validator(mode="before")

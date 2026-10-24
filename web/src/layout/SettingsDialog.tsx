@@ -18,18 +18,28 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { SchemaConfigReport, SchemaSettingInfo } from "@/api/client";
-import { useConfig, useExpert, usePlugins, useRevealConfig, useSetExpert } from "@/api/queries";
+import { useConfig, useExpert, useInfo, usePlugins, useRevealConfig, useSetExpert } from "@/api/queries";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
 import { ConnectorsSection } from "./ConnectorsSection";
-import { PluginsSection } from "./PluginsSection";
+import { PluginsSection, Provenance } from "./PluginsSection";
 import { Row, Switch } from "./SettingControls";
-import { CONNECTORS, displayName, FILES, group, PLUGINS, type SettingsEntry, settingsNav } from "./settingsSections";
+import type { JsonSchema } from "./settingSchema";
+import {
+  CONNECTORS,
+  displayName,
+  FILES,
+  group,
+  PLUGINS,
+  plainSummary,
+  type SettingsEntry,
+  settingsNav,
+} from "./settingsSections";
 import { ThemePreviews } from "./ThemePreviews";
 import { type Mode, useMode } from "./theme";
 
@@ -111,7 +121,12 @@ type BodyProps = {
 
 function Body({ report, query, setQuery, searchRef, section, onSection }: BodyProps) {
   const plugins = usePlugins();
-  const groups = [...new Set(report.settings.map((setting) => group(setting.section)))];
+  const info = useInfo();
+  // Deprecated settings are never shown: hz migrates them, and doctor names the fix when one is still set.
+  const settings = report.settings.filter(
+    (setting) => !(setting.json_schema as JsonSchema | null | undefined)?.deprecated,
+  );
+  const groups = [...new Set(settings.map((setting) => group(setting.section)))];
   const nav = settingsNav(groups, plugins.data ?? []);
   const connector = nav.connectors.find((entry) => entry.id === section || entry.groups.includes(section ?? ""));
   const preference = nav.preferences.find((entry) => entry.id === section);
@@ -125,8 +140,8 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
   const needle = query.trim().toLowerCase();
   const titled = (entry: SettingsEntry) => entry.title || t("settings.general");
   const matching = needle
-    ? report.settings.filter((s) => `${s.section}.${s.key} ${s.description}`.toLowerCase().includes(needle))
-    : report.settings.filter((s) => group(s.section) === current);
+    ? settings.filter((s) => `${s.section}.${s.key} ${s.description}`.toLowerCase().includes(needle))
+    : settings.filter((s) => group(s.section) === current);
   const item = (active: boolean) =>
     cn(
       "flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-ui text-foreground/90 transition-colors hover:bg-accent/70 [&_svg]:size-(--icon) [&_svg]:shrink-0 [&_svg]:stroke-[1.75] [&_svg]:text-icon",
@@ -185,7 +200,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
           <ConnectorsSection
             connectors={nav.connectors}
             open={connector}
-            settings={report.settings}
+            settings={settings}
             onOpen={go}
             renderSettings={(settings, heading) => <Sections settings={settings} heading={heading} />}
           />
@@ -204,22 +219,13 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 </div>
               </>
             )}
-            {preference?.plugin && (
-              <p className="mb-2 text-ui-sm text-muted-foreground">
-                {t("settings.fromPlugin")}{" "}
-                <button
-                  type="button"
-                  onClick={() => go(PLUGINS)}
-                  className="rounded text-foreground/80 hover:text-foreground hover:underline"
-                >
-                  {displayName(preference.plugin.name, preference.plugin.summary)}
-                </button>
-              </p>
-            )}
             <Sections
               settings={matching}
               heading={preference ? titled(preference) : displayName(current)}
-              summary={preference?.plugin?.summary}
+              summary={preference?.plugin?.summary ? plainSummary(preference.plugin.summary) : undefined}
+              provenance={
+                <Provenance plugin={preference?.plugin} version={info.data?.version} onOpen={() => go(PLUGINS)} />
+              }
             />
           </>
         )}
@@ -232,15 +238,18 @@ function Sections({
   settings,
   heading,
   summary,
+  provenance,
 }: {
   settings: SchemaSettingInfo[];
   heading: string;
   summary?: string;
+  provenance?: ReactNode;
 }) {
   const sections = [...new Set(settings.map((setting) => setting.section))];
   return (
     <>
       <h3 className="mb-2 text-ui font-medium">{heading}</h3>
+      {provenance}
       {summary && <p className="-mt-1 mb-2 text-sm text-muted-foreground">{summary}</p>}
       {settings.length === 0 && <p className="text-sm text-muted-foreground">{t("settings.none")}</p>}
       {sections.map((section) => (

@@ -20,6 +20,7 @@ export type JsonSchema = {
   anyOf?: JsonSchema[];
   oneOf?: JsonSchema[];
   title?: string;
+  deprecated?: boolean;
   description?: string;
 };
 

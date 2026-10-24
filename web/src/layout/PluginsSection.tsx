@@ -36,6 +36,52 @@ import { displayName } from "./settingsSections";
 
 type PluginKind = NonNullable<SchemaPluginInfo["kinds"]>[number];
 
+/** Where a plugin comes from, as its badge says: first-party, community (the catalog knows) or private. */
+export function sourceLabel(plugin: SchemaPluginInfo, community?: boolean): string {
+  if (plugin.first_party) return t("plugins.firstParty");
+  return community ? t("plugins.community") : t("plugins.private");
+}
+
+/** Where a module's settings come from, as Settings heads them: the plugin with the same badges, version and
+ *  repository its row under Plugins shows, or hz itself for a built-in module. */
+export function Provenance({
+  plugin,
+  version,
+  onOpen,
+}: {
+  plugin: SchemaPluginInfo | undefined;
+  version: string | undefined;
+  onOpen: () => void;
+}) {
+  if (!plugin) {
+    return (
+      <p className="mb-3 text-ui-sm text-muted-foreground">
+        <a href={CORE} target="_blank" rel="noreferrer noopener" className="hover:text-foreground hover:underline">
+          {t("settings.builtIn", { version: version ? `v${version}` : "" }).trim()}
+        </a>
+      </p>
+    );
+  }
+  return (
+    <div className="mb-3">
+      <p className="flex flex-wrap items-center gap-2 text-ui-sm text-muted-foreground">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="rounded font-medium text-foreground hover:underline"
+          title={t("settings.openPlugin")}
+        >
+          {displayName(plugin.name, plugin.summary)}
+        </button>
+        <KindBadges plugin={plugin} />
+        <span className="rounded-md border border-border px-1.5 text-[11px]">{sourceLabel(plugin)}</span>
+        <span className="text-xs tabular-nums">v{plugin.version}</span>
+      </p>
+      <RepositoryLine url={plugin.source_url ?? plugin.homepage} />
+    </div>
+  );
+}
+
 /** The browsable repository of an install spec: `name @ git+https://host/o/r@ref#subdirectory=d` → its tree. */
 export function repositoryOf(spec: string): string | null {
   const match = spec.match(/git\+(https:\/\/[^@#\s]+?)(?:\.git)?(?:@([^#\s]+))?(?:#subdirectory=(\S+))?$/);
@@ -342,11 +388,7 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
               <ul>
                 {shown.map((plugin) => {
                   const entry = known.get(plugin.distribution);
-                  const source = plugin.first_party
-                    ? t("plugins.firstParty")
-                    : entry?.community
-                      ? t("plugins.community")
-                      : t("plugins.private");
+                  const source = sourceLabel(plugin, entry?.community);
                   const url = plugin.source_url ?? (entry ? repositoryOfEntry(entry) : null);
                   const enabled = plugin.enabled ?? true;
                   return (

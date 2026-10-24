@@ -179,6 +179,10 @@ def test_the_zones_schema_tells_a_form_each_name_is_a_time_zone_and_each_hour_an
     assert "$ref" not in str(schema)
 
 
+def test_the_old_working_hours_are_marked_deprecated_for_forms(hz):
+    assert hz("system", "config", "get", "clock.working_hours").json["json_schema"]["deprecated"] is True
+
+
 def test_an_hour_past_midnight_is_refused():
     with pytest.raises(ValidationError, match="less than or equal to 24"):
         Zone(name="Asia/Tokyo", hours=(9, 25))

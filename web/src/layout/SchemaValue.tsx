@@ -303,9 +303,14 @@ function Table({
                   </span>
                 );
               })}
-              {zones && index === 0 && (
-                <span className="rounded-md border border-primary/40 px-1.5 text-[11px] text-primary">
-                  {t("settings.primary")}
+              {zones && (
+                // Every row keeps the badge's column, so the first row's pickers are as wide as the others'.
+                <span className="flex w-16 shrink-0 justify-center">
+                  {index === 0 && (
+                    <span className="rounded-md border border-primary/40 px-1.5 text-[11px] text-primary">
+                      {t("settings.primary")}
+                    </span>
+                  )}
                 </span>
               )}
               <span className="ml-auto flex items-center">
