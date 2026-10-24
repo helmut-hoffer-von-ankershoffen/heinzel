@@ -247,13 +247,15 @@ request (director's decisions, 2026-10-24):
     the field in `ignored_in_project`, which it should; then doctor names the project key, as for bindings.
   - *Host names only*: each value may be a host name or a URL; the kernel keeps only the lowercase host name (no
     scheme, user information, port, path or query), so a token in a URL never reaches `hz system info`. ASCII host
-    names (punycode for international ones) and IP addresses are valid; a static list is held to the same rule when
-    the module is imported.
-  - *When the matrix is built*, once per kernel (the settings it reads are resolved once per kernel too). It never
-    raises into `hz system capability list`, info or doctor: if the settings can't be read, the function fails or
-    returns something that isn't a host, or returns nothing, the hosts show as `unknown (configured)` and doctor adds
-    a degraded `hosts of <adapter>:<capability>` check. The check names the exception type and the position of a bad
-    value, never the value or the exception's message, which may carry a URL with a token; the log has the traceback.
+    names (punycode for international ones) and IP addresses are valid; wildcards (`*.example.com`) are not. A static
+    list is held to the same rule when the module is imported.
+  - *When the matrix is built*, once per adapter and kernel (the settings it reads are resolved once per kernel too).
+    It never raises into `hz system capability list`, info or doctor: if the settings can't be read, the function
+    fails or returns something that isn't a host, or returns nothing, the hosts show as `unknown (configured)`, and
+    if the adapter is bound or serves a requirement, doctor adds a degraded `hosts of <adapter>:<capability>` check;
+    an installed adapter nobody uses sends nothing and doesn't degrade doctor. The check and the log name the
+    exception type and the position of a bad value, never the value, the exception's message or a traceback, which
+    may carry a URL with a token (pydantic's validation errors repeat the input).
 - **Not an isolation boundary.** Every module and plugin runs in the same process with the user's rights. A plugin can
   import an adapter's module and build it, reach the adapter through a handle's closures with introspection, or call
   the kernel's private modules. Handles and declarations make intent explicit and misuse visible in review, as
