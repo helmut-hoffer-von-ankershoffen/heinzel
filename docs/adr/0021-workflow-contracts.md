@@ -79,6 +79,24 @@ readable prose. Each point says what 0.2 builds and what comes later.
      output `target` and facets, input `source`/`query`/`facets`/`required`, publish `auto_approve` and
      `target`. Agent `runner`, `model`, `effort` and `max_turns` are refused for good: the runner and model are
      configuration ([ADR 0029](0029-agent-runners-are-capability-adapters.md)).
+   - Amended 2026-10-24 ([ADR 0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md)
+     statements 13, 15 and 20, borrowed from OpenProse Reactor,
+     [harness spec](https://github.com/openprose/reactor/blob/main/spec/02-ReactorHarness.md),
+     [pattern](https://github.com/openprose/reactor/blob/main/spec/03-ReactorPattern.md)): four keys are defined.
+     They stay refused with `HZC023` until ADR 0049's staged step 6 builds them; `freshness` stays deferred.
+     - Input `facet` (singular; it replaces the deferred input `facets`, and two facets are two inputs): one facet of
+       what a capability input reads, a document's tab or heading, a tracker's row; the input then wakes only when that
+       facet's fingerprint moved (8). A `contract:` input keeps its `#<output>` suffix (7) and takes no `facet`.
+     - Input `recheck` (`5m` to `7d`, default every tick): how often the daemon may look, so a volatile input is
+       polled often and a roster weekly. It decides when to look and never wakes anyone by itself.
+     - Output `valid_for` (`1h` to `366d`): the approved text expires that long after approval, and the
+       Heinzelmännchen then wakes with cause `stale`.
+     - `hz.render_on_schedule: if-moved | always`: whether a schedule slot renders when no input moved. `if-moved`
+       gathers, fingerprints and ends `skipped` with reason `nothing-moved` at no model cost; `always` renders every
+       slot, for an output that must exist each time ("the Friday section, even if nothing merged"). An absent key
+       means `always`, so no existing contract changes behaviour; `hz heinzel new` writes `if-moved` into the personal
+       contracts it creates, and `if-moved` is refused for team contracts until ADR 0054 records how a skip counts
+       towards a promise.
 3. **Requirements and inputs name capabilities, never vendors** ([ADR 0028](0028-integrations-are-capability-adapters.md)).
    - 0.2: `requires` lists `<capability>:read`; `agent-runner:read` is implied; a contract never pins an adapter and
      never writes. An input is `{read: <capability>.<method>, args, window}`, checked against the protocol method's
@@ -124,6 +142,14 @@ readable prose. Each point says what 0.2 builds and what comes later.
    agent hints, limits, policy references, `### Continuity` and comments. `source_fingerprint` covers the exact
    canonical text and pins embedded workflows. The memo key is `(contract_fingerprint, input facet fingerprints,
    freshness_epoch)`.
+   - Amended 2026-10-24 ([ADR 0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md)): an
+     input's fingerprint is a map `{facet: hash}`, computed by hz over the canonical content per facet the adapter
+     returns (ADR [0028](0028-integrations-are-capability-adapters.md)); an adapter that knows no facets returns one
+     facet, `@all`, the whole result. An input with `facet` (2) compares only that facet, so a change in another tab of
+     the same document wakes nobody who reads this one. The freshness epoch advances only when an approved output's
+     `valid_until` (approval plus `valid_for`, 2) passes, and the wake it causes has cause `stale`; a `recheck` interval
+     moves nothing in the key. As in Reactor, nothing in the memo key is judged by a model: facets and what is material
+     are decided by adapter code, never by a model compiling the contract.
    - 0.2: each input's data is hashed in the render's record; the whole file's SHA-256 pins team contracts (10).
 9. **Approvals and cost.** Every `publishes` entry names a publish operation (`read_only=False`, `HZC013` otherwise),
    which declares `write` itself; the contract never does.
