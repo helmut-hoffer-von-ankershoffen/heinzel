@@ -47,22 +47,25 @@ operation, every head reads the same field, and nothing stops working.
 
 - `@module.operation(audience="everyday")` declares an everyday operation; `audience="expert"` is the default
   (`OperationLet.audience`). Plugins choose for their own operations; the first-party `clock` is everyday.
-- The everyday set: `hz join`, `hz setup`, `hz ui` (commands of the CLI head), `hz team new | join | show`,
-  `hz org show | sync`, `hz workflow list | show | drafts | run`, `hz system doctor | update | expert [on|off]`,
+- The everyday set: `hz join`, `hz setup`, `hz ui` (commands of the CLI head), `hz team new | join | add | show`,
+  `hz org show | sync`, `hz workflow list | show | new | drafts | run`, `hz system doctor | update | expert [on|off]`,
   `hz clock` when installed, and `hz --version`. Everything else is for experts.
 - `[hz] expert = false` is a kernel setting, user scope only: a project `hz.toml` can't set it
   (`ignored_in_project`), because a repository someone else controls must not decide what a person's tool shows.
   `HZ_EXPERT=1` turns it on for one shell or one agent.
 - `hz system expert` shows the mode; `hz system expert on` and `off` write the user configuration file through
-  `ConfigEditor` and answer with the mode in effect, saying so when `HZ_EXPERT` wins. It is the submodule
+  `ConfigEditor` and answer with the mode in effect, read from the files and the environment at every call (a running
+  `hz ui` sees a switch made in a terminal); when `HZ_EXPERT` or the `HZ_CONFIG` file decides, the answer says which. It is the submodule
   `system.expert` (ADR 0018: it is about Heinzelmännchen itself).
 - A module's operation named like the module, beside other operations, is what the module's path does by itself:
   `hz system expert` runs it, `GET /system/expert` and the MCP tool `system_expert` are it, next to
-  `hz system expert on`. Before, only a module whose only operation it was collapsed into it.
+  `hz system expert on`, provided every parameter it takes has a default (a required one would swallow a
+  subcommand's name, so such an operation keeps its own name). Before, only a module whose only operation it was
+  collapsed into it.
 - Hidden, in the CLI head outside expert mode: expert commands, and groups holding nothing else, are left out of
   `--help` and shell completion. They run when typed, their `--help` works, and inside a hidden group everything is
   listed. `hz system serve` is for experts. `hz` and `hz --help` end with one line: how many commands are hidden and
-  `hz system expert on`.
+  `hz system expert on`; so does the help of every group that hides some of its commands.
 - The web head shows the same split: every screen names the operation it shows; the navigation and the search list
   a screen when its operation is everyday or expert mode is on, reading both from `GET /api/system/expert`
   (`expert` and every operation's audience). Settings has a switch that calls `POST /api/system/expert/on` or
@@ -74,7 +77,7 @@ operation, every head reads the same field, and nothing stops working.
 
 ### Consequences
 
-- Good: a newcomer's `hz --help` shows about fifteen commands; the rest is one line away.
+- Good: a newcomer's `hz --help` shows about twenty commands; the rest is one line away.
 - Good: an operation says who it is for in one place, and every head follows.
 - Bad: plugins written before this release show only in expert mode until they declare `audience="everyday"`; the
   plugin template adds it to its example once its Heinzelmännchen version includes this release.

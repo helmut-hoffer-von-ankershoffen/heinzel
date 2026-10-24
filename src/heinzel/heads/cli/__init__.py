@@ -2,7 +2,11 @@
 
 Commands and groups are sorted alphabetically at every level; built-in modules and plugins sit in separate help
 panels. A module with exactly one operation of its own name and no submodules collapses into a plain command, so the
-`changelog` submodule of `system` reads as `hz system changelog`.
+`changelog` submodule of `system` reads as `hz system changelog`; beside other operations, the one named like its
+module runs when the group is called without a subcommand (`hz system expert`, next to `hz system expert on`).
+
+Outside expert mode, help and shell completion list the everyday operations only, and say how many others there are
+(ADR 0041); every command runs either way.
 """
 
 import inspect
@@ -24,7 +28,7 @@ from rich.text import Text
 from typer.core import TyperGroup
 
 from heinzel import __version__
-from heinzel.heads._exposure import collapses
+from heinzel.heads._exposure import collapses, owns_path
 from heinzel.heads.cli import _update
 from heinzel.heads.cli._command import command
 from heinzel.heads.cli._join import HELP as JOIN_HELP
@@ -133,7 +137,9 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
             info.help = mount.help(info.help or inspect.getdoc(info.callback) or "", expert=True)
         serve.info.help = mount.help(serve.info.help or "", expert=True)
         system.add_typer(serve, cls=SortedGroup, hidden=mount.hides(expert=True))
-        count += Count(len(serve.registered_commands), len(serve.registered_commands))
+        servers = Count(len(serve.registered_commands), len(serve.registered_commands))
+        count += servers
+        mount.hint(system, mount.counts["system"] + servers)
     if not plain:
         hidden = 0 if mount.expert else count.expert
         app.info.epilog = start_screen_footer(kernel, hidden)
@@ -179,8 +185,7 @@ class _Mount:
 
     Outside expert mode, expert operations, and groups holding nothing else, are hidden: left out of help and shell
     completion, but they run when typed (ADR 0041). Inside a hidden group nothing is hidden, so its own help lists
-    its commands. `plain` (the generated reference) lists everything and marks what
-    is for experts.
+    its commands. `plain` (the generated reference) lists everything and marks what is for experts.
     """
 
     kernel: Kernel
@@ -189,6 +194,7 @@ class _Mount:
     plain: bool = False
     expert: bool = False
     groups: dict[str, typer.Typer] = field(default_factory=dict[str, typer.Typer])
+    counts: dict[str, Count] = field(default_factory=dict[str, Count])
 
     def __call__(self, parent: typer.Typer, qualname: str | None) -> Count:
         """Mount the operations and submodules of `qualname` (the top level for None) on `parent`; count them."""
@@ -197,7 +203,7 @@ class _Mount:
         if qualname is not None:
             record = kernel.module(qualname)
             # The operation named like its module is the group's own command, not one of its subcommands.
-            entries += [(op.name, op) for op in _operations(kernel, record) if op.name != record.module.name]
+            entries += [(op.name, op) for op in _operations(kernel, record) if not owns_path(kernel, record, op)]
         entries += [(record.module.name, record) for record in kernel.children(qualname)]
         count = Count()
         for _, entry in sorted(entries, key=lambda pair: pair[0]):
@@ -215,6 +221,11 @@ class _Mount:
     def hides(self, *, expert: bool) -> bool:
         """Whether a command or group for experts (when `expert`) is hidden in this tree."""
         return expert and not (self.expert or self.plain)
+
+    def hint(self, group: typer.Typer, count: Count) -> None:
+        """End a visible group's help with how many of its commands are hidden, like the start screen's."""
+        if self.footer is not None and not count.all_expert and self.hides(expert=count.expert > 0):
+            group.info.epilog = f"{self.footer}\n\n{expert_hint(count.expert)}"
 
     def help(self, text: str, *, expert: bool) -> str:
         """Help text, marked as for experts in the generated reference."""
@@ -240,7 +251,7 @@ class _Mount:
             return _count(operation)
         if not operations and not self.kernel.children(record.qualname):
             return Count()
-        own = next((op for op in operations if op.name == record.module.name), None)
+        own = next((op for op in operations if owns_path(self.kernel, record, op)), None)
         group = typer.Typer(
             name=record.module.name,
             epilog=self.footer,
@@ -259,6 +270,8 @@ class _Mount:
                 command_info.hidden = False
             for group_info in group.registered_groups:
                 group_info.hidden = False
+        self.counts[record.qualname] = count
+        self.hint(group, count)
         summary = self.help(record.module.summary, expert=count.all_expert)
         short_help = f"{summary}\n{plugin}" if plugin else None
         parent.add_typer(
@@ -280,7 +293,7 @@ class _Mount:
                 run(**kwargs)
 
         context = inspect.Parameter("ctx", inspect.Parameter.KEYWORD_ONLY, annotation=typer.Context)
-        own.__signature__ = inspect.Signature([context, *inspect.signature(run).parameters.values()])  # type: ignore[attr-defined]
+        own.__signature__ = inspect.Signature([context, *inspect.signature(run).parameters.values()])  # type: ignore[attr-defined]  # Typer reads it
         own.__doc__ = run.__doc__
         return own
 

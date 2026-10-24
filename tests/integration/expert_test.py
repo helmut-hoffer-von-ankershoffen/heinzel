@@ -35,6 +35,12 @@ def test_the_web_api_switches_the_mode_with_the_same_operations(client, tmp_path
     assert client.post("/api/system/expert/off", headers=AUTH).json()["expert"] is False
 
 
+def test_the_running_web_head_sees_a_mode_switched_elsewhere(client, tmp_path):
+    assert client.get("/api/system/expert", headers=AUTH).json()["expert"] is False
+    (tmp_path / "config.toml").write_text("[hz]\nexpert = true\n", encoding="utf-8")  # `hz system expert on` elsewhere
+    assert client.get("/api/system/expert", headers=AUTH).json()["expert"] is True
+
+
 def test_machine_heads_list_expert_operations_outside_expert_mode(make_kernel):
     kernel = make_kernel(builtins=True)
     assert not kernel.settings.expert

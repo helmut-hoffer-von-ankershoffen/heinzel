@@ -58,3 +58,20 @@ def test_an_operation_named_like_its_module_beside_others_takes_the_module_path(
 
     paths = {item.name: item.path for item in exposed(make_kernel(mode=mode), "api")}
     assert paths == {"mode": ("mode",), "mode_on": ("mode", "on")}
+
+
+def test_an_operation_named_like_its_module_with_a_required_parameter_keeps_its_name(make_kernel):
+    tool = Module("tool", "A tool.")
+
+    @tool.operation
+    def tool_(target: str) -> str:
+        """Use it on a target."""
+        return target
+
+    @tool.operation
+    def other() -> str:
+        """Do something else."""
+        return "else"
+
+    paths = {item.name: item.path for item in exposed(make_kernel(tool=tool), "api")}
+    assert paths == {"tool_tool": ("tool", "tool"), "tool_other": ("tool", "other")}

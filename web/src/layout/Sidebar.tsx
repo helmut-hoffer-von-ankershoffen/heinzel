@@ -20,7 +20,9 @@ export function Sidebar({ onSearch }: { onSearch: () => void }) {
   const expert = useExpert();
   const [theme, toggleTheme] = useTheme();
   const listed = visibleSections(sections, expert.data).filter(
-    (section) => section.label !== CONTRACTS_SECTION || section.items.length > 0 || contracts.data?.contracts.length,
+    // The contracts section stays for its entries; with no graph listed and no contract, there's nothing to show.
+    (section) =>
+      section.label !== CONTRACTS_SECTION || section.items.length > 0 || Boolean(contracts.data?.contracts.length),
   );
   return (
     <div className="flex h-full flex-col gap-2 p-3">

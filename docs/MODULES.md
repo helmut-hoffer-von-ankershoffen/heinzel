@@ -263,7 +263,7 @@ Your team's repository: create one (`hz team new`), join one by its URL (`hz tea
 | --- | --- | --- | --- | --- | --- | --- |
 | Create a team repository from the template: you its first owner, its roster drafted for review. | `hz team new` | `team_new` | — | — | yes |  |
 | Clone a team repository with your own access, find you in its roster, and make it your team. | `hz team join` | `team_join` | — | — | yes |  |
-| Add someone to your team's roster, as one of its owners: a pull request the other owners see. | `hz team add` | `team_add` | — | — | yes | expert |
+| Add someone to your team's roster, as one of its owners: a pull request the other owners see. | `hz team add` | `team_add` | — | — | yes |  |
 | Show your team: its repository, checkout and members, and what is wrong with them. | `hz team show` | `team_show` | `GET /team/show` | `GET /api/team/show` |  |  |
 | Make an existing checkout your team repository; replaces the deprecated `workflow.team_repository`. | `hz team adopt` | `team_adopt` | — | — | yes | expert |
 
@@ -278,7 +278,7 @@ Workflow contracts: Markdown files an agent drafts from, by hand or on your daem
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | List the contracts in your and your team's workflows directories, with their schedule and problems. | `hz workflow list` | `workflow_list` | `GET /workflow/list` | `GET /api/workflow/list` |  |  |
-| Write a starter contract, or a playbook's template (--template), into your workflows directory. | `hz workflow new` | `workflow_new` | — | — | yes | expert |
+| Write a starter contract, or a playbook's template (--template), into your workflows directory. | `hz workflow new` | `workflow_new` | — | — | yes |  |
 | List the playbooks plugins contribute: asset types, template contracts and recommended settings. | `hz workflow playbooks` | `workflow_playbooks` | `GET /workflow/playbooks` | `GET /api/workflow/playbooks` |  | expert |
 | Find candidates for each playbook's asset types through the capabilities you have bound; reads only. | `hz workflow discover` | `workflow_discover` | — | `GET /api/workflow/discover` |  | expert |
 | Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps. | `hz workflow show` | `workflow_show` | `GET /workflow/show` | `GET /api/workflow/show` |  |  |

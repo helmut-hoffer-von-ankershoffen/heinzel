@@ -18,7 +18,7 @@ import typer
 from pydantic import BaseModel, Field
 from typer.testing import CliRunner
 
-from heinzel import Config, HeinzelError, Module, Prompter, Settings, __version__
+from heinzel import Config, HeinzelError, Module, OperationLet, Prompter, Settings, __version__
 from heinzel.heads.cli import build
 from heinzel.kernel import ReleaseCache
 from heinzel.modules.system import _github
@@ -138,7 +138,7 @@ def top_level(app: typer.Typer, *args: str) -> set[str]:
     return {row for row in rows if row and row.isascii() and row[0].isalpha()}
 
 
-def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app):
+def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app, make_kernel):
     screen = runner.invoke(app, []).output
     assert {"join", "setup", "ui", "system", "team", "org", "workflow"} <= top_level(app)
     assert "example" not in top_level(app)  # a module of expert operations only
@@ -146,8 +146,17 @@ def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app):
     assert not top_level(app, "system") & {"info", "config", "plugin", "serve", "changelog"}
     assert top_level(app, "workflow") >= {"list", "show", "drafts", "run"}
     assert "graph" not in top_level(app, "workflow")
-    last = screen.strip().splitlines()[-1]
-    assert re.fullmatch(r"\d+ more commands for experts are hidden; hz system expert on lists them\.", last.strip())
+    kernel = make_kernel(builtins=True, **example_modules())
+    expert = sum(let.audience == "expert" for _, let in kernel.lets(OperationLet) if kernel.available(let.func))
+    hidden = expert + 3  # and `hz system serve mcp | api | daemon`
+    last = screen.strip().splitlines()[-1].strip()
+    assert last == f"{hidden} more commands for experts are hidden; hz system expert on lists them."
+
+
+def test_a_group_that_hides_commands_says_how_many(app):
+    last = runner.invoke(app, ["workflow", "--help"]).output.strip().splitlines()[-1].strip()
+    assert re.fullmatch(r"\d+ more commands? for experts (are|is) hidden; hz system expert on lists them\.", last)
+    assert "are hidden" not in runner.invoke(app, ["system", "plugin", "--help"]).output  # hides nothing itself
 
 
 def test_hidden_commands_run_and_have_help(app):
@@ -197,6 +206,21 @@ def test_expert_mode_says_when_the_environment_wins(make_kernel, tmp_path, monke
     result = json.loads(runner.invoke(build(make_kernel(builtins=True)), ["system", "expert", "off", "--json"]).output)
     assert result["expert"] is True
     assert "HZ_EXPERT" in result["note"]
+    assert result["next"] == ["unset HZ_EXPERT"]
+    text = runner.invoke(build(make_kernel(builtins=True)), ["system", "expert"]).output  # said without a change too
+    assert "HZ_EXPERT=1 in your environment decides the mode" in text
+    assert "hz system expert off" not in text
+
+
+def test_expert_mode_names_the_hz_config_file_that_wins(make_kernel, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    explicit = tmp_path / "team.toml"
+    explicit.write_text("[hz]\nexpert = true\n", encoding="utf-8")
+    monkeypatch.setenv("HZ_CONFIG", str(explicit))
+    result = json.loads(runner.invoke(build(make_kernel(builtins=True)), ["system", "expert", "off", "--json"]).output)
+    assert result["expert"] is True
+    assert str(explicit) in result["note"]
+    assert "HZ_EXPERT" not in result["note"]
 
 
 def test_a_project_file_cannot_turn_expert_mode_on(tmp_path, monkeypatch):

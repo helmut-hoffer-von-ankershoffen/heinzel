@@ -86,7 +86,7 @@ def list_(service: WorkflowService) -> ContractList:
 # A contract written through a web page could reach a local REST server; the CLI and MCP get it, like `run`. Neither
 # the starter nor a template has an active schedule (templates with one are refused), so nothing written here runs on
 # the daemon by itself.
-@module.operation(read_only=False, render=render_new, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_new, heads={"cli", "mcp"}, audience="everyday")
 def new(
     service: WorkflowService,
     name: Annotated[

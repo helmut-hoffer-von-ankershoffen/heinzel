@@ -30,8 +30,8 @@ def render(result: ExpertMode) -> RenderableType:
             ),
             "List every command: hz system expert on",
         ]
-    if result.note:
-        lines.append(result.note)
+    if result.note:  # the environment or HZ_CONFIG decides; switching here wouldn't change anything
+        lines[-1] = result.note
     return Text("\n".join(lines))
 
 

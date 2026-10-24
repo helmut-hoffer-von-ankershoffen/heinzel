@@ -83,7 +83,7 @@ def join(  # noqa: PLR0913, PLR0917 - the options of one command
     return service.join(url, propose=propose, handle=handle, login=login, role=role, yes=yes)
 
 
-@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"}, audience="everyday")
 def add(  # noqa: PLR0913, PLR0917 - the options of one command
     service: TeamService,
     handle: Annotated[str, Field(description="Their handle: lowercase letters, digits, dashes.")],

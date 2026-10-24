@@ -11,15 +11,15 @@ command accepts `--json` — always use it when you read results.
 ## Discover
 
 ```bash
-hz --help                     # top-level modules
-hz system modules --json      # every module, submodule and what it advertises
-hz <module> --help            # its commands; parameters and their descriptions
-hz system info --json         # versions, settings, plugins, plugin errors
+HZ_EXPERT=1 hz --help                # top-level modules, all of them
+hz system modules --json             # every module, submodule and what it advertises
+HZ_EXPERT=1 hz <module> --help       # its commands; parameters and their descriptions
+hz system info --json                # versions, settings, plugins, plugin errors
 ```
 
-`--help` lists the everyday commands unless the user turned expert mode on; `HZ_EXPERT=1 hz --help` lists every
-command for you without changing their setting. Every command runs either way. Don't run `hz system expert on|off`
-unless the user asks: it is their choice of what their help shows.
+Without `HZ_EXPERT=1`, `--help` lists only the everyday commands unless the user turned expert mode on; the variable
+shows you everything without changing their setting, and every command runs either way. Don't run
+`hz system expert on|off` unless the user asks: it is their choice of what their help shows.
 
 ## Call
 
