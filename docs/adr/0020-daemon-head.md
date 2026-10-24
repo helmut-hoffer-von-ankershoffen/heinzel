@@ -213,6 +213,11 @@ personal part.
   an alpha since 2025-04 (4.0.0a6), its repository has 74 open issues, and it brings tzlocal and a scheduler we don't
   use. croniter's `get_next` and `get_prev` are exactly the "slots since the last receipt" question.
 
+**Compiled jobs (added with the workflow module, 2026-10-24).** Workflow contracts are data, so the `ContractLet` of
+decision 2 isn't a let: a module provides the kernel's `CompiledJobs` service, and the daemon runs its jobs beside
+the declared `JobLet`s under `<module>:<job>`, with the same slots, receipts and timeouts. Details:
+[ADR 0021](0021-workflow-contracts.md).
+
 **Remaining:** the `state` module with `Ledger`, `Leases` and `Inbox` protocols and the shared ledger in a GitHub
 state repository; lease refs; `WatchLet` and conditional polling; `scope="team"`, `publishes`, `concurrency`,
 owners and the Actions runner; approvals and `hz inbox`; memo keys and fingerprints; per-job subprocesses with

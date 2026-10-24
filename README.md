@@ -131,6 +131,13 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 
 Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add their own modules.
 
+Workflows are Markdown files, not code: a `<name>.prose.md` contract in your workflows directory (or your team's
+state repository) names the capabilities it reads, the inputs to fetch and the agent's limits, and its body says what
+the draft must achieve. `hz workflow check` lists every problem by file and line, `hz workflow run <name> --dry-run`
+shows what the agent would get, and the daemon runs contracts with a schedule. Drafts are saved locally; nothing is
+published by itself. Format and decisions: [ADR 0021](docs/adr/0021-workflow-contracts.md), schema:
+[docs/schemas/contract-frontmatter-1.json](docs/schemas/contract-frontmatter-1.json).
+
 ## Configure
 
 Settings come from, lowest precedence first: defaults, the site file, your user file

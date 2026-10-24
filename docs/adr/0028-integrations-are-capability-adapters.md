@@ -128,7 +128,11 @@ request (director's decisions, 2026-10-24):
   private modules; modules get a `CapabilityView` (bindings, adapters, matrix, fixes) and no way to ask for a handle
   besides declaring a requirement. `Capabilities.handle_for(requester, capability)` is the seam for code that acts on
   a requester's behalf without being its function, such as the compiler of workflow contracts
-  ([ADR 0021](0021-workflow-contracts.md)).
+  ([ADR 0021](0021-workflow-contracts.md)). The workflow module reaches it through `Kernel.handle_for(requester,
+  capability)` (2026-10-24), which refuses publishing requesters, so it hands out read handles only. That widens the
+  sentence above: a module that asks for the `Kernel` can build a `Requester` and get read handles for what that
+  requester declares. Like the rest of this design, it makes intent explicit in code and review; it is not an
+  isolation boundary (below).
 - **Write only through publish operations, declared there.** Until approvals exist, "approved publish operation" is
   enforced structurally: `write` is granted only to operations with `read_only=False` that declared it themselves.
   `Module(requires=...)` refuses `write`, and so do read-only operations and jobs, when the module is imported;
