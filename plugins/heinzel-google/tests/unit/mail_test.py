@@ -264,7 +264,9 @@ def test_html_to_text_is_one_linear_scan(unit):
 def test_html_to_text_keeps_text_and_breaks_and_decodes_entities_once():
     html = "<html><body><h1>Title</h1>a &amp;lt; b<br/>c<!-- hidden --><template>t</template><p>d</p>e < f"
     assert html_to_text(html) == "Title\na &lt; b\nc\nd\ne"
-    assert html_to_text("<script>x</script >after<style/>shown") == "aftershown"  # a self-closed style hides nothing
+    assert html_to_text("<script>x</script >after") == "after"
+    assert html_to_text("<script/>hidden</script>shown") == "shown"  # `/>` doesn't close a script in HTML
+    assert html_to_text("<style>p{}<body>still style</style>shown") == "shown"  # nor does <body>
     assert html_to_text("text <unterminated") == "text"
 
 
@@ -317,3 +319,19 @@ def test_labels_are_read_once_and_repeated_headers_joined(gmail, fake_gws):
     content = gmail.read("m1")
     assert content.headers["references"] == "<a@x>, <b@x>"
     assert [r.command for r in fake_gws.runs].count(LABELS) == 1
+
+
+@pytest.mark.parametrize("label", ["SPAM", "TRASH"])
+def test_a_message_in_spam_or_trash_is_not_read(gmail, fake_gws, label):
+    junk = message("m1", SINCE, mimeType="text/plain", body={"data": b64("buy now")})
+    junk["labelIds"] = [label]
+    fake_gws.json(GET, junk)
+    with pytest.raises(HeinzelError, match="in Spam or Trash"):
+        gmail.read("m1")
+
+
+def test_long_address_headers_are_cut_before_parsing(gmail, fake_gws):
+    many = message("m1", SINCE)
+    many["payload"]["headers"].append({"name": "To", "value": ", ".join(f"p{i}@example.com" for i in range(20_000))})
+    fake_gws.json(GET, many)
+    assert len(gmail.read("m1").message.recipients) < 1_000

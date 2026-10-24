@@ -75,9 +75,12 @@ def _decoded(value: str) -> str:
 
 
 def _people(raw: str) -> list[Participant]:
-    """The people of a raw `From`, `To` or `Cc` value: addresses parsed before any display name is decoded."""
+    """The people of a raw `From`, `To` or `Cc` value, its first `MAX_HEADER` characters.
+
+    Addresses are parsed before any display name is decoded, so an encoded name can't pose as an address.
+    """
     found = []
-    for name, address in getaddresses([raw]):
+    for name, address in getaddresses([raw[:MAX_HEADER]]):
         display = _line(_decoded(name))
         email = _line(address).lower()
         email = email if email.count("@") == 1 and not email.startswith("@") and not email.endswith("@") else ""
@@ -116,8 +119,9 @@ def html_to_text(html: str) -> str:
     """The text of an HTML mail body, whitespace tidied, in one linear scan.
 
     Not `html.parser`: its handling of unterminated tags rescans the input and is quadratic on older Pythons. Text
-    between tags is kept, block tags become line breaks, the content of `script`, `style`, `title` and `template` and
-    comments are dropped, and an unterminated tag or comment ends the text. Entities are decoded once, at the end.
+    between tags is kept, block tags become line breaks, the content of `script`, `style`, `title` and `template` up
+    to its own end tag (a `/>` closes none of them) and comments are dropped, and an unterminated tag or comment ends
+    the text. Entities are decoded once, at the end.
     """
     parts: list[str] = []
     hidden: str | None = None
@@ -139,8 +143,8 @@ def html_to_text(html: str) -> str:
             break
         name, ends = _tag_name(html[opening + 1 : closing])
         if hidden is not None:
-            hidden = None if (ends and name == hidden) or name == "body" else hidden
-        elif name in _HIDDEN and not ends and html[closing - 1] != "/":
+            hidden = None if ends and name == hidden else hidden  # only its own end tag ends it
+        elif name in _HIDDEN and not ends:  # `<script/>` is no empty element in HTML: it hides what follows
             hidden = name
         elif name in _BLOCK:
             parts.append("\n")
@@ -325,6 +329,9 @@ class Gmail:
         found = self._message(data, self._labels())
         if found is None:
             msg = f"Gmail's answer for message {message} lacks its id or time."
+            raise HeinzelError(msg)
+        if {label.casefold() for label in found.labels} & {"spam", "trash"}:
+            msg = f"Message {message} is in Spam or Trash, which is not read."
             raise HeinzelError(msg)
         payload = _object(data.get("payload"))
         headers = {k: v for k, v in _raw_headers(payload).items() if k not in _ADDRESSED}

@@ -26,6 +26,7 @@ _MEET = re.compile(r"^[a-z]{3}-[a-z]{4}-[a-z]{3}$")
 _EVENT_LINK = ("https://www.google.com/calendar/", "https://calendar.google.com/")
 _CONFERENCE_HOSTS = frozenset({"meet.google.com", "zoom.us", "teams.microsoft.com", "teams.live.com"})
 _CONFERENCE_DOMAINS = (".zoom.us", ".webex.com")
+_HOST = re.compile(r"^[a-z0-9.-]+$")
 MAX_TEXT = 100_000
 """Characters of a location or description searched for a Zoom link."""
 
@@ -85,14 +86,21 @@ def _link(url: object) -> str | None:
     """A conferencing link without query or fragment (where passcodes live), or None.
 
     Anyone can put an event on a calendar, so only the conferencing services' own hosts count, over https, in one
-    piece without whitespace.
+    piece without whitespace or backslashes (which browsers read as a slash, so a host "evil.example", backslash,
+    ".zoom.us" goes to evil.example); a host is letters, digits, dots and hyphens only. A malformed URL is no link.
     """
     if not isinstance(url, str):
         return None
     bare = url.split("#", 1)[0].split("?", 1)[0]
-    parts = urlsplit(bare)
+    if not bare.isprintable() or " " in bare or "\\" in bare:
+        return None
+    try:
+        parts = urlsplit(bare)
+        port = parts.port
+    except ValueError:
+        return None
     host = (parts.hostname or "").lower()
-    if parts.scheme != "https" or not bare.isprintable() or " " in bare or parts.username or parts.port:
+    if parts.scheme != "https" or parts.username or port or not _HOST.fullmatch(host):
         return None
     if host in _CONFERENCE_HOSTS or host.endswith(_CONFERENCE_DOMAINS):
         return bare

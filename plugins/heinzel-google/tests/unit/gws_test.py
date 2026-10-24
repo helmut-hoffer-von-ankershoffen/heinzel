@@ -246,6 +246,12 @@ def test_gws_gets_an_allowlisted_environment():
         "GOOGLE_WORKSPACE_CLI_CONFIG_DIR": "/home/ada/.config/gws",
         "HZ_CREDENTIAL_GITHUB_GITHUB_TOKEN": "t",
         "AWS_SECRET_ACCESS_KEY": "s",
+        "GOOGLE_WORKSPACE_CLI_TOKEN": "another identity",
+        "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE": "/elsewhere.json",
+        "GOOGLE_WORKSPACE_CLI_SANITIZE_TEMPLATE": "projects/p/locations/l/templates/t",
+        "GOOGLE_WORKSPACE_CLI_SANITIZE_MODE": "block",
+        "GOOGLE_WORKSPACE_CLI_LOG": "gws=debug",
+        "GOOGLE_WORKSPACE_CLI_LOG_FILE": "/somewhere/logs",
     }
     assert _gws.environment(source) == {
         "PATH": "/bin",

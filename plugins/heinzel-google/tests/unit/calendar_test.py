@@ -197,3 +197,22 @@ def test_conference_links_with_controls_and_emails_with_line_breaks_are_cleaned(
     [found] = events(item)
     assert found.conference_url is None
     assert found.attendees[0].email == "a@b.example # x"
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "https://evil.example\\.zoom.us/j/1",
+        "https://evil.example/\\@meet.google.com/x",
+        "https://[meet.google.com/x",
+        "https://meet.google.com:abc/x",
+        "https://meet.google.com:99999/x",
+        "https://user@meet.google.com/x",
+        "https://meet.google.com:443/x",
+        "https://meet_google.com/x",
+    ],
+)
+def test_malformed_or_disguised_conference_links_are_no_links(events, link):
+    item = event("x", "2026-10-21T09:00:00Z", "2026-10-21T10:00:00Z", hangoutLink=link)
+    [found] = events(item)
+    assert found.conference_url is None
