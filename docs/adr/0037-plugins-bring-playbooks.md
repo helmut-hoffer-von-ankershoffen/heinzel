@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-10-24
 decision-makers: maintainer
-related: 0021, 0026, 0028, 0032
+related: 0021, 0026, 0028, 0032, 0035
 ---
 
 # 0037: Plugins bring playbooks: asset types with discovery hints, template contracts and recommended settings
@@ -119,4 +119,4 @@ them without the core knowing what they are about.
   `sent` can read it without `--ref`.
 - Open: listing reads for `documents` (title patterns, folders) so hints can search; showing data-declared reads
   (hints, approved versions) in the capability matrix.
-- Numbering: 0035 and 0036 are left for the records being written alongside this one (layers as plugins).
+- Numbering: 0036 is left for the record being written alongside this one (layers as plugins).
