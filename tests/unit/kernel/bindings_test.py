@@ -232,6 +232,32 @@ def test_handle_for_serves_requesters_built_by_compilers(kernel):
     assert kernel._capabilities.handle_for(reader, CAPABILITIES["documents"]).read("x").title == "notes:x"
 
 
+def test_the_kernel_hands_compilers_read_handles_by_capability_name(kernel):
+    reader = Requester("digest", "job", "contract", (Requirement("documents", frozenset({"read", "write"})),))
+    documents = kernel.handle_for(reader, "documents")
+    assert documents.read("x").title == "notes:x"
+    with pytest.raises(HeinzelError, match="only publish operations"):
+        documents.replace_section("x", "m", "t")
+
+
+def test_the_kernel_refuses_publishing_requesters_and_unknown_capabilities(kernel):
+    publisher = Requester("digest", "operation", "p", (Requirement("documents", frozenset({"write"})),), publishes=True)
+    with pytest.raises(HeinzelError, match="read-only until approvals exist"):
+        kernel.handle_for(publisher, "documents")
+    with pytest.raises(HeinzelError, match="Unknown capability 'mail'"):
+        kernel.handle_for(publisher, "mail")
+
+
+def test_the_view_says_which_adapter_would_serve_a_requirement_without_building_it(make_kernel):
+    Notes.built = 0
+    kernel = make_kernel(notes=notes_module(modes=("read",)), config=bind(documents="notes"))
+    view = kernel.resolve(CapabilityView)
+    assert view.serves(Requirement("documents", frozenset({"read"}))) == ("notes", None)
+    assert view.serves(Requirement("documents", frozenset({"write"}))) == ("notes", "notes serves only read, not write")
+    assert view.serves(Requirement("tracker", frozenset({"read"}))) == (None, "no adapter bound")
+    assert Notes.built == 0
+
+
 def test_an_unbound_capability_fails_with_the_binding_to_write(make_kernel):
     kernel = make_kernel(notes=notes_module(), digest=digest_module())
     with pytest.raises(

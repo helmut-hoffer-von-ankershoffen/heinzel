@@ -22,7 +22,7 @@ from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
 
 from heinzel import CatchUp, Check, Config, HeinzelError, JobLet, Kernel, Settings, Status
-from heinzel.kernel import KERNEL_SECTION
+from heinzel.kernel import KERNEL_SECTION, CompiledJobs
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import (
@@ -489,9 +489,15 @@ class DaemonService:
     # Helpers ---------------------------------------------------------------------------------------------------------
 
     def _jobs(self) -> list[Job]:
+        declared = [(record.qualname, let) for record, let in self._kernel.lets(JobLet)]
+        # Jobs compiled from data, such as workflow contracts (ADR 0021); none when no enabled module provides them.
+        compiled: list[tuple[str, JobLet]] = []
+        if self._kernel.provides(CompiledJobs):
+            source = self._kernel.resolve(CompiledJobs)
+            compiled = [(source.module, let) for let in source.jobs]
         return [
-            Job(id=f"{record.qualname}:{let.name}", let=let)
-            for record, let in self._kernel.lets(JobLet)
+            Job(id=f"{module}:{let.name}", let=let)
+            for module, let in (*declared, *compiled)
             if self._kernel.available(let.func)
         ]
 

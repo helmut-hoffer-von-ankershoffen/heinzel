@@ -190,6 +190,29 @@ class Kernel:
             self._instances[kind] = self.call(self._factories[kind])
         return cast("T", self._instances[kind])
 
+    def handle_for(self, requester: Requester, capability: str) -> object:
+        """A handle on `capability` for `requester`, for code that acts on its behalf without being its function.
+
+        The seam for jobs compiled from data, such as workflow contracts (ADR 0021): the compiler builds a
+        `Requester` from what the contract declares and asks here, getting only the read modes it declared and the
+        bound adapter serves. Writes come with approvals (`hz inbox`, ADR 0020), so a publishing requester is refused.
+
+        Raises:
+            HeinzelError: If the capability is unknown, the requester publishes, didn't declare the capability, or
+                no adapter serves it.
+        """
+        spec = CAPABILITIES.get(capability)
+        if spec is None:
+            msg = f"Unknown capability {capability!r}; known: {', '.join(sorted(CAPABILITIES))}"
+            raise HeinzelError(msg)
+        if requester.publishes:
+            msg = (
+                f"{requester.label} publishes; handles for code acting on a requester's behalf are read-only until "
+                f"approvals exist (`hz inbox`, ADR 0020)."
+            )
+            raise HeinzelError(msg)
+        return self._capabilities.handle_for(requester, spec)
+
     def call[R](self, func: Callable[..., R], /, **kwargs: Any) -> R:  # noqa: ANN401 - forwards arbitrary arguments
         """Call `func`, injecting every parameter the kernel provides that the caller didn't pass."""
         return func(**self._inject(func, kwargs))

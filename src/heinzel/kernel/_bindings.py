@@ -355,6 +355,11 @@ class CapabilityView:
         """Bindings that name an adapter no installed module provides, as (capability, adapter)."""
         return self._capabilities.unknown_bindings()
 
+    def serves(self, requirement: Requirement) -> tuple[str | None, str | None]:
+        """The adapter that would serve `requirement` and why it can't, if it can't; builds no adapter."""
+        adapter, problem = self._capabilities.adapter_for(requirement)
+        return (adapter.let.adapter if adapter else None), problem
+
     def fix(self, capability: str) -> str:
         """What to do so that `capability` is served."""
         return self._capabilities.fix(capability)

@@ -178,6 +178,19 @@ class JobLet(Let):
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
+class CompiledJobs:
+    """Jobs compiled from data when the kernel boots rather than declared in code, e.g. workflow contracts (ADR 0021).
+
+    A module provides it as a service whose factory compiles them (`module.service(CompiledJobs, compile)`); the
+    daemon runs them beside the declared `JobLet`s, under the ids `<module>:<job>`. One module provides it.
+    """
+
+    module: str
+    """Qualified name of the module the jobs run for."""
+    jobs: tuple[JobLet, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
 class CredentialLet(Let):
     """A secret a module needs (ADR 0030); `Credentials` hands out its value, `hz system credential` stores it."""
 

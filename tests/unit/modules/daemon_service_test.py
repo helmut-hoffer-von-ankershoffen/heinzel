@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from heinzel import Check, HeinzelError, Kernel, Module, Status
+from heinzel import Check, CompiledJobs, HeinzelError, JobLet, Kernel, Module, Status
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
@@ -301,6 +301,26 @@ def test_jobs_lists_schedules_next_slots_and_last_runs(make, jobs):
     )
     assert hourly.next_run == T0.replace(hour=11, minute=0)
     assert (hourly.last_disposition, hourly.last_as_of) == (Disposition.RENDERED, T0.replace(minute=0))
+
+
+def test_compiled_jobs_run_beside_declared_ones_under_their_modules_name(make, calls):
+    module = Module("contracts", "Compiles jobs from data.")
+
+    def compiled() -> str:
+        calls.append("compiled")
+        return "drafted"
+
+    module.service(
+        CompiledJobs,
+        lambda: CompiledJobs(
+            module="contracts", jobs=(JobLet(name="digest", func=compiled, summary="Digest.", schedule="0 * * * *"),)
+        ),
+    )
+    service = make(module)
+    report = service.tick()
+    assert [(run.job, run.disposition) for run in report.runs] == [("contracts:digest", Disposition.RENDERED)]
+    assert calls == ["compiled"]
+    assert [job.job for job in service.jobs()] == ["contracts:digest"]
 
 
 def test_logs_show_what_ticks_did(make, jobs):
