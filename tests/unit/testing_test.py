@@ -96,6 +96,63 @@ def test_plugins_get_the_policy_from_heinzel_testing():
     assert "CATEGORIES" not in conftest
 
 
+class Chatter:
+    """A test-only chat adapter that reads and posts."""
+
+    def messages(self, channel: str, window: object) -> list[object]:
+        return [channel, window]
+
+    def post(self, channel: str, text: str, thread: str | None = None) -> object:
+        return (channel, text, thread)
+
+
+def test_assert_adapter_accepts_a_class_or_an_instance_that_implements_its_modes():
+    from heinzel.testing import assert_adapter
+
+    assert_adapter(Chatter, "chat", modes={"read", "write"})
+    assert_adapter(Chatter(), "chat")
+
+
+def test_assert_adapter_names_missing_methods_and_other_parameters():
+    from heinzel.testing import assert_adapter
+
+    class Partial:
+        def messages(self, channel: str) -> list[object]:
+            return [channel]
+
+        def transcripts(self, window: object) -> list[object]:
+            return [window]
+
+    with pytest.raises(AssertionError, match=r"messages takes \(channel\), the protocol \(channel, window\)"):
+        assert_adapter(Partial, "chat")
+    with pytest.raises(AssertionError, match=r"ended is missing \(mode read\); transcript is missing \(mode read\)"):
+        assert_adapter(Partial(), "meetings")
+    with pytest.raises(
+        AssertionError, match=r"^Partial doesn't implement chat \(Chat\): post is missing \(mode write\)$"
+    ):
+        assert_adapter(Partial, "chat", modes={"write"})
+
+
+def test_assert_adapter_compares_parameter_defaults_too():
+    from heinzel.testing import assert_adapter
+
+    class Poster:
+        def post(self, channel: str, text: str, thread: str) -> object:
+            return (channel, text, thread)
+
+    with pytest.raises(
+        AssertionError, match=r"post takes \(channel, text, thread\), the protocol \(channel, text, thread=None\)"
+    ):
+        assert_adapter(Poster, "chat", modes={"write"})
+
+
+def test_assert_adapter_refuses_unknown_capabilities():
+    from heinzel.testing import assert_adapter
+
+    with pytest.raises(ValueError, match="Unknown capability 'mail'"):
+        assert_adapter(Chatter, "mail")
+
+
 def test_isolation_forces_the_environment_backend_and_drops_credential_variables(monkeypatch):
     from heinzel.testing import isolate_credentials
 

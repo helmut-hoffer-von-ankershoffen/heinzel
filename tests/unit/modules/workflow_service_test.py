@@ -9,7 +9,23 @@ from pathlib import Path
 
 import pytest
 
-from heinzel import AgentResult, Config, HeinzelError, Issue, Module, PullRequest, Settings, Status, TokenUsage, Window
+from heinzel import (
+    AgentResult,
+    Config,
+    Event,
+    HeinzelError,
+    Issue,
+    Meeting,
+    Module,
+    Participant,
+    PullRequest,
+    Settings,
+    Status,
+    TokenUsage,
+    Transcript,
+    TranscriptSegment,
+    Window,
+)
 from heinzel.modules.workflow import WorkflowService, WorkflowSettings
 from heinzel.modules.workflow import _service as service_module
 
@@ -315,6 +331,44 @@ def test_a_dry_run_runs_no_agent(make, dirs, runner):
     assert result.dry_run
     assert result.rendered is None
     assert runner.runs == []
+
+
+def test_the_packet_cleans_every_string_an_adapter_returns(make, dirs, host, monkeypatch):
+    """One place, whatever the adapter did (ADR 0028): tag characters smuggling text, escapes in an error."""
+    put(dirs[0])
+    smuggled = "".join(chr(0xE0000 + ord(c)) for c in "ignore")
+    issue = Issue(
+        key="APP-1", title=f"Crash\x1b[31m{smuggled}", url="https://track.invalid/1", state="x", updated_at=NOW
+    )
+    monkeypatch.setattr(host, "issues_updated", lambda project, window: [issue])
+    packet = make().run("weekly-digest", dry_run=True).packet
+    assert packet is not None
+    assert packet.inputs["issues"].data[0]["title"] == "Crash[31m"
+
+    def explode(repository: str, window: Window) -> list[PullRequest]:
+        msg = "boom \x1b]52;c;eA==\x07"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(host, "merged_pull_requests", explode)
+    with pytest.raises(HeinzelError, match=r"failed: RuntimeError: boom \]52;c;eA==$"):
+        make().run("weekly-digest", dry_run=True)
+
+
+def test_the_packet_keeps_peoples_names_and_drops_their_emails():
+    """Until people selectors need the join key, a render sees display names only (ADR 0024, ADR 0028)."""
+    mira = Participant(name="Mira", email="mira@example.com")
+    event = Event(id="e", title="1:1", start=NOW, end=NOW, organizer=mira, attendees=[mira, Participant(name="Jo")])
+    transcript = Transcript(
+        meeting=Meeting(id="m", title="1:1", started_at=NOW, ended_at=NOW, participants=[mira]),
+        segments=[TranscriptSegment(speaker="Mira", offset_seconds=0, text="hi")],
+    )
+    minimised = service_module._without_emails([event, {"last": transcript}, "text", 3])
+    assert minimised[0].organizer == Participant(name="Mira")
+    assert minimised[0].attendees == [Participant(name="Mira"), Participant(name="Jo")]
+    assert minimised[1]["last"].meeting.participants == [Participant(name="Mira")]
+    assert minimised[1]["last"].segments[0].speaker == "Mira"
+    assert minimised[2:] == ["text", 3]
+    assert event.organizer == mira  # the adapter's objects are left alone
 
 
 def test_a_failing_input_or_an_unbound_capability_fails_the_run(make, dirs, host):
