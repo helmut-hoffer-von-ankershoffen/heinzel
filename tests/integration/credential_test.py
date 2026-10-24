@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 
 import anyio
 import pytest
@@ -42,6 +43,11 @@ def memory(kernel) -> MemoryBackend:
     return backend
 
 
+def example(output: str) -> list[dict[str, object]]:
+    """The listed credentials of the test module; the built-in modules declare their own (`ai.access/api-key`)."""
+    return [row for row in json.loads(output) if row["service"] == "example"]
+
+
 def hz(kernel: Kernel, *args: str, stdin: str | None = None) -> tuple[int, str]:
     result = CliRunner().invoke(build(kernel), list(args), input=stdin)
     return result.exit_code, result.output
@@ -53,7 +59,7 @@ def test_set_reads_the_value_from_standard_input_and_list_shows_presence(kernel,
     assert json.loads(output)["present"] is True
     assert memory.values == {("example", "api-token"): SENTINEL}
     code, output = hz(kernel, "system", "credential", "list", "--json")
-    assert json.loads(output) == [
+    assert example(output) == [
         {
             "name": "api-token",
             "service": "example",
@@ -106,9 +112,9 @@ def test_doctor_reports_missing_and_stored_credentials(kernel, memory):
 def test_without_a_keychain_credentials_come_from_the_environment(kernel, monkeypatch):
     """The test environment forces the environment backend, as on Linux without Secret Service."""
     code, output = hz(kernel, "system", "credential", "list", "--json")
-    assert (json.loads(output)[0]["backend"], json.loads(output)[0]["present"]) == ("environment", False)
+    assert (example(output)[0]["backend"], example(output)[0]["present"]) == ("environment", False)
     monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_API_TOKEN", SENTINEL)
-    assert json.loads(hz(kernel, "system", "credential", "list", "--json")[1])[0]["present"] is True
+    assert example(hz(kernel, "system", "credential", "list", "--json")[1])[0]["present"] is True
     code, output = hz(kernel, "system", "credential", "set", "api-token", stdin=SENTINEL)
     assert code == 1
     assert "export HZ_CREDENTIAL_EXAMPLE_API_TOKEN" in output
@@ -166,7 +172,7 @@ def test_no_output_of_any_head_or_log_contains_a_value(kernel, backend, monkeypa
     else:
         monkeypatch.setenv("HZ_CREDENTIAL_EXAMPLE_API_TOKEN", SENTINEL)
         outputs.append(hz(kernel, "system", "credential", "set", "api-token", stdin=SENTINEL)[1])
-    assert json.loads(hz(kernel, "system", "credential", "list", "--json")[1])[0]["present"] is True
+    assert example(hz(kernel, "system", "credential", "list", "--json")[1])[0]["present"] is True
     outputs += mcp_outputs(kernel) + rest_outputs(kernel)
     outputs += [hz(kernel, *args)[1] for args in CLI_COMMANDS]
     assert [output for output in outputs if SENTINEL in output] == []
@@ -201,7 +207,7 @@ def test_a_backend_error_holding_the_value_never_reaches_the_terminal(kernel):
         assert "Unexpected error" not in output, args
     code, output = hz(kernel, "system", "credential", "list")
     assert code == 1
-    assert "Could not read example/api-token from memory: RuntimeError" in output
+    assert re.search(r"Could not read [a-z.]+/[a-z-]+ from memory: RuntimeError", output)
 
 
 def test_the_hz_credentials_fixture_keeps_credentials_in_memory(hz_credentials, hz):

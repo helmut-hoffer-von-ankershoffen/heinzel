@@ -1,7 +1,7 @@
 """Service of the capability module: the report and its health checks."""
 
 from heinzel import Check, Status
-from heinzel.kernel import CAPABILITIES, MODES, CapabilityView
+from heinzel.kernel import CAPABILITIES, CORE_DISTRIBUTION, MODES, CapabilityView
 from heinzel.modules.system.capability._models import AdapterInfo, CapabilityInfo, CapabilityReport, CapabilityUse
 
 UNKNOWN_HOSTS = "unknown (configured)"
@@ -127,7 +127,10 @@ class CapabilityService:
                 continue
             provided = [a for a in self.capabilities.adapters if a.let.capability == spec.name]
             default = {a.module for a in provided if a.let.adapter == bound}
-            others = sorted({a.let.adapter for a in provided if a.module not in default})
+            # A plugin's adapter, not another core one: the core's own options (`gateway`) are chosen, not discovered.
+            others = sorted(
+                {a.let.adapter for a in provided if a.module not in default and a.distribution != CORE_DISTRIBUTION}
+            )
             if not others:
                 continue
             key = spec.name.replace("-", "_")

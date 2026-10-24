@@ -5,7 +5,7 @@ import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Any, cast, get_origin
+from typing import Any, cast, get_args, get_origin
 
 import pluggy
 from pydantic import ConfigDict, ValidationError, validate_call
@@ -13,12 +13,13 @@ from pydantic import ConfigDict, ValidationError, validate_call
 from heinzel.kernel._bindings import (
     CAPABILITIES_SECTION,
     Adapter,
+    Adapters,
     Capabilities,
     CapabilitySettings,
     CapabilityView,
     Requester,
 )
-from heinzel.kernel._capabilities import CAPABILITIES, capability_of
+from heinzel.kernel._capabilities import CAPABILITIES, Capability, capability_of
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import Installation
@@ -199,7 +200,7 @@ class Kernel:
     def provides(self, kind: object) -> bool:
         """Whether the kernel can inject a parameter annotated with `kind`: a service, settings or a capability."""
         return isinstance(kind, type) and (
-            kind in self._instances or kind in self._factories or capability_of(kind) is not None
+            kind in self._instances or kind in self._factories or capability_of(kind) is not None or kind is Adapters
         )
 
     def bind[T](self, kind: type[T], instance: T) -> None:
@@ -393,7 +394,9 @@ class Kernel:
             annotation = get_origin(parameter.annotation) or parameter.annotation
             if name in kwargs:
                 continue
-            if capability := capability_of(annotation):
+            if annotation is Adapters:
+                kwargs[name] = self._capabilities.handles(_adapters_capability(parameter.annotation), func)
+            elif capability := capability_of(annotation):
                 # A handle per requester: what it may call depends on what `func` declared (ADR 0028).
                 kwargs[name] = self._capabilities.handle(capability, func)
             elif self.provides(annotation):
@@ -542,6 +545,22 @@ class Kernel:
     def _is_disabled(self, qualname: str) -> bool:
         parts = qualname.split(".")
         return any(".".join(parts[: i + 1]) in self.settings.disabled_modules for i in range(len(parts)))
+
+
+def _adapters_capability(annotation: Any) -> Capability:  # noqa: ANN401 - an annotation
+    """The capability of `Adapters[P]`: the one whose protocol is `P`.
+
+    Raises:
+        HeinzelError: If `P` is missing or is no capability's protocol.
+    """
+    args = get_args(annotation)
+    capability = capability_of(args[0]) if args else None
+    if capability is None:
+        msg = (
+            f"Ask for `Adapters[<protocol>]` with a capability's protocol, e.g. `Adapters[AiAccess]`, not {annotation}"
+        )
+        raise HeinzelError(msg)
+    return capability
 
 
 def _builtins_first(pair: tuple[ModuleRecord, Let]) -> tuple[bool, tuple[str, ...]]:

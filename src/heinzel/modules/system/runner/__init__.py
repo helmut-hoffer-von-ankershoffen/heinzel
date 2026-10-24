@@ -13,6 +13,7 @@ from pydantic import Field
 
 from heinzel import AgentResult, AgentRunner, Budget, Check, HeinzelError, Module, Status, ToolProfile
 from heinzel.kernel import CapabilityView
+from heinzel.modules.system.runner._access import ClaudeCodeAccess
 from heinzel.modules.system.runner._claude import BIND_COMMAND_RUNNER, HOSTS, ClaudeCodeRunner, login_check
 from heinzel.modules.system.runner._claude import DOCS as CLAUDE_CODE_DOCS
 from heinzel.modules.system.runner._command import SET_COMMAND, TRUST_COMMAND, CommandRunner
@@ -22,6 +23,8 @@ module = Module("runner", "Run bounded agent sessions with Claude Code or a conf
 module.settings(RunnerSettings)
 module.provides("agent-runner", modes={"read"}, hosts=HOSTS, name="claude-code")(ClaudeCodeRunner)
 module.provides("agent-runner", modes={"read"}, name="command")(CommandRunner)
+# The same CLI as an AI access option, which names the runner above (ADR 0057).
+module.provides("ai-access", modes={"read"}, hosts=HOSTS, name="claude-code")(ClaudeCodeAccess)
 
 
 ASK_TIMEOUT = timedelta(minutes=3)
@@ -125,4 +128,4 @@ def runner(capabilities: CapabilityView, settings: RunnerSettings) -> list[Check
     return [Check(name="runner", status=Status.UP, detail=f"agent-runner is bound to {bound or 'nothing'}")]
 
 
-__all__ = ["ASK_TIMEOUT", "ClaudeCodeRunner", "CommandRunner", "RunnerSettings", "module"]
+__all__ = ["ASK_TIMEOUT", "ClaudeCodeAccess", "ClaudeCodeRunner", "CommandRunner", "RunnerSettings", "module"]
