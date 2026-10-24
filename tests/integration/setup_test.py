@@ -58,6 +58,12 @@ def vault() -> Module:
 
 
 @pytest.fixture
+def settings(settings):
+    """The built-in org step asks who you are first in every run; tests/integration/org_test.py runs it."""
+    return settings.model_copy(update={"disabled_modules": frozenset({"org"})})
+
+
+@pytest.fixture
 def terminal(monkeypatch, tmp_path):
     monkeypatch.setattr(_setup, "stdin_is_terminal", lambda: True)
     monkeypatch.chdir(tmp_path)  # doctor after setup reads the files again; no hz.toml from above the repository
@@ -228,7 +234,7 @@ def test_a_broken_configuration_file_is_an_error_line(make_kernel, terminal):
 
 
 def test_without_doctor_setup_ends_with_the_summary(make_kernel, settings, terminal):
-    disabled = settings.model_copy(update={"disabled_modules": frozenset({"system.doctor"})})
+    disabled = settings.model_copy(update={"disabled_modules": settings.disabled_modules | {"system.doctor"}})
     kernel = make_kernel(builtins=True, settings_=disabled, greet=greet())
     result = runner.invoke(build(kernel), ["setup"], input="\n\n")
     assert result.exit_code == 0, result.output
