@@ -2,11 +2,12 @@
 
 import re
 import textwrap
-import time
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+import yaml
 
 from heinzel import JobLet, Window
 from heinzel.kernel import schedule_problem
@@ -447,20 +448,46 @@ ALIAS_BOMB = "a: &a [x, x, x, x, x, x, x, x, x]\n" + "".join(
 )
 
 
-def test_an_alias_bomb_is_refused_before_anything_expands():
+class _Work:
+    """How much YAML work reading one contract did: events the scan pulled, and whether any node was built."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        self.events = 0
+        self.built = False
+        parse, compose = yaml.parse, contracts._Loader.get_single_node
+
+        def counting(*args: object, **kwargs: object) -> Iterator[yaml.Event]:
+            for event in parse(*args, **kwargs):
+                self.events += 1
+                yield event
+
+        def composing(loader: contracts._Loader) -> object:
+            self.built = True
+            return compose(loader)
+
+        monkeypatch.setattr(yaml, "parse", counting)
+        monkeypatch.setattr(contracts._Loader, "get_single_node", composing)
+
+
+def test_an_alias_bomb_is_refused_before_anything_expands(monkeypatch):
+    # Bounded work, not a wall-clock budget: the scan stops at the first anchor and no node is ever built.
     assert len(ALIAS_BOMB) < 1024
-    started = time.monotonic()
+    work = _Work(monkeypatch)
     found = read_contract(PATH, "me", f"---\n{ALIAS_BOMB}---\n{BODY}").diagnostics
-    assert time.monotonic() - started < 1
     assert [(d.code, d.message) for d in found][:1] == [("HZC004", "anchors and aliases aren't allowed")]
+    assert not work.built
+    assert work.events <= 5  # stream, document, mapping, the key `a`, then its anchored list
 
 
-def test_deep_nesting_is_refused_fast():
-    started = time.monotonic()
-    found = read_contract(PATH, "me", "---\nx: " + "[" * 5000 + "]" * 5000 + "\n---\n" + BODY).diagnostics
-    assert time.monotonic() - started < 1
+@pytest.mark.parametrize("levels", [5_000, 50_000])
+def test_deep_nesting_is_refused_after_reading_only_the_allowed_depth(monkeypatch, levels):
+    # The work is bounded by the limit, not by the input: ten times the nesting reads the same few events.
+    work = _Work(monkeypatch)
+    found = read_contract(PATH, "me", "---\nx: " + "[" * levels + "]" * levels + "\n---\n" + BODY).diagnostics
     assert found[0].code == "HZC004"
-    assert "nested deeper than 32 levels" in found[0].message
+    assert f"nested deeper than {contracts.MAX_DEPTH} levels" in found[0].message
+    assert not work.built
+    assert work.events <= contracts.MAX_DEPTH + 5  # stream, document, mapping, the key, then MAX_DEPTH + 1 lists
 
 
 def test_too_many_values_are_refused():

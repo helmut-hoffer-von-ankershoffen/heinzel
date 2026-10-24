@@ -81,11 +81,25 @@ def test_run_reports_failures_with_output(tmp_path):
         installation.run(["uv"], "Broke.", "Doing")
 
 
-def test_hz_runs_a_fresh_interpreter(tmp_path):
+def test_hz_runs_a_fresh_interpreter(tmp_path, monkeypatch):
+    # The real interpreter start is in tests/integration/installation_test.py; here only what is started and how a
+    # failure is reported.
+    commands = []
+
+    def answering(command, **kwargs):
+        commands.append(command)
+        ok = command[-1] == "--version"
+        return subprocess.CompletedProcess(command, 0 if ok else 2, "hz 9.9.9\n" if ok else "", "" if ok else "boom")
+
+    monkeypatch.setattr(subprocess, "run", answering)
     installation = Installation(Progress(), prefix=tmp_path, uv="uv")
-    assert installation.hz("--version").startswith("hz ")
-    with pytest.raises(HeinzelError, match="failed after the change"):
+    assert installation.hz("--version") == "hz 9.9.9\n"
+    with pytest.raises(HeinzelError, match="failed after the change:\nboom"):
         installation.hz("no-such-command")
+    assert commands == [
+        [sys.executable, "-m", "heinzel", "--version"],
+        [sys.executable, "-m", "heinzel", "no-such-command"],
+    ]
 
 
 def test_commands_that_hang_time_out(tmp_path, monkeypatch):
