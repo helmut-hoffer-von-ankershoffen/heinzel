@@ -34,6 +34,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
+| [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
 | [`zoom`](#zoom) | Read meetings from Zoom's meeting-summary emails: the meetings capability. |
@@ -366,6 +367,23 @@ Pick how the web app looks: the built-in theme or one a plugin offers.
 | Use a theme in the web app: writes `[system.theme] name` to your configuration file. | `hz system theme use` | `system_theme_use` | `POST /system/theme/use` | `POST /api/system/theme/use` | yes | expert |
 
 Settings: [`[system.theme]`](CONFIGURATION.md#systemtheme).
+
+## `system.ui`
+
+List what modules add to the web app: status items, header actions and Today widgets.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the status items modules add to the web app's status bar, with what each shows now. | `hz system ui status` | `system_ui_status` | — | `GET /api/system/ui/status` |  | expert |
+| List the buttons modules add to the web app's header, with what each does and its badge. | `hz system ui actions` | `system_ui_actions` | — | `GET /api/system/ui/actions` |  | expert |
+| List the widgets modules add to the web app's Today screen, with what each shows now. | `hz system ui widgets` | `system_ui_widgets` | — | `GET /api/system/ui/widgets` |  | expert |
+| List every contribution to the web app, where it may show and whether it does; nothing runs. | `hz system ui list` | `system_ui_list` | — | `GET /api/system/ui/list` |  | expert |
+| Show a contribution in a slot of the web app, such as the clock in the sidebar. | `hz system ui show` | `system_ui_show` | — | `POST /api/system/ui/show` | yes | expert |
+| Hide a contribution from a slot of the web app, such as the clock from the footer. | `hz system ui hide` | `system_ui_hide` | — | `POST /api/system/ui/hide` | yes | expert |
+
+Settings: [`[system.ui]`](CONFIGURATION.md#systemui).
+
+Health checks: reported by `hz system doctor`.
 
 ## `team`
 

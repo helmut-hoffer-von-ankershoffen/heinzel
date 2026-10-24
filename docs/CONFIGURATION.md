@@ -192,6 +192,12 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `name` | `HZ_SYSTEM_THEME__NAME` | `'default'` | The theme of the web app, one `hz system theme list` shows, e.g. `acme`; `default` is built in. |
 
+## `[system.ui]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `contributions` | `HZ_SYSTEM_UI__CONTRIBUTIONS` | platform-specific | Per contribution id, each slot shown or hidden, e.g. { "clock:primary-zone" = { sidebar = true } }; a slot not named keeps the contribution's default. |
+
 ## `[team]`
 
 | Key | Environment variable | Default | Description |

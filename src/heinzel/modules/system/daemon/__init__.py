@@ -20,6 +20,7 @@ from heinzel.modules.system.daemon._models import (
 )
 from heinzel.modules.system.daemon._render import render_installed, render_jobs, render_logs, render_tick
 from heinzel.modules.system.daemon._service import DaemonService
+from heinzel.modules.system.daemon._status_item import status_item
 
 module = Module("daemon", "Run modules' jobs in the background, supervised by launchd or systemd.")
 """Jobs run unattended, with your rights, on their schedule once installed (SECURITY.md). Stop them with
@@ -58,6 +59,10 @@ def uninstall(service: DaemonService) -> Uninstalled:
 def status(service: DaemonService) -> DaemonStatus:
     """Show whether the daemon is installed, loaded and paused, its last tick and failing jobs."""
     return service.status()
+
+
+# In the web app's status bar (ADR 0056): installing stays a command the person runs, pausing a confirmed call.
+module.status(source="status", name="daemon", order=700)(status_item)
 
 
 @module.operation(render=render_logs)
