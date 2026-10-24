@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 260" role="img" aria-label="Seven Heinzelmännchen showing what they are up to: at rest, working, thinking, waiting for you, asleep, blocked and done">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 20 1000 230" role="img" aria-label="Seven Heinzelmännchen showing what they are up to: at rest, working, thinking, waiting for you, asleep, blocked and done">
   <g transform="translate(22 30) scale(0.19)">
     <path d="M166 680 H250 V804 H172 Z" fill="#6D4C41"/>
     <path d="M346 680 H262 V804 H340 Z" fill="#6D4C41"/>
@@ -36,7 +36,7 @@
       <path d="M256 308 C236 298 202 302 192 322 C212 336 240 328 256 316 C272 328 300 336 320 322 C310 302 276 298 256 308 Z" fill="#CF8640"/>
     </g>
   </g>
-  <text x="70.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#8b949e">at rest</text>
+  <text x="70.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#768390">at rest</text>
   <g transform="translate(159 30) scale(0.19)">
     <path d="M166 680 H250 V804 H172 Z" fill="#6D4C41"/>
     <path d="M346 680 H262 V804 H340 Z" fill="#6D4C41"/>
@@ -76,7 +76,7 @@
       <path d="M206 322 C216 372 296 372 306 322 Z" fill="#8B3A2A"/>
     </g>
   </g>
-  <text x="207.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#8b949e">working</text>
+  <text x="207.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#768390">working</text>
   <g transform="translate(296 30) scale(0.19)">
     <path d="M166 680 H250 V804 H172 Z" fill="#6D4C41"/>
     <path d="M346 680 H262 V804 H340 Z" fill="#6D4C41"/>
@@ -114,7 +114,7 @@
       <path d="M256 308 C236 298 202 302 192 322 C212 336 240 328 256 316 C272 328 300 336 320 322 C310 302 276 298 256 308 Z" fill="#FFFFFF"/>
     </g>
   </g>
-  <text x="344.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#8b949e">thinking</text>
+  <text x="344.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#768390">thinking</text>
   <g transform="translate(433 30) scale(0.19)">
     <path d="M166 680 H250 V804 H172 Z" fill="#6D4C41"/>
     <path d="M346 680 H262 V804 H340 Z" fill="#6D4C41"/>
@@ -152,7 +152,7 @@
       <path d="M256 308 C236 298 202 302 192 322 C212 336 240 328 256 316 C272 328 300 336 320 322 C310 302 276 298 256 308 Z" fill="#CF8640"/>
     </g>
   </g>
-  <text x="481.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#8b949e">waiting for you</text>
+  <text x="481.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#768390">waiting for you</text>
   <g transform="translate(570 30) scale(0.19)">
     <path d="M146 680 H366 V744 Q366 760 350 760 H162 Q146 760 146 744 Z" fill="#6D4C41"/>
     <path d="M136 800 Q136 756 180 756 H248 V800 Z" fill="#3E2723"/>
@@ -185,7 +185,7 @@
       <circle cx="256" cy="342" r="12" fill="#8B3A2A"/>
     </g>
   </g>
-  <text x="618.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#8b949e">asleep</text>
+  <text x="618.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#768390">asleep</text>
   <g transform="translate(707 30) scale(0.19)">
     <path d="M166 680 H250 V804 H172 Z" fill="#6D4C41"/>
     <path d="M346 680 H262 V804 H340 Z" fill="#6D4C41"/>
@@ -223,7 +223,7 @@
       <path d="M256 308 C236 298 202 302 192 322 C212 336 240 328 256 316 C272 328 300 336 320 322 C310 302 276 298 256 308 Z" fill="#CF8640"/>
     </g>
   </g>
-  <text x="755.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#8b949e">blocked</text>
+  <text x="755.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#768390">blocked</text>
   <g transform="translate(844 30) scale(0.19)">
     <path d="M166 680 H250 V804 H172 Z" fill="#6D4C41"/>
     <path d="M346 680 H262 V804 H340 Z" fill="#6D4C41"/>
@@ -257,5 +257,5 @@
       <path d="M198 318 C208 384 304 384 314 318 Z" fill="#8B3A2A"/>
     </g>
   </g>
-  <text x="892.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#8b949e">done</text>
+  <text x="892.64" y="238" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" fill="#768390">done</text>
 </svg>
