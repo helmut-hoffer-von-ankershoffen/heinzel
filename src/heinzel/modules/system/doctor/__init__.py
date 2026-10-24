@@ -53,7 +53,7 @@ def doctor(kernel: Kernel) -> HealthReport:
     """Run every module's health checks; exits with 1 if anything is down."""
     checks: dict[str, list[Check]] = {}
     for record, let in kernel.lets(HealthLet):
-        if let.live:  # reaches the network; `hz system connector test` runs it on demand (ADR 0055)
+        if let.live:  # reaches the network; `hz system connector test` runs it on demand (ADR 0056)
             continue
         try:
             checks[record.qualname] = kernel.call(let.provider)

@@ -21,7 +21,7 @@ class Editor:
 
 
 class Bound:
-    """Configured bindings, and those Google serves automatically as the only installed adapter (ADR 0055)."""
+    """Configured bindings, and those Google serves automatically as the only installed adapter (ADR 0056)."""
 
     def __init__(self, automatic: tuple[str, ...] = (), **bound: str) -> None:
         self._bound = bound | dict.fromkeys(automatic, "google")

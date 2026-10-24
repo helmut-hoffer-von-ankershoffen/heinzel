@@ -62,7 +62,7 @@ own tool (on macOS: `security delete-generic-password -s heinzel/atlassian -a at
 ### Is it connected?
 
 Bound automatically while it is the only installed adapter of a capability, [ADR
-0055](../../docs/adr/0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md). `hz
+0056](../../docs/adr/0056-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md). `hz
 system connector list` (or Settings → Connectors in `hz ui`) shows the site and the login command; whether acli is
 logged in is only known after `hz system connector test atlassian`, which reads one Jira work item (`acli jira workitem
 search --limit 1`) and, when `documents` is bound to it, one Confluence space (`acli confluence space list --limit 1`),

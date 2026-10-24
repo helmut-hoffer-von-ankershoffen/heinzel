@@ -194,7 +194,7 @@ LOGIN_TEXT = 200
 
 
 class Login(BaseModel):
-    """What a check found about the sign-in of the tool an adapter goes through, such as a vendor CLI (ADR 0055).
+    """What a check found about the sign-in of the tool an adapter goes through, such as a vendor CLI (ADR 0056).
 
     The tool owns the sign-in (ADR 0035): this says only whether there is one, as whom and where, and the command
     that makes one, which the person runs in a terminal and where the tool itself asks for any secret.
@@ -249,7 +249,7 @@ class HealthLet(Let):
     provider: Callable[..., list[Check]]
     live: bool = False
     """Whether the provider reaches the network to test a connection, as `hz system connector test` does on demand;
-    doctor stays offline and leaves it out (ADR 0055)."""
+    doctor stays offline and leaves it out (ADR 0056)."""
 
 
 class CatchUp(StrEnum):

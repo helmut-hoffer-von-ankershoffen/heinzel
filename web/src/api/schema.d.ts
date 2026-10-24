@@ -3374,7 +3374,7 @@ export interface components {
         };
         /**
          * Login
-         * @description What a check found about the sign-in of the tool an adapter goes through, such as a vendor CLI (ADR 0055).
+         * @description What a check found about the sign-in of the tool an adapter goes through, such as a vendor CLI (ADR 0056).
          *
          *     The tool owns the sign-in (ADR 0035): this says only whether there is one, as whom and where, and the command
          *     that makes one, which the person runs in a terminal and where the tool itself asks for any secret.

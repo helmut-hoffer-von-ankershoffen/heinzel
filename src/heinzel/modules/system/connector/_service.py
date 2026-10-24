@@ -1,4 +1,4 @@
-"""Service of the connector module: each connector's state from its own checks, and its live test (ADR 0055)."""
+"""Service of the connector module: each connector's state from its own checks, and its live test (ADR 0056)."""
 
 import inspect
 import re

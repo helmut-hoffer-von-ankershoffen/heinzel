@@ -74,7 +74,7 @@ def run_setup(  # noqa: PLR0913, PLR0917 - what the step is injected with
 def _bind(view: CapabilityView, prompter: Prompter, editor: ConfigEditor) -> set[str]:
     """Offer each capability not chosen to be read from Google yet; the ones now bound to it.
 
-    Google serving a capability automatically, as the only installed adapter (ADR 0055), is no choice of the
+    Google serving a capability automatically, as the only installed adapter (ADR 0056), is no choice of the
     person's: they are asked, and declining writes `none`, so mail stays opt-in even when nothing else provides it.
     """
     newly: set[str] = set()
