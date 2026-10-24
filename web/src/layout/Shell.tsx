@@ -7,6 +7,7 @@ import { t } from "@/i18n";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { useNoticeStream } from "@/notifications/useNoticeStream";
+import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { ChatPanel } from "./ChatPanel";
 import { InfoDialog, type Panel } from "./InfoDialog";
 import { NotificationPanel } from "./NotificationCenter";
@@ -239,6 +240,7 @@ function Layout() {
       )}
       <ThemeTokens />
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      <Onboarding />
       {(params.get("panel") === "changelog" || params.get("panel") === "help") && (
         <InfoDialog
           panel={params.get("panel") as Panel}
