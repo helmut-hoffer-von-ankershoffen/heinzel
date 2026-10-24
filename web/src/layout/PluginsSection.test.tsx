@@ -99,7 +99,9 @@ describe("PluginsSection", () => {
   it("shows what a spec would install first, and installs the pinned requirement only on confirm", async () => {
     const calls = serve((url) => {
       if (url.pathname === "/api/system/plugin/add") {
-        return { body: change("add", url.searchParams.get("confirm") === "true") };
+        return {
+          body: change("add", url.searchParams.get("confirm") === "true"),
+        };
       }
       return base(url);
     });
@@ -118,10 +120,11 @@ describe("PluginsSection", () => {
       expect(within(dialog).getByText(text)).toBeInTheDocument();
     }
     expect(within(dialog).getByText(/private repository/)).toBeInTheDocument();
-    expect(within(dialog).getByRole("link", { name: "github.com/acme-example/heinzel-crm" })).toHaveAttribute(
-      "href",
-      candidate.url,
-    );
+    expect(
+      within(dialog).getByRole("link", {
+        name: "github.com/acme-example/heinzel-crm",
+      }),
+    ).toHaveAttribute("href", candidate.url);
     await expectAccessible(container);
 
     await user.click(within(dialog).getByRole("button", { name: "Install" }));
@@ -132,10 +135,84 @@ describe("PluginsSection", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
+  it("installs a first-party plugin from Discover by name and a community one by its spec", async () => {
+    const entry = (name: string, community: boolean, install_spec: string) => ({
+      name: `heinzel-${name}`,
+      short_name: name,
+      description: `The ${name} plugin.`,
+      source: community ? "github" : "first-party",
+      community,
+      install_spec,
+      url: `https://example.org/${name}`,
+      repository_url: `https://github.com/acme-example/heinzel-${name}`,
+      stars: null,
+      installed: false,
+    });
+    const git = "git+https://github.com/acme-example/heinzel-crm";
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/search") {
+        return {
+          body: {
+            plugins: [entry("zoom", false, "zoom"), entry("crm", true, git)],
+            warnings: [],
+          },
+        };
+      }
+      if (url.pathname === "/api/system/plugin/add") {
+        const first =
+          url.searchParams.get("spec") === "zoom" || url.searchParams.get("spec") === "heinzel-zoom @ git+x";
+        return {
+          body: change("add", url.searchParams.get("confirm") === "true", {
+            candidate: {
+              ...candidate,
+              first_party: first,
+              spec: url.searchParams.get("spec"),
+              requirement: first ? "heinzel-zoom @ git+x" : PINNED,
+            },
+          }),
+        };
+      }
+      return base(url);
+    });
+    const user = userEvent.setup();
+    show();
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    const adds = () => calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/add");
+    const spec = (index: number) => new URL(adds()[index]?.url ?? "").searchParams.get("spec");
+
+    const installs = await screen.findAllByRole("button", {
+      name: "Install",
+    });
+    await user.click(installs[0] as HTMLElement);
+    expect(spec(0)).toBe("zoom");
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Install",
+      }),
+    );
+    await waitFor(() => expect(adds()).toHaveLength(2));
+    expect(spec(1)).toBe("zoom");
+
+    await user.click((await screen.findAllByRole("button", { name: "Install" }))[1] as HTMLElement);
+    expect(spec(2)).toBe(git);
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Install",
+      }),
+    );
+    await waitFor(() => expect(adds()).toHaveLength(4));
+    expect(spec(3)).toBe(PINNED);
+  });
+
   it("says why a source is refused and installs nothing", async () => {
     const calls = serve((url) =>
       url.pathname === "/api/system/plugin/add"
-        ? { status: 400, body: { error: "Can't add '/tmp/x': local paths aren't added, they are developed." } }
+        ? {
+            status: 400,
+            body: {
+              error: "Can't add '/tmp/x': local paths aren't added, they are developed.",
+            },
+          }
         : base(url),
     );
     const user = userEvent.setup();
@@ -155,7 +232,10 @@ describe("PluginsSection", () => {
       if (url.pathname === "/api/system/plugin/disable") return { body: change("disable", true) };
       if (url.pathname === "/api/restart") {
         restarted = true;
-        return { status: 202, body: { restarting: true, message: "Restarting" } };
+        return {
+          status: 202,
+          body: { restarting: true, message: "Restarting" },
+        };
       }
       if (url.pathname === "/api/system/info") {
         infoAsked += 1;
@@ -166,7 +246,11 @@ describe("PluginsSection", () => {
     const reload = vi.fn();
     const user = userEvent.setup();
     show({ reload, restartInterval: 1 });
-    await user.click(await screen.findByRole("button", { name: "Disable heinzel-clock" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Disable heinzel-clock",
+      }),
+    );
     const dialog = screen.getByRole("alertdialog");
     expect(dialog).toHaveTextContent("Disable heinzel-clock?");
     await user.click(within(dialog).getByRole("button", { name: "Disable" }));
@@ -186,9 +270,10 @@ describe("PluginsSection", () => {
     show();
     expect(await screen.findByRole("button", { name: "Enable heinzel-clock" })).toBeInTheDocument();
     expect(screen.getByText("Disabled")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "github.com/helmut-hoffer-von-ankershoffen/heinzel" })).toHaveAttribute(
-      "href",
-      installed.source_url,
-    );
+    expect(
+      screen.getByRole("link", {
+        name: "github.com/helmut-hoffer-von-ankershoffen/heinzel",
+      }),
+    ).toHaveAttribute("href", installed.source_url);
   });
 });
