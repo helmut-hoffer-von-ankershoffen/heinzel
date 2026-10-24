@@ -890,7 +890,7 @@ wheels = [
 
 [[package]]
 name = "heinzel"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "croniter" },
@@ -1023,7 +1023,7 @@ test = [
 
 [[package]]
 name = "heinzel-atlassian"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "plugins/heinzel-atlassian" }
 dependencies = [
     { name = "heinzel" },
@@ -1034,7 +1034,7 @@ requires-dist = [{ name = "heinzel", editable = "." }]
 
 [[package]]
 name = "heinzel-clock"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "plugins/heinzel-clock" }
 dependencies = [
     { name = "heinzel" },
@@ -1045,7 +1045,7 @@ requires-dist = [{ name = "heinzel", editable = "." }]
 
 [[package]]
 name = "heinzel-github"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "plugins/heinzel-github" }
 dependencies = [
     { name = "heinzel" },
@@ -1056,7 +1056,7 @@ requires-dist = [{ name = "heinzel", editable = "." }]
 
 [[package]]
 name = "heinzel-zoom"
-version = "0.2.0"
+version = "0.3.0"
 source = { editable = "plugins/heinzel-zoom" }
 dependencies = [
     { name = "heinzel" },
