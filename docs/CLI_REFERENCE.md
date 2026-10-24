@@ -22,8 +22,10 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `clock`: Show the time in each of the team&#x27;s time...
 * `github`: (expert) Read pull requests and issues...
 * `google`: (expert) Read Google Docs, Sheets, Drive,...
+* `graph`: Show your team&#x27;s promises: who keeps which...
 * `join`: Join a team from its invite line: finds...
 * `org`: Your profile, and the team, org and...
+* `report`: Telemetry: log what a Heinzelmännchen did,...
 * `setup`: Set up what is still missing, wizard...
 * `system`: Inspect, configure, diagnose and update...
 * `team`: Your team&#x27;s repository: create one (`hz...
@@ -335,6 +337,26 @@ $ hz google info [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+## `hz graph`
+
+Show your team&#x27;s promises: who keeps which artifact, how each promise stands, where the flow waits.
+
+**Usage**:
+
+```console
+$ hz graph [OPTIONS]
+```
+
+**Options**:
+
+* `--artifact <str>`: Only this artifact, its parts and what reads or writes them, by node id.
+* `--heinzel <str>`: Only this Heinzelmännchen and what it reads and writes, by its id.
+* `--state <on_time|waiting_for_approval|late|fell_back|offline>`: Only nodes in this state: on_time, waiting_for_approval, late, fell_back or offline.
+* `--at ISO-8601`: The graph as of this time, ISO 8601 with offset; now by default.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ## `hz join`
 
 Join a team from its invite line: finds out who you are, joins the team, then sets up what is missing.
@@ -424,6 +446,205 @@ $ hz org sync [OPTIONS]
 **Options**:
 
 * `--accept <str>`: Recommendations to apply, by id and comma-separated (binding:documents), or all.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz report`
+
+Telemetry: log what a Heinzelmännchen did, for your team&#x27;s graph (`hz report published &lt;id&gt; &lt;url&gt;`).
+
+**Usage**:
+
+```console
+$ hz report [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `approved`: Log that a Heinzelmännchen&#x27;s draft was...
+* `drafted`: Log that a Heinzelmännchen put a draft...
+* `fell-back`: Log that a Heinzelmännchen used a stale...
+* `heartbeat`: Log that a Heinzelmännchen is alive; one a...
+* `published`: Log where a Heinzelmännchen published: a...
+* `read`: Log that a Heinzelmännchen read an...
+* `sync`: (expert) Copy your Heinzelmännchen&#x27;s logs...
+
+### `hz report approved`
+
+Log that a Heinzelmännchen&#x27;s draft was approved, by whom; the entry&#x27;s time is when.
+
+**Usage**:
+
+```console
+$ hz report approved [OPTIONS] {heinzel} {target} {by}
+```
+
+**Arguments**:
+
+* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+* `target`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
+* `by`: Who approved it, by roster handle.  [required]
+
+**Options**:
+
+* `--description <str>`: One line a reader of the team&#x27;s graph should know; never content or addresses.
+* `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
+* `--part <str>`: The part of the target it concerns, e.g. its row in a tracker.
+* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
+* `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz report drafted`
+
+Log that a Heinzelmännchen put a draft where it will be approved, and from which contract version.
+
+**Usage**:
+
+```console
+$ hz report drafted [OPTIONS] {heinzel} {target}
+```
+
+**Arguments**:
+
+* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+* `target`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
+
+**Options**:
+
+* `--contract-version <str>`: The contract&#x27;s version it drafted from.
+* `--description <str>`: One line a reader of the team&#x27;s graph should know; never content or addresses.
+* `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
+* `--part <str>`: The part of the target it concerns, e.g. its row in a tracker.
+* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
+* `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz report fell-back`
+
+Log that a Heinzelmännchen used a stale version of an input to keep its deadline.
+
+**Usage**:
+
+```console
+$ hz report fell-back [OPTIONS] {heinzel} {target} {input}
+```
+
+**Arguments**:
+
+* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+* `target`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
+* `input`: The input whose stale version it used, as a target.  [required]
+
+**Options**:
+
+* `--description <str>`: One line a reader of the team&#x27;s graph should know; never content or addresses.
+* `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
+* `--part <str>`: The part of the target it concerns, e.g. its row in a tracker.
+* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
+* `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz report heartbeat`
+
+Log that a Heinzelmännchen is alive; one a day is enough for the team to see it isn&#x27;t offline.
+
+**Usage**:
+
+```console
+$ hz report heartbeat [OPTIONS] {heinzel}
+```
+
+**Arguments**:
+
+* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+
+**Options**:
+
+* `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
+* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
+* `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz report published`
+
+Log where a Heinzelmännchen published: a document, an email address, a chat channel.
+
+**Usage**:
+
+```console
+$ hz report published [OPTIONS] {heinzel} {target}
+```
+
+**Arguments**:
+
+* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+* `target`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
+
+**Options**:
+
+* `--version <str>`: The artifact&#x27;s version, as its source names it.
+* `--description <str>`: One line a reader of the team&#x27;s graph should know; never content or addresses.
+* `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
+* `--part <str>`: The part of the target it concerns, e.g. its row in a tracker.
+* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
+* `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz report read`
+
+Log that a Heinzelmännchen read an artifact, which version, and by when its contract needs it.
+
+**Usage**:
+
+```console
+$ hz report read [OPTIONS] {heinzel} {target}
+```
+
+**Arguments**:
+
+* `heinzel`: The Heinzelmännchen&#x27;s id, a slug unique in your team, e.g. costas-tracker.  [required]
+* `target`: What it acted on: an https URL, an email address, contract:team/&lt;name&gt;#&lt;output&gt; or chat:&lt;channel&gt;.  [required]
+
+**Options**:
+
+* `--version <str>`: The artifact&#x27;s version, as its source names it.
+* `--needed-by ISO-8601`: By when the reader&#x27;s contract needs it, ISO 8601 with offset.
+* `--description <str>`: One line a reader of the team&#x27;s graph should know; never content or addresses.
+* `--contract <str>`: The team contract it keeps, team:&lt;name&gt;.
+* `--part <str>`: The part of the target it concerns, e.g. its row in a tracker.
+* `--user <str>`: Your roster handle, when ` user` doesn&#x27;t say.
+* `--at ISO-8601`: When it happened, ISO 8601 with offset, within the last 30 days; now by default.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz report sync`
+
+(expert) Copy your Heinzelmännchen&#x27;s logs into your team repository&#x27;s checkout, for you to commit and push.
+
+**Usage**:
+
+```console
+$ hz report sync [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

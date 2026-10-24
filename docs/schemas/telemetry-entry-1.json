@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:heinzel:telemetry-entry:1",
+  "additionalProperties": false,
+  "description": "One action a Heinzelmännchen reports: who, when, which verb, on what; metadata only, never content.\n\nVerb-specific fields: `read` may carry the `version` read and `needed_by`, when the reader's contract needs it;\n`drafted` the `contract_version` it drafted from; `approved` who approved it (`by`); `published` the `version`\npublished; `fell_back` the stale `input` it used. `heartbeat` has no target. `part` names the part of the target\nthe action concerns, e.g. the row of a tracker one person keeps.",
+  "properties": {
+    "v": {
+      "const": 1,
+      "default": 1,
+      "description": "The entry format's version.",
+      "title": "V",
+      "type": "integer"
+    },
+    "heinzel_id": {
+      "description": "The Heinzelmännchen's id: a slug, unique in your team, e.g. `costas-tracker`; it becomes the durable id of a Heinzelmännchen once those exist.",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+      "title": "Heinzel Id",
+      "type": "string"
+    },
+    "user": {
+      "description": "Its user's handle in the team's roster.",
+      "maxLength": 39,
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "title": "User",
+      "type": "string"
+    },
+    "time": {
+      "description": "When it happened, with its offset; stored in UTC.",
+      "format": "date-time",
+      "title": "Time",
+      "type": "string"
+    },
+    "verb": {
+      "description": "What it did: read, drafted, approved, published, fell_back or heartbeat.",
+      "enum": [
+        "read",
+        "drafted",
+        "approved",
+        "published",
+        "fell_back",
+        "heartbeat"
+      ],
+      "title": "Verb",
+      "type": "string"
+    },
+    "target": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "What it acted on: an https URL (no user name, password or credential in it), an email address, a team contract's output as `contract:team/<name>#<output>`, or a chat channel as `chat:<channel>`. None only for a heartbeat.",
+      "title": "Target"
+    },
+    "description": {
+      "default": "",
+      "description": "What a reader of the graph should know, in one line; never content, names or addresses.",
+      "maxLength": 280,
+      "title": "Description",
+      "type": "string"
+    },
+    "contract": {
+      "anyOf": [
+        {
+          "pattern": "^team:[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The team contract the action keeps, `team:<name>`; personal contracts never appear here.",
+      "title": "Contract"
+    },
+    "part": {
+      "anyOf": [
+        {
+          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The part of the target it concerns, e.g. a tracker's row.",
+      "title": "Part"
+    },
+    "version": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+@-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The artifact's version read or published, as its source has it.",
+      "title": "Version"
+    },
+    "needed_by": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "For `read`: by when the reader's contract needs the artifact.",
+      "title": "Needed By"
+    },
+    "contract_version": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+@-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "For `drafted`: the contract's version or `sha256:<hex>`.",
+      "title": "Contract Version"
+    },
+    "by": {
+      "anyOf": [
+        {
+          "maxLength": 39,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "For `approved`: who approved, by handle.",
+      "title": "By"
+    },
+    "input": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "For `fell_back`: the input whose stale version it used.",
+      "title": "Input"
+    }
+  },
+  "required": [
+    "heinzel_id",
+    "user",
+    "time",
+    "verb"
+  ],
+  "title": "One entry of a Heinzelmännchen's telemetry log",
+  "type": "object"
+}

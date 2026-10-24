@@ -56,10 +56,26 @@ class CapabilitySettings(ModuleSettings):
     documents: str | None = Field(default=None, description="Adapter that serves `documents`.")
     mail: str | None = Field(default=None, description="Adapter that serves `mail`, e.g. `google`.")
     meetings: str | None = Field(default=None, description="Adapter that serves `meetings`, e.g. `zoom`.")
+    team_graph: str | None = Field(
+        default="hz-graph",
+        description="Adapter that serves `team-graph`: `hz-graph` (the default, the core's graph of your team's "
+        "contracts and telemetry), or one from a plugin.",
+    )
     tracker: str | None = Field(default=None, description="Adapter that serves `tracker`, e.g. `github`.")
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
-        {"agent_runner", "calendar", "chat", "code_host", "directory", "documents", "mail", "meetings", "tracker"}
+        {
+            "agent_runner",
+            "calendar",
+            "chat",
+            "code_host",
+            "directory",
+            "documents",
+            "mail",
+            "meetings",
+            "team_graph",
+            "tracker",
+        }
     )
 
     @model_validator(mode="before")

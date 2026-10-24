@@ -12,7 +12,9 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`clock`](#clock) | What time it is for everyone on the team. |
 | [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
 | [`google`](#google) | Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
+| [`graph`](#graph) | Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
+| [`report`](#report) | Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`). |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
 | [`system.capability`](#systemcapability) | Show which adapters serve which capabilities, and who reads and writes what. |
@@ -94,6 +96,16 @@ Health checks: reported by `hz system doctor`.
 
 Setup: `hz setup google` (optional), also part of `hz setup`.
 
+## `graph`
+
+Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits. | `hz graph` | `graph` | — | `GET /api/graph` |  |  |
+
+Settings: [`[graph]`](CONFIGURATION.md#graph).
+
 ## `org`
 
 Your profile, and the team, org and company you work with.
@@ -109,6 +121,22 @@ Settings: [`[org]`](CONFIGURATION.md#org).
 Health checks: reported by `hz system doctor`.
 
 Setup: `hz setup org` (required), also part of `hz setup`.
+
+## `report`
+
+Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Log that a Heinzelmännchen read an artifact, which version, and by when its contract needs it. | `hz report read` | `report_read` | — | — | yes |  |
+| Log that a Heinzelmännchen put a draft where it will be approved, and from which contract version. | `hz report drafted` | `report_drafted` | — | — | yes |  |
+| Log that a Heinzelmännchen's draft was approved, by whom; the entry's time is when. | `hz report approved` | `report_approved` | — | — | yes |  |
+| Log where a Heinzelmännchen published: a document, an email address, a chat channel. | `hz report published` | `report_published` | — | — | yes |  |
+| Log that a Heinzelmännchen used a stale version of an input to keep its deadline. | `hz report fell-back` | `report_fell_back` | — | — | yes |  |
+| Log that a Heinzelmännchen is alive; one a day is enough for the team to see it isn't offline. | `hz report heartbeat` | `report_heartbeat` | — | — | yes |  |
+| Copy your Heinzelmännchen's logs into your team repository's checkout, for you to commit and push. | `hz report sync` | `report_sync` | — | — | yes | expert |
+
+Settings: [`[report]`](CONFIGURATION.md#report).
 
 ## `system`
 
