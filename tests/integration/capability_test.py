@@ -4,6 +4,7 @@ The adapters are test-only; core ships no vendor adapters.
 """
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import anyio
 import pytest
@@ -11,7 +12,26 @@ from fastapi.testclient import TestClient
 from mcp import Client
 from typer.testing import CliRunner
 
-from heinzel import Config, Document, Documents, Kernel, Module, SectionReplacement
+from heinzel import (
+    Calendar,
+    Chat,
+    Config,
+    Document,
+    Documents,
+    Event,
+    Kernel,
+    Meeting,
+    Meetings,
+    Message,
+    Module,
+    Participant,
+    PostedMessage,
+    SectionReplacement,
+    Transcript,
+    TranscriptSegment,
+    Window,
+    clean_text,
+)
 from heinzel.heads import api, mcp
 from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
@@ -118,8 +138,11 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
     assert code == 0
     assert {c["name"]: c["bound"] for c in report["capabilities"]} == {
         "agent-runner": "claude-code",
+        "calendar": None,
+        "chat": None,
         "code-host": None,
         "documents": "notes",
+        "meetings": None,
         "tracker": None,
     }
     assert [a for a in report["adapters"] if a["capability"] == "documents"] == [
@@ -186,6 +209,183 @@ def test_doctor_is_quiet_when_nothing_is_declared(make_kernel):
     assert report["checks"]["system.capability"] == [
         {"name": "requirements", "status": "up", "detail": "no module declares capabilities", "fix": ""}
     ]
+
+
+WINDOW = Window(since=datetime(2026, 10, 12, tzinfo=UTC), until=datetime(2026, 10, 19, tzinfo=UTC))
+MIRA = Participant(name="Mira", email="mira@example.com")
+
+
+class Talk:
+    """A chat adapter for tests, in memory; it cleans text like a real one must."""
+
+    def __init__(self) -> None:
+        self.posted: list[PostedMessage] = []
+
+    @staticmethod
+    def resolve(channel: str) -> str:
+        return "C1" if channel in {"C1", "#platform"} else channel
+
+    def messages(self, channel: str, window: Window) -> list[Message]:
+        channel = self.resolve(channel)
+        text = clean_text("shipped \x1b[31mthe\x1b[0m release")
+        reply = Message(
+            channel=channel, id="1.1", author=MIRA, posted_at=window.since, text="and the notes", thread="1.0"
+        )
+        return [
+            Message(channel=channel, id="1.0", author=MIRA, posted_at=window.since, text=text, reply_count=1),
+            reply,
+        ]
+
+    def post(self, channel: str, text: str, thread: str | None = None) -> PostedMessage:
+        self.posted.append(PostedMessage(channel=self.resolve(channel), id=f"{len(self.posted) + 2}.0", thread=thread))
+        return self.posted[-1]
+
+
+class Rooms:
+    """A meetings adapter for tests."""
+
+    def ended(self, window: Window) -> list[Meeting]:
+        return [
+            Meeting(
+                id="uuid-1",
+                title="Mira / Jonas 1:1",
+                started_at=window.since,
+                ended_at=window.since + timedelta(minutes=30),
+                participants=[MIRA, Participant(name="Jonas")],
+                conference_id="123456789",
+                has_transcript=True,
+            )
+        ]
+
+    def transcripts(self, window: Window) -> list[Transcript]:
+        return [self.transcript(meeting.id) for meeting in self.ended(window) if meeting.has_transcript]
+
+    def transcript(self, meeting: str) -> Transcript:
+        held = next(m for m in self.ended(WINDOW) if m.id == meeting)
+        segments = [
+            TranscriptSegment(speaker="Mira", offset_seconds=0, text="How was the launch?"),
+            TranscriptSegment(speaker="Jonas", offset_seconds=4.5, text="Quiet, which is good."),
+        ]
+        return Transcript(meeting=held, language="en", segments=segments)
+
+
+class Agenda:
+    """A calendar adapter for tests."""
+
+    def events(self, window: Window) -> list[Event]:
+        return [
+            Event(
+                id="e-1",
+                title="Mira / Jonas 1:1",
+                start=window.since,
+                end=window.since + timedelta(minutes=30),
+                organizer=MIRA,
+                attendees=[MIRA, Participant(name="Jonas", email="jonas@example.com")],
+                conference_id="123456789",
+                conference_url="https://rooms.invalid/j/123456789",
+            )
+        ]
+
+
+def adapters() -> dict[str, Module]:
+    talk = Module("talk", "Test-only chat adapter.")
+    talk.provides("chat", modes={"read", "write"}, hosts=["talk.invalid"])(Talk)
+    rooms = Module("rooms", "Test-only meetings adapter.")
+    rooms.provides("meetings", modes={"read"}, hosts=["rooms.invalid"])(Rooms)
+    agenda = Module("agenda", "Test-only calendar adapter.")
+    agenda.provides("calendar", modes={"read"}, hosts=["agenda.invalid"])(Agenda)
+    return {"talk": talk, "rooms": rooms, "agenda": agenda}
+
+
+def prep() -> Module:
+    module = Module("prep", "Prepares a one-on-one.", requires=["chat:read", "meetings:read", "calendar:read"])
+
+    @module.operation
+    def meeting(chat: Chat, meetings: Meetings, calendar: Calendar) -> dict[str, object]:
+        """Correlate the last one-on-one's transcript, its calendar event and the channel thread."""
+        held = meetings.transcripts(WINDOW)[0].meeting
+        event = next(
+            e
+            for e in calendar.events(WINDOW)
+            if e.conference_id == held.conference_id and e.start < held.ended_at and held.started_at < e.end
+        )
+        said = meetings.transcript(held.id).segments
+        return {
+            "title": event.title,
+            "attendees": [a.email for a in event.attendees],
+            "said": "\n".join(f"{s.speaker}: {s.text}" for s in said),
+            "thread": [(m.channel, m.text) for m in chat.messages("#platform", WINDOW)],
+        }
+
+    @module.operation
+    def nudge(chat: Chat) -> str:
+        """Try to post with a read-only declaration."""
+        return chat.post("#platform", "sneaky").id
+
+    @module.operation(read_only=False, requires=["chat:write"])
+    def remind(chat: Chat) -> str:
+        """Post the agenda to the channel thread."""
+        return chat.post("#platform", "agenda posted", thread="1.0").id
+
+    return module
+
+
+@pytest.fixture
+def prepared(make_kernel) -> Kernel:
+    config = Config(files=(), data={"capabilities": {"chat": "talk", "meetings": "rooms", "calendar": "agenda"}})
+    return make_kernel(builtins=True, prep=prep(), config=config, **adapters())
+
+
+def test_chat_meetings_and_calendar_read_through_bound_adapters_and_correlate(prepared):
+    code, result = hz(prepared, "prep", "meeting")
+    assert code == 0
+    assert result == {
+        "title": "Mira / Jonas 1:1",
+        "attendees": ["mira@example.com", "jonas@example.com"],
+        "said": "Mira: How was the launch?\nJonas: Quiet, which is good.",
+        "thread": [["C1", "shipped [31mthe[0m release"], ["C1", "and the notes"]],
+    }
+    response = TestClient(api.build(prepared), base_url="http://localhost").get("/prep/meeting")
+    assert response.json()["said"].startswith("Mira:")
+
+
+def test_posting_with_a_read_declaration_fails_and_a_publish_operation_posts(prepared):
+    code, output = hz(prepared, "prep", "nudge")
+    assert code != 0
+    assert "prep nudge can't call chat.post, which needs write" in str(output)
+    assert hz(prepared, "prep", "remind") == (0, "2.0")
+
+    async def scenario() -> tuple[bool, str]:
+        async with Client(mcp.build(prepared)) as client:
+            result = await client.call_tool("prep_nudge", {})
+            return result.is_error, repr(result.content)
+
+    is_error, content = anyio.run(scenario)
+    assert is_error
+    assert "needs write" in content
+
+
+def test_capability_list_shows_the_new_capabilities_with_their_adapters(prepared):
+    code, report = hz(prepared, "system", "capability", "list")
+    assert code == 0
+    bound = {c["name"]: c["bound"] for c in report["capabilities"]}
+    assert bound["chat"] == "talk"
+    assert bound["meetings"] == "rooms"
+    assert bound["calendar"] == "agenda"
+    assert {(a["capability"], a["adapter"], tuple(a["modes"])) for a in report["adapters"]} >= {
+        ("chat", "talk", ("read", "write")),
+        ("meetings", "rooms", ("read",)),
+        ("calendar", "agenda", ("read",)),
+    }
+    assert [(u["requester"], u["requirement"], u["adapter"]) for u in report["uses"]] == [
+        ("prep", "chat:read", "talk"),
+        ("prep", "meetings:read", "rooms"),
+        ("prep", "calendar:read", "agenda"),
+        ("prep remind", "chat:write", "talk"),
+    ]
+    rendered = CliRunner().invoke(build(prepared), ["system", "capability", "list"])
+    assert rendered.exit_code == 0
+    assert "rooms.invalid" in rendered.output
 
 
 HOSTILE_PROJECT = """

@@ -40,11 +40,16 @@ class CapabilitySettings(ModuleSettings):
         description="Adapter that serves `agent-runner`: `claude-code` (the default, because `command` needs a "
         "command line first), `command`, or one from a plugin.",
     )
+    calendar: str | None = Field(default=None, description="Adapter that serves `calendar`, e.g. `google`.")
+    chat: str | None = Field(default=None, description="Adapter that serves `chat`, e.g. `slack`.")
     code_host: str | None = Field(default=None, description="Adapter that serves `code-host`, e.g. `github`.")
     documents: str | None = Field(default=None, description="Adapter that serves `documents`.")
+    meetings: str | None = Field(default=None, description="Adapter that serves `meetings`, e.g. `zoom`.")
     tracker: str | None = Field(default=None, description="Adapter that serves `tracker`, e.g. `github`.")
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"agent_runner", "code_host", "documents", "tracker"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset(
+        {"agent_runner", "calendar", "chat", "code_host", "documents", "meetings", "tracker"}
+    )
 
     @model_validator(mode="before")
     @classmethod
