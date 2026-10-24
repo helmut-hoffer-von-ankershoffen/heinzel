@@ -60,7 +60,7 @@ the sign-in ask for `https://www.googleapis.com/auth/calendar.events` (create, m
 `https://www.googleapis.com/auth/gmail.modify` (keep drafts, send them, file conversations; it reads too, so it
 replaces `gmail.readonly`, and it can't delete mail for good). Heinzelmännchen writes only from publish operations
 that show you what they will do and run after you confirm; a chat's agent only proposes them
-([ADR 0058](../../docs/adr/0058-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md)). Without the
+([ADR 0059](../../docs/adr/0059-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md)). Without the
 scope, a write fails with the `gws auth login` that adds it.
 
 These are the narrowest read-only scopes for what the adapters do; `drive.metadata.readonly` lists and identifies files

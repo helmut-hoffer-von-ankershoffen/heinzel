@@ -6,7 +6,7 @@ amends: 0028, 0038, 0042
 related: 0024, 0026, 0035, 0045, 0047
 ---
 
-# 0058: The calendar and the mail write through hz, after a confirmation
+# 0059: The calendar and the mail write through hz, after a confirmation
 
 ## Context and Problem Statement
 

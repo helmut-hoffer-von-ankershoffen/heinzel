@@ -61,7 +61,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0054](0054-observability-is-whether-each-team-promise-is-kept.md) | Observability is whether each team promise is kept: telemetry in, a graph out | proposed | 2026-10-24 |
 | [0055](0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md) | Connectors show their sign-in, test live on demand, and bind themselves when they are alone | accepted | 2026-10-24 |
 | [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) | AI access is a module: one choice like the theme, options are adapters of `ai-access` | proposed | 2026-10-24 |
-| [0058](0058-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md) | The calendar and the mail write through hz, after a confirmation | proposed | 2026-10-24 |
+| [0059](0059-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md) | The calendar and the mail write through hz, after a confirmation | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -119,7 +119,7 @@ automatically);
 [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) amends
 [0029](0029-agent-runners-are-capability-adapters.md) (an AI access option names the agent runner that serves it) and
 [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (`[heinzel] model` gives way to `[ai]` routing);
-[0058](0058-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md) amends
+[0059](0059-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md) amends
 [0028](0028-integrations-are-capability-adapters.md) (a `write` mode and three reads for `calendar` and `mail`),
 [0038](0038-drafts-are-approved-in-place.md) (no `place_draft` for them: a mail draft is placed in the mailbox, a
 calendar write is confirmed) and [0042](0042-google-workspace-through-the-gws-cli.md) (writes and their scopes).
