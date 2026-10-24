@@ -3170,6 +3170,11 @@ export interface components {
              */
             accent: string;
             /**
+             * Accent Foreground
+             * @description Text and icons of the active navigation item and of links; `foreground` when not given.
+             */
+            accent_foreground: string;
+            /**
              * Background
              * @description A hex colour, `#rgb` or `#rrggbb`.
              */
@@ -3194,6 +3199,11 @@ export interface components {
              * @description A hex colour, `#rgb` or `#rrggbb`.
              */
             foreground: string;
+            /**
+             * Icon
+             * @description Icons that aren't active; `muted_foreground` when not given.
+             */
+            icon: string;
             /**
              * Input
              * @description A hex colour, `#rgb` or `#rrggbb`.
@@ -3244,6 +3254,32 @@ export interface components {
              * @description A hex colour, `#rgb` or `#rrggbb`.
              */
             warn: string;
+        };
+        /**
+         * ThemeFontView
+         * @description A font file a theme ships, where the web head serves it, for a `FontFace` in the web app.
+         */
+        ThemeFontView: {
+            /**
+             * Family
+             * @description The family name the theme's font stacks use, e.g. `Acme Sans`.
+             */
+            family: string;
+            /**
+             * Style
+             * @description `normal` or `italic`.
+             */
+            style: string;
+            /**
+             * Url
+             * @description Where the web head serves it, e.g. `/theme-fonts/acme/0.woff2?v=1a2b3c4d5e6f`.
+             */
+            url: string;
+            /**
+             * Weight
+             * @description The weight it covers, e.g. `400`, or a variable font's range, e.g. `100 900`.
+             */
+            weight: string;
         };
         /**
          * ThemeList
@@ -3298,6 +3334,36 @@ export interface components {
              * @description The font-family stack of text (`--font-sans`), installed fonts only.
              */
             font_sans: string;
+            /**
+             * Font Size
+             * @description The size of the app's text (`--font-size`), e.g. `15px`.
+             */
+            font_size: string;
+            /**
+             * Font Size Small
+             * @description The size of secondary text (`--font-size-small`), e.g. `13px`.
+             */
+            font_size_small: string;
+            /**
+             * Fonts
+             * @description Font files the theme ships, for the web app to load.
+             */
+            fonts?: components["schemas"]["ThemeFontView"][];
+            /**
+             * Heading Tracking
+             * @description The letter spacing of headings (`--heading-tracking`), e.g. `0`.
+             */
+            heading_tracking: string;
+            /**
+             * Heading Weight
+             * @description The weight of headings (`--heading-weight`), 100 to 900, e.g. `600`.
+             */
+            heading_weight: number;
+            /**
+             * Icon Size
+             * @description The size of icons (`--icon-size`), e.g. `18px`.
+             */
+            icon_size: string;
             /** @description Colours in light mode; each field is the token `--color-<field>`. */
             light: components["schemas"]["ThemeColours"];
             /**
@@ -3317,9 +3383,19 @@ export interface components {
             plugin: string | null;
             /**
              * Radius
-             * @description The corner radius (`--radius`), a CSS length, e.g. `0.5rem`.
+             * @description The corner radius of cards and dialogs (`--radius`), e.g. `0.75rem`.
              */
             radius: string;
+            /**
+             * Radius Control
+             * @description The corner radius of buttons, inputs and navigation items (`--radius-control`), e.g. `0.5rem`.
+             */
+            radius_control: string;
+            /**
+             * Row Height
+             * @description The height of navigation and list rows (`--row-height`), e.g. `36px`.
+             */
+            row_height: string;
             /**
              * Selected
              * @description Whether it is the theme in effect.
@@ -3330,6 +3406,11 @@ export interface components {
              * @description Modules that offer a theme of the same name, hidden by this one (layer order decides).
              */
             shadows?: string[];
+            /**
+             * Spacing
+             * @description The base step of gaps and padding (`--spacing`), e.g. `0.25rem`.
+             */
+            spacing: string;
             /**
              * Title
              * @description What people pick it by, e.g. `Acme`.
@@ -3496,6 +3577,7 @@ export type SchemaTeamShow = components['schemas']['TeamShow'];
 export type SchemaTemplateView = components['schemas']['TemplateView'];
 export type SchemaTested = components['schemas']['Tested'];
 export type SchemaThemeColours = components['schemas']['ThemeColours'];
+export type SchemaThemeFontView = components['schemas']['ThemeFontView'];
 export type SchemaThemeList = components['schemas']['ThemeList'];
 export type SchemaThemeView = components['schemas']['ThemeView'];
 export type SchemaToggled = components['schemas']['Toggled'];

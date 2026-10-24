@@ -3640,6 +3640,12 @@
             "title": "Accent",
             "type": "string"
           },
+          "accent_foreground": {
+            "description": "Text and icons of the active navigation item and of links; `foreground` when not given.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Accent Foreground",
+            "type": "string"
+          },
           "background": {
             "description": "A hex colour, `#rgb` or `#rrggbb`.",
             "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
@@ -3668,6 +3674,12 @@
             "description": "A hex colour, `#rgb` or `#rrggbb`.",
             "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
             "title": "Foreground",
+            "type": "string"
+          },
+          "icon": {
+            "description": "Icons that aren't active; `muted_foreground` when not given.",
+            "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+            "title": "Icon",
             "type": "string"
           },
           "input": {
@@ -3747,9 +3759,44 @@
           "ring",
           "sidebar",
           "input",
-          "popover"
+          "popover",
+          "accent_foreground",
+          "icon"
         ],
         "title": "ThemeColours",
+        "type": "object"
+      },
+      "ThemeFontView": {
+        "description": "A font file a theme ships, where the web head serves it, for a `FontFace` in the web app.",
+        "properties": {
+          "family": {
+            "description": "The family name the theme's font stacks use, e.g. `Acme Sans`.",
+            "title": "Family",
+            "type": "string"
+          },
+          "style": {
+            "description": "`normal` or `italic`.",
+            "title": "Style",
+            "type": "string"
+          },
+          "url": {
+            "description": "Where the web head serves it, e.g. `/theme-fonts/acme/0.woff2?v=1a2b3c4d5e6f`.",
+            "title": "Url",
+            "type": "string"
+          },
+          "weight": {
+            "description": "The weight it covers, e.g. `400`, or a variable font's range, e.g. `100 900`.",
+            "title": "Weight",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family",
+          "url",
+          "weight",
+          "style"
+        ],
+        "title": "ThemeFontView",
         "type": "object"
       },
       "ThemeList": {
@@ -3826,6 +3873,39 @@
             "title": "Font Sans",
             "type": "string"
           },
+          "font_size": {
+            "description": "The size of the app's text (`--font-size`), e.g. `15px`.",
+            "title": "Font Size",
+            "type": "string"
+          },
+          "font_size_small": {
+            "description": "The size of secondary text (`--font-size-small`), e.g. `13px`.",
+            "title": "Font Size Small",
+            "type": "string"
+          },
+          "fonts": {
+            "description": "Font files the theme ships, for the web app to load.",
+            "items": {
+              "$ref": "#/components/schemas/ThemeFontView"
+            },
+            "title": "Fonts",
+            "type": "array"
+          },
+          "heading_tracking": {
+            "description": "The letter spacing of headings (`--heading-tracking`), e.g. `0`.",
+            "title": "Heading Tracking",
+            "type": "string"
+          },
+          "heading_weight": {
+            "description": "The weight of headings (`--heading-weight`), 100 to 900, e.g. `600`.",
+            "title": "Heading Weight",
+            "type": "integer"
+          },
+          "icon_size": {
+            "description": "The size of icons (`--icon-size`), e.g. `18px`.",
+            "title": "Icon Size",
+            "type": "string"
+          },
           "light": {
             "$ref": "#/components/schemas/ThemeColours",
             "description": "Colours in light mode; each field is the token `--color-<field>`."
@@ -3860,8 +3940,18 @@
             "title": "Plugin"
           },
           "radius": {
-            "description": "The corner radius (`--radius`), a CSS length, e.g. `0.5rem`.",
+            "description": "The corner radius of cards and dialogs (`--radius`), e.g. `0.75rem`.",
             "title": "Radius",
+            "type": "string"
+          },
+          "radius_control": {
+            "description": "The corner radius of buttons, inputs and navigation items (`--radius-control`), e.g. `0.5rem`.",
+            "title": "Radius Control",
+            "type": "string"
+          },
+          "row_height": {
+            "description": "The height of navigation and list rows (`--row-height`), e.g. `36px`.",
+            "title": "Row Height",
             "type": "string"
           },
           "selected": {
@@ -3876,6 +3966,11 @@
             },
             "title": "Shadows",
             "type": "array"
+          },
+          "spacing": {
+            "description": "The base step of gaps and padding (`--spacing`), e.g. `0.25rem`.",
+            "title": "Spacing",
+            "type": "string"
           },
           "title": {
             "description": "What people pick it by, e.g. `Acme`.",
@@ -3894,7 +3989,15 @@
           "font_sans",
           "font_mono",
           "radius",
-          "border_width"
+          "radius_control",
+          "border_width",
+          "font_size",
+          "font_size_small",
+          "icon_size",
+          "row_height",
+          "heading_weight",
+          "heading_tracking",
+          "spacing"
         ],
         "title": "ThemeView",
         "type": "object"

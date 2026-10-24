@@ -12,9 +12,15 @@ Content Security Policy that allows this origin only (ADR 0039).
 the app pairs once for a device token it keeps, which every later `hz ui` accepts too (`_devices.py`, ADR 0046). The
 app's manifest and service worker are top-level files of the build; the worker shows notifications and caches the
 app's shell, never API data.
+
+Themes' font files are served outside `/api`, at `/theme-fonts/<theme>/<index>.woff2`, without the token: the browser
+fetches a font for `FontFace` or `@font-face` itself and can't add a header. They pass the same Host, Origin and
+`Sec-Fetch-Site` checks, hold nothing private (what an installed plugin ships), and come through `ThemeFonts`, which
+checks each file again as it reads it (ADR 0044).
 """
 
 import mimetypes
+import re
 import secrets
 import socket
 import threading
@@ -30,7 +36,7 @@ from heinzel.heads import api
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._stream import add_stream
-from heinzel.kernel import KERNEL_SECTION, Config, HeinzelError, Kernel, Settings
+from heinzel.kernel import FONT_ROUTE, KERNEL_SECTION, Config, HeinzelError, Kernel, Settings, ThemeFonts
 
 HEAD = "web"
 STATIC = Path(__file__).parent / "static"
@@ -54,6 +60,10 @@ SECURITY_HEADERS = {
 NO_CACHE = frozenset({"sw.js", "manifest.webmanifest"})
 """Top-level files a browser must check for a new version every time: the service worker and the manifest."""
 mimetypes.add_type("application/manifest+json", ".webmanifest")
+NOT_FOUND = 404
+FONT_THEME = re.compile(r"[a-z](?:-?[a-z0-9]){0,63}")
+FONT_FILE = re.compile(r"([0-9]{1,2})\.woff2")
+IMMUTABLE = "public, max-age=31536000, immutable"
 NOT_BUILT = (
     "The web app isn't built into this installation. In a checkout of the repository run `make web-build`; an "
     "installed release ships it."
@@ -101,7 +111,7 @@ def build(
             response = await call_next(request)
         response.headers.update(SECURITY_HEADERS)
         if request.url.path.startswith("/assets/") and response.status_code == OK:
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"  # file names carry their hash
+            response.headers["Cache-Control"] = IMMUTABLE  # file names carry their hash
         return response
 
     paired = devices or devices_for_user()
@@ -116,6 +126,7 @@ def build(
     add_pairing(endpoints, paired)
     add_stream(endpoints, kernel)  # behind the same middleware: Host, Origin and the token
     app.mount("/api", endpoints)
+    add_fonts(app, kernel)
     if static is None:
         return app
     if (static / "assets").is_dir():
@@ -135,6 +146,31 @@ def build(
         return FileResponse(index, headers={"Cache-Control": "no-store"})
 
     return app
+
+
+def add_fonts(app: FastAPI, kernel: Kernel) -> None:
+    """Serve the themes' font files at `FONT_ROUTE`, outside `/api`, behind the app's middleware (ADR 0044)."""
+
+    @app.get(FONT_ROUTE + "/{theme}/{file}", include_in_schema=False)
+    def theme_font(theme: str, file: str) -> Response:
+        # Not async: it reads files, so FastAPI runs it in its thread pool and other requests don't wait.
+        return font_response(kernel, theme, file)
+
+
+def font_response(kernel: Kernel, theme: str, file: str) -> Response:
+    """Font `<index>.woff2` of the available theme `theme`, or 404; served without the token (ADR 0044)."""
+    # Checked against fixed patterns, then looked up by theme name and index: a request never builds a path.
+    index = FONT_FILE.fullmatch(file)
+    content = None
+    if FONT_THEME.fullmatch(theme) and index and kernel.provides(ThemeFonts):
+        try:
+            content = kernel.resolve(ThemeFonts).font(theme, int(index.group(1)))
+        except HeinzelError:  # system.theme can't be built (a module it needs is off): no theme ships fonts
+            content = None
+    if content is None:
+        return JSONResponse(status_code=NOT_FOUND, content={"error": "No theme ships that font."})
+    # The list's URL carries the content's version (`?v=`), so a changed font is a new URL: the answer is immutable.
+    return Response(content, media_type="font/woff2", headers={"Cache-Control": IMMUTABLE})
 
 
 def free_socket(host: str = HOST, port: int = 0) -> socket.socket:
