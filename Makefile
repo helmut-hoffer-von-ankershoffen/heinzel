@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses template-test template-sync docs fuzz build changelog ci-logs pr sync release clean
+.PHONY: help install setup check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses template-test template-sync docs fuzz demo build changelog ci-logs pr sync release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -12,6 +12,7 @@ LINT := \
 		"contracts=uv run lint-imports" \
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
+		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
 		"&actionlint=uv run actionlint" \
 		"&typos=uv run typos" \
@@ -39,6 +40,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&contracts=uv run lint-imports" \
 		"&template=uv run --script scripts/sync_template.py --check" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check" \
+		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"unit=uv run pytest -m unit -n auto -x -q --session-timeout=60"
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
@@ -54,6 +56,7 @@ fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated 
 		"lock=uv lock --quiet" \
 		"template=uv run --script scripts/sync_template.py" \
 		"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py" \
+		"&demo=uv run --script scripts/demo_tape.py" \
 		"format=uv run ruff format --quiet ." \
 		"ruff=uv run ruff check --fix --quiet --exit-zero ."
 	@git status --short
@@ -111,6 +114,9 @@ docs: ## Regenerate docs/CLI_REFERENCE.md from the code
 
 fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; Linux, Python 3.12 to 3.14)
 	uv run --group fuzz python fuzz/contract_fuzz.py -max_total_time=$(or $(FUZZ_SECONDS),60) -timeout=10
+
+demo: ## Assemble docs/assets/demo.tape from the intro and the modules' demo.tape snippets and render the GIF with VHS
+	bash scripts/demo.sh
 
 template-sync: ## Regenerate the template's Makefile, CI workflow and pyproject from Heinzelmännchen's
 	uv run --script scripts/sync_template.py

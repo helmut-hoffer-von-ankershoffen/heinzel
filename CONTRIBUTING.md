@@ -55,6 +55,7 @@ uv run hz --help       # the CLI from your checkout
 | Regenerate the template's derived files after changing Makefile, CI or pyproject | `make template-sync` |
 | Dependency audit | `make audit` |
 | Preview the changelog | `make changelog` |
+| Re-render the README demo GIF (needs `vhs` and `jq`) | `make demo` |
 
 `make help` lists everything. Targets are quiet: one line per passing step, the tail of a failing one; `VERBOSE=1`
 streams all output.
@@ -145,8 +146,42 @@ The release and pull-request flow depends on these settings of the GitHub reposi
   `HZ_<MODULE>__*`.
 - **Service:** `module.service(MyService)`; injected wherever `MyService` is asked for.
 - **Info section:** `@module.info` contributes to `hz system info`.
+- **README demo:** a `demo.tape` next to the module's `__init__.py` adds its part to the demo GIF — see
+  [The README demo](#the-readme-demo).
 - **Plugin:** `hz system plugin new <dir>`; keep it current with `make update-template` inside the plugin.
 - **New kind of let or head:** write an ADR (skill `write-adr`) first.
+
+### The README demo
+
+The GIF at the top of the README is rendered by [VHS](https://github.com/charmbracelet/vhs) from
+`docs/assets/demo.tape`. That tape is generated (`make fix`, and `make check` fails while it is stale) from
+`docs/assets/demo-intro.tape` (settings, install, `hz --version`, `hz system info`) and the snippets modules contribute.
+A built-in module or a first-party plugin adds its part as a `demo.tape` next to its `__init__.py`; abridged from
+`packages/heinzel-clock/src/heinzel_clock/demo.tape`:
+
+```
+# The clock plugin in the README demo: add it, show the clocks, then the same as JSON into jq.
+Require jq
+
+Type "hz system plugin add clock"
+Enter
+Wait@60s
+Sleep 1.5s
+
+Type "hz clock --json | jq"
+Enter
+Wait
+Sleep 3s
+```
+
+A snippet may only use `Type`, `Enter`, `Wait`, `Sleep`, `Hide` and `Show`, and types only real `hz` commands (or
+`clear`); `Require` names any other program it uses and moves to the header. Settings belong to the intro. Each
+snippet starts on a cleared screen; the order is the intro, then first-party plugins, then built-in modules, each
+sorted by path, so built-in commands such as `hz system doctor` close the demo. Keep a snippet to a few seconds.
+
+`make demo` renders the GIF locally with the real `hz` from your checkout, installed into a throwaway uv tool
+directory, so your own hz, plugins and settings stay out of it. Look at the last frames, then commit the GIF. On `main`,
+the Demo workflow re-renders it on macOS whenever the tape changes, and opens a pull request.
 
 ## Code of conduct
 
