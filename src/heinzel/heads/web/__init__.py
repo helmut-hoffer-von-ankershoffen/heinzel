@@ -339,6 +339,23 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
         execute(sys.executable, command, {**os.environ, RESUME: f"{handover[0]}:{token}"})
 
 
+def _listening_on_loopback(sock: socket.socket) -> bool:
+    """Whether a handed-over socket is what `hz ui` listens on: TCP on 127.0.0.1, accepting connections."""
+    try:
+        if sock.family != socket.AF_INET or sock.type != socket.SOCK_STREAM or sock.getsockname()[0] != HOST:
+            return False
+    except OSError:
+        return False
+    try:
+        return bool(sock.getsockopt(socket.SOL_SOCKET, socket.SO_ACCEPTCONN))
+    except OSError:  # macOS has no SO_ACCEPTCONN; a listening socket is at least not connected to a peer
+        try:
+            sock.getpeername()
+        except OSError:
+            return True
+        return False
+
+
 def _session(handed_over: str | None, port: int) -> tuple[socket.socket, str, bool]:
     """The listening socket and token: those a restarting `hz ui` handed over, else new ones; and whether resumed.
 
@@ -352,6 +369,8 @@ def _session(handed_over: str | None, port: int) -> tuple[socket.socket, str, bo
         except OSError:
             pass  # not a socket after all: start a fresh session
         else:
-            os.set_inheritable(sock.fileno(), False)  # noqa: FBT003 - os API; a restart hands it on explicitly
-            return sock, token, True
+            if _listening_on_loopback(sock):
+                os.set_inheritable(sock.fileno(), False)  # noqa: FBT003 - os API; a restart hands it on explicitly
+                return sock, token, True
+            sock.detach()  # not ours to close: whatever handed it over keeps it
     return free_socket(HOST, port), secrets.token_urlsafe(32), False

@@ -53,6 +53,7 @@ from heinzel.modules.system.plugin._sources import (
     PREFIX,
     JsonGetter,
     Metadata,
+    PluginSource,
     browser_url,
     from_github,
     from_pypi,
@@ -262,6 +263,9 @@ class PluginService:
             requirement, page = pinned, metadata.page or f"https://pypi.org/project/{distribution}/"
         else:
             requirement, page = source.git_requirement(distribution, metadata.revision), metadata.page or source.url
+        self._check(spec, source, metadata, requirement, first_party=resolved is not None)
+        if distribution is not None and not distribution.startswith(PREFIX):
+            warnings.append(f"It is named {distribution}, not {PREFIX}<name> as plugins are (ADR 0025).")
         installed = self._installed_version(distribution)
         return PluginCandidate(
             spec=spec,
@@ -529,6 +533,31 @@ class PluginService:
         return [cast("dict[str, Any]", item) for item in cast("list[object]", items) if isinstance(item, dict)]
 
     # Helpers.
+
+    @staticmethod
+    def _check(spec: str, source: PluginSource, metadata: Metadata, requirement: str, *, first_party: bool) -> None:
+        """Refuse what would install something other than what is shown, or stand in for a first-party plugin.
+
+        Raises:
+            HeinzelError: If the plugin's own name differs from the one asked for, the requirement carries extras
+                or markers, or a plugin from elsewhere is named like a first-party one.
+        """
+        if source.name and metadata.name and canonicalize_name(source.name) != metadata.name:
+            msg = f"{spec!r} asks for {source.name}, but the repository's pyproject.toml names {metadata.name}."
+            raise HeinzelError(msg)
+        # An unnamed git URL (a host whose metadata can't be read) is no PEP 508 requirement; uv names it on install.
+        parsed = Requirement(requirement) if source.kind == "pypi" or " @ " in requirement else None
+        if parsed is not None and (parsed.extras or parsed.marker is not None):
+            msg = f"Add {parsed.name} without extras or environment markers; a plugin brings what it needs."
+            raise HeinzelError(msg)
+        reserved = {f"{PREFIX}{name}" for name in (*FIRST_PARTY, *REFERENCE)}
+        if not first_party and (taken := sorted(distributions_in_spec(requirement) & reserved)):
+            short = taken[0].removeprefix(PREFIX)
+            msg = (
+                f"{spec!r} would install {taken[0]}, the name of a first-party plugin; add that one by name "
+                f"(`hz system plugin add {short}`), or a plugin with a name of its own."
+            )
+            raise HeinzelError(msg)
 
     def _first_party_candidate(self, spec: str, name: str, requirement: str) -> PluginCandidate:
         """A plugin released with the core: its version is the core's, its publisher the maintainers."""

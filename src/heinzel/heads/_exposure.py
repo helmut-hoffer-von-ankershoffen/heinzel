@@ -6,6 +6,22 @@ from typing import Any, get_origin
 
 from heinzel.kernel import Kernel, ModuleRecord, OperationLet
 
+MCP_STDIO = "mcp-stdio"
+"""An operation's `heads` entry for MCP over stdio only: the client started the server as you, while streamable HTTP
+MCP (head `mcp-http`) has no authentication, so whatever can reach its port could call it (ADR 0047)."""
+MCP_HTTP = "mcp-http"
+
+
+def restricts(heads: frozenset[str] | None, head: str) -> bool:
+    """Whether `heads` leaves `head` out. `mcp` in `heads` covers both MCP transports, `mcp-stdio` only stdio."""
+    if heads is None or head in heads:
+        return False
+    if head == MCP_HTTP:
+        return "mcp" not in heads
+    if head == "mcp":
+        return MCP_STDIO not in heads
+    return True
+
 
 @dataclass(frozen=True, slots=True)
 class Exposed:
@@ -34,7 +50,7 @@ def exposed(kernel: Kernel, head: str) -> list[Exposed]:
     """
     result: list[Exposed] = []
     for record, operation in kernel.lets(OperationLet):
-        if not kernel.available(operation.func) or (operation.heads is not None and head not in operation.heads):
+        if not kernel.available(operation.func) or restricts(operation.heads, head):
             continue
         signature = operation.signature()
         result.append(

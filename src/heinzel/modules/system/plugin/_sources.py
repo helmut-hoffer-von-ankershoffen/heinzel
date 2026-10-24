@@ -9,6 +9,7 @@ are credentials inside a URL, which would end up in the uv receipt and the plugi
 import base64
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import tomllib
@@ -34,8 +35,12 @@ TIMEOUT = 10
 """Seconds to wait for PyPI or GitHub while reading what a plugin is."""
 MAX_BYTES = 5_000_000
 """Largest PyPI answer read; a project's JSON with its release list is far smaller."""
-SAFE_PART = re.compile(r"^[A-Za-z0-9._/+-]+$")
-"""A git ref or subdirectory: no spaces, no shell or URL syntax."""
+SAFE_PART = re.compile(r"^[A-Za-z0-9_+][A-Za-z0-9._/+-]*$")
+"""A git ref or subdirectory: no spaces, no shell or URL syntax, no leading `-` or `.`."""
+NAME = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$", re.IGNORECASE)
+"""A distribution name as PEP 508 allows it."""
+CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+"""C0 and C1 control characters, ESC among them: metadata never redraws a terminal."""
 ARCHIVES = (".whl", ".zip", ".tar.gz", ".tgz", ".tar.bz2")
 PATH_LIKE = (".", "/", "~", "\\")
 
@@ -153,10 +158,12 @@ def _git(spec: str, name: str | None, url: str) -> PluginSource:  # noqa: C901 -
             refused(spec, "the only fragment a git URL takes is #subdirectory=<dir>")
         subdirectory = value
     for part in (ref, subdirectory):
-        if part is not None and (not SAFE_PART.match(part) or ".." in part.split("/")):
+        if part is not None and (not SAFE_PART.match(part) or ".." in part.split("/") or part.endswith(("/", ".lock"))):
             refused(spec, f"{part!r} is no git ref or subdirectory")
     if not path.strip("/"):
         refused(spec, "the URL names no repository")
+    if "%" in path or any(segment in {".", ".."} for segment in path.split("/")):
+        refused(spec, "the repository path has dot segments or escapes; give it as the repository shows it")
     netloc = parts.netloc.lower()
     return PluginSource(
         kind="git", name=name, url=f"https://{netloc}{path.rstrip('/')}", ref=ref, subdirectory=subdirectory
@@ -203,14 +210,15 @@ def from_pypi(source: PluginSource, get: JsonGetter) -> Metadata:
     if source.requirement.specifier and not matching:
         msg = f"No release of {source.name} on PyPI matches {source.requirement.specifier}."
         raise HeinzelError(msg)
-    version = matching[-1] if matching else str(info.get("version") or "") or None
+    latest = str(info.get("version") or "")
+    version = matching[-1] if matching else (latest if _version_key(latest)[0] else None)
     author = info.get("author") or info.get("maintainer") or _name_of(info.get("author_email"))
     return Metadata(
         name=source.name,
         version=version,
-        summary=str(info.get("summary") or ""),
-        publisher=str(author) if author else None,
-        page=str(info.get("project_url") or f"{PYPI}/project/{source.name}/"),
+        summary=clean(info.get("summary")),
+        publisher=clean(author) or None,
+        page=f"{PYPI}/project/{source.name}/",
     )
 
 
@@ -239,14 +247,14 @@ def from_github(source: PluginSource, get: JsonGetter) -> Metadata:
     project = cast("dict[str, Any]", tomllib.loads(base64.b64decode(str(content["content"])).decode())["project"])
     authors = cast("list[dict[str, Any]]", project.get("authors") or [])
     owner_info = cast("dict[str, Any]", repo.get("owner") or {})
-    publisher = str(owner_info.get("login") or owner)
+    publisher = clean(owner_info.get("login") or owner)
     if authors and authors[0].get("name"):
-        publisher = f"{publisher} ({authors[0]['name']})"
-    version = project.get("version")
+        publisher = f"{publisher} ({clean(authors[0]['name'])})"
+    version = clean(project.get("version"))
     return Metadata(
-        name=canonicalize_name(str(project["name"])),
-        version=str(version) if version else None,
-        summary=str(project.get("description") or repo.get("description") or ""),
+        name=checked_name(str(project["name"]), str(source.url)),
+        version=version if _version_key(version)[0] else None,
+        summary=clean(project.get("description") or repo.get("description")),
         publisher=publisher,
         private=bool(repo.get("private")),
         revision=revision,
@@ -327,12 +335,33 @@ def git_credentials(environment: dict[str, str]) -> dict[str, str]:
         count = int(environment.get("GIT_CONFIG_COUNT", "0"))
     except ValueError:
         count = 0
-    quoted = gh if " " not in gh else f'"{gh}"'
+    quoted = shlex.quote(gh)  # git runs a `!` helper through the shell
     return {
         "GIT_CONFIG_COUNT": str(count + 1),
         f"GIT_CONFIG_KEY_{count}": "credential.https://github.com.helper",
         f"GIT_CONFIG_VALUE_{count}": f"!{quoted} auth git-credential",
     }
+
+
+def clean(text: object) -> str:
+    """Metadata text as it may be shown: control characters dropped, outer whitespace trimmed; empty for none."""
+    return CONTROL.sub("", str(text)).strip() if text else ""
+
+
+def checked_name(name: str, where: str) -> str:
+    """A plugin's canonical name as its own metadata gives it, refused when it can't name a plugin.
+
+    Raises:
+        HeinzelError: If it isn't a valid distribution name, or claims to be Heinzelmännchen itself.
+    """
+    if not NAME.match(name):
+        msg = f"{where} names its distribution {clean(name)!r}, which is no valid name; it isn't added."
+        raise HeinzelError(msg)
+    canonical = canonicalize_name(name)
+    if canonical == CORE_DISTRIBUTION:
+        msg = f"{where} calls itself {CORE_DISTRIBUTION}; Heinzelmännchen is updated with `hz system update`."
+        raise HeinzelError(msg)
+    return canonical
 
 
 def browser_url(url: str | None, ref: str | None = None, subdirectory: str | None = None) -> str | None:

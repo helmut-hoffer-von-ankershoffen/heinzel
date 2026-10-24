@@ -1,7 +1,7 @@
 import pytest
 
 from heinzel import Kernel, Module
-from heinzel.heads._exposure import exposed
+from heinzel.heads._exposure import exposed, restricts
 
 pytestmark = pytest.mark.unit
 
@@ -41,6 +41,22 @@ def test_heads_restrict_exposure(make_kernel):
     kernel = make_kernel(**_modules())
     assert "tools_wizard" in {item.name for item in exposed(kernel, "cli")}
     assert "tools_wizard" not in {item.name for item in exposed(kernel, "api")}
+
+
+@pytest.mark.parametrize(
+    ("heads", "head", "left_out"),
+    [
+        (None, "mcp-http", False),
+        (frozenset({"cli", "mcp"}), "mcp", False),
+        (frozenset({"cli", "mcp"}), "mcp-http", False),  # `mcp` covers both transports
+        (frozenset({"cli", "mcp-stdio"}), "mcp", False),
+        (frozenset({"cli", "mcp-stdio"}), "mcp-http", True),  # unauthenticated HTTP never gets stdio-only ones
+        (frozenset({"cli", "mcp-stdio"}), "api", True),
+        (frozenset({"cli"}), "mcp", True),
+    ],
+)
+def test_mcp_stdio_restricts_an_operation_to_the_transport_a_person_started(heads, head, left_out):
+    assert restricts(heads, head) is left_out
 
 
 def test_an_operation_named_like_its_module_beside_others_takes_the_module_path(make_kernel):

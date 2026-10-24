@@ -53,8 +53,10 @@ person or the session token, and an in-place restart of `hz ui`**, because it ke
 head and makes the dangerous step explicit and checkable. Proposed for the maintainer, 2026-10-24.
 
 1. **Which heads.** `hz system plugin add`, `remove`, `enable`, `disable` and `history` declare
-   `heads={"cli", "mcp", "web"}`; `list` and `search` stay on every head; `develop` and `new` are CLI only. This
-   removes `add` and `remove` from the REST head, which had them since ADR 0006.
+   `heads={"cli", "mcp-stdio", "web"}`; `list` and `search` stay on every head; `develop` and `new` are CLI only. This
+   removes `add` and `remove` from the REST head, which had them since ADR 0006. `mcp-stdio` is a new `heads` entry:
+   MCP over stdio only, because the client started that server as the person, while MCP over streamable HTTP has no
+   authentication either (head `mcp-http` in `heads/_exposure.py`; `mcp` in `heads` still covers both transports).
 2. **Show, then confirm.** `add SPEC` without `confirm` installs nothing: it reads PyPI's JSON API or the GitHub API
    (through `gh api` when gh is installed, so private repositories work; otherwise over https as
    [ADR 0033](0033-github-rest-api-over-urllib.md) does for public ones) and answers a `PluginCandidate`: the
@@ -67,8 +69,10 @@ head and makes the dangerous step explicit and checkable. Proposed for the maint
    and the reference company `acme`, [ADR 0040](0040-layers-and-playbooks-are-plugins.md)), PyPI packages named
    `heinzel-<name>` ([ADR 0025](0025-plugin-distributions-are-named-heinzel-name.md)), and git repositories over
    https. Refused: local paths and `file:` URLs (`hz system plugin develop PATH` instead), ssh, plain http, archives
-   and wheels, URLs with a user name or token, queries, refs or subdirectories with shell or path syntax, and anything
-   that starts like an option.
+   and wheels, URLs with a user name or token, queries, dot segments or escapes, refs or subdirectories with shell or
+   path syntax, extras and markers, and anything that starts like an option. The name a repository's
+   `pyproject.toml` gives must be a valid distribution name, not `heinzel` itself, the one asked for if one was, and
+   not a first-party plugin's (which would silently replace it); metadata text is shown without control characters.
 4. **Private repositories.** uv's git gets `credential.https://github.com.helper = !gh auth git-credential` through
    `GIT_CONFIG_*` variables for the reinstall, appended to any the person set: git asks gh, and the token never passes
    through Heinzelmännchen or lands in a URL, the receipt or the history.
@@ -84,7 +88,8 @@ head and makes the dangerous step explicit and checkable. Proposed for the maint
 8. **Restart instead of reload.** Every result of a change says `restart_required: true`: a new `hz` command sees it at
    once, a running `hz ui` or MCP server doesn't. The web head adds `POST /api/restart` (behind the token, like every
    `/api` call): `hz ui` stops serving and executes `hz` again with its arguments, handing the new process a duplicate of
-   its listening socket and its token (`HEINZEL_UI_RESUME`, read and removed at start), so the open tab keeps its URL
+   its listening socket and its token (`HEINZEL_UI_RESUME`, read and removed at start; a handed-over socket that isn't a
+   TCP listener on 127.0.0.1 starts a fresh session instead), so the open tab keeps its URL
    and token, and requests made meanwhile wait in the socket's backlog. A server that isn't `hz ui` (`make web-dev`)
    answers 400. This amends ADR 0039's "the API is the operations": the restart is the head's own endpoint, because
    only the head knows how it runs.
@@ -101,6 +106,9 @@ head and makes the dangerous step explicit and checkable. Proposed for the maint
   doesn't.
 - Bad: a long install holds the HTTP request open for minutes (uv's own timeout is 15); a job with progress is later
   work.
+- Bad: the token of a restarted `hz ui` passes through the process environment, which other processes of the same
+  user can read; the same user can read the browser's `sessionStorage` too.
+- Bad: one change at a time holds within a process; a CLI `add` racing the web app's is not locked out yet.
 - Neutral: themes that plugins ship are listed once their record lands; `list` is the place.
 
 ### Confirmation

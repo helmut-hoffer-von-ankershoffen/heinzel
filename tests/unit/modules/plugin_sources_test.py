@@ -74,6 +74,11 @@ def test_pypi_packages_and_https_git_repositories_are_taken(spec, kind, name, ur
         ("git+https://github.com/o/heinzel-x@v1;rm", "no git ref"),
         ("git+https://github.com/o/mono#subdirectory=../../etc", "no git ref or subdirectory"),
         ("git+https://github.com", "names no repository"),
+        ("https://github.com/good/repo/../../evil/x", "dot segments"),
+        ("https://github.com/good/%2e%2e/evil", "dot segments or escapes"),
+        ("git+https://github.com/o/heinzel-x@-upload-pack=evil", "no git ref"),
+        ("git+https://github.com/o/heinzel-x@main.lock", "no git ref"),
+        ("git+https://github.com/o/heinzel-x@feat/", "no git ref"),
         ("requests", "named heinzel-<name>"),
         ("heinzel", "hz system update"),
         ("not a requirement!", "no package name"),
@@ -193,7 +198,7 @@ def test_git_asks_gh_only_when_gh_is_installed(monkeypatch):
     assert _sources.git_credentials({"GIT_CONFIG_COUNT": "odd"}) == {
         "GIT_CONFIG_COUNT": "1",
         "GIT_CONFIG_KEY_0": "credential.https://github.com.helper",
-        "GIT_CONFIG_VALUE_0": '!"/Apps/My Tools/gh" auth git-credential',
+        "GIT_CONFIG_VALUE_0": "!'/Apps/My Tools/gh' auth git-credential",
     }
 
 

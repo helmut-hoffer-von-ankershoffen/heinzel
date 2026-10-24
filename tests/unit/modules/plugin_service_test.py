@@ -674,3 +674,49 @@ def test_installed_plugins_say_where_they_came_from(make_kernel, tmp_path):
         "CRM notes.",
     )
     assert not plugin.first_party
+
+
+@pytest.mark.parametrize(
+    ("name", "spec", "problem"),
+    [
+        ("heinzel", "git+https://github.com/acme-example/heinzel-crm", "calls itself heinzel"),
+        ("heinzel-crm[all]", "git+https://github.com/acme-example/heinzel-crm", "no valid name"),
+        ("heinzel crm", "git+https://github.com/acme-example/heinzel-crm", "no valid name"),
+        ("heinzel-github", "git+https://github.com/acme-example/heinzel-crm", "name of a first-party plugin"),
+        ("heinzel-other", "heinzel-crm @ git+https://github.com/acme-example/heinzel-crm", "names heinzel-other"),
+    ],
+)
+def test_a_repository_naming_itself_wrongly_is_refused(make_kernel, tool_env, monkeypatch, name, spec, problem):  # noqa: PLR0913, PLR0917 - fixtures and columns
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    service.github_api = FakeGitHubApi(name=name)
+    with pytest.raises(HeinzelError, match=problem):
+        service.add(spec, confirm=True)
+    assert runs == []
+
+
+def test_a_pypi_package_with_a_first_party_name_or_extras_is_refused(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-github", "1.0.0")
+    with pytest.raises(HeinzelError, match="hz system plugin add github"):
+        service.candidate("heinzel-github==1.0.0")
+    service.pypi = raising(urllib.error.URLError("offline"))
+    with pytest.raises(HeinzelError, match="without extras or environment markers"):
+        service.candidate("heinzel-crm[all]")
+    with pytest.raises(HeinzelError, match="without extras or environment markers"):
+        service.candidate('heinzel-crm; python_version > "3"')
+
+
+def test_a_plugin_not_named_heinzel_something_comes_with_a_warning(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.github_api = FakeGitHubApi(name="crm-tools")
+    candidate = service.candidate("git+https://github.com/acme-example/heinzel-crm")
+    assert candidate.warnings == ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."]
+
+
+def test_metadata_never_carries_control_characters(make_kernel, tool_env, monkeypatch):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    project = pypi_project("heinzel-crm", "1.0.0", author="Ada\x1b[2K\x1b[1AExample")
+    project["info"]["summary"] = "CRM\x07 notes\x9b"
+    service.pypi = lambda url: project
+    candidate = service.candidate("heinzel-crm")
+    assert (candidate.publisher, candidate.summary) == ("Ada[2K[1AExample", "CRM notes")

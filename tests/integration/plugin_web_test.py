@@ -1,5 +1,6 @@
 """Managing plugins from the web app (ADR 0047): behind the session token, never on the REST head, confirmed first."""
 
+import asyncio
 import os
 import subprocess
 import threading
@@ -242,3 +243,32 @@ def test_the_cli_shows_what_it_would_install_and_how_to_confirm(kernel):
     listed = CliRunner().invoke(app, ["system", "plugin", "list"])
     assert "heinzel-test" in listed.output
     assert "enabled" in listed.output
+
+
+def test_mcp_over_stdio_manages_plugins_and_unauthenticated_http_mcp_cannot(kernel):
+    from heinzel.heads import mcp
+
+    stdio = {tool.name for tool in asyncio.run(mcp.build(kernel, "stdio").list_tools())}
+    http = {tool.name for tool in asyncio.run(mcp.build(kernel, "streamable-http").list_tools())}
+    assert stdio >= CHANGES
+    assert not CHANGES & http
+    assert {"system_plugin_list", "system_plugin_search", "workflow_run"} <= http  # the rest stays as it was
+
+
+def test_a_handed_over_socket_that_isnt_a_loopback_listener_starts_a_fresh_session(monkeypatch):
+    import socket
+
+    other = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # bound nowhere, not listening
+    try:
+        sock, token, resumed = web._session(f"{other.fileno()}:{TOKEN}", 0)
+        try:
+            assert (resumed, token == TOKEN) == (False, False)
+            assert sock.fileno() != other.fileno()
+        finally:
+            sock.close()
+        assert other.fileno() != -1  # left to whoever handed it over
+    finally:
+        other.close()
+    sock, token, resumed = web._session(f"999999:{TOKEN}", 0)
+    sock.close()
+    assert not resumed

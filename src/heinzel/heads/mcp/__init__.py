@@ -13,7 +13,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from heinzel import __version__
-from heinzel.heads._exposure import Exposed, exposed
+from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
 from heinzel.kernel import HeinzelError, Kernel, boot
 
 HEAD = "mcp"
@@ -26,10 +26,14 @@ INSTRUCTIONS = (
 Transport = Literal["stdio", "streamable-http"]
 
 
-def build(kernel: Kernel) -> MCPServer:
-    """An MCP server with one tool per exposed operation."""
+def build(kernel: Kernel, transport: Transport = "stdio") -> MCPServer:
+    """An MCP server with one tool per exposed operation.
+
+    Over streamable HTTP, which has no authentication, the operations restricted to stdio (`mcp-stdio` in their
+    `heads`, such as installing plugins) are left out.
+    """
     server = MCPServer(name="heinzel", title="🧝 Heinzelmännchen", version=__version__, instructions=INSTRUCTIONS)
-    for item in exposed(kernel, HEAD):
+    for item in exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP):
         server.add_tool(
             tool(kernel, item),
             name=item.name,
@@ -60,7 +64,7 @@ def tool(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
 
 def serve(transport: Transport = "stdio", host: str = "127.0.0.1", port: int = 8765) -> None:
     """Boot the kernel and serve its operations over `transport` until interrupted."""
-    server = build(boot())
+    server = build(boot(), transport)
     if transport == "stdio":
         server.run("stdio")
     else:

@@ -24,9 +24,9 @@ module.settings(PluginSettings)
 module.service(PluginService)
 
 # Changing plugins installs or switches off code that runs with your rights, so it happens where a person or their
-# agent is (the CLI, MCP) or behind the web head's session token, never on the unauthenticated REST head, which any
-# page in the browser could reach (ADR 0019, 0039, 0047).
-CHANGES = frozenset({"cli", "mcp", "web"})
+# agent is (the CLI, MCP over stdio) or behind the web head's session token, never on the unauthenticated REST head or
+# MCP over HTTP, which whatever reaches their port could call (ADR 0019, 0039, 0047).
+CHANGES = frozenset({"cli", "mcp-stdio", "web"})
 Distribution = Annotated[str, Field(description="Distribution name, as `hz system plugin list` shows it.")]
 
 
