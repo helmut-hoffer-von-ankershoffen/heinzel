@@ -79,7 +79,7 @@ SECURITY_HEADERS = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
 }
-NO_CACHE = frozenset({"sw.js", "manifest.webmanifest"})
+NO_CACHE = frozenset({"sw.js", "manifest.webmanifest", "favicon.svg"})
 """Top-level files a browser must check for a new version every time: the service worker and the manifest."""
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 NOT_FOUND = 404
