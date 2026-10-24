@@ -1,6 +1,7 @@
 """Service of the config submodule."""
 
 import shlex
+import shutil
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -191,11 +192,21 @@ def _without_none(value: Any) -> Any:  # noqa: ANN401 - any JSON-compatible valu
 
 
 def _save(path: Path, document: tomlkit.TOMLDocument) -> None:
-    """Write the file whole or not at all: Ctrl-C or a full disk never leaves half a configuration behind."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(tomlkit.dumps(document), encoding="utf-8")
-    temporary.replace(path)
+    """Write the file whole or not at all: Ctrl-C or a full disk never leaves half a configuration behind.
+
+    A symlinked file (dotfile managers) is written where the link points, keeping the link and the file's mode.
+    """
+    target = path.resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.tmp")
+    try:
+        temporary.write_text(tomlkit.dumps(document), encoding="utf-8")
+        if target.exists():
+            shutil.copymode(target, temporary)
+        temporary.replace(target)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def _nest(section: str, table: dict[str, Any]) -> dict[str, Any]:
