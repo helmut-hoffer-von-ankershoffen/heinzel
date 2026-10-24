@@ -267,3 +267,6 @@ venv = ".venv"
 CPY = "CPY" # ruff rule prefix (flake8-copyright)
 Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-contracts.md
 intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
+
+[tool.typos.files]
+extend-exclude = ["ATTRIBUTIONS.md"] # third-party license texts, quoted as their authors wrote them

@@ -16,7 +16,8 @@
 **Heinzelmännchen are open-source helpers that keep product development teams running.** They draft the busywork of
 running a team — status, tracker updates, agendas, reports — in the background, and people approve it. Like the
 [Heinzelmännchen of Cologne](https://en.wikipedia.org/wiki/Heinzelm%C3%A4nnchen), who finished the town's work at
-night. Why it exists and where it is going: [INTENT.md](INTENT.md).
+night. Why it exists and where it is going: [INTENT.md](INTENT.md). It is built on open source, and we are
+grateful: [thank you](#standing-on-the-shoulders-of-giants) to everyone in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
 
 This release is the foundation — kernel, heads, plugins and release automation; the first team workflows arrive in
 0.x ([roadmap](INTENT.md#where-we-are)).
@@ -269,6 +270,21 @@ That is `hz greet hello --name Ada` in the CLI, with `--json`, help text, argume
 with all the tooling, CI/CD and agent setup: `hz system plugin new ../heinzel-mine`. A complete plugin to copy from:
 [plugins/heinzel-clock](plugins/heinzel-clock) (one module, settings, an operation, a health check and a setup step). See
 [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Standing on the shoulders of giants
+
+`hz` is a thin layer on a lot of brilliant open-source work, and we are deeply grateful to everyone who writes,
+maintains and shares it. **Thank you.** Among many others: [Typer](https://typer.tiangolo.com) and
+[Rich](https://github.com/Textualize/rich) for the CLI; [FastAPI](https://fastapi.tiangolo.com),
+[Starlette](https://www.starlette.io) and [Uvicorn](https://www.uvicorn.org) for the API;
+[Pydantic](https://docs.pydantic.dev) for every typed model; the
+[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) for the MCP head;
+[pluggy](https://pluggy.readthedocs.io) for plugins and [uv](https://docs.astral.sh/uv/) for installing them. The web
+app runs on [React](https://react.dev), [React Flow](https://reactflow.dev), [xterm.js](https://xtermjs.org) and
+[TanStack Query](https://tanstack.com/query), built with [Vite](https://vite.dev) and styled with
+[Tailwind CSS](https://tailwindcss.com).
+
+[ATTRIBUTIONS.md](ATTRIBUTIONS.md) lists every package `hz` ships, with its license, homepage and license text.
 
 ## Contribute
 

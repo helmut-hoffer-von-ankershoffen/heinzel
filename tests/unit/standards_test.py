@@ -98,6 +98,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     ".claude/skills/codify/SKILL.md": "adds checks to Heinzelmännchen's standards_test.py; plugins inherit them",
     ".claude/skills/raise-the-bar/SKILL.md": "audits Heinzelmännchen's own areas before a release",
     ".claude/skills/scaffold-plugin/SKILL.md": "creates plugins; a plugin updates itself with update-template",
+    "scripts/attributions.py": "writes ATTRIBUTIONS.md of the core and its web app; plugins bundle nothing",
     "scripts/demo.sh": "renders the README demo with hz's own commands; plugins have no demo tape",
     "scripts/demo_tape.py": "assembles the README demo from the core intro and its modules' snippets",
     "scripts/generate_docs.py": "generates Heinzelmännchen's CLI, module and configuration reference",

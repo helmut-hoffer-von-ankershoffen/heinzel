@@ -21,12 +21,13 @@ PYPROJECT_HEAD = ROOT / "scripts" / "template_pyproject_head.toml.tmpl"
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
-    text = text.replace(" template-test template-sync docs fuzz demo", "")
+    text = text.replace(" template-test template-sync docs attributions fuzz demo", "")
     text = text.replace(" release clean\n", " release clean update-template\n", 1)
     text = text.replace(" (KEEP=dir keeps it)", "")
-    text = re.sub(r"\n(template-test|template-sync|docs|fuzz|demo):.*?\n(?:\t.*\n)+", "\n", text)
-    # Steps only Heinzelmännchen has: import contracts, the template, generated docs, demo tape (never a last step).
-    text = re.sub(r'\n\t\t"&?(contracts|template|docs|demo)=[^\n]*', "", text)
+    text = re.sub(r"\n(template-test|template-sync|docs|attributions|fuzz|demo):.*?\n(?:\t.*\n)+", "\n", text)
+    # Steps only Heinzelmännchen has: import contracts, the template, generated docs, demo tape, ATTRIBUTIONS.md
+    # (never a last step).
+    text = re.sub(r'\n\t\t"&?(contracts|template|docs|demo|attributions)=[^\n]*', "", text)
     text = text.replace("uv build --all-packages", "uv build")
     text = text.replace("lint, import contracts, types, tests", "lint, types, tests")
     text = text.replace("format, lint, contracts, generated files, unit tests", "format, lint, unit tests")
@@ -66,8 +67,9 @@ def ci_workflow() -> str:
         "        run: unzip -l dist/*.whl | grep -q '[[ package_name ]]/__init__.py'",
     )
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
-    # The web head's app (ADR 0039): plugins have none.
+    # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
     text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
+    text = re.sub(r"\n      - name: Check the wheel ships the attributions\n[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships the web app\n[^\n]*", "", text)
     text = text.replace("      - run: uv build --all-packages\n", "      - run: uv build\n")
     # Heinzel Notifier (ADR 0043): only the core builds and ships it.
