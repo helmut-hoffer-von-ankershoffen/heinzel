@@ -70,7 +70,6 @@ DEFAULT_INTERVAL = 5
 STALE_TICKS = 3
 """A daemon that missed this many intervals in a row is reported as degraded."""
 PLATFORMS = ("darwin", "linux")
-UNIT_MODE = 0o644
 """launchd and systemd read unit files; they hold no secrets."""
 MODULE_SECTION = "system.daemon"
 
@@ -165,7 +164,7 @@ class DaemonService:
             )
         private_dir(self.log_path.parent)
         for path, content in files.items():
-            write_private(path, content, UNIT_MODE, shared_dir=True)
+            write_private(path, content, shared_dir=True)  # 0600: launchd and systemd read user units as the user
         self._write_state(
             "install.json",
             {

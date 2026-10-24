@@ -723,7 +723,7 @@ def test_receipts_state_and_logs_are_private_and_units_readable(make, jobs, sett
     assert {mode(p) for p in (settings.state_dir / "daemon").iterdir()} == {0o600}
     assert mode(settings.log_dir) == 0o700
     assert mode(settings.log_dir / "daemon.jsonl") == 0o600
-    assert mode(tmp_path / "units" / f"{LABEL}.plist") == 0o644
+    assert mode(tmp_path / "units" / f"{LABEL}.plist") == 0o600
     assert mode(tmp_path / "units") != 0o700  # the LaunchAgents directory is left as it is
 
 

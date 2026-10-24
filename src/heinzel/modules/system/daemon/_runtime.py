@@ -105,8 +105,8 @@ def _fsync_dir(directory: Path) -> None:
         os.close(descriptor)
 
 
-def write_private(path: Path, text: str, mode: int = PRIVATE_FILE, *, shared_dir: bool = False) -> None:
-    """Write `text` atomically and durably: a temporary file with `mode`, fsync, rename, fsync of the directory.
+def write_private(path: Path, text: str, *, shared_dir: bool = False) -> None:
+    """Write `text` atomically and durably: a temporary 0600 file, fsync, rename, fsync of the directory.
 
     The directory is made private (0700) unless `shared_dir`, e.g. for unit files in ~/Library/LaunchAgents.
     """
@@ -115,12 +115,12 @@ def write_private(path: Path, text: str, mode: int = PRIVATE_FILE, *, shared_dir
     else:
         private_dir(path.parent)
     temporary = path.with_name(f".{path.name}.tmp")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, PRIVATE_FILE)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
         handle.write(text)
         handle.flush()
         os.fsync(handle.fileno())
-    temporary.chmod(mode)  # the umask may have narrowed or widened os.open's mode
+    temporary.chmod(PRIVATE_FILE)  # the umask may have narrowed os.open's mode
     temporary.replace(path)
     _fsync_dir(path.parent)
 

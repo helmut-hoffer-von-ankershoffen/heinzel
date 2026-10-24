@@ -84,8 +84,8 @@ def test_write_private_is_atomic_and_private_whatever_the_umask(tmp_path):
 def test_write_private_can_leave_a_shared_directory_alone(tmp_path):
     shared = tmp_path / "LaunchAgents"
     shared.mkdir(mode=0o755)
-    write_private(shared / "unit.plist", "x", 0o644, shared_dir=True)
-    assert (mode(shared / "unit.plist"), mode(shared)) == (0o644, 0o755)
+    write_private(shared / "unit.plist", "x", shared_dir=True)
+    assert (mode(shared / "unit.plist"), mode(shared)) == (0o600, 0o755)
 
 
 def test_private_dir_tightens_an_existing_directory(tmp_path):
