@@ -176,3 +176,9 @@ head exposes).
   in-app list feeding the Home's "Today" cards) and becomes an installable progressive web app with a fixed default
   port and per-device tokens, so a notification's click opens it at the notice's route.
 - Revisit when the profile gains working days, or when the project can notarise the app.
+
+**Amendment 2026-10-24: an honest test.** `hz system notify test` reports each way a notice can reach you (`channels`:
+the open web app, the native notifier, the daemon), each with its state, the reason and what fixes it, and `pops_up`;
+it exits 1 when nothing will pop the test up. The web app adds this browser's permission and offers one fix per blocked
+way: allow in the browser, `hz system notify settings` (opens System Settings > Notifications on macOS; CLI and web
+head only), or the install command typed into its terminal after a confirmation.

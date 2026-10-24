@@ -1423,7 +1423,8 @@ $ hz system notify [OPTIONS] COMMAND [ARGS]...
 * `ack`: (expert) Mark notices as shown, so the...
 * `install`: (expert) Install the native notifier...
 * `list`: (expert) Show the latest notices, whether...
-* `test`: (expert) Record an urgent test notice,...
+* `settings`: (expert) Open the system&#x27;s notification...
+* `test`: (expert) Record a test notice, report each...
 
 #### `hz system notify ack`
 
@@ -1479,9 +1480,25 @@ $ hz system notify list [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+#### `hz system notify settings`
+
+(expert) Open the system&#x27;s notification settings to allow hz&#x27;s pop-ups (macOS: System Settings).
+
+**Usage**:
+
+```console
+$ hz system notify settings [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 #### `hz system notify test`
 
-(expert) Record an urgent test notice, which the open web app or the next daemon tick pops up.
+(expert) Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up.
 
 **Usage**:
 

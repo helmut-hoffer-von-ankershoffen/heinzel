@@ -676,6 +676,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/notify/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open the system's notification settings to allow hz's pop-ups (macOS: System Settings).
+         * @description Open the system's notification settings to allow hz's pop-ups (macOS: System Settings).
+         */
+        post: operations["system_notify_settings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/notify/test": {
         parameters: {
             query?: never;
@@ -686,10 +706,11 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Record an urgent test notice, which the open web app or the next daemon tick pops up.
-         * @description Record an urgent test notice, which the open web app or the next daemon tick pops up.
+         * Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up.
+         * @description Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up.
          *
-         *     `hz system notify install` pops one up at once, through the native notifier only.
+         *     The open web app or the next daemon tick pops it up; `hz system notify install` pops one up at once, through the
+         *     native notifier only.
          *
          *     Raises:
          *         HeinzelError: If notifications are off, or quiet mode keeps it from popping up.
@@ -1699,6 +1720,39 @@ export interface components {
          * @enum {string}
          */
         CatchUp: "latest" | "all" | "skip";
+        /**
+         * Channel
+         * @description One way a notice can reach you, and whether it can now.
+         */
+        Channel: {
+            /**
+             * Command
+             * @description The command that fixes it in a terminal, if one does.
+             */
+            command?: string | null;
+            /**
+             * Detail
+             * @description Why, in words, with the system's own reason when it gave one.
+             */
+            detail: string;
+            /**
+             * Fix
+             * @description What fixes it, for a button; none when nothing must.
+             */
+            fix?: ("open-settings" | "install-notifier" | "install-daemon" | "turn-on") | null;
+            /**
+             * Name
+             * @description `web`: the open web app; `native`: the system's pop-ups (Heinzel Notifier on macOS); `daemon`: the background ticks that hand due notices to the native notifier when no web app is open.
+             * @enum {string}
+             */
+            name: "web" | "native" | "daemon";
+            /**
+             * State
+             * @description `shown`: it popped the test up now; `ready`: it can; `closed`: no web app is open; `blocked`: the system refuses it; `missing`: not installed; `off`: turned off in the settings; `unknown`: can't tell.
+             * @enum {string}
+             */
+            state: "shown" | "ready" | "closed" | "blocked" | "missing" | "off" | "unknown";
+        };
         /**
          * ChatAction
          * @description An operation the agent proposed; it runs only when the person confirms it, with exactly these arguments.
@@ -3627,6 +3681,22 @@ export interface components {
             waiting: number;
         };
         /**
+         * Opened
+         * @description Whether the system's notification settings were opened.
+         */
+        Opened: {
+            /**
+             * Message
+             * @description What happened, or what to open by hand.
+             */
+            message: string;
+            /**
+             * Opened
+             * @description Whether they were opened on this machine.
+             */
+            opened: boolean;
+        };
+        /**
          * OperationAudience
          * @description Who one operation is for.
          */
@@ -4555,9 +4625,14 @@ export interface components {
         };
         /**
          * Tested
-         * @description What `test` recorded, and how the native pop-up went when it was asked for.
+         * @description What `test` recorded, how each way of reaching you stands, and whether anything can pop it up.
          */
         Tested: {
+            /**
+             * Channels
+             * @description The web app, the native notifier, the daemon.
+             */
+            channels?: components["schemas"]["Channel"][];
             /**
              * Native
              * @description `shown` when the native notifier popped it up now, else why not; none when not asked to.
@@ -4565,6 +4640,12 @@ export interface components {
             native: string | null;
             /** @description The test notice. */
             notice: components["schemas"]["Notice"];
+            /**
+             * Pops Up
+             * @description Whether anything pops the test up: it was shown, a web app is open, or the daemon hands it to a native notifier that may show it. False means nothing will: see the channels' fixes.
+             * @default true
+             */
+            pops_up: boolean;
         };
         /**
          * ThemeColours
@@ -5041,6 +5122,7 @@ export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
 export type SchemaCatchUp = components['schemas']['CatchUp'];
+export type SchemaChannel = components['schemas']['Channel'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
 export type SchemaChatContext = components['schemas']['ChatContext'];
 export type SchemaChatCosts = components['schemas']['ChatCosts'];
@@ -5099,6 +5181,7 @@ export type SchemaNodeMetadata = components['schemas']['NodeMetadata'];
 export type SchemaNotice = components['schemas']['Notice'];
 export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
+export type SchemaOpened = components['schemas']['Opened'];
 export type SchemaOperationAudience = components['schemas']['OperationAudience'];
 export type SchemaParticipant = components['schemas']['Participant'];
 export type SchemaPlaybookList = components['schemas']['PlaybookList'];
@@ -5970,6 +6053,26 @@ export interface operations {
             };
         };
     };
+    system_notify_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Opened"];
+                };
+            };
+        };
+    };
     system_notify_test: {
         parameters: {
             query?: {
@@ -5998,6 +6101,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The result, when its exit code is non-zero. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tested"];
                 };
             };
         };

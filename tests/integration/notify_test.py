@@ -31,8 +31,17 @@ def hz(kernel, *args: str) -> str:
     return result.output
 
 
+def test_a_test_nothing_can_pop_up_says_so_per_channel_and_fails(kernel):
+    result = runner.invoke(build(kernel), ["system", "notify", "test"])
+    assert result.exit_code == 1, result.output
+    assert "Web app: closed" in result.output
+    assert "Daemon: missing" in result.output
+    assert "hz system daemon install" in result.output
+    assert "Nothing will pop it up" in result.output
+
+
 def test_a_test_notice_is_listed_until_someone_shows_it(kernel):
-    hz(kernel, "system", "notify", "test")
+    runner.invoke(build(kernel), ["system", "notify", "test"])
     listed = json.loads(hz(kernel, "system", "notify", "list", "--json"))
     notice = listed["notices"][0]
     assert (notice["kind"], notice["popup"], notice["delivered_by"]) == ("test", True, None)
@@ -62,3 +71,7 @@ def test_notices_are_for_the_web_head_behind_its_token_not_the_unauthenticated_r
 def test_the_native_test_is_for_people_not_agents_over_mcp(kernel):
     assert not any(item.path == ("system", "notify", "test") for item in exposed(kernel, "mcp"))
     assert any(item.path == ("system", "notify", "test") for item in exposed(kernel, "web"))
+    # Opening System Settings is for the person who clicked, in the CLI or the web app.
+    assert not any(item.path == ("system", "notify", "settings") for item in exposed(kernel, "mcp"))
+    assert not any(item.path == ("system", "notify", "settings") for item in exposed(kernel, api.HEAD))
+    assert any(item.path == ("system", "notify", "settings") for item in exposed(kernel, "web"))
