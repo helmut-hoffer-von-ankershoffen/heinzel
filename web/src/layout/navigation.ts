@@ -37,7 +37,7 @@ export const sections: NavSection[] = [
     ],
   },
   {
-    label: "nav.inventory",
+    label: "nav.artifacts",
     items: [
       { to: "/inventory/types", label: "nav.assetTypes", icon: Shapes, operation: "workflow:playbooks" },
       { to: "/inventory/assets", label: "nav.assets", icon: Boxes, operation: "workflow:discover" },
