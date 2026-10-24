@@ -1,10 +1,13 @@
+import io
 import json
 
 import pytest
 from pydantic import BaseModel
 from rich.console import Console
+from rich.table import Table
+from rich.text import Text
 
-from heinzel.heads.cli._render import show, to_json
+from heinzel.heads.cli._render import CONTROLS, TerminalSafe, message, show, terminal_safe, to_json
 
 pytestmark = pytest.mark.unit
 
@@ -52,3 +55,44 @@ def test_other_values_print_as_json():
 
 def test_to_json():
     assert json.loads(to_json([Row(name="a", tags=[], size=1)])) == [{"name": "a", "tags": [], "size": 1}]
+
+
+ESCAPES = "\x1b[31mred\x1b[0m \x1b]8;;https://evil.invalid\x1b\\link\x1b]8;;\x1b\\ \x1b]52;c;eA==\x07 \x9b2J"
+
+
+def written(renderable: object, *, colour: bool = False) -> str:
+    """What the console writes; without colour, any control character came from the value."""
+    console = Console(file=io.StringIO(), width=120, color_system="standard" if colour else None, force_terminal=colour)
+    console.print(renderable)
+    return console.file.getvalue()
+
+
+def controls(text: str) -> list[str]:
+    return CONTROLS.findall(text.replace("\n", ""))
+
+
+def test_terminal_safe_strips_controls_but_tabs_and_newlines():
+    assert terminal_safe("a\tb\nc\x1b[31m\x9b\x07\x7f\x00d") == "a\tb\nc[31md"
+
+
+@pytest.mark.parametrize(
+    "result",
+    [ESCAPES, Row(name=ESCAPES, tags=[ESCAPES], size=1), [Row(name=ESCAPES, tags=[], size=1)], {"k": ESCAPES}],
+)
+def test_default_rendering_writes_no_control_characters(result):
+    console = Console(file=io.StringIO(), width=120, color_system=None)
+    show(console, result)
+    assert controls(console.file.getvalue()) == []
+
+
+def test_any_wrapped_renderable_is_safe_and_keeps_rich_styles():
+    table = Table("Title")
+    table.add_row(ESCAPES)
+    assert controls(written(Text(ESCAPES)))  # Rich alone lets them through
+    assert controls(written(TerminalSafe(table))) == []
+    assert controls(written(message("Error:", ESCAPES))) == []
+    assert "\x1b[31m" in written(message("Error:", "plain"), colour=True)  # Rich's own styling survives
+
+
+def test_json_escapes_c1_controls_too():
+    assert to_json({"x": "\x9b\x1b"}) == '{\n  "x": "\\u009b\\u001b"\n}'

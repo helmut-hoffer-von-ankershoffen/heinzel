@@ -10,10 +10,9 @@ from typing import Annotated, Any, get_args, get_origin
 import typer
 from pydantic.fields import FieldInfo
 from rich.console import Console
-from rich.markup import escape
 
 from heinzel.heads.cli._progress import ConsoleProgress
-from heinzel.heads.cli._render import show, to_json
+from heinzel.heads.cli._render import TerminalSafe, message, show, to_json
 from heinzel.kernel import HeinzelError, Kernel, OperationLet
 
 FORMAT_PARAMETER = "output_format"
@@ -75,25 +74,27 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional epil
         try:
             result = kernel.invoke(operation, **kwargs)
         except HeinzelError as exc:
-            err_console.print(f"[red]Error:[/red] {escape(str(exc))}", highlight=False, soft_wrap=True)
+            err_console.print(message("Error:", str(exc)), highlight=False, soft_wrap=True)
             raise typer.Exit(code=1) from exc
         except OSError as exc:
-            err_console.print(f"[red]Error:[/red] {escape(str(exc))}", highlight=False, soft_wrap=True)
+            err_console.print(message("Error:", str(exc)), highlight=False, soft_wrap=True)
             raise typer.Exit(code=1) from exc
         except Exception as exc:
             if kernel.settings.log_level == "DEBUG":
                 raise
             err_console.print(
-                f"[red]Unexpected error:[/red] {type(exc).__name__}: {escape(str(exc))}\n"
-                "This is a bug. Rerun with HZ_LOG_LEVEL=DEBUG for the traceback and report it with "
-                "`hz system doctor --json`.",
+                message(
+                    "Unexpected error:",
+                    f"{type(exc).__name__}: {exc}\nThis is a bug. Rerun with HZ_LOG_LEVEL=DEBUG for the traceback "
+                    "and report it with `hz system doctor --json`.",
+                ),
                 highlight=False,
             )
             raise typer.Exit(code=1) from exc
         if as_json:
-            console.print(to_json(result), markup=False, highlight=False, soft_wrap=True)
+            console.print(to_json(result), markup=False, highlight=False, soft_wrap=True)  # JSON escapes controls
         elif operation.render is not None:
-            console.print(operation.render(result))
+            console.print(TerminalSafe(operation.render(result)))
         else:
             show(console, result)
         if not as_json and epilogue is not None:
