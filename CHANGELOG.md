@@ -8,7 +8,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 The first release: the foundation the workflows will build on. A kernel that discovers modules and the lets they
 advertise; every operation as a CLI command, an MCP tool and a REST endpoint; layered configuration, health checks
 and plugin management with a template and a first-party `clock` plugin; agent skills for coding agents; and releases
-with provenance attestations and an SBOM. What comes next is in the [roadmap](INTENT.md#where-we-are).
+with provenance attestations and an SBOM. What comes next is in the [roadmap](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/INTENT.md#where-we-are).
 
 ### ✨ Features
 
