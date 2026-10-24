@@ -3,7 +3,8 @@
 Every fenced block right after a `<!-- docs-test -->` marker is run with bash in a sandbox, in order, except that the
 block that uninstalls runs last. Only the GitHub URL of Heinzelmännchen is redirected, to this checkout; first-party
 plugins like `clock` then come from the same checkout. Needs network (PyPI) and a git checkout with at least one
-commit.
+commit. `hz system changelog --newer` asks GitHub: CI passes its read-only `GITHUB_TOKEN`; without a token a
+rate-limited answer skips the test with the reason instead of failing it.
 """
 
 import os
@@ -21,6 +22,8 @@ HEAD = subprocess.run(
 ).stdout.strip()
 HZ_URL = "git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
 UNINSTALL = "uv tool uninstall heinzel"
+TOKENS = ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN")
+RATE_LIMITED = re.compile(r"HTTP Error (403|429): rate limit exceeded", re.IGNORECASE)
 MARKER = re.compile(r"<!-- docs-test -->\s*\n```bash\n(.*?)\n```", re.DOTALL)
 
 
@@ -61,6 +64,9 @@ def test_readme_instructions(tmp_path):
             ["bash", "-euo", "pipefail", "-c", script],
             capture_output=True, text=True, check=False, env=env, cwd=tmp_path, timeout=500,
         )  # fmt: skip
+        tokenless = not any(os.environ.get(name) for name in TOKENS)
+        if result.returncode and tokenless and (limited := RATE_LIMITED.search(result.stderr)):
+            pytest.skip(f"GitHub rate-limited the unauthenticated releases API ({limited[0]}); set GH_TOKEN")
         assert result.returncode == 0, f"README block failed:\n{script}\n---\n{result.stdout}\n{result.stderr}"
 
     assert not (tmp_path / "bin" / "hz").exists()

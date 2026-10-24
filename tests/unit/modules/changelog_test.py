@@ -1,7 +1,9 @@
 import json
 import urllib.error
+import urllib.request
 
 import pytest
+from pydantic import SecretStr
 from rich.console import Console
 
 from heinzel import HeinzelError, __version__
@@ -9,9 +11,11 @@ from heinzel.kernel import Installation, Progress
 from heinzel.modules.system import ReleaseNotes, _github
 from heinzel.modules.system import changelog as changelog_module
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, MAX_NOTES, PAGE_SIZE, GitHubReleases, clean
-from heinzel.modules.system.changelog import as_markdown, changelog, render
+from heinzel.modules.system.changelog import ChangelogSettings, as_markdown, changelog, render
 
 pytestmark = pytest.mark.unit
+
+NO_TOKEN = ChangelogSettings(github_token=None)
 
 
 def test_placeholders_and_brackets_are_shown_verbatim():
@@ -78,7 +82,7 @@ def test_newer_releases_come_newest_first_without_drafts_prereleases_or_odd_tags
     ]
     [(url, headers, timeout)] = github.requests
     assert url == f"https://api.github.com/repos/org/heinzel/releases?per_page={PAGE_SIZE}&page=1"
-    assert "Authorization" not in headers  # never a token (ADR 0031)
+    assert "Authorization" not in headers  # no token unless one is set (ADR 0031)
     assert headers["User-agent"] == f"heinzel/{__version__}"
     assert timeout == 5
 
@@ -155,13 +159,13 @@ def installation(tmp_path):
 
 
 def test_changelog_without_newer_never_asks(github, installation):
-    assert changelog(installation).startswith("# Changelog")
+    assert changelog(installation, NO_TOKEN).startswith("# Changelog")
     assert github.requests == []
 
 
 def test_changelog_newer_asks_the_installed_repository(github, installation):
     github.pages = [[release("v99.0.0"), release(f"v{__version__}")]]
-    [notes] = changelog(installation, newer=True)
+    [notes] = changelog(installation, NO_TOKEN, newer=True)
     assert notes.version == "99.0.0"
     assert f"repos/{DEFAULT_REPOSITORY}/releases" in github.requests[0][0]
 
@@ -179,15 +183,43 @@ def test_changelog_newer_asks_the_installed_repository(github, installation):
 def test_changelog_newer_offline_is_one_clear_error(github, installation, error, reason):
     github.pages = [error]
     with pytest.raises(HeinzelError, match="Could not ask GitHub for the releases newer than") as raised:
-        changelog(installation, newer=True)
+        changelog(installation, NO_TOKEN, newer=True)
     assert reason in str(raised.value)
     assert f"https://github.com/{DEFAULT_REPOSITORY}/releases" in str(raised.value)
+
+
+@pytest.mark.parametrize("variable", ["GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN"])
+def test_changelog_newer_sends_a_github_token_from_the_environment(github, installation, monkeypatch, variable):
+    for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(variable, "t0ken")
+    github.pages = [[release("v99.0.0"), release(f"v{__version__}")]]
+    changelog(installation, ChangelogSettings(), newer=True)
+    [(url, headers, _)] = github.requests
+    assert url.startswith("https://api.github.com/")
+    assert headers["Authorization"] == "Bearer t0ken"
+
+
+def test_a_token_never_follows_a_redirect_off_api_github_com():
+    redirects = _github._GitHubApiRedirects()
+    request = urllib.request.Request("https://api.github.com/x", headers={"Authorization": "Bearer t0ken"})
+    for elsewhere in ("https://evil.example/x", "http://api.github.com/x", "https://api.github.com.evil.example/x"):
+        assert redirects.redirect_request(request, None, 302, "Found", {}, elsewhere) is None
+
+
+@pytest.mark.parametrize(("token", "hinted"), [(None, True), (SecretStr("t0ken"), False)])
+def test_a_rate_limited_changelog_newer_without_a_token_suggests_one(github, installation, token, hinted):
+    error = urllib.error.HTTPError("u", 403, "rate limit exceeded", {}, None)  # type: ignore[arg-type]
+    github.pages = [error]
+    with error, pytest.raises(HeinzelError) as raised:
+        changelog(installation, ChangelogSettings(github_token=token), newer=True)
+    assert ("Set GH_TOKEN or GITHUB_TOKEN" in str(raised.value)) is hinted
 
 
 def test_changelog_newer_needs_a_release_version(github, installation, monkeypatch):
     monkeypatch.setattr(changelog_module, "__version__", "not a version")
     with pytest.raises(HeinzelError, match="is no release version"):
-        changelog(installation, newer=True)
+        changelog(installation, NO_TOKEN, newer=True)
     assert github.requests == []
 
 
