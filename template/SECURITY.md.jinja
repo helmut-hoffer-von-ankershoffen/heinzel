@@ -32,11 +32,14 @@ Only the latest release receives security fixes while the project is on 0.x.
   `hz system config show`) and to the uv tool environment it is installed in.
 - **Plugins run with the same rights.** Only add plugins you trust, from sources you trust; `hz system plugin list`
   shows where each one came from.
-- `hz` sends nothing anywhere on its own: no telemetry. Network access happens when you install, update or add
-  plugins (through uv), when you run `hz system release` (one GET to api.github.com with only a `heinzel/<version>`
-  User-Agent, no token; [ADR 0031](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0031-update-check.md)) or `hz system plugin search` (the same, plus your
-  GitHub token if you configured one), and when a plugin you installed calls a service. `hz --version` and
-  `hz system info` only read what `hz system release` cached.
+- `hz` sends nothing about you anywhere: no telemetry, crash reports or usage pings. Its one request of its own is
+  the update check: at most once an hour, on a terminal and outside CI, one GET to api.github.com for the latest
+  release, with only a `heinzel/<version>` User-Agent, no token and no identifier, in the background with a 2-second
+  timeout; `[hz] update_check = false` or `HZ_UPDATE_CHECK=false` turns it off
+  ([ADR 0031](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0031-update-check.md)).
+  Other network access happens when you install, update or add plugins (through uv), when you run
+  `hz system release` (the same request) or `hz system plugin search` (the same kind, plus your GitHub token if
+  you configured one), and when a plugin you installed calls a service.
 - `hz system serve mcp|api` listens on `127.0.0.1` unless you pass another `--host`; the servers have no
   authentication, so don't expose them to a network you don't trust. The REST server answers only requests to
   `localhost`, `127.0.0.1` or `[::1]` on its port (or names you list in `[hz] api_allowed_hosts`) and refuses
