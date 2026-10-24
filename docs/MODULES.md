@@ -6,7 +6,7 @@ modules; `hz system modules` lists what is installed.
 
 | Module | What it does |
 | --- | --- |
-| [`atlassian`](#atlassian) | Read Jira issues and Confluence pages: the tracker and documents capabilities. |
+| [`atlassian`](#atlassian) | Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. |
 | [`clock`](#clock) | What time it is for everyone on the team. |
 | [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
@@ -24,13 +24,13 @@ modules; `hz system modules` lists what is installed.
 
 ## `atlassian`
 
-Read Jira issues and Confluence pages: the tracker and documents capabilities.
+Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.
 
 First-party plugin `heinzel-atlassian`: `hz system plugin add atlassian`.
 
 | Operation | CLI | MCP tool | REST | Changes state |
 | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and the Atlassian site and APIs it uses. | `hz atlassian info` | `atlassian_info` | `GET /atlassian/info` |  |
+| Show this plugin's version, the Atlassian site and the acli commands it runs. | `hz atlassian info` | `atlassian_info` | `GET /atlassian/info` |  |
 
 Settings: [`[atlassian]`](CONFIGURATION.md#atlassian).
 

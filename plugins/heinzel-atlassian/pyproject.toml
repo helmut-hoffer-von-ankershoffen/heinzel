@@ -1,7 +1,7 @@
 [project]
 name = "heinzel-atlassian"
 version = "0.2.0"
-description = "Read Jira issues and Confluence pages: the tracker and documents capabilities."
+description = "Read Jira issues and Confluence pages through acli: the tracker and documents capabilities."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"

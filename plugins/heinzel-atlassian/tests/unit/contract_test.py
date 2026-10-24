@@ -5,7 +5,7 @@ import inspect
 import pytest
 from heinzel_atlassian import AtlassianSettings, hosts, module
 
-from heinzel import ProviderLet
+from heinzel import CredentialLet, ProviderLet
 from heinzel.kernel import CAPABILITIES
 
 pytestmark = pytest.mark.unit
@@ -20,9 +20,16 @@ def test_the_adapter_serves_tracker_and_documents_read_only_on_the_configured_si
     ]
 
 
-def test_the_hosts_are_the_site_once_it_is_set():
+def test_the_hosts_are_the_site_and_the_gateway_once_the_site_is_set():
     assert hosts(AtlassianSettings()) == []
-    assert hosts(AtlassianSettings(site_url="https://acme.atlassian.net/wiki")) == ["https://acme.atlassian.net"]
+    assert hosts(AtlassianSettings(site_url="https://acme.atlassian.net/wiki")) == [
+        "https://acme.atlassian.net",
+        "api.atlassian.com",
+    ]
+
+
+def test_no_credential_is_declared_because_acli_owns_authentication():
+    assert not [let for let in module.lets if isinstance(let, CredentialLet)]
 
 
 @pytest.mark.parametrize("provider", PROVIDERS, ids=lambda p: p.name)

@@ -43,30 +43,27 @@ def test_plugin_can_be_disabled(boot):
     assert not [r for r in kernel.modules if r.qualname.startswith("atlassian")]
 
 
-def test_the_site_and_email_are_configurable_through_the_environment(boot, monkeypatch):
+def test_the_site_is_configurable_through_the_environment(boot, monkeypatch):
     monkeypatch.setenv("HZ_ATLASSIAN__SITE_URL", "https://acme.atlassian.net/wiki")
     assert json.loads(invoke(boot(), "atlassian", "info", "--json"))["site_url"] == "https://acme.atlassian.net"
 
 
-def test_the_credential_is_declared_with_its_purpose(boot):
+def test_no_credential_is_declared(boot):
     listed = json.loads(invoke(boot(), "system", "credential", "list", "--json"))
     entries = listed if isinstance(listed, list) else listed.get("credentials", [])
-    ours = [c for c in entries if c["name"] == "atlassian-token"]
-    assert len(ours) == 1
-    assert "without scopes" in ours[0]["purpose"]
+    assert not [c for c in entries if c.get("service") == "atlassian" or "atlassian" in c["name"]]
 
 
-def test_the_kernel_provides_the_real_transport_unless_a_test_binds_a_fake(boot):
-    from heinzel_atlassian import Transport
+def test_the_kernel_provides_the_real_acli_runner(boot):
+    from heinzel_atlassian import Acli
 
-    assert type(boot().resolve(Transport)) is Transport
+    assert type(boot().resolve(Acli)) is Acli
 
 
 def test_the_readme_setup_commands_write_the_user_configuration(boot, monkeypatch, tmp_path):
     monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
     for key, value in (
         ("atlassian.site_url", "https://acme.atlassian.net"),
-        ("atlassian.email", "ada@acme.example"),
         ("capabilities.tracker", "atlassian"),
         ("capabilities.documents", "atlassian"),
     ):

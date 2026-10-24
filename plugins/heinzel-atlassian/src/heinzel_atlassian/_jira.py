@@ -1,9 +1,9 @@
-"""The Jira adapter of the `tracker` capability (ADR 0028), read mode only.
+"""The Jira adapter of the `tracker` capability (ADR 0028), read mode only, through acli.
 
-Issues come from Jira Cloud's enhanced search, `GET /rest/api/3/search/jql`, paged with `nextPageToken`
-(ADR 0034). The JQL compares `updated` with epoch milliseconds, which
-Jira reads as instants, so the account's time zone doesn't shift the window; each issue's `updated` is checked against
-the window again before it is kept.
+Issues come from `acli jira workitem search --jql <jql> --fields <fields> --paginate --json`; acli owns
+authentication and paging. The JQL compares `updated` with epoch milliseconds, which Jira reads as instants, so the
+account's time zone doesn't shift the window; each issue's `updated` is checked against the window again before it
+is kept.
 """
 
 import math
@@ -11,19 +11,18 @@ import re
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from heinzel import Credentials, HeinzelError, Issue, Window
-from heinzel_atlassian._client import clean, connect
+from heinzel import HeinzelError, Issue, Window, clean_text
+from heinzel_atlassian._acli import Acli
+from heinzel_atlassian._client import AcliClient, require_site, same_site
 from heinzel_atlassian._models import AtlassianSettings
-from heinzel_atlassian._transport import Transport
 
-SEARCH = "/rest/api/3/search/jql"
-FIELDS = "summary,status,updated,assignee,labels"
-MAX_RESULTS = "100"
-MAX_PAGES = 100
-"""Pages followed for one call (10,000 issues at 100 a page) before asking for a narrower window."""
+FIELDS = "key,summary,status,updated,assignee,labels"
+MAX_ISSUES = 1000
+"""Issues one call returns at most before asking for a narrower window."""
 MINUTE_MS = 60_000
 _PROJECT = re.compile(r"^[A-Z][A-Z0-9_]{1,254}$")
 _ISSUE = re.compile(r"^[A-Z][A-Z0-9_]{1,254}-[0-9]{1,18}$")
+_UNEXPECTED = "acli's search answer is not a list of Jira issues; is acli up to date?"
 
 
 def jql_string(text: str) -> str:
@@ -47,48 +46,41 @@ def search_jql(project: str, since: datetime, until: datetime) -> str:
 class Jira:
     """Reads issues of a Jira project, given by its key such as `WID`, updated within a window."""
 
-    def __init__(self, settings: AtlassianSettings, credentials: Credentials, transport: Transport) -> None:
-        """Build the adapter; the kernel injects the settings, the credentials and the transport."""
+    def __init__(self, settings: AtlassianSettings, acli: Acli) -> None:
+        """Build the adapter; the kernel injects the settings and acli."""
         self._settings = settings
-        self._credentials = credentials
-        self._transport = transport
+        self._acli = acli
 
     def issues_updated(self, project: str, window: Window) -> list[Issue]:
         """Issues of `project`, a Jira project key, updated within `window`, oldest first, each once.
 
-        An issue updated again while the pages are read can come back on a later page; the latest copy is kept.
+        An issue updated again while acli pages through the search can come back twice; the latest copy is kept.
 
         Raises:
-            HeinzelError: If the key or window is malformed, the site, email or token is missing, or Jira fails.
+            HeinzelError: If the key or window is malformed, the site is not set, acli is missing or logged out, Jira
+                fails, or more than `MAX_ISSUES` issues match.
         """
         key = _project(project)
         since, until = _bounds(window)
         if since == until:
             return []  # the half-open window is empty: nothing to ask
-        client = connect(self._settings, self._credentials, self._transport)
-        site = cast("str", self._settings.site_url)  # connect() checked it
-        params = {"jql": search_jql(key, since, until), "fields": FIELDS, "maxResults": MAX_RESULTS}
+        site = require_site(self._settings)
+        args = ["jira", "workitem", "search", "--jql", search_jql(key, since, until), "--fields", FIELDS]
+        args += ["--paginate", "--json"]
         subject = f"project {key}"
+        items = [
+            i for d in AcliClient(self._acli, self._settings.timeout).json("Jira", args, subject) for i in _issues(d)
+        ]
+        if len(items) > MAX_ISSUES:
+            msg = f"More than {MAX_ISSUES} issues of {subject} were updated in the window; ask for a shorter window."
+            raise HeinzelError(msg)
         found: dict[str, Issue] = {}
-        seen: set[str] = set()
-        for _ in range(MAX_PAGES):
-            page = client.get("Jira", SEARCH, params, subject)
-            for item in _issues(page):
-                issue = _issue(site, item)
-                if issue.updated_at >= until:
-                    return _oldest_first(found)  # sorted by update, oldest first: the rest is later still
-                if issue.updated_at >= since:
-                    _keep_latest(found, issue)
-            token = page.get("nextPageToken")
-            if page.get("isLast") is True or not isinstance(token, str) or not token:
-                return _oldest_first(found)
-            if token in seen:
-                msg = f"Jira repeated a page of the search for {subject}; stopping instead of looping. Try again."
-                raise HeinzelError(msg)
-            seen.add(token)
-            params = {**params, "nextPageToken": token}
-        msg = f"The search for {subject} has more than {MAX_PAGES} pages of issues; ask for a shorter window."
-        raise HeinzelError(msg)
+        for item in items:
+            same_site("Jira", site, item.get("self"), "/rest")
+            issue = _issue(site, key, item)
+            if since <= issue.updated_at < until:
+                _keep_latest(found, issue)
+        return _oldest_first(found)
 
 
 def _keep_latest(found: dict[str, Issue], issue: Issue) -> None:
@@ -120,36 +112,60 @@ def _bounds(window: Window) -> tuple[datetime, datetime]:
     return window.since.astimezone(UTC), window.until.astimezone(UTC)
 
 
-def _issues(page: dict[str, Any]) -> list[dict[str, Any]]:
-    issues = page.get("issues")
+def _issues(answer: object) -> list[dict[str, Any]]:
+    """The issues in one JSON document acli printed: a list of issues, or an object holding them under `issues`.
+
+    Raises:
+        HeinzelError: If the document is neither.
+    """
+    issues = cast("dict[str, Any]", answer).get("issues") if isinstance(answer, dict) else answer
     if not isinstance(issues, list) or not all(isinstance(i, dict) for i in cast("list[object]", issues)):
-        msg = "Jira's search answer lacks a list of issues; is atlassian.site_url an Atlassian Cloud site?"
-        raise HeinzelError(msg)
+        raise HeinzelError(_UNEXPECTED)
     return cast("list[dict[str, Any]]", issues)
 
 
 def _name(value: object, key: str) -> str | None:
     found = cast("dict[str, Any]", value).get(key) if isinstance(value, dict) else None
-    text = clean(str(found)) if found else ""
+    text = clean_text(found) if isinstance(found, str) else ""
     return text or None
 
 
-def _issue(site: str, item: dict[str, Any]) -> Issue:
+def _issue(site: str, project: str, item: dict[str, Any]) -> Issue:
+    """One issue of acli's answer, checked field by field; its key must be of `project`.
+
+    Raises:
+        HeinzelError: If a field is missing, has the wrong type, the key is of another project, or `updated` is no
+            time with an offset.
+    """
+    key, fields = item.get("key"), item.get("fields")
+    if isinstance(key, str) and _ISSUE.fullmatch(key) and key.startswith(f"{project}-") and isinstance(fields, dict):
+        fields = cast("dict[str, Any]", fields)
+        summary, labels = fields.get("summary"), cast("object", fields.get("labels") or [])
+        updated = _instant(fields.get("updated"))
+        if isinstance(summary, str) and isinstance(labels, list) and updated is not None:
+            return Issue(
+                key=key,
+                title=clean_text(summary),
+                url=f"{site}/browse/{key}",  # built, never taken from the answer
+                state=_name(fields.get("status"), "name") or "unknown",
+                updated_at=updated,
+                assignee=_name(fields.get("assignee"), "displayName"),
+                labels=[
+                    text
+                    for label in cast("list[object]", labels)
+                    if isinstance(label, str) and (text := clean_text(label))
+                ],
+            )
+    msg = "acli's search answer lacks fields of a Jira issue; is acli up to date?"
+    raise HeinzelError(msg)
+
+
+def _instant(value: object) -> datetime | None:
+    """`value` as a UTC time if it is an ISO time with an offset (`2026-10-05T12:34:56.789+0200`), else None."""
+    if not isinstance(value, str):
+        return None
     try:
-        key = str(item["key"])
-        fields = cast("dict[str, Any]", item["fields"])
-        if not _ISSUE.fullmatch(key):
-            raise ValueError(key)  # noqa: TRY301 - one message for every malformed issue
-        labels = cast("list[object]", fields.get("labels") or [])
-        return Issue(
-            key=key,
-            title=clean(str(fields["summary"])),
-            url=f"{site}/browse/{key}",  # built, never taken from the answer
-            state=_name(fields.get("status"), "name") or "unknown",
-            updated_at=datetime.fromisoformat(str(fields["updated"])).astimezone(UTC),
-            assignee=_name(fields.get("assignee"), "displayName"),
-            labels=[text for label in labels if (text := clean(str(label)))],
-        )
-    except (KeyError, TypeError, ValueError):
-        msg = "Jira's answer lacks fields of an issue; is atlassian.site_url an Atlassian Cloud site?"
-        raise HeinzelError(msg) from None
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed.astimezone(UTC) if parsed.tzinfo is not None else None

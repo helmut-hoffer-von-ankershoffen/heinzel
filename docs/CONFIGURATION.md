@@ -37,9 +37,9 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `site_url` | `HZ_ATLASSIAN__SITE_URL` | `None` | The Atlassian Cloud site, `https://<site>.atlassian.net`, where Jira and Confluence live. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml, because the token goes there. |
-| `email` | `HZ_ATLASSIAN__EMAIL` | `None` | Email address of the Atlassian account the API token belongs to; with the token, it is the Basic auth of every request. Never read from a project hz.toml. |
-| `timeout` | `HZ_ATLASSIAN__TIMEOUT` | `30.0` | Seconds to wait for each answer from Atlassian before giving up. |
+| `site_url` | `HZ_ATLASSIAN__SITE_URL` | `None` | The Atlassian Cloud site acli is logged in to, `https://<site>.atlassian.net`: issue and page links are built on it, and page URLs must name it. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml. |
+| `acli` | `HZ_ATLASSIAN__ACLI` | `'acli'` | Atlassian's CLI: a name looked up on PATH (only absolute PATH entries count) or an absolute path. Never read from a project hz.toml. |
+| `timeout` | `HZ_ATLASSIAN__TIMEOUT` | `60.0` | Seconds to wait for each acli command before stopping it. |
 
 ## `[clock]`
 
