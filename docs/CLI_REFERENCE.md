@@ -790,6 +790,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `release`: (expert) Ask where Heinzelmännchen was...
 * `runner`: Run bounded agent sessions with Claude...
 * `serve`: (expert) Serve every operation to coding...
+* `skill`: (expert) List the skills plugins ship for...
 * `theme`: (expert) Pick how the web app looks: the...
 * `update`: Update Heinzelmännchen, keeping plugins;...
 
@@ -1930,6 +1931,100 @@ $ hz system serve mcp [OPTIONS]
 * `--port <int>`: Port for streamable-http.  [default: 8765]
 * `--chat SESSION`: Serve the tools of this chat session: reads run, everything else waits for your confirmation in the chat. Started by `hz chat` for its agent, over stdio only.
 * `--project <path>`: Read the configuration as if started in this directory (its hz.toml), as the chat does.
+* `--help`: Show this message and exit.
+
+### `hz system skill`
+
+(expert) List the skills plugins ship for AI, and hand chosen ones to Claude Code.
+
+**Usage**:
+
+```console
+$ hz system skill [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `export`: (expert) Export skills you name for Claude...
+* `list`: (expert) List the skills in effect: which...
+* `show`: (expert) Show a skill: where it comes...
+* `unexport`: (expert) Remove skills hz exported for...
+
+#### `hz system skill export`
+
+(expert) Export skills you name for Claude Code, as `heinzel-&lt;name&gt;` in each ` export_dirs`.
+
+**Usage**:
+
+```console
+$ hz system skill export [OPTIONS]
+```
+
+**Options**:
+
+* `--name <str>`: A skill to export, e.g. explain-heinzel; repeat for each.
+* `--all-skills / --no-all-skills`: Export every skill in effect but your own.  [default: no-all-skills]
+* `--sync / --no-sync`: Only remove exports whose skill is gone or changed; never add one.  [default: no-sync]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system skill list`
+
+(expert) List the skills in effect: which module offers each, what it hides, and where it is exported.
+
+**Usage**:
+
+```console
+$ hz system skill list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system skill show`
+
+(expert) Show a skill: where it comes from, its files and hints, and its body.
+
+**Usage**:
+
+```console
+$ hz system skill show [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The skill, one `hz system skill list` shows, e.g. `explain-heinzel`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system skill unexport`
+
+(expert) Remove skills hz exported for Claude Code; directories hz didn&#x27;t write are left alone.
+
+**Usage**:
+
+```console
+$ hz system skill unexport [OPTIONS]
+```
+
+**Options**:
+
+* `--name <str>`: A skill to remove from the export; repeat for each.
+* `--all-skills / --no-all-skills`: Remove every skill hz exported.  [default: no-all-skills]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
 ### `hz system theme`

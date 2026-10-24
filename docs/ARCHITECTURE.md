@@ -53,6 +53,7 @@ the kinds it understands.
 | `SetupLet` | `@module.setup(required=False)`, asking through an injected `Prompter` and writing through `ConfigEditor` and `Credentials` | the CLI head: `hz setup [MODULE]` ([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)) |
 | `PlaybookLet` | `module.playbook(summary, assets=..., templates=..., defaults=...)`: asset types with discovery hints, template contracts, recommended settings | `workflow`: `hz workflow playbooks`, `discover`, `new --template`; the setup step it declares ([ADR 0037](adr/0037-plugins-bring-playbooks.md)) |
 | `LayerLet` | `module.layer(parent=..., site=..., roles=...)`: the plugin sits in a company's tree, under its parent layer and at a site layer | the kernel: `Kernel.layers()` checks the tree, `Kernel.layer_stack()` stacks your layers general to specific, afresh on every call; `system.layer`: `hz system layer list`, `show`, doctor ([ADR 0040](adr/0040-layers-and-playbooks-are-plugins.md)) |
+| `SkillLet` | `module.skill(path)`: a `SKILL.md` directory or a directory of them, checked at import (frontmatter, sizes, text only, no links, no secrets) | `system.skill`: `hz system skill list`, `show`, `export`; the read-only `Skills` service for Pydantic AI turns (`skill_tools`) and the MCP head's prompts and resources ([ADR 0060](adr/0060-plugins-ship-skills-every-ai-path-can-use.md)) |
 | `JobLet` | `@module.job(schedule="0 9 * * MON")` | `hz system daemon tick`, run by launchd or systemd ([ADR 0020](adr/0020-daemon-head.md)) |
 | `ProviderLet` | `@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter class; `hosts=` takes a function of the module's settings when they decide the hosts | the kernel's capability bindings and `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
 | `RequirementLet` | `Module(..., requires=["tracker:read"])` (read only); operations and jobs take `requires=[...]`, and a read-only operation that degrades without its own takes `optional=True` | the kernel's capability handles and the doctor check of `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
@@ -135,6 +136,7 @@ hz system config  show | get | set | unset | init
 hz system plugin  list | add | remove | new
 hz system layer   list | show
 hz system agent   skills | install | uninstall
+hz system skill   list | show | export | unexport   skills for AI; export hands chosen ones to Claude Code (ADR 0060)
 hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
 hz system notify  list | ack | test | install
 hz system serve   mcp | api | daemon

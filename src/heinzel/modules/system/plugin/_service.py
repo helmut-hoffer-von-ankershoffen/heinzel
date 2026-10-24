@@ -701,8 +701,12 @@ class PluginService:
         return self._kernel.settings.data_dir / HISTORY
 
     def _changed(self, action: Action, distribution: str | None, candidate: PluginCandidate | None) -> PluginChange:
-        """A carried-out change, with the plugins as a fresh `hz` sees them; this process still has the old ones."""
-        return PluginChange(
+        """A carried-out change, with the plugins as a fresh `hz` sees them; this process still has the old ones.
+
+        The fresh `hz` also removes skill exports whose skill went or changed (ADR 0060); it never adds one, and a
+        failure there is a next step, not a failed change.
+        """
+        change = PluginChange(
             action=action,
             done=True,
             distribution=distribution,
@@ -711,6 +715,11 @@ class PluginService:
             restart_required=True,
             next=[],
         )
+        try:
+            self._installation.hz("system", "skill", "export", "--sync", "--json")
+        except HeinzelError:
+            change.next.append("hz system skill export --sync")
+        return change
 
     def _fresh_list(self) -> list[PluginInfo]:
         return [

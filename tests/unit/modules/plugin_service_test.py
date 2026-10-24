@@ -840,3 +840,23 @@ def test_a_community_preview_still_confirms_by_its_requirement_and_warns(make_ke
     console = Console(record=True, width=200)
     console.print(render_change(preview))
     assert "not reviewed" in console.export_text()
+
+
+def test_a_change_removes_stale_skill_exports_in_the_fresh_hz_and_survives_its_failure(
+    make_kernel, tool_env, monkeypatch
+):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    calls = []
+
+    def fresh(*args):
+        calls.append(args)
+        if args[:3] == ("system", "skill", "export"):
+            msg = "no skill module"
+            raise HeinzelError(msg)
+        return "[]"
+
+    monkeypatch.setattr(service._installation, "hz", fresh)
+    change = service.remove("heinzel-old")
+    assert ("system", "skill", "export", "--sync", "--json") in calls
+    assert change.done
+    assert change.next == ["hz system skill export --sync"]

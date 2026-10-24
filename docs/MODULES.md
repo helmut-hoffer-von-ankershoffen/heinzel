@@ -33,6 +33,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
+| [`system.skill`](#systemskill) | List the skills plugins ship for AI, and hand chosen ones to Claude Code. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
@@ -355,6 +356,21 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |
 
 Settings: [`[system.runner.chat]`](CONFIGURATION.md#systemrunnerchat).
+
+## `system.skill`
+
+List the skills plugins ship for AI, and hand chosen ones to Claude Code.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the skills in effect: which module offers each, what it hides, and where it is exported. | `hz system skill list` | `system_skill_list` | — | `GET /api/system/skill/list` |  | expert |
+| Show a skill: where it comes from, its files and hints, and its body. | `hz system skill show` | `system_skill_show` | — | `GET /api/system/skill/show` |  | expert |
+| Export skills you name for Claude Code, as `heinzel-<name>` in each `[system.skill] export_dirs`. | `hz system skill export` | — | — | — | yes | expert |
+| Remove skills hz exported for Claude Code; directories hz didn't write are left alone. | `hz system skill unexport` | — | — | — | yes | expert |
+
+Settings: [`[system.skill]`](CONFIGURATION.md#systemskill).
+
+Health checks: reported by `hz system doctor`.
 
 ## `system.theme`
 

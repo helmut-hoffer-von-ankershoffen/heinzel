@@ -187,6 +187,14 @@ Plugins add their own tables.
 | `keep_days` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS` | `30` | Days a chat session is kept after its last message, then removed. |
 | `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | Chat sessions kept at most; the oldest beyond are removed. |
 
+## `[system.skill]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `chat` | `HZ_SYSTEM_SKILL__CHAT` | `None` | Skills the chat may load, by name, e.g. `["explain-heinzel"]`; none means the core's skills. |
+| `personal_dir` | `HZ_SYSTEM_SKILL__PERSONAL_DIR` | `None` | A directory of your own skills, each a directory with a SKILL.md; they win over every plugin's. Defaults to `skills` in your hz configuration directory. |
+| `export_dirs` | `HZ_SYSTEM_SKILL__EXPORT_DIRS` | platform-specific | Directories `hz system skill export` writes chosen skills into, one per coding agent, as `heinzel-<name>`. |
+
 ## `[system.theme]`
 
 | Key | Environment variable | Default | Description |

@@ -5547,6 +5547,169 @@
         "title": "Skill",
         "type": "object"
       },
+      "SkillDetail": {
+        "description": "One skill with its body, as `hz system skill show` prints it.",
+        "properties": {
+          "body": {
+            "description": "Its body, cleaned, without the frontmatter.",
+            "title": "Body",
+            "type": "string"
+          },
+          "skill": {
+            "$ref": "#/components/schemas/SkillView",
+            "description": "The skill."
+          }
+        },
+        "required": [
+          "skill",
+          "body"
+        ],
+        "title": "SkillDetail",
+        "type": "object"
+      },
+      "SkillList": {
+        "description": "Every skill in effect, the names nobody decided between, and personal skills that failed their checks.",
+        "properties": {
+          "conflicts": {
+            "description": "Names left out: an org and the site both.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "next": {
+            "description": "Commands worth running next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "problems": {
+            "description": "Your skills that failed a check, and why.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "skills": {
+            "description": "The skills in effect, by name.",
+            "items": {
+              "$ref": "#/components/schemas/SkillView"
+            },
+            "title": "Skills",
+            "type": "array"
+          }
+        },
+        "required": [
+          "skills"
+        ],
+        "title": "SkillList",
+        "type": "object"
+      },
+      "SkillView": {
+        "description": "A skill in effect: what it is, where it comes from, and what it hides.",
+        "properties": {
+          "chat": {
+            "default": false,
+            "description": "Whether the chat may use it (`[system.skill] chat`).",
+            "title": "Chat",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "When to use it, in one line.",
+            "title": "Description",
+            "type": "string"
+          },
+          "exported": {
+            "description": "Directories it is exported to, from `hz system skill export`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Exported",
+            "type": "array"
+          },
+          "files": {
+            "description": "Paths of the files beside its SKILL.md.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "fingerprint": {
+            "description": "SHA-256 over its files.",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "hints": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Frontmatter hints such as `allowed-tools`, never applied.",
+            "title": "Hints",
+            "type": "object"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The module offering it; none for a personal skill.",
+            "title": "Module"
+          },
+          "name": {
+            "description": "The skill's name, e.g. `review-pull-request`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin's distribution; none for the core and yours.",
+            "title": "Plugin"
+          },
+          "scripts": {
+            "default": 0,
+            "description": "How many of them are scripts, which hz never runs.",
+            "title": "Scripts",
+            "type": "integer"
+          },
+          "shadows": {
+            "description": "Modules (or `personal`) whose skill of the same name this one hides.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Shadows",
+            "type": "array"
+          },
+          "source": {
+            "description": "`core`, `plugin`, `layer` or `personal`.",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "source",
+          "fingerprint"
+        ],
+        "title": "SkillView",
+        "type": "object"
+      },
       "StackView": {
         "description": "`hz system layer show`: the layers you are in, general to specific, and what they bring together.",
         "properties": {
@@ -8889,6 +9052,73 @@
           }
         },
         "summary": "Show a chat session: its context, messages, actions and costs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/skill/list": {
+      "get": {
+        "description": "List the skills in effect: which module offers each, what it hides, and where it is exported.",
+        "operationId": "system_skill_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the skills in effect: which module offers each, what it hides, and where it is exported.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/skill/show": {
+      "get": {
+        "description": "Show a skill: where it comes from, its files and hints, and its body.",
+        "operationId": "system_skill_show",
+        "parameters": [
+          {
+            "description": "The skill, one `hz system skill list` shows, e.g. `explain-heinzel`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The skill, one `hz system skill list` shows, e.g. `explain-heinzel`.",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a skill: where it comes from, its files and hints, and its body.",
         "tags": [
           "system"
         ]

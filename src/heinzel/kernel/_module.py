@@ -40,6 +40,7 @@ from heinzel.kernel._lets import (
 )
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, PlaybookSetup, templates_in
 from heinzel.kernel._prompter import Prompter
+from heinzel.kernel._skills import SkillLet, skills_in
 from heinzel.kernel._spec import hookimpl
 from heinzel.kernel._themes import Theme, ThemeLet, sourced_themes
 
@@ -555,6 +556,30 @@ class Module:
         lets: list[ThemeLet] = []
         for theme, directory in sourced_themes(source):
             let = ThemeLet(name=theme.name, theme=theme, directory=directory)
+            self.add(let)
+            lets.append(let)
+        return tuple(lets)
+
+    def skill(self, source: Path) -> tuple[SkillLet, ...]:
+        """Offer skills (ADR 0060): a skill's directory with a `SKILL.md`, or a directory of them.
+
+        Data only, read and checked now, at import: `hz system skill list` lists them, Pydantic AI turns and MCP
+        clients read them through `Skills`, and `hz system skill export` hands chosen ones to Claude Code. Of two
+        modules offering a skill of the same name, the more specific layer of the person's stack wins (ADR 0040); a
+        plugin outside the stack never hides a core skill. Scripts a skill ships are text: nothing in hz runs them.
+
+        Example:
+            ```python
+            module.skill(Path(__file__).parent / "skills")
+            ```
+
+        Raises:
+            ValueError: If a skill breaks a rule of ADR 0060 (frontmatter, sizes, text only, links, a secret, its
+                name), or the module already offers a skill of that name.
+        """
+        lets: list[SkillLet] = []
+        for skill, directory in skills_in(source):
+            let = SkillLet(name=skill.name, skill=skill, directory=directory)
             self.add(let)
             lets.append(let)
         return tuple(lets)

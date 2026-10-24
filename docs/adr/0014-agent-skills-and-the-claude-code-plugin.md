@@ -1,6 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
+amended-by: 0060
 ---
 
 # 0014: Agent skills ship with Heinzelmännchen and as a Claude Code plugin
