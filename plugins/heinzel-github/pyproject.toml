@@ -7,6 +7,11 @@ license = "MIT"
 requires-python = ">=3.12"
 dependencies = ["heinzel>=0.2.0"] # released together; the release process bumps the bound
 
+[project.urls]
+Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-github"
+Changelog = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/CHANGELOG.md"
+Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
+
 [project.entry-points."heinzel.modules"]
 github = "heinzel_github"
 

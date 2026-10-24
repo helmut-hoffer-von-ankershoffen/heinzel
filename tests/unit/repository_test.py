@@ -107,6 +107,9 @@ def test_first_party_plugins_are_released_tested_and_fenced_with_the_core(packag
     assert project["name"] == distribution
     assert project["version"] == version
     assert project["dependencies"] == [f"heinzel>={version}"]
+    repository = root["project"]["urls"]["Source"]
+    assert project["urls"]["Source"] == f"{repository}/tree/main/plugins/{distribution}", "`hz --version` links it"
+    assert project["urls"]["Issues"] == root["project"]["urls"]["Issues"]
     assert not any(r.startswith(distribution) for r in root["project"]["dependencies"]), "not installed by default"
     assert f"{distribution}>={version}" in root["dependency-groups"]["test"]
     assert root["tool"]["uv"]["sources"][distribution] == {"workspace": True}
@@ -133,7 +136,17 @@ def test_first_party_plugins_are_released_tested_and_fenced_with_the_core(packag
     assert ("pyproject.toml", f'"{distribution}>={{current_version}}"') in bumped
 
 
-UNTRACKED = {".git", ".venv", "worktrees", "__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_cache", "dist"}
+UNTRACKED = {
+    ".git",
+    ".venv",
+    "worktrees",
+    "__pycache__",
+    ".hypothesis",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+    "dist",
+}
 
 
 def test_nothing_names_the_old_directory_of_first_party_plugins():
