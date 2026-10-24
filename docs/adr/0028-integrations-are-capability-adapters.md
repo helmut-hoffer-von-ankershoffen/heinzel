@@ -381,7 +381,8 @@ adapters are first-party plugins, not separate repositories:
 - Built: GitHub (`code-host`, `tracker`; through the `gh` CLI, [ADR 0035](0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md);
   the pulls list from [ADR 0033](0033-github-rest-api-over-urllib.md)) and Atlassian
   (`tracker`, `documents`; [ADR 0034](0034-atlassian-cloud-rest-apis-over-urllib.md)), both moved from their own repositories at
-  their v0.1.0. Planned: Google Workspace, Zoom and Slack.
+  their v0.1.0, and Google Workspace (`documents`, `calendar`, `mail`; through the `gws` CLI,
+  [ADR 0042](0042-google-workspace-through-the-gws-cli.md)). Planned: Zoom and Slack.
 - Separate repositories, scaffolded from `template/`, remain the model for community and company plugins (for
   example `heinzel-example`).
 - The maintainer named the directory holding them `plugins/` ("it contains plugins"), with `heinzel-clock` moved there
@@ -396,3 +397,10 @@ adapters are first-party plugins, not separate repositories:
 - [ADR 0021](0021-workflow-contracts.md) contract `inputs`, `outputs` and `publishes` would name capabilities rather
   than vendors.
 - Agent runners follow the same pattern: [ADR 0029](0029-agent-runners-are-capability-adapters.md).
+- **Providers are pluggable; first-party plugins are defaults** (maintainer's decision, 2026-10-24). A first-party
+  adapter is the default provider of its capabilities for its vendor, never the only one: any other plugin that
+  provides the same capabilities can be bound instead, per person or site, with the same `[capabilities]` keys, and
+  workflows don't notice. `heinzel-google` is the default provider of `documents` (Docs and Sheets) and `calendar`
+  for Google Workspace.
+- `heinzel-google` reads Google Workspace through the Google Workspace CLI, `gws`, which owns sign-in and tokens:
+  [ADR 0042](0042-google-workspace-through-the-gws-cli.md).

@@ -1,0 +1,20 @@
+[project]
+name = "heinzel-google"
+version = "0.2.0"
+description = "Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = ["heinzel>=0.2.0"] # released together; the release process bumps the bound
+
+[project.urls]
+Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-google"
+Changelog = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/CHANGELOG.md"
+Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
+
+[project.entry-points."heinzel.modules"]
+google = "heinzel_google"
+
+[build-system]
+requires = ["hatchling>=1.29.0"]
+build-backend = "hatchling.build"
