@@ -484,7 +484,13 @@ class Kernel:
                 match let:
                     case OperationLet():
                         requester = Requester(
-                            record.qualname, "operation", let.name, let.requires, own, publishes=not let.read_only
+                            record.qualname,
+                            "operation",
+                            let.name,
+                            let.requires,
+                            own,
+                            publishes=not let.read_only,
+                            optional=let.optional,
                         )
                         requesters.append(requester)
                         self._own(owners, let.func, requester, record)

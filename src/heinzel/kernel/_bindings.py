@@ -95,6 +95,9 @@ class Requester:
     """What its module declared, which it may use too (read modes only)."""
     publishes: bool = False
     """Whether it is a publish operation (`read_only=False`), the only kind that gets `write`."""
+    optional: bool = False
+    """Whether it does without its own requirements when nothing serves them (an optional operation): an unmet one
+    is no doctor finding, and its injected handle refuses only when called."""
     serves: tuple[tuple[str, str], ...] = ()
     """For a module that only provides adapters, the (capability, adapter) pairs it provides: its requirements are
     needed only while one of them serves someone."""
@@ -141,6 +144,8 @@ class CapabilityUse:
     """Hosts that adapter reaches, declared or read from its settings; empty if unknown, or none serves."""
     problem: str | None
     """Why the requirement is unmet; None when it is met."""
+    optional: bool = False
+    """Whether the requester does without it when it is unmet, so that is no doctor finding."""
 
 
 class _Handle:
@@ -272,6 +277,7 @@ class Capabilities:
                     adapter=adapter.let.adapter if adapter else None,
                     hosts=self.hosts_of(adapter)[0] if adapter else (),
                     problem=problem,
+                    optional=requester.optional,
                 )
                 rows.append((requester, use))
         idle = _idle(rows)
@@ -325,6 +331,9 @@ class Capabilities:
     def handle(self, capability: Capability, func: Callable[..., Any]) -> object:
         """The handle `func` gets for `capability`, for the injector.
 
+        An optional operation (`optional=True`) whose own requirement isn't served gets a handle whose every method
+        raises why; anything else `handle_for` refuses is refused here.
+
         Raises:
             HeinzelError: If `func` acts for no requester, or `handle_for` refuses.
         """
@@ -336,6 +345,17 @@ class Capabilities:
                 f"health providers of a registered module can declare capabilities."
             )
             raise HeinzelError(msg)
+        requirement, modes = requester.grant(capability.name)
+        own = any(r.capability == capability.name for r in requester.requires)
+        if requester.optional and own and requirement is not None and modes:
+            wanted = Requirement(capability.name, modes, requirement.adapter)
+            adapter, problem = self.adapter_for(wanted)
+            if adapter is None or problem is not None:
+                # An optional operation learns that nothing serves it on its first call, not when it is injected:
+                # it asks `CapabilityView.serves` first and degrades instead of failing (`hz org agenda`).
+                unmet = self._unmet(requester, wanted, problem)
+                label = f"{capability.name}:unserved for {requester.label}"
+                return _Handle({}, dict.fromkeys(capability.methods, unmet), label)
         return self.handle_for(requester, capability)
 
     def handle_for(self, requester: Requester, capability: Capability) -> object:
@@ -363,8 +383,7 @@ class Capabilities:
         wanted = Requirement(capability.name, modes, requirement.adapter)
         adapter, problem = self.adapter_for(wanted)
         if adapter is None or problem is not None:
-            msg = f"{requester.label} needs {wanted}: {problem}. {self.fix(capability.name)}"
-            raise HeinzelError(msg)
+            raise HeinzelError(self._unmet(requester, wanted, problem))
         # A reader's adapter is built on its first call, not here: a requester that never calls it, such as a setup
         # step that drafts only when asked, doesn't fail because what the adapter itself needs is unbound. A publish
         # operation's adapters are built here, so that one whose factory fails stops it before anything is written.
@@ -386,6 +405,10 @@ class Capabilities:
             denied[name] = f"{requester.label} can't call {capability.name}.{name}, which needs {mode}: {why}."
         label = f"{capability.name}:{','.join(m for m in MODES if m in modes)} for {requester.label}"
         return _Handle(allowed, denied, label)
+
+    def _unmet(self, requester: Requester, wanted: Requirement, problem: str | None) -> str:
+        """Why no adapter serves `wanted` for `requester`, ending with what to do."""
+        return f"{requester.label} needs {wanted}: {problem}. {self.fix(wanted.capability)}"
 
     def _instance(self, adapter: Adapter, capability: Capability) -> object:
         key = (adapter.let.capability, adapter.let.adapter)

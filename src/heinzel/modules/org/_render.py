@@ -1,9 +1,13 @@
-"""How `hz org show` looks in a terminal."""
+"""How `hz org show` and `hz org agenda` look in a terminal."""
+
+from datetime import datetime
 
 from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
+from heinzel import Event
+from heinzel.modules.org._agenda import Agenda
 from heinzel.modules.org._models import Profile
 
 
@@ -27,3 +31,24 @@ def render_profile(profile: Profile) -> RenderableType:
     if profile.complete:
         return table
     return Group(table, Text(f"Missing {', '.join(profile.missing)}: run `{profile.fix}`."))
+
+
+def render_agenda(agenda: Agenda) -> RenderableType:
+    """The meeting now and the next one, one line each, or why they can't be read and what to run."""
+    if agenda.problem is not None:
+        fix = f" Run `{agenda.fix}`." if agenda.fix else ""
+        return Text(f"{agenda.problem}{fix}")
+    now = Text("Now:  ")
+    current, upcoming = agenda.current, agenda.next
+    now = Text("Now:  ")
+    now.append(_event(current, "until", current.end, agenda.now) if current else "free")
+    then = Text("Next: ")
+    then.append(_event(upcoming, "at", upcoming.start, agenda.now) if upcoming else "nothing until the end of tomorrow")
+    return Group(now, then)
+
+
+def _event(event: Event, word: str, at: datetime, now: datetime) -> str:
+    when = at.astimezone(now.tzinfo)
+    day = "" if when.date() == now.date() else f"{when:%a} "
+    join = f" ({event.conference_url})" if event.conference_url else ""
+    return f"{event.title}, {word} {day}{when:%H:%M}{join}"

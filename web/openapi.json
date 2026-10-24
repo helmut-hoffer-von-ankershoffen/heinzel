@@ -56,6 +56,80 @@
         "title": "AdapterInfo",
         "type": "object"
       },
+      "Agenda": {
+        "description": "The meeting you are in now and your next one, or why they can't be read.",
+        "properties": {
+          "calendar": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The adapter bound to `calendar`, e.g. google, also when that binding can't be used; none when no calendar is connected.",
+            "title": "Calendar"
+          },
+          "current": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Event"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The event in progress now, not all-day and not cancelled; the one that started last if several overlap; none if you are free."
+          },
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The command that connects a calendar when none is; none otherwise (`problem` says what to do).",
+            "title": "Fix"
+          },
+          "next": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Event"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The first event starting after now, not all-day and not cancelled, until the end of tomorrow; none if there is none."
+          },
+          "now": {
+            "description": "When the agenda was read, in your time zone.",
+            "format": "date-time",
+            "title": "Now",
+            "type": "string"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why there is no agenda: no calendar is connected, its binding can't be used, or reading it failed (e.g. an expired sign-in); none when it was read.",
+            "title": "Problem"
+          }
+        },
+        "required": [
+          "now"
+        ],
+        "title": "Agenda",
+        "type": "object"
+      },
       "AgentResult": {
         "description": "The outcome of one agent session, for the job's result and its receipt.",
         "properties": {
@@ -444,6 +518,12 @@
             },
             "title": "Modes",
             "type": "array"
+          },
+          "optional": {
+            "default": false,
+            "description": "Whether the requester does without it when it is unmet, so that is no finding.",
+            "title": "Optional",
+            "type": "boolean"
           },
           "problem": {
             "anyOf": [
@@ -1407,6 +1487,108 @@
         ],
         "title": "Disposition",
         "type": "string"
+      },
+      "Event": {
+        "description": "One occurrence of an entry in a calendar; a recurring entry is expanded into its occurrences.",
+        "properties": {
+          "all_day": {
+            "default": false,
+            "description": "Whether it is an all-day event.",
+            "title": "All Day",
+            "type": "boolean"
+          },
+          "attendees": {
+            "description": "Who is invited, the user included.",
+            "items": {
+              "$ref": "#/components/schemas/Participant"
+            },
+            "title": "Attendees",
+            "type": "array"
+          },
+          "conference_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Identifier of the conference it is held in, in the meeting tool's notation (a Zoom meeting number taken from the conferencing data, location or description; a Meet code), so that the `Meeting` with the same `conference_id` and an overlapping time is this event's meeting; none without conferencing.",
+            "title": "Conference Id"
+          },
+          "conference_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Link to join the conference; none without one.",
+            "title": "Conference Url"
+          },
+          "end": {
+            "description": "When it ends, exclusive; the next midnight for an all-day event.",
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "id": {
+            "description": "Identifier of this occurrence in the adapter's notation.",
+            "title": "Id",
+            "type": "string"
+          },
+          "organizer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Participant"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who organizes it; none if the vendor doesn't say."
+          },
+          "start": {
+            "description": "When it starts; midnight in the calendar's zone for an all-day event.",
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "status": {
+            "default": "confirmed",
+            "description": "State in the vendor's words, e.g. `confirmed`, `cancelled`.",
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "description": "Title (summary) of the event.",
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where people open it; none if it has no web address.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "start",
+          "end"
+        ],
+        "title": "Event",
+        "type": "object"
       },
       "ExpertMode": {
         "description": "Whether expert mode is on, and who each operation is for.",
@@ -2382,6 +2564,37 @@
           "audience"
         ],
         "title": "OperationAudience",
+        "type": "object"
+      },
+      "Participant": {
+        "description": "Someone in a chat, a meeting or an event: how the vendor addresses them, nothing more (ADR 0024).",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Email address, the key a directory of record joins on; none if the vendor hides it.",
+            "title": "Email"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Display name as the vendor shows it; none if it doesn't.",
+            "title": "Name"
+          }
+        },
+        "title": "Participant",
         "type": "object"
       },
       "PlaybookList": {
@@ -3822,6 +4035,28 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/org/agenda": {
+      "get": {
+        "description": "Show the meeting you are in now and your next one, from your calendar, or how to connect one.",
+        "operationId": "org_agenda",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agenda"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show the meeting you are in now and your next one, from your calendar, or how to connect one.",
+        "tags": [
+          "org"
+        ]
+      }
+    },
     "/org/show": {
       "get": {
         "description": "Show your profile: who you are, your role, time zone and working hours, and what is still missing.",

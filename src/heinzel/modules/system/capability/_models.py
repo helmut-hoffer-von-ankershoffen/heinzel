@@ -40,6 +40,9 @@ class CapabilityUse(BaseModel):
         description="Hosts that adapter sends data to; `unknown (configured)` when its configuration decides."
     )
     problem: str | None = Field(description="Why the requirement is unmet; none when it is met.")
+    optional: bool = Field(
+        default=False, description="Whether the requester does without it when it is unmet, so that is no finding."
+    )
 
 
 class CapabilityReport(BaseModel):

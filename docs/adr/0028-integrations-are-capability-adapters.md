@@ -264,8 +264,14 @@ request (director's decisions, 2026-10-24):
       confirmed. A confirmed person already in the draft is named from it, not looked up again.
     - **A reader's handle builds its adapter on the first call**, not when injected. A requester that never calls
       it, such as a setup step that drafts only when asked, doesn't fail because what the adapter itself needs is
-      unbound. The binding is still checked when the handle is made. A publish operation's adapters are still built
-      when it is injected, so one whose factory fails stops it before anything is written. The wrappers' closures
+      unbound. The binding is still checked when the handle is made, except for an **optional operation**
+      (2026-10-24): `@module.operation(requires=[...], optional=True)` does without its own requirements when
+      nothing serves them. It asks `CapabilityView.serves` first and degrades, as `hz org agenda` does for the web
+      app's footer, so its handle for an unserved requirement is made anyway and every method raises why, with the
+      fix. While nothing is bound, an unmet one stays in the matrix but is no doctor finding (an `up` check saying
+      how to use it); a binding that can't be used (not installed, ambiguous, lacking the mode) still is one. Only
+      read-only operations can be optional. A publish operation's adapters are still built when it is injected, so
+      one whose factory fails stops it before anything is written. The wrappers' closures
       reach the kernel's `Capabilities` through that lazy build, which, like the rest of this design, is no
       isolation boundary.
     - **A module that only provides adapters** needs its requirements only while one of its adapters serves a

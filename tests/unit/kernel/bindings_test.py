@@ -329,6 +329,64 @@ def test_an_unbound_capability_fails_with_the_binding_to_write(make_kernel):
         run(kernel, "digest", "show")
 
 
+def test_an_unserved_optional_operation_is_injected_and_refused_only_when_it_calls(make_kernel):
+    module = Module("footer", "Degrades when nothing serves documents.")
+
+    @module.operation(requires=["documents:read"], optional=True)
+    def peek(documents: Documents, view: CapabilityView) -> str:
+        """Read a document if one is served."""
+        _, problem = view.serves(Requirement.parse("documents:read"))
+        return f"unserved: {problem}" if problem else documents.read("weekly").title
+
+    kernel = make_kernel(notes=notes_module(), footer=module, digest=digest_module())
+    assert run(kernel, "footer", "peek") == "unserved: no adapter bound"
+    assert repr(kernel._capabilities.handle(CAPABILITIES["documents"], operation(kernel, "footer", "peek").func)) == (
+        "<documents:unserved for footer peek>"
+    )
+    with pytest.raises(HeinzelError, match=r"digest count needs documents:read: no adapter bound"):
+        kernel._capabilities.handle(CAPABILITIES["documents"], operation(kernel, "digest", "count").func)
+    [use] = [use for use in kernel.resolve(CapabilityView).matrix() if use.requester == "footer peek"]
+    assert (use.optional, use.problem) == (True, "no adapter bound")
+
+
+def optional_digest() -> Module:
+    module = Module("optional", "Reads documents optionally, and its module's too.", requires=["tracker:read"])
+
+    @module.operation(requires=["documents:read"], optional=True)
+    def peek(documents: Documents) -> str:
+        """Read a document through its own optional requirement."""
+        return documents.read("weekly").title
+
+    @module.operation(optional=True)
+    def inherited(tracker: Tracker) -> int:
+        """Read issues through the module's requirement, which optional doesn't cover."""
+        return len(tracker.issues_updated("APP", WINDOW))
+
+    return module
+
+
+def test_an_optional_operation_is_refused_at_injection_for_what_it_only_inherits(make_kernel):
+    kernel = make_kernel(optional=optional_digest())
+    with pytest.raises(HeinzelError, match=r"optional inherited needs tracker:read: no adapter bound"):
+        kernel._capabilities.handle(CAPABILITIES["tracker"], operation(kernel, "optional", "inherited").func)
+
+
+def test_a_served_optional_operation_gets_the_real_handle(make_kernel):
+    kernel = make_kernel(notes=notes_module(), optional=optional_digest(), config=bind(documents="notes"))
+    handle = kernel._capabilities.handle(CAPABILITIES["documents"], operation(kernel, "optional", "peek").func)
+    assert repr(handle) == "<documents:read for optional peek>"
+    assert run(kernel, "optional", "peek") == "notes:weekly"
+
+
+def test_a_publish_operation_cant_be_optional():
+    with pytest.raises(ValueError, match="can't make its requirements optional"):
+
+        @Module("bad", "Publishes optionally.").operation(read_only=False, requires=["documents:write"], optional=True)
+        def publish(documents: Documents) -> str:
+            """Write."""
+            return documents.replace_section("weekly", "summary", "x").ref
+
+
 def test_a_binding_to_an_unknown_adapter_fails(make_kernel):
     kernel = make_kernel(digest=digest_module(), config=bind(documents="nowhere"))
     with pytest.raises(

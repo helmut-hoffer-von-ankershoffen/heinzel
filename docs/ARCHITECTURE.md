@@ -55,7 +55,7 @@ the kinds it understands.
 | `LayerLet` | `module.layer(parent=..., site=..., roles=...)`: the plugin sits in a company's tree, under its parent layer and at a site layer | the kernel: `Kernel.layers()` checks the tree, `Kernel.layer_stack()` stacks your layers general to specific, afresh on every call; `system.layer`: `hz system layer list`, `show`, doctor ([ADR 0040](adr/0040-layers-and-playbooks-are-plugins.md)) |
 | `JobLet` | `@module.job(schedule="0 9 * * MON")` | `hz system daemon tick`, run by launchd or systemd ([ADR 0020](adr/0020-daemon-head.md)) |
 | `ProviderLet` | `@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter class; `hosts=` takes a function of the module's settings when they decide the hosts | the kernel's capability bindings and `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
-| `RequirementLet` | `Module(..., requires=["tracker:read"])` (read only); operations and jobs take `requires=[...]` | the kernel's capability handles and the doctor check of `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
+| `RequirementLet` | `Module(..., requires=["tracker:read"])` (read only); operations and jobs take `requires=[...]`, and a read-only operation that degrades without its own takes `optional=True` | the kernel's capability handles and the doctor check of `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
 
 New kinds of lets (watchers) extend Heinzelmännchen without changing existing heads; see
 [ADR 0010](adr/0010-towards-a-reactive-workflow-engine.md). Workflow contracts are data, not lets: the `workflow`
