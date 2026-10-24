@@ -75,8 +75,7 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
         as_json = kwargs.pop(JSON_PARAMETER) or (chosen or Format(kernel.settings.output_format)) is Format.JSON
         progress.enabled = not as_json
         # On a terminal, and not for scripts (--json), operations that ask (a plugin's preview) may ask.
-        if has_terminal() and not as_json:
-            kernel.bind(Prompter, ConsolePrompter(console))
+        kernel.bind(Prompter, ConsolePrompter(console) if has_terminal() and not as_json else Prompter())
         try:
             result = kernel.invoke(operation, **kwargs)
         except HeinzelError as exc:

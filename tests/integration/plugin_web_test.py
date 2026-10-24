@@ -258,6 +258,43 @@ def test_the_cli_shows_what_it_would_install_and_how_to_confirm(kernel):
     assert "enabled" in listed.output
 
 
+def test_on_a_terminal_the_preview_asks_and_installs_on_yes_and_json_stays_two_step(kernel, monkeypatch):
+    from typer.testing import CliRunner
+
+    from heinzel.heads.cli import _command, build
+
+    monkeypatch.setattr(_command, "has_terminal", lambda: True)
+    app = build(kernel)
+    declined = CliRunner().invoke(app, ["system", "plugin", "add", "heinzel-crm"], input="n\n")
+    assert declined.exit_code == 0, declined.output
+    assert "Install heinzel-crm 1.1.0 now? [y/N]" in declined.output
+    assert "Not installed." in declined.output
+    assert "hz system plugin add heinzel-crm==1.1.0 --confirm" in declined.output
+    assert kernel.runs == []
+    accepted = CliRunner().invoke(app, ["system", "plugin", "add", "heinzel-crm"], input="y\n")
+    assert accepted.exit_code == 0, accepted.output
+    assert "✓ Installed heinzel-crm 1.1.0." in accepted.output
+    assert "Restart hz ui to load it (or click Restart in the app)." in accepted.output
+    assert len(kernel.runs) == 1
+    scripted = CliRunner().invoke(app, ["system", "plugin", "add", "heinzel-crm", "--json"], input="y\n")
+    assert '"done": false' in scripted.output
+    assert len(kernel.runs) == 1
+
+
+def test_off_a_terminal_the_preview_says_it_installed_nothing(kernel):
+    from typer.testing import CliRunner
+
+    from heinzel.heads.cli import build
+
+    shown = CliRunner().invoke(build(kernel), ["system", "plugin", "add", "heinzel-crm"])
+    assert "Not installed yet: this was a preview." in shown.output
+    assert (
+        "To install: hz system plugin add heinzel-crm==1.1.0 --confirm"
+        in shown.output.replace("\n", " ").replace("  ", " ")
+        or "--confirm" in shown.output
+    )
+
+
 def test_mcp_over_stdio_manages_plugins_and_unauthenticated_http_mcp_cannot(kernel):
     from heinzel.heads import mcp
 

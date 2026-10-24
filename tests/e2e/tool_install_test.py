@@ -269,9 +269,7 @@ def test_a_plugin_from_a_git_repository_is_added_with_confirm(sandbox, tmp_path)
     spec = "git+https://git.example.test/acme/heinzel-dummy@main"
     preview = sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, **rewrite)
     assert "Not installed yet" in preview
-    assert "Installed heinzel-dummy" in sandbox.run(
-        sandbox.hz_bin, "system", "plugin", "add", spec, "--confirm", **rewrite
-    )
+    assert "✓ Installed" in sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, "--confirm", **rewrite)
     assert sandbox.hz("dummy", "hello").strip() == "hello from dummy"
 
 
