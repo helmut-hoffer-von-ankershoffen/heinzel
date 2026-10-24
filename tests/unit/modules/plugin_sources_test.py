@@ -221,3 +221,26 @@ def test_browser_urls_are_https_without_credentials():
     assert _sources.browser_url(None) is None
     assert _sources.browser_url("http://example.org/x") is None
     assert _sources.browser_url("git+https://ada:t0ken@example.org/o/x.git/") == "https://example.org/o/x"
+
+
+@pytest.mark.parametrize(
+    ("url", "ref", "subdirectory", "expected"),
+    [
+        ("https://github.com/o/heinzel-x", "abc", None, "https://github.com/o/heinzel-x/tree/abc"),
+        ("git+https://github.com/o/heinzel-x.git/", "v1", None, "https://github.com/o/heinzel-x/tree/v1"),
+        ("https://ada:t0ken@github.com/o/mono", "abc", "plugins/x/", "https://github.com/o/mono/tree/abc/plugins/x"),
+        ("ssh://git@github.com/o/heinzel-x.git", "abc", None, "https://github.com/o/heinzel-x/tree/abc"),
+        ("git+ssh://git@github.com:22/o/heinzel-x", None, None, "https://github.com/o/heinzel-x"),
+        ("git@github.com:o/heinzel-x.git", "abc", None, "https://github.com/o/heinzel-x/tree/abc"),
+        ("https://github.com/o/heinzel-x", None, None, "https://github.com/o/heinzel-x"),
+        ("https://ada:t0ken@gitlab.example.org/o/x.git", "abc", None, "https://gitlab.example.org/o/x"),
+        ("https://gitlab.example.org/o/mono", "abc", "x", "https://gitlab.example.org/o/mono/tree/abc/x"),
+        ("ssh://git@gitlab.example.org/o/x", "abc", None, None),
+        ("git@gitlab.example.org:o/x.git", "abc", None, None),
+        ("http://github.com/o/x", "abc", None, None),
+        (None, "abc", None, None),
+        ("", None, None, None),
+    ],
+)
+def test_an_installed_repository_opens_at_the_code_installed(url, ref, subdirectory, expected):
+    assert _sources.installed_repository_url(url, ref, subdirectory) == expected

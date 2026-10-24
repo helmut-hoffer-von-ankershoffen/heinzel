@@ -267,3 +267,14 @@ def test_org_sync_offers_the_binding_the_stack_decides_and_leaves_the_undecided_
     items = {item["id"]: item for item in report["items"]}
     assert set(items) == {"binding:tracker"}  # the calendar is undecided between acme-payments and acme-lisbon
     assert items["binding:tracker"]["recommended"] == "acme-payments-checkout"
+
+
+def test_plugin_list_tells_what_kind_of_plugin_each_layer_is(acme):
+    code, listed = hz(acme(), "system", "plugin", "list")
+    assert code == 0, listed
+    acme_plugin = next(plugin for plugin in listed if plugin["distribution"] == "heinzel-acme")
+    assert (acme_plugin["kinds"], acme_plugin["themes"], acme_plugin["capabilities"]) == (
+        ["connector", "theme", "playbook"],
+        ["acme"],
+        ["acme:tracker"],
+    )

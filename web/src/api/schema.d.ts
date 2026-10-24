@@ -3355,6 +3355,11 @@ export interface components {
              */
             homepage?: string | null;
             /**
+             * Kinds
+             * @description What the plugin is, any of four, always in this order: `connector` when it brings adapters (`capabilities` isn't empty); `theme` when it offers themes; `capability` when it has an operation of its own besides the `info` every plugin from the template gets (e.g. `hz clock`); `playbook` when it ships one. In the web app `Capability` means such a feature of its own, while `capabilities` above, like ADR 0028, names the integration interfaces (tracker, calendar, ...) a connector implements.
+             */
+            kinds?: ("connector" | "theme" | "capability" | "playbook")[];
+            /**
              * Layers
              * @description Layers its modules declare (ADR 0040).
              */
@@ -3386,7 +3391,7 @@ export interface components {
             source_kind?: ("pypi" | "git" | "path") | null;
             /**
              * Source Url
-             * @description Where a browser shows its source: the git repository (with `/tree/<ref>/<subdirectory>` for a plugin in a subdirectory), or for PyPI its repository or PyPI page; https only, never with credentials; none for a directory or when unknown.
+             * @description Where a browser shows its source, from its `direct_url.json` (PEP 610): the git repository, on GitHub at `/tree/<commit>` (and `/<subdirectory>` for a plugin in one; an ssh remote becomes its https page), or for PyPI its repository or PyPI page; https only, never with credentials; none for a directory or when unknown.
              */
             source_url?: string | null;
             /**
@@ -3396,8 +3401,13 @@ export interface components {
              */
             summary: string;
             /**
+             * Themes
+             * @description Names of the themes its modules offer for the web app (`module.theme`, ADR 0044), sorted; `hz system theme use <name>` picks one.
+             */
+            themes?: string[];
+            /**
              * Version
-             * @description Installed version.
+             * @description Installed version, from the distribution's metadata as installed now; `0.0.0` only when the plugin says so itself (one not released yet).
              */
             version: string;
         };
