@@ -61,8 +61,9 @@ readable prose. Each point says what 0.2 builds and what comes later.
    - 0.2: PyYAML reads it, with a loader that keeps only YAML 1.2 core scalars, so `on`, `yes`, dates and `1:20` stay
      strings, and numbers with a leading zero stay strings too. Duplicate and non-string keys, anchors and aliases,
      explicit tags other than the core scalar ones, nesting deeper than 32, more than 10,000 values and files over
-     256 KiB are refused before anything is built; any failure is that file's diagnostic and never stops the others or
-     the daemon.
+     256 KiB are refused before anything is built, and so is a file holding control characters other than tab and line
+     feed (`HZC005`): escape sequences in a title or a diagnostic would reach whoever reads it on a terminal. Any
+     failure is that file's diagnostic and never stops the others or the daemon.
    - Later: a rewriting operation (`migrate`, `validate --fix`) needs a writer that keeps comments and layout, such as
      ruamel.yaml's round trip; reading doesn't.
 2. **Frontmatter.** The top level is OpenProse-compatible: `name` (lowercase words joined by single dashes, ≤64; a
@@ -176,8 +177,9 @@ the example and the filled model (`tests/unit/modules/workflow_schema_test.py`, 
 `hz workflow` through the CLI and REST heads, a receipted daemon run, one bad schedule leaving the other jobs and
 matrix rows intact while `check` fails, compiled jobs in the capability matrix, and a hostile project `hz.toml` that
 can't point discovery at its own contracts or raise the cap (`tests/integration/workflow_test.py`); contract names,
-titles, error messages and doctor text shown as written, never as Rich markup
-(`tests/integration/cli_plain_text_test.py`); `run` not reachable over REST (`tests/integration/rest_security_test.py`); the daemon running compiled jobs and surviving a failing compiler
+titles, error messages and doctor text shown as written, never as Rich markup and never with control characters
+(`tests/integration/cli_plain_text_test.py`, `tests/unit/heads/cli_render_test.py`); `run` not reachable over REST
+(`tests/integration/rest_security_test.py`); the daemon running compiled jobs and surviving a failing compiler
 (`tests/unit/modules/daemon_service_test.py`); the kernel's `handle_for` serving only the compiler's read-only jobs
 (`tests/unit/kernel/bindings_test.py`). No test runs a real agent. Still planned: golden tests for fingerprints,
 the contract graph, and `hz workflow check` in a team repository's CI template.

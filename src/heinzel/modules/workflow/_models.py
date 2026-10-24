@@ -359,12 +359,18 @@ def cron_problem(schedule: str) -> str | None:
     The shape is the kernel's own check, the one `JobLet` applies (five ASCII fields or an alias such as `@daily`), so
     a contract that passes here always compiles; croniter then checks the values.
     """
-    from croniter import croniter  # noqa: PLC0415 - only needed when a contract has a schedule
+    from croniter import CroniterBadDateError, croniter  # noqa: PLC0415 - only needed when a contract has a schedule
 
     if problem := schedule_problem(schedule):
         return f"invalid {problem}; e.g. 0 7 * * MON"
     if not schedule.startswith("@") and not croniter.is_valid(schedule):
         return f"invalid schedule {schedule!r}: a field is out of range, e.g. minute 0-59, hour 0-23, weekday MON-SUN"
+    # The daemon's own never-fires check (`system.daemon`'s schedule module), repeated because modules don't import
+    # each other's private files; keep the two in step.
+    try:
+        croniter(schedule, datetime(2000, 1, 1)).get_next(datetime)  # noqa: DTZ001 - wall-clock arithmetic is naive
+    except CroniterBadDateError:
+        return f"invalid schedule {schedule!r}: it never fires, e.g. 30 February"
     return None
 
 

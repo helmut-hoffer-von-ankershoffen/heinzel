@@ -112,7 +112,45 @@ def test_broken_yaml_is_reported_on_its_line(frontmatter, code, line):
 
 
 def test_characters_yaml_refuses_are_reported():
-    assert problems("---\nname: \x07\n---\n")[0] == (2, "HZC001", "frontmatter")
+    assert problems("---\nname: ￾\n---\n")[0] == (2, "HZC001", "frontmatter")
+
+
+ESC = "\x1b"
+
+
+@pytest.mark.parametrize(
+    ("where", "text"),
+    [
+        ("title", f"title: {ESC}[31mred{ESC}[0m"),
+        ("osc 8 link", f"title: {ESC}]8;;https://evil.invalid{ESC}\\click{ESC}]8;;{ESC}\\"),
+        ("osc 52 clipboard", f"title: {ESC}]52;c;cm0gLXJmIH4={chr(7)}"),
+        ("c1 csi", "title: \x9b31mred"),
+        ("bell", "title: ding\x07"),
+        ("delete", "title: oops\x7f"),
+    ],
+)
+def test_control_characters_are_refused_with_their_line(where, text):
+    text = contract(hz=f"schema: 1\n{text}\noutputs: {{digest: {{}}}}\n")
+    found = read_contract(PATH, "me", text)
+    assert not found.valid, where
+    assert [(d.line, d.code, d.message) for d in found.diagnostics] == [
+        (7, "HZC005", "control characters aren't allowed")
+    ]
+    assert found.body == ""
+    assert all(ESC not in str(d) and "\x9b" not in str(d) for d in found.diagnostics)
+
+
+def test_a_schedule_that_never_fires_is_refused():
+    found = read_contract(PATH, "me", contract(hz='schema: 1\ntitle: T\nschedule: "0 0 30 2 *"\noutputs: {d: {}}\n'))
+    assert [(d.code, d.message) for d in found.diagnostics if d.field == "hz.schedule"] == [
+        ("HZC011", "invalid schedule '0 0 30 2 *': it never fires, e.g. 30 February")
+    ]
+
+
+def test_control_characters_in_the_body_are_refused_too():
+    found = read_contract(PATH, "me", contract(body=BODY.replace("### Goal", f"### Goal {ESC}[2J")))
+    assert [d.code for d in found.diagnostics] == ["HZC005"]
+    assert read_contract(PATH, "me", contract(body=BODY + "\n\tindented with a tab\n")).valid
 
 
 def test_a_file_without_frontmatter_or_with_an_unclosed_one_is_reported():

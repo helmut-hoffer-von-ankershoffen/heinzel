@@ -94,6 +94,8 @@ _FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
 _ITEM = re.compile(r"^[-*+][ \t]+`([a-z][a-z0-9_]*)`")
 _LIST = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+\S")
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+"""C0 controls but tab and line feed, DEL and C1 controls: what a terminal acts on rather than shows."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,11 +207,10 @@ def _read(path: Path, namespace: Namespace, text: str | None) -> Contract:
     except (OSError, UnicodeDecodeError) as exc:
         problems.add(1, "HZC001", "file", f"can't read the file: {exc}")
         return Contract(path, namespace, name, None, "", tuple(problems.found))
-    if len(raw) > MAX_BYTES:
-        problems.add(1, "HZC001", "file", f"the file is {len(raw) // 1024} KiB; contracts are at most 256 KiB")
-        return Contract(path, namespace, name, None, "", tuple(problems.found))
     digest = "sha256:" + hashlib.sha256(raw).hexdigest()
     content = content.replace("\r\n", "\n").removeprefix("\ufeff")
+    if _refused(raw, content, problems):
+        return Contract(path, namespace, name, None, "", tuple(problems.found), sha256=digest)
     if not path.name.endswith(SUFFIX):
         problems.add(1, "HZC010", "file", f"a contract file is named `<name>{SUFFIX}`", f"rename it to {name}{SUFFIX}")
     split = _split(content)
@@ -241,6 +242,27 @@ def _read(path: Path, namespace: Namespace, text: str | None) -> Contract:
     _check_body(body, body_line, frontmatter, problems)
     body_text = _COMMENT.sub("", body).strip()
     return Contract(path, namespace, name, frontmatter, body_text, tuple(problems.found), lines, digest)
+
+
+def _refused(raw: bytes, content: str, problems: _Problems) -> bool:
+    """Whether the file is too large or holds control characters; then nothing else of it is read or shown.
+
+    Terminal escapes (colours, OSC 8 links, OSC 52 clipboard writes, C1 controls) would reach whoever reads a
+    diagnostic or a title.
+    """
+    if len(raw) > MAX_BYTES:
+        problems.add(1, "HZC001", "file", f"the file is {len(raw) // 1024} KiB; contracts are at most 256 KiB")
+        return True
+    controls = [number for number, line in enumerate(content.split("\n"), start=1) if CONTROLS.search(line)]
+    for number in controls[:20]:
+        problems.add(
+            number,
+            "HZC005",
+            "file",
+            "control characters aren't allowed",
+            "remove them; only tabs and line breaks may appear in a contract",
+        )
+    return bool(controls)
 
 
 def _split(content: str) -> tuple[str, str, int] | None:
