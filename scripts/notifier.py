@@ -12,10 +12,10 @@ sources, is not in git; the wheel ships it. The app runs on macOS 13 or later; b
 exits 1.
 
 `icons` (`make icons`) draws Heinzelmännchen from web/src/components/heinzel.ts, the shapes the web app's avatars
-are drawn from too, an original drawing and never an emoji font's artwork: heinzel.svg (the classic one alone) and
-heinzel-group.svg (three together, the product's logo). From those it makes everything else that shows them:
+are drawn from too, an original drawing and never an emoji font's artwork: heinzel.svg (the default one, cropped to
+the bust) and heinzel-swarm.svg (a busy swarm of them, the product's logo). From those it makes everything else:
 web/public/favicon.svg, favicon.ico, the images the web app's manifest names and the built-in theme's logo (ADR
-0044); an icon shows the group from GROUP_FROM pixels on, one Heinzelmännchen below. They are committed, because
+0044); an icon shows the swarm from SWARM_FROM pixels on, one Heinzelmännchen below. They are committed, because
 the Linux build has nothing to draw them with; tests check the SVGs. The PNG files' bytes depend on the macOS that
 drew them, so redraw them only when the drawing changes.
 """
@@ -45,23 +45,23 @@ WEB_ICONS = {
     "icons/maskable-512.png": (512, "maskable"),
     "icons/apple-touch-icon.png": (180, "maskable"),  # iOS and macOS round it themselves
 }
-"""The web app's icons by path under web/public: their size and icon.swift's style; all large enough for the group."""
+"""The web app's icons by path under web/public: their size and icon.swift's style; all large enough for the swarm."""
 FAVICON_SIZES = (16, 32)
 DRAWING = ROOT / "web" / "src" / "components" / "heinzel.ts"
 """Where Heinzelmännchen is drawn, as shapes the web app also draws its avatars from."""
 ARTWORK = SOURCES / "heinzel.svg"
-"""One Heinzelmännchen, the classic one: what the icons show below GROUP_FROM pixels."""
-GROUP = SOURCES / "heinzel-group.svg"
-"""Three of them together, the product's logo: what the icons show from GROUP_FROM pixels on."""
-GROUP_FROM = 48
-"""Below this many pixels the group doesn't read, and one Heinzelmännchen stands for it."""
+"""One Heinzelmännchen, the default one (grown, cropped to the bust): what the icons show below SWARM_FROM pixels."""
+SWARM = SOURCES / "heinzel-swarm.svg"
+"""A busy swarm of them, the product's logo: what the icons show from SWARM_FROM pixels on."""
+SWARM_FROM = 48
+"""Below this many pixels the swarm doesn't read, and one Heinzelmännchen stands for it."""
 THEME_LOGO = ROOT / "src" / "heinzel" / "kernel" / "assets" / "theme" / "logo"
-"""The built-in theme's logo (ADR 0044): the group as its mark, and wordmarks made from it."""
-COPIES = {PUBLIC / "favicon.svg": ARTWORK, THEME_LOGO / "mark.svg": GROUP}
+"""The built-in theme's logo (ADR 0044): the swarm as its mark, and wordmarks made from it."""
+COPIES = {PUBLIC / "favicon.svg": ARTWORK, THEME_LOGO / "mark.svg": SWARM}
 """Byte-for-byte copies of the artwork, for what can't reach it where it is."""
 WORDMARKS = {"wordmark-light.svg": ("light", "#1a1a1a"), "wordmark-dark.svg": ("dark", "#ececec")}
 """The built-in theme's wordmarks: the background each is for, and the name's colour on it."""
-SOURCE_NAMES = ("Info.plist", "heinzel-group.svg", "heinzel.svg", "icon.swift", "main.swift")
+SOURCE_NAMES = ("Info.plist", "heinzel-swarm.svg", "heinzel.svg", "icon.swift", "main.swift")
 """The app's sources, in the order its version digests them."""
 
 
@@ -96,16 +96,16 @@ def wordmark(background: str, fill: str) -> str:
     Raises:
         ValueError: heinzel.svg isn't one <svg> element with shapes in it.
     """
-    without_comments = re.sub(r"<!--.*?-->", "", GROUP.read_text(encoding="utf-8"), flags=re.DOTALL)
+    without_comments = re.sub(r"<!--.*?-->", "", SWARM.read_text(encoding="utf-8"), flags=re.DOTALL)
     match = re.fullmatch(r"\s*<svg\b[^>]*>(.*)</svg>\s*", without_comments, re.DOTALL)
     if match is None or not match.group(1).strip():
-        msg = f"{GROUP.name} isn't one <svg> element with shapes in it"
+        msg = f"{SWARM.name} isn't one <svg> element with shapes in it"
         raise ValueError(msg)
     shapes = "".join(f"    {line.strip()}\n" for line in match.group(1).splitlines() if line.strip())
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 200" role="img" aria-label="Heinzelmännchen">\n'
         f"  <!-- The built-in theme's wordmark on a {background} background,"
-        " made from heinzel-group.svg by `make icons`. -->\n"
+        " made from heinzel-swarm.svg by `make icons`. -->\n"
         '  <g transform="scale(0.390625)">\n'
         f"{shapes}"
         "  </g>\n"
@@ -136,19 +136,19 @@ def _svg_ready() -> bool:
 
 
 def artwork_for(pixels: int) -> Path:
-    """The drawing an icon of this many pixels shows: the group where it reads, else one Heinzelmännchen."""
-    return GROUP if pixels >= GROUP_FROM else ARTWORK
+    """The drawing an icon of this many pixels shows: the swarm where it reads, else one Heinzelmännchen."""
+    return SWARM if pixels >= SWARM_FROM else ARTWORK
 
 
 DRAW = (
     "const m = await import(process.argv[1]); const fs = await import('node:fs');"
-    " fs.writeFileSync(process.argv[2], m.heinzelSvg()); fs.writeFileSync(process.argv[3], m.heinzelGroupSvg());"
+    " fs.writeFileSync(process.argv[2], m.heinzelSvg()); fs.writeFileSync(process.argv[3], m.heinzelSwarmSvg());"
 )
-"""Writes heinzel.svg and heinzel-group.svg from the drawing (node runs TypeScript without imports as it is)."""
+"""Writes heinzel.svg and heinzel-swarm.svg from the drawing (node runs TypeScript without imports as it is)."""
 
 
 def draw() -> None:
-    """Write heinzel.svg and heinzel-group.svg from web/src/components/heinzel.ts.
+    """Write heinzel.svg and heinzel-swarm.svg from web/src/components/heinzel.ts.
 
     Raises:
         SystemExit: Without node.
@@ -157,7 +157,7 @@ def draw() -> None:
     if node is None:
         msg = "node not found: make setup installs what the web app needs"
         raise SystemExit(msg)
-    _run(node, "--input-type=module", "-e", DRAW, DRAWING.as_uri(), str(ARTWORK), str(GROUP))
+    _run(node, "--input-type=module", "-e", DRAW, DRAWING.as_uri(), str(ARTWORK), str(SWARM))
 
 
 def icons() -> None:

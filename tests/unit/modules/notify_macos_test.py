@@ -140,7 +140,7 @@ def test_the_build_script_and_the_runtime_agree_on_the_version():
         == hashlib.sha256(
             b"".join(
                 n.encode() + b"\0" + (SOURCES / n).read_bytes() + b"\0"
-                for n in ("Info.plist", "heinzel-group.svg", "heinzel.svg", "icon.swift", "main.swift")
+                for n in ("Info.plist", "heinzel-swarm.svg", "heinzel.svg", "icon.swift", "main.swift")
             )
         ).hexdigest()[:16]
     )
@@ -188,16 +188,16 @@ def png_size(png: bytes) -> tuple[int, int]:
 
 def test_one_drawing_an_original_one_shows_heinzelmaennchen_everywhere():
     script = build_script()
-    assert (script.ARTWORK, script.GROUP) == (SOURCES / "heinzel.svg", SOURCES / "heinzel-group.svg")
+    assert (script.ARTWORK, script.SWARM) == (SOURCES / "heinzel.svg", SOURCES / "heinzel-swarm.svg")
     # Shapes only: no embedded image or font glyph, so nothing of an emoji font's artwork can ship in them.
-    for artwork in (script.ARTWORK, script.GROUP):
+    for artwork in (script.ARTWORK, script.SWARM):
         for embedded in (b"<image", b"<text", b"<use", b"<font", b"<style", b"data:", b"href"):
             assert embedded not in artwork.read_bytes()
     for copy, source in script.COPIES.items():
         assert copy.read_bytes() == source.read_bytes(), f"{copy.relative_to(ROOT)} is stale: run make icons"
-    # One Heinzelmännchen where the group wouldn't read, the group where it does.
+    # One Heinzelmännchen where the swarm wouldn't read, the swarm where it does.
     assert script.artwork_for(32) == script.ARTWORK
-    assert script.artwork_for(script.GROUP_FROM) == script.GROUP
+    assert script.artwork_for(script.SWARM_FROM) == script.SWARM
     for name, (background, fill) in script.WORDMARKS.items():
         made = (script.THEME_LOGO / name).read_text(encoding="utf-8")
         assert made == script.wordmark(background, fill), f"{name} is stale: run make icons"

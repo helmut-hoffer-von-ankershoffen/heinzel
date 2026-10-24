@@ -199,8 +199,8 @@ theme written before stays valid.
 - **The list** returns `logo: {light, dark, mark, alt, height} | null` per theme: relative URLs with `?v=` (a hash of
   the content), `dark` the light one's URL when the theme declares none or its file is gone, `mark` null when there is
   none; a logo whose light file is gone is null.
-- **The built-in theme's logo** is three Heinzelmännchen together (`heinzel-group.svg`, which `make icons` copies) and
-  its name as a wordmark, light and dark with explicit fills, and the mark alone: package data of the kernel
+- **The built-in theme's logo** is a swarm of Heinzelmännchen (`heinzel-swarm.svg`, which `make icons` copies) and its
+  name as a wordmark, light and dark with explicit fills, and the mark alone: package data of the kernel
   (`heinzel/kernel/assets/theme`), as `DEFAULT_LOGO` beside `DEFAULT_THEME`, served for the theme name `default`.
   `DEFAULT_THEME` itself names no logo, so a plugin can still copy it into a theme of its own.
 - **A main tint.** `ThemeColours.main_tint` (both modes, optional, so light and dark can differ): a hex colour behind

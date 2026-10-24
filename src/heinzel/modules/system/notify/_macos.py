@@ -45,7 +45,7 @@ def source_version(sources: Path = SOURCES) -> str:
     digest = hashlib.sha256()
     for name in (
         "Info.plist",
-        "heinzel-group.svg",
+        "heinzel-swarm.svg",
         "heinzel.svg",
         "icon.swift",
         "main.swift",

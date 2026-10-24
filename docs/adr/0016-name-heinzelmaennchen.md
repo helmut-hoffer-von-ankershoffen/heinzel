@@ -23,8 +23,8 @@ Chosen option: **the brand is Heinzelmännchen, the command is `hz`, the distrib
 name fits the project's character and both short names are available where they are needed.
 
 - Brand: **Heinzelmännchen**, after the house spirits of Cologne who finished the townspeople's work at night. Logo: 🧝,
-  where only text can go; the image is an original drawing of a gnome with a red cap (`heinzel.svg`, three of them in
-  the logo, ADR 0046).
+  where only text can go; the image is an original drawing of a friendly Heinzelmännchen with a red cap (`heinzel.svg`;
+  a swarm of them in the logo, ADR 0046).
 - Command: **`hz`**. Everything a user types or sees uses `hz`: environment variables `HZ_*`, the `[hz]` config
   table, the project file `hz.toml`, the configuration directory `hz`, the skills `/hz-init` and `/hz-uninstall`.
 - Distribution, repository and Python package: **`heinzel`** (free on PyPI; `hz` is taken). Plugins are

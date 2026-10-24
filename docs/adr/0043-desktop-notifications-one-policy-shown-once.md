@@ -94,7 +94,7 @@ Doctor's look runs here rather than as a job: it only records notices, and an ho
 **Heinzel Notifier**, the macOS path.
 
 - `src/heinzel/modules/system/notify/macos/` holds a small Swift app (`main.swift`: an accessory `NSApplication` with
-  `UNUserNotificationCenter`), its icon (`heinzel.svg` and `heinzel-group.svg`, an original drawing that `icon.swift`
+  `UNUserNotificationCenter`), its icon (`heinzel.svg` and `heinzel-swarm.svg`, an original drawing that `icon.swift`
   renders with AppKit) and `Info.plist` (`dev.heinzel.notifier`, `LSUIElement`). `make notifier` (`scripts/notifier.py`)
   compiles it for arm64 and x86_64 (macOS 13+), joins them with `lipo`, builds the icon with `iconutil`, stamps
   `CFBundleVersion` with a digest of the sources and signs it ad hoc (`codesign --sign -`). CI and the release build it

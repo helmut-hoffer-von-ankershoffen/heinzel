@@ -65,7 +65,7 @@ maintainer, 2026-10-24.
     machine shared with people you don't trust shouldn't pair a browser. The per-process token had no such window but
     made installing impossible.
 - **The app is installable.** `manifest.webmanifest` (Heinzelmännchen, `hz`, standalone, `#181818`, icons 192, 512 and
-  maskable 512 made from Heinzel Notifier's `heinzel-group.svg`, an apple-touch-icon), `favicon.svg` and `favicon.ico`.
+  maskable 512 made from Heinzel Notifier's `heinzel-swarm.svg`, an apple-touch-icon), `favicon.svg` and `favicon.ico`.
   "Install app" uses `beforeinstallprompt` on Chrome and Edge; Safari gets the line "File > Add to Dock". The CSP adds
   `worker-src 'self'`; `sw.js` and the manifest are served with `Cache-Control: no-cache`.
 - **The service worker** (`sw.js`, same origin, scope `/`, no inline script): it caches the app's shell (the page,

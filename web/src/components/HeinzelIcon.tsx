@@ -11,7 +11,7 @@ export function HeinzelIcon({ className }: { className?: string }) {
       data-testid="heinzel-icon"
       className={cn("inline-flex shrink-0 items-center justify-center leading-none", className)}
     >
-      <HeinzelAvatar />
+      <HeinzelAvatar view="bust" />
     </span>
   );
 }
