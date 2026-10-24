@@ -23,6 +23,7 @@ modules; `hz system modules` lists what is installed.
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
+| [`zoom`](#zoom) | Read meetings from Zoom's meeting-summary emails: the meetings capability. |
 
 ## `atlassian`
 
@@ -62,7 +63,7 @@ First-party plugin `heinzel-github`: `hz system plugin add github`.
 
 | Operation | CLI | MCP tool | REST | Changes state |
 | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and the GitHub API it uses. | `hz github info` | `github_info` | `GET /github/info` |  |
+| Show this plugin's version, the Heinzelmännchen it runs on and the GitHub host it reads. | `hz github info` | `github_info` | `GET /github/info` |  |
 
 Settings: [`[github]`](CONFIGURATION.md#github).
 
@@ -241,5 +242,19 @@ Workflow contracts: Markdown files an agent drafts from, by hand or on your daem
 | Delete drafts and records older than `[workflow] retention_days` (default 90); receipts are kept. | `hz workflow prune` | `workflow_prune` | — | yes |
 
 Settings: [`[workflow]`](CONFIGURATION.md#workflow).
+
+Health checks: reported by `hz system doctor`.
+
+## `zoom`
+
+Read meetings from Zoom's meeting-summary emails: the meetings capability.
+
+First-party plugin `heinzel-zoom`: `hz system plugin add zoom`.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| Show this plugin's version, the Heinzelmännchen it runs on and where its meetings come from. | `hz zoom info` | `zoom_info` | `GET /zoom/info` |  |
+
+Settings: [`[zoom]`](CONFIGURATION.md#zoom).
 
 Health checks: reported by `hz system doctor`.
