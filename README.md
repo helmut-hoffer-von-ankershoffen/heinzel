@@ -14,9 +14,10 @@
 | src/heinzel/heads/cli/\_serve.py                              |       84 |        4 |       24 |        3 |     94% |72-\>74, 82-84, 100-\>exit, 185-186 |
 | src/heinzel/heads/cli/\_setup.py                              |      312 |        4 |       92 |        4 |     98% |270, 337, 422, 474-\>483, 497 |
 | src/heinzel/heads/mcp/\_\_init\_\_.py                         |       71 |        2 |       12 |        2 |     95% |  118, 148 |
-| src/heinzel/heads/web/\_\_init\_\_.py                         |      123 |        7 |       26 |        3 |     93% |189-191, 226, 231-233, 241-\>exit, 243-\>exit |
+| src/heinzel/heads/web/\_\_init\_\_.py                         |      125 |        7 |       26 |        3 |     93% |193-195, 230, 235-237, 245-\>exit, 247-\>exit |
 | src/heinzel/heads/web/\_devices.py                            |      100 |        2 |       12 |        0 |     98% |   125-126 |
 | src/heinzel/heads/web/\_stream.py                             |       46 |        5 |       14 |        4 |     82% |36, 66-\>65, 70-\>73, 75-78 |
+| src/heinzel/heads/web/\_terminal.py                           |      190 |       14 |       36 |        8 |     90% |33-\>38, 74, 85-\>89, 119-120, 136-137, 139, 178, 206-\>199, 212-\>exit, 218-221, 283-284, 286 |
 | src/heinzel/kernel/\_discovery.py                             |       66 |        2 |       16 |        0 |     98% |     60-61 |
 | src/heinzel/kernel/\_duration.py                              |       52 |        1 |       18 |        1 |     97% |        76 |
 | src/heinzel/kernel/\_installation.py                          |       84 |        0 |       20 |        1 |     99% |123-\>exit |
@@ -63,7 +64,7 @@
 | src/heinzel/modules/workflow/\_render.py                      |      213 |       15 |      104 |       10 |     90% |98, 116, 159-\>161, 164, 165-\>167, 197-203, 229, 263, 284-294, 352 |
 | src/heinzel/modules/workflow/\_retention.py                   |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
 | src/heinzel/modules/workflow/\_service.py                     |      718 |       17 |      236 |        6 |     98% |338, 426-427, 532-533, 573, 587-\>exit, 598-599, 960-961, 977-979, 1206-1207, 1239-1240 |
-| **TOTAL**                                                     | **15865** |  **219** | **3996** |  **118** | **98%** |           |
+| **TOTAL**                                                     | **16059** |  **233** | **4032** |  **126** | **98%** |           |
 
 120 files skipped due to complete coverage.
 
