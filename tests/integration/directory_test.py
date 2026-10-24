@@ -14,6 +14,7 @@ from heinzel import (
     ConfirmedLines,
     Directory,
     Event,
+    FreeBusy,
     Kernel,
     Module,
     Participant,
@@ -64,6 +65,9 @@ class Agenda:
                 for week in range(3)
             ),
         ]
+
+    def free_busy(self, people: str, window: Window) -> list[FreeBusy]:
+        return []
 
 
 class Records:

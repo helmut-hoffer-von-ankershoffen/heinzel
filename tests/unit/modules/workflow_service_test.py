@@ -14,6 +14,7 @@ from heinzel import (
     AgentResult,
     Config,
     Event,
+    FreeBusy,
     HeinzelError,
     Issue,
     MailContent,
@@ -1301,6 +1302,9 @@ class Agenda:
 
     def events(self, window: Window) -> list[Event]:
         self.windows.append(window)
+        return []
+
+    def free_busy(self, people: str, window: Window) -> list[FreeBusy]:
         return []
 
 

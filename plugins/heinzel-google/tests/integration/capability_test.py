@@ -1,13 +1,13 @@
 """The adapters bound by configuration, used by a requester through the CLI, with a fake `gws`. Offline."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 from heinzel_google import Process
 from typer.testing import CliRunner
 
-from heinzel import Calendar, Config, Document, Documents, Event, Kernel, Module, Window
+from heinzel import Calendar, Config, Document, Documents, Event, EventDraft, Kernel, Module, Window
 from heinzel.heads.cli import build
 
 pytestmark = pytest.mark.integration
@@ -124,13 +124,13 @@ def test_capability_list_shows_the_adapter_and_its_hosts(google_kernel):
     assert {c["name"]: c["bound"] for c in report["capabilities"]}["calendar"] == "google"
     ours = sorted((a["capability"], a["modes"], a["hosts"]) for a in report["adapters"] if a["adapter"] == "google")
     assert ours == [
-        ("calendar", ["read"], ["www.googleapis.com", "oauth2.googleapis.com"]),
+        ("calendar", ["read", "write"], ["www.googleapis.com", "oauth2.googleapis.com"]),
         (
             "documents",
             ["read"],
             ["www.googleapis.com", "docs.googleapis.com", "sheets.googleapis.com", "oauth2.googleapis.com"],
         ),
-        ("mail", ["read"], ["gmail.googleapis.com", "oauth2.googleapis.com"]),
+        ("mail", ["read", "write"], ["gmail.googleapis.com", "oauth2.googleapis.com"]),
     ]
 
 
@@ -182,3 +182,45 @@ def test_drive_lists_recent_files(google_kernel, fake_gws):
             "modified_at": "2026-10-23T08:00:00Z",
         }
     ]
+
+
+def planner() -> Module:
+    """A test-only requester that writes: a publish operation declares `calendar:write`, a read operation doesn't."""
+    module = Module("planner", "Test-only planning.", requires=["calendar:read"])
+
+    @module.operation(read_only=False, requires=["calendar:write"])
+    def book(calendar: Calendar, title: str, start: str) -> Event:
+        """Book an hour."""
+        begin = datetime.fromisoformat(start)
+        return calendar.create_event(EventDraft(title=title, start=begin, end=begin + timedelta(hours=1)))
+
+    @module.operation
+    def sneak(calendar: Calendar, title: str, start: str) -> Event:
+        """Try to book an hour from a read operation."""
+        begin = datetime.fromisoformat(start)
+        return calendar.create_event(EventDraft(title=title, start=begin, end=begin + timedelta(hours=1)))
+
+    return module
+
+
+def test_only_a_publish_operation_that_declared_calendar_write_creates_an_event(google_kernel, fake_gws):
+    fake_gws.json(
+        ("calendar", "events", "insert"),
+        {
+            "id": "new1",
+            "summary": "Focus",
+            "start": {"dateTime": SINCE},
+            "end": {"dateTime": "2026-10-19T01:00:00+00:00"},
+            "organizer": {"self": True},
+        },
+    )
+    kernel = google_kernel(BOUND, planner=planner())
+    code, refused = hz(kernel, "planner", "sneak", "Focus", SINCE)
+    assert code != 0
+    assert "write" in str(refused)
+    assert fake_gws.api_runs == []
+    code, event = hz(kernel, "planner", "book", "Focus", SINCE)
+    assert code == 0, event
+    assert (event["id"], event["organized_by_user"]) == ("new1", True)
+    (run,) = fake_gws.api_runs
+    assert run.command == ("calendar", "events", "insert")

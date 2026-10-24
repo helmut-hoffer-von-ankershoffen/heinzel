@@ -76,7 +76,7 @@ FIRST_PARTY: Mapping[str, str] = MappingProxyType(
         "atlassian": "Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.",
         "clock": "What time it is for everyone on the team.",
         "github": "Read pull requests and issues from GitHub: the code-host and tracker capabilities.",
-        "google": "Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.",
+        "google": "Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.",
         "zoom": "Read meetings from Zoom's meeting-summary emails: the meetings capability.",
     }
 )

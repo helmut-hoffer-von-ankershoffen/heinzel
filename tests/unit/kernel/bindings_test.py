@@ -645,7 +645,8 @@ def test_a_publish_operation_that_declared_chat_write_posts(talking):
 
 
 @pytest.mark.parametrize(
-    ("capability", "method"), [("meetings", "transcripts"), ("calendar", "events"), ("chat", "messages")]
+    ("capability", "method"),
+    [("meetings", "transcripts"), ("calendar", "events, free_busy"), ("chat", "messages")],
 )
 def test_an_adapter_class_must_define_every_read_method_of_the_new_capabilities(make_kernel, capability, method):
     class Partial:

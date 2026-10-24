@@ -11,7 +11,20 @@ from typing import ClassVar
 
 import pytest
 
-from heinzel import Config, Kernel, MailContent, MailMessage, MailQuery, Module, Participant, Settings, Window
+from heinzel import (
+    Config,
+    DraftedMail,
+    HeinzelError,
+    Kernel,
+    MailContent,
+    MailMessage,
+    MailQuery,
+    MailThread,
+    Module,
+    Participant,
+    Settings,
+    Window,
+)
 from heinzel.kernel import ModuleRecord, Origin, discover
 
 TEST_ORIGIN = Origin(distribution="heinzel-test", version="0", builtin=False)
@@ -91,6 +104,14 @@ class Mailbox:
     def read(self, message: str) -> MailContent:
         self.reads.append(message)
         return self.stored[message]
+
+    def thread(self, thread: str) -> MailThread:
+        msg = "No conversations in this mailbox"
+        raise HeinzelError(msg)
+
+    def draft(self, draft: str) -> DraftedMail:
+        msg = "No drafts in this mailbox"
+        raise HeinzelError(msg)
 
     @classmethod
     def holding(cls, *contents: MailContent) -> "Mailbox":

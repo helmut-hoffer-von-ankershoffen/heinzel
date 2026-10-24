@@ -196,8 +196,8 @@ def test_a_module_cannot_require_write_for_all_its_functions():
         Module("announcer", "x", requires=["chat:write"])
 
 
-def test_only_chat_and_documents_have_a_write_mode_to_declare():
-    for capability in ("calendar", "code-host", "meetings", "tracker"):
+def test_only_calendar_chat_documents_and_mail_have_a_write_mode_to_declare():
+    for capability in ("code-host", "directory", "meetings", "tracker"):
         with pytest.raises(ValueError, match=f"{capability} has no write mode"):
             Module("x", "x", requires=[f"{capability}:write"])
 
