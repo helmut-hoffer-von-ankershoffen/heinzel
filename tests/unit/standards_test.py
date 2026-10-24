@@ -415,3 +415,14 @@ def test_the_working_title_is_gone():
         and (OLD_NAME.search(path) or OLD_NAME.search((REPO / path).read_text(encoding="utf-8", errors="ignore")))
     ]
     assert found == [], "say Heinzelmännchen, hz or heinzel"
+
+
+def test_plugins_start_at_the_version_their_release_process_knows():
+    """bump-my-version's current_version must equal the [project] version, in the core and in the template."""
+    for path in (REPO / "pyproject.toml", REPO / "template" / "pyproject.toml.jinja"):
+        text = path.read_text(encoding="utf-8")
+        project = re.search(r'^version = "([^"]+)"', text, re.MULTILINE)
+        bump = re.search(r'^current_version = "([^"]+)"', text, re.MULTILINE)
+        assert project, path.name
+        assert bump, path.name
+        assert project.group(1) == bump.group(1), path.name
