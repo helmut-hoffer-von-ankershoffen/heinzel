@@ -280,7 +280,16 @@ def test_doctor_reports_a_refused_pop_up_until_one_works(make, runner):
 
 
 def heinzel_service(  # noqa: PLR0913 - a test double with switches
-    settings, clock, tmp_path, said: str, *, quarantined: bool = False, posted: str = "posted", stale: bool = False
+    settings,
+    clock,
+    tmp_path,
+    said: str,
+    *,
+    quarantined: bool = False,
+    posted: str = "posted",
+    stale: bool = False,
+    wheel: bool = False,
+    build_error: str | None = None,
 ) -> NotifyService:
     bundle = tmp_path / "HeinzelNotifier.app"
     (bundle / "Contents" / "MacOS").mkdir(parents=True)
@@ -293,7 +302,20 @@ def heinzel_service(  # noqa: PLR0913 - a test double with switches
         code = 0 if command[0] != "/usr/bin/xattr" or quarantined else 1
         return subprocess.CompletedProcess(command, code, "", "")
 
-    app = NotifierApp(tmp_path / "home", bundled=bundle, runner=run, build_script=None)
+    script = None
+    if build_error is not None:  # a source checkout whose rebuild fails
+        script = tmp_path / "notifier.py"
+        script.write_text("", encoding="utf-8")
+        inner = run
+
+        def run(command, timeout=None):
+            if str(script) in command:
+                return subprocess.CompletedProcess(command, 1, "", build_error)
+            return inner(command, timeout)
+
+    app = NotifierApp(
+        tmp_path / "home", bundled=tmp_path / "none" if wheel else bundle, runner=run, build_script=script
+    )
     if stale:  # an older app is installed already
         (app.path / "Contents" / "MacOS").mkdir(parents=True)
         (app.path / "Contents" / "MacOS" / "notifier").write_bytes(b"old app")
@@ -354,6 +376,21 @@ def test_install_replaces_an_outdated_notifier_and_says_so(settings, clock, tmp_
         "macOS may show the old icon until you remove Heinzel Notifier there once and run this again.",
     ]
     assert service.notifier.app.inspect().state == "current"
+
+
+def test_install_says_so_when_a_wheel_ships_no_notifier(settings, clock, tmp_path):
+    service = heinzel_service(settings, clock, tmp_path, "authorized", stale=True, wheel=True)
+    lines = shown(service)
+    assert lines[0].startswith("Couldn't update Heinzel Notifier: this installation carries no Heinzel Notifier")
+    assert "xcode-select --install" in lines[0]
+    assert not any("new icon" in line for line in lines)
+
+
+def test_install_does_not_claim_an_update_when_the_rebuild_fails(settings, clock, tmp_path):
+    service = heinzel_service(settings, clock, tmp_path, "authorized", stale=True, build_error="swiftc not found")
+    lines = shown(service)
+    assert lines[0].startswith("Couldn't update Heinzel Notifier: building it failed (swiftc not found)")
+    assert service.notifier.app.inspect().state == "outdated"  # the stale bundle was not copied over
 
 
 def test_install_reads_the_notifiers_success_output_as_success(settings, clock, tmp_path):

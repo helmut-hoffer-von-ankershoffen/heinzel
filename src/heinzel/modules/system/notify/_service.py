@@ -327,13 +327,17 @@ class NotifyService(Notifications):
         steps: list[str] = []
         if notifier.name == HEINZEL and notifier.app is not None:
             previous = notifier.app.inspect().state
-            notifier.app.rebuild()  # a source checkout: the bundled app may predate its sources
+            failed = notifier.app.rebuild()  # a source checkout: the bundled app may predate its sources
             try:
-                installed = notifier.app.ensure()
+                installed = notifier.app.ensure() if failed is None else None
             except OSError as exc:
                 msg = f"Heinzel Notifier can't be installed in {notifier.app.path}: {exc.strerror or exc}"
                 raise HeinzelError(msg) from exc
-            path, state, detail = str(installed.path), installed.state, installed.detail or None
+            if installed is None:  # never copy a bundle the rebuild could not bring up to date
+                path, state = str(notifier.app.path), "outdated" if previous != "missing" else "missing"
+                detail = f"building it failed ({failed}); install the Xcode Command Line Tools: xcode-select --install"
+            else:
+                path, state, detail = str(installed.path), installed.state, installed.detail or None
         problem = notifier.post("Notifications work", "This is how hz tells you that a draft is ready.", asking=True)
         self.store.native_result(self._clock(), problem)
         if problem is not None:

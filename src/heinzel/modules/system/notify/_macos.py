@@ -121,14 +121,21 @@ class NotifierApp:
         """Whether there is an app to use: bundled with this installation, or installed before."""
         return tree_digest(self.bundled) is not None or tree_digest(self.path) is not None
 
-    def rebuild(self) -> bool:
-        """In a source checkout, rebuild the bundled app when its sources changed; True if it was rebuilt."""
+    def rebuild(self) -> str | None:
+        """In a source checkout, rebuild the bundled app when its sources changed; why it failed, else None.
+
+        A wheel ships the app built when it was installed and has no build script: nothing to do there.
+        """
         script = self._build_script
         if script is None or not script.is_file():
-            return False  # a wheel ships the built app
+            return None
         if self._runner([sys.executable, str(script), "--check"]).returncode == 0:
-            return False
-        return self._runner([sys.executable, str(script)], BUILD_TIMEOUT).returncode == 0
+            return None
+        built = self._runner([sys.executable, str(script)], BUILD_TIMEOUT)
+        if built.returncode == 0:
+            return None
+        lines = (built.stderr or built.stdout).strip().splitlines()
+        return lines[-1] if lines else f"the build exited with {built.returncode}"
 
     def inspect(self) -> Install:
         """Whether the installed app matches the bundled one, without changing anything."""
@@ -145,7 +152,12 @@ class NotifierApp:
         have = tree_digest(self.path)
         if wanted is None:
             state = "outdated" if have is not None else "missing"
-            return Install(self.path, state, "this installation carries no Heinzel Notifier (built on macOS only)")
+            return Install(
+                self.path,
+                state,
+                "this installation carries no Heinzel Notifier: install hz again on a Mac with the Xcode Command Line "
+                "Tools (xcode-select --install)",
+            )
         if have == wanted:
             return Install(self.path, "current")
         try:

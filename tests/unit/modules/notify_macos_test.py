@@ -235,8 +235,20 @@ def test_a_source_checkout_rebuilds_the_bundled_app_only_when_its_sources_change
         return subprocess.CompletedProcess(command, 0 if current[0] or command[-1] != "--check" else 1, "", "")
 
     app = NotifierApp(tmp_path / "home", bundled=bundled, runner=runner, build_script=script)
-    assert app.rebuild() is True
+    assert app.rebuild() is None
     assert [c[-1] for c in commands] == ["--check", str(script)]
     current[0] = True
-    assert app.rebuild() is False  # up to date: no second build
-    assert NotifierApp(tmp_path / "h", bundled=bundled, runner=runner, build_script=None).rebuild() is False
+    assert app.rebuild() is None  # up to date: no second build
+    assert NotifierApp(tmp_path / "h", bundled=bundled, runner=runner, build_script=None).rebuild() is None
+
+
+def test_a_failed_rebuild_says_why(tmp_path, bundled):
+    script = tmp_path / "notifier.py"
+    script.write_text("", encoding="utf-8")
+
+    def runner(command, timeout=None):
+        return subprocess.CompletedProcess(command, 1, "", "swiftc not found\n")
+
+    assert NotifierApp(tmp_path / "home", bundled=bundled, runner=runner, build_script=script).rebuild() == (
+        "swiftc not found"
+    )
