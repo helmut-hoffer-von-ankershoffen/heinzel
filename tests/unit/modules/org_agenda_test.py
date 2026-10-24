@@ -5,10 +5,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from heinzel import Event, HeinzelError, Window
+from heinzel import Event, HeinzelError, LiveTime, LiveUntil, OpenUrl, RunCommand, Window
 from heinzel.kernel import Requirement
 from heinzel.modules.org import _agenda as agenda_module
-from heinzel.modules.org._agenda import Agenda, local_now, read_agenda
+from heinzel.modules.org._agenda import Agenda, local_now, read_agenda, status_item
 from heinzel.modules.org._render import render_agenda
 
 pytestmark = pytest.mark.unit
@@ -147,3 +147,37 @@ def test_now_is_in_your_time_zone_or_this_machines_by_name(monkeypatch):
     assert local_now(None).tzinfo == ZoneInfo("America/New_York")
     monkeypatch.setattr(agenda_module, "local_timezone", lambda: None)
     assert local_now(None).utcoffset() is not None
+
+
+def test_the_status_item_joins_the_meeting_now():
+
+    now = event("Acme standup " + "x" * 80, "2026-10-26T10:00", conference_url="https://meet.acme.example/j/1")
+    item = status_item(Agenda(now=NOW, current=now, calendar="google"))
+    assert item is not None
+    assert (item.tone, item.icon, item.live) == ("ok", "video", LiveTime(at=now.end))
+    assert item.text.endswith("… until")
+    assert len(item.text) <= 80
+    assert item.effect == OpenUrl(url="https://meet.acme.example/j/1")
+
+
+def test_the_status_item_drops_a_join_link_that_isnt_https():
+
+    now = event("Standup", "2026-10-26T10:00", conference_url="http://meet.acme.example/j/1")
+    item = status_item(Agenda(now=NOW, current=now, calendar="google"))
+    assert item is not None
+    assert (item.effect, item.detail) == (None, [])
+
+
+def test_the_status_item_counts_down_to_the_next_meeting_or_says_why_there_is_none():
+
+    upcoming = event("Review", "2026-10-26T11:00")
+    item = status_item(Agenda(now=NOW, next=upcoming, calendar="google"))
+    assert item is not None
+    assert (item.text, item.live) == ("Next: Review", LiveUntil(at=upcoming.start))
+    missing = status_item(Agenda(now=NOW, problem="No calendar connected.", fix="hz setup google"))
+    assert missing is not None
+    assert (missing.text, missing.effect) == ("No calendar", RunCommand(command="hz setup google"))
+    odd = status_item(Agenda(now=NOW, calendar="google", problem="expired", fix="open the settings; then retry"))
+    assert odd is not None
+    assert (odd.text, odd.effect) == ("Calendar unavailable", None)
+    assert status_item(Agenda(now=NOW, calendar="google")) is None

@@ -1,7 +1,8 @@
 """What time it is for everyone on the team.
 
-The whole plugin: one module, its settings, one operation, a health check and a setup step. Heinzelmännchen provides
-the CLI command, MCP tool, REST endpoint, configuration, validation, health reporting and the setup wizard.
+The whole plugin: one module, its settings, one operation, a health check, a setup step, and three views of the
+operation for the web app: a status item, a header action and a Today widget (ADR 0056). Heinzelmännchen provides the
+CLI command, MCP tool, REST endpoint, configuration, validation, health reporting, the setup wizard and the web app.
 """
 
 import warnings
@@ -13,7 +14,21 @@ from zoneinfo import ZoneInfo, available_timezones
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rich.table import Table
 
-from heinzel import Check, ConfigEditor, HeinzelError, Module, ModuleSettings, Prompter, Status
+from heinzel import (
+    Check,
+    ConfigEditor,
+    DetailLine,
+    HeinzelError,
+    LiveClock,
+    MetricWidget,
+    Module,
+    ModuleSettings,
+    Navigate,
+    Prompter,
+    RunCommand,
+    Status,
+    StatusItem,
+)
 
 module = Module("clock", "What time it is for everyone on the team.")
 
@@ -128,6 +143,57 @@ def clock(
         for index, zone in enumerate(settings.zones)
         for local in [moment.astimezone(ZoneInfo(zone.name))]
     ]
+
+
+def city(zone: str) -> str:
+    """`America/Los_Angeles` as people say it: `Los Angeles`."""
+    return zone.rsplit("/", 1)[-1].replace("_", " ")
+
+
+@module.status(source="clock", order=900, slots={"footer": True, "sidebar": False})
+def primary_zone(times: list[ZoneTime]) -> StatusItem | None:
+    """The time in your primary zone, the first of `clock.zones`, ticking; the others and who is at work on hover."""
+    if not times:
+        return None
+    first, *others = times
+    return StatusItem(
+        text=city(first.zone),
+        icon="clock",
+        live=LiveClock(zone=first.zone),
+        detail=[
+            DetailLine(
+                text=f"{city(zone.zone)} {zone.time}, "
+                + ("at work" if zone.working else f"works {zone.hours[0]:02d}-{zone.hours[1]:02d}"),
+                tone="ok" if zone.working else "neutral",
+            )
+            for zone in others
+        ],
+        effect=Navigate(path="/?settings=clock"),
+    )
+
+
+def working(times: list[ZoneTime]) -> int:
+    """How many of the team's zones are within working hours now."""
+    return sum(zone.working for zone in times)
+
+
+module.action(
+    "team-clock",
+    label="Team clock",
+    icon="globe",
+    effect=RunCommand(command="hz clock"),
+    source="clock",
+    badge=working,
+)
+
+
+@module.widget(source="clock")
+def at_work(times: list[ZoneTime]) -> MetricWidget | None:
+    """How many of the team's zones are at work now, out of all of them."""
+    if not times:
+        return None
+    count = working(times)
+    return MetricWidget(label="Zones at work now", value=f"{count}/{len(times)}", tone="ok" if count else "neutral")
 
 
 @module.health

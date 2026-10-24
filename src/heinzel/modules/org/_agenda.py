@@ -8,10 +8,21 @@ from datetime import datetime, time, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
-from pydantic import AwareDatetime, BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field, ValidationError
 
-from heinzel import Calendar, Event, HeinzelError, Window
-from heinzel.kernel import Requirement
+from heinzel import (
+    Calendar,
+    DetailLine,
+    Event,
+    HeinzelError,
+    LiveTime,
+    LiveUntil,
+    OpenUrl,
+    RunCommand,
+    StatusItem,
+    Window,
+)
+from heinzel.kernel import Requirement, clean_text, link_problem
 from heinzel.modules.org._discovery import local_timezone
 
 CALENDAR = Requirement.parse("calendar:read")
@@ -115,3 +126,43 @@ def read_agenda(calendar: Calendar, bindings: Bindings, now: datetime) -> Agenda
         next=min(upcoming, key=lambda e: e.start, default=None),
         calendar=adapter,
     )
+
+
+MAX_TITLE = 60
+"""How much of a meeting's title the status bar shows."""
+
+
+def _title(event: Event) -> str:
+    title = " ".join(clean_text(event.title).split()) or "(no title)"
+    return title if len(title) <= MAX_TITLE else f"{title[: MAX_TITLE - 1]}…"
+
+
+def status_item(agenda: Agenda) -> StatusItem | None:
+    """The meeting you are in, with its join link, or the next one with how soon; or why there is none (ADR 0056)."""
+    if agenda.current is not None:
+        url = agenda.current.conference_url
+        join = OpenUrl(url=url) if url and link_problem(url) is None and url.startswith("https://") else None
+        return StatusItem(
+            text=f"{_title(agenda.current)} until",
+            tone="ok",
+            icon="video",
+            live=LiveTime(at=agenda.current.end),
+            detail=[DetailLine(text="Click to join")] if join else [],
+            effect=join,
+        )
+    if agenda.next is not None:
+        return StatusItem(
+            text=f"Next: {_title(agenda.next)}", icon="calendar-clock", live=LiveUntil(at=agenda.next.start)
+        )
+    if agenda.problem is not None:
+        try:
+            fix = RunCommand(command=agenda.fix) if agenda.fix else None
+        except ValidationError:  # not a plain `hz` command: the detail says what to do
+            fix = None
+        return StatusItem(
+            text="No calendar" if agenda.calendar is None else "Calendar unavailable",
+            icon="calendar",
+            detail=[DetailLine(text=agenda.problem[:80], tone="warn")],
+            effect=fix,
+        )
+    return None

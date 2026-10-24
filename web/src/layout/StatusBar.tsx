@@ -1,5 +1,5 @@
 // The status bar under the screen: hz's version on the left; the meeting running now or the next
-// one, and a clock, on the right. The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
+// one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
 import { CalendarClock, Video } from "lucide-react";
@@ -7,6 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useInfo } from "@/api/queries";
 import { token } from "@/api/token";
+import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { zoneHour, zoneTime } from "@/lib/zoneTime";
@@ -277,6 +278,8 @@ function until(start: Date, now: Date): string {
 export function StatusBar() {
   const info = useInfo();
   const agenda = useAgenda();
+  const clock = useShown("clock:primary-zone", "footer");
+  const meeting = useShown("org:meeting", "footer");
   const now = useNow();
   const current = agenda.data?.current;
   const next = agenda.data?.next;
@@ -294,8 +297,10 @@ export function StatusBar() {
           </Link>
         )}
       </span>
-      <span className="ml-auto flex min-w-0 items-center gap-1.5">
-        {current ? (
+      <span aria-hidden className="ml-auto" />
+      <StatusItems slot="footer" except={NATIVE_FOOTER} />
+      <span className="flex min-w-0 items-center gap-1.5">
+        {!meeting ? null : current ? (
           <>
             <Video aria-hidden className="size-3.5 shrink-0 text-primary" />
             <span className="truncate">
@@ -325,7 +330,7 @@ export function StatusBar() {
           </span>
         ) : null}
       </span>
-      <Clock now={now} />
+      {clock && <Clock now={now} />}
     </footer>
   );
 }

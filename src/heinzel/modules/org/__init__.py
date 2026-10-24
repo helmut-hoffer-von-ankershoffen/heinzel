@@ -11,7 +11,7 @@ from pydantic import Field
 
 from heinzel import Calendar, Check, ConfigEditor, Module, Prompter, Status
 from heinzel.kernel import CapabilityView
-from heinzel.modules.org._agenda import Agenda, local_now, read_agenda
+from heinzel.modules.org._agenda import Agenda, local_now, read_agenda, status_item
 from heinzel.modules.org._models import ROLES, OrgSettings, Profile
 from heinzel.modules.org._profile import ProfileService, ask_profile
 from heinzel.modules.org._render import render_agenda, render_profile
@@ -38,6 +38,10 @@ def show(service: ProfileService) -> Profile:
 def agenda(calendar: Calendar, view: CapabilityView, settings: OrgSettings) -> Agenda:
     """Show the meeting you are in now and your next one, from your calendar, or how to connect one."""
     return read_agenda(calendar, view, local_now(settings.timezone))
+
+
+# The web app's status bar shows it (ADR 0056): a view over `agenda`, so it is gated and private like the operation.
+module.status(source="agenda", name="meeting", order=800)(status_item)
 
 
 @module.health
