@@ -2,8 +2,10 @@
 
 import inspect
 import re
+import tomllib
 from pathlib import Path
 from typing import Annotated, get_args, get_origin
+from urllib.parse import quote
 
 import heinzel_clock
 import pytest
@@ -49,9 +51,59 @@ def test_relative_links_resolve(document):
 def test_security_policy_links_to_private_vulnerability_reporting(root):
     """Reporters land on the advisory form of the repository they read the policy in; OpenSSF Scorecard also wants
     an absolute link, which GitHub's guide for reporters is."""
-    policy = (root / "SECURITY.md").read_text(encoding="utf-8")
+    policy = next(root / name for name in ("SECURITY.md", "SECURITY.md.jinja") if (root / name).exists())
+    policy = policy.read_text(encoding="utf-8")
     assert "](../../security/advisories/new)" in policy
     assert re.search(r"\]\(https://docs\.github\.com/[^)]*report-privately\)", policy)
+
+
+BADGES = re.compile(r"<!-- badges:start -->\n(.*?)<!-- badges:end -->", re.DOTALL)
+BADGE = re.compile(r"^\[!\[[^\]]+\]\([^)\s]+\)\]\([^)\s]+\)$")
+# Every top-level page GitHub renders, except LICENSE (raw text), AGENTS.md and CLAUDE.md (agent instructions) and
+# CHANGELOG.md (the release process writes it). scripts/generate_docs.py writes the block; this pins the result.
+BADGE_PAGES = ["README.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "INTENT.md"]
+TEMPLATE_BADGE_PAGES = ["README.md.jinja", "SECURITY.md.jinja"]
+
+
+def badge_block(path: Path) -> str:
+    """The badges between a page's markers."""
+    match = BADGES.search(path.read_text(encoding="utf-8"))
+    assert match, f"{path.name} has no badge block"
+    return match[1]
+
+
+def test_finds_the_badge_block(tmp_path):
+    page = tmp_path / "x.md"
+    page.write_text("# X\n\n<!-- badges:start -->\n[![a](b)](c)\n<!-- badges:end -->\n", encoding="utf-8")
+    assert badge_block(page) == "[![a](b)](c)\n"
+    assert BADGE.match("[![a](b)](c)")
+    assert not BADGE.match("![a](b)")
+
+
+def test_every_page_shows_the_same_linked_badges_at_most_ten():
+    """One badge set, so what README promises CONTRIBUTING and SECURITY promise too; each badge leads somewhere."""
+    blocks = {page: badge_block(REPO / page) for page in BADGE_PAGES}
+    assert len(set(blocks.values())) == 1, "run `make fix`"
+    badges = blocks["README.md"].splitlines()
+    assert 1 <= len(badges) <= 10
+    assert [badge for badge in badges if not BADGE.match(badge)] == []
+    pages_with_badges = {p.name for p in REPO.glob("*.md") if "img.shields.io" in p.read_text(encoding="utf-8")}
+    assert pages_with_badges <= set(BADGE_PAGES), "badges belong in the generated block"
+    assert "badge" not in (REPO / "LICENSE").read_text(encoding="utf-8")
+
+
+def test_python_badge_lists_the_versions_pyproject_declares():
+    classifiers = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]["classifiers"]
+    versions = [c.rsplit(" :: ", 1)[1] for c in classifiers if c.startswith("Programming Language :: Python :: 3.")]
+    expected = "python-" + quote(" | ".join(versions)) + "-blue"
+    assert expected in badge_block(REPO / "README.md")
+
+
+@pytest.mark.parametrize("page", TEMPLATE_BADGE_PAGES)
+def test_plugins_show_the_same_badges_for_their_own_repository(page):
+    ours = badge_block(REPO / "README.md").replace("helmut-hoffer-von-ankershoffen/heinzel", "OWNER/REPO")
+    theirs = badge_block(REPO / "template" / page).replace("[[ github_owner ]]/[[ project_name ]]", "OWNER/REPO")
+    assert theirs == ours
 
 
 def test_every_document_in_docs_is_listed_in_the_index():
