@@ -76,7 +76,8 @@ data.
   is one of `card {title, body, tone, actions (at most 3)}`, `list {title, items: [{text, detail?, tone, effect?}]
   (at most 8)}`, `metric {label, value, delta?, tone}` and `progress {label, done, total, tone}` (`0 <= done <=
   total`, `total >= 1`). The app adds "Ask about it" (it hands the widget's text to the chat, framed as what module
-  `<qualname>` shows, never as the person's words) and dismiss to every widget.
+  `<qualname>` shows, never as the person's words; it is data an agent reads, so ADR 0045's gate still confirms
+  anything the chat would change) and dismiss to every widget.
 - **Slots.** Each contribution names where it may show and whether it does by default: a status item in `footer`
   (the status bar) and `sidebar` (the bottom of the navigation, above the account line), `{"footer": true}` unless
   it says otherwise; an action in `header`; a widget in `today`. The person turns each slot on or off: `hz system ui
@@ -88,7 +89,8 @@ data.
 - **Effects**, exactly one per action, at most one per status item or list entry: `navigate {path}` (an in-app path),
   `open {url}` (an https link, opened with `noopener noreferrer`), `operation {operation, arguments}` (an operation
   of the same module with scalar arguments) and `command {command}` (`hz` followed by plain words or single-quoted
-  arguments, the grammar the terminal panel runs as is).
+  arguments without control characters, the grammar the terminal panel runs as is; the panel also drops control
+  characters from anything it types, since a terminal acts on Ctrl-C or Enter even inside quotes).
 - **Consumer.** `system.ui` (ADR 0018: about Heinzelmännchen itself) lists them: `hz system ui status`, `hz system ui
   actions` and `hz system ui widgets`, each with `--item <id>` for one, read-only and on the CLI, MCP and web heads
   only (`heads={"cli", "mcp", "web"}`), never the REST head. Each entry is `{id: "<qualname>:<name>", module,

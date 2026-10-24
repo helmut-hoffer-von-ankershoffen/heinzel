@@ -100,6 +100,25 @@ class UiService:
         except (ValidationError, HeinzelError):  # a broken table must not take the app's surfaces with it
             return {}
 
+    @staticmethod
+    def _in_user_file() -> dict[str, dict[Slot, bool]]:
+        """The choices in the user file alone: a toggle writes there, never copying a site file's or a variable's.
+
+        Raises:
+            HeinzelError: If the user file's table isn't valid, rather than overwriting what the person wrote.
+        """
+        config = Config.load()
+        for file, content in config.layers:
+            if file.scope == "user":
+                table = Config(files=(), data=content).section(SECTION)
+                try:
+                    found = UiSettings.model_validate({"contributions": table.get("contributions", {})})
+                except ValidationError as exc:
+                    msg = f"`[{SECTION}] contributions` in {file.path} isn't valid; fix or remove it first"
+                    raise HeinzelError(msg) from exc
+                return {key: dict(value) for key, value in found.contributions.items()}
+        return {}
+
     def slots(
         self, contribution: "Contribution", chosen: dict[str, dict[Slot, bool]] | None = None
     ) -> dict[Slot, bool]:
@@ -146,7 +165,7 @@ class UiService:
         if picked is None:
             msg = f"{item} shows in {', '.join(allowed)}; name one with --slot"
             raise HeinzelError(msg)
-        chosen = self.chosen()
+        chosen = self._in_user_file()
         decided: dict[Slot, bool] = dict(chosen.get(item, {}))
         decided[picked] = shown
         chosen[item] = decided
@@ -193,6 +212,8 @@ class UiService:
                 effect: Effect | None = self.resolve(contribution.record, let.effect)
             except Unusable as exc:
                 effect, problem = None, str(exc)
+            except Exception as exc:  # noqa: BLE001 - isolation boundary, as in _viewed
+                effect, problem = None, f"{contribution.id} failed: {type(exc).__name__}"
             if problem is None and let.source is not None and let.badge is not None:
                 badge, problem = self._viewed(contribution, let.source, let.badge, _BADGE)
             entries.append(
@@ -286,7 +307,7 @@ class UiService:
         for name, value in effect.arguments.items():
             text = value if isinstance(value, str) else json.dumps(value)
             words += [f"--{name.replace('_', '-')}", shlex.quote(text)]
-        summary = (inspect.getdoc(operation.func) or operation.summary).splitlines()[0]
+        summary = next(iter((inspect.getdoc(operation.func) or operation.summary).splitlines()), operation.name)
         return OperationCall(
             method="GET" if operation.read_only else "POST",
             path="/" + "/".join(path),
@@ -343,6 +364,8 @@ class UiService:
             return _map_effects(value, lambda effect: self.resolve(record, effect)), None
         except Unusable as exc:
             return None, f"{record.qualname}: {exc}"
+        except Exception as exc:  # noqa: BLE001 - isolation boundary, as in _viewed
+            return None, f"{record.qualname} failed: {type(exc).__name__}"
 
     def _entry(self, contribution: Contribution, problem: str | None) -> dict[str, Any]:
         record = contribution.record

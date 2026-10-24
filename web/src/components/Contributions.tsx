@@ -216,6 +216,7 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
           role="alertdialog"
           aria-modal="true"
           aria-labelledby="contrib-confirm"
+          onKeyDown={(event) => event.key === "Escape" && setPending(null)}
           className="fixed inset-x-0 bottom-20 z-50 mx-auto w-[min(28rem,calc(100%-2rem))] rounded-xl border border-border bg-popover p-4 text-sm shadow-xl"
         >
           <p id="contrib-confirm" className="font-medium">
@@ -224,7 +225,7 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
           <p className="mt-1 text-muted-foreground">{t("contrib.confirm")}</p>
           <code className="mt-2 block rounded bg-muted px-2 py-1 font-mono text-xs break-all">{pending.command}</code>
           <div className="mt-3 flex justify-end gap-2">
-            <Button size="sm" variant="outline" onClick={() => setPending(null)}>
+            <Button size="sm" variant="outline" autoFocus onClick={() => setPending(null)}>
               {t("contrib.cancel")}
             </Button>
             <Button

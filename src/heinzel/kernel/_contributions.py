@@ -94,8 +94,9 @@ _QUERY = r"\?[a-z](?:-?[a-z0-9])*=[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?"
 IN_APP_PATH = re.compile(rf"^/(?:{_SEGMENT}(?:/{_SEGMENT})*)?(?:{_QUERY})?$")
 """An in-app path: `/`, dash-separated lowercase segments, at most one `?name=value`; never `//`, `\\` or `..`."""
 _UNSAFE = re.compile(r"[\s\\\"'<>`\x00-\x1f\x7f-\x9f]")
-COMMAND = re.compile(r"^hz(?: +(?:[\w./:=@,+-]+|'(?:[^'\\]|'\\'')*'))+$", re.ASCII)
-"""An `hz` command the terminal panel runs as typed: plain words, or single-quoted arguments."""
+COMMAND = re.compile(r"^hz(?: +(?:[\w./:=@,+-]+|'(?:[^'\\\x00-\x1f\x7f-\x9f]|'\\'')*'))+$", re.ASCII)
+"""An `hz` command the terminal panel runs as typed: plain words, or single-quoted arguments without control
+characters, which a terminal would act on (Ctrl-C, Enter, escape sequences) even inside quotes."""
 MAX_COMMAND = 300
 Scalar = StrictBool | StrictInt | StrictFloat | Annotated[str, Field(max_length=MAX_BODY)]
 

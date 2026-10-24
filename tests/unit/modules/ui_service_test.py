@@ -19,6 +19,7 @@ from heinzel import (
     StatusItem,
     WidgetAction,
 )
+from heinzel.kernel import user_config_dir
 from heinzel.modules.system.ui import UiService
 from heinzel.modules.system.ui import contributions as health
 
@@ -273,3 +274,33 @@ def test_show_refuses_an_unknown_id_or_slot(service):
         service.show("acme:down", None, shown=True)
     with pytest.raises(HeinzelError, match="shows in header"):
         service.show("acme:sync-now", "footer", shown=True)
+
+
+def test_an_effect_that_crashes_is_its_entry_s_problem_only(service, monkeypatch):
+    def crash(*args: object) -> None:
+        msg = "secret detail"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(UiService, "_call", crash)
+    sync = next(e for e in service.actions() if e.id == "acme:sync-now")
+    assert (sync.effect, sync.problem) == (None, "acme:sync-now failed: RuntimeError")
+    reviews = next(e for e in service.status() if e.id == "acme:reviews")
+    assert (reviews.item, reviews.problem) == (None, "acme failed: RuntimeError")
+    assert next(e for e in service.status() if e.id == "acme:down").problem == "acme:down: Acme is down"
+
+
+def test_a_toggle_writes_only_the_user_file_s_choices(service, monkeypatch):
+    monkeypatch.setenv("HZ_SYSTEM_UI__CONTRIBUTIONS", '{"acme:reviews": {"footer": false}}')
+    assert service.chosen()["acme:reviews"] == {"footer": False}
+    service.show("acme:down", "sidebar", shown=True)
+    monkeypatch.delenv("HZ_SYSTEM_UI__CONTRIBUTIONS")
+    assert service.chosen() == {"acme:down": {"sidebar": True}}  # the variable's choice stayed out of the file
+
+
+def test_a_broken_user_table_is_refused_not_overwritten(service):
+    path = user_config_dir() / "config.toml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('[system.ui.contributions."acme:down"]\nsidebar = "maybe"\n', encoding="utf-8")
+    with pytest.raises(HeinzelError, match="isn't valid; fix or remove it first"):
+        service.show("acme:down", "footer", shown=False)
+    assert "maybe" in path.read_text(encoding="utf-8")
