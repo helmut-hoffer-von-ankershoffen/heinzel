@@ -64,10 +64,11 @@ declares ([ADR 0021](adr/0021-workflow-contracts.md)).
 by kind with their owning module, and injects dependencies by type: `Kernel`, `Settings`, `Config`, every type a
 `ServiceLet` provides and every `SettingsLet` model, plus `Installation` (the uv tool environment) and `Progress`
 (head-provided progress reporting: operations never print). Services are singletons per kernel and may depend on other services.
-A capability protocol (`Tracker`, `Documents`, `Chat`, `Meetings`, `Calendar`, ...) is injected as a handle on the
-adapter bound in `[capabilities]`, limited to the modes the asking operation, job or module declared; `write` reaches
-only publish operations (`read_only=False`); adapters pass every string they return through `clean_text`
-([ADR 0028](adr/0028-integrations-are-capability-adapters.md)). Agent sessions are the
+A capability protocol (`Tracker`, `Documents`, `Chat`, `Meetings`, `Calendar`, `Mail`, ...) is injected as a handle
+on the adapter bound in `[capabilities]`, limited to the modes the asking operation, job or module declared; `write`
+reaches only publish operations (`read_only=False`); adapters pass every string they return through `clean_text`.
+Several adapters may provide one capability and the binding picks one; an adapter may build on another capability
+(meetings from summary emails, through `mail`) ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)). Agent sessions are the
 capability `agent-runner`; core ships its Claude Code and generic command adapters in `system.runner`
 ([ADR 0029](adr/0029-agent-runners-are-capability-adapters.md)).
 

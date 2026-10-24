@@ -56,6 +56,8 @@ from heinzel.modules.workflow import _measure, _playbooks
 from heinzel.modules.workflow._contracts import Contract, collect, read_contract
 from heinzel.modules.workflow._measure import Sent
 from heinzel.modules.workflow._models import (
+    DRAFT_STAMP,
+    DRAFTS,
     RUNNER,
     SUFFIX,
     CheckReport,
@@ -71,6 +73,7 @@ from heinzel.modules.workflow._models import (
     Namespace,
     NewContract,
     Packet,
+    PruneReport,
     PublishStatus,
     Rendered,
     RequirementStatus,
@@ -79,6 +82,7 @@ from heinzel.modules.workflow._models import (
     Step,
     WorkflowSettings,
 )
+from heinzel.modules.workflow._retention import Sweep, expired
 from heinzel.modules.workflow._starter import from_template, is_name, slug, starter
 
 logger = logging.getLogger(__name__)
@@ -86,14 +90,15 @@ MODULE = "workflow"
 FETCH_MARGIN = timedelta(minutes=2)
 """A job may take this much longer than its agent session: fetching inputs and saving the draft."""
 NOT_PUBLISHED = "the draft waits for `hz inbox` (not built yet); nothing is published automatically"
-STAMP = "%Y%m%dT%H%M%SZ"
-"""Draft file names start with the render's time, so a listing sorts by it without reading the records."""
 NOT_SCHEDULED = "not-scheduled"
 PIN_CHANGED = "pin-changed"
 """Kinds of reasons a contract isn't a daemon job; the doctor treats a changed pin specially."""
 MAX_INPUT_BYTES = 256 * 1024
 """An input whose JSON is larger fails the run rather than being cut silently: the agent would draft from half."""
 MAX_PROMPT_BYTES = 1024 * 1024
+PRUNE = "hz workflow prune"
+PRUNE_GRACE = timedelta(days=2)
+"""The daemon prunes daily, at a slot a sleeping laptop may miss; files expired for longer mean nothing prunes them."""
 RUNNER_TOOLS = {"claude-code": "read_only_tools", "command": "command_read_only_tools"}
 """The `[system.runner]` setting that lists the read-only tools each core runner accepts (ADR 0029)."""
 
@@ -125,7 +130,8 @@ class WorkflowService:
         self._kernel = kernel
         self._workflow = workflow
         self._clock = clock or (lambda: datetime.now(UTC))
-        self.drafts_dir = settings.data_dir / MODULE / "drafts"
+        self.data_dir = settings.data_dir
+        self.drafts_dir = settings.data_dir.joinpath(*DRAFTS)
 
     @classmethod
     def for_user(cls, kernel: Kernel, workflow: WorkflowSettings) -> "WorkflowService":
@@ -526,9 +532,11 @@ class WorkflowService:
             requires=tuple(hz.requirements().values()),
         )
 
-    def _job(self, contract: Contract) -> Callable[[], Rendered]:
-        def render() -> Rendered:
-            return self.render(contract, scheduled=True)
+    def _job(self, contract: Contract) -> Callable[[], JsonValue]:
+        def render() -> JsonValue:
+            # The receipt outlives the draft (`[workflow] retention_days`), so it gets the draft's hash, not its text.
+            rendered = self.render(contract, scheduled=True)
+            return cast("JsonValue", rendered.model_dump(mode="json", exclude={"agent": {"draft"}}))
 
         render.__qualname__ = f"workflow:{self.job_name(contract)}"
         render.__doc__ = f"Render the workflow contract {contract.qualified}."
@@ -740,7 +748,7 @@ class WorkflowService:
                 continue
             stamp = path.stem.partition("-")[0]
             try:
-                created = datetime.strptime(stamp, STAMP).replace(tzinfo=UTC)
+                created = datetime.strptime(stamp, DRAFT_STAMP).replace(tzinfo=UTC)
             except ValueError:
                 created = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
             record = directory / f"{path.stem}.record.json"
@@ -955,15 +963,87 @@ class WorkflowService:
             )
         if not checks:
             where = ", ".join(str(d) for d in self.directories.values())
-            return [
+            checks.append(
                 Check(
                     name="workflow",
                     status=Status.UP,
                     detail=f"no contracts in {where}",
                     fix="hz workflow new my-first-workflow",
                 )
+            )
+        return [*checks, self._retention_check()]
+
+    def _retention_check(self) -> Check:
+        """How much `hz workflow prune` would delete now; degraded once expired files outlast the daemon's daily prune.
+
+        It only lists, never deletes: doctor is a read.
+        """
+        name = "workflow retention"
+        days = self._workflow.retention_days
+        if days == 0:
+            return Check(name=name, status=Status.UP, detail="drafts and records are kept forever (retention_days = 0)")
+        cutoff = self._clock() - timedelta(days=days)
+        try:
+            sweep = expired(self.data_dir, cutoff, delete=False)
+        except HeinzelError as exc:
+            return Check(name=name, status=Status.DEGRADED, detail=str(exc), fix=f"Fix it, then run {PRUNE}")
+        if sweep.problems:
+            return Check(
+                name=name,
+                status=Status.DEGRADED,
+                detail="; ".join(sweep.problems),
+                fix=f"Fix the permissions or move the entry aside, then run {PRUNE}",
+            )
+        if not sweep.found:
+            return Check(name=name, status=Status.UP, detail=f"nothing older than {days} days")
+        detail = f"{_amount(sweep)} older than {days} days; {PRUNE} deletes them"
+        if sweep.found[0].created < cutoff - PRUNE_GRACE:
+            return Check(
+                name=name,
+                status=Status.DEGRADED,
+                detail=f"{detail}; nothing has pruned them for {PRUNE_GRACE.days} days",
+                fix=f"{PRUNE}, or install the daemon, which prunes daily: hz system daemon install",
+            )
+        return Check(name=name, status=Status.UP, detail=detail)
+
+    # Retention -------------------------------------------------------------------------------------------------------
+
+    def prune(self, *, dry_run: bool = False) -> PruneReport:
+        """Delete the drafts and records older than `[workflow] retention_days`; `dry_run` only lists them.
+
+        Only files hz wrote under the drafts directory are considered, never through a symbolic link; receipts are
+        kept. Running it again deletes nothing more. A contract directory or file that can't be read or deleted is
+        listed under `problems`, and the rest are still deleted.
+
+        Raises:
+            HeinzelError: If `workflow` or `drafts` below the data directory is a symbolic link or can't be read.
+        """
+        days = self._workflow.retention_days
+        cutoff = self._clock() - timedelta(days=days) if days else None
+        sweep = expired(self.data_dir, cutoff, delete=not dry_run) if cutoff is not None else Sweep()
+        if cutoff is None:
+            steps = [
+                Step(
+                    command="hz system config set workflow.retention_days 90",
+                    why="drafts are kept forever; this deletes them 90 days after their render",
+                )
             ]
-        return checks
+        elif dry_run and sweep.found:
+            steps = [Step(command=PRUNE, why=f"delete these {len(sweep.found)} files")]
+        else:
+            steps = [Step(command="hz workflow drafts", why="the drafts that are kept")]
+        return PruneReport(
+            dry_run=dry_run,
+            retention_days=days,
+            cutoff=cutoff,
+            directory=self.drafts_dir,
+            files=[e.path for e in sweep.found],
+            drafts=sweep.drafts,
+            records=sweep.records,
+            bytes=sweep.bytes,
+            problems=sweep.problems,
+            next=steps,
+        )
 
     def _check_of(self, contract: Contract) -> Check:
         name = f"workflow {contract.qualified}"
@@ -1122,7 +1202,7 @@ class WorkflowService:
                 raise HeinzelError(msg)
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         directory.chmod(0o700)
-        stamp = f"{packet.as_of.astimezone(UTC):%Y%m%dT%H%M%SZ}"
+        stamp = packet.as_of.astimezone(UTC).strftime(DRAFT_STAMP)
         extension = ".json" if packet.format == "json" else ".md"
         for attempt in range(1, 1000):
             stem = stamp if attempt == 1 else f"{stamp}-{attempt}"
@@ -1149,6 +1229,11 @@ def _name_problem(name: str) -> str | None:
     return None if is_name(name) else f"use lowercase words joined by dashes, e.g. {slug(name)}"
 
 
+def _amount(sweep: Sweep) -> str:
+    """What a sweep found, counted for a person: drafts, records and their size."""
+    return f"{sweep.drafts} draft(s) and {sweep.records} record(s), {math.ceil(sweep.bytes / 1024)} KiB,"
+
+
 def _write(path: Path, text: str, *, exclusive: bool = False) -> None:
     """Write a private file (0600) without following a symbolic link; `exclusive` refuses an existing one."""
     flags = os.O_WRONLY | os.O_CREAT | (os.O_EXCL if exclusive else os.O_TRUNC) | getattr(os, "O_NOFOLLOW", 0)
@@ -1168,7 +1253,9 @@ def _without_emails(value: object) -> object:
         return Participant(name=value.name)
     if isinstance(value, BaseModel):
         fields = {name: _without_emails(getattr(value, name)) for name in type(value).model_fields}
-        return value.model_copy(update=fields)
+        # Validated again, not copied: a model's own guards (MailContent keeps only headers without addresses) then
+        # hold for whatever the adapter built, `model_construct` or later mutation included.
+        return type(value).model_validate(fields)
     if isinstance(value, list):
         return [_without_emails(item) for item in cast("list[object]", value)]
     if isinstance(value, dict):

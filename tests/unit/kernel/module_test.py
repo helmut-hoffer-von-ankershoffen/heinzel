@@ -332,7 +332,7 @@ def test_provides_records_an_adapter_named_after_the_module_by_default():
 @pytest.mark.parametrize(
     ("capability", "modes", "name", "problem"),
     [
-        ("mail", {"read"}, None, "Unknown capability 'mail'"),
+        ("spreadsheets", {"read"}, None, "Unknown capability 'spreadsheets'"),
         ("tracker", {"write"}, None, "must serve some of"),
         ("documents", set(), None, "must serve some of"),
         ("tracker", {"read"}, "Acme", "Adapter name 'Acme'"),

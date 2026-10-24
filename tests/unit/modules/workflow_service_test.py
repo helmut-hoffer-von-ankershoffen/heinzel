@@ -1,6 +1,7 @@
 """WorkflowService with test-only adapters and a fake agent runner: never a real agent, never the network."""
 
 import json
+import os
 import re
 import shlex
 import stat
@@ -15,6 +16,8 @@ from heinzel import (
     Event,
     HeinzelError,
     Issue,
+    MailContent,
+    MailMessage,
     Meeting,
     Module,
     Participant,
@@ -143,7 +146,7 @@ def dirs(tmp_path) -> tuple[Path, Path]:
 def make(make_kernel, host, runner, dirs, tmp_path):
     """A service over a kernel with the fakes bound; `bindings` and `workflow` override the configuration."""
 
-    def build(*, bindings: dict[str, str] | None = None, **workflow: object) -> WorkflowService:
+    def build(*, bindings: dict[str, str] | None = None, now: datetime = NOW, **workflow: object) -> WorkflowService:
         me, team = dirs
         table = {"user_dir": str(me), "team_repository": str(team)} | dict(workflow.items())
         capabilities = (
@@ -152,7 +155,7 @@ def make(make_kernel, host, runner, dirs, tmp_path):
         config = Config(files=(), data={"capabilities": capabilities, "workflow": table})
         kernel = make_kernel(builtins=True, fakes=adapters(host, runner), notes=notes(), config=config)
         settings = Config(files=(), data={}).settings(Settings, "hz")  # HZ_DATA_DIR: a temporary directory
-        return WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings, clock=lambda: NOW)
+        return WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings, clock=lambda: now)
 
     return build
 
@@ -231,13 +234,17 @@ def test_the_kernel_hands_the_daemon_the_compiled_jobs(make, dirs):
     assert [(module, job.name) for module, job in kernel.compiled_jobs()] == [("workflow", "me-weekly-digest")]
 
 
-def test_a_compiled_job_renders_its_contract(make, dirs, runner):
+def test_a_compiled_job_renders_its_contract_and_its_result_holds_the_drafts_hash_not_its_text(make, dirs, runner):
     put(dirs[0])
     service = make()
     job = service.compiled().jobs[0]
     rendered = job.func()
-    assert rendered.contract == "me:weekly-digest"
+    assert rendered["contract"] == "me:weekly-digest"
     assert len(runner.runs) == 1
+    assert "draft" not in rendered["agent"]
+    assert runner.draft not in json.dumps(rendered)
+    assert Path(rendered["draft"]).read_text() == runner.draft
+    assert rendered["sha256"].startswith("sha256:")
 
 
 def test_find_takes_bare_and_qualified_names(make, dirs):
@@ -369,6 +376,25 @@ def test_the_packet_keeps_peoples_names_and_drops_their_emails():
     assert minimised[1]["last"].segments[0].speaker == "Mira"
     assert minimised[2:] == ["text", 3]
     assert event.organizer == mira  # the adapter's objects are left alone
+
+
+def test_the_packet_drops_mail_senders_and_recipients_addresses():
+    sender = Participant(name="Meeting tool", email="noreply@meet.example")
+    message = MailMessage(
+        id="m", sender=sender, recipients=[Participant(email="mira@example.com")], subject="s", received_at=NOW
+    )
+    (minimised,) = service_module._without_emails([message])
+    assert minimised.sender == Participant(name="Meeting tool")
+    assert minimised.recipients == [Participant()]
+
+
+def test_the_packet_validates_models_again_so_no_address_header_slips_through():
+    message = MailMessage(id="m", sender=Participant(name="Tool"), subject="s", received_at=NOW)
+    built = MailContent.model_construct(message=message, text="t", headers={"to": "ada@example.com", "date": "d"})
+    mutated = MailContent(message=message, text="t")
+    mutated.headers["reply-to"] = "ada@example.com"
+    assert service_module._without_emails(built).headers == {"date": "d"}
+    assert service_module._without_emails(mutated).headers == {}
 
 
 def test_a_failing_input_or_an_unbound_capability_fails_the_run(make, dirs, host):
@@ -938,3 +964,115 @@ def test_an_alternative_adapter_is_named_in_the_step_not_the_command(make_kernel
     steps = {s.command: s.why for s in shown.next}
     assert steps["hz system config set capabilities.tracker host"].endswith("(or bind other)")
     assert steps["hz system config set capabilities.code_host host"].endswith("runs fail until it is")
+
+
+# Retention -----------------------------------------------------------------------------------------------------------
+
+
+def test_retention_is_90_days_by_default_never_negative_and_at_most_a_century():
+    assert WorkflowSettings().retention_days == 90
+    assert WorkflowSettings(retention_days=0).retention_days == 0
+    with pytest.raises(ValueError, match="greater than or equal to 0"):
+        WorkflowSettings(retention_days=-1)
+    with pytest.raises(ValueError, match="less than or equal to 36500"):
+        WorkflowSettings(retention_days=36_501)
+    assert "retention_days" in WorkflowSettings.ignored_in_project
+
+
+def test_prune_deletes_drafts_and_records_older_than_the_retention_and_keeps_the_rest(make, dirs):
+    put(dirs[0])
+    old = make().run("weekly-digest").rendered
+    later = make(now=NOW + timedelta(days=30)).run("weekly-digest").rendered
+    size = old.draft.stat().st_size + old.record.stat().st_size
+    service = make(now=NOW + timedelta(days=91))
+    report = service.prune()
+    assert report.files == [old.draft, old.record]
+    assert (report.drafts, report.records, report.bytes, report.dry_run) == (1, 1, size, False)
+    assert report.cutoff == NOW + timedelta(days=1)
+    assert not old.draft.exists()
+    assert not old.record.exists()
+    assert later.draft.exists()
+    assert later.record.exists()
+    assert [d.draft for d in service.drafts().drafts] == [later.draft]
+    assert service.prune().files == []  # idempotent
+
+
+def test_a_dry_run_lists_what_prune_would_delete_and_deletes_nothing(make, dirs):
+    put(dirs[0])
+    old = make().run("weekly-digest").rendered
+    report = make(now=NOW + timedelta(days=91)).prune(dry_run=True)
+    assert report.dry_run
+    assert report.files == [old.draft, old.record]
+    assert report.next[0].command == "hz workflow prune"
+    assert old.draft.exists()
+    assert old.record.exists()
+
+
+def test_retention_zero_keeps_drafts_forever(make, dirs):
+    put(dirs[0])
+    old = make().run("weekly-digest").rendered
+    service = make(now=NOW + timedelta(days=10_000), retention_days=0)
+    report = service.prune()
+    assert (report.files, report.cutoff) == ([], None)
+    assert report.next[0].command == "hz system config set workflow.retention_days 90"
+    assert old.draft.exists()
+    check = {c.name: c for c in service.health()}["workflow retention"]
+    assert (check.status, check.detail) == (Status.UP, "drafts and records are kept forever (retention_days = 0)")
+
+
+def test_reading_drafts_contracts_and_health_never_deletes_expired_drafts(make, dirs):
+    put(dirs[0])
+    old = make().run("weekly-digest").rendered
+    service = make(now=NOW + timedelta(days=365))
+    service.drafts()
+    service.drafts("weekly-digest", latest=True)
+    service.show("weekly-digest")
+    service.listing()
+    service.health()
+    assert old.draft.exists()
+    assert old.record.exists()
+
+
+def test_doctor_reports_what_would_be_pruned_and_degrades_once_nothing_pruned_it_for_two_days(make, dirs):
+    put(dirs[0])
+    make().run("weekly-digest")
+    assert {c.name: c.detail for c in make().health()}["workflow retention"] == "nothing older than 90 days"
+    fresh = {c.name: c for c in make(now=NOW + timedelta(days=91, hours=23)).health()}["workflow retention"]
+    assert fresh.status is Status.UP
+    assert re.fullmatch(
+        r"1 draft\(s\) and 1 record\(s\), \d+ KiB, older than 90 days; hz workflow prune deletes them", fresh.detail
+    )
+    stale = {c.name: c for c in make(now=NOW + timedelta(days=92, hours=1)).health()}["workflow retention"]
+    assert stale.status is Status.DEGRADED
+    assert stale.detail.endswith("nothing has pruned them for 2 days")
+    assert stale.fix.startswith("hz workflow prune")
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads any directory")
+def test_a_contract_directory_that_cant_be_read_is_a_problem_of_its_own(make, dirs):
+    put(dirs[0])
+    old = make().run("weekly-digest").rendered
+    locked = make().drafts_dir / "me-locked"
+    locked.mkdir()
+    locked.chmod(0o000)
+    try:
+        service = make(now=NOW + timedelta(days=91))
+        check = {c.name: c for c in service.health()}["workflow retention"]
+        report = service.prune()
+    finally:
+        locked.chmod(0o700)
+    assert check.status is Status.DEGRADED
+    assert check.detail.startswith(f"Can't read {locked}")
+    assert report.files == [old.draft, old.record]
+    assert report.problems == [check.detail]
+
+
+def test_doctor_reports_a_drafts_directory_that_cant_be_pruned(make, tmp_path):
+    service = make()
+    service.drafts_dir.parent.mkdir(parents=True)
+    service.drafts_dir.symlink_to(tmp_path, target_is_directory=True)
+    check = {c.name: c for c in service.health()}["workflow retention"]
+    assert check.status is Status.DEGRADED
+    assert "symbolic link" in check.detail
+    with pytest.raises(HeinzelError, match="symbolic link"):
+        service.prune()

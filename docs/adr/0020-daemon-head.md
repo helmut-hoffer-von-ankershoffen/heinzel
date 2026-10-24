@@ -158,6 +158,10 @@ our own. Points are marked where 0.2 builds part of them and the rest comes late
     - Kill switches (local flag, team `control.toml`, per job) are checked before every tick and every publish
       (0.2: the local pause flag).
     - `--dry-run` on `install` and `tick`.
+    - Housekeeping (2026-10-24) is ordinary jobs, not a separate duty of the tick: a module whose data expires declares
+      a `JobLet` that deletes it, so ticks run it with a receipt, `hz system daemon jobs` lists it and `pause` stops it.
+      The same deletion is an operation a person runs, and never a side effect of a read. The first is `workflow:prune`
+      (daily, [ADR 0021](0021-workflow-contracts.md) decision 13). Receipts themselves don't expire.
 
 ### Consequences
 

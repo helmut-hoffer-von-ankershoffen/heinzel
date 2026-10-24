@@ -149,8 +149,8 @@ def test_assert_adapter_compares_parameter_defaults_too():
 def test_assert_adapter_refuses_unknown_capabilities():
     from heinzel.testing import assert_adapter
 
-    with pytest.raises(ValueError, match="Unknown capability 'mail'"):
-        assert_adapter(Chatter, "mail")
+    with pytest.raises(ValueError, match="Unknown capability 'spreadsheets'"):
+        assert_adapter(Chatter, "spreadsheets")
 
 
 def test_isolation_forces_the_environment_backend_and_drops_credential_variables(monkeypatch):

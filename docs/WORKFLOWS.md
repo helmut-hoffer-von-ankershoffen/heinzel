@@ -106,7 +106,25 @@ hz workflow drafts                                  # every draft, newest first,
 hz workflow drafts --name weekly-digest --latest    # the newest draft of one contract, as text
 ```
 
-A manual run has no receipt, only its record; daemon runs write a receipt with the same content.
+A manual run has no receipt, only its record; daemon runs write a receipt that names the draft and its record and holds
+the draft's hash, the input hashes and the agent's report, but not the draft's text.
+
+### How long drafts are kept
+
+Drafts and their records (which hold the fetched inputs) are deleted 90 days after their render; receipts are kept.
+
+```bash
+hz workflow prune --dry-run                          # what would be deleted now, deleting nothing
+hz workflow prune                                    # delete it; running it again deletes nothing more
+hz system config set workflow.retention_days 30      # keep them 30 days; 0 keeps them forever
+```
+
+The daemon runs the job `workflow:prune` daily, so with the daemon installed you don't run it yourself; `hz system
+doctor` says how much would be deleted, and degrades when expired drafts are more than two days overdue. Reading drafts
+never deletes them. Only files a render wrote below `<data dir>/workflow/drafts/` are deleted, never through a symbolic
+link. Receipts the daemon wrote before this change, with 0.2.0, hold the draft's text too; they are never rewritten,
+since that would break their chain. To drop them, move that job's receipts out of `<data dir>/receipts/`, which starts
+its chain again ([ADR 0020](adr/0020-daemon-head.md)).
 
 ### Measure whether it pays off
 
@@ -221,7 +239,7 @@ inputs as data in `<input>` elements, framed as never being instructions.
 | --- | --- | --- |
 | Your contracts (`me`) | `<user config dir>/workflows/` (`hz workflow list` prints it) | `[workflow] user_dir` |
 | Team contracts (`team`) | `<team_repository>/workflows/` | `[workflow] team_repository`, `[workflow] schedule_team` |
-| Drafts and records | `<data dir>/workflow/drafts/<namespace>-<name>/` | `[hz] data_dir` |
+| Drafts and records | `<data dir>/workflow/drafts/<namespace>-<name>/`, kept 90 days by default | `[hz] data_dir`, `[workflow] retention_days` |
 | Cost cap | 1 USD a run by default, in every head | `[workflow] max_usd` |
 
 A project `hz.toml` can't set any `[workflow]` key: a repository someone else controls must not decide which prompts

@@ -29,6 +29,7 @@ Plugins add their own tables.
 | `chat` | `HZ_CAPABILITIES__CHAT` | `None` | Adapter that serves `chat`, e.g. `slack`. |
 | `code_host` | `HZ_CAPABILITIES__CODE_HOST` | `None` | Adapter that serves `code-host`, e.g. `github`. |
 | `documents` | `HZ_CAPABILITIES__DOCUMENTS` | `None` | Adapter that serves `documents`. |
+| `mail` | `HZ_CAPABILITIES__MAIL` | `None` | Adapter that serves `mail`, e.g. `google`. |
 | `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | Adapter that serves `meetings`, e.g. `zoom`. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | Adapter that serves `tracker`, e.g. `github`. |
 
@@ -53,6 +54,19 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `api_url` | `HZ_GITHUB__API_URL` | `'https://api.github.com'` | Base URL of the GitHub REST API: `https://api.github.com`, or for GitHub Enterprise Server `https://<host>/api/v3`. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml, because the token goes there. `hz system capability list` shows its host as the adapter's. |
 | `timeout` | `HZ_GITHUB__TIMEOUT` | `30.0` | Seconds to wait for each answer from GitHub before giving up. |
+
+## `[org]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `handle` | `HZ_ORG__HANDLE` | `None` | Your handle in teams, pull requests and contracts: lowercase letters, digits and dashes, e.g. mira. Your GitHub login is a good one. |
+| `role` | `HZ_ORG__ROLE` | `None` | Your role, one of engineer, principal, engineering-manager, engineering-leadership, product-manager, product-leadership, program-manager. |
+| `timezone` | `HZ_ORG__TIMEZONE` | `None` | Your IANA time zone, e.g. Europe/Berlin. |
+| `working_hours` | `HZ_ORG__WORKING_HOURS` | `(9, 18)` | Start and end hour of your working day, e.g. [9, 18] or "09-18" (HZ_ORG__WORKING_HOURS=09-18). |
+| `github` | `HZ_ORG__GITHUB` | `None` | Your GitHub login, needed to approve and own in a team. |
+| `coding_agent` | `HZ_ORG__CODING_AGENT` | `None` | The coding agent you draft with: claude-code, command (one of your own) or none. |
+| `name` | `HZ_ORG__NAME` | `None` | Your name, from your Google or GitHub login; stays on this machine, never in a repository. |
+| `email` | `HZ_ORG__EMAIL` | `None` | Your work email, from your Google login; stays on this machine, never in a repository. |
 
 ## `[system.agent]`
 
@@ -101,3 +115,4 @@ Plugins add their own tables.
 | `team_repository` | `HZ_WORKFLOW__TEAM_REPOSITORY` | `None` | A checkout of your team's state repository; its contracts are in `workflows/`. They run only with `hz workflow run`, or on your daemon when named in `schedule_team`. |
 | `schedule_team` | `HZ_WORKFLOW__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name, or `name@sha256:<hex>` to run only the content you approved (`hz workflow show` prints it); the others run only by hand, so a team's contracts don't run on every member's daemon. |
 | `max_usd` | `HZ_WORKFLOW__MAX_USD` | `1.0` | Most one render may cost in US dollars, whatever a contract asks for: scheduled and manual runs, in every head. A scheduled slot's retries share it. |
+| `retention_days` | `HZ_WORKFLOW__RETENTION_DAYS` | `90` | Days drafts and their `.record.json` files (the packet with the fetched inputs) are kept, counted from the render; older ones are deleted by the daemon's daily `workflow:prune` job or by `hz workflow prune`, never by reading them. 0 keeps them forever, at most 36500. Receipts are kept and hold the draft's hash, not its text (ADR 0021). |
