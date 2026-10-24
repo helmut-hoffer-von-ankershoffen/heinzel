@@ -24,6 +24,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `setup`: Set up every module that has a setup step,...
 * `system`: Inspect, configure, diagnose and update...
 * `workflow`: Workflow contracts: Markdown files an...
+* `zoom`: Read meetings from Zoom&#x27;s meeting-summary...
 
 ## `hz atlassian`
 
@@ -1170,6 +1171,40 @@ $ hz workflow show [OPTIONS] {name}
 **Arguments**:
 
 * `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz zoom`
+
+Read meetings from Zoom&#x27;s meeting-summary emails: the meetings capability.
+
+**Usage**:
+
+```console
+$ hz zoom [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `info`: Show this plugin&#x27;s version, the...
+
+### `hz zoom info`
+
+Show this plugin&#x27;s version, the Heinzelmännchen it runs on and where its meetings come from.
+
+**Usage**:
+
+```console
+$ hz zoom info [OPTIONS]
+```
 
 **Options**:
 
