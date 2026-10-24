@@ -21,7 +21,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal, cast
+from typing import Any, ClassVar, Literal, cast
 
 import platformdirs
 from pydantic.fields import FieldInfo
@@ -66,6 +66,11 @@ class ModuleSettings(BaseSettings):
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)
 
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset()
+    """Fields a project `hz.toml` may not set, because a repository someone else controls must not decide what runs
+    or where data goes: they come from the site, user and `HZ_CONFIG` files and the environment only, and doctor
+    names the keys a project file sets anyway."""
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -102,6 +107,8 @@ class Config:
 
     files: tuple[ConfigFile, ...]
     data: Mapping[str, Any]
+    layers: tuple[tuple[ConfigFile, Mapping[str, Any]], ...] = ()
+    """The content of each existing file, lowest precedence first; `data` is their merge."""
 
     @classmethod
     def load(cls, cwd: Path | None = None) -> "Config":
@@ -112,14 +119,17 @@ class Config:
         """
         files = config_files(cwd or Path.cwd())
         data: dict[str, Any] = {}
+        layers: list[tuple[ConfigFile, Mapping[str, Any]]] = []
         for file in files:
             if file.exists:
                 try:
-                    _merge(data, tomllib.loads(file.path.read_text(encoding="utf-8")))
+                    content = tomllib.loads(file.path.read_text(encoding="utf-8"))
                 except tomllib.TOMLDecodeError as exc:
                     msg = f"{file.path} is not valid TOML: {exc}"
                     raise HeinzelError(msg) from exc
-        return cls(files=files, data=data)
+                layers.append((file, content))
+                _merge(data, content)
+        return cls(files=files, data=data, layers=tuple(layers))
 
     @classmethod
     def empty(cls) -> "Config":
@@ -133,9 +143,27 @@ class Config:
             table = _table(table.get(part)) or {}
         return table
 
+    def project_keys(self, section: str, fields: frozenset[str]) -> list[str]:
+        """Keys of `section` among `fields` that the project file sets (`-` and `_` alike); never their values."""
+        project = [content for file, content in self.layers if file.scope == "project"]
+        table = Config(files=(), data=project[0]).section(section) if project else {}
+        return sorted(key for key in table if _field(key) in fields)
+
     def settings[S: ModuleSettings](self, model: type[S], section: str) -> S:
-        """Build `model` from this configuration's `section` and the section's environment variables."""
-        token = _section.set(self.section(section))
+        """Build `model` from this configuration's `section` and the section's environment variables.
+
+        Fields in `model.ignored_in_project` ignore what a project file sets and keep the other files' values.
+        """
+        table = self.section(section)
+        if model.ignored_in_project and self.project_keys(section, model.ignored_in_project):
+            trusted: dict[str, Any] = {}
+            for file, content in self.layers:
+                if file.scope != "project":
+                    _merge(trusted, content)
+            others = Config(files=(), data=trusted).section(section)
+            table = {k: v for k, v in table.items() if _field(k) not in model.ignored_in_project}
+            table |= {k: v for k, v in others.items() if _field(k) in model.ignored_in_project}
+        token = _section.set(table)
         try:
             return model(_env_prefix=env_prefix(section))  # pyright: ignore[reportCallIssue] - pydantic-settings init option
         finally:
@@ -163,6 +191,11 @@ def user_config_dir() -> Path:
     if xdg := os.environ.get("XDG_CONFIG_HOME"):
         return Path(xdg).expanduser() / APP_NAME
     return platformdirs.user_config_path(APP_NAME)
+
+
+def _field(key: str) -> str:
+    """The settings field a TOML key sets: `code-host` and `code_host` both set `code_host`."""
+    return key.replace("-", "_")
 
 
 def _table(value: object) -> dict[str, Any] | None:

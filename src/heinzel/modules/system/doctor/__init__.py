@@ -92,6 +92,19 @@ def core(kernel: Kernel, settings: Settings) -> list[Check]:
         Check(name=f"plugin {name}", status=Status.DEGRADED, detail=error, fix=f"Reinstall or remove the plugin {name}")
         for name, error in kernel.errors.items()
     )
+    # A repository someone else controls must not decide what runs or where data goes (ADR 0028): settings that
+    # do are ignored in a project hz.toml. Name the key, never the value.
+    project = next((file.path for file in kernel.config.files if file.scope == "project"), None)
+    checks.extend(
+        Check(
+            name=f"project setting {section}.{key}",
+            status=Status.DEGRADED,
+            detail=f"{project} sets it, which only the user, site or HZ_CONFIG file may; it is ignored",
+            fix=f"Remove it from {project}, or set it in your user configuration: hz system config set {section}.{key}",
+        )
+        for section, model in kernel.settings_of()
+        for key in kernel.config.project_keys(section, type(model).ignored_in_project)
+    )
     for name, directory in (("data_dir", settings.data_dir), ("cache_dir", settings.cache_dir)):
         existing = next((p for p in (directory, *directory.parents) if p.exists()), None)
         writable = existing is not None and os.access(existing, os.W_OK)

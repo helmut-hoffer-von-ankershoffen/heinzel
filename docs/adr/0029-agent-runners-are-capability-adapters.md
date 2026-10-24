@@ -62,9 +62,16 @@ configuration**, because the kernel gets bounded, reportable runs while the agen
 
 ### Confirmation
 
-Not yet: proposed, planned for 0.2. When implemented: a contract-test suite every `AgentRunner` adapter passes
-(timeouts, budgets, read-only profile, result shape), tests of the command adapter against a fake CLI, and an
-import-linter contract that the core imports no agent SDK.
+Partly, for the part built in 0.2 (see the implementation status under More Information): the command line, the
+isolation flags, the environment and the parsing of the Claude Code adapter with a recorded fake
+(`tests/unit/modules/runner_claude_test.py`); the command adapter's fail-closed checks, placeholders, environment
+allowlist and output handling (`tests/unit/modules/runner_command_test.py`) and its run against a fake agent CLI
+written in Python (`tests/integration/runner_test.py`); process groups, timeouts and output caps with real processes
+(`tests/integration/runner_process_test.py`); a hostile project `hz.toml` can't configure execution
+(`tests/integration/capability_test.py`); the import-linter contract "The core imports no vendor client or agent SDK"
+(`pyproject.toml`). No test runs a real agent. Still planned: a contract-test suite every `AgentRunner` adapter
+passes (timeouts, budgets, read-only profile, result shape), and verifying the stream-json shape against a real
+Claude Code run.
 
 ## More Information
 
@@ -76,3 +83,61 @@ import-linter contract that the core imports no agent SDK.
   either is accepted.
 - [ADR 0020](0020-daemon-head.md) receipts gain the runner, model, tool calls and token cost reported by the adapter.
 - Integrations follow the same pattern: [ADR 0028](0028-integrations-are-capability-adapters.md).
+
+**What 0.2 implements.** The status stays proposed: per-person and per-job runner choice, receipts carrying the
+result, contract hints and the shared adapter contract-test suite are not built yet. Built, with the choices made
+while building it and in review of the pull request (director's decisions, 2026-10-24):
+
+- **Protocol** `AgentRunner.run(prompt, *, contract, tools, timeout, budget) -> AgentResult` in the kernel
+  (`heinzel.kernel._agents`, public in `heinzel`), the capability `agent-runner` with one mode, `read`: a session with
+  read-only tools. `ToolProfile` lists tools in the runner's own naming (empty: its read-only default) and the working
+  directory, which must exist; `Budget` has `max_usd`. `AgentResult` carries runner, model, status (`completed`,
+  `timeout`, `budget`, `failed`), draft, tool calls by name, turns, token usage and cost, duration, why it didn't
+  complete, and the limits the runner could not enforce. A timeout or budget stop is a result, never an exception; so
+  are a failing CLI and missing or empty output (status `failed`, with the exit code and the end of stderr). A
+  misconfigured runner raises a `HeinzelError`.
+- **Tools in 0.2: inputs are pre-fetched, the agent gets no hz tools.** This settles ADR 0021's tools question for
+  0.2 (option a): a render packet holds the inputs, fetched through capability handles by the job before the session
+  starts, and the agent session only reads the working directory with the runner's read-only tools. `hz.tools`
+  (hz operations and MCP servers as agent tools) is deferred, and `ToolProfile` stays in the runner's naming until it
+  comes.
+- **Runners are adapters like any other** (`@module.provides("agent-runner", ...)` in `system.runner`), bound with
+  `[capabilities] agent_runner`, which defaults to `claude-code` because `command` needs a command line first.
+  Requesters declare `agent-runner:read` like any capability. What runs (`claude_executable`, `read_only_tools`, every
+  `command*` setting) comes from the site, user or `HZ_CONFIG` file or the environment, never from a project
+  `hz.toml`; executables are resolved to absolute paths before the run changes directory.
+- **Processes are bounded.** Both runners start the agent in its own session (`start_new_session`); past the timeout
+  the whole process group gets SIGTERM, then SIGKILL two seconds later, and whatever the agent left running in its
+  group is killed when it exits. Stdout and stderr are drained and capped (8 MiB each).
+- **Claude Code adapter**: `claude -p` with the prompt on standard input and the contract in a file in a private
+  temporary directory (`--append-system-prompt-file`), so neither shows in the process list; `--output-format
+  stream-json --verbose` so tool calls can be counted. It does not load the user's or the project's Claude setup as
+  far as this Claude Code offers (flags checked against `claude --help` of Claude Code 2.1, 2026-10-24):
+  `--safe-mode` (no CLAUDE.md, skills, plugins, hooks, MCP servers, custom commands or agents), `--restricted` (no
+  user, project or local settings files, so none of their hooks, `env` or `apiKeyHelper`; no tools that run commands
+  or code unless named; file tools confined to the working directory), `--disable-slash-commands`,
+  `--strict-mcp-config`, `--no-session-persistence`, and `--tools` and `--allowed-tools` set to the profile with
+  `--permission-mode dontAsk`. Managed (policy) settings still apply, and Claude Code still reads its own login from
+  the keychain: `--bare` would stop that too but allows only API keys, which breaks OAuth logins. The environment is
+  Heinzelmännchen's without `HZ_CREDENTIAL_*`, plus `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` and
+  `DISABLE_AUTOUPDATER=1`. `--model` comes from `[system.runner] model`, `--max-budget-usd` from the budget. This
+  Claude Code has no turn limit flag, so the `max_turns` hint of ADR 0021 is not enforced. A profile may only name
+  tools listed in `[system.runner] read_only_tools` (default `Read`, `Grep`, `Glob`). The stream-json event shape
+  (a `system` event with the model, `assistant` events with `tool_use` blocks, a final `result` event with `result`,
+  `subtype`, `is_error`, `num_turns`, `total_cost_usd` and `usage`) is parsed defensively, every field optional, and
+  was not verified against a real run in this change (that would spend the maintainer's quota).
+- **Generic command adapter, fail closed**: it refuses to run until the user sets `command_enforces_read_only = true`
+  (the command restricts its agent itself; Heinzelmännchen can't check that), and passes only tools listed in
+  `command_read_only_tools`. `[system.runner] command` is a list of arguments, run without a shell, with placeholders
+  `{prompt_file}`, `{contract_file}`, `{output_file}`, `{working_dir}`, `{tools}`, `{model}`, `{timeout_seconds}` and
+  `{max_usd}` filled inside single arguments (`{{` and `}}` are literal braces); unknown placeholders, format specs and
+  conversions are refused. Prompt and contract go to files in a private temporary directory that is removed
+  afterwards. The environment is an allowlist: PATH, HOME, LANG, LC_*, TMPDIR and the names in `command_env`, never
+  `HZ_CREDENTIAL_*`. The result is read from stdout or `{output_file}` (opened without following symlinks, at most
+  8 MiB), as text or as JSON (draft under a configured key, optional `usage` and `total_cost_usd`).
+- **Doctor** checks the bound core runner only when some module requires `agent-runner`: Claude Code on PATH; for the
+  command runner a configured, existing executable, and degraded while it refuses to run. Results list the limits a
+  run could not enforce (a budget the command doesn't take).
+- **Credentials**: neither runner needs a credential in 0.2 (Claude Code uses its own login; a command reads its own
+  from a variable named in `command_env`). A command runner that needs a stored token is a follow-up through
+  `Credentials` ([ADR 0030](0030-credentials-live-in-the-os-keychain.md)).

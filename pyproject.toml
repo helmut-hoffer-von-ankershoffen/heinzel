@@ -343,6 +343,12 @@ source_modules = ["heinzel.kernel"]
 forbidden_modules = ["keyring"]
 
 [[tool.importlinter.contracts]]
+name = "The core imports no vendor client or agent SDK: adapters call CLIs; SDKs belong in plugins (ADR 0028, 0029)"
+type = "forbidden"
+source_modules = ["heinzel"]
+forbidden_modules = ["anthropic", "claude_agent_sdk", "openai", "github", "atlassian", "jira", "googleapiclient", "slack_sdk", "zoomus"]
+
+[[tool.importlinter.contracts]]
 name = "Modules never import heads"
 type = "forbidden"
 source_modules = ["heinzel.modules"]
@@ -353,12 +359,14 @@ name = "Every module could be a plugin: system's submodules don't import each ot
 type = "independence"
 modules = [
     "heinzel.modules.system.agent",
+    "heinzel.modules.system.capability",
     "heinzel.modules.system.changelog",
     "heinzel.modules.system.config",
     "heinzel.modules.system.credential",
     "heinzel.modules.system.daemon",
     "heinzel.modules.system.doctor",
     "heinzel.modules.system.plugin",
+    "heinzel.modules.system.runner",
 ]
 
 [[tool.importlinter.contracts]]
@@ -366,9 +374,9 @@ name = "Modules use only the kernel's public API, like plugins"
 type = "forbidden"
 source_modules = ["heinzel.modules"]
 forbidden_modules = [
-    "heinzel.kernel._boot", "heinzel.kernel._config", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation",
+    "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation",
     "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings",
-    "heinzel.kernel._spec",
+    "heinzel.kernel._protocols", "heinzel.kernel._spec",
 ]
 allow_indirect_imports = true # going through heinzel.kernel's public API is the point
 

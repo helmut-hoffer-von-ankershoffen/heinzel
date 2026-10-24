@@ -15,6 +15,7 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, Field, model_validator
 from rich.console import RenderableType
 
+from heinzel.kernel._capabilities import Mode, Requirement
 from heinzel.kernel._config import ModuleSettings
 
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
@@ -48,6 +49,23 @@ class OperationLet(Let):
     """For heads with exit codes: the code for a result, e.g. non-zero when a health report is DOWN."""
     heads: frozenset[str] | None = None
     """Heads that expose the operation (`"cli"`, `"mcp"`, `"api"`); every head when None."""
+    requires: tuple[Requirement, ...] = ()
+    """Capabilities the operation asks for by type, besides its module's (ADR 0028); `write` only if not read-only.
+
+    `write` doesn't imply `read`: a publish operation that also reads declares `documents:read,write`."""
+
+    def __post_init__(self) -> None:
+        """Refuse a read-only operation that declares a write.
+
+        Raises:
+            ValueError: If a read-only operation requires a `write` mode.
+        """
+        if self.read_only and (writes := [str(r) for r in self.requires if "write" in r.modes]):
+            msg = (
+                f"Operation {self.name!r} can't require {', '.join(writes)}: writes happen only in publish operations "
+                f"(read_only=False)"
+            )
+            raise ValueError(msg)
 
     def signature(self) -> inspect.Signature:
         """The signature of `func`, with string annotations resolved."""
@@ -131,6 +149,8 @@ class JobLet(Let):
     catch_up: CatchUp = CatchUp.LATEST
     idempotency: Callable[[datetime], str] | None = None
     """The key of the run for a schedule slot; `<job>@<slot>` when None. A slot with a rendered key never reruns."""
+    requires: tuple[Requirement, ...] = ()
+    """Capabilities the job asks for by type, besides its module's (ADR 0028); always read-only."""
 
     def __post_init__(self) -> None:
         """Refuse a job the daemon could never run.
@@ -152,6 +172,9 @@ class JobLet(Let):
         if self.retries < 0:
             msg = f"Job {self.name!r}: retries must be 0 or more, not {self.retries}"
             raise ValueError(msg)
+        if writes := [str(r) for r in self.requires if "write" in r.modes]:
+            msg = f"Job {self.name!r} can't require {', '.join(writes)}: writes happen only in publish operations"
+            raise ValueError(msg)
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
@@ -169,3 +192,33 @@ class InfoLet(Let):
     """A section contributed to `hz system info`. The provider may ask for injected services."""
 
     provider: Callable[..., Mapping[str, Any] | BaseModel]
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class ProviderLet(Let):
+    """An adapter: implements a capability's protocol, in some modes, reaching some hosts (ADR 0028).
+
+    Its name is `<adapter>:<capability>`. Configuration binds a capability to an adapter by the adapter's name
+    (`[capabilities] tracker = "github"`); the kernel builds one instance from `factory`, injecting its parameters.
+    """
+
+    adapter: str
+    """The name bindings use, e.g. `github` or `claude-code`."""
+    capability: str
+    """The capability implemented, e.g. `tracker`."""
+    modes: frozenset[Mode]
+    """The modes it serves; a requester never gets a mode its adapter lacks."""
+    hosts: tuple[str, ...] = ()
+    """Hosts it sends data to, e.g. `api.github.com`; empty when that depends on its configuration."""
+    factory: Callable[..., Any]
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class RequirementLet(Let):
+    """A capability a whole module reads, declared with `Module(..., requires=[...])` and named after it (ADR 0028).
+
+    Every operation, job, service, info and health provider of the module may ask for it by type. Only read modes:
+    `write` is declared on the publish operation (`read_only=False`) that writes.
+    """
+
+    requirement: Requirement

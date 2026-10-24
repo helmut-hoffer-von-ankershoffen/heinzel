@@ -3,7 +3,10 @@
 The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets and decide how to expose them.
 """
 
+from heinzel.kernel._agents import AgentResult, AgentRunner, Budget, RunStatus, TokenUsage, ToolProfile
+from heinzel.kernel._bindings import CapabilityView
 from heinzel.kernel._boot import boot
+from heinzel.kernel._capabilities import CAPABILITIES, MODES, Capability, Mode, Requirement
 from heinzel.kernel._config import (
     FILENAME,
     KERNEL_SECTION,
@@ -36,49 +39,83 @@ from heinzel.kernel._lets import (
     JobLet,
     Let,
     OperationLet,
+    ProviderLet,
+    RequirementLet,
     ServiceLet,
     SettingsLet,
     Status,
 )
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
+from heinzel.kernel._protocols import (
+    CodeHost,
+    Document,
+    Documents,
+    Issue,
+    PullRequest,
+    SectionReplacement,
+    Tracker,
+    Window,
+)
 from heinzel.kernel._release import ReleaseCache
 from heinzel.kernel._settings import Settings
 
 __all__ = [
     "BUILTIN_PACKAGE",
+    "CAPABILITIES",
     "CORE_DISTRIBUTION",
     "ENTRY_POINT_GROUP",
     "FILENAME",
     "KERNEL_SECTION",
+    "MODES",
     "PROJECT_FILENAME",
+    "AgentResult",
+    "AgentRunner",
+    "Budget",
+    "Capability",
+    "CapabilityView",
     "CatchUp",
     "Check",
+    "CodeHost",
     "Config",
     "ConfigFile",
     "CredentialBackend",
     "CredentialLet",
     "Credentials",
     "DeclaredCredential",
+    "Document",
+    "Documents",
     "EnvironmentBackend",
     "HealthLet",
     "HeinzelError",
     "InfoLet",
     "Installation",
+    "Issue",
     "JobLet",
     "Kernel",
     "Let",
+    "Mode",
     "Module",
     "ModuleRecord",
     "ModuleSettings",
     "OperationLet",
     "Origin",
     "Progress",
+    "ProviderLet",
+    "PullRequest",
     "ReleaseCache",
+    "Requirement",
+    "RequirementLet",
+    "RunStatus",
+    "SectionReplacement",
     "ServiceLet",
     "Settings",
     "SettingsLet",
     "Status",
+    "TokenUsage",
+    "ToolProfile",
+    "Tracker",
+    "Window",
     "boot",
     "discover",
     "env_prefix",

@@ -206,7 +206,7 @@ def test_system_info_json(app):
     assert result.exit_code == 0, result.output
     info = json.loads(result.output)
     assert info["version"] == __version__
-    assert info["sections"] == {"example": {"greeting": "hi"}}
+    assert info["sections"] == {"example": {"greeting": "hi"}}  # an empty section (no capabilities in use) is left out
     assert {m["qualname"] for m in info["modules"]} >= {"system", "system.changelog", "system.plugin", "example.ping"}
 
 
@@ -481,6 +481,7 @@ def test_commands_are_sorted(app):
     assert root.list_commands(None) == sorted(root.list_commands(None))  # type: ignore[arg-type]
     expected = [
         "agent",
+        "capability",
         "changelog",
         "config",
         "credential",

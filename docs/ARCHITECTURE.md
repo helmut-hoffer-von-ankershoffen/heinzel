@@ -48,6 +48,8 @@ the kinds it understands.
 | `HealthLet` | `@module.health` returning `Check`s | `hz system doctor` |
 | `CredentialLet` | `module.credential(name, purpose=...)` | `Credentials` (injected) and `hz system credential` with its doctor check ([ADR 0030](adr/0030-credentials-live-in-the-os-keychain.md)) |
 | `JobLet` | `@module.job(schedule="0 9 * * MON")` | `hz system daemon tick`, run by launchd or systemd ([ADR 0020](adr/0020-daemon-head.md)) |
+| `ProviderLet` | `@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter class | the kernel's capability bindings and `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
+| `RequirementLet` | `Module(..., requires=["tracker:read"])` (read only); operations and jobs take `requires=[...]` | the kernel's capability handles and the doctor check of `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
 
 New kinds of lets (contracts, watchers) extend Heinzelmännchen without changing existing heads; see
 [ADR 0010](adr/0010-towards-a-reactive-workflow-engine.md).
@@ -56,6 +58,11 @@ New kinds of lets (contracts, watchers) extend Heinzelmännchen without changing
 by kind with their owning module, and injects dependencies by type: `Kernel`, `Settings`, `Config`, every type a
 `ServiceLet` provides and every `SettingsLet` model, plus `Installation` (the uv tool environment) and `Progress`
 (head-provided progress reporting: operations never print). Services are singletons per kernel and may depend on other services.
+A capability protocol (`Tracker`, `Documents`, ...) is injected as a handle on the adapter bound in `[capabilities]`,
+limited to the modes the asking operation, job or module declared; `write` reaches only publish operations
+(`read_only=False`) ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)). Agent sessions are the
+capability `agent-runner`; core ships its Claude Code and generic command adapters in `system.runner`
+([ADR 0029](adr/0029-agent-runners-are-capability-adapters.md)).
 
 **Head.** A view that boots the kernel and exposes operations ([ADR 0019](adr/0019-mcp-and-rest-heads.md)). All heads
 share one exposure rule (`heinzel.heads._exposure`): the same path, public parameters and `heads=` restrictions. The
@@ -68,8 +75,10 @@ an operation into a command; parameters without defaults become arguments, other
 shares its name and has no submodules collapses into a single command (`hz system changelog`).
 
 **Configuration.** Layered TOML files (site, user, project `hz.toml`, `$HZ_CONFIG`) under environment variables;
-the `[hz]` table holds kernel settings, `[<module>]` tables module settings
-([ADR 0012](adr/0012-layered-configuration.md)).
+the `[hz]` table holds kernel settings, `[capabilities]` the capability bindings, `[<module>]` tables module settings
+([ADR 0012](adr/0012-layered-configuration.md)). Settings that decide what runs or where data goes (the bindings, the
+agent runners' executables and tools) are ignored in a project `hz.toml`, and doctor names any it sets
+([ADR 0028](adr/0028-integrations-are-capability-adapters.md)).
 
 ## The command tree
 

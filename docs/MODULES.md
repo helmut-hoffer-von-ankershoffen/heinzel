@@ -9,12 +9,14 @@ modules; `hz system modules` lists what is installed.
 | [`clock`](#clock) | What time it is for everyone on the team. |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
+| [`system.capability`](#systemcapability) | Show which adapters serve which capabilities, and who reads and writes what. |
 | [`system.changelog`](#systemchangelog) | Release notes of the installed version. |
 | [`system.config`](#systemconfig) | Show, get, set and initialize configuration. |
 | [`system.credential`](#systemcredential) | Store and check the credentials modules need, in the OS keychain. |
 | [`system.daemon`](#systemdaemon) | Run modules' jobs in the background, supervised by launchd or systemd. |
 | [`system.doctor`](#systemdoctor) | Check that Heinzelmännchen and its modules are healthy. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
+| [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 
 ## `clock`
 
@@ -52,6 +54,16 @@ Install the Heinzelmännchen skills for coding agents.
 | Remove Heinzelmännchen's skills from each configured agent skill directory. | `hz system agent uninstall` | `system_agent_uninstall` | `POST /system/agent/uninstall` | yes |
 
 Settings: [`[system.agent]`](CONFIGURATION.md#systemagent).
+
+## `system.capability`
+
+Show which adapters serve which capabilities, and who reads and writes what.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| List capabilities, their bindings and adapters, and every requirement with its adapter and hosts. | `hz system capability list` | `system_capability_list` | `GET /system/capability/list` |  |
+
+Health checks: reported by `hz system doctor`.
 
 ## `system.changelog`
 
@@ -129,3 +141,11 @@ Find, add, remove, list and scaffold plugins.
 | Find plugins to install: first-party ones, and community ones by querying the GitHub API. | `hz system plugin search` | `system_plugin_search` | `GET /system/plugin/search` |  |
 
 Settings: [`[system.plugin]`](CONFIGURATION.md#systemplugin).
+
+## `system.runner`
+
+Run bounded agent sessions with Claude Code or a configured command.
+
+Settings: [`[system.runner]`](CONFIGURATION.md#systemrunner).
+
+Health checks: reported by `hz system doctor`.

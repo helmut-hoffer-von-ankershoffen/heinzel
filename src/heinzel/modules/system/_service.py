@@ -72,7 +72,11 @@ class SystemService:
             settings=self._kernel.settings.model_dump(mode="json"),
             modules=self.modules(),
             plugin_errors=dict(self._kernel.errors),
-            sections={record.qualname: self._section(let) for record, let in self._kernel.lets(InfoLet)},
+            sections={
+                record.qualname: section
+                for record, let in self._kernel.lets(InfoLet)
+                if (section := self._section(let)) not in ({}, [], None)  # nothing to say, no empty heading
+            },
             latest_release=ReleaseCache(self._kernel.settings.cache_dir).latest,
         )
 

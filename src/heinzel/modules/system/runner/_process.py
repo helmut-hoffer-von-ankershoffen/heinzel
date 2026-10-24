@@ -1,0 +1,137 @@
+"""Running an agent CLI with hard limits: its own process group, a timeout that kills it, capped output."""
+
+import contextlib
+import os
+import signal
+import subprocess
+import threading
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import IO, cast
+
+MAX_OUTPUT = 8 * 1024 * 1024
+"""Bytes kept of stdout and of stderr each; the rest is drained and dropped, so a runaway agent can't fill memory."""
+GRACE = 2.0
+"""Seconds a stopped agent gets between SIGTERM and SIGKILL."""
+
+
+@dataclass(frozen=True, slots=True)
+class Outcome:
+    """How an agent process ended and what it printed, cut at the limit."""
+
+    returncode: int | None
+    """None when it was stopped for exceeding its timeout."""
+    stdout: str
+    stderr: str
+    truncated: bool = False
+    """Whether stdout or stderr went over the limit and was cut."""
+
+    @property
+    def timed_out(self) -> bool:
+        """Whether it was stopped for exceeding its timeout."""
+        return self.returncode is None
+
+    def stderr_tail(self, size: int = 500) -> str:
+        """The end of stderr, for a detail line."""
+        return self.stderr.strip()[-size:]
+
+
+Execute = Callable[..., Outcome]
+"""Runs a command like `run_bounded`; runners take one so tests never start an agent."""
+
+
+class _Capture:
+    """Drains a pipe in a thread, keeping at most `limit` bytes."""
+
+    def __init__(self, stream: IO[bytes], limit: int) -> None:
+        self.chunks: list[bytes] = []
+        self.size = 0
+        self._limit = limit
+        self._thread = threading.Thread(target=self._drain, args=(stream,), daemon=True)
+        self._thread.start()
+
+    def _drain(self, stream: IO[bytes]) -> None:
+        with stream:
+            while chunk := stream.read(65536):
+                if self.size < self._limit:
+                    self.chunks.append(chunk[: self._limit - self.size])
+                self.size += len(chunk)
+
+    def text(self, wait: float) -> str:
+        self._thread.join(wait)
+        return b"".join(self.chunks).decode(errors="replace")
+
+    @property
+    def truncated(self) -> bool:
+        return self.size > self._limit
+
+
+def _write(stream: IO[bytes], data: bytes) -> None:
+    try:
+        with stream:
+            stream.write(data)
+    except BrokenPipeError:  # the agent exited without reading all of its input; its exit code tells why
+        pass
+
+
+def _signal_group(pid: int, signum: signal.Signals) -> None:
+    with contextlib.suppress(ProcessLookupError):  # the whole group is gone already
+        os.killpg(pid, signum)
+
+
+def run_bounded(  # noqa: PLR0913 - the process's whole contract
+    command: list[str],
+    *,
+    input: str | None,  # noqa: A002 - as in subprocess.run
+    cwd: Path | None,
+    env: Mapping[str, str],
+    timeout: float,
+    limit: int = MAX_OUTPUT,
+) -> Outcome:
+    """Run `command` in a new session; past `timeout` its whole process group gets SIGTERM, then SIGKILL.
+
+    The command line is a list, never a shell string. Whatever the agent left running in its group after it exits is
+    killed too, so no tool process outlives the run.
+    """
+    process = subprocess.Popen(  # noqa: S603 - an argument list built by the runner, executable resolved to a path
+        command,
+        stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=cwd,
+        env=dict(env),
+        start_new_session=True,
+    )
+    stdout = _Capture(cast("IO[bytes]", process.stdout), limit)  # both are pipes, see above
+    stderr = _Capture(cast("IO[bytes]", process.stderr), limit)
+    if input is not None and process.stdin is not None:
+        threading.Thread(target=_write, args=(process.stdin, input.encode()), daemon=True).start()
+    returncode: int | None
+    try:
+        returncode = process.wait(timeout)
+    except subprocess.TimeoutExpired:
+        returncode = None
+        _signal_group(process.pid, signal.SIGTERM)
+        try:
+            process.wait(GRACE)
+        except subprocess.TimeoutExpired:
+            _signal_group(process.pid, signal.SIGKILL)
+            process.wait()
+    _signal_group(process.pid, signal.SIGKILL)  # leftovers of the agent's group
+    return Outcome(
+        returncode=returncode,
+        stdout=stdout.text(GRACE),
+        stderr=stderr.text(GRACE),
+        truncated=stdout.truncated or stderr.truncated,
+    )
+
+
+def whole_number(value: object) -> int | None:
+    """`value` if it is an int and not a bool (JSON `true` is no token count), else None."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def amount(value: object) -> float | None:
+    """`value` as a float if it is a number and not a bool, else None."""
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
