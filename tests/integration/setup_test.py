@@ -198,6 +198,34 @@ def test_mcp_and_rest_expose_no_setup(kernel):
     assert not [path for path in paths if "setup" in path]
 
 
+INVALID_CLOCK = Config(files=(), data={"clock": {"zones": [{"name": "Asia/Tokyo", "hours": [19, 10]}]}})
+
+
+def test_invalid_settings_fail_the_step_with_a_message_not_a_traceback(make_kernel, terminal):
+    kernel = make_kernel(builtins=True, config=INVALID_CLOCK, clock=heinzel_clock.module)
+    result = runner.invoke(build(kernel), ["clock", "setup"])
+    assert result.exit_code == 1
+    assert "clock failed: its configuration is invalid: ClockSettings zones.0" in " ".join(result.output.split())
+    assert "hz system config show" in result.output
+
+
+def test_invalid_settings_without_a_terminal_are_a_configuration_error(make_kernel):
+    kernel = make_kernel(builtins=True, config=INVALID_CLOCK, clock=heinzel_clock.module)
+    result = runner.invoke(build(kernel), ["setup"])
+    assert result.exit_code == 1
+    assert "Configuration error:" in result.stderr
+    assert "Traceback" not in result.output
+
+
+def test_a_broken_configuration_file_is_an_error_line(make_kernel, terminal):
+    (user_config_dir() / "config.toml").write_text("[greet\n", encoding="utf-8")
+    result = runner.invoke(build(make_kernel(builtins=True, greet=greet())), ["setup"], input="\n\n")
+    assert result.exit_code == 1
+    assert "greet failed:" in result.output  # writing the greeting needs the file
+    assert "Error:" in result.stderr  # and doctor can't read it
+    assert "is not valid TOML" in result.stderr
+
+
 def test_without_doctor_setup_ends_with_the_summary(make_kernel, settings, terminal):
     disabled = settings.model_copy(update={"disabled_modules": frozenset({"system.doctor"})})
     kernel = make_kernel(builtins=True, settings_=disabled, greet=greet())

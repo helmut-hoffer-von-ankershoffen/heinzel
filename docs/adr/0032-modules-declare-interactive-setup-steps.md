@@ -40,7 +40,7 @@ declare such a step, how does it ask questions without knowing about the termina
   (directories, log levels), can't search IANA names or ask "hours per zone", and the maintainer wants modules to
   declare their steps. Rejected; a module without a declared step has none.
 - **`hz system setup` instead of `hz setup`**: consistent with ADR 0018, but the maintainer decided on `hz setup`; it
-  is the first command a new user types and the README's first step.
+  is meant to be the first command a new user types.
 
 ## Decision Outcome
 

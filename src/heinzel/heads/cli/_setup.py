@@ -8,10 +8,13 @@ already configured is offered a change instead. Ctrl-C stops and keeps what fini
 import getpass
 import shlex
 import sys
+from collections.abc import Generator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 
 import typer
+from pydantic import ValidationError
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
@@ -158,27 +161,41 @@ class Runner:
         return results
 
     def _step(self, record: ModuleRecord, let: SetupLet, *, offer_skip: bool) -> StepResult:
-        say, ask = self.prompter.say, self.prompter.confirm
         kind = "required" if let.required else "optional"
-        say("")
-        say(f"{record.qualname} ({kind}): {let.summary}")
-        if is_configured(self.kernel, record):
-            if not ask(f"{record.qualname} is already set up. Change it?", default=False):
-                return StepResult(module=record.qualname, required=let.required, outcome=Outcome.KEPT)
-        elif offer_skip and not let.required and not ask(f"Set up {record.qualname} now?"):
-            return StepResult(module=record.qualname, required=let.required, outcome=Outcome.SKIPPED)
+        self.prompter.say("")
+        self.prompter.say(f"{record.qualname} ({kind}): {let.summary}")
         try:
-            self.kernel.call(let.func)
+            outcome = self._ask_and_run(record, let, offer_skip=offer_skip)
+        except ValidationError as exc:
+            # The module's settings in a file or HZ_* variable are invalid, so neither its step nor its check can run.
+            detail = f"its configuration is invalid: {invalid(exc)}"
         except HeinzelError as exc:
-            say(f"{record.qualname} failed: {exc}")
-            return StepResult(module=record.qualname, required=let.required, outcome=Outcome.FAILED, detail=str(exc))
+            detail = str(exc)
         except (KeyboardInterrupt, LookupError):
             raise
         except Exception as exc:  # noqa: BLE001 - a broken plugin's step is reported, the other steps still run
             detail = f"{type(exc).__name__}: {exc} (a bug in the step; report it to the module's authors)"
-            say(f"{record.qualname} failed: {detail}")
-            return StepResult(module=record.qualname, required=let.required, outcome=Outcome.FAILED, detail=detail)
-        return StepResult(module=record.qualname, required=let.required, outcome=Outcome.DONE)
+        else:
+            return StepResult(module=record.qualname, required=let.required, outcome=outcome)
+        self.prompter.say(f"{record.qualname} failed: {detail}")
+        return StepResult(module=record.qualname, required=let.required, outcome=Outcome.FAILED, detail=detail)
+
+    def _ask_and_run(self, record: ModuleRecord, let: SetupLet, *, offer_skip: bool) -> Outcome:
+        ask = self.prompter.confirm
+        if is_configured(self.kernel, record):
+            if not ask(f"{record.qualname} is already set up. Change it?", default=False):
+                return Outcome.KEPT
+        elif offer_skip and not let.required and not ask(f"Set up {record.qualname} now?"):
+            return Outcome.SKIPPED
+        self.kernel.call(let.func)
+        return Outcome.DONE
+
+
+def invalid(exc: ValidationError) -> str:
+    """The first problem of invalid settings, and where to look for it."""
+    error = exc.errors()[0]
+    where = ".".join(map(str, error["loc"])) or "input"
+    return f"{exc.title} {where}: {error['msg']}. `hz system config show` lists the files and variables it comes from"
 
 
 def summary(results: list[StepResult]) -> Table:
@@ -213,6 +230,10 @@ class SetupCommands:
         Raises:
             typer.Exit: With 1 when a step failed or there is no terminal, 130 after Ctrl-C.
         """
+        with self._errors():
+            self._everything()
+
+    def _everything(self) -> None:
         plan = steps(self.kernel)
         if not plan:
             self.console.print("No module has a setup step.")
@@ -236,11 +257,29 @@ class SetupCommands:
             typer.Exit: With 1 when the step failed or there is no terminal, 130 after Ctrl-C.
         """
         plan = [(record, let)]
-        results = Runner(self.kernel, self._prompter(plan)).run(plan, offer_skip=False)
+        with self._errors():
+            prompter = self._prompter(plan)
+        results = Runner(self.kernel, prompter).run(plan, offer_skip=False)
         result = results[0]
         self.console.print(Text(f"{record.qualname}: {result.outcome.value}"), highlight=False)
         if code := exit_code(results):
             raise typer.Exit(code=code)
+
+    @contextmanager
+    def _errors(self) -> Generator[None]:
+        """Invalid configuration and other expected failures as an error line and exit code 1, like every command.
+
+        Raises:
+            typer.Exit: With 1 for a `HeinzelError`, an invalid configuration or a file that can't be written.
+        """
+        try:
+            yield
+        except ValidationError as exc:
+            self.err_console.print(message("Configuration error:", invalid(exc)), highlight=False, soft_wrap=True)
+            raise typer.Exit(code=1) from exc
+        except (HeinzelError, OSError) as exc:
+            self.err_console.print(message("Error:", str(exc)), highlight=False, soft_wrap=True)
+            raise typer.Exit(code=1) from exc
 
     def _prompter(self, plan: list[tuple[ModuleRecord, SetupLet]]) -> Prompter:
         """The prompter a test bound, the terminal, or a refusal listing the equivalent commands.
