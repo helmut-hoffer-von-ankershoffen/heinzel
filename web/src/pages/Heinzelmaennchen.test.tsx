@@ -6,7 +6,7 @@ import { expectAccessible, mockApi, renderAt } from "@/test/render";
 describe("Heinzelmännchen", () => {
   it("lists each Heinzelmännchen with its contract, owner, state and runs", async () => {
     mockApi(shell);
-    const { container } = renderAt("/heinzel");
+    renderAt("/heinzel");
     const table = within(await screen.findByRole("table"));
     const row = table.getByRole("link", { name: "Weekly digest" }).closest("tr") as HTMLElement;
     expect(within(row).getByText("weekly-digest.prose.md")).toBeInTheDocument();
@@ -19,6 +19,12 @@ describe("Heinzelmännchen", () => {
     expect(within(team).getByText("never")).toBeInTheDocument();
     expect(within(team).getByText("when you wake it")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Heinzelmännchen" })).toBeInTheDocument();
+  });
+
+  it("is accessible", async () => {
+    mockApi(shell);
+    const { container } = renderAt("/heinzel");
+    await screen.findByRole("table");
     await expectAccessible(container);
   });
 
