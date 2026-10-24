@@ -19,6 +19,7 @@ modules; `hz system modules` lists what is installed.
 | [`system.daemon`](#systemdaemon) | Run modules' jobs in the background, supervised by launchd or systemd. |
 | [`system.directory`](#systemdirectory) | Guess reporting lines from recurring 1:1s in your calendar, for setup to confirm. |
 | [`system.doctor`](#systemdoctor) | Check that Heinzelmännchen and its modules are healthy. |
+| [`system.layer`](#systemlayer) | Show the layer plugins installed and the stack you are in, general to specific. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
@@ -183,6 +184,17 @@ Check that Heinzelmännchen and its modules are healthy.
 | Operation | CLI | MCP tool | REST | Changes state |
 | --- | --- | --- | --- | --- |
 | Run every module's health checks; exits with 1 if anything is down. | `hz system doctor` | `system_doctor` | `GET /system/doctor` |  |
+
+Health checks: reported by `hz system doctor`.
+
+## `system.layer`
+
+Show the layer plugins installed and the stack you are in, general to specific.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| List the installed layer plugins: where each sits, what it brings and what is wrong with the tree. | `hz system layer list` | `system_layer_list` | `GET /system/layer/list` |  |
+| Show your stack: company, org and site, team; what the layers bring and the settings they recommend. | `hz system layer show` | `system_layer_show` | `GET /system/layer/show` |  |
 
 Health checks: reported by `hz system doctor`.
 

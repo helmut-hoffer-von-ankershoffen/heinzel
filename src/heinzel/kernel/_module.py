@@ -17,6 +17,7 @@ from rich.console import RenderableType
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, Mode, Requirement, parse_requirements
 from heinzel.kernel._config import ConfigEditor, ModuleSettings
 from heinzel.kernel._duration import parse_duration
+from heinzel.kernel._layers import LayerLet
 from heinzel.kernel._lets import (
     NAME_PATTERN,
     SETUP_PHASES,
@@ -459,6 +460,38 @@ class Module:
             walk.__doc__ = f"Playbook: {let.summary}"
             walk.__qualname__ = f"{self.name}.playbook_setup"
             self.setup(walk)
+        return let
+
+    def layer(self, *, parent: str | None = None, site: str | None = None, roles: Iterable[str] = ()) -> LayerLet:
+        """Declare that this module's plugin is a layer of a company's tree (ADR 0040); once per module.
+
+        Layers are untyped: a layer without a parent is the root (the company), and company, org, site and team are
+        labels hz derives from where a layer sits. Name a layer by its path from the root, joined with dashes
+        (`acme`, `acme-payments`, `acme-payments-checkout`, `acme-lisbon`), so its name says where it sits; doctor
+        hints at a name that doesn't. List the parent's and the site's plugins as dependencies of this one, so
+        installing a team installs its stack.
+
+        Example:
+            ```python
+            module = Module("acme-payments-checkout", "The Checkout team of Acme Payments.")
+            module.layer(parent="acme-payments", site="acme-lisbon", roles=["checkout-captain"])
+            ```
+
+        Args:
+            parent: The module name of the layer above, e.g. `acme-payments`; none for the root.
+            site: The module name of a site layer this layer is at, e.g. `acme-lisbon`; a site sits beside the org
+                tree, under the company, and is never one of this layer's parents.
+            roles: Roles this layer adds to the core vocabulary for everyone whose stack includes it.
+
+        Raises:
+            ValueError: If the module is a layer already (a layer has one parent), a name is malformed, or the layer
+                is its own parent or site, or its parent is its site.
+        """
+        if any(isinstance(existing, LayerLet) for existing in self._lets):
+            msg = f"Module {self.name!r} is a layer already; a layer has one parent and at most one site"
+            raise ValueError(msg)
+        let = LayerLet(name=self.name, parent=parent, site=site, roles=tuple(roles))
+        self.add(let)
         return let
 
     @hookimpl

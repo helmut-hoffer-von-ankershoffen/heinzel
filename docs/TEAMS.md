@@ -24,6 +24,10 @@ Not on the roster? You can still read the team's contracts. Ask to be added: `--
 you, which the team's owners merge. If the roster lists you without a login, claim that entry with `--handle <entry>`.
 `gh` not signed in? Say who you are with `--login <your GitHub login>`.
 
+Your team's plugin, the one `hz.yaml` names, is your layer: `hz system layer show` shows it stacked on your
+company's, org's and site's plugins ([Playbooks: layers](PLAYBOOKS.md#layers-company-org-site-team)). Install it with
+`hz system plugin add <plugin>`; another layer is yours with `hz system config set team.layer <layer>`.
+
 ## Create a team
 
 ```bash

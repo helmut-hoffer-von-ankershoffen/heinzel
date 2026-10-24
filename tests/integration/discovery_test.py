@@ -24,6 +24,7 @@ def test_discovers_builtin_modules_and_submodules():
         "system.daemon",
         "system.directory",
         "system.doctor",
+        "system.layer",
         "system.plugin",
         "system.runner",
         "team",
@@ -67,6 +68,7 @@ def test_kernel_boots_from_discovery(settings):
         "system.daemon",
         "system.directory",
         "system.doctor",
+        "system.layer",
         "system.plugin",
         "system.runner",
     ]

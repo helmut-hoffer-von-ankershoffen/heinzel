@@ -3,7 +3,7 @@
 import inspect
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
 from typing import Any, cast, get_origin
 
@@ -23,6 +23,7 @@ from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._installation import Installation
 from heinzel.kernel._jobs import CompiledJobs
+from heinzel.kernel._layers import Declared, Label, LayerLet, LayerProblem, LayerProblemKind, Layers, LayerStack
 from heinzel.kernel._lets import (
     CredentialLet,
     HealthLet,
@@ -38,6 +39,8 @@ from heinzel.kernel._lets import (
     settings_parameters,
 )
 from heinzel.kernel._module import Module
+from heinzel.kernel._org import OrgContext
+from heinzel.kernel._playbooks import PlaybookLet
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._settings import Settings
@@ -45,7 +48,7 @@ from heinzel.kernel._spec import PROJECT_NAME, Spec
 
 logger = logging.getLogger(__name__)
 
-ADAPTER_ONLY_LETS = (ProviderLet, RequirementLet, SettingsLet, CredentialLet)
+ADAPTER_ONLY_LETS = (ProviderLet, RequirementLet, SettingsLet, CredentialLet, LayerLet)
 """Lets that leave a module adapter-only: none of them runs code that could use the module's requirements, so its
 needs count only while one of its adapters serves someone. Any other let, including kinds added later, makes them
 count always."""
@@ -131,7 +134,10 @@ class Kernel:
             Progress: Progress(),
             Prompter: Prompter(),
         }
-        self._factories: dict[type[Any], Callable[..., Any]] = {Installation: Installation}
+        self._factories: dict[type[Any], Callable[..., Any]] = {
+            Installation: Installation,
+        }
+        self._layers: Layers | None = None
         self._providers: dict[type[Any], str] = {}
         """The module providing each service type, by qualified name."""
         # Built-ins first, so a plugin providing a type a built-in provides is the one skipped and reported, whatever
@@ -247,6 +253,73 @@ class Kernel:
             msg = f"{requester.label} pins {', '.join(pins)}: compiled jobs use the adapters configuration binds."
             raise HeinzelError(msg)
         return self._capabilities.handle_for(requester, spec)
+
+    def layers(self) -> Layers:
+        """Every installed layer, checked once: what is wrong with the tree is in `problems` (ADR 0040)."""
+        if self._layers is None:
+            # The adapters the kernel registered, by plugin: a layer brings its whole plugin's.
+            adapters: dict[str, list[str]] = {}
+            for registered in (a for found in self._capabilities.adapters.values() for a in found):
+                adapters.setdefault(registered.module.split(".")[0], []).append(registered.let.name)
+            playbooks = {record.qualname: let for record, let in self.lets(PlaybookLet)}
+            self._layers = Layers(
+                Declared(
+                    let=let,
+                    module=record.qualname,
+                    distribution=record.origin.distribution,
+                    adapters=tuple(sorted(adapters.get(record.path[0], ()))),
+                    playbook=playbooks.get(record.qualname),
+                    plugin=not record.origin.builtin and record.parent is None,
+                )
+                for record, let in self.lets(LayerLet)
+            )
+        return self._layers
+
+    def layer_stack(self, layer: str | None = None) -> LayerStack:
+        """The stack of `layer`, or of the layer the person is in, general to specific (ADR 0040); built afresh.
+
+        Without `layer`, the person's layer is what their team declares (`OrgContext.layer`, provided by `team`);
+        when nothing declares one, the only team layer installed, or the only company when there is no team. Built on
+        every call, so a team joined or a `[team] layer` set earlier in the same process counts.
+        """
+        tree = self.layers()
+        if layer is not None:
+            return tree.stack(layer, source="asked for")
+        declared, problems = None, list[LayerProblem]()
+        if self.provides(OrgContext):
+            try:
+                declared = self.resolve(OrgContext).layer()
+            # An unreadable team repository or invalid team settings leave the stack to what is installed.
+            except (HeinzelError, ValidationError) as exc:
+                reason = exc.errors()[0]["msg"] if isinstance(exc, ValidationError) else str(exc)
+                problems.append(
+                    LayerProblem(
+                        layer="",
+                        problem=LayerProblemKind.UNREADABLE,
+                        detail=f"your team's layer couldn't be read: {reason}",
+                        fix="hz team show",
+                    )
+                )
+        if declared is not None:
+            stack = tree.stack(declared, source="your team")
+        else:
+            candidates = tree.teams() or [found for found in tree.layers if found.label is Label.COMPANY]
+            if len(candidates) == 1:
+                stack = tree.stack(candidates[0].name, source=f"the only {candidates[0].label} layer installed")
+            else:
+                stack = tree.stack(None)
+            if len(candidates) > 1:
+                names = ", ".join(c.name for c in candidates)
+                problems.append(
+                    LayerProblem(
+                        layer="",
+                        problem=LayerProblemKind.AMBIGUOUS,
+                        detail=f"{len(candidates)} {candidates[0].label} layers are installed ({names}) and nothing "
+                        "says which is yours",
+                        fix=f"hz system config set team.layer {candidates[0].name}",
+                    )
+                )
+        return replace(stack, problems=(*stack.problems, *problems)) if problems else stack
 
     def compiled_jobs(self) -> list[tuple[str, JobLet]]:
         """The jobs compiled from data, each with the module that compiled it; compiled afresh on every call.
