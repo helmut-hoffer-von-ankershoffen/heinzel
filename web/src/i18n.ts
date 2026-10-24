@@ -14,7 +14,7 @@ const en = {
   "nav.organisation": "Organisation",
   "nav.orgChart": "Org chart",
   "nav.team": "Team roster",
-  "nav.inventory": "Inventory",
+  "nav.artifacts": "Artifacts",
   "nav.assetTypes": "Asset types",
   "nav.assets": "Assets",
   "nav.doctor": "Doctor",
