@@ -66,5 +66,5 @@ heinzel_owner:
 
 heinzel_version:
   type: str
-  default: "0.3.0" # bumped by the release process
+  default: "0.4.0" # bumped by the release process
   when: false
