@@ -15,7 +15,7 @@ cd "$destination"
 git init --quiet -b main
 
 # Test against this checkout instead of the released Heinzelmännchen the template points at.
-python3 - "$repo_root" <<'PY'
+uv run --quiet --no-project python - "$repo_root" <<'PY' # uv's Python: a fresh Linux may have none
 import pathlib, re, sys
 path = pathlib.Path("pyproject.toml")
 local = f'"heinzel @ {pathlib.Path(sys.argv[1]).as_uri()}",'

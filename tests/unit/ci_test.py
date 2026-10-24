@@ -18,8 +18,6 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "*": {"uv sync": "installs what the job needs"},
     "ci.yml": {
         "uv run --script scripts/check_confidentiality.py --require": "the secret must be configured in this repo",
-        "curl ": "downloads the pinned gitleaks binary",
-        "./gitleaks ": "scans the whole history; locally the pre-commit hook scans each commit",
         "unzip -l ": "asserts what the built wheel contains",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
     },

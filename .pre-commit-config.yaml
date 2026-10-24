@@ -14,12 +14,14 @@ repos:
       - id: check-yaml
       - id: end-of-file-fixer
       - id: trailing-whitespace
-  - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.1
-    hooks:
-      - id: gitleaks # credentials: API keys, tokens, private keys (confidential terms: scripts/check_confidentiality.py)
   - repo: local
     hooks:
+      - id: gitleaks # credentials: API keys, tokens, private keys (confidential terms: scripts/check_confidentiality.py)
+        name: gitleaks (credentials in the staged changes)
+        # The binary pinned in scripts/tools.toml, the same one `make secrets` runs over the history in CI.
+        entry: uv run --quiet --script scripts/tools.py run gitleaks git --pre-commit --staged --redact --verbose
+        language: system
+        pass_filenames: false
       - id: ruff-format
         name: ruff format
         entry: uv run ruff format

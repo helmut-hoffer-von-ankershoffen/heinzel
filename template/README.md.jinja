@@ -41,7 +41,8 @@ hz system info                  # includes a section contributed by this plugin
 ## Develop
 
 ```bash
-make setup     # dependencies and git hooks
+make setup     # everything the build needs, and the git hooks; you need only git, make and uv
+make doctor    # what is missing, and the command that fixes it
 make check     # lint, types, unit + integration tests
 make test-e2e  # installs Heinzelmännchen with uv and adds this checkout as a plugin
 ```

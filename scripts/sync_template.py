@@ -52,6 +52,11 @@ def ci_workflow() -> str:
     )
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
     text = text.replace("      - run: uv build --all-packages\n", "      - run: uv build\n")
+    # The core's CI covers every platform of the shared scripts/tools.toml; a plugin, possibly private and paying for
+    # its minutes, sets up on the two most contributors use.
+    text = text.replace(
+        "os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]", "os: [ubuntu-latest, macos-latest]"
+    )
     return text.replace(", template, build]", ", build]")
 
 
