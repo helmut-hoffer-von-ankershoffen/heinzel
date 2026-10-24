@@ -16,6 +16,7 @@ from rich.console import RenderableType
 from heinzel.kernel._config import ModuleSettings
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._lets import (
+    NAME_PATTERN,
     CatchUp,
     Check,
     CredentialLet,
@@ -29,7 +30,6 @@ from heinzel.kernel._lets import (
 )
 from heinzel.kernel._spec import hookimpl
 
-NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 SERVICE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$")
 
 
@@ -165,11 +165,8 @@ class Module:
             idempotency: Key of the run for a slot; `<job>@<slot>` by default.
 
         Raises:
-            ValueError: If the docstring is missing, the timeout is malformed or retries is negative.
+            ValueError: If the docstring is missing, or the name, schedule, timeout or retries are invalid.
         """
-        if retries < 0:
-            msg = f"retries must be 0 or more, not {retries}"
-            raise ValueError(msg)
         duration = parse_duration(timeout)
 
         def decorate(target: F) -> F:

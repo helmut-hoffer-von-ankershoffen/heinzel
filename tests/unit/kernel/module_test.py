@@ -140,7 +140,29 @@ def test_job_requires_docstring_and_valid_options():
     module = Module("example", "x")
     with pytest.raises(ValueError, match="needs a docstring"):
         module.job(schedule="@daily")(lambda: None)
-    with pytest.raises(ValueError, match="retries"):
-        module.job(schedule="@daily", retries=-1)
     with pytest.raises(ValueError, match="positive whole number"):
         module.job(schedule="@daily", timeout="soon")
+
+
+def _undecorated() -> None:
+    """Do it."""
+
+
+@pytest.mark.parametrize(
+    ("options", "problem"),
+    [
+        ({"schedule": "@daily", "retries": -1}, "retries must be 0 or more"),
+        ({"schedule": "@daily", "name": "Weekly_Digest"}, "must match"),
+        ({"schedule": "@reboot"}, "five cron fields"),
+        ({"schedule": "0 9 * *"}, "five cron fields"),
+        ({"schedule": "0 9 * * MON; rm"}, "five cron fields"),
+    ],
+)
+def test_jobs_are_validated_when_declared(options, problem):
+    with pytest.raises(ValueError, match=problem):
+        Module("example", "x").job(**options)(_undecorated)
+
+
+def test_a_job_let_refuses_a_timeout_that_is_not_positive():
+    with pytest.raises(ValueError, match="timeout must be positive"):
+        JobLet(name="x", func=_undecorated, summary="x", schedule="@daily", timeout=timedelta(0))
