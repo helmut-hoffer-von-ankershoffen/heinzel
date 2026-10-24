@@ -136,17 +136,25 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.doctor`](docs/MODULES.md#systemdoctor) — Check that Heinzelmännchen and its modules are healthy.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, list and scaffold plugins.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
-- [`workflow`](docs/MODULES.md#workflow) — Workflow contracts: Markdown files that compile to daemon jobs drafting with an agent.
+- [`workflow`](docs/MODULES.md#workflow) — Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one).
 <!-- modules:end -->
 
 Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add their own modules.
 
 Workflows are Markdown files, not code: a `<name>.prose.md` contract in your workflows directory (or your team's
 state repository) names the capabilities it reads, the inputs to fetch and the agent's limits, and its body says what
-the draft must achieve. `hz workflow check` lists every problem by file and line, `hz workflow run <name> --dry-run`
-shows what the agent would get, and the daemon runs contracts with a schedule. Drafts are saved locally; nothing is
-published by itself. Format and decisions: [ADR 0021](docs/adr/0021-workflow-contracts.md), schema:
-[docs/schemas/contract-frontmatter-1.json](docs/schemas/contract-frontmatter-1.json).
+the draft must achieve. Drafts are saved locally; nothing is published by itself.
+
+```bash
+hz workflow new weekly-digest             # a starter contract, valid as written, with comments; creates the directory
+hz workflow check                         # every problem by file and line
+hz workflow show weekly-digest            # what it requires, what is bound, whether it is ready, what to run next
+hz workflow run weekly-digest --dry-run   # the packet the agent would get; nothing is spent
+hz workflow run weekly-digest             # draft it now; then `hz workflow drafts`
+```
+
+Give it a `schedule:` and the daemon runs it. The journey from nothing to a scheduled team contract, and the contract
+reference: [docs/WORKFLOWS.md](docs/WORKFLOWS.md). Decisions: [ADR 0021](docs/adr/0021-workflow-contracts.md).
 
 ## Configure
 

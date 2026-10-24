@@ -19,7 +19,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 * `clock`: Show the time in each of the team&#x27;s time...
 * `system`: Inspect, configure, diagnose and update...
-* `workflow`: Workflow contracts: Markdown files that...
+* `workflow`: Workflow contracts: Markdown files an...
 
 ## `hz clock`
 
@@ -810,7 +810,7 @@ $ hz system update [OPTIONS]
 
 ## `hz workflow`
 
-Workflow contracts: Markdown files that compile to daemon jobs drafting with an agent.
+Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon&#x27;s schedule (`hz workflow new` starts one).
 
 **Usage**:
 
@@ -825,7 +825,9 @@ $ hz workflow [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `check`: Check contracts and list every problem...
+* `drafts`: List the drafts runs saved locally, newest...
 * `list`: List the contracts in your and your team&#x27;s...
+* `new`: Write a starter contract, valid as written...
 * `run`: Render a contract now: fetch its inputs,...
 * `show`: Show a contract as the daemon runs it:...
 
@@ -846,6 +848,24 @@ $ hz workflow check [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz workflow drafts`
+
+List the drafts runs saved locally, newest first, with their paths and records, or show the newest.
+
+**Usage**:
+
+```console
+$ hz workflow drafts [OPTIONS]
+```
+
+**Options**:
+
+* `--name <str>`: Only this contract&#x27;s drafts; every contract&#x27;s if omitted.
+* `--latest / --no-latest`: Print the newest draft instead of the list.  [default: no-latest]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz workflow list`
 
 List the contracts in your and your team&#x27;s workflows directories, with their schedule and problems.
@@ -858,6 +878,27 @@ $ hz workflow list [OPTIONS]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz workflow new`
+
+Write a starter contract, valid as written and commented, into your workflows directory; creates it.
+
+**Usage**:
+
+```console
+$ hz workflow new [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The contract&#x27;s name: lowercase words joined by dashes, e.g. weekly-digest.  [required]
+
+**Options**:
+
+* `--team / --no-team`: Write it into the team repository&#x27;s workflows/ instead of your own directory.  [default: no-team]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -885,7 +926,7 @@ $ hz workflow run [OPTIONS] {name}
 
 ### `hz workflow show`
 
-Show a contract as the daemon runs it: schedule, requirements, adapters, inputs and publishes.
+Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
 
 **Usage**:
 

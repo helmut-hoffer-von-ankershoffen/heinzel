@@ -17,7 +17,7 @@ modules; `hz system modules` lists what is installed.
 | [`system.doctor`](#systemdoctor) | Check that Heinzelmännchen and its modules are healthy. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
-| [`workflow`](#workflow) | Workflow contracts: Markdown files that compile to daemon jobs drafting with an agent. |
+| [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
 
 ## `clock`
 
@@ -153,12 +153,14 @@ Health checks: reported by `hz system doctor`.
 
 ## `workflow`
 
-Workflow contracts: Markdown files that compile to daemon jobs drafting with an agent.
+Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one).
 
 | Operation | CLI | MCP tool | REST | Changes state |
 | --- | --- | --- | --- | --- |
 | List the contracts in your and your team's workflows directories, with their schedule and problems. | `hz workflow list` | `workflow_list` | `GET /workflow/list` |  |
-| Show a contract as the daemon runs it: schedule, requirements, adapters, inputs and publishes. | `hz workflow show` | `workflow_show` | `GET /workflow/show` |  |
+| Write a starter contract, valid as written and commented, into your workflows directory; creates it. | `hz workflow new` | `workflow_new` | — | yes |
+| Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps. | `hz workflow show` | `workflow_show` | `GET /workflow/show` |  |
+| List the drafts runs saved locally, newest first, with their paths and records, or show the newest. | `hz workflow drafts` | `workflow_drafts` | — |  |
 | Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate. | `hz workflow check` | `workflow_check` | `GET /workflow/check` |  |
 | Render a contract now: fetch its inputs, run the agent and save the draft; nothing is published. | `hz workflow run` | `workflow_run` | — | yes |
 

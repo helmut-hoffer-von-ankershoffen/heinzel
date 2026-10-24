@@ -21,15 +21,29 @@ from heinzel.kernel import CompiledJobs
 from heinzel.modules.workflow._models import (
     CheckReport,
     CompiledContract,
+    ContractList,
     ContractSummary,
+    DraftList,
     Frontmatter,
+    NewContract,
     RunResult,
     WorkflowSettings,
 )
-from heinzel.modules.workflow._render import render_check, render_list, render_run, render_show
+from heinzel.modules.workflow._render import (
+    render_check,
+    render_drafts,
+    render_list,
+    render_new,
+    render_run,
+    render_show,
+)
 from heinzel.modules.workflow._service import WorkflowService
 
-module = Module("workflow", "Workflow contracts: Markdown files that compile to daemon jobs drafting with an agent.")
+module = Module(
+    "workflow",
+    "Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule "
+    "(`hz workflow new` starts one).",
+)
 module.settings(WorkflowSettings)
 module.service(WorkflowService, WorkflowService.for_user)
 
@@ -51,15 +65,42 @@ def _check_exit_code(report: CheckReport) -> int:
 
 
 @module.operation(render=render_list)
-def list_(service: WorkflowService) -> list[ContractSummary]:
+def list_(service: WorkflowService) -> ContractList:
     """List the contracts in your and your team's workflows directories, with their schedule and problems."""
-    return service.summaries()
+    return service.listing()
+
+
+# A contract written through a web page could reach a local REST server; the CLI and MCP get it, like `run`. The
+# starter has no schedule, so even then nothing would run on the daemon by itself.
+@module.operation(read_only=False, render=render_new, heads={"cli", "mcp"})
+def new(
+    service: WorkflowService,
+    name: Annotated[
+        str, Field(description="The contract's name: lowercase words joined by dashes, e.g. weekly-digest.")
+    ],
+    team: Annotated[
+        bool, Field(description="Write it into the team repository's workflows/ instead of your own directory.")
+    ] = False,
+) -> NewContract:
+    """Write a starter contract, valid as written and commented, into your workflows directory; creates it."""
+    return service.new(name, team=team)
 
 
 @module.operation(render=render_show)
 def show(service: WorkflowService, name: Name) -> CompiledContract:
-    """Show a contract as the daemon runs it: schedule, requirements, adapters, inputs and publishes."""
+    """Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps."""
     return service.show(name)
+
+
+# Drafts hold data fetched from your systems; a web page can reach a local REST server, so the CLI and MCP list them.
+@module.operation(render=render_drafts, heads={"cli", "mcp"})
+def drafts(
+    service: WorkflowService,
+    name: Annotated[str | None, Field(description="Only this contract's drafts; every contract's if omitted.")] = None,
+    latest: Annotated[bool, Field(description="Print the newest draft instead of the list.")] = False,
+) -> DraftList:
+    """List the drafts runs saved locally, newest first, with their paths and records, or show the newest."""
+    return service.drafts(name, latest=latest)
 
 
 @module.operation(render=render_check, exit_code=_check_exit_code)
@@ -94,8 +135,11 @@ def health(service: WorkflowService) -> list[Check]:
 __all__ = [
     "CheckReport",
     "CompiledContract",
+    "ContractList",
     "ContractSummary",
+    "DraftList",
     "Frontmatter",
+    "NewContract",
     "RunResult",
     "WorkflowService",
     "WorkflowSettings",
