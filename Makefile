@@ -130,7 +130,7 @@ pr: ## Push this branch and open a squash-merged, auto-merging pull request to m
 sync: ## Rebase this branch onto the latest main
 	@git fetch --quiet origin && git rebase --quiet origin/main && git log --oneline origin/main..HEAD
 
-release: ## Open a release pull request from main: BUMP=auto|patch|minor|major (default auto)
+release: ## Open a release pull request from main: BUMP=auto|patch|minor|major (default auto), INTRO="prose"
 	bash scripts/release.sh $(or $(BUMP),auto) --open-pr
 
 clean: ## Remove build and test artifacts

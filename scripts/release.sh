@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # Prepare a release as a pull request: derive the next semantic version from conventional commits (or force a bump),
-# update the version everywhere bump-my-version knows about, regenerate CHANGELOG.md, and commit
-# "chore(release): vX.Y.Z" on a new branch `release/vX.Y.Z`.
+# update the version everywhere bump-my-version knows about, regenerate CHANGELOG.md (keeping the hand-written
+# introductions of earlier releases), and commit "chore(release): vX.Y.Z" on a new branch `release/vX.Y.Z`.
 #
-# Usage: bash scripts/release.sh [auto|patch|minor|major] [--open-pr]
+# Usage: [INTRO="prose"] bash scripts/release.sh [auto|patch|minor|major] [--open-pr]
+#   INTRO      the new release's introduction, written under its heading in CHANGELOG.md and the release notes;
+#              edit it in the release pull request like the rest.
 #   --open-pr  pushes the branch and opens the release pull request with gh. Merging it tags and publishes the
 #              release (workflow "Release tag"). Prints the tag on the last line.
 set -euo pipefail
 
 bump="${1:-auto}"
 open_pr="${2:-}"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -39,16 +43,18 @@ uv lock --quiet
 # Regenerate what derives from the version (the plugin template's pyproject, generated docs); the release PR's
 # lint fails otherwise.
 make --no-print-directory fix >&2
+# git-cliff writes every release from the commits; the introductions written under the headings come from the old file.
+if [[ -f CHANGELOG.md ]]; then cp CHANGELOG.md "$work/previous.md"; fi
 uv run --frozen git-cliff --offline --tag "$tag" --output CHANGELOG.md
+uv run --script scripts/changelog_intros.py "$work/previous.md" CHANGELOG.md --version "$next" \
+  --intro "${INTRO:-}"
 git add --update
 git commit --quiet --message "chore(release): $tag"
 
 if [[ "$open_pr" == "--open-pr" ]]; then
   git ls-remote --exit-code --heads origin "release/$tag" >/dev/null && die "release/$tag already exists on origin"
-  notes="$(mktemp)"
-  trap 'rm -f "$notes"' EXIT
   git push --quiet --set-upstream origin "release/$tag"
-  uv run --frozen git-cliff --offline --unreleased --tag "$tag" --strip header > "$notes"
-  gh pr create --base main --head "release/$tag" --title "chore(release): $tag" --body-file "$notes" >&2
+  uv run --script scripts/release_notes.py "$tag" > "$work/notes.md"
+  gh pr create --base main --head "release/$tag" --title "chore(release): $tag" --body-file "$work/notes.md" >&2
 fi
 echo "$tag"
