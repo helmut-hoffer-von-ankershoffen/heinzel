@@ -132,3 +132,9 @@ Plugins add their own tables.
 | `schedule_team` | `HZ_WORKFLOW__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name, or `name@sha256:<hex>` to run only the content you approved (`hz workflow show` prints it); the others run only by hand, so a team's contracts don't run on every member's daemon. |
 | `max_usd` | `HZ_WORKFLOW__MAX_USD` | `1.0` | Most one render may cost in US dollars, whatever a contract asks for: scheduled and manual runs, in every head. A scheduled slot's retries share it. |
 | `retention_days` | `HZ_WORKFLOW__RETENTION_DAYS` | `90` | Days drafts and their `.record.json` files (the packet with the fetched inputs) are kept, counted from the render; older ones are deleted by the daemon's daily `workflow:prune` job or by `hz workflow prune`, never by reading them. 0 keeps them forever, at most 36500. Receipts are kept and hold the draft's hash, not its text (ADR 0021). |
+
+## `[zoom]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `query` | `HZ_ZOOM__QUERY` | `'from:zoom.us'` | Mail query that finds Zoom's meeting-summary emails, in the mail capability's syntax (`from:`, `subject:`, `label:`), e.g. `from:zoom.us label:Meetings`; subjects that are no summary are skipped. Never read from a project hz.toml. |

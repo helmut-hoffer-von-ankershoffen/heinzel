@@ -26,6 +26,7 @@ FIRST_PARTY: Mapping[str, str] = MappingProxyType(
         "clock": "What time it is for everyone on the team.",
         "github": "Read pull requests and issues from GitHub: the code-host and tracker capabilities.",
         "google": "Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.",
+        "zoom": "Read meetings from Zoom's meeting-summary emails: the meetings capability.",
     }
 )
 """First-party plugins in `plugins/heinzel-<name>/` (ADR 0017) by name, with their descriptions; found by

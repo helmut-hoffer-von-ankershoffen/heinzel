@@ -11,6 +11,7 @@ import click
 import heinzel_atlassian
 import heinzel_clock
 import heinzel_github
+import heinzel_zoom
 import pytest
 import typer
 from pydantic import BaseModel, Field
@@ -211,6 +212,7 @@ def test_plugin_search_lists_first_party_and_community_plugins(app, monkeypatch)
         ("heinzel-clock", "first-party", False, "clock"),
         ("heinzel-github", "first-party", False, "github"),
         ("heinzel-google", "first-party", False, "google"),
+        ("heinzel-zoom", "first-party", False, "zoom"),
         ("heinzel-crm", "github", True, "git+https://github.com/someone/heinzel-crm"),
     ]
     assert found["warnings"] == []
@@ -236,6 +238,7 @@ def test_plugin_search_offline_shows_first_party_plugins_and_a_warning(app, monk
         "heinzel-clock",
         "heinzel-github",
         "heinzel-google",
+        "heinzel-zoom",
     ]
     assert found["warnings"] == [
         "GitHub could not be searched (network is unreachable); showing first-party plugins only."
@@ -510,6 +513,7 @@ def test_every_operation_accepts_json(make_kernel):
             atlassian=heinzel_atlassian.module,
             clock=heinzel_clock.module,
             github=heinzel_github.module,
+            zoom=heinzel_zoom.module,
             **example_modules(),
         )
     )
