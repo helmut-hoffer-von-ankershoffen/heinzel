@@ -4,6 +4,8 @@
 - docs/CLI_REFERENCE.md: Typer's own `utils docs` output for the CLI built from the built-in modules.
 - docs/CONFIGURATION.md: every setting of the kernel and the built-in modules, with environment variable and default.
 - README.md: the module list between `<!-- modules:start -->` and `<!-- modules:end -->`.
+- The badges between `<!-- badges:start -->` and `<!-- badges:end -->`: one set on every top-level page GitHub renders
+  (BADGE_PAGES), and the same set for a plugin's own repository in the template's README.md and SECURITY.md.
 - docs/schemas/contract-frontmatter-1.json: the JSON Schema of workflow contract frontmatter (ADR 0021).
 
 Usage: uv run python scripts/generate_docs.py [--check]
@@ -16,7 +18,9 @@ import importlib
 import json
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
+from urllib.parse import quote
 
 from pydantic_core import PydanticUndefined
 
@@ -31,6 +35,12 @@ ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
 README = ROOT / "README.md"
 README_START, README_END = "<!-- modules:start -->", "<!-- modules:end -->"
+BADGES_START, BADGES_END = "<!-- badges:start -->", "<!-- badges:end -->"
+#: The top-level pages GitHub renders that carry the badges. Not LICENSE (raw text), not AGENTS.md and CLAUDE.md
+#: (instructions every agent session loads), not CHANGELOG.md (the release process writes it).
+BADGE_PAGES = ("README.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "INTENT.md")
+OWNER, REPOSITORY = "helmut-hoffer-von-ankershoffen", "heinzel"
+TEMPLATE = ROOT / "template"
 
 MODULES_HEADER = """\
 # Modules
@@ -132,6 +142,12 @@ def module_catalog() -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def with_block(text: str, start_marker: str, end_marker: str, body: str) -> str:
+    """The text with `body` between its two markers."""
+    start, end = text.index(start_marker) + len(start_marker), text.index(end_marker)
+    return text[:start] + "\n" + body + "\n" + text[end:]
+
+
 def readme_with_module_list(readme: str) -> str:
     """README with the generated module list between its markers."""
     k = kernel()
@@ -140,8 +156,66 @@ def readme_with_module_list(readme: str) -> str:
         + ("" if r.origin.builtin else f" *First-party plugin: `hz system plugin add {r.path[0]}`.*")
         for r in k.modules
     ]
-    start, end = readme.index(README_START) + len(README_START), readme.index(README_END)
-    return readme[:start] + "\n" + "\n".join(items) + "\n" + readme[end:]
+    return with_block(readme, README_START, README_END, "\n".join(items))
+
+
+def python_versions() -> list[str]:
+    """The Python versions pyproject.toml's classifiers declare, which CI tests: the source of the Python badge."""
+    classifiers = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["classifiers"]
+    prefix = "Programming Language :: Python :: 3."
+    return [c.removeprefix("Programming Language :: Python :: ") for c in classifiers if c.startswith(prefix)]
+
+
+def badges(owner: str, repository: str) -> str:
+    """The badges of a repository, one per line: what it is checked with, how healthy it is, what it runs on."""
+    github = f"https://github.com/{owner}/{repository}"
+    scorecard = f"github.com/{owner}/{repository}"
+    shield = "https://img.shields.io"
+    versions = quote(" | ".join(python_versions()))
+    items = [
+        ("CI", f"{github}/actions/workflows/ci.yml/badge.svg", f"{github}/actions/workflows/ci.yml"),
+        (
+            "Coverage",
+            f"https://raw.githubusercontent.com/{owner}/{repository}/python-coverage-comment-action-data/badge.svg",
+            f"{github}/tree/python-coverage-comment-action-data",
+        ),
+        ("CodeQL", f"{github}/actions/workflows/codeql.yml/badge.svg", f"{github}/actions/workflows/codeql.yml"),
+        (
+            "OpenSSF Scorecard",
+            f"https://api.scorecard.dev/projects/{scorecard}/badge",
+            f"https://scorecard.dev/viewer/?uri={scorecard}",
+        ),
+        ("Release", f"{shield}/github/v/release/{owner}/{repository}?sort=semver", f"{github}/releases"),
+        ("Python", f"{shield}/badge/python-{versions}-blue", "pyproject.toml"),
+        (
+            "Types: mypy + pyright strict",
+            f"{shield}/badge/types-mypy%20%2B%20pyright%20strict-blue",
+            "docs/CODING_STANDARDS.md#python",
+        ),
+        (
+            "Ruff",
+            f"{shield}/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json",
+            "https://github.com/astral-sh/ruff",
+        ),
+        (
+            "uv",
+            f"{shield}/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json",
+            "https://github.com/astral-sh/uv",
+        ),
+        ("License: MIT", f"{shield}/badge/license-MIT-green", "LICENSE"),
+    ]
+    return "\n".join(f"[![{alt}]({image})]({link})" for alt, image, link in items)
+
+
+def template_badges() -> str:
+    """The badges of a plugin's own repository, in the template's placeholders."""
+    return badges("[[ github_owner ]]", "[[ project_name ]]")
+
+
+def template_security() -> str:
+    """The template's SECURITY.md: ours, with the plugin's badges ([# starts a comment in the template's Jinja)."""
+    ours = (ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    return with_block(ours, BADGES_START, BADGES_END, template_badges()).replace("[#", '[[ "[#" ]]')
 
 
 def contract_schema() -> str:
@@ -161,9 +235,15 @@ def main() -> int:
         DOCS / "MODULES.md": module_catalog(),
         DOCS / "CLI_REFERENCE.md": cli_reference(),
         DOCS / "CONFIGURATION.md": configuration_reference(),
-        README: readme_with_module_list(README.read_text(encoding="utf-8")),
         DOCS / "schemas" / f"contract-frontmatter-{SCHEMA_VERSION}.json": contract_schema(),
     }
+    ours = badges(OWNER, REPOSITORY)
+    for page in BADGE_PAGES:
+        text = with_block((ROOT / page).read_text(encoding="utf-8"), BADGES_START, BADGES_END, ours)
+        outputs[ROOT / page] = readme_with_module_list(text) if page == README.name else text
+    readme = TEMPLATE / "README.md.jinja"
+    outputs[readme] = with_block(readme.read_text(encoding="utf-8"), BADGES_START, BADGES_END, template_badges())
+    outputs[TEMPLATE / "SECURITY.md.jinja"] = template_security()
     stale = [path for path, content in outputs.items() if not path.exists() or path.read_text("utf-8") != content]
     if "--check" in sys.argv:
         if stale:
