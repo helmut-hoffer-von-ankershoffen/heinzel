@@ -47,7 +47,9 @@ Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
 [0008](0008-release-from-conventional-commits.md); [0020](0020-daemon-head.md) and
 [0021](0021-workflow-contracts.md) amend [0010](0010-towards-a-reactive-workflow-engine.md);
-[0032](0032-modules-declare-interactive-setup-steps.md) amends [0018](0018-one-administrative-namespace.md) (`hz setup`). ADRs 0021–0024 are
+[0032](0032-modules-declare-interactive-setup-steps.md) amends [0018](0018-one-administrative-namespace.md) (`hz setup`);
+[0028](0028-integrations-are-capability-adapters.md) amends [0024](0024-people-and-org.md) (the directory is a
+capability). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 

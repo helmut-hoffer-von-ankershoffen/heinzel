@@ -86,6 +86,7 @@ class CapabilityService:
             )
             for capability, adapter in self.capabilities.unknown_bindings()
         )
+        checks.extend(self._default_checks())
         uses = self.uses()
         checks.extend(self._host_checks(uses))
         for use in uses:
@@ -102,6 +103,33 @@ class CapabilityService:
                     )
                 )
         return checks or [Check(name="requirements", status=Status.UP, detail="no module declares capabilities")]
+
+    def _default_checks(self) -> list[Check]:
+        """A check per capability served by the core's default while another module's adapter could serve it.
+
+        Declared beats discovered (ADR 0028), so installing a plugin binds nothing: this says which binding to write,
+        e.g. a directory of record instead of the guesses from 1:1s. Binding the default explicitly silences it.
+        """
+        checks: list[Check] = []
+        for spec in sorted(CAPABILITIES.values(), key=lambda spec: spec.name):
+            bound = self.capabilities.bound(spec.name)
+            if bound is None or not self.capabilities.defaulted(spec.name):
+                continue
+            provided = [a for a in self.capabilities.adapters if a.let.capability == spec.name]
+            default = {a.module for a in provided if a.let.adapter == bound}
+            others = sorted({a.let.adapter for a in provided if a.module not in default})
+            if not others:
+                continue
+            key = spec.name.replace("-", "_")
+            checks.append(
+                Check(
+                    name=f"binding {spec.name}",
+                    status=Status.DEGRADED,
+                    detail=f"{spec.name} is served by the default, {bound}; {', '.join(others)} could serve it",
+                    fix=f"Bind one, or {bound} to keep it: hz system config set capabilities.{key} {others[0]}",
+                )
+            )
+        return checks
 
     def _host_checks(self, uses: list[CapabilityUse]) -> list[Check]:
         """A check per adapter that is bound or serves a requirement and whose hosts couldn't be read.
