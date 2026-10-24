@@ -17,8 +17,9 @@
 2. **hz knows who you are.** It reads your code host login (`gh`) and, when bound, your office-suite account (`gws`), and
    finds you in the team's roster. It asks one question only when it can't, and turns your answer into a proposal for
    the manager, not a fact.
-3. **The manager owns the roster, hz drafts it.** `hz org team roster draft` reads the tracker's team or the directory
-   and opens one pull request; the manager merges. Newcomers the roster lacks are proposed the same way.
+3. **The manager owns the roster, hz drafts it.** `hz team new --roster github:<org>/<team>` reads the code host's
+   team (later the tracker's team or the directory) for one pull request; the manager merges. Newcomers the roster
+   lacks are proposed the same way.
 4. **The team is a plugin; the repository is its data.** The invite repository holds the roster, contracts and receipts
    and names the team plugin (`heinzel-acme-payments-checkout`), which depends on its org, company and site plugins.
    `join` shows the stack and installs it on one yes; its adapters, defaults and playbooks come along.
@@ -86,7 +87,7 @@ Mira, the engineering manager, is first. Acme's plugins already exist in the com
 (company, the Payments org, the Lisbon site); she adds the team.
 
 ```text
-$ hz org team new checkout --repository git@github.com:acme-example/hz-team-checkout.git \
+$ hz team new checkout --github acme-example/hz-team-checkout --roster github:acme-example/checkout \
     --plugin acme-payments-checkout --parent acme-payments --site acme-lisbon
   Created hz-team-checkout from the template: hz.yaml (plugin: acme-payments-checkout), CODEOWNERS,
   team/roster.yaml (you, engineering-manager, owner), people/mira-example.yaml, workflows/,
@@ -95,7 +96,7 @@ $ hz org team new checkout --repository git@github.com:acme-example/hz-team-chec
   playbook) in ./heinzel-acme-payments-checkout; move it into acme-example/heinzel-acme-plugins and release it, or
   keep it in this repository under plugin/.
 
-$ hz org team roster draft
+  Roster draft:
   Sources: github team acme-example/checkout (gh), atlassian team "Checkout" (acli).
   7 people in both, 1 only in the tracker (priya-example: product-manager?), 0 only on github.
   Roles from the tracker's team roles where they map, engineer otherwise; edit the pull request.
@@ -107,7 +108,7 @@ $ hz join git@github.com:acme-example/hz-team-checkout.git
 ```
 
 The roster is the manager's: hz read it from the tools that already know the team, she reviews and merges. Each later
-`hz org team roster draft` is a diff (joined, left, changed role), never a rewrite. The plugin changes by release, the
+roster draft is a diff (joined, left, changed role), never a rewrite. The plugin changes by release, the
 roster by pull request; a joiner never needs a release.
 
 ### 1.3 (c) No match
@@ -223,12 +224,14 @@ moves" (data) or "when the team decides to work differently" (code).
 - **Directory of record.** When the company plugin brings an IdP source, the roster's `sources` names it and the IdP
   decides existence and manager (ADR 0024 §2); the tracker's team is the source for teams without one.
 
-### 2.4 Recommendations from plugins, nothing from repositories
+### 2.4 Recommendations from plugins and from the team repository, applied only on acceptance
 
-ADR 0012's precedence is unchanged. A layer's defaults are its playbook's recommended settings (ADR 0037: bindings and
-the module's own settings); `join` offers them general to specific (company, then org and site, then team, the most
-specific as the default) and writes only what the person accepts to their user file. A repository still steers
-nothing: the manifest names the plugin, and only the person's yes installs it; nothing in the repository binds, stores or
+ADR 0012's precedence is unchanged. For code, a layer's defaults are its playbook's recommended settings (ADR 0037:
+bindings and the module's own settings); `join` offers them general to specific (company, then org and site, then
+team, the most specific as the default). For team data, the manifest's `recommend:` (plugins, bindings, credential
+names, contracts) is shown by `hz org sync` beside what the person has. Either way only what the person accepts is
+written, to their user file. A repository still steers nothing: the manifest names the plugin and recommends, and only
+the person's yes installs or applies; nothing in the repository binds, stores or
 schedules (ADR 0021 §10, ADR 0028), because a team repository is writable by everyone on the team and fetched by the
 tick.
 
@@ -255,11 +258,11 @@ employment); `hz org privacy notice` is the long form.
 | hz drafts the roster (org chart, tracker team) for the manager to approve | the roster replaces member-opened join pull requests; self-declaration is the fallback (earlier question 14) |
 | Join ends with a first win | the finale asks once, shows the cap, runs the playbook's first contract for the role (earlier question 8); daemon install is offered, not done (earlier question 11) |
 | Terminal and Claude Code alike | every question a flag, `--json`, `--non-interactive`; the `hz-init` skill runs the line (earlier answers file folded into flags) |
-| Layers and playbooks are plugins; a company's plugins in its private repository; names follow the path | the team is a plugin the invite repository names; org, company and site arrive as its dependencies (earlier questions 1, 3, 4, 12); manifest recommendations are replaced by plugin defaults (earlier question 9); the core ships no report contract |
+| Layers and playbooks are plugins; a company's plugins in its private repository; names follow the path | the team is a plugin the invite repository names; org, company and site arrive as its dependencies (earlier questions 1, 3, 4, 12); manifest recommendations stay for team data beside plugin defaults for code, both recommend-only (earlier question 9); the core ships no report contract |
 
 Earlier recommendations kept because the decisions do not touch them: a core role vocabulary extensible by a layer (5);
 the privacy screen is shown, not acknowledged (15). Dropped: the five-phase `hz setup` journey, `--answers` files (flags
-and `--json` cover agents), `hz setup --join`, membership by a pull request the member opens, `recommend:` blocks, org and
+and `--json` cover agents), `hz setup --join`, membership by a pull request the member opens, org and
 company as repositories of their own, core role templates.
 
 ## 4. Technical decisions (made here)
@@ -271,16 +274,17 @@ company as repositories of their own, core role templates.
    answer becomes a proposal pull request.
 3. The manifest `hz.yaml` names the team plugin and its source; `join` installs it and its layers through the uv tool
    receipt (ADR 0006) after one yes; the layer declaration, the stack and playbooks are the other record's.
-4. The `org` module (ADR 0024) owns `OrgContext` (checkout, manifest, roster, the stack), `team new` (repository from
-   the template, optionally a scaffolded team plugin), `team roster draft|show`, `team show`, `person me`. Checkouts
-   under `<data_dir>/org/team/<name>`, shallow, fetched by the tick; `[org] team` replaces `[workflow] team_repository`,
-   which is deprecated.
+4. The `team` module provides `OrgContext` (checkout, manifest, roster, recommendations, the stack) and the commands
+   `hz team new` (repository from the template, optionally a scaffolded team plugin), `hz team join`, `hz team add`,
+   `hz team show` and `hz team adopt`; `hz join <url>` is the top-level front door and calls `team.join`. The `org`
+   module has `hz org show` (the profile) and `hz org sync` (recommendations). `[team] repository` and
+   `[team] checkout` replace `[workflow] team_repository`, which is deprecated; the checkout is fetched by the tick.
 5. Data files people write are YAML (manifest, roster, people files), parsed with ADR 0021's strict loader;
    configuration stays TOML.
 6. The first win is a contract run by hand (`hz workflow run`, ADR 0021 §12) from the stacked playbooks' template
    contracts, picked by role (the most specific layer that names one wins), copied into `me:`; the core ships none.
-7. `join` is CLI and MCP only (it installs, clones and may open a pull request; it spends money for the win); `team
-   show`, `roster show` and `person me` are in every head.
+7. `join` is CLI and MCP only (it installs, clones and may open a pull request; it spends money for the win); `hz team
+   show` and `hz org show` are in every head.
 8. Tests run the journeys with `ScriptedPrompter`, fake vendor CLIs, the public reference company's plugins and a local
    bare Git repository; no test touches a code host or spends money.
 
@@ -308,11 +312,11 @@ first-party adapters through their CLIs.
 
 | Slice | Delivers | Depends on |
 | --- | --- | --- |
-| S1 `org` module | `[org]` settings, `OrgContext`, manifest and roster models, `hz org team show`, `person me`, doctor check | ADR 0032 (merged) |
+| S1 `org` module | `[org]` settings, the profile (`hz org show`), doctor check (merged) | ADR 0032 (merged) |
 | S2 `hz join` | identity discovery, roster match, the one question and its proposal, the one-yes install of the stack, `--json`, flags, `--non-interactive`; the `heinzel` console script | S1; the layer let; the code host adapter |
 | S3 first win | the hook into playbooks' template contracts by role, the capped run, doctor and "what happens next" | S2; the playbook let; the reference company's playbook |
-| S4 team repository | `hz org team new` with the template (manifest, CODEOWNERS, roster, a scaffolded team plugin, Actions runner) | S1 |
-| S5 roster draft | `hz org team roster draft` from code host and tracker teams, as a diff pull request | S4; the tracker adapter through its CLI |
+| S4 team repository | the `team` module: `hz team new`, `join`, `add`, `show`, `adopt`, `[team]` settings, `OrgContext`, the template (manifest, CODEOWNERS, roster, Actions runner), the roster drafted from a GitHub team (merged, #46); `recommend:` accepted with `hz org sync` (merged, #51); still to come: a scaffolded team plugin | S1 |
+| S5 roster draft | redrafting from the tracker's team and the directory, as a diff pull request | S4; the tracker adapter through its CLI |
 | S6 reference company | the journeys above run end to end against the public reference company's four plugins | S2–S5 |
 | S7 agents and docs | `hz-init` runs the line; README onboarding section; e2e journeys on macOS and Linux | S2 |
 
