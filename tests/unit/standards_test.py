@@ -182,7 +182,7 @@ NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's
     "HZ_URL": "a constant in tests/e2e/docs_test.py, not a variable",
     "HZ_CREDENTIAL_": "credentials in the environment fallback, named per declared credential (ADR 0030)",
     "HZ_EXAMPLE__": "settings of the `example` module tests define",
-    "HZ_WORKFLOW__": "the heinzel module's old prefix, read beneath HZ_HEINZEL__ for one minor release (ADR 0051)",
+    "HZ_WORKFLOW__": "the heinzel module's old prefix, read for one minor release (ADR 0051)",
     "HZ_A_B__": "the variable prefix of a module named `a-b`, in a test of env_prefix",
     "HZ_SYSTEM_CHANGELOG__": "the variable prefix of a nested module, in a test of env_prefix",
 }
