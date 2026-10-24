@@ -3,9 +3,9 @@
 from importlib.metadata import PackageNotFoundError, version
 from typing import Protocol
 
-from heinzel import Check, Credentials, Kernel, Status, __version__
+from heinzel import Check, HeinzelError, Kernel, Status, __version__
+from heinzel_github._gh import INSTALL, MINIMUM_VERSION, Gh, login_fix, version_text
 from heinzel_github._models import GithubAbout, GithubSettings
-from heinzel_github._module import TOKEN
 
 DISTRIBUTION = "heinzel-github"
 ADAPTER = "github"
@@ -21,16 +21,16 @@ class Bindings(Protocol):
 
 
 class GithubService:
-    """Describes the plugin and checks its setup, without ever sending a request (doctor stays offline)."""
+    """Describes the plugin and checks its setup; doctor runs only `gh --version` and reads gh's hosts file."""
 
-    def __init__(self, kernel: Kernel, settings: GithubSettings, credentials: Credentials) -> None:
-        """Create the service; the kernel, the plugin's settings and the credentials are injected."""
+    def __init__(self, kernel: Kernel, settings: GithubSettings, gh: Gh) -> None:
+        """Create the service; the kernel, the plugin's settings and the `gh` runner are injected."""
         self._kernel = kernel
         self._settings = settings
-        self._credentials = credentials
+        self._gh = gh
 
     def about(self) -> GithubAbout:
-        """Describe the plugin, the Heinzelmännchen installation it runs in and the API it talks to."""
+        """Describe the plugin, the Heinzelmännchen installation it runs in and the GitHub host it reads."""
         try:
             installed = version(DISTRIBUTION)
         except PackageNotFoundError:  # pragma: no cover - only when running from an uninstalled source tree
@@ -40,20 +40,56 @@ class GithubService:
             version=installed,
             heinzel_version=__version__,
             modules=[r.qualname for r in self._kernel.modules if r.origin.distribution == DISTRIBUTION],
-            api_url=self._settings.api_url,
+            host=self._settings.host,
+            gh=self._gh.executable(),
         )
 
     def checks(self, bindings: Bindings) -> list[Check]:
-        """The API in use and which capabilities this adapter serves; degraded when it is installed but serves none.
+        """Whether `gh` is installed and logged in, and which capabilities this adapter serves.
 
-        A missing token is reported by `system.credential` already, with the command that stores it.
+        Degraded when `gh` is missing, older than the adapter needs or has no login for the host, and when the
+        adapter is installed but serves nothing. The login is looked up in gh's hosts file and the token variables gh
+        reads, never by running a command that prints a token or asks GitHub (ADR 0035).
         """
-        access = (
-            "with a token"
-            if self._credentials.has(TOKEN)
-            else "anonymously: public repositories only, 60 requests an hour"
+        return [self._gh_check(), *self._binding_checks(bindings)]
+
+    def _gh_check(self) -> Check:
+        host, name = self._settings.host, self._settings.gh
+        if (path := self._gh.executable()) is None:
+            return Check(
+                name="gh",
+                status=Status.DEGRADED,
+                detail=f"{name}, the GitHub CLI, is not on PATH; every read goes through it",
+                fix=f"install gh ({INSTALL}), then {login_fix(host)}",
+            )
+        try:
+            found = self._gh.version()
+        except HeinzelError as exc:
+            return Check(name="gh", status=Status.DEGRADED, detail=str(exc), fix=f"reinstall gh ({INSTALL})")
+        if found is not None and found < MINIMUM_VERSION:
+            return Check(
+                name="gh",
+                status=Status.DEGRADED,
+                detail=f"{path} is gh {version_text(found)}; "
+                f"the adapter needs {version_text(MINIMUM_VERSION)} or later",
+                fix=f"upgrade gh ({INSTALL})",
+            )
+        said = f"gh {version_text(found)}" if found else "gh of a version it doesn't name"
+        if not self._gh.logged_in():
+            return Check(
+                name="gh",
+                status=Status.DEGRADED,
+                detail=f"{path}, {said}, has no login for {host}",
+                fix=login_fix(host),
+            )
+        return Check(
+            name="gh",
+            status=Status.UP,
+            detail=f"{path}, {said}, has a login for {host}; checked on first use: doctor stays offline",
         )
-        checks = [Check(name="api", status=Status.UP, detail=f"{self._settings.api_url}, {access}; not contacted")]
+
+    def _binding_checks(self, bindings: Bindings) -> list[Check]:
+        checks: list[Check] = []
         bound = {capability: bindings.bound(capability) for capability in CAPABILITIES}
         for capability, adapter in bound.items():
             # The CLI renders text as Rich markup, which swallows a literal `[capabilities]`: name the command.

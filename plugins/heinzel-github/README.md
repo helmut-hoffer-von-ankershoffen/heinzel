@@ -10,6 +10,20 @@ hz system plugin remove heinzel-github
 
 ## Set up
 
+The adapter talks to GitHub only through the [GitHub CLI](https://cli.github.com) `gh` (2.40.0 or later), which owns
+authentication ([ADR 0035](../../docs/adr/0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md)). It reads what you can read, as you:
+no app to register, no token to create or store. Install `gh` and log in once:
+
+```bash
+gh auth login                           # or: gh auth login --hostname ghe.example.com
+```
+
+The adapter acts with whatever that login may do, which is usually more than reading; it only ever sends GET
+requests. As for any `gh` command, a `GH_TOKEN` or `GITHUB_TOKEN` (`GH_ENTERPRISE_TOKEN` for a GitHub Enterprise
+Server) in your environment takes precedence over the stored login: it is gh's own variable, passed to gh and never
+read by Heinzelmännchen. If you stored a token for an earlier version, remove it:
+`hz system credential remove github-token --service github` (or unset `HZ_CREDENTIAL_GITHUB_GITHUB_TOKEN`).
+
 Bind the adapter in your user configuration, never in a project `hz.toml`, which Heinzelmännchen ignores for bindings:
 
 ```bash
@@ -27,27 +41,25 @@ tracker = "github"
 
 Or per shell: `HZ_CAPABILITIES__CODE_HOST=github`, `HZ_CAPABILITIES__TRACKER=github`.
 
-Store a token in the OS keychain (the value is read from a hidden prompt, never the command line):
+For GitHub Enterprise Server, name its host in your user configuration or `HZ_GITHUB__HOST`; the adapter passes it to
+`gh` as `--hostname` and `GH_HOST`, so `gh` uses its login for that host:
 
 ```bash
-hz system credential set github-token --service github
+hz system config set github.host ghe.example.com
 ```
 
-Create a [fine-grained personal access token](https://github.com/settings/personal-access-tokens) with access to the
-repositories you need and these repository permissions, all **read-only**: **Metadata**, **Pull requests**, **Issues**.
-Without a token the adapter works anonymously for public repositories, at GitHub's 60 requests an hour;
-`hz system doctor` says so. On machines without a keychain, export `HZ_CREDENTIAL_GITHUB_GITHUB_TOKEN` instead.
-
-For GitHub Enterprise Server, point the adapter at its API, in your user configuration or `HZ_GITHUB__API_URL`:
+or in the file (`api_url` from earlier versions is refused; `host` replaced it):
 
 ```toml
 [github]
-api_url = "https://ghe.example.com/api/v3"
-timeout = 30   # seconds per request
+host = "ghe.example.com"
+gh = "gh"      # the GitHub CLI: a name on PATH (absolute entries only) or an absolute path
+timeout = 60   # seconds per gh call
 ```
 
-`api_url` is ignored in a project `hz.toml`: the token goes wherever it points. The adapter's hosts come from it, so
-`hz system capability list` shows `api.github.com`, or the host of your GitHub Enterprise Server.
+`host`, `gh` and `timeout` are ignored in a project `hz.toml`, so a repository can't send your login elsewhere or pick
+the program that runs. The adapter's hosts come
+from it: `hz system capability list` shows `api.github.com`, or your GitHub Enterprise Server's host.
 
 ## Use
 
@@ -67,25 +79,33 @@ def merged(code_host: CodeHost, since: datetime, until: datetime) -> list[PullRe
     return code_host.merged_pull_requests("acme/widgets", Window(since=since, until=until))
 ```
 
-| Method | Capability | GitHub endpoint |
+| Method | Capability | `gh api` call |
 | --- | --- | --- |
-| `merged_pull_requests(repository, window)` | `code-host:read` | `GET /repos/{owner}/{repo}/pulls?state=closed&sort=updated&direction=desc`, kept when `merged_at` is in the window; paging stops before the window |
-| `issues_updated(project, window)` | `tracker:read` | `GET /repos/{owner}/{repo}/issues?state=all&since=...&sort=updated&direction=asc`, without pull requests |
+| `merged_pull_requests(repository, window)` | `code-host:read` | `repos/{owner}/{repo}/pulls?state=closed&sort=updated&direction=desc`, kept when `merged_at` is in the window; paging stops before the window |
+| `issues_updated(project, window)` | `tracker:read` | `repos/{owner}/{repo}/issues?state=all&since=...&sort=updated&direction=asc`, without pull requests |
 
 Repositories and projects are written `owner/repo`; windows are half-open `[since, until)` with timezone-aware times;
-results are oldest first. A call follows at most 100 pages (10,000 items), then fails and says what to ask for
-instead: merged pull requests page through every pull request updated since `since`, even after `until`, so they need
+results are oldest first. The adapter pages with the API's `page` and `per_page` parameters rather than
+`gh api --paginate`, so it can stop as soon as the window is covered. A call reads at most 100 pages of 100 (10,000
+items), 50 MiB in all and ten times `github.timeout`, then fails and says what to ask for instead: merged pull requests page through every pull request updated since `since`, even after `until`, so they need
 a window that starts more recently; issues stop at `until`, so they need a shorter window. Why the pulls list and not
-the search API: [ADR 0033](../../docs/adr/0033-github-rest-api-over-urllib.md).
+the search API: [ADR 0033](../../docs/adr/0033-github-rest-api-over-urllib.md); why `gh`:
+[ADR 0035](../../docs/adr/0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md).
 
 ```bash
-hz github info                  # this plugin, its version and the GitHub API it uses
+hz github info                  # this plugin, its version and the GitHub host it reads
 hz system capability list       # who reads what, through which adapter and hosts
-hz system doctor                # bindings, the token's presence; never contacts GitHub
+hz system doctor                # gh on PATH, its version and login, the bindings; never contacts GitHub
 ```
 
-Errors say what to do: a rejected token or an exhausted rate limit (with the time it resets, or when to retry) names
-`hz system credential set github-token --service github`; a missing or forbidden repository says whether a token or
-access is lacking; a network error names the underlying error. Tokens never appear in output, errors or logs: a stored
-token is stripped of surrounding whitespace and refused, without being shown, unless it is one line of printable ASCII.
-Requests never follow redirects or next-page links to another host, and a refused redirect says so.
+Errors say what to do: no `gh`, or one too old, names where to get it; no login, or a login GitHub rejects, names
+`gh auth login --hostname <host>`; a rate limit says to wait and how to see when it resets; a missing or forbidden
+repository says to check the spelling and what your account can see; a slow call names the timeout setting.
+
+How `gh` is run: with an argument list, never a shell, from your home directory, in its own process group, stopped
+(SIGTERM, then SIGKILL) at the timeout, with its output capped, and with an allowlisted environment: never
+Heinzelmännchen's `HZ_CREDENTIAL_*` variables or debug switches such as `GH_DEBUG`, which would print request
+headers. Doctor runs only `gh --version` and looks for the host in gh's hosts file (or a token variable gh reads); it
+never runs a command that prints a token. Everything GitHub or `gh` says is redacted of anything shaped like a GitHub
+token, stripped of control and bidirectional characters, and only then cut to length; every string the adapter
+returns is cleaned too.
