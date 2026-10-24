@@ -17,6 +17,7 @@ from heinzel.modules.workflow._models import (
     Directory,
     DraftList,
     NewContract,
+    PruneReport,
     RunResult,
     Step,
 )
@@ -223,3 +224,17 @@ def render_run(result: RunResult) -> RenderableType:
         f"Drafted {rendered.contract}: {rendered.draft}\n"
         f"Agent: {agent.runner} {agent.model or ''} in {agent.duration_seconds:.0f}s{cost}{awaiting}{note}"
     )
+
+
+def render_prune(report: PruneReport) -> RenderableType:
+    """What was deleted, or would be in a dry run, with the cutoff; that nothing is when drafts are kept forever."""
+    if report.cutoff is None:
+        return Group(Text("Drafts and records are kept forever ([workflow] retention_days = 0).\n"), _next(report.next))
+    verb = "Would delete" if report.dry_run else "Deleted"
+    summary = Text(
+        f"{verb} {report.drafts} draft(s) and {report.records} record(s), {report.bytes} bytes, rendered before "
+        f"{report.cutoff:%Y-%m-%d %H:%M} UTC ({report.retention_days} days) under {report.directory}. "
+        "Receipts are kept.\n"
+    )
+    files = Text("".join(f"  {path}\n" for path in report.files))  # paths name contracts: text, never markup
+    return Group(summary, files, _next(report.next))

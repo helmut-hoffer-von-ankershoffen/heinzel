@@ -14,7 +14,7 @@ kernel calls `CompiledJobs`' factory each time the daemon lists its jobs, so an 
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 
 from heinzel import Check, Module
 from heinzel.kernel import CompiledJobs
@@ -26,6 +26,7 @@ from heinzel.modules.workflow._models import (
     DraftList,
     Frontmatter,
     NewContract,
+    PruneReport,
     RunResult,
     WorkflowSettings,
 )
@@ -34,6 +35,7 @@ from heinzel.modules.workflow._render import (
     render_drafts,
     render_list,
     render_new,
+    render_prune,
     render_run,
     render_show,
 )
@@ -126,6 +128,24 @@ def run(
     return service.run(name, dry_run=dry_run)
 
 
+# Pruning deletes local files, and a dry run lists drafts by name; a web page can reach a local REST server, so the
+# CLI and MCP get it, like `drafts`.
+@module.operation(read_only=False, render=render_prune, heads={"cli", "mcp"})
+def prune(
+    service: WorkflowService,
+    dry_run: Annotated[bool, Field(description="Only list what would be deleted; delete nothing.")] = False,
+) -> PruneReport:
+    """Delete drafts and records older than `[workflow] retention_days` (default 90); receipts are kept."""
+    return service.prune(dry_run=dry_run)
+
+
+# Housekeeping is an ordinary job, so the daemon's tick runs it with a receipt and `hz system daemon jobs` shows it.
+@module.job(schedule="@daily", name="prune", timeout="5m")
+def prune_expired(service: WorkflowService) -> JsonValue:
+    """Delete drafts and records older than `[workflow] retention_days`; the receipt counts them."""
+    return service.prune().model_dump(mode="json", include={"retention_days", "cutoff", "drafts", "records", "bytes"})
+
+
 @module.health
 def health(service: WorkflowService) -> list[Check]:
     """Contracts with errors, and scheduled contracts whose capabilities no adapter serves."""
@@ -140,6 +160,7 @@ __all__ = [
     "DraftList",
     "Frontmatter",
     "NewContract",
+    "PruneReport",
     "RunResult",
     "WorkflowService",
     "WorkflowSettings",

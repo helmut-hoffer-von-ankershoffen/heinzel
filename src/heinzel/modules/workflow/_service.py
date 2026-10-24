@@ -55,6 +55,7 @@ from heinzel.modules.workflow._models import (
     Namespace,
     NewContract,
     Packet,
+    PruneReport,
     PublishStatus,
     Rendered,
     RequirementStatus,
@@ -63,6 +64,7 @@ from heinzel.modules.workflow._models import (
     Step,
     WorkflowSettings,
 )
+from heinzel.modules.workflow._retention import Expired, expired
 from heinzel.modules.workflow._starter import is_name, slug, starter
 
 logger = logging.getLogger(__name__)
@@ -78,6 +80,9 @@ PIN_CHANGED = "pin-changed"
 MAX_INPUT_BYTES = 256 * 1024
 """An input whose JSON is larger fails the run rather than being cut silently: the agent would draft from half."""
 MAX_PROMPT_BYTES = 1024 * 1024
+PRUNE = "hz workflow prune"
+PRUNE_GRACE = timedelta(days=1)
+"""The daemon prunes daily, so files expired for longer than this mean nothing is pruning them; doctor says so."""
 RUNNER_TOOLS = {"claude-code": "read_only_tools", "command": "command_read_only_tools"}
 """The `[system.runner]` setting that lists the read-only tools each core runner accepts (ADR 0029)."""
 
@@ -461,9 +466,11 @@ class WorkflowService:
             requires=tuple(hz.requirements().values()),
         )
 
-    def _job(self, contract: Contract) -> Callable[[], Rendered]:
-        def render() -> Rendered:
-            return self.render(contract, scheduled=True)
+    def _job(self, contract: Contract) -> Callable[[], JsonValue]:
+        def render() -> JsonValue:
+            # The receipt outlives the draft (`[workflow] retention_days`), so it gets the draft's hash, not its text.
+            rendered = self.render(contract, scheduled=True)
+            return cast("JsonValue", rendered.model_dump(mode="json", exclude={"agent": {"draft"}}))
 
         render.__qualname__ = f"workflow:{self.job_name(contract)}"
         render.__doc__ = f"Render the workflow contract {contract.qualified}."
@@ -700,15 +707,78 @@ class WorkflowService:
             )
         if not checks:
             where = ", ".join(str(d) for d in self.directories.values())
-            return [
+            checks.append(
                 Check(
                     name="workflow",
                     status=Status.UP,
                     detail=f"no contracts in {where}",
                     fix="hz workflow new my-first-workflow",
                 )
+            )
+        return [*checks, self._retention_check()]
+
+    def _retention_check(self) -> Check:
+        """How much `hz workflow prune` would delete now; degraded once expired files outlast the daemon's daily prune.
+
+        It only lists, never deletes: doctor is a read.
+        """
+        name = "workflow retention"
+        days = self._workflow.retention_days
+        if days == 0:
+            return Check(name=name, status=Status.UP, detail="drafts and records are kept forever (retention_days = 0)")
+        cutoff = self._clock() - timedelta(days=days)
+        try:
+            found = expired(self.drafts_dir, cutoff, delete=False)
+        except HeinzelError as exc:
+            return Check(name=name, status=Status.DEGRADED, detail=str(exc), fix=f"Fix it, then run {PRUNE}")
+        if not found:
+            return Check(name=name, status=Status.UP, detail=f"nothing older than {days} days")
+        detail = f"{_amount(found)} older than {days} days; {PRUNE} deletes them"
+        if found[0].created < cutoff - PRUNE_GRACE:
+            return Check(
+                name=name,
+                status=Status.DEGRADED,
+                detail=f"{detail}; nothing has pruned them for over a day",
+                fix=f"{PRUNE}, or install the daemon, which prunes daily: hz system daemon install",
+            )
+        return Check(name=name, status=Status.UP, detail=detail)
+
+    # Retention -------------------------------------------------------------------------------------------------------
+
+    def prune(self, *, dry_run: bool = False) -> PruneReport:
+        """Delete the drafts and records older than `[workflow] retention_days`; `dry_run` only lists them.
+
+        Only files hz wrote under the drafts directory are considered, never through a symbolic link; receipts are
+        kept. Running it again deletes nothing more.
+
+        Raises:
+            HeinzelError: If a directory below the data directory is a symbolic link, or a file can't be deleted.
+        """
+        days = self._workflow.retention_days
+        cutoff = self._clock() - timedelta(days=days) if days else None
+        found = expired(self.drafts_dir, cutoff, delete=not dry_run) if cutoff is not None else []
+        if cutoff is None:
+            steps = [
+                Step(
+                    command="hz system config set workflow.retention_days 90",
+                    why="drafts are kept forever; this deletes them 90 days after their render",
+                )
             ]
-        return checks
+        elif dry_run and found:
+            steps = [Step(command=PRUNE, why=f"delete these {len(found)} files")]
+        else:
+            steps = [Step(command="hz workflow drafts", why="the drafts that are kept")]
+        return PruneReport(
+            dry_run=dry_run,
+            retention_days=days,
+            cutoff=cutoff,
+            directory=self.drafts_dir,
+            files=[e.path for e in found],
+            drafts=sum(not e.record for e in found),
+            records=sum(e.record for e in found),
+            bytes=sum(e.bytes for e in found),
+            next=steps,
+        )
 
     def _check_of(self, contract: Contract) -> Check:
         name = f"workflow {contract.qualified}"
@@ -877,6 +947,13 @@ class WorkflowService:
             return draft, directory / f"{stem}.record.json"
         msg = f"Too many drafts of {contract.qualified} at {stamp} in {directory}"  # pragma: no cover - 999 per second
         raise HeinzelError(msg)  # pragma: no cover
+
+
+def _amount(found: list[Expired]) -> str:
+    """`found` counted for a person: drafts, records and their size."""
+    drafts = sum(not e.record for e in found)
+    size = math.ceil(sum(e.bytes for e in found) / 1024)
+    return f"{drafts} draft(s) and {len(found) - drafts} record(s), {size} KiB,"
 
 
 def _write(path: Path, text: str, *, exclusive: bool = False) -> None:

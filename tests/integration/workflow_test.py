@@ -233,6 +233,69 @@ def test_drafts_lists_what_runs_saved_and_shows_the_latest(kernel, tmp_path):
     assert response.status_code == 404  # drafts hold fetched data; the CLI and MCP list them, not a local web server
 
 
+def old_draft(kernel: Kernel) -> tuple[Path, Path]:
+    """A draft and its record from 2020, as a render then would have named them: long past 90 days."""
+    directory = Path(kernel.settings.data_dir) / "workflow" / "drafts" / "me-weekly-digest"
+    directory.mkdir(parents=True, exist_ok=True)
+    draft, record = directory / "20200101T070000Z.md", directory / "20200101T070000Z.record.json"
+    draft.write_text("# Old digest")
+    record.write_text("{}")
+    return draft, record
+
+
+def test_prune_lists_then_deletes_expired_drafts_and_doctor_reports_them_first(kernel):
+    assert hz(kernel, "workflow", "run", "weekly-digest")[0] == 0
+    draft, record = old_draft(kernel)
+    _, doctor = hz(kernel, "system", "doctor")
+    check = {c["name"]: c for c in doctor["checks"]["workflow"]}["workflow retention"]
+    assert check["status"] == "degraded"
+    assert check["detail"].startswith("1 draft(s) and 1 record(s)")
+    assert draft.exists()  # doctor reads
+    code, planned = hz(kernel, "workflow", "prune", "--dry-run")
+    assert code == 0
+    assert (planned["dry_run"], planned["files"], planned["retention_days"]) == (True, [str(draft), str(record)], 90)
+    assert draft.exists()
+    code, text = hz(kernel, "workflow", "prune", "--dry-run", json_output=False)
+    assert code == 0
+    assert "Woulddelete1draft(s)and1record(s)" in unwrapped(text)
+    assert unwrapped(str(draft)) in unwrapped(text)
+    code, done = hz(kernel, "workflow", "prune")
+    assert (code, done["files"]) == (0, [str(draft), str(record)])
+    assert not draft.exists()
+    assert not record.exists()
+    assert [d["contract"] for d in hz(kernel, "workflow", "drafts")[1]["drafts"]] == ["me:weekly-digest"]
+    assert hz(kernel, "workflow", "prune")[1]["files"] == []
+    response = TestClient(api.build(kernel), base_url="http://localhost").post("/workflow/prune")
+    assert response.status_code == 404  # deleting your files is not for a page that can reach a local server
+
+
+def test_retention_zero_keeps_drafts_forever_and_says_so(make_kernel, contracts):
+    workflow = {"user_dir": str(contracts), "retention_days": 0}
+    kernel = make_kernel(builtins=True, fakes=fakes(), config=Config(files=(), data={"workflow": workflow}))
+    draft, _ = old_draft(kernel)
+    code, text = hz(kernel, "workflow", "prune", json_output=False)
+    assert code == 0
+    assert "Drafts and records are kept forever" in str(text)
+    assert "hz system config set workflow.retention_days 90" in str(text)
+    assert draft.exists()
+
+
+def test_the_daemon_prunes_on_its_tick_and_the_receipt_counts_without_naming_files(kernel):
+    draft, _ = old_draft(kernel)
+    code, report = hz(kernel, "system", "daemon", "tick", "--job", "workflow:prune")
+    assert code == 0, report
+    assert report["runs"][0]["disposition"] == "rendered"
+    assert not draft.exists()
+    receipts = [json.loads(p.read_text()) for p in (Path(kernel.settings.data_dir) / "receipts").glob("*.json")]
+    [receipt] = [r for r in receipts if r["job"] == "workflow:prune"]
+    assert {k: receipt["result"][k] for k in ("retention_days", "drafts", "records")} == {
+        "retention_days": 90,
+        "drafts": 1,
+        "records": 1,
+    }
+    assert "files" not in receipt["result"]
+
+
 def test_show_reports_the_compiled_view(kernel):
     code, shown = hz(kernel, "workflow", "show", "weekly-digest")
     assert code == 0
@@ -336,11 +399,11 @@ def test_an_unknown_contract_is_an_error(kernel):
     assert "No contract 'nope'" in str(output)
 
 
-def test_the_daemon_runs_a_contract_and_writes_a_receipt_with_the_draft(kernel):
+def test_the_daemon_runs_a_contract_and_writes_a_receipt_naming_the_draft(kernel):
     code, jobs = hz(kernel, "system", "daemon", "jobs")
     assert code == 0
-    assert [j["job"] for j in jobs] == ["workflow:me-weekly-digest"]
-    assert jobs[0]["timeout_seconds"] == timedelta(minutes=12).total_seconds()
+    assert [j["job"] for j in jobs] == ["workflow:prune", "workflow:me-weekly-digest"]
+    assert jobs[1]["timeout_seconds"] == timedelta(minutes=12).total_seconds()
     code, report = hz(kernel, "system", "daemon", "tick", "--job", "workflow:me-weekly-digest")
     assert code == 0, report
     run = report["runs"][0]
@@ -350,6 +413,7 @@ def test_the_daemon_runs_a_contract_and_writes_a_receipt_with_the_draft(kernel):
     assert receipt["id"] == run["receipt"]
     assert Path(receipt["result"]["draft"]).is_file()
     assert receipt["result"]["agent"]["runner"] == "fake"
+    assert "draft" not in receipt["result"]["agent"]  # the receipt outlives the draft: its hash, never its text
 
 
 def test_a_contract_whose_capability_is_unbound_fails_its_daemon_run(make_kernel, contracts):
@@ -387,18 +451,19 @@ def test_a_project_file_cant_point_discovery_at_its_own_contracts(make_kernel, t
     shutil.copy(EXAMPLE, repository / "contracts")
     (repository / "hz.toml").write_text(
         '[workflow]\nuser_dir = "contracts"\nteam_repository = "."\nschedule_team = ["weekly-digest"]\n'
-        "max_usd = 500.0\n",
+        "max_usd = 500.0\nretention_days = 1\n",
         encoding="utf-8",
     )
     kernel = make_kernel(builtins=True, fakes=fakes(), config=Config.load(repository))
     code, listed = hz(kernel, "workflow", "list")
     assert (code, listed["contracts"]) == (0, [])
     assert listed["directories"][0]["path"] == str(user / "workflows")
-    assert hz(kernel, "system", "daemon", "jobs") == (0, [])
+    assert [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]] == ["workflow:prune"]
     _, report = hz(kernel, "system", "doctor")
     ignored = sorted(c["name"] for c in report["checks"]["system.doctor"] if c["name"].startswith("project setting"))
     assert ignored == [
         "project setting workflow.max_usd",
+        "project setting workflow.retention_days",
         "project setting workflow.schedule_team",
         "project setting workflow.team_repository",
         "project setting workflow.user_dir",
@@ -412,7 +477,10 @@ def test_one_bad_schedule_leaves_the_other_jobs_and_matrix_rows_and_fails_check(
     code, report = hz(kernel, "workflow", "check")
     assert code == 1
     assert [(d["code"], d["field"]) for d in report["diagnostics"]] == [("HZC011", "hz.schedule")]
-    assert [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]] == ["workflow:me-weekly-digest"]
+    assert [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]] == [
+        "workflow:prune",
+        "workflow:me-weekly-digest",
+    ]
     uses = {use["requester"] for use in hz(kernel, "system", "capability", "list")[1]["uses"]}
     assert "workflow me-weekly-digest" in uses
     assert "workflow me-bad-schedule" not in uses

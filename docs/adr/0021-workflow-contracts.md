@@ -145,6 +145,29 @@ readable prose. Each point says what 0.2 builds and what comes later.
       `.record.json` but no ledger receipt and says so; receipted runs go through the daemon
       (`hz system daemon tick --job workflow:<namespace>-<name>`).
     - Later: `new`, `graph`, `fingerprint`, `migrate`, `export --prose`.
+13. **Retention** (amended 2026-10-24, maintainer's decision: "Agreed: 90 days default, configurable."). Drafts and their
+    `.record.json` files, which hold the packet with the fetched inputs, expire `[workflow] retention_days` after their
+    render (default 90; 0 keeps them forever; 0 to 36,500; a project `hz.toml` can't set it). Receipts don't expire.
+    - **Deleting is housekeeping, never a read.** `hz workflow prune [--dry-run]` (CLI and MCP: it deletes your files and
+      a dry run names them) and the daily job `workflow:prune` delete them; it is an ordinary `JobLet`, so the daemon's
+      tick runs it with a receipt that counts what went and names no file (ADR 0020, decision 10). `drafts`, `show`,
+      `list` and the health check never delete; `hz system doctor` says how much `prune` would delete, and degrades
+      once expired files are more than a day overdue (nothing is pruning them).
+    - **Only what hz wrote, only where it wrote it.** Files named as a render names them (`<stamp>[-n].md`, `.json`,
+      `.record.json`), in a contract's directory below `<data dir>/workflow/drafts/`; their age comes from the stamp in
+      the name, not the file's times. The walk opens each directory relative to the last with `O_NOFOLLOW` and unlinks
+      relative to its descriptor, so a symbolic link, also one swapped in while it runs, can't make it delete elsewhere;
+      `workflow` or `drafts` being a link is an error. Directories stay (a render may be writing into one); a file
+      already gone is not an error, so pruning twice deletes nothing more.
+    - **Receipts are kept, and hold no draft text** (chosen over pruning receipt payloads or checkpointing the chain).
+      A receipt's id hashes its content and chains it to the job's previous receipt, so deleting a receipt or its
+      payload would break every later link, and a checkpoint (a signed or recorded summary of the chain so far) is
+      machinery the shared ledger (0.3) should own. Instead, a compiled job's receipt carries the render without the
+      agent's draft text: the draft's path, its SHA-256, the record's path, the input hashes, the agent's status,
+      model, usage and cost. That is lineage without content, small enough to keep, and the chain stays verifiable
+      because nothing is removed. A receipt's draft path can outlive the draft; its hash still identifies it.
+    - **0.2.0 receipts** of compiled jobs hold the draft's text in `result.agent.draft`. They aren't rewritten, which
+      would break their chain; moving a job's receipts aside, the documented way to start a chain again, drops them.
 
 ### Consequences
 
@@ -181,7 +204,13 @@ titles, error messages and doctor text shown as written, never as Rich markup an
 (`tests/integration/cli_plain_text_test.py`, `tests/unit/heads/cli_render_test.py`); `run` not reachable over REST
 (`tests/integration/rest_security_test.py`); the daemon running compiled jobs and surviving a failing compiler
 (`tests/unit/modules/daemon_service_test.py`); the kernel's `handle_for` serving only the compiler's read-only jobs
-(`tests/unit/kernel/bindings_test.py`). No test runs a real agent. Still planned: golden tests for fingerprints,
+(`tests/unit/kernel/bindings_test.py`); which files expire, links below the data directory refused and never
+followed, a file that can't be deleted named, pruning twice deleting nothing more
+(`tests/unit/modules/workflow_retention_test.py`); the setting's bounds, `prune` and its dry run, retention 0, reads and
+health never deleting, the doctor check and its grace day, and a compiled job's result without the draft's text
+(`tests/unit/modules/workflow_service_test.py`); `hz workflow prune` through the CLI, not over REST, the daemon's
+receipted `workflow:prune`, and a project `hz.toml` that can't shorten the retention
+(`tests/integration/workflow_test.py`). No test runs a real agent. Still planned: golden tests for fingerprints,
 the contract graph, and `hz workflow check` in a team repository's CI template.
 
 ## More Information
@@ -195,7 +224,7 @@ the contract graph, and `hz workflow check` in a team repository's CI template.
   approvals, migration and embedding are not built.
 - **Interim lineage.** A manual run's `.record.json` (the packet, each input's hash and the agent's report) is interim
   lineage, not a receipt: it isn't hash-chained, and nothing lists or verifies it. Daemon runs get the chained receipt
-  with the same content. When the `Ledger` protocol moves into the kernel (0.3), manual runs write receipts too and the
+  with the same lineage but without the draft's text (13); the record expires with its draft. When the `Ledger` protocol moves into the kernel (0.3), manual runs write receipts too and the
   record folds into them. Until then a manual run has no receipt, and `hz workflow run` says so.
 - **Why PyYAML.** It was already locked and audited (MIT) and has typed stubs; with a core-schema resolver and the
   limits above it reads frontmatter safely. ruamel.yaml stays the candidate for a comment-preserving writer.
