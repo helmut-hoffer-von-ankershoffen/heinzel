@@ -143,14 +143,16 @@ ignore = [
     "T201",    # scripts report on stdout/stderr
 ]
 "**/tests/**/*.py" = [
-    "ANN",
-    "DOC",     # test docstrings describe behaviour, not interfaces     # fixtures and tests don't need full annotations
+    "ANN",     # fixtures and tests don't need full annotations
+    "DOC",     # test docstrings describe behaviour, not interfaces
     "ARG",     # fixtures are used for their side effects
     "D",       # test names are the documentation
     "INP001",  # tests are not a package
     "PLC0415", # local imports keep fixtures isolated
     "PLR2004", # magic values are fine in assertions
     "S101",    # asserts are what tests do
+    "S105",    # fake tokens and passwords are test data (credentials, adapters for tracker and document services)
+    "S106",    # same as S105, passed as arguments
     "S603",    # subprocess calls with trusted input
     "S607",    # partial executable paths (uv, hz) are resolved from PATH on purpose
     "SLF001",  # private access is needed for solitary unit tests
