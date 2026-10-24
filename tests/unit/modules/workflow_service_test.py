@@ -1089,3 +1089,212 @@ def test_doctor_reports_a_drafts_directory_that_cant_be_pruned(make, tmp_path):
     assert "symbolic link" in check.detail
     with pytest.raises(HeinzelError, match="symbolic link"):
         service.prune()
+
+
+# The graph and forward windows ---------------------------------------------------------------------------------------
+
+NEWSLETTER = """\
+---
+name: newsletter
+kind: responsibility
+description: Keeps the newsletter drafted from the digest.
+hz:
+  schema: 1
+  title: Newsletter
+  schedule: "0 9 * * MON"
+  inputs:
+    digest: {read: "contract:me/weekly-digest#digest", stage: draft}
+  outputs:
+    issue: {format: markdown}
+---
+
+### Goal
+
+The newsletter is drafted.
+
+### Requires
+
+- `digest`: the newest digest draft.
+
+### Maintains
+
+- `issue`: the newsletter.
+
+### Done when
+
+- [ ] It quotes the digest.
+"""
+
+
+def test_a_contract_reads_the_newest_draft_of_the_contract_it_depends_on(make, dirs, runner):
+    put(dirs[0])
+    put(dirs[0], "newsletter", NEWSLETTER)
+    service = make()
+    with pytest.raises(HeinzelError, match="has no draft yet; draft it first: hz workflow run me:weekly-digest"):
+        service.run("newsletter", dry_run=True)
+    service.run("weekly-digest")
+    runner.draft = "# Newer digest"
+    make(now=NOW + timedelta(hours=1)).run("weekly-digest")
+    packet = make(now=NOW + timedelta(hours=2)).run("newsletter", dry_run=True).packet
+    fetched = packet.inputs["digest"]
+    assert (fetched.read, fetched.data, fetched.arguments) == ("contract:me/weekly-digest#digest", "# Newer digest", {})
+    assert fetched.sha256 == service_module.fingerprint("# Newer digest")
+    assert '<input name="digest" read="contract:me/weekly-digest#digest">' in packet.prompt
+
+
+def test_a_json_upstream_draft_is_read_as_json_and_must_parse(make, dirs, runner):
+    put(dirs[0], text=EXAMPLE.read_text().replace("digest: {format: markdown}", "digest: {format: json}"))
+    put(dirs[0], "newsletter", NEWSLETTER)
+    runner.draft = '{"shipped": ["login fix"]}'
+    make().run("weekly-digest")
+    assert make().run("newsletter", dry_run=True).packet.inputs["digest"].data == {"shipped": ["login fix"]}
+    draft = make().drafts_dir / "me-weekly-digest" / "20261026T070000Z.json"
+    draft.write_text("not json")
+    with pytest.raises(HeinzelError, match="isn't JSON"):
+        make().run("newsletter", dry_run=True)
+
+
+def test_an_input_nobody_maintains_fails_its_run_and_warns_in_check(make, dirs):
+    put(dirs[0], "newsletter", NEWSLETTER)
+    service = make()
+    found = {d.code: d for d in service.check().diagnostics}
+    assert found["HZC031"].severity == "warning"
+    assert "there is no contract me:weekly-digest" in found["HZC031"].message
+    with pytest.raises(HeinzelError, match="which no contract maintains"):
+        service.run("newsletter", dry_run=True)
+
+
+def test_contracts_on_a_cycle_are_errors_and_dont_run_on_the_daemon(make, dirs):
+    put(dirs[0], "newsletter", NEWSLETTER)
+    looped = EXAMPLE.read_text().replace(
+        "  outputs:\n", '    news: {read: "contract:me/newsletter#issue", stage: draft}\n  outputs:\n'
+    )
+    put(dirs[0], text=looped.replace("### Requires\n\n", "### Requires\n\n- `news`: the newsletter.\n"))
+    service = make()
+    assert [d.code for d in service.check().diagnostics] == ["HZC030", "HZC030"]
+    assert service.compiled().jobs == ()
+    assert service.graph().cycles == [["me:newsletter", "me:weekly-digest"]]
+
+
+def test_the_service_graph_links_your_contracts(make, dirs):
+    put(dirs[0])
+    put(dirs[0], "newsletter", NEWSLETTER)
+    graph = make().graph()
+    edges = {(e.source, e.kind, e.target) for e in graph.edges}
+    assert ("contract:me/weekly-digest#digest", "reads", "me:newsletter") in edges
+    assert graph.mermaid.startswith("flowchart LR")
+
+
+def test_the_newest_upstream_draft_is_a_real_draft_by_its_name(make, dirs, runner, tmp_path):
+    """Stray files and symbolic links are never read; `<stamp>-2.md` is newer than `<stamp>.md`."""
+    put(dirs[0])
+    put(dirs[0], "newsletter", NEWSLETTER)
+    runner.draft = "# First"
+    make().run("weekly-digest")
+    directory = make().drafts_dir / "me-weekly-digest"
+    (directory / "20261026T070000Z-2.md").write_text("# Second, same second")
+    (directory / "notes.md").write_text("# Not a draft")
+    elsewhere = tmp_path / "elsewhere.md"
+    elsewhere.write_text("# Elsewhere")
+    (directory / "20991231T235959Z.md").symlink_to(elsewhere)
+    assert make().run("newsletter", dry_run=True).packet.inputs["digest"].data == "# Second, same second"
+
+
+def test_an_upstream_draft_larger_than_an_input_may_be_is_refused_before_it_is_read(make, dirs, runner):
+    put(dirs[0])
+    put(dirs[0], "newsletter", NEWSLETTER)
+    runner.draft = "x" * (service_module.MAX_INPUT_BYTES + 1)
+    make().run("weekly-digest")
+    with pytest.raises(HeinzelError, match="larger than the 256 KiB an input may have"):
+        make().run("newsletter", dry_run=True)
+
+
+def test_an_upstream_drafts_directory_that_is_a_link_is_refused(make, dirs, runner, tmp_path):
+    put(dirs[0])
+    put(dirs[0], "newsletter", NEWSLETTER)
+    make().run("weekly-digest")
+    directory = make().drafts_dir / "me-weekly-digest"
+    moved = directory.rename(tmp_path / "moved")
+    directory.symlink_to(moved)
+    with pytest.raises(HeinzelError, match="is a symbolic link"):
+        make().run("newsletter", dry_run=True)
+
+
+def test_an_input_reading_an_output_its_contract_doesnt_have_fails_its_run(make, dirs):
+    put(dirs[0])
+    put(dirs[0], "newsletter", NEWSLETTER.replace("weekly-digest#digest", "weekly-digest#nope"))
+    with pytest.raises(HeinzelError, match="which no contract maintains"):
+        make().run("newsletter", dry_run=True)
+
+
+def test_a_contract_on_a_cycle_doesnt_run_by_hand_and_says_to_check_them_all(make, dirs):
+    put(dirs[0], "newsletter", NEWSLETTER)
+    looped = EXAMPLE.read_text().replace(
+        "  outputs:\n", '    news: {read: "contract:me/newsletter#issue", stage: draft}\n  outputs:\n'
+    )
+    put(dirs[0], text=looped.replace("### Requires\n\n", "### Requires\n\n- `news`: the newsletter.\n"))
+    with pytest.raises(HeinzelError, match=r"HZC030") as raised:
+        make().run("newsletter", dry_run=True)
+    assert "(`hz workflow check` rechecks it)" in str(raised.value)
+    assert "--path" not in str(raised.value)
+
+
+class Agenda:
+    """A calendar in memory that records the windows it is asked for."""
+
+    def __init__(self) -> None:
+        self.windows: list[Window] = []
+
+    def events(self, window: Window) -> list[Event]:
+        self.windows.append(window)
+        return []
+
+
+AGENDA = """\
+---
+name: week-ahead
+kind: responsibility
+description: Keeps a note on the coming week.
+hz:
+  schema: 1
+  title: Week ahead
+  requires: [calendar:read]
+  inputs:
+    week: {read: calendar.events, window: next 7d}
+  outputs:
+    note: {format: markdown}
+---
+
+### Goal
+
+The week ahead is clear.
+
+### Requires
+
+- `week`: the coming week's events.
+
+### Maintains
+
+- `note`: the note.
+
+### Done when
+
+- [ ] Every event is in it.
+"""
+
+
+def test_a_forward_window_asks_the_calendar_for_the_coming_days(make_kernel, dirs, runner):
+    agenda = Agenda()
+    fakes = Module("fakes", "Test-only adapters.")
+    fakes.provides("calendar", modes={"read"}, name="agenda")(lambda: agenda)
+    fakes.provides("agent-runner", modes={"read"}, name="fake")(lambda: runner)
+    put(dirs[0], "week-ahead", AGENDA)
+    bindings = {"agent_runner": "fake", "calendar": "agenda"}
+    config = Config(files=(), data={"capabilities": bindings, "workflow": {"user_dir": str(dirs[0])}})
+    kernel = make_kernel(builtins=True, fakes=fakes, config=config)
+    settings = Config(files=(), data={}).settings(Settings, "hz")
+    service = WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings, clock=lambda: NOW)
+    packet = service.run("week-ahead", dry_run=True).packet
+    assert agenda.windows == [Window(since=NOW, until=NOW + timedelta(days=7))]
+    window = packet.inputs["week"].arguments["window"]
+    assert Window.model_validate(window) == Window(since=NOW, until=NOW + timedelta(days=7))

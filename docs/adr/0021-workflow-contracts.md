@@ -75,14 +75,16 @@ readable prose. Each point says what 0.2 builds and what comes later.
      `skip`).
    - Later, refused until then with `HZC023` (all such keys reported at once): `owner`, `maintainers`, `tags`,
      `freshness`, `on`, `tools`, `concurrency`, `cost`, `idempotency`, `overrides`, `scope: team`, `catch_up: all`,
-     output `target` and facets, input `source`/`query`/`facets`/`stage`/`required`, publish `auto_approve` and
+     output `target` and facets, input `source`/`query`/`facets`/`required`, publish `auto_approve` and
      `target`. Agent `runner`, `model`, `effort` and `max_turns` are refused for good: the runner and model are
      configuration ([ADR 0029](0029-agent-runners-are-capability-adapters.md)).
 3. **Requirements and inputs name capabilities, never vendors** ([ADR 0028](0028-integrations-are-capability-adapters.md)).
    - 0.2: `requires` lists `<capability>:read`; `agent-runner:read` is implied; a contract never pins an adapter and
      never writes. An input is `{read: <capability>.<method>, args, window}`, checked against the protocol method's
-     signature; its window ends when the run starts.
-   - Later: windows end at the schedule slot, with memo keys (8).
+     signature. Its window looks back from the run (`7d`, `last 7d`: it ends when the run starts) or ahead of it
+     (`next 7d`: it begins then, e.g. a calendar's coming week), at most 366 days either way (amended 2026-10-24,
+     maintainer's decision: "a forward window is just an input window"). Its data is hashed like any other input's.
+   - Later: windows end, or begin, at the schedule slot, with memo keys (8).
 4. **Body.** Required: `### Goal`, `### Maintains` and `### Done when` (with items); `### Requires` when there are
    inputs. Optional: `### Continuity`, `### Steps`, `### Invariants`, `### Description`. Retired OpenProse sections and
    `### Execution` are rejected (`HZC106`); unknown sections are warnings (`HZC105`). HTML comments are authors' notes,
@@ -103,9 +105,18 @@ readable prose. Each point says what 0.2 builds and what comes later.
    compiled jobs appear in the capability matrix. A failing compiler is reported and the declared jobs still run.
    - 0.2: one bounded agent session per run, inputs pre-fetched, no hz tools.
    - Later: inputs compiled into shared `WatchLet` instances; `JobLet` gains `fingerprint`, `freshness` and `cost`.
-7. **The graph** (later). Edges come only from explicit `contract:<namespace>/<name>#<facet>` inputs, never semantic
+7. **The graph.** Edges come only from explicit `contract:<namespace>/<name>#<facet>` inputs, never semantic
    matching; downstream contracts see published truth unless they declare `stage: draft`; cycles are reported and
    disable the contracts on them; team contracts can't depend on personal ones.
+   - 0.2 (amended 2026-10-24): an input `{read: "contract:<namespace>/<name>#<output>", stage: draft}` reads the
+     newest local draft of that contract's output (its text, or its JSON), hashed like any input; it takes no `args`
+     or `window` and needs no capability. `stage: draft` is required, since nothing is published yet. `hz workflow
+     graph` (text, `--json`, `--mermaid`) derives the graph from the contracts found: contracts, the assets they
+     maintain, the sources they read, and edges between them. A contract on a cycle, its own output included, is an
+     error (`HZC030`) and doesn't run; an input no contract maintains is a warning (`HZC031`) and fails that run; a
+     team contract reading a personal one's output is an error (`HZC032`). These are diagnostics of the reading
+     contract, found only when the whole set is read, not by `check --path`.
+   - Later: published truth as the default stage, output facets in place of output names, and `--suggest`.
 8. **Fingerprints** (later). All are SHA-256 over RFC 8785 canonical JSON of normalized text. `contract_fingerprint`
    covers intent only (kind, inputs, outputs, publish actions and targets, tools, one hash per behavior-bearing
    section), computed from the migrated model with defaults filled in; it excludes identity, display, scheduling,
@@ -148,7 +159,9 @@ readable prose. Each point says what 0.2 builds and what comes later.
       records its drafting time; `sent <name> --file <f>` or `--ref <document>` (the approved version where the asset
       lives, read through `documents`) records the share of words changed, both word counts and a hash, never the
       text, next to the draft; `show` reports both per draft. It is about drafts, never about people.
-    - Later: `new`, `graph`, `fingerprint`, `migrate`, `export --prose`.
+    - 0.2, `graph` (text, `--json`, `--mermaid`; every head, read-only, like `check`: it lists contracts and what they
+      read, never fetched data) draws the graph of (7). `new` writes a starter contract.
+    - Later: `fingerprint`, `migrate`, `export --prose`.
 13. **Retention** (amended 2026-10-24, maintainer's decision: "Agreed: 90 days default, configurable."). Drafts and their
     `.record.json` files, which hold the packet with the fetched inputs, expire `[workflow] retention_days` after their
     render (default 90; 0 keeps them forever; 0 to 36,500; a project `hz.toml` can't set it). Receipts don't expire.
@@ -174,6 +187,23 @@ readable prose. Each point says what 0.2 builds and what comes later.
       because nothing is removed. A receipt's draft path can outlive the draft; its hash still identifies it.
     - **0.2.0 receipts** of compiled jobs hold the draft's text in `result.agent.draft`. They aren't rewritten, which
       would break their chain; moving a job's receipts aside, the documented way to start a chain again, drops them.
+
+14. **What a contract is, and where the workflow is** (amended 2026-10-24, maintainer's decision: "a contract is an
+    invariant about one asset ('keep X true given Y'); the overall workflow is not written anywhere but emerges from
+    the graph of contracts linked by inputs/outputs. Events are just 'an input changed' (fingerprints), besides clock
+    and manual triggers.").
+    - A contract states one invariant: it keeps one asset, its output, true given its inputs. `### Goal` and
+      `### Maintains` say what is true; `### Done when` is how the agent checks it.
+    - Until publishing exists, the output is the asset's draft: the graph's asset nodes are a contract's outputs
+      (`contract:<namespace>/<name>#<output>`). Where the asset itself lives (ADR 0037's asset types and `kept_by`, a
+      document a playbook names) is not a node yet; when a contract can name it, the output is drawn as the draft of
+      that asset, and the node keeps its id.
+    - There are no workflow files and no pipeline definitions. The workflow is the graph (7): contracts linked by the
+      outputs they maintain and the inputs that read them. Adding a step is adding a contract that reads another's
+      output; `hz workflow graph` shows the result.
+    - A contract wakes for three reasons only: the clock (`schedule`), a person (`hz workflow run`, `tick --job`) and,
+      later, an input that changed, detected by its fingerprint (8) rather than by a separate event system. 0.2 builds
+      the first two; input wakes come with memo keys and `WatchLet`s.
 
 ### Consequences
 
@@ -216,8 +246,13 @@ followed, a file that can't be deleted named, pruning twice deleting nothing mor
 health never deleting, the doctor check and its grace day, and a compiled job's result without the draft's text
 (`tests/unit/modules/workflow_service_test.py`); `hz workflow prune` through the CLI, not over REST, the daemon's
 receipted `workflow:prune`, and a project `hz.toml` that can't shorten the retention
-(`tests/integration/workflow_test.py`). No test runs a real agent. Still planned: golden tests for fingerprints,
-the contract graph, and `hz workflow check` in a team repository's CI template.
+(`tests/integration/workflow_test.py`); windows back and ahead and their bounds, and contract inputs
+(`tests/unit/modules/workflow_contracts_test.py`); the graph, its cycles (a 300-contract chain included), unmaintained
+inputs, team contracts reading personal ones and Mermaid labels that can't break out of their quotes
+(`tests/unit/modules/workflow_graph_test.py`); a contract reading the newest draft it depends on, a cycle that
+doesn't run, and a calendar asked for the coming week (`tests/unit/modules/workflow_service_test.py`); `hz workflow
+graph` as text, JSON and Mermaid (`tests/integration/workflow_test.py`). No test runs a real agent. Still planned:
+golden tests for fingerprints and `hz workflow check` in a team repository's CI template.
 
 ## More Information
 
@@ -226,7 +261,7 @@ the contract graph, and `hz workflow check` in a team repository's CI template.
 - Research, schema and examples: [docs/research/workflow-contracts.md](../research/workflow-contracts.md); the example
   contract the tests use: `tests/fixtures/workflows/weekly-digest.prose.md`.
 - **Status.** Proposed. 0.2 builds the points marked 0.2 above in the `workflow` module (director's decisions,
-  2026-10-24, and on review of the pull request, 2026-10-24); fingerprints, memo keys, the graph, watches, team scope,
+  2026-10-24, and on review of the pull request, 2026-10-24); fingerprints, memo keys, input wakes, watches, team scope,
   approvals, migration and embedding are not built.
 - **Interim lineage.** A manual run's `.record.json` (the packet, each input's hash and the agent's report) is interim
   lineage, not a receipt: it isn't hash-chained, and nothing lists or verifies it. Daemon runs get the chained receipt

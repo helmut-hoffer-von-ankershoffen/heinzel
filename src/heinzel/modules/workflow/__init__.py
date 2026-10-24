@@ -22,6 +22,7 @@ from heinzel.modules.workflow._measure import Measurements, Sent
 from heinzel.modules.workflow._models import (
     CheckReport,
     CompiledContract,
+    ContractGraph,
     ContractList,
     ContractSummary,
     DraftList,
@@ -36,6 +37,7 @@ from heinzel.modules.workflow._render import (
     render_check,
     render_discovery,
     render_drafts,
+    render_graph,
     render_list,
     render_new,
     render_playbooks,
@@ -203,6 +205,17 @@ def sent(  # noqa: PLR0913, PLR0917 - one option per place the approved text can
     return service.sent(name, file, ref=ref, draft=draft, edit_minutes=edit_minutes)
 
 
+@module.operation(render=render_graph)
+def graph(
+    service: WorkflowService,
+    mermaid: Annotated[
+        bool, Field(description="Print only the Mermaid flowchart, to paste into a document or a pull request.")
+    ] = False,
+) -> ContractGraph:
+    """Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs."""
+    return service.graph().model_copy(update={"mermaid_only": mermaid})
+
+
 @module.operation(render=render_check, exit_code=_check_exit_code)
 def check(
     service: WorkflowService,
@@ -262,6 +275,7 @@ def health(service: WorkflowService) -> list[Check]:
 __all__ = [
     "CheckReport",
     "CompiledContract",
+    "ContractGraph",
     "ContractList",
     "ContractSummary",
     "Discovery",

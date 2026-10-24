@@ -19,7 +19,7 @@ from typing import Any
 
 from heinzel.kernel._capabilities import CAPABILITIES
 from heinzel.kernel._config import ConfigEditor
-from heinzel.kernel._duration import parse_duration
+from heinzel.kernel._duration import parse_window
 from heinzel.kernel._lets import Let
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._text import clean_text
@@ -58,7 +58,7 @@ class DiscoveryHint:
     args: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
     """The method's arguments besides its time window, e.g. `{"project": "APP"}`."""
     window: str | None = None
-    """For methods that take a time window: how far back, e.g. `30d`."""
+    """For methods that take a time window: back from now, `30d` or `last 30d`, or ahead, `next 14d`; at most 366d."""
     match: str | None = None
     """A regular expression the title must match (searched, case-sensitive unless it says `(?i)`); all if None."""
     summary: str = ""
@@ -79,7 +79,7 @@ class DiscoveryHint:
             msg = "Discovery hints read data; agent-runner.run is not a hint"
             raise ValueError(msg)
         if self.window is not None:
-            parse_duration(self.window)
+            parse_window(self.window)
         if self.match is not None:
             try:
                 re.compile(self.match)

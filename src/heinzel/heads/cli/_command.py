@@ -10,6 +10,7 @@ from typing import Annotated, Any, get_args, get_origin
 import typer
 from pydantic.fields import FieldInfo
 from rich.console import Console
+from rich.text import Text
 
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, show, to_json
@@ -116,7 +117,10 @@ def _present(
     if prologue is not None:
         prologue()
     if operation.render is not None:
-        console.print(TerminalSafe(operation.render(result)))
+        rendered = operation.render(result)
+        # Bare text is content to copy or pipe as it is (a draft, a flowchart): the terminal wraps it, Rich must not
+        # break its lines. Tables and groups are laid out for the terminal's width.
+        console.print(TerminalSafe(rendered), soft_wrap=isinstance(rendered, Text))
     else:
         show(console, result)
     if epilogue is not None:

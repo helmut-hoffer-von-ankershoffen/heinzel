@@ -157,11 +157,11 @@
     },
     "Input": {
       "additionalProperties": false,
-      "description": "Data fetched through a capability's read method before the agent session starts (ADR 0029, option a).",
+      "description": "Data fetched before the agent session starts: a capability's read method, or another contract's output.\n\nInputs are how contracts link: a contract maintains its outputs, and one that reads another's output depends on it,\nso the workflow is the graph of contracts these inputs draw (ADR 0021).",
       "properties": {
         "read": {
-          "description": "The capability read method that fetches it, `<capability>.<method>`, e.g. `tracker.issues_updated`; `hz system capability list` shows the capabilities.",
-          "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9_]*$",
+          "description": "What fetches it: a capability read method, `<capability>.<method>`, e.g. `tracker.issues_updated` (`hz system capability list` shows them), or another contract's output, `contract:<namespace>/<name>#<output>`, e.g. `contract:me/weekly-digest#digest`.",
+          "pattern": "^(?:[a-z][a-z0-9-]*\\.[a-z][a-z0-9_]*|contract:(?:me|team)/[a-z](?:-?[a-z0-9])*#[a-z][a-z0-9_]*)$",
           "title": "Read",
           "type": "string"
         },
@@ -178,9 +178,9 @@
             {
               "examples": [
                 "7d",
-                "10m"
+                "next 7d"
               ],
-              "pattern": "^[1-9][0-9]*[smhd]$",
+              "pattern": "^(?:(?:last|next) )?[1-9][0-9]*[smhd]$",
               "type": "string"
             },
             {
@@ -188,8 +188,22 @@
             }
           ],
           "default": null,
-          "description": "For methods that take a time window: how far back from the run, e.g. `7d`.",
+          "description": "For methods that take a time window: back from the run, `7d` or `last 7d`, or ahead of it, `next 7d` (e.g. a calendar's coming week); at most 366d.",
           "title": "Window"
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "const": "draft",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "For a contract's output: `draft` reads its newest local draft. Required, since nothing is published yet; published truth comes with `hz inbox`.",
+          "title": "Stage"
         }
       },
       "required": [

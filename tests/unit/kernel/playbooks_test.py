@@ -23,6 +23,9 @@ def test_a_hint_must_be_a_capabilitys_read_method_with_a_valid_window_and_patter
         DiscoveryHint(read="tracker.issues_updated", window="soon")
     with pytest.raises(ValueError, match="isn't a regular expression"):
         DiscoveryHint(read="documents.read", match="(")
+    assert DiscoveryHint(read="calendar.events", window="next 14d").window == "next 14d"  # a contract input's grammar
+    with pytest.raises(ValueError, match="longer than 366d"):
+        DiscoveryHint(read="tracker.issues_updated", window="400d")
 
 
 def test_asset_types_and_templates_have_slugs_and_content():
