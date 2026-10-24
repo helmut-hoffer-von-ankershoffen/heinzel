@@ -2,7 +2,9 @@
 
 import json
 
+import anyio
 import pytest
+from mcp import Client
 from typer.testing import CliRunner
 
 from heinzel import Check, Config, Document, Kernel, Login, Module, Status
@@ -85,3 +87,29 @@ def test_the_web_head_has_it_mcp_gets_it_without_accounts_and_rest_has_none(make
     assert wiki_report.login is not None
     assert wiki_report.login.account == ""
     assert all(check.login is None or check.login.account == "" for check in wiki_report.checks)
+
+
+def test_mcp_and_doctor_never_carry_the_account_while_the_cli_list_does(make_kernel):
+    kernel = make_kernel(builtins=True, wiki=wiki(signed_in=True))
+    code, listed = hz(kernel, "system", "connector", "list")
+    assert code == 0
+    assert next(c for c in listed["connectors"] if c["name"] == "wiki")["login"]["account"] == "ada"
+    code, doctor = hz(kernel, "system", "doctor")
+    assert code == 0
+    assert doctor["checks"]["wiki"][0]["login"] == {
+        "signed_in": True,
+        "account": "",
+        "site": "",
+        "command": "wiki login",
+    }
+
+    async def over_mcp() -> tuple[str, str]:
+        async with Client(mcp.build(kernel)) as client:
+            status = await client.call_tool("system_connector_status", {})
+            doctor = await client.call_tool("system_doctor", {})
+            return json.dumps(status.structured_content), json.dumps(doctor.structured_content)
+
+    status, checks = anyio.run(over_mcp)
+    assert '"wiki"' in status
+    assert '"ada"' not in status
+    assert '"ada"' not in checks

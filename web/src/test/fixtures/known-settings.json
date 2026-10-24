@@ -1,0 +1,222 @@
+{
+  "capabilities.agent_runner": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": "claude-code",
+    "description": "Adapter that serves `agent-runner`: `claude-code` (the default, because `command` needs a command line first), `command`, or one from a plugin.",
+    "title": "Agent Runner",
+    "x-options": {
+      "capability": "agent-runner",
+      "none": "none",
+      "source": "adapters"
+    }
+  },
+  "capabilities.calendar": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": null,
+    "description": "Adapter that serves `calendar`, e.g. `google`.",
+    "title": "Calendar",
+    "x-options": {
+      "capability": "calendar",
+      "none": "none",
+      "source": "adapters"
+    }
+  },
+  "capabilities.chat": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": null,
+    "description": "Adapter that serves `chat`, e.g. `slack`.",
+    "title": "Chat",
+    "x-options": {
+      "capability": "chat",
+      "none": "none",
+      "source": "adapters"
+    }
+  },
+  "capabilities.code_host": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": null,
+    "description": "Adapter that serves `code-host`, e.g. `github`.",
+    "title": "Code Host",
+    "x-options": {
+      "capability": "code-host",
+      "none": "none",
+      "source": "adapters"
+    }
+  },
+  "capabilities.directory": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": "one-on-ones",
+    "description": "Adapter that serves `directory`: `one-on-ones` (the default, the core's guesses from recurring 1:1s in the bound calendar, each marked as a guess for the user to confirm), or one from a plugin that reads a directory of record.",
+    "title": "Directory",
+    "x-options": {
+      "capability": "directory",
+      "none": "none",
+      "source": "adapters"
+    }
+  },
+  "capabilities.documents": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": null,
+    "description": "Adapter that serves `documents`.",
+    "title": "Documents",
+    "x-options": {
+      "capability": "documents",
+      "none": "none",
+      "source": "adapters"
+    }
+  },
+  "capabilities.mail": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": null,
+    "description": "Adapter that serves `mail`, e.g. `google`.",
+    "title": "Mail",
+    "x-options": {
+      "capability": "mail",
+      "none": "none",
+      "source": "adapters"
+    }
+  },
+  "capabilities.meetings": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": null,
+    "description": "Adapter that serves `meetings`, e.g. `zoom`.",
+    "title": "Meetings",
+    "x-options": {
+      "capability": "meetings",
+      "none": "none",
+      "source": "adapters"
+    }
+  },
+  "capabilities.team_graph": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": "hz-graph",
+    "description": "Adapter that serves `team-graph`: `hz-graph` (the default, the core's graph of your team's contracts and telemetry), or one from a plugin.",
+    "title": "Team Graph",
+    "x-options": {
+      "capability": "team-graph",
+      "none": "none",
+      "source": "adapters"
+    }
+  },
+  "capabilities.tracker": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": null,
+    "description": "Adapter that serves `tracker`, e.g. `github`.",
+    "title": "Tracker",
+    "x-options": {
+      "capability": "tracker",
+      "none": "none",
+      "source": "adapters"
+    }
+  },
+  "hz.disabled_modules": {
+    "default": [],
+    "description": "Qualified names of modules to switch off, with their submodules. Comma-separated in the environment, a list in TOML.",
+    "items": {
+      "type": "string"
+    },
+    "title": "Disabled Modules",
+    "type": "array",
+    "uniqueItems": true,
+    "x-options": {
+      "source": "modules"
+    }
+  },
+  "system.theme.name": {
+    "default": "default",
+    "description": "The theme of the web app, one `hz system theme list` shows, e.g. `acme`; `default` is built in.",
+    "maxLength": 64,
+    "pattern": "^[a-z](?:-?[a-z0-9])*$",
+    "title": "Name",
+    "type": "string",
+    "x-options": {
+      "source": "themes"
+    }
+  },
+  "team.layer": {
+    "anyOf": [
+      {
+        "type": "string"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "default": null,
+    "description": "Your team's layer plugin by module name, e.g. acme-payments-checkout (ADR 0040), when your team repository's hz.yaml names none or you want another; hz system layer show shows the stack it gives.",
+    "title": "Layer",
+    "x-options": {
+      "source": "layers"
+    }
+  }
+}

@@ -358,6 +358,7 @@ const en = {
   "bindings.automatic": "{title} (automatic)",
   "bindings.default": "{title} (default)",
   "bindings.choose": "Choose…",
+  "bindings.unset": "Automatic",
   "bindings.off": "None (turned off)",
   "bindings.nothing": "No connector installed",
   "bindings.find": "Find one",

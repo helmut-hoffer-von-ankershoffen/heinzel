@@ -1,4 +1,7 @@
+import json
+import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated, Literal
 
 import pytest
@@ -119,3 +122,31 @@ def test_settings_whose_values_depend_on_what_is_installed_name_their_source():
     assert setting_schemas(ThemeSettings)["name"]["x-options"] == {"source": "themes"}
     assert setting_schemas(TeamSettings)["layer"]["x-options"] == {"source": "layers"}
     assert setting_schemas(Settings)["disabled_modules"]["x-options"] == {"source": "modules"}
+
+
+KNOWN = Path(__file__).parents[3] / "web" / "src" / "test" / "fixtures" / "known-settings.json"
+"""The real schemas of settings with known values, which the web app's tests render (ADR 0056)."""
+
+
+def known_settings() -> dict[str, dict[str, object]]:
+    from heinzel import Settings
+    from heinzel.kernel._bindings import CapabilitySettings
+    from heinzel.modules.system.theme._models import ThemeSettings
+    from heinzel.modules.team._models import TeamSettings
+
+    found = {f"capabilities.{name}": schema for name, schema in setting_schemas(CapabilitySettings).items()}
+    found["system.theme.name"] = setting_schemas(ThemeSettings)["name"]
+    found["team.layer"] = setting_schemas(TeamSettings)["layer"]
+    found["hz.disabled_modules"] = setting_schemas(Settings)["disabled_modules"]
+    return found
+
+
+def test_the_web_app_renders_the_real_schemas_of_settings_with_known_values():
+    """`web/src/layout/settingSchema.test.ts` checks each of these is a choice; this keeps them the real ones."""
+    text = json.dumps(known_settings(), indent=2, sort_keys=True) + "\n"
+    if os.environ.get("HZ_UPDATE_FIXTURES"):
+        KNOWN.write_text(text, encoding="utf-8")
+    assert KNOWN.read_text(encoding="utf-8") == text, (
+        "Settings with known values changed; regenerate the fixture: "
+        "HZ_UPDATE_FIXTURES=1 uv run pytest tests/unit/modules/config_schema_test.py"
+    )

@@ -33,7 +33,8 @@ def list_(service: ConnectorService) -> ConnectorReport:
     return service.report()
 
 
-@module.operation(render=render_report, heads={"mcp"})
+# MCP over stdio only: streamable HTTP MCP has no authentication, and sites and commands still say where you work.
+@module.operation(render=render_report, heads={"mcp-stdio"})
 def status(service: ConnectorService) -> ConnectorReport:
     """List connectors with their state, what they serve and their tools, without accounts; offline."""
     return service.report(accounts=False)

@@ -210,7 +210,10 @@ class ConnectorService:
 
 
 def _anonymous(connector: Connector) -> Connector:
-    """`connector` with every sign-in's account left out."""
+    """`connector` with every sign-in's account left out.
+
+    A check's `detail` must never name the account for this to hold: plugins put it in `login.account` alone.
+    """
 
     def plain(login: Login | None) -> Login | None:
         return None if login is None else login.model_copy(update={"account": ""})

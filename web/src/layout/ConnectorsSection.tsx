@@ -8,7 +8,7 @@ import type { SchemaCapabilityChoice, SchemaConnector, SchemaConnectorTest, Sche
 import { useConnectors, useSetSetting, useTestConnector } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
-import { runInTerminal } from "@/lib/terminal";
+import { offerInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { group, type SettingsNav } from "./settingsSections";
 
@@ -25,11 +25,15 @@ type Props = {
 
 type Pill = { label: string; tone: "ok" | "warn" | "muted" | "bad" };
 
-/** What a card's pill says: the last live test when it failed, else the connector's own state. */
+/**
+ * What a card's pill says: a failed live test, else the connector's own state, which a passed test can only improve
+ * from not signed in or not tested: serving nothing (not bound) stays visible whatever the test found.
+ */
 export function pill(connector: SchemaConnector, tested?: SchemaConnectorTest): Pill {
   if (tested && !tested.passed) return { label: t("connectors.testFailed"), tone: "bad" };
   const account = tested?.login?.account || connector.login?.account;
-  if (tested?.passed || connector.state === "connected") {
+  const improves = tested?.passed && ["not-signed-in", "unknown"].includes(connector.state);
+  if (improves || connector.state === "connected") {
     return { label: account ? t("connectors.connectedAs", { account }) : t("connectors.connected"), tone: "ok" };
   }
   switch (connector.state) {
@@ -51,11 +55,19 @@ const tones = {
   muted: "bg-accent text-muted-foreground",
 };
 
-const key = (capability: string) => `capabilities.${capability.replaceAll("-", "_")}`;
-
 /** The report's connector for a plugin's card: the one whose module the plugin ships. */
 const reported = (entry: Entry, connectors: SchemaConnector[]) =>
   connectors.find((connector) => entry.plugin.modules.includes(connector.name));
+
+function CheckAgain() {
+  const report = useConnectors();
+  return (
+    <Button variant="ghost" size="sm" className="ml-auto" disabled={report.isFetching} onClick={() => report.refetch()}>
+      <RefreshCw aria-hidden className={cn(report.isFetching && "animate-spin")} />
+      {t("connectors.checkAgain")}
+    </Button>
+  );
+}
 
 export function ConnectorsSection({ connectors, open, settings, onOpen, onFind, renderSettings }: Props) {
   const report = useConnectors();
@@ -65,14 +77,17 @@ export function ConnectorsSection({ connectors, open, settings, onOpen, onFind, 
     const connector = reported(open, all);
     return (
       <>
-        <button
-          type="button"
-          onClick={() => onOpen("connectors")}
-          className="mb-3 -ml-1.5 flex items-center gap-1 rounded-lg px-1.5 py-1 text-ui-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
-        >
-          <ChevronLeft aria-hidden className="size-4 text-icon" />
-          {t("connectors.title")}
-        </button>
+        <div className="mb-3 flex items-center">
+          <button
+            type="button"
+            onClick={() => onOpen("connectors")}
+            className="-ml-1.5 flex items-center gap-1 rounded-lg px-1.5 py-1 text-ui-sm text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+          >
+            <ChevronLeft aria-hidden className="size-4 text-icon" />
+            {t("connectors.title")}
+          </button>
+          <CheckAgain />
+        </div>
         {connector ? (
           <div className="mb-6">
             <Card entry={open} connector={connector} />
@@ -95,16 +110,7 @@ export function ConnectorsSection({ connectors, open, settings, onOpen, onFind, 
     <>
       <div className="mb-1 flex items-center gap-2">
         <h3 className="text-ui font-medium">{t("connectors.title")}</h3>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ml-auto"
-          disabled={report.isFetching}
-          onClick={() => report.refetch()}
-        >
-          <RefreshCw aria-hidden className={cn(report.isFetching && "animate-spin")} />
-          {t("connectors.checkAgain")}
-        </Button>
+        <CheckAgain />
       </div>
       <p className="mb-4 text-sm text-muted-foreground">{t("connectors.intro")}</p>
       {connectors.length === 0 ? (
@@ -164,7 +170,11 @@ function Title({ entry, onOpen }: { entry: Entry; onOpen?: () => void }) {
 function Card({ entry, connector, onOpen }: { entry: Entry; connector: SchemaConnector; onOpen?: () => void }) {
   const test = useTestConnector();
   const report = useConnectors();
-  const tested = test.data?.name === connector.name ? test.data : undefined;
+  // A test answers for the state it was run against: once the report is read again ("Check again", a binding
+  // changed, the window got focus after signing in), the fresh state speaks, not the old result.
+  const [testedAt, setTestedAt] = useState(0);
+  const fresh = testedAt >= report.dataUpdatedAt;
+  const tested = fresh && test.data?.name === connector.name ? test.data : undefined;
   const status = pill(connector, tested);
   const serves = connector.capabilities.filter((use) => use.used).map((use) => use.title);
   const unused = connector.capabilities.filter((use) => !use.used);
@@ -203,11 +213,16 @@ function Card({ entry, connector, onOpen }: { entry: Entry; connector: SchemaCon
       <Tools connector={connector} />
       <div className="mt-auto flex flex-wrap gap-2 pt-1">
         {connector.testable && (
-          <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate(connector.name)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={test.isPending}
+            onClick={() => test.mutate(connector.name, { onSuccess: () => setTestedAt(Date.now()) })}
+          >
             {test.isPending ? t("connectors.testing") : t("connectors.test")}
           </Button>
         )}
-        {signIn && needsSignIn && <ConnectButton command={signIn} onDone={() => report.refetch()} />}
+        {signIn && needsSignIn && <ConnectButton command={signIn} />}
         {unused.map((use) => (
           <UseFor key={use.capability} connector={entry.title} use={use} />
         ))}
@@ -216,16 +231,10 @@ function Card({ entry, connector, onOpen }: { entry: Entry; connector: SchemaCon
   );
 }
 
-function ConnectButton({ command, onDone }: { command: string; onDone?: () => void }) {
+/** Types the sign-in into the terminal for the person to run; "Check again" (or coming back) reads the result. */
+function ConnectButton({ command }: { command: string }) {
   return (
-    <Button
-      size="sm"
-      title={t("connectors.connectHint", { command })}
-      onClick={() => {
-        runInTerminal(command);
-        onDone?.();
-      }}
-    >
+    <Button size="sm" title={t("connectors.connectHint", { command })} onClick={() => offerInTerminal(command)}>
       {t("connectors.connect")}
     </Button>
   );
@@ -281,7 +290,10 @@ function UseFor({ connector, use }: { connector: string; use: SchemaConnector["c
         size="sm"
         disabled={save.isPending}
         onClick={() =>
-          save.mutate({ key: key(use.capability), value: use.adapter }, { onSuccess: () => setAsking(false) })
+          save.mutate(
+            { key: `capabilities.${use.capability.replaceAll("-", "_")}`, value: use.adapter },
+            { onSuccess: () => setAsking(false) },
+          )
         }
       >
         {t("connectors.yes")}
@@ -306,6 +318,9 @@ function BindingRow({
   onFind: (capability: string) => void;
 }) {
   const save = useSetSetting();
+  // Until the report is read again after a change, `choice` is the old one: no second change, so Undo goes back
+  // exactly one step.
+  const report = useConnectors();
   const [undo, setUndo] = useState<{ text: string; previous: string | null } | null>(null);
   const titleOf = (adapter: string | null | undefined) =>
     choice.candidates.find((candidate) => candidate.adapter === adapter)?.title ?? adapter ?? "";
@@ -315,7 +330,11 @@ function BindingRow({
       ? t("bindings.automatic", { title: titleOf(choice.bound) })
       : choice.how === "default"
         ? t("bindings.default", { title: titleOf(choice.bound) })
-        : t("bindings.choose");
+        : choice.how === "unbound"
+          ? t("bindings.choose")
+          : t("bindings.unset");
+  // A binding to an adapter nobody installs any more (its plugin removed) stays visible, so it can be changed.
+  const stale = current !== AUTOMATIC && current !== "none" && !choice.candidates.some((c) => c.adapter === current);
   const chosen = connectors.find((connector) =>
     connector.capabilities.some((use) => use.capability === choice.capability && use.adapter === choice.bound),
   );
@@ -342,11 +361,18 @@ function BindingRow({
   return (
     <li className="border-b border-border/70 py-3 last:border-b-0">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <label htmlFor={id} className="min-w-0 flex-1">
-          <span className="text-ui">{choice.title}</span>
-          <span className="text-sm text-muted-foreground"> — {choice.purpose}</span>
-        </label>
-        {choice.candidates.length === 0 ? (
+        {choice.candidates.length === 0 && !stale ? (
+          <span className="min-w-0 flex-1">
+            <span className="text-ui">{choice.title}</span>
+            <span className="text-sm text-muted-foreground"> — {choice.purpose}</span>
+          </span>
+        ) : (
+          <label htmlFor={id} className="min-w-0 flex-1">
+            <span className="text-ui">{choice.title}</span>
+            <span className="text-sm text-muted-foreground"> — {choice.purpose}</span>
+          </label>
+        )}
+        {choice.candidates.length === 0 && !stale ? (
           <span className="flex items-center gap-2 text-sm text-muted-foreground">
             {t("bindings.nothing")}
             <Button variant="outline" size="sm" onClick={() => onFind(choice.capability)}>
@@ -359,11 +385,12 @@ function BindingRow({
             <select
               id={id}
               value={current}
-              disabled={save.isPending}
+              disabled={save.isPending || report.isFetching}
               onChange={(event) => change(event.target.value)}
               className="h-8 max-w-64 rounded-lg border border-border bg-input px-2 text-sm outline-none focus:border-muted-foreground/50 disabled:opacity-50"
             >
               <option value={AUTOMATIC}>{unset}</option>
+              {stale && <option value={current}>{current}</option>}
               {choice.candidates.map((candidate) => (
                 <option key={`${candidate.connector}:${candidate.adapter}`} value={candidate.adapter}>
                   {candidate.title} · {t(`bindings.state.${candidate.state}` as MessageKey)}

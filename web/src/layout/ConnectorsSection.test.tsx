@@ -1,8 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
-import type { SchemaPluginInfo } from "@/api/client";
-import * as terminal from "@/lib/terminal";
+import { afterEach, describe, expect, it } from "vitest";
+import type { SchemaConnectorTest, SchemaPluginInfo } from "@/api/client";
+import { connectTerminal } from "@/lib/terminal";
 import { choice, connector, connectorReport, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { pill } from "./ConnectorsSection";
@@ -42,24 +42,38 @@ const open = async () => {
   return screen.findByRole("dialog", { name: "Settings" });
 };
 
+afterEach(() => connectTerminal(null));
+
+/** What the terminal is sent: the real `offerInTerminal`, no mock, so Enter would show as `\r`. */
+const terminalTyped = () => {
+  const sent: string[] = [];
+  connectTerminal((text) => sent.push(text));
+  return sent;
+};
+
+const run = (passed: boolean, account?: string): SchemaConnectorTest => ({
+  name: "github",
+  passed,
+  latency_ms: 3,
+  login: account ? { signed_in: true, account, site: "", command: "" } : null,
+  checks: [],
+});
+
 const query = (calls: Request[], path: string) =>
   calls.filter((call) => call.url.includes(path)).map((call) => Object.fromEntries(new URL(call.url).searchParams));
 
 describe("the connector pill", () => {
-  it.each([
+  it.each<[ReturnType<typeof connector>, SchemaConnectorTest | undefined, string]>([
     [connector(), undefined, "Connected as ada"],
     [connector({ login: null }), undefined, "Connected"],
     [connector({ state: "not-signed-in" }), undefined, "Not signed in"],
     [connector({ state: "not-bound" }), undefined, "Not bound"],
     [connector({ state: "attention" }), undefined, "Needs attention"],
     [connector({ state: "unknown", login: null }), undefined, "Not tested"],
-    [connector(), { name: "github", passed: false, latency_ms: 3, login: null, checks: [] }, "Test failed"],
-    [
-      connector({ state: "unknown", login: null }),
-      { name: "github", passed: true, latency_ms: 3, login: { signed_in: true, account: "bo" }, checks: [] },
-      "Connected as bo",
-    ],
-  ] as const)("says %#", (given, tested, label) => {
+    [connector(), run(false), "Test failed"],
+    [connector({ state: "unknown", login: null }), run(true, "bo"), "Connected as bo"],
+    [connector({ state: "not-bound" }), run(true, "bo"), "Not bound"],
+  ])("says %#", (given, tested, label) => {
     expect(pill(given, tested).label).toBe(label);
   });
 });
@@ -75,11 +89,18 @@ describe("Settings → Connectors", () => {
     await user.click(within(card).getByRole("button", { name: /What hz can do through it \(2\)/ }));
     expect(within(card).getByText("code-host.merged_pull_requests")).toBeInTheDocument();
     expect(within(card).getAllByText("read")).toHaveLength(2);
+    expect(within(card).queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
     await expectAccessible(dialog);
   });
 
   it("tests a connector only when asked, and shows the result and latency", async () => {
-    const tested = { name: "github", passed: true, latency_ms: 42, login: { signed_in: true, account: "ada" }, checks: [] };
+    const tested = {
+      name: "github",
+      passed: true,
+      latency_ms: 42,
+      login: { signed_in: true, account: "ada" },
+      checks: [],
+    };
     const { calls } = mockApi(answers(connectorReport(), { "/api/system/connector/test": tested }));
     const user = userEvent.setup();
     const dialog = await open();
@@ -99,7 +120,7 @@ describe("Settings → Connectors", () => {
       checks: [{ name: "whoami", status: "degraded", detail: "gh is not logged in", fix: "gh auth login" }],
     };
     mockApi(answers(connectorReport(), { "/api/system/connector/test": failed }));
-    const run = vi.spyOn(terminal, "runInTerminal").mockImplementation(() => {});
+    const sent = terminalTyped();
     const user = userEvent.setup();
     const dialog = await open();
     const card = await within(dialog).findByRole("article", { name: "GitHub" });
@@ -107,8 +128,30 @@ describe("Settings → Connectors", () => {
     expect(await within(card).findByText("Test failed")).toBeInTheDocument();
     expect(within(card).getByText("Failed after 7 ms: gh is not logged in")).toBeInTheDocument();
     await user.click(within(card).getByRole("button", { name: "Connect" }));
-    expect(run).toHaveBeenCalledWith("gh auth login --hostname github.com");
-    run.mockRestore();
+    expect(sent).toEqual(["gh auth login --hostname github.com"]);
+    // Checking again reads the state afresh: the old failure no longer speaks for it.
+    await user.click(within(dialog).getByRole("button", { name: "Check again" }));
+    expect(await within(card).findByText("Connected as ada")).toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "Connect" })).not.toBeInTheDocument();
+  });
+
+  it("offers Connect on a card that isn't signed in, without a test", async () => {
+    mockApi(
+      answers(
+        connectorReport([
+          connector({
+            state: "not-signed-in",
+            login: { signed_in: false, account: "", site: "", command: "gh auth login --hostname github.com" },
+          }),
+        ]),
+      ),
+    );
+    const sent = terminalTyped();
+    const user = userEvent.setup();
+    const dialog = await open();
+    const card = await within(dialog).findByRole("article", { name: "GitHub" });
+    await user.click(within(card).getByRole("button", { name: "Connect" }));
+    expect(sent).toEqual(["gh auth login --hostname github.com"]);
   });
 
   it("binds an unused capability from its card only after asking", async () => {
@@ -170,7 +213,12 @@ describe("Settings → Connectors", () => {
   });
 
   it("offers Connect beside a chosen connector that isn't signed in", async () => {
-    const atlassian = connector({ name: "atlassian", title: "Atlassian", state: "not-signed-in", connect: ["acli jira auth login"] });
+    const atlassian = connector({
+      name: "atlassian",
+      title: "Atlassian",
+      state: "not-signed-in",
+      connect: ["acli jira auth login"],
+    });
     const report = connectorReport(
       [connector(), atlassian],
       [
@@ -184,16 +232,38 @@ describe("Settings → Connectors", () => {
         }),
       ],
     );
-    report.connectors[1].capabilities = [
-      { capability: "tracker", title: "Tracker", adapter: "atlassian", modes: ["read"], used: true, bound: "atlassian", how: "configured" },
+    (report.connectors[1] as ReturnType<typeof connector>).capabilities = [
+      {
+        capability: "tracker",
+        title: "Tracker",
+        adapter: "atlassian",
+        modes: ["read"],
+        used: true,
+        bound: "atlassian",
+        how: "configured",
+      },
     ];
     mockApi(answers(report));
-    const run = vi.spyOn(terminal, "runInTerminal").mockImplementation(() => {});
+    const sent = terminalTyped();
     const user = userEvent.setup();
     const dialog = await open();
     const rows = await within(dialog).findByRole("list", { name: "Which connector serves what" });
     await user.click(within(rows).getByRole("button", { name: "Connect" }));
-    expect(run).toHaveBeenCalledWith("acli jira auth login");
-    run.mockRestore();
+    expect(sent).toEqual(["acli jira auth login"]);
+  });
+
+  it("keeps a binding to an adapter nobody installs any more visible, so it can be changed", async () => {
+    const gone = choice({ bound: "gitea", how: "configured" });
+    mockApi(answers(connectorReport([connector()], [gone])));
+    const dialog = await open();
+    const rows = await within(dialog).findByRole("list", { name: "Which connector serves what" });
+    const picker = within(rows).getByLabelText(/Code host/) as HTMLSelectElement;
+    expect(picker.value).toBe("gitea");
+    expect([...picker.options].map((option) => option.textContent)).toEqual([
+      "Automatic",
+      "gitea",
+      "GitHub · connected",
+      "None",
+    ]);
   });
 });

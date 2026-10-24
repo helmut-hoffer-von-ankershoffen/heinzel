@@ -26,6 +26,19 @@ export function runInTerminal(command: string): void {
   window.dispatchEvent(new Event(OPEN_TERMINAL));
 }
 
+/**
+ * Type `command` into the terminal, opening it, and never press Enter: the person reads it and runs it, as for a
+ * connector's sign-in, whose text comes from a plugin (ADR 0056). Control characters are dropped, so a line break or
+ * an escape sequence in it can't run anything either.
+ */
+export function offerInTerminal(command: string): void {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
+  const text = command.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+  if (sender) sender(text);
+  else pending.push(text);
+  window.dispatchEvent(new Event(OPEN_TERMINAL));
+}
+
 /** The connected terminal's sender, or null when it closes; waiting commands go out on connect. */
 export function connectTerminal(send: Sender | null): void {
   sender = send;

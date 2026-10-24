@@ -87,6 +87,9 @@ export const useSetSetting = () => {
       // A binding is a setting: what serves each capability, and so each connector's state, may have changed.
       client.invalidateQueries({ queryKey: keys.connectors });
       client.invalidateQueries({ queryKey: ["system", "capability", "list"] });
+      // So is the theme and your team's layer: the app re-applies a theme when its list is read again.
+      client.invalidateQueries({ queryKey: ["system", "theme", "list"] });
+      client.invalidateQueries({ queryKey: ["system", "layer", "list"] });
     },
   });
 };

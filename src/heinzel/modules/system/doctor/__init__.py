@@ -48,6 +48,16 @@ def _exit_code(report: HealthReport) -> int:
     return 1 if report.status is Status.DOWN else 0
 
 
+def _without_account(check: Check) -> Check:
+    """`check` without whom its sign-in is for, which only `hz system connector list` names (ADR 0056).
+
+    Doctor reaches every head, MCP and REST too; `list` only the CLI and the web app.
+    """
+    if check.login is None or not check.login.account:
+        return check
+    return check.model_copy(update={"login": check.login.model_copy(update={"account": ""})})
+
+
 @module.operation(render=_render, exit_code=_exit_code, audience="everyday")
 def doctor(kernel: Kernel) -> HealthReport:
     """Run every module's health checks; exits with 1 if anything is down."""
@@ -56,7 +66,7 @@ def doctor(kernel: Kernel) -> HealthReport:
         if let.live:  # reaches the network; `hz system connector test` runs it on demand (ADR 0055)
             continue
         try:
-            checks[record.qualname] = kernel.call(let.provider)
+            checks[record.qualname] = [_without_account(check) for check in kernel.call(let.provider)]
         except Exception as exc:  # noqa: BLE001 - a broken check is a finding, not a crash
             checks[record.qualname] = [Check(name="checks", status=Status.DOWN, detail=f"{type(exc).__name__}: {exc}")]
     statuses = [check.status for group in checks.values() for check in group]
