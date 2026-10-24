@@ -91,6 +91,63 @@ def test_git_identities_and_branches_are_checked(monkeypatch):
     assert confidentiality.main(["--branch"]) == 0
 
 
+@pytest.mark.parametrize(
+    "email",
+    [
+        "dev@Some-MacBook-Air.local",
+        "dev@build-box.LocalDomain",
+        "dev@nas.lan",
+        "dev@router.home",
+        "dev@laptop.corp.internal",
+        "dev@laptop",
+        "dev@machine.local.",
+    ],
+)
+def test_hostname_emails_are_refused(email):
+    assert confidentiality.hostname_email(f"Dev <{email}> 1792821657 +0200") == email
+
+
+@pytest.mark.parametrize(
+    "email",
+    [
+        "dev@example.com",
+        "noreply@github.com",
+        "12345+dev@users.noreply.github.com",
+        "41898282+github-actions[bot]@users.noreply.github.com",  # CI's bot identity
+        "49699333+dependabot[bot]@users.noreply.github.com",
+        "dev@localhost.example.org",
+    ],
+)
+def test_mailbox_emails_pass(email):
+    assert confidentiality.hostname_email(f"Dev <{email}> 1792821657 +0200") is None
+
+
+def _identity(monkeypatch, email):
+    for role in ("AUTHOR", "COMMITTER"):  # both, so neither the machine's nor CI's git configuration leaks in
+        monkeypatch.setenv(f"GIT_{role}_NAME", "Dev")
+        monkeypatch.setenv(f"GIT_{role}_EMAIL", email)
+
+
+def test_the_identity_check_refuses_a_hostname_email_and_says_how_to_fix_it(monkeypatch, capsys):
+    _identity(monkeypatch, "dev@Some-MacBook-Air.local")
+    assert confidentiality.main(["--identity"]) == 1
+    err = capsys.readouterr().err
+    assert "author email dev@Some-MacBook-Air.local" in err
+    assert "committer email" in err
+    assert "git config --global user.email" in err
+    assert "users.noreply.github.com" in err
+
+
+def test_the_hostname_check_runs_without_terms(monkeypatch):
+    """Plugin developers usually have no term list; the check protects them too."""
+    monkeypatch.delenv("CONFIDENTIAL_TERMS")
+    _identity(monkeypatch, "dev@Some-MacBook-Air.local")
+    assert confidentiality.main(["--identity"]) == 1
+    _identity(monkeypatch, "41898282+github-actions[bot]@users.noreply.github.com")
+    assert confidentiality.main(["--identity"]) == 0
+    assert confidentiality.main(["--text", "dev@Some-MacBook-Air.local"]) == 0  # only --identity checks emails
+
+
 def test_commit_messages_and_text_are_checked(tmp_path):
     message = tmp_path / "COMMIT_EDITMSG"
     message.write_text("feat: integrate Project Zebra\n", encoding="utf-8")
