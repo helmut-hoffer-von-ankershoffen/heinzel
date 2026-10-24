@@ -65,7 +65,9 @@ external plugins alike and promotion becomes a move, not a rename.
 ## More Information
 
 - [ADR 0007](0007-plugins-scaffolded-with-copier.md) calls the example plugin `heinzel-plugin-example`; it is
-  `heinzel-example` (github.com/helmut-hoffer-von-ankershoffen/heinzel-example) from now on.
+  `heinzel-example` (github.com/helmut-hoffer-von-ankershoffen/heinzel-example) from now on. Since 2026-10-24 it
+  lives in heinzel-contrib, the repository of community plugins, as `plugins/heinzel-example`; its own repository
+  is archived.
 - Decided by the maintainer on 2026-10-23.
 - Open questions: who keeps a name when an external plugin collides with a later first-party one; whether the PyPI
   keyword `heinzel-plugin` in the template stays as the way to find plugins.

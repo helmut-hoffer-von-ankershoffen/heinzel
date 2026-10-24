@@ -110,3 +110,24 @@ body {
   --xy-controls-button-color: var(--color-foreground);
   --xy-attribution-background-color: transparent;
 }
+
+/* HeinzelAvatar's motion (only without reduced motion): a working Heinzelmännchen bobs, a state's badge breathes. */
+@keyframes hz-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes hz-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
