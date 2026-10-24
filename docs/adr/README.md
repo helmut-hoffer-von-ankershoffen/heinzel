@@ -60,6 +60,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0053](0053-the-team-graph-is-drawn-with-react-flow-and-elk.md) | The team graph is drawn with React Flow and laid out by elk; Mermaid is only an export | proposed | 2026-10-24 |
 | [0054](0054-observability-is-whether-each-team-promise-is-kept.md) | Observability is whether each team promise is kept: telemetry in, a graph out | proposed | 2026-10-24 |
 | [0055](0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md) | Connectors show their sign-in, test live on demand, and bind themselves when they are alone | accepted | 2026-10-24 |
+| [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) | AI access is a module: one choice like the theme, options are adapters of `ai-access` | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -111,7 +112,11 @@ entries; the `report` tool); [0054](0054-observability-is-whether-each-team-prom
 [0052](0052-the-graph-emerges-from-recorded-reads-and-writes.md) (telemetry logs in the team repository before the
 spine; `hz report`); [0055](0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md)
 amends [0028](0028-integrations-are-capability-adapters.md) (a sole installed adapter serves its capability
-automatically). ADRs 0021–0024 are
+automatically);
+[0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) amends
+[0029](0029-agent-runners-are-capability-adapters.md) (an AI access option names the agent runner that serves it) and
+[0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (`[heinzel] model` gives way to `[ai]` routing).
+ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 
