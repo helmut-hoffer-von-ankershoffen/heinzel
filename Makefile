@@ -1,10 +1,16 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses template-test template-sync docs fuzz demo build changelog ci-logs pr sync release clean
+.PHONY: help install setup doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses secrets template-test template-sync docs fuzz demo build changelog ci-logs pr sync release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
 STEPS := @uv run --quiet --script scripts/steps.py
-BASE ?= origin/main
+# Programs the build needs that aren't Python packages (gitleaks, gh, ...): pinned in scripts/tools.toml, installed
+# into .tools/bin by `make install`, and found there first by every target.
+TOOLS := uv run --quiet --script scripts/tools.py
+export PATH := $(CURDIR)/.tools/bin:$(PATH)
+# The repository pull requests go to: `upstream` in a fork's clone, otherwise `origin`.
+REMOTE := $(shell git remote 2>/dev/null | grep -qx upstream && echo upstream || echo origin)
+BASE ?= $(REMOTE)/main
 
 # Cheapest checks first, so a typo fails in a second; the rest runs in parallel.
 GATE := "lock=uv lock --check" "&format=uv run ruff format --check ." "&ruff=uv run ruff check --no-fix ."
@@ -24,11 +30,19 @@ TESTS := "&tests=uv run pytest -m 'unit or integration' -n 4 -x -q --session-tim
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-install: ## Create the virtualenv with all dependencies
-	uv sync --all-groups
+install: ## Install what the build needs: Python with every dependency group (.venv) and the pinned tools (.tools)
+	@uv sync --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
+	@$(TOOLS) install
 
-setup: install ## Install dependencies and git hooks (prek: lint on commit, conventional commit messages)
-	uv run prek install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push
+setup: install ## Install what the build needs, and the git hooks (prek: lint on commit, conventional commits)
+	@uv run --quiet prek install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push >/dev/null
+	@echo "✓ git hooks: pre-commit, commit-msg, pre-push"
+
+doctor: ## What the build needs, what is missing, and the command that fixes it
+	@$(TOOLS) doctor
+
+tools-verify: ## Download every pinned tool for every platform and check its checksum and binary (needs network)
+	@$(TOOLS) verify
 
 check: ## Everything CI checks that runs offline, in parallel: lint, import contracts, types, tests
 	$(STEPS) $(GATE) $(LINT) $(TYPES) $(TESTS)
@@ -103,6 +117,9 @@ test-e2e: ## Run end-to-end tests (needs network), on 3 workers
 audit: ## Audit runtime dependencies: known vulnerabilities (pip-audit) and licenses (.license-allowlist)
 	$(STEPS) "licenses=$(MAKE) --no-print-directory licenses" "&vulnerabilities=uv export --quiet --no-dev --no-emit-project --no-emit-package heinzel --format requirements-txt --output-file .audit-requirements.txt && uv run pip-audit --strict --disable-pip -r .audit-requirements.txt; status=\$$?; rm -f .audit-requirements.txt; exit \$$status"
 
+secrets: ## Scan the whole git history for credentials with gitleaks (the pre-commit hook scans each commit)
+	@$(TOOLS) run gitleaks git --redact --verbose --exit-code 1 .
+
 licenses: ## Check that runtime dependencies' licenses are on .license-allowlist, so releases stay MIT-compatible
 	bash scripts/check_licenses.sh
 
@@ -133,8 +150,8 @@ ci-logs: ## The failing steps of the latest CI run of this branch (waits for a r
 pr: ## Push this branch and open a squash-merged, auto-merging pull request to main: make pr TITLE="feat: ..." (DRAFT=1: draft, no auto-merge)
 	@bash scripts/pr.sh "$(TITLE)"
 
-sync: ## Rebase this branch onto the latest main
-	@git fetch --quiet origin && git rebase --quiet origin/main && git log --oneline origin/main..HEAD
+sync: ## Rebase this branch onto the latest main (upstream's, in a fork)
+	@git fetch --quiet $(REMOTE) && git rebase --quiet $(REMOTE)/main && git log --oneline $(REMOTE)/main..HEAD
 
 release: ## Open a release pull request from main: BUMP=auto|patch|minor|major (default auto), INTRO="prose"
 	bash scripts/release.sh $(or $(BUMP),auto) --open-pr
