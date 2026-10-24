@@ -319,6 +319,7 @@ class PluginService:
         """
         candidate = self.candidate(spec)
         if not confirm:
+            handle = candidate.spec if candidate.first_party else candidate.requirement
             return PluginChange(
                 action="add",
                 done=False,
@@ -326,7 +327,8 @@ class PluginService:
                 candidate=candidate,
                 plugins=self.installed(),
                 restart_required=False,
-                next=[f"hz system plugin add {shlex.quote(candidate.requirement)} --confirm"],
+                # A first-party plugin is added by the name asked for: its git requirement is refused as a spec.
+                next=[f"hz system plugin add {shlex.quote(handle)} --confirm"],
             )
         with self._exclusive():
             self._installation.run(
@@ -652,7 +654,7 @@ class PluginService:
             short = taken[0].removeprefix(PREFIX)
             msg = (
                 f"{spec!r} would install {taken[0]}, the name of a first-party plugin; add that one by name "
-                f"(`hz system plugin add {short}`), or a plugin with a name of its own."
+                f"({short}), or use a plugin with a name of its own."
             )
             raise HeinzelError(msg)
 
