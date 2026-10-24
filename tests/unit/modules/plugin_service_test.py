@@ -785,7 +785,7 @@ def test_a_repository_naming_itself_wrongly_is_refused(make_kernel, tool_env, mo
 def test_a_pypi_package_with_a_first_party_name_or_extras_is_refused(make_kernel, tool_env, monkeypatch):
     service, _ = installing(make_kernel, tool_env, monkeypatch)
     service.pypi = lambda url: pypi_project("heinzel-github", "1.0.0")
-    with pytest.raises(HeinzelError, match="hz system plugin add github"):
+    with pytest.raises(HeinzelError, match=r"by name \(github\)"):
         service.candidate("heinzel-github==1.0.0")
     service.pypi = raising(urllib.error.URLError("offline"))
     with pytest.raises(HeinzelError, match="without extras or environment markers"):
@@ -808,3 +808,35 @@ def test_metadata_never_carries_control_characters(make_kernel, tool_env, monkey
     service.pypi = lambda url: project
     candidate = service.candidate("heinzel-crm")
     assert (candidate.publisher, candidate.summary) == ("Ada[2K[1AExample", "CRM notes")
+
+
+def test_a_first_party_preview_confirms_by_name_not_by_its_git_requirement(make_kernel, tool_env, monkeypatch):
+    from heinzel.modules.system.plugin._render import render_change
+
+    service, runs = installing(make_kernel, tool_env, monkeypatch)
+    preview = service.add("clock")
+    assert preview.candidate is not None
+    assert preview.candidate.requirement != "clock"  # a git or path requirement ...
+    assert preview.next == ["hz system plugin add clock --confirm"]  # ... which the hint must not suggest
+    rendered = render_change(preview)
+    from rich.console import Console
+
+    console = Console(record=True, width=200)
+    console.print(rendered)
+    assert "not reviewed" not in console.export_text()
+    assert service.add(preview.next[0].split()[-2], confirm=True).done  # the hinted name installs
+    assert len(runs) == 1
+
+
+def test_a_community_preview_still_confirms_by_its_requirement_and_warns(make_kernel, tool_env, monkeypatch):
+    from rich.console import Console
+
+    from heinzel.modules.system.plugin._render import render_change
+
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    service.pypi = lambda url: pypi_project("heinzel-crm", "1.1.0")
+    preview = service.add("heinzel-crm")
+    assert preview.next == ["hz system plugin add heinzel-crm==1.1.0 --confirm"]
+    console = Console(record=True, width=200)
+    console.print(render_change(preview))
+    assert "not reviewed" in console.export_text()
