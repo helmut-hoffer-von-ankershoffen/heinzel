@@ -7,7 +7,7 @@ change like a library release: an ADR for a new concept, unit tests for every br
   `credential`, `provides`, `setup`, `playbook`, `layer`, `theme`; `requires=` on modules, operations and jobs;
   `optional=True` on a read-only operation that degrades without its own requirements).
 - `_protocols.py` — integration capability protocols (`CodeHost`, `Tracker`, `Documents`, `Chat`, `Meetings`,
-  `Calendar`, `Mail`, `Directory`; `MailQuery`, the mail query syntax) and their models; `_directory.py` —
+  `Calendar`, `Mail`, `Directory`, `TeamGraph`; `MailQuery`, the mail query syntax) and their models; `_directory.py` —
   `draft_reporting_lines`, the seam setup steps and roster drafting call (fallback adapter:
   `system.directory`); `_text.py` — `clean_text`, which adapters apply to every string they return, and
   `redact_emails`, which keeps addresses out of prompts;
@@ -43,6 +43,8 @@ change like a library release: an ADR for a new concept, unit tests for every br
   `_progress.py` — head-agnostic progress; `_duration.py` — `parse_duration` (`5m`); `_release.py` —
   `ReleaseCache` and `ReleaseSource`, the latest release last seen and who asks for it (ADR 0031); `_org.py` —
   `OrgContext`, where the person's team repository is checked out, what it recommends and which layer the
-  team is (provided by `team`);
+  team is (provided by `team`), and `TeamPromises`, what each team contract promises (provided by `workflow`);
+  `_telemetry.py` — `TelemetryEntry`, one strictly checked metadata entry of a Heinzelmännchen's log, and
+  `TelemetryLog`, the team's entries (provided by `telemetry`; read by `graph`, ADR 0054);
   `_prompter.py` — `Prompter`, head-agnostic questions for setup steps, and `ScriptedPrompter` (ADR 0032;
   the CLI head runs the steps); `ConfigEditor` in `_config.py` is implemented by `system.config`.

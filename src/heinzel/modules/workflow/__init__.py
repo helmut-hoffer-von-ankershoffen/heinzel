@@ -17,7 +17,7 @@ from typing import Annotated
 from pydantic import Field, JsonValue
 
 from heinzel import Check, ConfigEditor, HeinzelError, Module, Prompter
-from heinzel.kernel import CompiledJobs, PlaybookLet, PlaybookSetup
+from heinzel.kernel import CompiledJobs, PlaybookLet, PlaybookSetup, TeamPromises
 from heinzel.modules.workflow._measure import Measurements, Sent
 from heinzel.modules.workflow._models import (
     CheckReport,
@@ -33,6 +33,7 @@ from heinzel.modules.workflow._models import (
     WorkflowSettings,
 )
 from heinzel.modules.workflow._playbooks import Discovery, PlaybookList
+from heinzel.modules.workflow._promises import ContractPromises
 from heinzel.modules.workflow._render import (
     render_check,
     render_discovery,
@@ -62,6 +63,7 @@ def _compiled(service: WorkflowService) -> CompiledJobs:
 
 
 module.service(CompiledJobs, _compiled)
+module.service(TeamPromises, ContractPromises)
 
 Name = Annotated[
     str,
@@ -278,6 +280,7 @@ __all__ = [
     "CompiledContract",
     "ContractGraph",
     "ContractList",
+    "ContractPromises",
     "ContractSummary",
     "Discovery",
     "DraftList",

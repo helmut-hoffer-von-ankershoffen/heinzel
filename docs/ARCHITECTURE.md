@@ -77,7 +77,10 @@ The org chart is the capability `directory`: a plugin's directory of record when
 and marks each as a guess (with no calendar bound the draft is empty and says why); setup steps and roster
 drafting call `draft_reporting_lines`. Agent sessions are the
 capability `agent-runner`; core ships its Claude Code and generic command adapters in `system.runner`
-([ADR 0029](adr/0029-agent-runners-are-capability-adapters.md)).
+([ADR 0029](adr/0029-agent-runners-are-capability-adapters.md)). The team graph is the capability `team-graph`,
+served by the core's `hz-graph` adapter (`graph`), so a contract (the graph keeper) can read it; `graph` builds it
+from the kernel's `TeamPromises` (provided by `workflow`) and `TelemetryLog` (provided by `telemetry`, command
+`hz report`), whose entries are `TelemetryEntry` ([ADR 0054](adr/0054-observability-is-whether-each-team-promise-is-kept.md)).
 
 **Head.** A view that boots the kernel and exposes operations ([ADR 0019](adr/0019-mcp-and-rest-heads.md)). All heads
 share one exposure rule (`heinzel.heads._exposure`): the same path, public parameters and `heads=` restrictions. The
@@ -135,6 +138,8 @@ hz system agent   skills | install | uninstall
 hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
 hz system notify  list | ack | test | install
 hz system serve   mcp | api | daemon
+hz report <verb> | sync                    what a Heinzelmännchen did, for the team graph (ADR 0054)
+hz graph                                  are the team's promises kept, and where the flow waits
 hz <module> …     work: plugin modules and built-in workflow modules
 ```
 

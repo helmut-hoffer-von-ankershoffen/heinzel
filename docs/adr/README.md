@@ -58,6 +58,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0051](0051-the-workflow-module-becomes-the-heinzel-module.md) | The workflow module becomes the heinzel module | proposed | 2026-10-24 |
 | [0052](0052-the-graph-emerges-from-recorded-reads-and-writes.md) | The graph emerges from recorded reads and writes | proposed | 2026-10-24 |
 | [0053](0053-the-team-graph-is-drawn-with-react-flow-and-elk.md) | The team graph is drawn with React Flow and laid out by elk; Mermaid is only an export | proposed | 2026-10-24 |
+| [0054](0054-observability-is-whether-each-team-promise-is-kept.md) | Observability is whether each team promise is kept: telemetry in, a graph out | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -104,7 +105,10 @@ names), [0038](0038-drafts-are-approved-in-place.md) (`hz inbox` becomes `hz dra
 edges beside declared ones), [0023](0023-inventory.md) (no entity schema or single-writer rule for now),
 [0038](0038-drafts-are-approved-in-place.md) (repeated nudges and the fallback, proposed) and
 [0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md) (receipt-grade events are action
-entries; the `report` tool). ADRs 0021–0024 are
+entries; the `report` tool); [0054](0054-observability-is-whether-each-team-promise-is-kept.md) amends
+[0037](0037-plugins-bring-playbooks.md) (the core's graph module ships the graph keeper's playbook) and
+[0052](0052-the-graph-emerges-from-recorded-reads-and-writes.md) (telemetry logs in the team repository before the
+spine; `hz report`). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 

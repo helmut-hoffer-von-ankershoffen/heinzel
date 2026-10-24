@@ -152,6 +152,7 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
         "documents": "notes",
         "mail": None,
         "meetings": None,
+        "team-graph": "hz-graph",
         "tracker": None,
     }
     assert [a for a in report["adapters"] if a["capability"] == "documents"] == [

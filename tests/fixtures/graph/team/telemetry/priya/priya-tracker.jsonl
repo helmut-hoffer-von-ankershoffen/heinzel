@@ -1,0 +1,4 @@
+{"v":1,"heinzel_id":"priya-tracker","user":"priya","time":"2026-10-14T11:10:00Z","verb":"drafted","target":"https://tracker.acme.example/boards/7#priya","description":"Drafted this week's row","contract":"team:tracker-update","part":"priya","contract_version":"1.0.0"}
+{"v":1,"heinzel_id":"priya-tracker","user":"priya","time":"2026-10-14T13:00:00Z","verb":"approved","target":"https://tracker.acme.example/boards/7#priya","contract":"team:tracker-update","part":"priya","by":"priya"}
+{"v":1,"heinzel_id":"priya-tracker","user":"priya","time":"2026-10-21T11:05:00Z","verb":"drafted","target":"https://tracker.acme.example/boards/7#priya","description":"Drafted this week's row","contract":"team:tracker-update","part":"priya","contract_version":"1.0.0"}
+{"v":1,"heinzel_id":"priya-tracker","user":"priya","time":"2026-10-23T08:00:00Z","verb":"heartbeat","contract":"team:tracker-update"}

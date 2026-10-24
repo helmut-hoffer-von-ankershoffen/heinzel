@@ -256,7 +256,7 @@ allowed_prefixes = ["Merge", "Revert", "Pull request", "fixup!", "squash!", "ame
 
 [tool.commitizen.customize]
 schema = "<type>(<scope>)!: <summary of at most 72 characters>\n\n<body: why>\n\n<footers>"
-schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|setup|workflow|team|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|web|chat|clock|github|atlassian|google|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
+schema_pattern = '(?s)(?=[^\n]{1,72}(?: \(#\d+\))?(?:\n|$))(feat|fix|perf|refactor|docs|test|build|ci|chore|style|revert)(\((kernel|cli|heads|system|setup|workflow|team|org|plugin|template|ci|docs|adr|agents|dx|security|release|deps|web|chat|graph|report|clock|github|atlassian|google|zoom)\))?!?: [^\s][^\n]*(\n\n.*|\s*)?$'
 example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
@@ -487,7 +487,7 @@ modules = [
 [[tool.importlinter.contracts]]
 name = "Every module could be a plugin: top-level modules don't import each other, they inject services by type"
 type = "independence"
-modules = ["heinzel.modules.org", "heinzel.modules.system", "heinzel.modules.workflow"]
+modules = ["heinzel.modules.graph", "heinzel.modules.org", "heinzel.modules.system", "heinzel.modules.telemetry", "heinzel.modules.workflow"]
 
 [[tool.importlinter.contracts]]
 name = "Modules use only the kernel's public API, like plugins"
@@ -496,7 +496,7 @@ source_modules = ["heinzel.modules"]
 forbidden_modules = [
     "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._chat", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation", "heinzel.kernel._jobs",
     "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._notifications", "heinzel.kernel._org", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings",
-    "heinzel.kernel._protocols", "heinzel.kernel._spec",
+    "heinzel.kernel._protocols", "heinzel.kernel._spec", "heinzel.kernel._telemetry",
 ]
 allow_indirect_imports = true # going through heinzel.kernel's public API is the point
 

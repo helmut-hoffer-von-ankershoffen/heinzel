@@ -27,6 +27,7 @@ from heinzel import (
     Kernel,
     Module,
     PullRequest,
+    Settings,
     Window,
 )
 from heinzel.heads.cli import _setup, build
@@ -147,7 +148,11 @@ def make(make_kernel, tmp_path):
 
     def build_kernel(bindings: dict[str, str] = BINDINGS) -> Kernel:
         data = {"capabilities": bindings, "workflow": {"user_dir": str(tmp_path / "workflows")}}
-        return make_kernel(builtins=True, teamwork=teamwork(), fakes=runner(), config=Config(files=(), data=data))
+        # Without `graph`, whose graph keeper is the core's one playbook: these tests are about what plugins bring.
+        no_graph = Settings(disabled_modules=frozenset({"graph"}))
+        return make_kernel(
+            builtins=True, teamwork=teamwork(), fakes=runner(), config=Config(files=(), data=data), settings_=no_graph
+        )
 
     return build_kernel
 

@@ -93,6 +93,9 @@ def plugin(name: str = "teamwork", *, template: bool = True, defaults: bool = Tr
     return module
 
 
+NO_GRAPH = Settings(disabled_modules=frozenset({"graph"}))
+
+
 @pytest.fixture
 def make(make_kernel, tmp_path):
     Tracker.windows.clear()
@@ -101,7 +104,8 @@ def make(make_kernel, tmp_path):
         capabilities = {"agent_runner": "claude-code", "documents": "docs", "tracker": "tracker"}
         data = {"capabilities": capabilities if bindings is None else bindings, "workflow": {"user_dir": str(tmp_path)}}
         named = {m.name: m for m in modules or (plugin(),)}
-        kernel = make_kernel(builtins=True, config=Config(files=(), data=data), **named)
+        # Without `graph`, whose graph keeper is the core's one playbook: these tests are about what plugins bring.
+        kernel = make_kernel(builtins=True, config=Config(files=(), data=data), settings_=NO_GRAPH, **named)
         settings = Config(files=(), data={}).settings(Settings, "hz")
         return WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings, clock=lambda: NOW)
 
