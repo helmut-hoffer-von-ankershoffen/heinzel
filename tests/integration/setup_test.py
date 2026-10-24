@@ -159,13 +159,36 @@ def test_a_collapsed_module_keeps_its_command_and_runs_its_step_under_setup(kern
     assert "Nothing was saved." in result.output
 
 
-def test_setup_names_the_modules_that_have_a_step_when_given_another(kernel, terminal):
-    for name in ("nope", "system"):
-        result = runner.invoke(build(kernel), ["setup", name])
-        assert result.exit_code == 2
-        text = " ".join(result.stderr.replace("│", " ").split())  # the error is boxed
-        assert f"No module named '{name}' has a setup step. Modules with one: clock, greet, vault." in text
-        assert "Usage: hz setup [OPTIONS] [MODULE]" in text
+@pytest.mark.parametrize(
+    ("name", "problem"),
+    [("nope", "No module is named 'nope'."), ("system", "Module 'system' has no setup step.")],
+)
+def test_setup_names_the_modules_that_have_a_step_when_given_another(kernel, terminal, name, problem):
+    result = runner.invoke(build(kernel), ["setup", name])
+    assert result.exit_code == 2
+    text = " ".join(result.stderr.replace("│", " ").split())  # the error is boxed
+    assert f"{problem} Modules with one: clock, greet, vault." in text
+    assert "Usage: hz setup [OPTIONS] [MODULE]" in text
+
+
+def test_setup_says_when_a_modules_step_cant_run(make_kernel, settings, terminal):
+    provider = Module("provider", "Provides.")
+
+    class Service:
+        pass
+
+    provider.service(Service)
+    needy = Module("needy", "Needs the service of a disabled module.")
+
+    @needy.setup
+    def setup(service: Service) -> None:
+        """Use it."""
+
+    disabled = settings.model_copy(update={"disabled_modules": frozenset({"provider"})})
+    kernel = make_kernel(builtins=True, settings_=disabled, provider=provider, needy=needy)
+    result = runner.invoke(build(kernel), ["setup", "needy"])
+    assert result.exit_code == 2
+    assert "The setup step of 'needy' can't run" in " ".join(result.stderr.replace("│", " ").split())
 
 
 def test_setup_help_names_the_module_argument(kernel):

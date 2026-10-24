@@ -60,10 +60,11 @@ head**, because modules stay head-agnostic, steps write through the existing ser
   interrupted keeps what it already wrote.
 - **Commands (CLI only).** `hz setup [MODULE]` is the one command that runs setup steps: `hz setup` runs every step,
   built-in modules first, then the others alphabetically by qualified name; `hz setup clock` runs one module's step,
-  without the skip question. A name without a step that can run is a usage error that lists the modules with one. An optional step asks "Set up clock now? [Y/n]" first; a
-  required one doesn't. A step whose module is already configured says so and asks whether to change it. Ctrl-C stops
-  the run and keeps finished steps; configuration files are replaced whole, never half written. A step that fails is
-  reported and the others still run. `hz setup` ends with a summary and `hz system doctor` on the configuration just
+  without the skip question. A name without a step that can run is a usage error that says why and lists the
+  modules with one. An optional step asks "Set up clock now? [Y/n]" first; a required one doesn't. A step whose
+  module is already configured says so and asks whether to change it. Ctrl-C stops the run and keeps finished steps;
+  configuration files are replaced whole, never half written. A step that fails is reported and the others still
+  run. `hz setup` ends with a summary and `hz system doctor` on the configuration just
   written, and exits 1 when doctor reports a check down, saying so on stderr. A setup step never changes a module's
   command path: the module keeps exactly the commands it has without one (`hz clock`, `hz echo hi`), as in MCP and
   REST.
@@ -76,8 +77,8 @@ head**, because modules stay head-agnostic, steps write through the existing ser
   must be a terminal: `hz setup > out.txt` would otherwise wait for answers to questions nobody sees. Otherwise it
   refuses and prints, on stderr, the equivalent `hz system config set` and `hz system credential set` commands for
   each step's module.
-- **Names.** `setup` is reserved as a module name, because `hz setup` is a top-level command. A module's operations
-  and submodules may take any name, `setup` included: the step is never one of the module's commands.
+- **Names.** `setup` is reserved as a module name, at every level, because `hz setup` is a top-level command. A
+  module's operations may take any name, `setup` included: the step is never one of the module's commands.
 - **Top level.** `hz setup` is an exception to ADR 0018, decided by the maintainer: everything else about
   Heinzelmännchen itself stays under `hz system`.
 
@@ -88,6 +89,8 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 - Good: the wizard can't write what `hz system config set` would refuse; MCP and REST never see setup.
 - Bad: the order is fixed (built-ins, then alphabetical). A step that needs another module's step first has to say so
   in its text until an `after=` declaration exists.
+- Bad: `hz setup` exits 1 when any doctor check is down, also one of a module whose step was skipped: the run did
+  what was asked, but the installation isn't healthy yet, and doctor's table says which check to fix.
 - Bad: "configured" is a heuristic; a module whose defaults are fine is offered its step until something is set.
 - Neutral: new public API, additive ([ADR 0026](0026-plugin-api-versioned-with-semver.md)): `SetupLet`,
   `Prompter` and `ConfigEditor` in `heinzel`; for tests `ScriptedPrompter`, `ScriptExhausted` and `INTERRUPT` in
@@ -114,7 +117,8 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 ## More Information
 
 - Decided by the maintainer: setup steps declared by modules, required or optional, one module's step on its own
-  and a top-level `hz setup`, 2026-10-24. The technical shape (let, prompter, configured heuristic, order) was delegated.
+  and a top-level `hz setup`, 2026-10-24.
+  The technical shape (let, prompter, configured heuristic, order) was delegated.
 - Amended on 2026-10-24, decided by the maintainer: adding a setup step must never change a module's command path.
   The first version mounted the step as `hz <module> setup`, which turned a module that collapses into one command
   into a group; when that command took an argument it no longer collapsed (`hz echo hi` became "No such command"),

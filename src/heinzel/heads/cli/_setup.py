@@ -115,11 +115,6 @@ def steps(kernel: Kernel) -> list[tuple[ModuleRecord, SetupLet]]:
     return sorted(found, key=lambda pair: (not pair[0].origin.builtin, pair[0].path))
 
 
-def step_of(kernel: Kernel, record: ModuleRecord) -> SetupLet | None:
-    """The setup step of a module, if it has one that can run."""
-    return next((let for owner, let in steps(kernel) if owner.qualname == record.qualname), None)
-
-
 def is_configured(kernel: Kernel, record: ModuleRecord) -> bool:
     """Whether one of the module's settings is set in a file or the environment, or one of its credentials stored."""
     for owner, let in kernel.lets(SettingsLet):
@@ -276,16 +271,23 @@ class SetupCommands:
         """
         plan = steps(self.kernel)
         if name is not None:
-            plan = [(record, let) for record, let in plan if record.qualname == name]
+            every, plan = plan, [(record, let) for record, let in plan if record.qualname == name]
             if not plan:
-                having = ", ".join(record.qualname for record, _ in steps(self.kernel)) or "none"
-                msg = f"No module named {name!r} has a setup step. Modules with one: {having}."
-                raise typer.BadParameter(msg, param_hint="MODULE")
+                raise typer.BadParameter(self._no_step(name, every), param_hint="MODULE")
         with self._errors():
             if name is None:
                 self._everything(plan)
             else:
                 self._module(plan)
+
+    def _no_step(self, name: str, every: list[tuple[ModuleRecord, SetupLet]]) -> str:
+        """Why `hz setup <name>` has nothing to run, and which modules do have a step."""
+        having = f"Modules with one: {', '.join(record.qualname for record, _ in every) or 'none'}."
+        if not any(record.qualname == name for record in self.kernel.modules):
+            return f"No module is named {name!r}. {having}"
+        if any(owner.qualname == name for owner, _ in self.kernel.lets(SetupLet)):
+            return f"The setup step of {name!r} can't run: something it needs is missing (`hz system doctor`). {having}"
+        return f"Module {name!r} has no setup step. {having}"
 
     def _everything(self, plan: list[tuple[ModuleRecord, SetupLet]]) -> None:
         if not plan:

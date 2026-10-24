@@ -26,7 +26,6 @@ from heinzel.heads.cli._setup import (
     equivalent_commands,
     exit_code,
     is_configured,
-    step_of,
     steps,
     summary,
 )
@@ -108,8 +107,7 @@ def kernel(make_kernel, monkeypatch, tmp_path) -> Kernel:
 
 def test_builtins_come_first_then_the_others_by_name(kernel):
     assert [record.qualname for record, _ in steps(kernel)] == ["core", "greet", "vault"]
-    assert step_of(kernel, kernel.module("plain")) is None
-    assert step_of(kernel, kernel.module("vault")).required
+    assert {record.qualname: let for record, let in steps(kernel)}["vault"].required
 
 
 def test_a_step_needing_a_disabled_module_is_left_out(make_kernel, settings):
@@ -190,7 +188,7 @@ def test_a_configured_module_is_offered_a_change():
 
 def test_one_module_runs_without_the_skip_question(kernel):
     prompter = ScriptedPrompter(["Hi"])
-    plan = [(kernel.module("greet"), step_of(kernel, kernel.module("greet")))]
+    plan = [(record, let) for record, let in steps(kernel) if record.qualname == "greet"]
     assert Runner(kernel, prompter).run(plan, offer_skip=False)[0].outcome is Outcome.DONE
     assert prompter.transcript[-1] == "Greeting [Hello]: Hi"
 
