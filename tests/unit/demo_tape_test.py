@@ -38,7 +38,7 @@ def test_snippets_come_from_plugins_first_then_built_in_modules_each_sorted_by_p
     doctor = module(root, "src/heinzel/modules/system/doctor", 'Type "hz system doctor"\n')
     agent = module(root, "src/heinzel/modules/system/agent", 'Type "hz system agent"\n')
     zebra = module(root, "plugins/heinzel-zebra/src/heinzel_zebra", 'Type "hz zebra"\n')
-    clock = module(root, "packages/heinzel-clock/src/heinzel_clock", 'Type "hz clock"\n')
+    clock = module(root, "plugins/heinzel-clock/src/heinzel_clock", 'Type "hz clock"\n')
     assert demo_tape.snippets(root) == [clock, zebra, agent, doctor]
 
 
@@ -59,11 +59,11 @@ def test_a_snippet_lives_next_to_a_module(root):
 
 
 def test_assembling_hoists_requires_clears_between_snippets_and_holds_the_end(root):
-    module(root, "packages/heinzel-clock/src/heinzel_clock", '# Clock.\nRequire jq\nType "hz clock --json | jq"\n')
+    module(root, "plugins/heinzel-clock/src/heinzel_clock", '# Clock.\nRequire jq\nType "hz clock --json | jq"\n')
     module(root, "src/heinzel/modules/system", 'Require jq\nRequire hz\nType "hz system doctor"\n')
     lines = demo_tape.assemble(root).splitlines()
     assert lines[lines.index("Output demo.gif") + 2 : lines.index("Set Shell bash")] == ["Require hz", "Require jq", ""]
-    clock = lines.index("# --- packages/heinzel-clock/src/heinzel_clock ---")
+    clock = lines.index("# --- plugins/heinzel-clock/src/heinzel_clock ---")
     assert lines[clock + 1 : clock + 6] == [*demo_tape.CLEAR, 'Type "hz clock --json | jq"']
     assert lines.index("# --- src/heinzel/modules/system ---") > clock
     assert "# Clock." not in lines

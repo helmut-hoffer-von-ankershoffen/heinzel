@@ -2,6 +2,7 @@
 
 import shlex
 import shutil
+import tomllib
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -176,9 +177,10 @@ class ConfigService(ConfigEditor):
 
 
 def _parse_value(value: str) -> Any:  # noqa: ANN401 - any TOML value
+    # tomllib, not tomlkit: tomlkit hands back a plain bool for `true`, which has no `unwrap`.
     try:
-        return tomlkit.parse(f"value = {value}")["value"].unwrap()
-    except ParseError:
+        return tomllib.loads(f"value = {value}")["value"]
+    except tomllib.TOMLDecodeError:
         return value
 
 

@@ -94,7 +94,7 @@ head**, because modules stay head-agnostic, steps write through the existing ser
   required steps, already configured, failing steps, Ctrl-C and the console prompter.
 - `tests/integration/setup_test.py`: `hz setup` and `hz <module> setup` answered on stdin, the summary and doctor
   on the configuration just written, the refusal without a TTY, and that MCP and REST expose no setup.
-- `packages/heinzel-clock/tests/clock_test.py`: `hz clock setup` and the migration of the old settings shape.
+- `plugins/heinzel-clock/tests/clock_test.py`: `hz clock setup` and the migration of the old settings shape.
 - `tests/unit/public_api_test.py` snapshots the new names.
 
 ## More Information

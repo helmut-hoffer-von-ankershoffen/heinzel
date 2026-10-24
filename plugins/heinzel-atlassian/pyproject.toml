@@ -1,19 +1,19 @@
 [project]
-name = "heinzel-clock"
+name = "heinzel-atlassian"
 version = "0.2.0"
-description = "What time it is for everyone on the team: a Heinzelmännchen plugin."
+description = "Read Jira issues and Confluence pages: the tracker and documents capabilities."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = ["heinzel>=0.2.0"] # released together; the release process bumps the bound
 
 [project.urls]
-Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/packages/heinzel-clock"
+Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-atlassian"
 Changelog = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/CHANGELOG.md"
 Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
 
 [project.entry-points."heinzel.modules"]
-clock = "heinzel_clock"
+atlassian = "heinzel_atlassian"
 
 [build-system]
 requires = ["hatchling>=1.29.0"]

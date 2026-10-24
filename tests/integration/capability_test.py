@@ -191,7 +191,9 @@ def test_doctor_reports_unmet_requirements_and_unknown_bindings(make_kernel):
     checks = {check["name"]: check for check in report["checks"]["system.capability"]}
     assert checks["tracker:read for announcer"]["status"] == "degraded"
     assert checks["tracker:read for announcer"]["detail"] == "tracker:read: no adapter bound"
-    assert checks["tracker:read for announcer"]["fix"] == "Install a plugin that provides tracker."
+    assert checks["tracker:read for announcer"]["fix"] == (
+        "Find a plugin that provides tracker: hz system plugin search --text tracker"
+    )
     assert (
         checks["binding code-host"]["detail"] == "code-host is bound to 'nowhere', which no installed module provides"
     )

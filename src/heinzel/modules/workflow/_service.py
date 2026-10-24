@@ -608,19 +608,12 @@ class WorkflowService:
 
     def _fix(self, capability: str) -> str:
         """The command that serves `capability`: bind an installed adapter, or find a plugin that provides one."""
-        installed = self._installed(capability)
-        if not installed:
-            return f"hz system plugin search --text {capability}"
-        return f"hz system config set capabilities.{capability.replace('-', '_')} {installed[0]}"
+        return self._kernel.resolve(CapabilityView).command(capability)
 
     def _alternatives(self, status: RequirementStatus) -> str:
         """The other installed adapters a fix could name instead, for the step's explanation."""
-        others = self._installed(status.requirement.partition(":")[0])[1:]
+        others = self._kernel.resolve(CapabilityView).installed(status.requirement.partition(":")[0])[1:]
         return f" (or bind {', '.join(others)})" if others else ""
-
-    def _installed(self, capability: str) -> list[str]:
-        view = self._kernel.resolve(CapabilityView)
-        return sorted({a.let.adapter for a in view.adapters if a.let.capability == capability})
 
     # Drafts ----------------------------------------------------------------------------------------------------------
 

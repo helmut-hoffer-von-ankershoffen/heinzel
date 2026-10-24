@@ -27,8 +27,8 @@ This release is the foundation — kernel, heads, plugins and release automation
 
 - **Write an operation once, use it everywhere.** A typed Python function is a `hz` command, an MCP tool for coding
   agents and a REST endpoint at once — with help text, validation and `--json`.
-- **Extend it with plugins.** `hz system plugin add clock` adds a first-party plugin; `hz system plugin new` scaffolds
-  your own `heinzel-*` repository with tests, CI/CD and agent setup.
+- **Extend it with plugins.** `hz system plugin add github` adds a [first-party plugin](#first-party-plugins);
+  `hz system plugin new` scaffolds your own `heinzel-*` repository with tests, CI/CD and agent setup.
 - **Run it with confidence.** `hz system doctor` checks every module's health, `hz system config` manages layered
   settings, `hz system update` updates in place and keeps your plugins.
 
@@ -109,7 +109,7 @@ flowchart TB
     end
     subgraph Modules["Modules and plugins"]
         System["system<br/>(built-in)"]
-        Clock["clock<br/>(first-party)"]
+        Clock["clock · github · atlassian<br/>(first-party)"]
         Ext["heinzel-*<br/>(external)"]
     end
     CLI & MCP & REST & Daemon --> Core
@@ -125,7 +125,9 @@ or the MCP tools. Modules can also advertise jobs that
 rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)). Built in today:
 
 <!-- modules:start -->
+- [`atlassian`](docs/MODULES.md#atlassian) — Read Jira issues and Confluence pages: the tracker and documents capabilities. *First-party plugin: `hz system plugin add atlassian`.*
 - [`clock`](docs/MODULES.md#clock) — What time it is for everyone on the team. *First-party plugin: `hz system plugin add clock`.*
+- [`github`](docs/MODULES.md#github) — Read pull requests and issues from GitHub: the code-host and tracker capabilities. *First-party plugin: `hz system plugin add github`.*
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
 - [`system.capability`](docs/MODULES.md#systemcapability) — Show which adapters serve which capabilities, and who reads and writes what.
@@ -140,6 +142,21 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 <!-- modules:end -->
 
 Details for each, in every head: [docs/MODULES.md](docs/MODULES.md). Plugins add their own modules.
+
+### First-party plugins
+
+Maintained and released with the core, from [plugins/](plugins), at the same version; none is installed by default,
+so you only get the integrations you use. `hz system plugin add <name>` installs the one matching your `hz`, and
+`hz system plugin search` lists them first.
+
+| Plugin | What it does | Install |
+| --- | --- | --- |
+| [heinzel-clock](plugins/heinzel-clock) | What time it is for everyone on the team | `hz system plugin add clock` |
+| [heinzel-github](plugins/heinzel-github) | Pull requests and issues from GitHub: the `code-host` and `tracker` capabilities | `hz system plugin add github` |
+| [heinzel-atlassian](plugins/heinzel-atlassian) | Jira issues and Confluence pages: the `tracker` and `documents` capabilities | `hz system plugin add atlassian` |
+
+Google Workspace, Zoom and Slack adapters are planned as first-party plugins too. Community and company plugins live
+in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
 
 Workflows are Markdown files, not code: a `<name>.prose.md` contract in your workflows directory (or your team's
 state repository) names the capabilities it reads, the inputs to fetch and the agent's limits, and its body says what
@@ -211,7 +228,7 @@ and becomes `hz greet setup` and part of `hz setup`
 That is `hz greet hello --name Ada` in the CLI, with `--json`, help text, argument validation and
 `HZ_GREET__GREETING` — and the same operation is an MCP tool and a REST endpoint. Scaffold a plugin repository
 with all the tooling, CI/CD and agent setup: `hz system plugin new ../heinzel-mine`. A complete plugin to copy from:
-[packages/heinzel-clock](packages/heinzel-clock) (one module, settings, an operation, a health check and a setup step). See
+[plugins/heinzel-clock](plugins/heinzel-clock) (one module, settings, an operation, a health check and a setup step). See
 [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Contribute

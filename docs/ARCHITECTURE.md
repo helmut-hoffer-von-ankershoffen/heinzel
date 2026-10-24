@@ -18,7 +18,7 @@ flowchart LR
     subgraph Modules
         System["system (built-in)<br/>├ agent ├ changelog ├ config<br/>├ daemon └ doctor └ plugin"]
         Workflow["workflow (built-in)<br/>contracts → daemon jobs"]
-        Clock["clock<br/>(first-party plugin)"]
+        Clock["clock · github · atlassian<br/>(first-party plugins)"]
         Ext["heinzel-*<br/>(external plugins)"]
     end
     Discovery --> Registry
@@ -136,7 +136,10 @@ reinstalls the `uv tool` environment with `--with <spec>`, so plugins survive `u
 Every plugin, first-party or external, is named the same way
 ([ADR 0025](adr/0025-plugin-distributions-are-named-heinzel-name.md)): distribution and repository `heinzel-<name>`,
 root package `heinzel_<name>`, entry point `<name>` in the `heinzel.modules` group. `hz system plugin add <name>`
-resolves the name of a first-party plugin.
+resolves the name of a first-party plugin. First-party plugins (`plugins/`: clock and the GitHub and Atlassian
+adapters) are released with the core but never installed by default; the core imports none of them
+([ADR 0017](adr/0017-first-party-plugins-in-the-core-repository.md),
+[ADR 0028](adr/0028-integrations-are-capability-adapters.md)).
 
 ## Layering
 

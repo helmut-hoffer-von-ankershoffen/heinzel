@@ -358,16 +358,23 @@ class Capabilities:
             self._instances[key] = instance
         return self._instances[key]
 
-    def fix(self, capability: str) -> str:
-        """What to do so that `capability` is served: the binding to write, with the installed adapters."""
-        installed = sorted({adapter for (name, adapter) in self.adapters if name == capability})
+    def installed(self, capability: str) -> list[str]:
+        """The names of the installed adapters of `capability`, sorted."""
+        return sorted({adapter for (name, adapter) in self.adapters if name == capability})
+
+    def command(self, capability: str) -> str:
+        """The command line that serves `capability`: bind the first installed adapter, or find a plugin with one."""
+        installed = self.installed(capability)
         if not installed:
-            return f"Install a plugin that provides {capability}."
-        key = capability.replace("-", "_")
-        return (
-            f'Bind it in your user configuration: [{CAPABILITIES_SECTION}] {key} = "{installed[0]}" '
-            f"(installed: {', '.join(installed)})"
-        )
+            return f"hz system plugin search --text {capability}"
+        return f"hz system config set {CAPABILITIES_SECTION}.{capability.replace('-', '_')} {installed[0]}"
+
+    def fix(self, capability: str) -> str:
+        """What to do so that `capability` is served, ending with the command line that does it."""
+        installed = self.installed(capability)
+        if not installed:
+            return f"Find a plugin that provides {capability}: {self.command(capability)}"
+        return f"Bind an installed adapter ({', '.join(installed)}): {self.command(capability)}"
 
     @property
     def view(self) -> "CapabilityView":
@@ -419,6 +426,14 @@ class CapabilityView:
         adapter, problem = self._capabilities.adapter_for(requirement)
         return (adapter.let.adapter if adapter else None), problem
 
+    def installed(self, capability: str) -> list[str]:
+        """The names of the installed adapters of `capability`, sorted."""
+        return self._capabilities.installed(capability)
+
+    def command(self, capability: str) -> str:
+        """The command line that serves `capability`."""
+        return self._capabilities.command(capability)
+
     def fix(self, capability: str) -> str:
-        """What to do so that `capability` is served."""
+        """What to do so that `capability` is served, ending with the command line that does it."""
         return self._capabilities.fix(capability)

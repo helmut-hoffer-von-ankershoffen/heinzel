@@ -323,16 +323,16 @@ def test_the_view_says_which_adapter_would_serve_a_requirement_without_building_
 
 def test_an_unbound_capability_fails_with_the_binding_to_write(make_kernel):
     kernel = make_kernel(notes=notes_module(), digest=digest_module())
-    with pytest.raises(
-        HeinzelError,
-        match=r'no adapter bound. Bind it in your user configuration: \[capabilities\] documents = "notes"',
-    ):
+    fix = r"Bind an installed adapter \(notes\): hz system config set capabilities.documents notes$"
+    with pytest.raises(HeinzelError, match=rf"no adapter bound. {fix}"):
         run(kernel, "digest", "show")
 
 
 def test_a_binding_to_an_unknown_adapter_fails(make_kernel):
     kernel = make_kernel(digest=digest_module(), config=bind(documents="nowhere"))
-    with pytest.raises(HeinzelError, match=r"no installed module provides documents as 'nowhere'.*Install a plugin"):
+    with pytest.raises(
+        HeinzelError, match=r"provides documents as 'nowhere'.*: hz system plugin search --text documents$"
+    ):
         run(kernel, "digest", "show")
     assert ("documents", "nowhere") in kernel._capabilities.unknown_bindings()
 

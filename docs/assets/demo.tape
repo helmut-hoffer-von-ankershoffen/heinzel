@@ -47,7 +47,7 @@ Enter
 Wait
 Sleep 3s
 
-# --- packages/heinzel-clock/src/heinzel_clock ---
+# --- plugins/heinzel-clock/src/heinzel_clock ---
 Hide
 Type "clear"
 Enter

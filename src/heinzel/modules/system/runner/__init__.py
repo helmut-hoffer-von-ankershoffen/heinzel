@@ -7,8 +7,9 @@ import shutil
 
 from heinzel import Check, Module, Status
 from heinzel.kernel import CapabilityView
-from heinzel.modules.system.runner._claude import HOSTS, ClaudeCodeRunner
-from heinzel.modules.system.runner._command import CommandRunner
+from heinzel.modules.system.runner._claude import BIND_COMMAND_RUNNER, HOSTS, ClaudeCodeRunner
+from heinzel.modules.system.runner._claude import DOCS as CLAUDE_CODE_DOCS
+from heinzel.modules.system.runner._command import SET_COMMAND, TRUST_COMMAND, CommandRunner
 from heinzel.modules.system.runner._models import RunnerSettings
 
 module = Module("runner", "Run bounded agent sessions with Claude Code or a configured command.")
@@ -32,7 +33,7 @@ def runner(capabilities: CapabilityView, settings: RunnerSettings) -> list[Check
                 name="claude-code",
                 status=Status.DEGRADED,
                 detail=f"{settings.claude_executable} is not on PATH",
-                fix='Install Claude Code, or bind another runner: [capabilities] agent_runner = "command"',
+                fix=f"Install Claude Code ({CLAUDE_CODE_DOCS}), or bind the command runner: {BIND_COMMAND_RUNNER}",
             )
         ]
     if bound == "command":
@@ -42,7 +43,7 @@ def runner(capabilities: CapabilityView, settings: RunnerSettings) -> list[Check
                     name="command",
                     status=Status.DEGRADED,
                     detail="no command is configured" if not settings.command else f"{settings.command[0]} not found",
-                    fix='Set [system.runner] command = ["mytool", "run", "--prompt", "{prompt_file}"]',
+                    fix=f"Set the agent CLI's command line, e.g.: {SET_COMMAND}",
                 )
             ]
         if not settings.command_enforces_read_only:
@@ -51,8 +52,7 @@ def runner(capabilities: CapabilityView, settings: RunnerSettings) -> list[Check
                     name="command",
                     status=Status.DEGRADED,
                     detail="it refuses to run: nothing records that the command restricts its agent to read-only tools",
-                    fix="Configure the command's own read-only mode, then set [system.runner] "
-                    "command_enforces_read_only = true in your user configuration",
+                    fix=f"Configure the command's own read-only mode, then record that it does: {TRUST_COMMAND}",
                 )
             ]
         return [Check(name="command", status=Status.UP, detail=" ".join(settings.command))]
