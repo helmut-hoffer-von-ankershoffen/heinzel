@@ -1,15 +1,18 @@
-"""`hz system update`: move the installation to the latest release, or say what it is pinned to and how to move it.
+"""`hz system update`: move the installation to the latest release or the newest commit, or say how to move it.
 
 uv keeps a git requirement at the ref it was installed from: `uv tool upgrade` leaves `heinzel @ git+…@v0.2.0` at
 v0.2.0 for good. So an installation pinned to a release tag is reinstalled from the tag of the highest release, with
 every plugin as the receipt has it (ADR 0006). A branch, a commit or a local source could mean anything, so nothing is
 guessed there: the result says what it is pinned to and which command moves it. An installation that follows a git
-repository's default branch or the package index is upgraded by uv, which moves both.
+repository's default branch or the package index is upgraded by uv, which moves both; one pinned to `main`, the
+default branch, is reinstalled from the same spec, which fetches its newest commit. No result suggests a release that
+is older than the installed version.
 """
 
 import re
 import shlex
 from collections.abc import Sequence
+from typing import Literal
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
@@ -19,6 +22,9 @@ from heinzel import HeinzelError, __version__
 from heinzel.kernel import CorePin, Installation, ReleaseSource
 from heinzel.modules.system._models import UpdateResult
 from heinzel.modules.system._service import DEFAULT_REPOSITORY, RELEASE_TIMEOUT
+
+DEFAULT_BRANCH = "main"
+"""The repository's default branch: a pin to it is kept in place, the way an install without a ref is."""
 
 PLACEHOLDER_TAG = "vX.Y.Z"
 """Stands in for the latest release tag in a suggested command when the package source couldn't be asked."""
@@ -45,8 +51,14 @@ class UpdateService:
         self._installation = installation
         self._releases = releases
 
-    def update(self, source: str | None = None, current: str = __version__) -> UpdateResult:
+    def update(
+        self, source: str | None = None, current: str = __version__, channel: Literal["release", "main"] = "release"
+    ) -> UpdateResult:
         """Update to the latest release, or reinstall from `source`; `current` is the version running now.
+
+        `channel` is where the installation follows: the releases (a pin to the newest release tag, which every later
+        update follows; an installation on `main` moves there once a release is as new as it, never as a downgrade) or
+        `main` (its newest commit).
 
         Raises:
             HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, the latest release can't be
@@ -60,14 +72,50 @@ class UpdateService:
         if source is not None:
             command = self._installation.tool_install_command(source, plugins)
             return self._install(command, pin, plugins, current=current, latest=None, target=source)
-        match pin.kind:
-            case "release":
-                return self._to_latest_release(pin, plugins, current)
-            case "default" | "index":
-                command = self._installation.upgrade_command()
-                return self._install(command, pin, plugins, current=current, latest=None, target=None)
-            case _:
-                return self._pinned(pin, current)
+        if channel == "main":
+            command = self._installation.tool_install_command(self._at(pin, DEFAULT_BRANCH), plugins)
+            result = self._install(command, pin, plugins, current=current, latest=None, target=None, channel="main")
+            return self._with_release_hint(pin, result)
+        if pin.kind == "release":
+            return self._to_latest_release(pin, plugins, current)
+        if pin.kind == "ref" and pin.ref == DEFAULT_BRANCH:
+            return self._switch_to_releases(pin, plugins, current)
+        if pin.kind in ("default", "index"):
+            command = self._installation.upgrade_command()
+            return self._install(command, pin, plugins, current=current, latest=None, target=None)
+        return self._pinned(pin, current)
+
+    @staticmethod
+    def _at(pin: CorePin, ref: str) -> str:
+        """The requirement at `ref`, of the default repository if the installation isn't from git."""
+        if pin.git is not None:
+            return pin.at(ref)
+        return f"{pin.name} @ git+https://github.com/{DEFAULT_REPOSITORY}@{ref}"
+
+    def _switch_to_releases(self, pin: CorePin, plugins: list[str], current: str) -> UpdateResult:
+        """Reinstall from the newest release's tag, unless that is a downgrade.
+
+        Raises:
+            HeinzelError: If the latest release can't be asked for.
+        """
+        try:
+            latest = self._latest(current)
+        # Isolation boundary: whatever the package source raises, the user gets one error with what to do.
+        except Exception as exc:
+            msg = f"Could not ask for the latest release ({exc}); hz {current} stays at {pin.ref}."
+            raise HeinzelError(msg) from exc
+        if Version(latest) < _version(current):
+            message = (
+                f"hz {current} (main) is ahead of the latest release, {latest}; it moves to releases with the next "
+                "release.\nTo stay on main: hz system update --channel main"
+            )
+            return UpdateResult(
+                before=current, after=current, latest=latest, pinned_to=pin.ref, updated=False, message=message, next=[]
+            )
+        command = self._installation.tool_install_command(self._at(pin, f"v{latest}"), plugins)
+        return self._install(
+            command, pin, plugins, current=current, latest=latest, target=f"v{latest}", channel="releases"
+        )
 
     def _to_latest_release(self, pin: CorePin, plugins: list[str], current: str) -> UpdateResult:
         try:
@@ -81,46 +129,59 @@ class UpdateService:
             )
             raise HeinzelError(msg) from exc
         if Version(latest) <= _version(current):
-            newer = Version(latest) < _version(current)
-            message = f"hz {current} is newer than the latest release, {latest}" if newer else ""
             return UpdateResult(
                 before=current,
                 after=current,
                 latest=latest,
                 pinned_to=pin.ref,
                 updated=False,
-                message=message or f"hz {current} is the latest release",
+                message=f"hz {current} is up to date (releases).",
                 next=[],
             )
         command = self._installation.tool_install_command(pin.at(f"v{latest}"), plugins)
         return self._install(command, pin, plugins, current=current, latest=latest, target=f"v{latest}")
 
+    def _release_hint(self, pin: CorePin, after: str) -> tuple[str | None, str | None]:
+        """The newest release, and the command that moves to it, if it is newer than `after`; else None for both."""
+        try:
+            latest = self._latest(after)
+        except Exception:  # noqa: BLE001 - isolation boundary: without the latest release there is nothing to suggest
+            return None, None
+        if Version(latest) <= _version(after):
+            return latest, None
+        release = (
+            f"git+https://github.com/{DEFAULT_REPOSITORY}@v{latest}" if pin.git is None else pin.source_at(f"v{latest}")
+        )
+        return latest, f"hz system update --source {shlex.quote(release)}"
+
+    def _with_release_hint(self, pin: CorePin, result: UpdateResult) -> UpdateResult:
+        """`result` of an in-place update, with a line about a release newer than what is installed now."""
+        latest, command = self._release_hint(pin, result.after)
+        if command is None:
+            return result.model_copy(update={"latest": latest})
+        message = f"{result.message}\nA release newer than this build exists: run {command} to switch to releases."
+        return result.model_copy(update={"latest": latest, "message": message, "next": [command]})
+
     def _pinned(self, pin: CorePin, current: str) -> UpdateResult:
         """Say what the installation is pinned to and which commands move it; change nothing."""
-        try:
-            latest: str | None = self._latest(current)
-        except Exception:  # noqa: BLE001 - isolation boundary: without the latest release the command has a placeholder
-            latest = None
-        tag = f"v{latest}" if latest else PLACEHOLDER_TAG
-        release = f"git+https://github.com/{DEFAULT_REPOSITORY}@{tag}" if pin.git is None else pin.source_at(tag)
-        to_release = f"hz system update --source {shlex.quote(release)}"
+        latest, to_release = self._release_hint(pin, current)
+        commands = [to_release] if to_release else []
         what = f"the latest release ({latest})" if latest else "a release"
-        commands = [to_release] if latest else []  # a placeholder command would only fail
         match pin.kind:
             case "commit":
-                message = f"Pinned to commit {pin.ref}; to update to {what} run: {to_release}"
+                message = f"Pinned to commit {pin.ref}."
+                if to_release:
+                    message += f" To update to {what} run: {to_release}"
             case "ref":
                 to_ref = f"hz system update --source {shlex.quote(pin.source_at(str(pin.ref)))}"
                 commands.append(to_ref)
-                message = (
-                    f"Pinned to {pin.ref}; to update to {what} run: {to_release}\n"
-                    f"To get the newest commit on {pin.ref} instead: {to_ref}"
-                )
+                message = f"Pinned to {pin.ref}; to get its newest commit run: {to_ref}"
+                if to_release:
+                    message += f"\nA release newer than this build exists: run {to_release} to switch to releases."
             case _:  # a local directory or file, or a URL
-                message = (
-                    f"Installed from {pin.ref}; to update, run hz system update --source with a newer build, "
-                    f"or move to {what}: {to_release}"
-                )
+                message = f"Installed from {pin.ref}; to update, run hz system update --source with a newer build."
+                if to_release:
+                    message += f"\nA release newer than this build exists: run {to_release} to switch to releases."
         return UpdateResult(
             before=current,
             after=current,
@@ -140,6 +201,7 @@ class UpdateService:
         current: str,
         latest: str | None,
         target: str | None,
+        channel: str | None = None,
     ) -> UpdateResult:
         """Run `command`; on failure name the plugins that block it and make sure the previous hz still works.
 
@@ -157,12 +219,12 @@ class UpdateService:
             msg = f"{installed}, but hz doesn't start.\n{self._still_working(pin, plugins, current)}"
             raise HeinzelError(msg) from exc
         now = self._installation.core_pin()
-        if target is None and after == current:  # `uv tool upgrade` found nothing newer
-            message = f"hz {current} is the newest from {pin.git or 'the package index'}"
+        if target is None and after == current:  # nothing newer where the installation follows
+            message = f"hz {current} is up to date{f' ({channel})' if channel else ''}."
         elif after == current:
             message = f"Reinstalled hz {current} from {target}"
         else:
-            message = f"Updated hz {current} → {after}"
+            message = f"Updated hz {current} → {after}."
         return UpdateResult(
             before=current,
             after=after,
