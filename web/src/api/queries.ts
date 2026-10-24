@@ -119,10 +119,15 @@ export const useNotices = () =>
 export const useTestNotice = () => {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: () => unwrap(api.POST("/system/notify/test")),
+    // Native too, as a person pressed the button: the answer says how each way of reaching you stands.
+    mutationFn: () => unwrap(api.POST("/system/notify/test", { params: { query: { native: true } } })),
     onSettled: () => client.invalidateQueries({ queryKey: ["system", "notify", "list"] }),
   });
 };
+
+/** `hz system notify settings`: System Settings > Notifications opens on the machine hz runs on. */
+export const useOpenNotificationSettings = () =>
+  useMutation({ mutationFn: () => unwrap(api.POST("/system/notify/settings")) });
 
 /** `hz system capability list`: which adapter serves which capability (`[capabilities]`), for the Connectors page. */
 export const useCapabilities = () =>

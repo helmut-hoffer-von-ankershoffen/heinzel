@@ -11,7 +11,15 @@ from typing import Annotated
 from pydantic import Field
 
 from heinzel import Check, Module, Notifications
-from heinzel.modules.system.notify._models import Delivered, Installed, NoticeList, NotifySettings, Tested
+from heinzel.modules.system.notify._models import (
+    Channel,
+    Delivered,
+    Installed,
+    NoticeList,
+    NotifySettings,
+    Opened,
+    Tested,
+)
 from heinzel.modules.system.notify._render import render_installed, render_list, render_tested
 from heinzel.modules.system.notify._service import NotifyService
 
@@ -65,16 +73,21 @@ def ack(
 
 # A test may pop up a native notification and let macOS ask whether to allow it: that's for a person at the screen
 # (the CLI, the web app's button), not for an agent over MCP.
-@module.operation(name="test", read_only=False, render=render_tested, heads={"cli", "web"})
+def _tested_exit_code(result: Tested) -> int:
+    return 0 if result.pops_up else 1
+
+
+@module.operation(name="test", read_only=False, render=render_tested, exit_code=_tested_exit_code, heads={"cli", "web"})
 def send_test(
     service: NotifyService,
     native: Annotated[
         bool, Field(description="Pop it up through the native notifier now too, as the web app's test button does.")
     ] = False,
 ) -> Tested:
-    """Record an urgent test notice, which the open web app or the next daemon tick pops up.
+    """Record an urgent test notice and say how each way of reaching you stands; exit 1 if nothing pops it up.
 
-    `hz system notify install` pops one up at once, through the native notifier only.
+    The open web app or the next daemon tick pops it up; `hz system notify install` pops one up at once, through the
+    native notifier only.
 
     Raises:
         HeinzelError: If notifications are off, or quiet mode keeps it from popping up.
@@ -89,10 +102,27 @@ def install(service: NotifyService) -> Installed:
     return service.install()
 
 
+# Opens a window on the machine hz runs on, for the person who clicked: the CLI and the web app, not agents.
+@module.operation(name="settings", read_only=False, heads={"cli", "web"})
+def open_settings(service: NotifyService) -> Opened:
+    """Open the system's notification settings (macOS: System Settings > Notifications) to allow hz's pop-ups."""
+    return service.open_settings()
+
+
 @module.health
 def health(service: NotifyService) -> list[Check]:
     """How notices reach you: the web app, the daemon's native notifier, or neither."""
     return service.health()
 
 
-__all__ = ["Delivered", "Installed", "NoticeList", "NotifyService", "NotifySettings", "Tested", "module"]
+__all__ = [
+    "Channel",
+    "Delivered",
+    "Installed",
+    "NoticeList",
+    "NotifyService",
+    "NotifySettings",
+    "Opened",
+    "Tested",
+    "module",
+]
