@@ -61,7 +61,8 @@ def pyproject() -> str:
     dev = source[source.index("[dependency-groups]") : source.index("[build-system]")]
     # Only Heinzelmännchen itself needs these: the template renderer, its import contracts, its first-party plugin and
     # the type stubs of its own dependencies.
-    dev = re.sub(r'\n    "(copier|import-linter|heinzel-clock|types-croniter)[^\n]*', "", dev)
+    dev = re.sub(r'\n    "(copier|import-linter|heinzel-[a-z]+>=|types-croniter)[^\n]*', "", dev)
+    dev = re.sub(r"\n    # The first-party plugins[^\n]*\n    #[^\n]*", "", dev)
     # Fuzzing targets Heinzelmännchen's contract parser (fuzz/).
     dev = re.sub(r"\n# Fuzzing[^\n]*\nfuzz = [^\n]*", "", dev)
     # The Heinzelmännchen the plugin is developed against: a direct URL in the test group, never in
@@ -76,12 +77,12 @@ def pyproject() -> str:
     tools = re.sub(r'\n"fuzz/\*\.py" = \[\n[^\]]*\]', "", tools)
     tools = re.sub(r'\n\[\[tool\.mypy\.overrides\]\]\nmodule = \["atheris"\][^\n]*\n[^\n]*\n', "", tools)
     tools = re.sub(r"\n\[tool\.importlinter\].*?(?=\n\[tool\.(?!importlinter)|\Z)", "\n", tools, flags=re.DOTALL)
-    tools = tools.replace('source = ["heinzel", "heinzel_clock"]', 'source = ["[[ package_name ]]"]')
-    # The workspace (packages/) exists only here.
+    tools = re.sub(r'source = \["heinzel"(, "heinzel_\w+")*\]', 'source = ["[[ package_name ]]"]', tools)
+    # The workspace (plugins/) exists only here.
     tools = re.sub(r"\nmypy_path = [^\n]*", "", tools)
-    tools = tools.replace('files = ["src", "packages/*/src"]', 'files = ["src"]')
-    tools = tools.replace('include = ["src", "packages/*/src"]', 'include = ["src"]')
-    tools = tools.replace('testpaths = ["tests", "packages"]', 'testpaths = ["tests"]')
+    tools = tools.replace('files = ["src", "plugins/*/src"]', 'files = ["src"]')
+    tools = tools.replace('include = ["src", "plugins/*/src"]', 'include = ["src"]')
+    tools = tools.replace('testpaths = ["tests", "plugins"]', 'testpaths = ["tests"]')
     # A new plugin starts at 0.0.0, like its [project] version, not at Heinzelmännchen's version.
     tools = re.sub(r'(\[tool\.bumpversion\]\ncurrent_version = )"[^"]*"', r'\1"0.0.0"', tools)
     start, end = tools.index("[[tool.bumpversion.files]]"), tools.index("[tool.git-cliff.remote.github]")

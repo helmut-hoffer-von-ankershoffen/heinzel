@@ -12,7 +12,9 @@ from pathlib import Path
 from types import ModuleType
 from typing import get_origin
 
+import heinzel_atlassian
 import heinzel_clock
+import heinzel_github
 import pytest
 from packaging.requirements import Requirement
 
@@ -23,7 +25,7 @@ pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
 TEMPLATE = REPO / "template"
-CODE = [*REPO.glob("src/**/*.py"), *REPO.glob("packages/*/src/**/*.py"), *REPO.glob("scripts/*.py"),
+CODE = [*REPO.glob("src/**/*.py"), *REPO.glob("plugins/*/src/**/*.py"), *REPO.glob("scripts/*.py"),
         *REPO.glob("tests/**/*.py"), *REPO.glob(".claude/hooks/*.py"),
         *REPO.glob("template/**/*.py"), *REPO.glob("template/**/*.py.jinja")]  # fmt: skip
 BLOCKING = {"run", "check_call", "check_output", "call"}
@@ -199,7 +201,9 @@ def test_finds_env_names_and_reads():
 def test_tests_and_template_use_only_variables_something_reads(make_kernel):
     """A variable nothing reads isolates nothing: settings (`HZ_<FIELD>`, `HZ_<MODULE>__<FIELD>`) and the variables
     code reads by name (HZ_CONFIG, HZ_CONFIG_HOME, HZ_SOURCE in install.sh, HZ_SPEC in the template's e2e test)."""
-    kernel = make_kernel(builtins=True, clock=heinzel_clock.module)
+    kernel = make_kernel(
+        builtins=True, atlassian=heinzel_atlassian.module, clock=heinzel_clock.module, github=heinzel_github.module
+    )
     known = {
         f"{env_prefix(section)}{key.upper()}"
         for section, settings in kernel.settings_of()
@@ -250,7 +254,7 @@ def test_claude_md_names_every_bash_guard_rule(root):
 LOWER_BOUNDS = {">=", ">", "==", "~=", "==="}
 PYPROJECTS = [
     REPO / "pyproject.toml",
-    *sorted(REPO.glob("packages/*/pyproject.toml")),
+    *sorted(REPO.glob("plugins/*/pyproject.toml")),
     TEMPLATE / "pyproject.toml.jinja",
 ]
 
@@ -285,7 +289,7 @@ def test_every_dependency_has_a_lower_bound(pyproject):
 
 # Modules return results and heads present them: a module writing to the terminal breaks MCP and REST.
 
-MODULE_CODE = [*REPO.glob("src/heinzel/modules/**/*.py"), *REPO.glob("packages/*/src/**/*.py")]
+MODULE_CODE = [*REPO.glob("src/heinzel/modules/**/*.py"), *REPO.glob("plugins/*/src/**/*.py")]
 
 
 def terminal_writes(source: str) -> list[int]:
@@ -346,7 +350,17 @@ def test_finds_injected_parameters_after_exposed_ones(make_kernel):
 
 def test_injected_parameters_come_first(make_kernel):
     """Reading a signature, the dependencies come first and the interface follows, in every module and plugin."""
-    assert injected_after_exposed(make_kernel(builtins=True, clock=heinzel_clock.module)) == []
+    assert (
+        injected_after_exposed(
+            make_kernel(
+                builtins=True,
+                atlassian=heinzel_atlassian.module,
+                clock=heinzel_clock.module,
+                github=heinzel_github.module,
+            )
+        )
+        == []
+    )
 
 
 # Makefiles: every target is documented in `make help` and phony; Markdown names only targets that exist.

@@ -12,13 +12,13 @@ related: 0007, 0017
 
 [ADR 0016](0016-name-heinzelmaennchen.md) named plugins `heinzel-plugin-*`. [ADR 0017](0017-first-party-plugins-in-the-core-repository.md)
 then named first-party plugins `heinzel-<name>` (`heinzel-clock`, `heinzel-atlassian`), so the repository had two
-conventions: one for plugins in `packages/` and one for plugins scaffolded from `template/`. A plugin promoted from
-its own repository into `packages/` would have to be renamed, which breaks every install URL and receipt that names
+conventions: one for plugins in `plugins/` and one for plugins scaffolded from `template/`. A plugin promoted from
+its own repository into `plugins/` would have to be renamed, which breaks every install URL and receipt that names
 it. Which name does a plugin distribution get?
 
 ## Decision Drivers
 
-- One convention for every plugin, so promoting an external plugin into `packages/` changes nothing for its users.
+- One convention for every plugin, so promoting an external plugin into `plugins/` changes nothing for its users.
 - Short names: distributions, repositories and `hz system plugin remove <distribution>` are typed.
 - The name a user types (`hz system plugin add clock`, `hz clock ...`) maps to the distribution without a lookup.
 
@@ -39,14 +39,14 @@ external plugins alike and promotion becomes a move, not a rename.
 - Root package: `heinzel_<name>`.
 - Entry point: `<name> = "heinzel_<name>"` in the `heinzel.modules` group; `<name>` is also the command group
   (`hz <name> ...`).
-- `hz system plugin add <name>` resolves a first-party name to `packages/heinzel-<name>` at the installed core
+- `hz system plugin add <name>` resolves a first-party name to `plugins/heinzel-<name>` at the installed core
   version (ADR 0017); anything else is a uv spec (git URL, path, package name).
 - The copier template defaults to `heinzel-<name>` / `heinzel_<name>`; the example plugin is `heinzel-example`.
 - This replaces the sentence "Plugins are `heinzel-plugin-*`" of ADR 0016; the rest of ADR 0016 stands.
 
 ### Consequences
 
-- Good: one convention; `packages/heinzel-<name>`, `heinzel_<name>`, `hz <name>` and the extra `heinzel[<name>]` line
+- Good: one convention; `plugins/heinzel-<name>`, `heinzel_<name>`, `hz <name>` and the extra `heinzel[<name>]` line
   up.
 - Bad: breaking for plugin authors who scaffolded with the old defaults. They rename the distribution and package,
   or keep the old name until their next major release; discovery reads the entry point group, not the name, so old
@@ -58,8 +58,8 @@ external plugins alike and promotion becomes a move, not a rename.
 
 - `tests/fixtures/heinzel-dummy` and `make template-test` (renders `heinzel-example` from the template) exercise the
   convention end to end.
-- `tests/unit/repository_test.py::test_first_party_plugins_match_the_packages_directory` keeps first-party names
-  equal to `packages/heinzel-<name>`.
+- `tests/unit/repository_test.py::test_first_party_plugins_match_the_plugins_directory` keeps first-party names
+  equal to `plugins/heinzel-<name>`.
 - Review: the copier defaults in `copier.yml` and the docs.
 
 ## More Information

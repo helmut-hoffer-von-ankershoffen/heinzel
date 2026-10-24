@@ -62,8 +62,8 @@ integration becomes a configuration change.
   - Calling a capability or mode that wasn't declared fails, at runtime and in a test.
 - **First adapters, planned for 0.2**: GitHub (code host, tracker), Atlassian (tracker, documents), Google Workspace
   (documents, calendar; spreadsheets and mail later), Zoom (meetings and transcripts) and Slack (chat). All five are
-  first-party plugins in `plugins/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md); the move from
-  `packages/` is in flight): maintainer's decision, 2026-10-24.
+  first-party plugins in `plugins/` ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md)): maintainer's
+  decision, 2026-10-24.
 
 ### Consequences
 
@@ -263,8 +263,29 @@ request (director's decisions, 2026-10-24):
   Only install plugins you trust ([SECURITY.md](../../SECURITY.md)).
 - **Not yet:** per-person and per-job binding overrides beyond the layered files, OAuth scopes and credentials per
   mode (adapters use `Credentials` as any module does), doctor checks that call adapters, plugin-defined
-  capabilities, the generic MCP adapter, and contract tests for adapters. No vendor adapter ships in core; the tests
-  use test-only adapters.
+  capabilities, the generic MCP adapter, and contract tests for adapters. No vendor adapter ships in the core
+  distribution (`src/heinzel`); its tests use test-only adapters.
+
+**First-party adapters (maintainer's decision, 2026-10-24).** Google Workspace, Zoom, GitHub, Atlassian and Slack
+adapters are first-party plugins, not separate repositories:
+
+- They live in `plugins/heinzel-<name>/` as uv workspace members ([ADR 0017](0017-first-party-plugins-in-the-core-repository.md)),
+  are versioned, tested and released with the core (same tag, changelog, CI, coverage gate; `publish.yml` builds,
+  attests and lists every package in the SBOM) and are installed with `hz system plugin add <name>`, which resolves
+  to `plugins/heinzel-<name>` at the installed core's release tag.
+- They are **not installed by default**: the `heinzel` distribution doesn't depend on them (like `heinzel-clock`, they
+  are only in the `test` dependency group, so the suite runs them), so users get only the integrations, hosts and
+  credential prompts they chose.
+- Vendor code stays out of `src/heinzel`: import-linter forbids the core from importing any first-party plugin and
+  any vendor client, and lets each adapter use only the public API (`heinzel`, `heinzel.kernel`), independent of
+  the other plugins.
+- Built: GitHub (`code-host`, `tracker`; [ADR 0033](0033-github-rest-api-over-urllib.md)) and Atlassian (`tracker`,
+  `documents`; [ADR 0034](0034-atlassian-cloud-rest-apis-over-urllib.md)), both moved from their own repositories at
+  their v0.1.0. Planned: Google Workspace, Zoom and Slack.
+- Separate repositories, scaffolded from `template/`, remain the model for community and company plugins (for
+  example `heinzel-example`).
+- The maintainer named the directory holding them `plugins/` ("it contains plugins"), with `heinzel-clock` moved there
+  too; install specs use `#subdirectory=plugins/heinzel-<name>`.
 
 - [ADR 0022](0022-embedded-workflows.md) describes `DocumentConnector` plugins (`heinzel-google`,
   `heinzel-atlassian`); under this ADR they are adapters of the documents and spreadsheets capabilities, and

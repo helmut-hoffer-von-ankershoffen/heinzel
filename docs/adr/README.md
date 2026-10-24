@@ -37,6 +37,8 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0030](0030-credentials-live-in-the-os-keychain.md) | Credentials live in the OS keychain behind a credentials service | accepted | 2026-10-24 |
 | [0031](0031-update-check.md) | The CLI checks for a newer release hourly, anonymously and in the background, and says so on stderr | accepted | 2026-10-24 |
 | [0032](0032-modules-declare-interactive-setup-steps.md) | Modules declare interactive setup steps; `hz setup` runs them all | proposed | 2026-10-24 |
+| [0033](0033-github-rest-api-over-urllib.md) | Read GitHub through its REST API with urllib; merged pull requests from the pulls list | accepted | 2026-10-24 |
+| [0034](0034-atlassian-cloud-rest-apis-over-urllib.md) | Read Jira and Confluence Cloud through their REST APIs with urllib, Basic auth and epoch-millisecond JQL | accepted | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -63,4 +65,4 @@ statuses and dates are unchanged. "Alternatives considered" became Considered Op
 Drivers, status annotations became `amends`/`amended-by` front matter, and each record gained a Confirmation that
 names the checks that exist in the repository. Where no alternatives were written down, the record says so instead
 of inventing them. Two factual corrections came with it: ADR 0004 names the pluggy hook `heinzel_lets` (renamed from
-`joy_lets`), and ADR 0017, already implemented with the clock plugin (`packages/heinzel-clock`), was accepted.
+`joy_lets`), and ADR 0017, already implemented with the clock plugin (`plugins/heinzel-clock`), was accepted.

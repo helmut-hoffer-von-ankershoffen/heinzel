@@ -6,7 +6,9 @@ modules; `hz system modules` lists what is installed.
 
 | Module | What it does |
 | --- | --- |
+| [`atlassian`](#atlassian) | Read Jira issues and Confluence pages: the tracker and documents capabilities. |
 | [`clock`](#clock) | What time it is for everyone on the team. |
+| [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
 | [`system.capability`](#systemcapability) | Show which adapters serve which capabilities, and who reads and writes what. |
@@ -18,6 +20,20 @@ modules; `hz system modules` lists what is installed.
 | [`system.plugin`](#systemplugin) | Find, add, remove, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
+
+## `atlassian`
+
+Read Jira issues and Confluence pages: the tracker and documents capabilities.
+
+First-party plugin `heinzel-atlassian`: `hz system plugin add atlassian`.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| Show this plugin's version, the Heinzelmännchen it runs on and the Atlassian site and APIs it uses. | `hz atlassian info` | `atlassian_info` | `GET /atlassian/info` |  |
+
+Settings: [`[atlassian]`](CONFIGURATION.md#atlassian).
+
+Health checks: reported by `hz system doctor`.
 
 ## `clock`
 
@@ -34,6 +50,20 @@ Settings: [`[clock]`](CONFIGURATION.md#clock).
 Health checks: reported by `hz system doctor`.
 
 Setup: `hz clock setup` (optional), also part of `hz setup`.
+
+## `github`
+
+Read pull requests and issues from GitHub: the code-host and tracker capabilities.
+
+First-party plugin `heinzel-github`: `hz system plugin add github`.
+
+| Operation | CLI | MCP tool | REST | Changes state |
+| --- | --- | --- | --- | --- |
+| Show this plugin's version, the Heinzelmännchen it runs on and the GitHub API it uses. | `hz github info` | `github_info` | `GET /github/info` |  |
+
+Settings: [`[github]`](CONFIGURATION.md#github).
+
+Health checks: reported by `hz system doctor`.
 
 ## `system`
 
