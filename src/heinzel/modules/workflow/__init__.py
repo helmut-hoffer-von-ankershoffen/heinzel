@@ -75,8 +75,9 @@ def list_(service: WorkflowService) -> ContractList:
     return service.listing()
 
 
-# A contract written through a web page could reach a local REST server; the CLI and MCP get it, like `run`. The
-# starter has no schedule, so even then nothing would run on the daemon by itself.
+# A contract written through a web page could reach a local REST server; the CLI and MCP get it, like `run`. Neither
+# the starter nor a template has an active schedule (templates with one are refused), so nothing written here runs on
+# the daemon by itself.
 @module.operation(read_only=False, render=render_new, heads={"cli", "mcp"})
 def new(
     service: WorkflowService,
@@ -101,7 +102,7 @@ def new(
         ),
     ] = None,
 ) -> NewContract:
-    """Write a starter contract, valid as written and commented, into your workflows directory; creates it."""
+    """Write a starter contract, or a playbook's template (--template), into your workflows directory."""
     return service.new(name, team=team, template=template, assets=_assets(asset or []))
 
 
@@ -113,11 +114,14 @@ def _assets(pairs: list[str]) -> dict[str, str]:
     """
     found: dict[str, str] = {}
     for pair in pairs:
-        key, sep, value = pair.partition("=")
+        key, sep, value = (part.strip() for part in pair.partition("="))
         if not sep or not key or not value:
             msg = f"--asset {pair!r} must read type=reference, e.g. weekly-report=doc-123"
             raise HeinzelError(msg)
-        found[key.strip()] = value.strip()
+        if key in found:
+            msg = f"--asset {key} is given twice; give each asset type once"
+            raise HeinzelError(msg)
+        found[key] = value
     return found
 
 

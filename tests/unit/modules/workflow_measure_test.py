@@ -1,12 +1,13 @@
 """Measuring drafts (`_measure`), recording what was sent (`WorkflowService.sent`) and the shipped templates."""
 
 import json
-from datetime import UTC, datetime
+import re
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from heinzel import AgentResult, Config, ContractTemplate, HeinzelError, Module, Settings
+from heinzel import AgentResult, Config, ContractTemplate, Document, HeinzelError, Module, Settings
 from heinzel.modules.workflow import WorkflowService, WorkflowSettings
 from heinzel.modules.workflow import _measure as measure
 from heinzel.modules.workflow._contracts import read_contract
@@ -88,17 +89,96 @@ class Runner:
         return AgentResult(runner="fake", status="completed", draft="one two three four", duration_seconds=1)
 
 
+class Docs:
+    """Approved versions in documents; some refs fail the way adapters do."""
+
+    def read(self, ref: str) -> Document:
+        if ref == "boom":
+            msg = "the vendor is down"
+            raise RuntimeError(msg)
+        if ref == "gone":
+            msg = "no document gone"
+            raise HeinzelError(msg)
+        text = "w " * (measure.MAX_SENT_BYTES // 2 + 1) if ref == "huge" else "one two three five"
+        return Document(ref=ref, title=ref, text=text)
+
+
+CLOCK = [NOW]
+
+
 @pytest.fixture
-def service(make_kernel, tmp_path) -> WorkflowService:
+def make_service(make_kernel, tmp_path):
     me = tmp_path / "me"
     me.mkdir()
     (me / "plain.prose.md").write_text(starter("plain"))
-    fakes = Module("fakes", "Test-only runner.")
-    fakes.provides("agent-runner", modes={"read"}, name="fake")(Runner)
-    config = Config(files=(), data={"capabilities": {"agent_runner": "fake"}, "workflow": {"user_dir": str(me)}})
-    kernel = make_kernel(builtins=True, fakes=fakes, config=config)
-    settings = Config(files=(), data={}).settings(Settings, "hz")
-    return WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings, clock=lambda: NOW)
+    CLOCK[:] = [NOW]
+
+    def build(capabilities: dict[str, str] | None = None) -> WorkflowService:
+        fakes = Module("fakes", "Test-only runner and documents.")
+        fakes.provides("agent-runner", modes={"read"}, name="fake")(Runner)
+        fakes.provides("documents", modes={"read"}, name="docs")(Docs)
+        bound = capabilities if capabilities is not None else {"agent_runner": "fake", "documents": "docs"}
+        config = Config(files=(), data={"capabilities": bound, "workflow": {"user_dir": str(me)}})
+        kernel = make_kernel(builtins=True, fakes=fakes, config=config)
+        settings = Config(files=(), data={}).settings(Settings, "hz")
+        return WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings, clock=lambda: CLOCK[0])
+
+    return build
+
+
+@pytest.fixture
+def service(make_service) -> WorkflowService:
+    return make_service()
+
+
+def test_sent_reads_the_approved_version_from_a_document(service):
+    service.run("plain")
+    result = service.sent("plain", ref="doc-1")
+    assert (result.sent, result.sent_words) == ("documents:doc-1", 4)
+    assert 0 < result.changed < 1
+
+
+@pytest.mark.parametrize(
+    ("ref", "problem"),
+    [
+        ("boom", "Can't read the document 'boom': RuntimeError: the vendor is down"),
+        ("gone", "no document gone"),
+        ("huge", "documents:huge is over 256 KiB"),
+    ],
+)
+def test_a_document_that_cant_be_read_records_nothing(service, ref, problem):
+    rendered = service.run("plain").rendered
+    assert rendered is not None
+    with pytest.raises(HeinzelError, match=re.escape(problem)):
+        service.sent("plain", ref=ref)
+    assert not measure.sent_path(rendered.draft).exists()
+
+
+def test_reading_a_document_needs_documents_bound(make_service):
+    service = make_service({"agent_runner": "fake"})
+    service.run("plain")
+    with pytest.raises(HeinzelError, match="documents"):
+        service.sent("plain", ref="doc-1")
+
+
+def test_sent_compares_with_the_newest_draft_and_show_lists_newest_first(service, tmp_path):
+    older = service.run("plain").rendered
+    CLOCK[0] = NOW + timedelta(days=7)
+    newer = service.run("plain").rendered
+    assert older is not None
+    assert newer is not None
+    sent = tmp_path / "sent.md"
+    sent.write_text("one two three five")
+    assert service.sent("plain", sent).draft == newer.draft
+    shown = service.show("plain").measurements
+    assert shown is not None
+    assert [r.draft for r in shown.recent] == [newer.draft, older.draft]
+    assert [r.changed is not None for r in shown.recent] == [True, False]
+
+
+def test_sent_for_an_unknown_contract_says_so(service, tmp_path):
+    with pytest.raises(HeinzelError, match="No contract 'nope'"):
+        service.sent("nope", tmp_path / "x.md")
 
 
 def test_sent_records_the_change_next_to_the_newest_draft(service, tmp_path):
@@ -107,7 +187,7 @@ def test_sent_records_the_change_next_to_the_newest_draft(service, tmp_path):
         service.sent("plain", tmp_path / "x.md")
     with pytest.raises(HeinzelError, match="a file you saved"):
         service.sent("plain")
-    with pytest.raises(HeinzelError, match="a file you saved"):
+    with pytest.raises(HeinzelError, match="not both"):
         service.sent("plain", tmp_path / "x.md", ref="doc")
     rendered = service.run("plain").rendered
     assert rendered is not None
@@ -136,7 +216,7 @@ def test_sent_refuses_what_isnt_a_small_regular_file(service, tmp_path):
         service.sent("plain", link)
     large = tmp_path / "large.md"
     large.write_bytes(b"x" * (measure.MAX_SENT_BYTES + 1))
-    with pytest.raises(HeinzelError, match="over 1024 KiB"):
+    with pytest.raises(HeinzelError, match="over 256 KiB"):
         service.sent("plain", large)
 
 

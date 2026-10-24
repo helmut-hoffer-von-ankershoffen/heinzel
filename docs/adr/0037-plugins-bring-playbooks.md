@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-10-24
 decision-makers: maintainer
-related: 0021, 0028, 0032
+related: 0021, 0026, 0028, 0032
 ---
 
 # 0037: Plugins bring playbooks: asset types with discovery hints, template contracts and recommended settings
@@ -46,26 +46,40 @@ them without the core knowing what they are about.
 
 - **Declaration.** `module.playbook(summary, assets=[AssetType(...)], templates=[Path | ContractTemplate],
   defaults={"<section>.<key>": value})` adds one `PlaybookLet` per module, named after it. Templates are
-  `*.prose.md` files (or directories of them) read at import. Everything is checked when declared: names are slugs,
-  a hint names a capability's read method (never `agent-runner`), windows parse, patterns compile, setting keys are
-  `<section>.<key>`, and every placeholder and `kept_by` names something the playbook declares.
+  `*.prose.md` files (or directories of them) read at import. The shape is checked when declared: names are slugs,
+  a hint names a capability's read method (never `agent-runner`), windows parse, patterns compile, every placeholder
+  and `kept_by` names something the playbook declares. A hint's arguments are checked when it runs, like a contract
+  input's, and a mismatch is reported as the playbook's mistake.
 - **Asset types and hints.** An `AssetType` has a name, a description, `DiscoveryHint`s and optionally `kept_by`, the
   template whose output keeps it true. A hint is a contract input's shape (`read`, `args`, `window`) plus `match`, a
   pattern on each returned item's `title`; a matching item's `ref`, `key`, `id` or `url` is the candidate's reference.
-- **Templates.** A `ContractTemplate` is a contract's text with `{{asset:<type>}}` placeholders in double-quoted
-  strings. `hz workflow new <name> --template <module>:<template> --asset <type>=<ref>` fills them, JSON-escaped, sets
-  the name, and refuses a template whose result `hz workflow check` would reject.
-- **Consumer.** The `workflow` module lists playbooks (`hz workflow playbooks`), runs hints (`hz workflow discover`,
-  CLI and MCP only) through `Kernel.handle_for` as a read-only job of itself that declared just that capability, and
-  provides the kernel's `PlaybookSetup` service. One failing hint is its own problem, with the command that fixes it.
+- **Templates.** A `ContractTemplate` is a contract's text with `{{asset:<type>}}` placeholders, which must sit in
+  double-quoted strings in the frontmatter (refused anywhere else: unquoted they could add keys, in the body they
+  would reach the agent's instructions). A template with an active `schedule` is refused: when a contract runs on the
+  daemon is the person's decision. `hz workflow new <name> --template <module>:<template> --asset <type>=<ref>` fills
+  the placeholders in one pass, each reference cleaned and JSON-escaped, sets the name in the frontmatter, and refuses
+  a result `hz workflow check` would reject. A placeholder left unfilled is an error (`HZC025`) until the person names
+  the asset, so the contract isn't ready.
+- **Consumer.** The built-in `workflow` module consumes the let: contracts are its concept (ADR 0021), and a
+  playbook is inert when it is disabled, because the setup step's `PlaybookSetup` is then unavailable. It lists
+  playbooks (`hz workflow playbooks`), runs hints (`hz workflow discover`, CLI and MCP only) and provides
+  `PlaybookSetup`. One failing hint is its own problem; an unbound capability is reported once, with its fix.
+- **Reads declared by data.** Hints, like contract inputs, are reads declared by data rather than code. They go
+  through `Kernel.handle_for` as a read-only job of `workflow` named `discover-<module>` that declares just that
+  capability; so does reading an approved version (`approved-version`). This widens the seam ADR 0021 describes from
+  "the compiling module's jobs" to "the compiling module's data-declared reads"; they get read modes only, never an
+  adapter pin, and, unlike scheduled contracts, don't appear in the capability matrix.
+- **Recommended settings.** Only capability bindings (never `agent_runner`) and the module's own `<module>.*`
+  settings: a playbook is data and can't recommend what runs code, what the agent may do, what it costs or where
+  contracts come from. Each is applied only on its own yes, through `ConfigEditor`; one that is refused is reported
+  and the others are still offered.
 - **Setup.** Unless `setup=False`, `module.playbook` declares the module's setup step: `hz <module> setup` and
-  `hz setup` show the recommended settings and write them through `ConfigEditor` only on yes, offer the candidates
-  for each asset type (or "fill it in later"), and write each template only when confirmed, under a name the person
-  may change; an existing contract is left alone. A module with its own step passes `setup=False` and asks for
-  `PlaybookSetup` in it.
-- **Success measure.** Each render records its drafting time; `hz workflow sent <name> --file <f>` or `--ref <doc>`
-  (the approved version where the asset lives, read through `documents`) records the share of words changed, both
-  word counts and a hash, never the text; `hz workflow show` reports both per draft. It is about drafts, never people.
+  `hz setup` offer each recommended setting, the candidates for each asset type (or "fill it in later"), and each
+  template, written only when confirmed under a name the person may change; an existing contract is left alone. A
+  module with its own step passes `setup=False` and asks for `PlaybookSetup` in it.
+- **The asset a contract keeps.** `kept_by` names the template whose output keeps an asset true. Drafts stay local
+  in this version; the success measure of ADR 0021 (`hz workflow sent --ref`) reads the approved version from where
+  the asset lives.
 
 ### Consequences
 
@@ -83,12 +97,12 @@ them without the core knowing what they are about.
 
 ### Confirmation
 
-- `tests/unit/kernel/playbooks_test.py`: every check at declaration, filling placeholders, reading template files,
-  the setup step `module.playbook` declares.
+- `tests/unit/kernel/playbooks_test.py`: every check at declaration (an active schedule, placeholders outside
+  double-quoted frontmatter strings, settings a playbook may not recommend), filling placeholders in one pass,
+  reading template files, the setup step `module.playbook` declares and its clash with a module's own step.
 - `tests/unit/modules/workflow_playbooks_test.py`: discovery (matches, references, the candidate cap, a failing
   adapter, arguments that don't fit, an unbound capability), template lookup, a template that fails its checks, the
   setup walk writing only what is accepted.
-- `tests/unit/modules/workflow_measure_test.py`: the diff ratio, records, `sent` and its refusals.
 - `tests/integration/playbook_test.py`: a test plugin with adapters, a weekly report playbook and defaults, end to end
   through the CLI: playbooks, discover, setup answered on stdin, new from the template, a dry run that costs nothing,
   the daemon drafting on Friday 17:00 in a pinned time zone with lineage, and the success measure in `show`.
@@ -100,6 +114,9 @@ them without the core knowing what they are about.
   Fridays by time saved and how much was changed). The weekly report playbook itself lives in a reference plugin.
 - Planned next: approval in place. The draft is written where the asset lives (this week's section of the rolling
   report document) with a draft tag; the person edits it and removes the tag to approve; hz reads the approver from
-  revision history and diffs draft against approved. `kept_by` and `sent --ref` are the seams for it.
-- Open: listing reads for `documents` (title patterns, folders) so hints can search; whether a playbook's defaults may
-  name keys a project `hz.toml` can't set (today they go through `ConfigEditor`, user scope, on yes only).
+  revision history and diffs draft against approved. `kept_by` and `sent --ref` are the seams for it; the contract
+  will need to record the asset it keeps (e.g. `hz.keeps: {weekly-report: "<ref>"}`, filled from the template), so
+  `sent` can read it without `--ref`.
+- Open: listing reads for `documents` (title patterns, folders) so hints can search; showing data-declared reads
+  (hints, approved versions) in the capability matrix.
+- Numbering: 0035 and 0036 are left for the records being written alongside this one (layers as plugins).

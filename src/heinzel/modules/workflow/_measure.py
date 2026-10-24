@@ -20,8 +20,10 @@ from pydantic import BaseModel, Field
 
 SENT_SUFFIX = ".sent.json"
 """What `hz workflow sent` recorded about a draft, next to it."""
-MAX_SENT_BYTES = 1024 * 1024
-"""A sent file larger than this is refused: a report is a few kilobytes, and the diff is quadratic in the worst case."""
+MAX_SENT_BYTES = 256 * 1024
+"""A sent text larger than this is refused: a report is a few kilobytes, and the diff is quadratic in the worst case."""
+MEASURED = 52
+"""How many of the newest drafts `hz workflow show` measures: a year of weekly ones."""
 RECENT = 8
 """How many of the newest drafts `hz workflow show` lists one by one."""
 _WORD = re.compile(r"\S+")

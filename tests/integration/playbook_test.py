@@ -214,15 +214,28 @@ def test_playbooks_list_asset_types_templates_and_recommended_settings(kernel):
 def test_discover_finds_candidates_through_what_you_can_read(make):
     code, found = hz(make(), "workflow", "discover")
     assert code == 0, found
-    assert [(c["asset"], c["ref"], c["title"]) for c in found["candidates"]] == [
-        ("teamwork:weekly-report", "doc-previous", "Team update, week 43"),
-        ("teamwork:team-tracker", "doc-tracker", "Team tracker"),
+    assert [(c["playbook"], c["asset"], c["ref"], c["title"]) for c in found["candidates"]] == [
+        ("teamwork", "weekly-report", "doc-previous", "Team update, week 43"),
+        ("teamwork", "team-tracker", "doc-tracker", "Team tracker"),
     ]
     assert found["problems"] == []
+    code, text = hz(make(), "workflow", "discover", json_output=False)
+    assert code == 0
+    assert "doc-previous" in str(text)
+    assert "--asset <type>=<reference>" in " ".join(str(text).split())
+
+
+def test_discover_says_once_how_to_bind_an_unbound_capability(make):
     code, found = hz(make({"agent_runner": "fake"}), "workflow", "discover")
     assert code == 0
-    assert [p["hint"] for p in found["problems"]] == ["documents.read"] * 3
+    assert [p["hint"] for p in found["problems"]] == ["documents.read"]
     assert "hz system config set capabilities.documents docs" in found["problems"][0]["problem"]
+    code, text = hz(make({"agent_runner": "fake"}), "workflow", "discover", json_output=False)
+    assert "No candidates found." in str(text)
+    assert "capabilities.documents" in "".join(str(text).split())
+
+
+def test_discover_names_an_unknown_playbook(make):
     code, text = hz(make(), "workflow", "discover", "--playbook", "nope", json_output=False)
     assert code == 1
     assert "No playbook 'nope'" in str(text)
@@ -232,7 +245,9 @@ def test_setup_applies_settings_only_on_yes_proposes_assets_and_writes_the_templ
     monkeypatch.setattr(_setup, "stdin_is_terminal", lambda: True)
     monkeypatch.chdir(tmp_path)
     answers = [
-        "",  # Apply them? [y/N]: no
+        "",  # Set capabilities.code_host = "host"? [y/N]: no
+        "",  # capabilities.tracker: no
+        "",  # capabilities.documents: no
         "1",  # which is your weekly-report: the only candidate
         "1",  # which is your team-tracker
         "",  # write the contract? yes
@@ -246,8 +261,9 @@ def test_setup_applies_settings_only_on_yes_proposes_assets_and_writes_the_templ
     assert 'args: {ref: "doc-previous"}' in contract
     assert 'args: {ref: "doc-tracker"}' in contract
     assert "{{asset:team-repository}}" in contract  # no hint: the person fills it in
-    assert hz(kernel, "workflow", "check")[1]["diagnostics"] == []
-    code, text = hz(kernel, "teamwork", "setup", json_output=False, stdin="y\n2\n2\n\n\n")
+    left = [(d["code"], d["field"]) for d in hz(kernel, "workflow", "check")[1]["diagnostics"]]
+    assert left == [("HZC025", "hz.inputs.merged.args.repository"), ("HZC025", "hz.inputs.issues.args.project")]
+    code, text = hz(kernel, "teamwork", "setup", json_output=False, stdin="y\ny\ny\n2\n2\n\n\n")
     assert code == 0, text
     assert tomllib.loads(config.read_text())["capabilities"] == {
         "code_host": "host",

@@ -190,7 +190,7 @@ Workflow contracts: Markdown files an agent drafts from, by hand or on your daem
 | Operation | CLI | MCP tool | REST | Changes state |
 | --- | --- | --- | --- | --- |
 | List the contracts in your and your team's workflows directories, with their schedule and problems. | `hz workflow list` | `workflow_list` | `GET /workflow/list` |  |
-| Write a starter contract, valid as written and commented, into your workflows directory; creates it. | `hz workflow new` | `workflow_new` | — | yes |
+| Write a starter contract, or a playbook's template (--template), into your workflows directory. | `hz workflow new` | `workflow_new` | — | yes |
 | List the playbooks plugins contribute: asset types, template contracts and recommended settings. | `hz workflow playbooks` | `workflow_playbooks` | `GET /workflow/playbooks` |  |
 | Find candidates for each playbook's asset types through the capabilities you have bound; reads only. | `hz workflow discover` | `workflow_discover` | — |  |
 | Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps. | `hz workflow show` | `workflow_show` | `GET /workflow/show` |  |

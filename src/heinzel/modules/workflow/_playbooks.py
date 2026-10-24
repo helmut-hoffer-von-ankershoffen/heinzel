@@ -7,7 +7,7 @@ on the adapters configuration binds and nothing else. One hint's failure is that
 
 import re
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, cast
 
 from pydantic import BaseModel, Field, JsonValue, ValidationError
@@ -81,7 +81,8 @@ class PlaybookList(BaseModel):
 class Candidate(BaseModel):
     """Something a hint found that may be an asset of its type."""
 
-    asset: str = Field(description="The asset type, `<module>:<name>`.")
+    playbook: str = Field(description="The module whose playbook's hint found it.")
+    asset: str = Field(description="The asset type, as `--asset <type>=<ref>` takes it.")
     ref: str = Field(description="Its reference, in the adapter's notation: what `--asset <type>=<ref>` takes.")
     title: str = Field(description="Its title.")
     url: str | None = Field(default=None, description="Where people open it, if it has a web address.")
@@ -91,7 +92,8 @@ class Candidate(BaseModel):
 class HintProblem(BaseModel):
     """A hint that couldn't run, and what to do about it."""
 
-    asset: str = Field(description="The asset type, `<module>:<name>`.")
+    playbook: str = Field(description="The module whose playbook's hint it is.")
+    asset: str = Field(description="The asset type.")
     hint: str = Field(description="The read method.")
     problem: str = Field(description="Why it couldn't run.")
 
@@ -99,6 +101,7 @@ class HintProblem(BaseModel):
 class Discovery(BaseModel):
     """`hz workflow discover`: candidates for each asset type, found through capabilities you can read."""
 
+    playbooks: list[str] = Field(description="The playbooks whose hints ran, by module.")
     candidates: list[Candidate] = Field(description="What the hints found, by asset type.")
     problems: list[HintProblem] = Field(description="Hints that couldn't run.")
     next: list[Step] = Field(description="What to do next, as commands.")
@@ -137,12 +140,7 @@ def listing(kernel: Kernel) -> PlaybookList:
     """Every playbook as `hz workflow playbooks` shows it."""
     views = [_view(qualname, playbook) for qualname, playbook in playbooks(kernel)]
     if not views:
-        steps = [
-            Step(
-                command="hz system plugin search --text playbook",
-                why="playbooks come with plugins: asset types, template contracts and recommended settings",
-            )
-        ]
+        steps = NO_PLAYBOOKS
     else:
         steps = [Step(command="hz workflow discover", why="find candidates for each asset type in what you can read")]
         with_setup = {record.qualname for record, _ in kernel.lets(SetupLet)}
@@ -206,13 +204,27 @@ def _shell_value(value: object) -> str:
     return "'" + toml_value(value).replace("'", "'\\''") + "'"
 
 
-def discover(kernel: Kernel, module: str, fix: Callable[[str], str], only: str | None = None) -> Discovery:
+NO_PLAYBOOKS = [
+    Step(
+        command="hz system plugin search --text playbook",
+        why="playbooks come with plugins: asset types, template contracts and recommended settings",
+    ),
+    Step(
+        command="hz system plugin new ../my-playbook",
+        why="or write your own: docs/PLAYBOOKS.md#writing-a-playbook says how",
+    ),
+]
+
+
+def discover(kernel: Kernel, module: str, clock: Callable[[], datetime], only: str | None = None) -> Discovery:
     """Run every hint of every playbook (or of `only`'s) through read-only handles and collect the candidates.
+
+    The same problem (an unbound capability, say) is reported once per playbook, not once per hint.
 
     Args:
         kernel: Hands out the handles.
         module: The qualified name of the workflow module, whose jobs may get handles on a requester's behalf.
-        fix: The command that serves a capability, for a hint whose capability isn't served.
+        clock: The current time; time windows end now.
         only: A playbook's module; every playbook's hints if None.
 
     Raises:
@@ -226,40 +238,56 @@ def discover(kernel: Kernel, module: str, fix: Callable[[str], str], only: str |
     problems: list[HintProblem] = []
     for qualname, playbook in chosen:
         for asset in playbook.assets:
-            label = f"{qualname}:{asset.name}"
             for hint in asset.hints:
                 try:
-                    candidates += _run(kernel, module, qualname, label, hint)
+                    candidates += _run(kernel, module, qualname, asset.name, hint, clock())
+                except _BadHintError as exc:
+                    why = f"{exc} This is the playbook's mistake: report it to the authors of {qualname}"
+                    problems.append(HintProblem(playbook=qualname, asset=asset.name, hint=hint.read, problem=why))
                 except HeinzelError as exc:
-                    capability = hint.read.partition(".")[0]
-                    problems.append(HintProblem(asset=label, hint=hint.read, problem=f"{exc} Fix: {fix(capability)}"))
+                    problem = clean_text(str(exc))
+                    if not any(p.playbook == qualname and p.problem == problem for p in problems):
+                        problems.append(
+                            HintProblem(playbook=qualname, asset=asset.name, hint=hint.read, problem=problem)
+                        )
                 except Exception as exc:  # noqa: BLE001 - isolation boundary: an adapter's failure is the hint's own
                     why = clean_text(f"{type(exc).__name__}: {exc}")
-                    problems.append(HintProblem(asset=label, hint=hint.read, problem=why))
-    steps = [
-        Step(command=t.command, why="write it; fill each asset with --asset <type>=<ref> from the candidates above")
-        for q, p in chosen
-        for t in _view(q, p).templates
-    ]
-    return Discovery(candidates=candidates, problems=problems, next=steps)
+                    problems.append(HintProblem(playbook=qualname, asset=asset.name, hint=hint.read, problem=why))
+    if not chosen:
+        steps = NO_PLAYBOOKS
+    else:
+        steps = [
+            Step(command=t.command, why="write it; fill each asset with --asset <type>=<ref> from the candidates")
+            for q, p in chosen
+            for t in _view(q, p).templates
+        ]
+    return Discovery(playbooks=[q for q, _ in chosen], candidates=candidates, problems=problems, next=steps)
 
 
-def _run(kernel: Kernel, module: str, playbook: str, label: str, hint: DiscoveryHint) -> list[Candidate]:
+class _BadHintError(HeinzelError):
+    """A hint whose arguments don't fit its read method: the playbook's mistake, not the person's."""
+
+
+def _run(  # noqa: PLR0913, PLR0917 - everything one hint's read needs
+    kernel: Kernel, module: str, playbook: str, asset: str, hint: DiscoveryHint, now: datetime
+) -> list[Candidate]:
     """The candidates one hint finds.
 
     Raises:
-        HeinzelError: If the hint's arguments don't fit its method, or its capability isn't served.
+        _BadHintError: If the hint's arguments don't fit its method.
+        HeinzelError: If its capability isn't served.
     """
     window = {"window": hint.window} if hint.window is not None else {}
     try:
         spec = Input.model_validate({"read": hint.read, "args": dict(hint.args), **window})
     except ValidationError as exc:
-        msg = f"the hint doesn't fit {hint.read}: {exc.errors()[0]['msg']}."
-        raise HeinzelError(msg) from exc
+        msg = f"The hint doesn't fit {hint.read}: {exc.errors()[0]['msg']}."
+        raise _BadHintError(msg) from exc
     requirement = Requirement.parse(f"{spec.capability}:read")
-    requester = Requester(module=module, kind="job", name=f"playbook-{playbook}", requires=(requirement,))
+    # A read declared by data, like a contract's inputs: a read-only job of the module that owns contracts (ADR 0037).
+    requester = Requester(module=module, kind="job", name=f"discover-{playbook}", requires=(requirement,))
     handle = kernel.handle_for(requester, spec.capability)
-    result: object = getattr(handle, spec.method)(**spec.arguments(datetime.now(UTC)))
+    result: object = getattr(handle, spec.method)(**spec.arguments(now))
     items = cast("list[object]", result) if isinstance(result, list) else [result]
     pattern = re.compile(hint.match) if hint.match is not None else None
     found: list[Candidate] = []
@@ -277,7 +305,8 @@ def _run(kernel: Kernel, module: str, playbook: str, label: str, hint: Discovery
         url = fields.get("url")
         found.append(
             Candidate(
-                asset=label,
+                playbook=playbook,
+                asset=asset,
                 ref=clean_text(ref),
                 title=title,
                 url=clean_text(url) if isinstance(url, str) else None,

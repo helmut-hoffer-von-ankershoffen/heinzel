@@ -494,6 +494,10 @@ class NewContract(BaseModel):
     file: Path = Field(description="The contract file written.")
     namespace: Namespace = Field(description="Where it was written: `me` or `team`.")
     name: str = Field(description="The contract's name.")
+    template: str | None = Field(default=None, description="The template it was written from, `<module>:<name>`.")
+    unfilled: list[str] = Field(
+        default_factory=list, description="Asset types whose `{{asset:<type>}}` placeholders are left to fill in."
+    )
     next: list[Step] = Field(description="What to do next, as commands.")
 
 

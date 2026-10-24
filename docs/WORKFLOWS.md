@@ -157,6 +157,7 @@ A pinned contract whose file changed doesn't run, and `hz system doctor` says so
 | `HZC013` | A `publishes` operation is read-only, so it can't publish |
 | `HZC023` | A key or section ADR 0021 names that this version doesn't build yet |
 | `HZC024` | A tool the bound runner doesn't accept as read-only (warning) |
+| `HZC025` | A playbook's `{{asset:<type>}}` placeholder is left in an input's arguments; name your asset there |
 | `HZC101`, `HZC107` | `### Goal` or `### Done when` missing or empty |
 | `HZC103` | The items under `### Requires` or `### Maintains` don't match `hz.inputs` or `hz.outputs` |
 | `HZC105` | An unknown section (warning: the agent sees it as part of the contract) |

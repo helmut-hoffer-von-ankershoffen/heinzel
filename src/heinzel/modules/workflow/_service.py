@@ -237,11 +237,22 @@ class WorkflowService:
         ]
 
     def _checked(self, contract: Contract) -> Contract:
-        """Add what only the kernel knows: publish operations, and tools the bound runner refuses."""
+        """Add what only the kernel knows: publish operations, tools the bound runner refuses, placeholders left."""
         if contract.frontmatter is None:
             return contract
         operations = self._operations()
-        problems: list[Diagnostic] = []
+        problems: list[Diagnostic] = [
+            _diagnostic(
+                contract,
+                PLACEHOLDER_LEFT,
+                ("hz", "inputs", name, "args", key),
+                f"{value!r} is a playbook's placeholder: name your {value[8:-2]} here",
+                "`hz workflow discover` finds candidates; or write the contract again with --asset <type>=<ref>",
+            )
+            for name, spec in contract.frontmatter.hz.inputs.items()
+            for key, value in spec.args.items()
+            if isinstance(value, str) and value.startswith("{{asset:") and value.endswith("}}")
+        ]
         for index, publish in enumerate(contract.frontmatter.hz.publishes):
             operation = operations.get(publish.action)
             where = ("hz", "publishes", index, "action")
@@ -341,6 +352,12 @@ class WorkflowService:
         """
         chosen = None if template is None else _playbooks.find_template(self._kernel, template)
         assets = assets or {}
+        if chosen is None and assets:
+            msg = (
+                "--asset fills a template's placeholders; add --template <module>:<name> "
+                "(`hz workflow playbooks` lists them)"
+            )
+            raise HeinzelError(msg)
         if chosen is not None and (unknown := sorted(set(assets) - set(chosen[1].placeholders()))):
             known = ", ".join(chosen[1].placeholders()) or "none"
             msg = f"{chosen[0]} has no placeholder for the asset {unknown[0]!r}; its assets: {known}"
@@ -373,17 +390,21 @@ class WorkflowService:
             raise HeinzelError(msg)
         text = starter(name) if chosen is None else from_template(chosen[1], name, assets)
         checked = self._checked(read_contract(path, namespace, text=text))
-        if problems := [d for d in checked.diagnostics if d.severity == "error" or chosen is None]:
-            source = "The starter contract" if chosen is None else f"The template {chosen[0]}"
-            msg = f"{source} doesn't pass its own checks; report it to its authors with:\n" + "\n".join(
+        refused = [d for d in checked.diagnostics if d.code != PLACEHOLDER_LEFT]  # those are left to fill in
+        if problems := [d for d in refused if d.severity == "error" or chosen is None]:
+            msg = f"{source_of(chosen)} doesn't pass its own checks; report it to its authors with:\n" + "\n".join(
                 map(str, problems)
             )
+            raise HeinzelError(msg)
+        if checked.frontmatter is not None and checked.frontmatter.hz.schedule is not None:  # the person decides
+            msg = f"{source_of(chosen)} has an active schedule; nothing is written. Report it to its authors"
             raise HeinzelError(msg)
         directory.mkdir(parents=True, exist_ok=True)
         _write(path, text, exclusive=True)
         qualified = f"{namespace}:{name}"
         steps = self._next_for_new(qualified, path, team)
-        if chosen is not None and (unfilled := [a for a in chosen[1].placeholders() if a not in assets]):
+        unfilled = [a for a in chosen[1].placeholders() if a not in assets] if chosen is not None else []
+        if unfilled:
             steps.insert(
                 0,
                 Step(
@@ -391,7 +412,14 @@ class WorkflowService:
                     why=f"candidates for {', '.join(unfilled)}; put their references where " + "{{asset:...}} is",
                 ),
             )
-        return NewContract(file=path, namespace=namespace, name=name, next=steps)
+        return NewContract(
+            file=path,
+            namespace=namespace,
+            name=name,
+            template=chosen[0] if chosen is not None else None,
+            unfilled=unfilled,
+            next=steps,
+        )
 
     def _next_for_new(self, qualified: str, path: Path, team: bool) -> list[Step]:
         steps = [
@@ -739,7 +767,7 @@ class WorkflowService:
         Raises:
             HeinzelError: If `playbook` names no playbook.
         """
-        return _playbooks.discover(self._kernel, MODULE, self._fix, playbook)
+        return _playbooks.discover(self._kernel, MODULE, self._clock, playbook)
 
     def setup(self, playbook: PlaybookLet, prompter: Prompter, editor: ConfigEditor) -> None:
         """Walk through `playbook`: accept its recommended settings, choose its assets, write its templates.
@@ -757,17 +785,20 @@ class WorkflowService:
             raise HeinzelError(msg)
         applied = False
         if playbook.defaults:
-            prompter.say("It recommends these settings:")
-            for key, value in playbook.defaults.items():
-                prompter.say(f"  {key} = {toml_value(value)}")
-            if applied := prompter.confirm("Apply them?", default=False):
-                for key, value in playbook.defaults.items():
-                    prompter.say(f"Saved {key} to {editor.write(key, value)}.")
+            prompter.say("It recommends these settings; each is applied only if you say yes:")
+        for key, value in playbook.defaults.items():
+            if not prompter.confirm(f"Set {key} = {toml_value(value)}?", default=False):
+                continue
+            try:
+                prompter.say(f"Saved {key} to {editor.write(key, value)}.")
+                applied = True
+            except (HeinzelError, ValueError) as exc:  # one refused setting doesn't stop the others
+                prompter.say(f"Not saved: {clean_text(str(exc))}")
         if playbook.templates:
             self._offer_templates(prompter, qualname, playbook, applied=applied)
 
     def _offer_templates(self, prompter: Prompter, qualname: str, playbook: PlaybookLet, *, applied: bool) -> None:
-        discovery = _playbooks.discover(self._kernel, MODULE, self._fix, qualname)
+        discovery = _playbooks.discover(self._kernel, MODULE, self._clock, qualname)
         for problem in discovery.problems:
             prompter.say(f"  {problem.asset}: {problem.hint} couldn't run: {problem.problem}")
         if discovery.problems and applied:  # settings written now count from the next command on
@@ -775,7 +806,7 @@ class WorkflowService:
         later = "none of these: fill it in later"
         assets: dict[str, str] = {}
         for asset in playbook.assets:
-            candidates = [c for c in discovery.candidates if c.asset == f"{qualname}:{asset.name}"]
+            candidates = [c for c in discovery.candidates if c.asset == asset.name]
             if not candidates:
                 continue
             labels = [f"{c.title} ({c.ref})" for c in candidates]
@@ -800,6 +831,7 @@ class WorkflowService:
         found = sorted(self._draft_files(self._drafts_of(contract)), key=lambda d: (d.created, d.draft), reverse=True)
         if not found:
             return None
+        found = found[: _measure.MEASURED]  # a year of weekly drafts; each record holds its whole packet
         return _measure.summary([_measure.measure(d.draft, d.created, d.record) for d in found])
 
     def sent(
@@ -821,10 +853,18 @@ class WorkflowService:
             HeinzelError: If not exactly one of `file` and `ref` is given, there is no such draft, `file` isn't a
                 readable regular file, the text is too large, or the document can't be read.
         """
-        if (file is None) == (ref is None):
+        if file is not None and ref is not None:
+            msg = "Give one of --file or --ref, not both"
+            raise HeinzelError(msg)
+        if file is None and ref is None:
             msg = "Say where the approved text is: a file you saved (--file) or a document reference (--ref)"
             raise HeinzelError(msg)
         drafts = self.drafts(name).drafts
+        if len(owners := sorted({d.contract for d in drafts})) > 1:
+            msg = f"{name!r} has drafts in more than one place: say {' or '.join(owners)}"
+            raise HeinzelError(msg)
+        if not drafts and draft is None:
+            self.find(name)  # says when there is no such contract at all
         if draft is not None:
             drafts = [d for d in drafts if d.draft.resolve() == draft.resolve()]
         if not drafts:
@@ -1094,6 +1134,15 @@ class WorkflowService:
             return draft, directory / f"{stem}.record.json"
         msg = f"Too many drafts of {contract.qualified} at {stamp} in {directory}"  # pragma: no cover - 999 per second
         raise HeinzelError(msg)  # pragma: no cover
+
+
+PLACEHOLDER_LEFT = "HZC025"
+"""A playbook's `{{asset:<type>}}` placeholder that nobody filled: an error, so the contract isn't ready."""
+
+
+def source_of(chosen: tuple[str, object] | None) -> str:
+    """How an error names what a contract was written from."""
+    return "The starter contract" if chosen is None else f"The template {chosen[0]}"
 
 
 def _name_problem(name: str) -> str | None:

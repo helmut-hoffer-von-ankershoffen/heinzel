@@ -3,9 +3,10 @@
 A playbook names the **asset types** a team keeps (a weekly report, a team tracker), how to find candidates for each
 (**discovery hints**: capability reads the person can already make, narrowed by a title pattern), **template
 contracts** that keep those assets true, and **recommended configuration**. It is data: the kernel checks its shape
-and collects it; the `workflow` module evaluates the hints, offers the templates (`hz workflow new --template`) and
-applies a recommended setting only when the person accepts it (`hz workflow setup`). Nothing in a playbook runs by
-itself: hints only read, templates have no active schedule until the person adds one, and defaults are proposals.
+and collects it; the module that owns contracts (the built-in `workflow`) evaluates the hints, offers the templates
+(`hz workflow new --template`) and applies a recommended setting only when the person accepts it (`hz <module> setup`,
+`hz setup`). Nothing in a playbook runs by itself: hints only read, a template can't carry an active schedule, and
+defaults are proposals limited to capability bindings and the module's own settings.
 """
 
 import json
@@ -21,6 +22,7 @@ from heinzel.kernel._config import ConfigEditor
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._lets import Let
 from heinzel.kernel._prompter import Prompter
+from heinzel.kernel._text import clean_text
 
 SLUG = re.compile(r"^[a-z](?:-?[a-z0-9])*$")
 """Asset type and template names: lowercase words joined by single dashes, like contract names."""
@@ -31,6 +33,9 @@ TEMPLATE_SUFFIX = ".prose.md"
 PLACEHOLDER = "{{asset:%s}}"
 """How a template contract marks where a found asset's reference goes, e.g. `{{asset:weekly-report}}`."""
 MAX_SLUG = 64
+_PLACEHOLDER = re.compile(r"\{\{asset:([a-z0-9-]+)\}\}")
+_QUOTED = re.compile(r'"[^"\n]*"')
+_SCHEDULE = re.compile(r"^\s*schedule\s*:", re.MULTILINE)
 
 
 def _slug(kind: str, name: str) -> None:
@@ -118,15 +123,33 @@ class ContractTemplate:
     text: str
 
     def __post_init__(self) -> None:
-        """Refuse a bad name or an empty text.
+        """Refuse a bad name, an empty text, an active schedule and placeholders outside double-quoted strings.
+
+        A schedule is the person's decision, never a plugin's: a template that had one would run on the daemon the
+        moment it is written. A placeholder belongs in a double-quoted YAML string in the frontmatter, where a filled
+        reference stays one string; anywhere else it could add keys or reach the agent's instructions.
 
         Raises:
-            ValueError: If the name isn't a slug or the text is empty.
+            ValueError: If the template breaks one of these rules.
         """
         _slug("Template", self.name)
         if not self.text.strip():
             msg = f"Template {self.name!r} is empty"
             raise ValueError(msg)
+        frontmatter, body = _split(self.text)
+        if _SCHEDULE.search(frontmatter):
+            msg = f"Template {self.name!r} has an active schedule; comment it out: the person decides when it runs"
+            raise ValueError(msg)
+        if _PLACEHOLDER.search(body):
+            msg = f"Template {self.name!r} has a placeholder outside the frontmatter; put them in its input arguments"
+            raise ValueError(msg)
+        for line in frontmatter.splitlines():
+            quoted = [m.span() for m in _QUOTED.finditer(line)]
+            for match in _PLACEHOLDER.finditer(line):
+                if not any(start < match.start() and match.end() < end for start, end in quoted):
+                    msg = f"Template {self.name!r}: put {match.group(0)} in a double-quoted string, e.g. ref: "
+                    msg += f'"{match.group(0)}"'
+                    raise ValueError(msg)
 
     @classmethod
     def from_file(cls, path: Path) -> "ContractTemplate":
@@ -144,18 +167,30 @@ class ContractTemplate:
     def fill(self, assets: Mapping[str, str]) -> str:
         """The text with the placeholders of `assets` replaced by their references; the others stay as they are.
 
-        A reference is inserted JSON-escaped: a placeholder belongs in a double-quoted YAML string, which stays one
-        string whatever the reference holds.
+        One pass, so a reference that looks like a placeholder stays as it is. A reference is cleaned (`clean_text`)
+        and inserted JSON-escaped into the double-quoted string its placeholder is in, which stays one string.
         """
-        text = self.text
-        for asset, ref in assets.items():
-            text = text.replace(PLACEHOLDER % asset, json.dumps(ref, ensure_ascii=False)[1:-1])
-        return text
+
+        def replace(match: re.Match[str]) -> str:
+            ref = assets.get(match.group(1))
+            return match.group(0) if ref is None else json.dumps(clean_text(ref), ensure_ascii=False)[1:-1]
+
+        return _PLACEHOLDER.sub(replace, self.text)
 
     def placeholders(self) -> list[str]:
         """The asset types its placeholders name, in order of first use."""
-        found = re.findall(r"\{\{asset:([a-z0-9-]+)\}\}", self.text)
-        return list(dict.fromkeys(found))
+        return list(dict.fromkeys(_PLACEHOLDER.findall(self.text)))
+
+
+def _split(text: str) -> tuple[str, str]:
+    """The frontmatter between the leading `---` lines and the rest; no frontmatter, everything is body."""
+    lines = text.splitlines(keepends=True)
+    if not lines or lines[0].strip() != "---":
+        return "", text
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return "".join(lines[1:index]), "".join(lines[index + 1 :])
+    return "".join(lines[1:]), ""
 
 
 def templates_in(paths: Iterable[Path | ContractTemplate]) -> tuple[ContractTemplate, ...]:
@@ -194,7 +229,9 @@ class PlaybookLet(Let):
     templates: tuple[ContractTemplate, ...] = ()
     defaults: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
     """Recommended settings by `<section>.<key>`, e.g. `{"capabilities.tracker": "github"}`; applied only on
-    acceptance, through the same validation as `hz system config set`."""
+    acceptance, through the same validation as `hz system config set`. Only capability bindings (never
+    `agent_runner`) and the module's own settings: a playbook is data and can't recommend what runs code, what the
+    agent may do, what it costs or where contracts come from."""
 
     def __post_init__(self) -> None:
         """Refuse an empty summary, duplicate asset types, setting keys that aren't keys and unknown placeholders.
@@ -212,6 +249,12 @@ class PlaybookLet(Let):
         if bad := [key for key in self.defaults if not SETTING.fullmatch(key)]:
             msg = f"Playbook {self.name!r}: {bad[0]!r} isn't a setting key such as capabilities.tracker"
             raise ValueError(msg)
+        if refused := [key for key in self.defaults if not self._may_recommend(key)]:
+            msg = (
+                f"Playbook {self.name!r} can't recommend {refused[0]!r}: only capability bindings other than "
+                f"agent_runner, and its own `{self.name}.*` settings"
+            )
+            raise ValueError(msg)
         templates = {t.name for t in self.templates}
         if kept := [a for a in self.assets if a.kept_by is not None and a.kept_by not in templates]:
             msg = f"Asset type {kept[0].name!r} of playbook {self.name!r} is kept by an unknown template "
@@ -225,9 +268,16 @@ class PlaybookLet(Let):
         object.__setattr__(self, "templates", tuple(self.templates))
         object.__setattr__(self, "defaults", MappingProxyType(dict(self.defaults)))
 
+    def _may_recommend(self, key: str) -> bool:
+        section, _, rest = key.partition(".")
+        if section == "capabilities":
+            capability = rest.replace("_", "-")
+            return capability in CAPABILITIES and capability != "agent-runner"
+        return section == self.name
+
 
 class PlaybookSetup:
-    """Runs a playbook's setup step: the service the module that consumes playbooks provides (`workflow` in the core).
+    """Runs a playbook's setup step: a service of the module that owns contracts (the built-in `workflow`).
 
     `Module.playbook` declares a setup step (ADR 0032) for its module that asks for this service by type, so
     `hz <module> setup` and `hz setup` walk through the playbook only when such a module is enabled.

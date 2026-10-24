@@ -100,7 +100,7 @@ def render_show(contract: CompiledContract) -> RenderableType:
     if contract.inputs or contract.outputs or contract.publishes:
         parts.append(_flows(contract))
     if contract.measurements is not None:
-        parts.append(_measurements(contract.measurements))
+        parts.append(_measurements(contract.measurements, f"{contract.namespace}:{contract.name}"))
     if contract.diagnostics:
         parts.append(_diagnostics(contract.diagnostics))
     parts.append(_next(contract.next))
@@ -139,7 +139,7 @@ def _flows(contract: CompiledContract) -> Table:
     return flows
 
 
-def _measurements(measurements: Measurements) -> RenderableType:
+def _measurements(measurements: Measurements, qualified: str) -> RenderableType:
     """The success test: per draft, how long drafting took, what it cost and how much was changed before sending."""
     table = Table(title="Success test: drafting time and how much was changed")
     for column in ("Drafted (UTC)", "Drafting", "Cost", "Changed", "Editing"):
@@ -159,7 +159,7 @@ def _measurements(measurements: Measurements) -> RenderableType:
     if measurements.mean_changed is not None:
         parts.append(f"{measurements.sent} sent, {measurements.mean_changed:.0%} of words changed on average")
     else:
-        parts.append("none sent yet: `hz workflow sent <name> --file <what you sent>` records it")
+        parts.append(f"none sent yet: `hz workflow sent {qualified} --file <what you sent>` records it")
     if measurements.total_edit_minutes is not None:
         parts.append(f"{measurements.total_edit_minutes:g} min editing in all")
     return Group(table, Text("; ".join(parts)))
@@ -190,9 +190,18 @@ def render_check(report: CheckReport) -> RenderableType:
 
 def render_new(result: NewContract) -> RenderableType:
     """Where the starter was written, and what to do with it."""
+    if result.template is None:
+        note = "Edit it: the comments say what each key and section is for. It is valid as written and has no schedule."
+    elif result.unfilled:
+        note = (
+            f"From {result.template}. Fill the placeholders left ({', '.join(result.unfilled)}) where it says "
+            "{{asset:...}}; `hz workflow check` lists them. It has no schedule until you add one."
+        )
+    else:
+        note = f"From {result.template}, with every asset filled in. It has no schedule until you add one."
     return Group(
         Text(f"Wrote {result.file}", style="bold"),
-        Text("Edit it: the comments say what each key and section is for. It is valid as written and has no schedule."),
+        Text(note),
         _next(result.next),
         Text(f"Guide: {GUIDE}"),
     )
@@ -242,18 +251,20 @@ def render_discovery(result: Discovery) -> RenderableType:
     """The candidates for each asset type, and hints that couldn't run."""
     parts: list[RenderableType] = []
     if result.candidates:
-        table = Table(title="Candidates")
-        for column in ("Asset type", "Reference", "Title", "Found by"):
+        table = Table(title="Candidates: fill a template with --asset <type>=<reference>")
+        for column in ("Playbook", "Type", "Reference", "Title"):
             table.add_column(column, overflow="fold")
         for candidate in result.candidates:
-            table.add_row(Text(candidate.asset), Text(candidate.ref), Text(candidate.title), Text(candidate.hint))
+            table.add_row(Text(candidate.playbook), Text(candidate.asset), Text(candidate.ref), Text(candidate.title))
         parts.append(table)
+    elif not result.playbooks:
+        parts.append(Text("No playbooks yet: plugins bring them.", style="bold"))
     else:
         parts.append(Text("No candidates found.", style="bold"))
     if result.problems:
         lines = Text()
         for problem in result.problems:
-            lines.append(f"{problem.asset} {problem.hint}: {problem.problem}\n", style="yellow")
+            lines.append(f"{problem.playbook} {problem.asset} ({problem.hint}): {problem.problem}\n", style="yellow")
         parts.append(lines)
     return Group(*parts, _next(result.next))
 

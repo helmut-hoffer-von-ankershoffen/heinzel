@@ -120,4 +120,9 @@ The team has a short, sourced note for the week.
 
 def from_template(template: ContractTemplate, name: str, assets: dict[str, str]) -> str:
     """A playbook's template contract as a contract named `name`, with the given assets' references filled in."""
-    return _NAME_LINE.sub(f"name: {name}", template.fill(assets), count=1)
+    text = template.fill(assets)
+    if not text.startswith("---"):
+        return text  # no frontmatter: `check` says so
+    end = text.find("\n---", 3)
+    head, tail = (text, "") if end < 0 else (text[:end], text[end:])
+    return _NAME_LINE.sub(f"name: {name}", head, count=1) + tail

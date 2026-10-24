@@ -17,17 +17,22 @@ hz system plugin search --text playbook     # find one; `hz system plugin add <n
 hz workflow playbooks                       # its asset types, templates and recommended settings
 ```
 
+No first-party plugin brings a playbook yet; to use one today, [write one](#writing-a-playbook) in your own plugin
+(`hz system plugin new`). Commands below name a playbook's templates as `<module>:<template>`, where `<module>` is
+the module `hz workflow playbooks` shows.
+
 The recommended settings are only proposals, each shown with the `hz system config set` command that applies it.
-They usually bind the capabilities its templates read to the adapters it brings or expects (`code-host`, `tracker`,
-`documents`); the vendor's CLI or API is the adapter's transport, set up as the adapter's README says.
+A playbook may recommend only capability bindings (`code-host`, `tracker`, `documents`, …, never the agent runner)
+and its own module's settings; the vendor's CLI or API is the adapter's transport, set up as the adapter's README
+says.
 
 ## 2. Set it up
 
 ```bash
-hz <plugin> setup     # or `hz setup`, which runs every module's step
+hz <module> setup     # or `hz setup`, which runs every module's step
 ```
 
-The step shows the recommended settings and applies them only if you say yes. It runs the playbook's hints through
+The step offers each recommended setting and applies it only if you say yes to it. It runs the playbook's hints through
 the capabilities you have bound (read only) and asks which candidate is your asset, or lets you fill it in later.
 Then it offers each template contract and writes it into your workflows directory under a name you choose; an
 existing contract is never overwritten. Settings you just applied count from the next command: run the step again
@@ -37,11 +42,12 @@ Without setup, or for an asset no hint finds:
 
 ```bash
 hz workflow discover                                                     # candidates, by asset type
-hz workflow new weekly-report --template <plugin>:weekly-report \
+hz workflow new weekly-report --template <module>:weekly-report \
   --asset weekly-report=<document ref> --asset team-project=APP         # fill the placeholders you know
 ```
 
-A placeholder you leave out stays as `{{asset:<type>}}` in the file; replace it there.
+A placeholder you leave out stays as `{{asset:<type>}}` in the file; replace it there. Until you do, the contract
+isn't ready, and `hz workflow check` lists each one left (`HZC025`). Templates never come with an active schedule.
 
 ## 3. Try it, draft it, schedule it
 
@@ -102,8 +108,11 @@ module.playbook(
 - A hint is a contract input's shape (`read`, `args`, `window`) plus `match`, a pattern on each item's title. Today's
   capability reads work within a known repository, project or document, so hints confirm and narrow; searching all
   documents by title or folder needs listing reads that `documents` doesn't have yet.
-- Placeholders go in double-quoted strings, e.g. `args: {ref: "{{asset:weekly-report}}"}`, so the template is a valid
-  contract as written; test it with `hz workflow check --path`.
+- Placeholders go in double-quoted strings in the frontmatter, e.g. `args: {ref: "{{asset:weekly-report}}"}`;
+  anywhere else, and a template with an active `schedule:`, is refused when the plugin is imported. Write it to a
+  directory you check with `hz workflow new x --template <module>:<template>` and `hz workflow check`.
+- `defaults` may name `capabilities.<capability>` (never `agent_runner`) and your module's own `<module>.<key>`
+  settings; anything else is refused.
 - `kept_by` names the template whose output keeps the asset true. Drafts are local today; writing the draft where the
   asset lives, approved in place, is planned.
 - `module.playbook` declares the module's setup step; a module with its own step passes `setup=False` and asks for

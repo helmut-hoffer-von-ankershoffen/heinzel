@@ -425,6 +425,12 @@ class Module:
             ValueError: If the playbook is malformed or the module already has one.
             OSError: If a template file can't be read.
         """
+        if setup and any(isinstance(existing, SetupLet) for existing in self._lets):
+            msg = (
+                f"Module {self.name!r} already has a setup step; pass module.playbook(..., setup=False) and ask "
+                "for heinzel.kernel.PlaybookSetup in it"
+            )
+            raise ValueError(msg)
         let = PlaybookLet(
             name=self.name,
             summary=summary,
