@@ -14,6 +14,7 @@ Plugins add their own tables.
 | `log_level` | `HZ_LOG_LEVEL` | `'WARNING'` | Log level for Heinzelmännchen and its modules. |
 | `output_format` | `HZ_OUTPUT_FORMAT` | `'text'` | Default output of every operation; `json` suits scripts and agents. `--format` overrides it. |
 | `plugins_enabled` | `HZ_PLUGINS_ENABLED` | `True` | Discover modules from installed plugins. Disable to debug a broken plugin. |
+| `update_check` | `HZ_UPDATE_CHECK` | `True` | Say in `hz --version` and `hz system info` when a newer release is available, from what `hz system release` last found (ADR 0031); only in text output on a terminal, never in CI. Ordinary commands never ask the network. Set to false to turn the hint off. |
 | `disabled_modules` | `HZ_DISABLED_MODULES` | `frozenset()` | Qualified names of modules to switch off, with their submodules. Comma-separated in the environment, a list in TOML. |
 
 ## `[clock]`

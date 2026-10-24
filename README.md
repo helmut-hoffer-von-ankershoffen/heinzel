@@ -71,6 +71,7 @@ hz system modules              # every module and submodule with the lets it adv
 hz system changelog            # release notes of the installed version
 hz system config show          # configuration files, settings in effect, their environment variables
 hz system config set hz.log_level INFO
+hz system release              # is there a newer release? (asks GitHub; HZ_UPDATE_CHECK=false hides the hint)
 hz system update               # update, keeping plugins
 hz system plugin add clock     # a first-party plugin
 hz clock                       # its command: the time for everyone on the team

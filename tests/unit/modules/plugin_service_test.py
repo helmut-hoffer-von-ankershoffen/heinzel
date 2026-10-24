@@ -1,8 +1,6 @@
-import io
 import subprocess
 import sys
 import urllib.error
-import urllib.request
 
 import pytest
 
@@ -169,10 +167,10 @@ class FakeGitHub:
 
     def __init__(self) -> None:
         self.answer: object = {"items": []}
-        self.requests: list[tuple[str, dict[str, str]]] = []
+        self.requests: list[tuple[str, str | None, float]] = []
 
-    def get_json(self, url, headers):
-        self.requests.append((url, dict(headers)))
+    def get_json(self, url, token, timeout):
+        self.requests.append((url, token.get_secret_value() if token else None, timeout))
         if isinstance(self.answer, Exception):
             raise self.answer
         return self.answer
@@ -181,7 +179,7 @@ class FakeGitHub:
 @pytest.fixture
 def github(monkeypatch):
     fake = FakeGitHub()
-    monkeypatch.setattr(_service, "_get_json", fake.get_json)
+    monkeypatch.setattr(_service, "get_json", fake.get_json)
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     return fake
@@ -221,9 +219,9 @@ def test_search_filters_first_party_plugins_and_passes_the_text_to_github(make_k
     service = service_for(make_kernel, tmp_path)
     assert [p.name for p in service.search("TIME team").plugins] == ["heinzel-clock"]
     assert service.search("calendar").plugins == []
-    url, headers = github.requests[-1]
+    url, token, timeout = github.requests[-1]
     assert url.startswith("https://api.github.com/search/repositories?q=topic%3Aheinzel-plugin+calendar&")
-    assert "Authorization" not in headers
+    assert (token, timeout) == (None, 10)
 
 
 @pytest.mark.parametrize("variable", ["GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"])
@@ -231,7 +229,7 @@ def test_search_sends_a_github_token_from_the_environment(make_kernel, tmp_path,
     monkeypatch.setenv(variable, "t0ken")
     settings = make_kernel(builtins=True).resolve(PluginSettings)
     service_for(make_kernel, tmp_path, settings=settings).search()
-    assert github.requests[-1][1]["Authorization"] == "Bearer t0ken"
+    assert github.requests[-1][1] == "t0ken"
 
 
 @pytest.mark.parametrize(
@@ -248,15 +246,3 @@ def test_search_falls_back_to_first_party_plugins_with_a_warning(make_kernel, tm
     result = service_for(make_kernel, tmp_path).search()
     assert [p.name for p in result.plugins] == ["heinzel-clock"]
     assert result.warnings == [f"GitHub could not be searched ({reason}); showing first-party plugins only."]
-
-
-def test_get_json_asks_with_a_timeout_and_parses_the_answer(monkeypatch):
-    requests = []
-
-    def urlopen(request, timeout):
-        requests.append((request.full_url, request.get_header("User-agent"), timeout))
-        return io.BytesIO(b'{"items": []}')
-
-    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
-    assert _service._get_json("https://api.github.com/x", {"User-Agent": "hz"}) == {"items": []}
-    assert requests == [("https://api.github.com/x", "hz", 10)]

@@ -6,8 +6,8 @@ from pydantic import Field
 
 from heinzel import HeinzelError, Module
 from heinzel.kernel import Installation
-from heinzel.modules.system._models import ModuleInfo, SystemInfo
-from heinzel.modules.system._render import render_info, render_modules
+from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, SystemInfo
+from heinzel.modules.system._render import render_info, render_modules, render_release
 from heinzel.modules.system._service import SystemService
 
 module = Module("system", "Inspect, configure, diagnose and update Heinzelmännchen itself.", essential=True)
@@ -24,6 +24,18 @@ def info(service: SystemService) -> SystemInfo:
 def modules(service: SystemService) -> list[ModuleInfo]:
     """List every module and the lets it advertises."""
     return service.modules()
+
+
+@module.operation(render=render_release)
+def release(service: SystemService, installation: Installation) -> ReleaseCheck:
+    """Ask where Heinzelmännchen was installed from for its latest release, and whether to update.
+
+    One unauthenticated GET to the GitHub releases API of the repository in the uv tool receipt (or the default
+    repository) with only a `heinzel/<version>` User-Agent (ADR 0031); offline or rate-limited, the result carries a
+    warning. The answer is cached for the hint in `hz --version` and `hz system info` (setting `update_check`).
+    """
+    requirements = installation.requirements()
+    return service.release(requirements[0] if requirements else None)
 
 
 @module.operation(read_only=False)
@@ -52,4 +64,4 @@ def update(
     return installation.hz("--version").splitlines()[0]
 
 
-__all__ = ["ModuleInfo", "SystemInfo", "SystemService", "module"]
+__all__ = ["ModuleInfo", "ReleaseCheck", "SystemInfo", "SystemService", "module"]

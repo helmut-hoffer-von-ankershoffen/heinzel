@@ -35,6 +35,12 @@ class Settings(ModuleSettings):
         default=True,
         description="Discover modules from installed plugins. Disable to debug a broken plugin.",
     )
+    update_check: bool = Field(
+        default=True,
+        description="Say in `hz --version` and `hz system info` when a newer release is available, from what "
+        "`hz system release` last found (ADR 0031); only in text output on a terminal, never in CI. Ordinary "
+        "commands never ask the network. Set to false to turn the hint off.",
+    )
     disabled_modules: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset(),
         description="Qualified names of modules to switch off, with their submodules. Comma-separated in the "

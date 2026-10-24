@@ -6,8 +6,9 @@ from typing import Any, cast
 from rich.console import Group, RenderableType
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
-from heinzel.modules.system._models import ModuleInfo, SystemInfo
+from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, SystemInfo
 
 
 def render_modules(modules: list[ModuleInfo]) -> RenderableType:
@@ -46,3 +47,13 @@ def render_info(info: SystemInfo) -> RenderableType:
             table.add_row(str(key), value if isinstance(value, str) else json.dumps(value))
         parts.append(Panel(table, title=qualname, expand=False))
     return Group(*parts)
+
+
+def render_release(check: ReleaseCheck) -> RenderableType:
+    """One line: the update and where to read about it, that this is the latest, or why nobody could tell."""
+    if check.latest is None:
+        return Text("\n".join(f"Warning: {warning}" for warning in check.warnings), style="yellow")
+    if check.update_available:
+        notes = f"\n{check.url}" if check.url else ""
+        return Text(f"v{check.latest} is available (installed: {check.current}): hz system update{notes}")
+    return Text(f"hz {check.current} is up to date; the latest release is {check.latest}.")

@@ -52,6 +52,7 @@ KERNEL = [
     "Origin",
     "PROJECT_FILENAME",
     "Progress",
+    "ReleaseCache",
     "ServiceLet",
     "Settings",
     "SettingsLet",

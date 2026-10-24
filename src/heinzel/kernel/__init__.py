@@ -21,6 +21,7 @@ from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._lets import Check, HealthLet, InfoLet, Let, OperationLet, ServiceLet, SettingsLet, Status
 from heinzel.kernel._module import Module
 from heinzel.kernel._progress import Progress
+from heinzel.kernel._release import ReleaseCache
 from heinzel.kernel._settings import Settings
 
 __all__ = [
@@ -45,6 +46,7 @@ __all__ = [
     "OperationLet",
     "Origin",
     "Progress",
+    "ReleaseCache",
     "ServiceLet",
     "Settings",
     "SettingsLet",

@@ -356,7 +356,7 @@ type = "forbidden"
 source_modules = ["heinzel.modules"]
 forbidden_modules = [
     "heinzel.kernel._boot", "heinzel.kernel._config", "heinzel.kernel._discovery", "heinzel.kernel._errors", "heinzel.kernel._installation",
-    "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._progress", "heinzel.kernel._settings",
+    "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings",
     "heinzel.kernel._spec",
 ]
 allow_indirect_imports = true # going through heinzel.kernel's public API is the point

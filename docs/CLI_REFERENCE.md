@@ -60,6 +60,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `info`: Show versions, interpreter, settings,...
 * `modules`: List every module and the lets it advertises.
 * `plugin`: Find, add, remove, list and scaffold plugins.
+* `release`: Ask where Heinzelmännchen was installed...
 * `serve`: Serve every operation to coding agents...
 * `update`: Update Heinzelmännchen, keeping installed...
 
@@ -428,6 +429,22 @@ $ hz system plugin search [OPTIONS]
 **Options**:
 
 * `--text <str>`: Words that name or describe the plugin, e.g. `calendar`; sent to GitHub&#x27;s search. All plugins if omitted.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system release`
+
+Ask where Heinzelmännchen was installed from for its latest release, and whether to update.
+
+**Usage**:
+
+```console
+$ hz system release [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
