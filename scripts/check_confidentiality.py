@@ -11,12 +11,16 @@ no letter touches them, so they don't fire inside ordinary words. The words of a
 that isn't a letter or digit, line breaks included, or by nothing. Binary files are scanned through their printable
 strings, as `strings` would show them.
 
+`--identity` also refuses an email git made up from the machine's name (`name@Some-MacBook-Air.local`), with or
+without terms: it names a machine, not a mailbox, and would be published with every commit.
+
 Usage:
     python scripts/check_confidentiality.py [FILE ...]          files, or every tracked file
     python scripts/check_confidentiality.py --commit-msg FILE   a commit message (commit-msg hook)
     python scripts/check_confidentiality.py --messages A..B     the messages of a range of commits
     python scripts/check_confidentiality.py --text TEXT         a string, such as a pull request title or branch
-    python scripts/check_confidentiality.py --identity          the author and committer git will record
+    python scripts/check_confidentiality.py --identity          the author and committer git will record, and that
+                                                                their emails are not machine hostnames
     python scripts/check_confidentiality.py --branch            the current branch's name (pre-push hook)
     --require                                                   fail instead of skipping when no terms are set
 """
@@ -36,6 +40,9 @@ DEFAULT_TERMS_FILE = Path("~/.config/heinzel-dev/confidential-terms")
 ANYWHERE = 6  # words at least this long match inside other words too
 NOT_A_LETTER_BEFORE, NOT_A_LETTER_AFTER = r"(?<![^\W\d_])", r"(?![^\W\d_])"
 PRINTABLE = re.compile(rb"[\x20-\x7e]{4,}")
+# Domains that name a machine or a home or company network, not a mailbox; git builds such an email from the hostname
+# when user.email isn't set.
+HOST_DOMAINS = (".local", ".localdomain", ".lan", ".home", ".internal")
 
 
 @dataclass(frozen=True)
@@ -120,6 +127,28 @@ def _is_utf8(data: bytes) -> bool:
     return True
 
 
+def hostname_email(ident: str) -> str | None:
+    """The email of a `git var GIT_*_IDENT` line if its domain is a machine's hostname, else `None`."""
+    match = re.search(r"<([^>]*)>", ident)
+    email = match[1] if match else ""
+    domain = email.rpartition("@")[2].lower().rstrip(".")
+    return email if "." not in domain or domain.endswith(HOST_DOMAINS) else None
+
+
+def identity_problems() -> list[str]:
+    """Why the author or committer email git will record is not one to publish."""
+    problems: list[str] = []
+    for role in ("author", "committer"):
+        with contextlib.suppress(subprocess.CalledProcessError):  # no identity: git refuses to commit anyway
+            if email := hostname_email(_git("var", f"GIT_{role.upper()}_IDENT")):
+                problems.append(
+                    f"The {role} email {email} is a machine's hostname, not a mailbox, and would be published with "
+                    "the commit. Set yours: git config --global user.email you@example.com (GitHub's noreply address "
+                    "works: ID+USERNAME@users.noreply.github.com, see https://github.com/settings/emails)."
+                )
+    return problems
+
+
 def sources(args: argparse.Namespace) -> Iterator[tuple[str, str]]:
     """Collect what the command line selects.
 
@@ -159,13 +188,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--require", action="store_true")
     args = parser.parse_args(argv)
 
+    # Independent of the term list, which plugin developers usually don't have.
+    problems = identity_problems() if args.identity else []
+    for problem in problems:
+        print(problem, file=sys.stderr)
     terms = load_terms()
     if not terms:
         if args.require:
             print("No confidential terms configured; set CONFIDENTIAL_TERMS.", file=sys.stderr)
             return 1
         print("Confidentiality check skipped: no terms configured (see scripts/check_confidentiality.py).")
-        return 0
+        return 1 if problems else 0
     compiled = patterns(terms)
     findings: list[Finding] = []
     for where, text in sources(args):
@@ -175,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
     if findings:
         print(f"{len(findings)} confidential term(s) found; remove them before committing.", file=sys.stderr)
         return 1
-    return 0
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":
