@@ -72,6 +72,8 @@ def pyproject() -> str:
     tools = tools.replace('files = ["src", "packages/*/src"]', 'files = ["src"]')
     tools = tools.replace('include = ["src", "packages/*/src"]', 'include = ["src"]')
     tools = tools.replace('testpaths = ["tests", "packages"]', 'testpaths = ["tests"]')
+    # A new plugin starts at 0.0.0, like its [project] version, not at Heinzelmännchen's version.
+    tools = re.sub(r'(\[tool\.bumpversion\]\ncurrent_version = )"[^"]*"', r'\1"0.0.0"', tools)
     start, end = tools.index("[[tool.bumpversion.files]]"), tools.index("[tool.git-cliff.remote.github]")
     tools = (
         tools[:start]
