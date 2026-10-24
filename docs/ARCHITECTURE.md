@@ -48,6 +48,7 @@ the kinds it understands.
 | `InfoLet` | `@module.info` | `hz system info` |
 | `HealthLet` | `@module.health` returning `Check`s | `hz system doctor` |
 | `CredentialLet` | `module.credential(name, purpose=...)` | `Credentials` (injected) and `hz system credential` with its doctor check ([ADR 0030](adr/0030-credentials-live-in-the-os-keychain.md)) |
+| `SetupLet` | `@module.setup(required=False)`, asking through an injected `Prompter` and writing through `ConfigEditor` and `Credentials` | the CLI head: `hz <module> setup` and `hz setup` ([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)) |
 | `JobLet` | `@module.job(schedule="0 9 * * MON")` | `hz system daemon tick`, run by launchd or systemd ([ADR 0020](adr/0020-daemon-head.md)) |
 | `ProviderLet` | `@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter class | the kernel's capability bindings and `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
 | `RequirementLet` | `Module(..., requires=["tracker:read"])` (read only); operations and jobs take `requires=[...]` | the kernel's capability handles and the doctor check of `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
@@ -89,10 +90,12 @@ agent runners' executables and tools) are ignored in a project `hz.toml`, and do
 
 The top level belongs to the team's work: every module a plugin brings (and future built-in workflow modules) sits
 there. Everything about Heinzelmännchen itself lives under one administrative namespace, `hz system`
-([ADR 0018](adr/0018-one-administrative-namespace.md)):
+([ADR 0018](adr/0018-one-administrative-namespace.md)), except `hz setup`, which runs every module's setup step
+([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)):
 
 ```
 hz --version
+hz setup                                   every module's setup step, wizard style (CLI only)
 hz system info | modules | doctor | changelog | release | update
 hz system config  show | get | set | unset | init
 hz system plugin  list | add | remove | new
@@ -100,6 +103,7 @@ hz system agent   skills | install | uninstall
 hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
 hz system serve   mcp | api | daemon
 hz <module> …     work: plugin modules and built-in workflow modules
+hz <module> setup  a module's setup step, when it declares one
 ```
 
 The **kernel** is the core: a library without commands. **system** is the one module that ships with the core
