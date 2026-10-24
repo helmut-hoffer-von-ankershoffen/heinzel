@@ -9,6 +9,7 @@ from pydantic import Field, field_validator
 
 from heinzel import (
     Chat,
+    Check,
     Config,
     Document,
     Documents,
@@ -768,3 +769,162 @@ def test_hosts_may_read_only_their_own_modules_settings(make_kernel, settings):
     assert not kernel._capabilities.adapters
     with pytest.raises(HeinzelError, match="Built-in module 'acme': the hosts of adapter acme:documents read"):
         Kernel(settings, [ModuleRecord("acme", acme_module(url, settings=None), BUILTIN)])
+
+
+def test_a_handle_builds_its_adapter_on_the_first_call_not_when_injected(make_kernel):
+    Notes.built = 0
+    kernel = make_kernel(notes=notes_module(), digest=digest_module(), config=bind(documents="notes"))
+    documents = handle(kernel)
+    assert Notes.built == 0
+    assert documents.read("weekly").title == "notes:weekly"  # type: ignore[attr-defined]
+    assert documents.read("other").title == "notes:other"  # type: ignore[attr-defined]
+    assert Notes.built == 1
+
+
+class Layer:
+    """A tracker adapter on top of documents, the way `system.directory` builds on calendar."""
+
+    def __init__(self, documents: Documents) -> None:
+        self.documents = documents
+
+    def issues_updated(self, project: str, window: Window) -> list[object]:
+        return []
+
+
+class Top:
+    """A chat adapter on top of the tracker."""
+
+    def __init__(self, tracker: Tracker) -> None:
+        self.tracker = tracker
+
+    def messages(self, channel: str, window: Window) -> list[Message]:
+        return []
+
+
+def layered(*, with_operation: bool = False) -> Module:
+    module = Module("layer", "Issues from documents.", requires=["documents:read"])
+    module.provides("tracker", modes={"read"}, hosts=[])(Layer)
+    if with_operation:
+
+        @module.operation
+        def peek(documents: Documents) -> str:
+            """Read through the module's own requirement."""
+            return documents.read("x").ref
+
+    return module
+
+
+def needs(kernel: Kernel) -> set[str]:
+    return {f"{use.requester} {use.requirement}" for use in kernel._capabilities.matrix()}
+
+
+def test_an_adapter_only_modules_needs_count_only_while_its_adapter_serves_someone(make_kernel):
+    assert needs(make_kernel(layer=layered(), config=bind(tracker="layer"))) == set()
+    tracked = Module("issues", "Reads issues.", requires=["tracker:read"])
+    used = needs(make_kernel(layer=layered(), issues=tracked, config=bind(tracker="layer")))
+    assert used == {"issues tracker:read", "layer documents:read"}
+    unused = needs(make_kernel(layer=layered(), issues=tracked, config=bind(tracker="other")))
+    assert unused == {"issues tracker:read"}
+
+
+def test_a_module_that_also_has_operations_keeps_its_needs(make_kernel):
+    assert needs(make_kernel(layer=layered(with_operation=True))) == {"layer documents:read"}
+
+
+class Service:
+    """A service that could use its module's requirements."""
+
+
+def peek(documents: Documents) -> list[Check]:
+    """Read through the module's requirement."""
+    return []
+
+
+def peek_info(documents: Documents) -> dict[str, str]:
+    """Read through the module's requirement."""
+    return {}
+
+
+def peek_setup(documents: Documents) -> None:
+    """Set nothing up."""
+
+
+@pytest.mark.parametrize(
+    "add",
+    [
+        lambda m: m.job(schedule="@daily")(peek),
+        lambda m: m.service(Service),
+        lambda m: m.info(peek_info),
+        lambda m: m.health(peek),
+        lambda m: m.setup(peek_setup),
+    ],
+    ids=["job", "service", "info", "health", "setup"],
+)
+def test_any_let_that_runs_code_keeps_a_modules_needs(make_kernel, add):
+    module = layered()
+    add(module)
+    assert needs(make_kernel(layer=module)) == {"layer documents:read"}
+
+
+def test_a_module_whose_one_adapter_of_two_serves_someone_keeps_its_needs(make_kernel):
+    module = layered()
+    module.provides("chat", modes={"read"}, hosts=[])(Top)
+    reader = Module("reader", "Reads chat.", requires=["chat:read"])
+    config = bind(chat="layer", documents="notes")
+    kernel = make_kernel(layer=module, reader=reader, notes=notes_module(), config=config)
+    assert needs(kernel) == {"reader chat:read", "layer documents:read"}
+
+
+def test_a_readers_adapter_that_cant_be_built_fails_on_the_first_call_and_is_retried(make_kernel):
+    attempts = []
+
+    def flaky() -> Reader:
+        attempts.append(1)
+        if len(attempts) == 1:
+            msg = "not yet"
+            raise HeinzelError(msg)
+        return Reader()
+
+    reads = Module("half", "Reads through a factory that fails once.")
+    reads.provides("documents", modes={"read"})(flaky)
+    kernel = make_kernel(half=reads, digest=digest_module(), config=bind(documents="half"))
+    documents = handle(kernel)
+    assert attempts == []
+    with pytest.raises(HeinzelError, match="not yet"):
+        documents.read("weekly")  # type: ignore[attr-defined]
+    assert documents.read("weekly").title == "reader:weekly"  # type: ignore[attr-defined]
+
+
+def test_a_publish_operations_adapter_is_built_before_it_runs(make_kernel):
+    def broken() -> Notes:
+        msg = "credentials missing"
+        raise HeinzelError(msg)
+
+    writes = Module("notes", "Writes through a factory that fails.")
+    writes.provides("documents", modes={"read", "write"})(broken)
+    kernel = make_kernel(notes=writes, digest=digest_module(), config=bind(documents="notes"))
+    with pytest.raises(HeinzelError, match="credentials missing"):
+        handle(kernel, "publish")
+
+
+def test_needs_of_a_chain_of_unused_adapter_modules_all_drop_out(make_kernel):
+    top = Module("top", "Chat from issues.", requires=["tracker:read"])
+    top.provides("chat", modes={"read"}, hosts=[])(Top)
+    kernel = make_kernel(layer=layered(), top=top, config=bind(tracker="layer", chat="top"))
+    assert needs(kernel) == set()
+    reader = Module("reader", "Reads chat.", requires=["chat:read"])
+    kernel = make_kernel(layer=layered(), top=top, reader=reader, config=bind(tracker="layer", chat="top"))
+    assert needs(kernel) == {"reader chat:read", "top tracker:read", "layer documents:read"}
+
+
+def test_a_binding_is_defaulted_only_while_no_file_or_variable_sets_it(make_kernel, monkeypatch):
+    view = make_kernel(config=bind(documents="notes")).resolve(CapabilityView)
+    assert view.defaulted("directory")
+    assert view.defaulted("agent-runner")
+    assert not view.defaulted("documents")  # no default at all
+    assert not view.defaulted("tracker")
+    explicit = make_kernel(config=bind(directory="one-on-ones", agent_runner="claude-code")).resolve(CapabilityView)
+    assert not explicit.defaulted("directory")
+    assert not explicit.defaulted("agent-runner")
+    monkeypatch.setenv("HZ_CAPABILITIES__DIRECTORY", "one-on-ones")
+    assert not make_kernel().resolve(CapabilityView).defaulted("directory")

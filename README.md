@@ -136,6 +136,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.config`](docs/MODULES.md#systemconfig) — Show, get, set and initialize configuration.
 - [`system.credential`](docs/MODULES.md#systemcredential) — Store and check the credentials modules need, in the OS keychain.
 - [`system.daemon`](docs/MODULES.md#systemdaemon) — Run modules' jobs in the background, supervised by launchd or systemd.
+- [`system.directory`](docs/MODULES.md#systemdirectory) — Guess reporting lines from recurring 1:1s in your calendar, for setup to confirm.
 - [`system.doctor`](docs/MODULES.md#systemdoctor) — Check that Heinzelmännchen and its modules are healthy.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, list and scaffold plugins.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.

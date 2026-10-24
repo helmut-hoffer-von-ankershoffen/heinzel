@@ -21,7 +21,9 @@ from heinzel import (
     Meeting,
     Module,
     Participant,
+    Person,
     PullRequest,
+    Relation,
     Settings,
     Status,
     TokenUsage,
@@ -416,6 +418,17 @@ def test_the_packet_validates_models_again_so_no_address_header_slips_through():
     mutated.headers["reply-to"] = "ada@example.com"
     assert service_module._without_emails(built).headers == {"date": "d"}
     assert service_module._without_emails(mutated).headers == {}
+
+
+def test_the_packet_drops_the_addresses_of_people_a_directory_names():
+    ada = Participant(name="Ada", email="ada@example.com")
+    person = Person(
+        who=Participant(name="Mira", email="mira@example.com"),
+        manager=Relation(who=ada, guess=True, evidence=["weekly 1:1"]),
+        reports=[Relation(who=ada)],
+    )
+    minimised = service_module._without_emails(person)
+    assert "@" not in json.dumps(minimised.model_dump())  # type: ignore[attr-defined]
 
 
 def test_a_failing_input_or_an_unbound_capability_fails_the_run(make, dirs, host):

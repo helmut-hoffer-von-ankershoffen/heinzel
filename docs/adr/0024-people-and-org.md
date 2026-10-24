@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-10-23
 related: 0005, 0012, 0018, 0020
+amended-by: 0028
 ---
 
 # 0024: People and teams come from a directory of record, are referenced by role, and are minimised
@@ -139,6 +140,9 @@ per-person metrics.
 ## More Information
 
 - Research and sources: [docs/research/people-and-org.md](../research/people-and-org.md).
+- Amended by [ADR 0028](0028-integrations-are-capability-adapters.md) (maintainer's decision, 2026-10-24):
+  the `Directory` is the capability `directory`, not a service of `hz org`; a plugin reads a directory of
+  record, and otherwise the core drafts reporting lines from recurring 1:1s for the user to confirm.
 - Builds on [ADR 0005](0005-dependency-injection-by-type.md), [ADR 0012](0012-layered-configuration.md),
   [ADR 0018](0018-one-administrative-namespace.md) and [ADR 0020](0020-daemon-head.md). Aligns with
   [ADR 0021](0021-workflow-contracts.md) (workflow contracts), [ADR 0022](0022-embedded-workflows.md)
