@@ -21,6 +21,10 @@ def test_rejects_other_expressions(schedule):
     assert "invalid schedule" in (problem(schedule) or "")
 
 
+def test_rejects_schedules_that_never_fire():
+    assert problem("0 0 31 2 *") == "invalid schedule '0 0 31 2 *': it never fires"
+
+
 def test_slots_exclude_the_start_and_include_the_end():
     assert slots("0 * * * *", at(9), at(12)) == [at(10), at(11), at(12)]
 

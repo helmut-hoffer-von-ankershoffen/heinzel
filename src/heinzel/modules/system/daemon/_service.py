@@ -129,7 +129,12 @@ class DaemonService:
             path.write_text(content, encoding="utf-8")
         self._write_state(
             "install.json",
-            {"interval_minutes": minutes, "executable": str(executable), "platform": self._platform},
+            {
+                "interval_minutes": minutes,
+                "executable": str(executable),
+                "platform": self._platform,
+                "installed_at": self._clock().isoformat(),
+            },
         )
         if self._platform == "darwin":  # bootstrap fails on a loaded agent; unload the old one, if any, first
             self._runner(self._command("launchctl", "bootout", f"gui/{self._uid()}/{LABEL}"))
@@ -397,9 +402,12 @@ class DaemonService:
         ]
 
     def _last_tick(self) -> datetime | None:
-        last = self._read_state("heartbeat.json").get("last_tick")
+        return self._timestamp("heartbeat.json", "last_tick")
+
+    def _timestamp(self, name: str, key: str) -> datetime | None:
+        value = self._read_state(name).get(key)
         try:
-            return datetime.fromisoformat(str(last)) if last else None
+            return datetime.fromisoformat(str(value)) if value else None
         except ValueError:
             return None
 
@@ -408,7 +416,8 @@ class DaemonService:
 
     def _freshness(self, status: DaemonStatus) -> Check:
         interval = timedelta(minutes=status.interval_minutes or DEFAULT_INTERVAL)
-        if status.paused or (status.last_tick and self._clock() - status.last_tick <= STALE_TICKS * interval):
+        since = status.last_tick or self._timestamp("install.json", "installed_at")
+        if status.paused or since is None or self._clock() - since <= STALE_TICKS * interval:
             return Check(name="last tick", status=Status.UP, detail=str(status.last_tick or "none yet"))
         return Check(
             name="last tick",

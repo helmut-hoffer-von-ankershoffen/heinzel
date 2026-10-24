@@ -228,6 +228,17 @@ def test_health_of_a_loaded_daemon_that_ticks(make, jobs):
     assert [(c.name, c.status) for c in service.health()] == [("daemon", Status.UP), ("last tick", Status.UP)]
 
 
+def test_a_freshly_installed_daemon_is_healthy_until_it_misses_ticks(make):
+    clock = Clock()
+    service = make(clock=clock)
+    service.install(timedelta(minutes=5))
+    assert {c.name: c.status for c in service.health()}["last tick"] is Status.UP
+    clock.set(10, 30)
+    checks = {c.name: c for c in service.health()}
+    assert checks["last tick"].status is Status.DEGRADED
+    assert checks["last tick"].detail == "no tick since installation"
+
+
 def test_health_flags_a_unit_that_is_not_loaded(make, bin_dir):
     make().install(timedelta(minutes=5))
     [check] = make(runner=Runner(bin_dir, {"print": 113})).health()

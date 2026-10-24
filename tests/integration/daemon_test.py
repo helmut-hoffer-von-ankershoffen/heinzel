@@ -31,6 +31,13 @@ def job_module(calls: list[str]) -> Module:
         calls.append("minutely")
         return "done"
 
+    return module
+
+
+def stuck_module() -> Module:
+    """A job that overruns its timeout; only `tick --job` runs it, since no test runs on 1 January at midnight."""
+    module = Module("slow", "A job that never finishes.")
+
     def stuck() -> None:
         STUCK.wait()
 
@@ -68,8 +75,9 @@ def test_tick_runs_due_jobs_writes_receipts_and_logs(kernel, calls, settings):
     assert "tick done" in hz(kernel, "system", "daemon", "logs").output
 
 
-def test_a_job_that_overruns_its_timeout_fails(kernel):
-    report = json.loads(hz(kernel, "system", "daemon", "tick", "--job", "example:stuck", "--json").output)
+def test_a_job_that_overruns_its_timeout_fails(make_kernel):
+    kernel = make_kernel(builtins=True, slow=stuck_module())
+    report = json.loads(hz(kernel, "system", "daemon", "tick", "--job", "slow:stuck", "--json").output)
     [run] = report["runs"]
     assert (run["disposition"], run["error"], run["wake"]) == ("failed", "timed out after 0.01s", "manual")
     STUCK.set()
@@ -81,14 +89,14 @@ def test_rendered_tick_jobs_and_dry_run(kernel):
     assert "Nothing was due" in hz(kernel, "system", "daemon", "tick").output
     assert "Jobs" in hz(kernel, "system", "daemon", "jobs").output
     listed = json.loads(hz(kernel, "system", "daemon", "jobs", "--json").output)
-    assert [job["job"] for job in listed] == ["example:minutely", "example:stuck"]
+    assert [job["job"] for job in listed] == ["example:minutely"]
 
 
 def test_pause_resume_and_status(kernel, calls):
     assert json.loads(hz(kernel, "system", "daemon", "pause", "--json").output) == {"paused": True}
     assert "Paused" in hz(kernel, "system", "daemon", "tick").output
     status = json.loads(hz(kernel, "system", "daemon", "status", "--json").output)
-    assert (status["installed"], status["paused"], status["jobs"]) == (False, True, 2)
+    assert (status["installed"], status["paused"], status["jobs"]) == (False, True, 1)
     assert json.loads(hz(kernel, "system", "daemon", "resume", "--json").output) == {"paused": False}
     assert calls == []
 

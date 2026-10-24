@@ -1,8 +1,8 @@
 """Schedule arithmetic: cron slots in a window, through croniter rather than by hand (ADR 0020)."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
-from croniter import croniter
+from croniter import CroniterBadDateError, croniter
 
 MAX_SLOTS_PER_TICK = 100
 """`catch_up=all` replays at most this many slots per tick, oldest first; the next tick continues."""
@@ -13,6 +13,10 @@ def problem(schedule: str) -> str | None:
     """Why a cron expression can't be used, or None if it can."""
     if not (schedule.startswith("@") or len(schedule.split()) == FIELDS) or not croniter.is_valid(schedule):
         return f"invalid schedule {schedule!r}: use five cron fields (minute hour day month weekday) or @daily"
+    try:
+        croniter(schedule, datetime(2000, 1, 1, tzinfo=UTC)).get_next(datetime)
+    except CroniterBadDateError:
+        return f"invalid schedule {schedule!r}: it never fires"
     return None
 
 
