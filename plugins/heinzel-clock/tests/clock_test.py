@@ -1,9 +1,10 @@
 import tomllib
 
 import pytest
-from heinzel_clock import ClockSettings, Zone, search
+from heinzel_clock import ClockSettings, Zone, ZoneTime, at_work, primary_zone, search, working
 from pydantic import ValidationError
 
+from heinzel import LiveClock, MetricWidget, Navigate
 from heinzel.kernel import user_config_dir
 
 pytestmark = pytest.mark.integration
@@ -186,3 +187,59 @@ def test_the_old_working_hours_are_marked_deprecated_for_forms(hz):
 def test_an_hour_past_midnight_is_refused():
     with pytest.raises(ValidationError, match="less than or equal to 24"):
         Zone(name="Asia/Tokyo", hours=(9, 25))
+
+
+TIMES = [
+    ZoneTime(zone="Europe/Lisbon", time="Fri 13:00", hours=(9, 18), working=True),
+    ZoneTime(zone="America/New_York", time="Fri 08:00", hours=(9, 18), working=False),
+    ZoneTime(zone="Asia/Tokyo", time="Fri 21:00", hours=(8, 22), working=True),
+]
+
+
+def test_the_status_item_ticks_in_the_primary_zone_and_lists_the_others():
+    item = primary_zone(TIMES)
+    assert item is not None
+    assert (item.text, item.icon, item.live) == ("Lisbon", "clock", LiveClock(zone="Europe/Lisbon"))
+    assert [(line.text, line.tone) for line in item.detail] == [
+        ("New York Fri 08:00, works 09-18", "neutral"),
+        ("Tokyo Fri 21:00, at work", "ok"),
+    ]
+    assert item.effect == Navigate(path="/?settings=clock")
+    assert primary_zone([]) is None
+
+
+def test_the_widget_and_the_badge_count_the_zones_at_work():
+    assert working(TIMES) == 2
+    assert at_work(TIMES) == MetricWidget(label="Zones at work now", value="2/3", tone="ok")
+    assert at_work([]) is None
+
+
+def test_the_web_app_gets_the_clock_in_the_footer_not_the_sidebar_until_asked(hz, monkeypatch):
+    monkeypatch.setenv("HZ_CLOCK__ZONES", '["Asia/Tokyo", "Europe/Berlin"]')
+    (entry,) = hz("system", "ui", "status", "--item", "clock:primary-zone").json
+    assert (entry["plugin"], entry["slots"], entry["problem"]) == (
+        "heinzel-clock",
+        {"footer": True, "sidebar": False},
+        None,
+    )
+    assert entry["item"]["live"] == {"kind": "clock", "zone": "Asia/Tokyo"}
+    assert hz("system", "ui", "show", "clock:primary-zone", "--slot", "sidebar").exit_code == 0
+    (entry,) = hz("system", "ui", "status", "--item", "clock:primary-zone").json
+    assert entry["slots"] == {"footer": True, "sidebar": True}
+    assert config()["system"]["ui"]["contributions"] == {"clock:primary-zone": {"sidebar": True}}
+
+
+def test_the_header_action_opens_hz_clock_in_the_terminal(hz):
+    (action,) = hz("system", "ui", "actions", "--item", "clock:team-clock").json
+    assert action["effect"] == {"kind": "command", "command": "hz clock", "runs": True}
+    assert isinstance(action["badge"], int)
+    (widget,) = hz("system", "ui", "widgets", "--item", "clock:at-work").json
+    assert widget["widget"]["kind"] == "metric"
+
+
+def test_an_unknown_zone_is_a_problem_of_the_item_not_of_the_bar(hz, monkeypatch):
+    monkeypatch.setenv("HZ_CLOCK__ZONES", '["Mars/Olympus"]')
+    entries = {entry["id"]: entry for entry in hz("system", "ui", "status").json}
+    assert entries["clock:primary-zone"]["item"] is None
+    assert "Unknown time zones: Mars/Olympus" in entries["clock:primary-zone"]["problem"]
+    assert entries["system.daemon:daemon"]["problem"] is None

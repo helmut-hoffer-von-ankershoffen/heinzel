@@ -61,7 +61,9 @@ def _on_head(operation: OperationLet, head: str) -> bool:
 
 def _problems(exc: ValidationError) -> str:
     """Where a value is wrong and why, without the value itself."""
-    return "; ".join(f"{'.'.join(map(str, e['loc'])) or 'value'}: {e['msg']}" for e in exc.errors(include_input=False))
+    return "; ".join(
+        f"{'.'.join(map(str, e['loc']))}: {e['msg']}" if e["loc"] else e["msg"] for e in exc.errors(include_input=False)
+    )
 
 
 def _safe(text: str) -> str:
