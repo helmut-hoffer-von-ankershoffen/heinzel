@@ -35,8 +35,10 @@ Chosen option: **Heinzelmännchen sends nothing home**, because the trust of the
 the data.
 
 - The core sends no telemetry, crash reports, usage pings or update checks with identifying data to the project or
-  to any third party. It contacts a network service only on the user's behalf: installing and updating through uv,
-  and calling the services a workflow or plugin was configured to use.
+  to any third party. It contacts a network service on the user's behalf: installing and updating through uv, and
+  calling the services a workflow or plugin was configured to use. Its one request of its own is the hourly,
+  anonymous update check of [ADR 0031](0031-update-check.md), which carries nothing about the user and which the
+  `update_check` setting turns off.
 - Observability is local: logs, job receipts and `hz system info` / `hz system doctor`. Users who want metrics or
   error tracking export them themselves.
 - A plugin that sends data out says so in its README: what it sends and where.
@@ -58,5 +60,6 @@ promise to users.
 - [SECURITY.md](../../SECURITY.md) "What Heinzelmännchen does on your machine": "`hz` sends nothing anywhere on its own".
 - Receipts and local logs: [ADR 0020](0020-daemon-head.md); health checks: [ADR 0015](0015-health-checks-as-lets.md).
 - Decided by the maintainer on 2026-10-23.
-- Open questions: how the update notifier planned for 0.2 checks for new versions within this rule, and whether
-  plugins also declare outbound data in `hz system info`.
+- Open question: whether plugins also declare outbound data in `hz system info`. How the update notifier checks
+  for new versions within this rule is answered by [ADR 0031](0031-update-check.md) (amended 2026-10-24 by the
+  maintainer: automatic, hourly, anonymous, with an opt-out).

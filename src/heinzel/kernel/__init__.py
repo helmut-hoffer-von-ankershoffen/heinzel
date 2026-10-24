@@ -69,7 +69,7 @@ from heinzel.kernel._protocols import (
     TranscriptSegment,
     Window,
 )
-from heinzel.kernel._release import ReleaseCache
+from heinzel.kernel._release import ReleaseCache, ReleaseSource
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._text import clean_text
 
@@ -126,6 +126,7 @@ __all__ = [
     "ProviderLet",
     "PullRequest",
     "ReleaseCache",
+    "ReleaseSource",
     "Requester",
     "Requirement",
     "RequirementLet",

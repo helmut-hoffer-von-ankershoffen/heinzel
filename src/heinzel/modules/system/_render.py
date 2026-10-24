@@ -20,6 +20,8 @@ def render_modules(modules: list[ModuleInfo]) -> RenderableType:
     for info in modules:
         lets = "\n".join(f"{kind}: {', '.join(names)}" for kind, names in info.lets.items())
         distribution = "built-in" if info.builtin else f"{info.distribution} {info.version}"
+        if info.repository and not info.builtin:
+            distribution += f"\n{info.repository}"
         table.add_row(Text(info.qualname), Text(info.summary), Text(distribution), Text(lets))
     return table
 
@@ -30,6 +32,10 @@ def render_info(info: SystemInfo) -> RenderableType:
     overview.add_column(style="bold cyan", overflow="fold")
     overview.add_column(overflow="fold")
     overview.add_row("Heinzelmännchen", info.version)
+    if info.repository:
+        overview.add_row("Repository", Text(info.repository))
+    if info.latest_release:
+        overview.add_row("Latest release", info.latest_release)
     overview.add_row("Python", f"{info.python_version} ({info.python_executable})")
     overview.add_row("Platform", info.platform)
     for key, value in info.settings.items():
@@ -56,5 +62,5 @@ def render_release(check: ReleaseCheck) -> RenderableType:
         return Text("\n".join(f"Warning: {warning}" for warning in check.warnings), style="yellow")
     if check.update_available:
         notes = f"\n{check.url}" if check.url else ""
-        return Text(f"v{check.latest} is available (installed: {check.current}): hz system update{notes}")
+        return Text(f"hz {check.latest} is available (installed {check.current}): hz system update{notes}")
     return Text(f"hz {check.current} is up to date; the latest release is {check.latest}.")

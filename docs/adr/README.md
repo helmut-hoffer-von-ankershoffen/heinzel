@@ -35,7 +35,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0028](0028-integrations-are-capability-adapters.md) | Integrations are capability adapters; workflows name capabilities, never vendors | proposed | 2026-10-23 |
 | [0029](0029-agent-runners-are-capability-adapters.md) | Agent runners are capability adapters; core ships Claude Code and a generic command adapter | proposed | 2026-10-23 |
 | [0030](0030-credentials-live-in-the-os-keychain.md) | Credentials live in the OS keychain behind a credentials service | accepted | 2026-10-24 |
-| [0031](0031-update-check.md) | The update check is one unauthenticated request on demand; only the CLI shows a cached hint | accepted | 2026-10-24 |
+| [0031](0031-update-check.md) | The CLI checks for a newer release hourly, anonymously and in the background, and says so on stderr | accepted | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends

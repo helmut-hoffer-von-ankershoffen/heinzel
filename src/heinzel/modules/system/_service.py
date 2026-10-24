@@ -5,21 +5,21 @@ import re
 import sys
 import urllib.error
 from collections import defaultdict
-from typing import Any
+from typing import Any, override
 from urllib.parse import urlsplit
 
 from packaging.version import Version
 from pydantic import BaseModel
 
 from heinzel import InfoLet, Kernel, __version__
-from heinzel.kernel import ReleaseCache
+from heinzel.kernel import Installation, ReleaseCache, ReleaseSource
 from heinzel.modules.system import _github
 from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, SystemInfo
 
 DEFAULT_REPOSITORY = "helmut-hoffer-von-ankershoffen/heinzel"
 """Where releases come from when the installation doesn't say, e.g. in a development checkout."""
 RELEASE_TIMEOUT = 5
-"""Seconds to wait for the package source before giving up with a warning."""
+"""Seconds to wait for the package source, when someone asked, before giving up with a warning."""
 _SEGMENT = re.compile(r"[A-Za-z0-9_.-]+")
 
 
@@ -34,6 +34,50 @@ def repository_of(requirement: str | None) -> str:
     if not all(_SEGMENT.fullmatch(segment) and segment not in {".", ".."} for segment in path):
         return DEFAULT_REPOSITORY
     return "/".join(path)
+
+
+def _github_link(url: object) -> str | None:
+    """`url` if it links to github.com; anything else in an answer stays out of the terminal."""
+    return url if isinstance(url, str) and url.startswith("https://github.com/") else None
+
+
+class GitHubReleases(ReleaseSource):
+    """The releases of the GitHub repository Heinzelmännchen was installed from: its `ReleaseSource` (ADR 0031).
+
+    Never sends a token: unauthenticated GETs with only the `heinzel/<version>` User-Agent.
+    """
+
+    def __init__(self, repository: str) -> None:
+        """Ask the releases of `repository` (`owner/name`)."""
+        self.repository = repository
+
+    @property
+    def latest_url(self) -> str:
+        """Where the latest release is asked for."""
+        return f"{_github.GITHUB_API}/repos/{self.repository}/releases/latest"
+
+    def latest(self, timeout: float) -> tuple[str, str | None]:
+        """The version of the latest release and its page on github.com.
+
+        Raises:
+            OSError: If GitHub can't be reached or answers with an error, e.g. when rate-limited.
+            ValueError: If the answer is no release (`InvalidVersion` is one).
+            KeyError: If the answer lacks a field.
+            TypeError: If the answer is no JSON object.
+        """
+        answer = _github.get_json(self.latest_url, None, timeout)
+        return str(Version(str(answer["tag_name"]).removeprefix("v"))), _github_link(answer["html_url"])
+
+    @override
+    def latest_version(self, timeout: float) -> str:
+        """The version of the latest release, for the release cache."""
+        return self.latest(timeout)[0]
+
+
+def github_releases(installation: Installation) -> GitHubReleases:
+    """The releases of the repository in the uv tool receipt, or of the default repository."""
+    requirements = installation.requirements()
+    return GitHubReleases(repository_of(requirements[0] if requirements else None))
 
 
 class SystemService:
@@ -57,6 +101,7 @@ class SystemService:
                     distribution=record.origin.distribution,
                     version=record.origin.version,
                     builtin=record.origin.builtin,
+                    repository=record.origin.url,
                     lets=dict(lets),
                 )
             )
@@ -66,6 +111,7 @@ class SystemService:
         """Versions, interpreter, settings, modules and the sections modules contribute."""
         return SystemInfo(
             version=__version__,
+            repository=next((r.origin.url for r in self._kernel.modules if r.origin.builtin), None),
             python_version=platform.python_version(),
             python_executable=sys.executable,
             platform=platform.platform(),
@@ -88,28 +134,27 @@ class SystemService:
         Args:
             requirement: The requirement Heinzelmännchen was installed from, as in the uv tool receipt.
         """
-        source = f"{_github.GITHUB_API}/repos/{repository_of(requirement)}/releases/latest"
+        releases = GitHubReleases(repository_of(requirement))
+        source, cache = releases.latest_url, ReleaseCache(self._kernel.settings.cache_dir)
         try:
-            answer = _github.get_json(source, None, RELEASE_TIMEOUT)
-            latest = str(Version(str(answer["tag_name"]).removeprefix("v")))
-            html_url = str(answer["html_url"])
+            latest, url = releases.latest(RELEASE_TIMEOUT)
         # Isolation boundary: an unreachable, rate-limited or odd package source is a warning, never a crash.
         except (OSError, ValueError, KeyError, TypeError) as exc:  # InvalidVersion is a ValueError
             # An HTTPError reads best whole (it carries the status, e.g. 403 when rate-limited); others by reason.
             reason: object = exc
             if isinstance(exc, urllib.error.URLError) and not isinstance(exc, urllib.error.HTTPError):
                 reason = exc.reason
+            cache.stamp(error=str(reason))  # the hourly check waits too: nobody gains from asking again right away
             warning = f"Could not ask {source} for the latest release ({reason})."
             return ReleaseCheck(
                 current=__version__, latest=None, update_available=False, url=None, source=source, warnings=[warning]
             )
-        ReleaseCache(self._kernel.settings.cache_dir).remember(latest)
+        cache.remember(latest)
         return ReleaseCheck(
             current=__version__,
             latest=latest,
             update_available=Version(latest) > Version(__version__),
-            # Only a link to github.com is shown; anything else in the answer stays out of the terminal.
-            url=html_url if html_url.startswith("https://github.com/") else None,
+            url=url,
             source=source,
             warnings=[],
         )

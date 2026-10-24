@@ -182,3 +182,8 @@ def test_every_test_runs_in_the_pinned_terminal():
 def test_help_wraps_at_the_pinned_width(hz):
     widest = max(len(line) for line in hz("--help", json=False).output.splitlines())
     assert widest <= 80
+
+
+def test_no_test_checks_for_updates():
+    """Every `hz` a test starts, in-process or not, inherits this (ADR 0031): the suite never asks GitHub."""
+    assert os.environ["HZ_UPDATE_CHECK"] == "false"

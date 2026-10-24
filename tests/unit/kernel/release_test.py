@@ -1,9 +1,9 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from heinzel.kernel import ReleaseCache
+from heinzel.kernel import ReleaseCache, ReleaseSource
 
 pytestmark = pytest.mark.unit
 
@@ -55,3 +55,70 @@ def test_an_unwritable_cache_directory_only_loses_the_hint(tmp_path):
     cache = ReleaseCache(blocked / "cache")
     cache.remember("0.2.0")
     assert cache.latest is None
+
+
+NOW = datetime(2026, 10, 24, 8, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("checked", "fresh"),
+    [
+        (None, False),
+        (NOW - timedelta(minutes=59), True),
+        (NOW - timedelta(hours=1), False),
+        (NOW + timedelta(1), False),
+    ],
+    ids=["never", "within-the-hour", "an-hour-ago", "in-the-future"],
+)
+def test_is_fresh_within_max_age_only(cache, checked, fresh):
+    if checked is not None:
+        cache.stamp(checked_at=checked)
+    assert cache.is_fresh(timedelta(hours=1), now=NOW) is fresh
+
+
+def test_stamp_keeps_the_latest_release_and_records_a_failure(cache):
+    cache.remember("0.2.0", NOW - timedelta(days=1))
+    cache.stamp(error="offline", checked_at=NOW)
+    assert (cache.latest, cache.checked_at, cache.error) == ("0.2.0", NOW, "offline")
+
+
+def test_remember_clears_a_failure(cache):
+    cache.stamp(error="offline")
+    cache.remember("0.3.0")
+    assert (cache.latest, cache.error) == ("0.3.0", None)
+
+
+class Source(ReleaseSource):
+    def __init__(self, answer):
+        self.answer = answer
+
+    def latest_version(self, timeout):
+        if isinstance(self.answer, Exception):
+            raise self.answer
+        return self.answer
+
+
+def test_refresh_remembers_what_the_source_says(cache):
+    cache.refresh(Source("v0.3.0"), timeout=1)
+    assert (cache.latest, cache.error) == ("0.3.0", None)
+
+
+@pytest.mark.parametrize(
+    ("answer", "error"),
+    [(OSError("offline"), "OSError: offline"), ("nightly", "InvalidVersion: Invalid version: 'nightly'")],
+)
+def test_refresh_never_raises_and_stamps_the_failure(cache, answer, error):
+    cache.remember("0.2.0", NOW)
+    cache.refresh(Source(answer), timeout=1)
+    assert (cache.latest, cache.error) == ("0.2.0", error)
+    assert cache.checked_at != NOW
+
+
+def test_the_base_source_knows_nothing():
+    with pytest.raises(NotImplementedError):
+        ReleaseSource().latest_version(1)
+
+
+def test_a_write_replaces_the_file_whole(cache):
+    cache.remember("0.2.0")
+    assert [path.name for path in cache.cache_dir.iterdir()] == ["release.json"]

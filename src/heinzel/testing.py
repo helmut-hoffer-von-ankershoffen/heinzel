@@ -120,12 +120,13 @@ def _category_index(item: pytest.Item) -> int:
 
 @pytest.fixture(autouse=True)
 def hz_isolation(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
-    """No test sees the developer's HZ_* variables, configuration or state, nor touches their launchd or systemd."""
+    """No test sees the developer's HZ_* variables, config or state, touches launchd or systemd or asks for updates."""
     for name in ISOLATED:
         monkeypatch.delenv(name, raising=False)
     for name in OWN_DIRECTORIES:
         monkeypatch.setenv(name, str(tmp_path_factory.mktemp(name.lower())))
     isolate_credentials(monkeypatch)
+    monkeypatch.setenv("HZ_UPDATE_CHECK", "false")  # no `hz` a test starts asks GitHub for the latest release
     for name in (*UNCOLOURED, "COLUMNS", "TERMINAL_WIDTH"):
         monkeypatch.delenv(name, raising=False)  # registers the restore; a test may change them
     pin_terminal(os.environ)

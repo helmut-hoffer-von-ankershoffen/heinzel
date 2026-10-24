@@ -49,6 +49,8 @@ class Origin:
     distribution: str
     version: str
     builtin: bool
+    url: str | None = None
+    """Source repository of the distribution, from its Project-URL metadata; None if it names none."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -26,13 +26,14 @@ class Format(StrEnum):
     JSON = "json"
 
 
-def command(  # noqa: PLR0913 - the head's collaborators, plus the optional epilogue
+def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prologue and epilogue
     kernel: Kernel,
     operation: OperationLet,
     console: Console,
     err_console: Console,
     progress: ConsoleProgress,
     *,
+    prologue: Callable[[], None] | None = None,
     epilogue: Callable[[], None] | None = None,
 ) -> Callable[..., None]:
     """A Typer-compatible callable that runs the operation through the kernel and presents its result.
@@ -40,7 +41,7 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional epil
     The command's signature is the operation's, minus injected parameters, plus `--format` and its shorthand `--json`.
     Parameters without a default become arguments, the others options; `Field(description=...)` becomes their help
     text. Progress goes to stderr and is silent for JSON output, so stdout always holds just the result.
-    `epilogue` runs after text output only, never after JSON.
+    `prologue` runs before text output and `epilogue` after it; neither runs for JSON.
     """
     parameters = [
         _cli_parameter(parameter)
@@ -93,12 +94,8 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional epil
             raise typer.Exit(code=1) from exc
         if as_json:
             console.print(to_json(result), markup=False, highlight=False, soft_wrap=True)  # JSON escapes controls
-        elif operation.render is not None:
-            console.print(TerminalSafe(operation.render(result)))
         else:
-            show(console, result)
-        if not as_json and epilogue is not None:
-            epilogue()
+            _present(console, operation, result, prologue, epilogue)
         if operation.exit_code is not None and (code := operation.exit_code(result)):
             raise typer.Exit(code=code)
 
@@ -106,6 +103,24 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional epil
     run.__doc__ = inspect.getdoc(operation.func)
     run.__name__ = operation.name
     return run
+
+
+def _present(
+    console: Console,
+    operation: OperationLet,
+    result: object,
+    prologue: Callable[[], None] | None,
+    epilogue: Callable[[], None] | None,
+) -> None:
+    """Print a result as text, with the operation's renderer if it has one, between prologue and epilogue."""
+    if prologue is not None:
+        prologue()
+    if operation.render is not None:
+        console.print(TerminalSafe(operation.render(result)))
+    else:
+        show(console, result)
+    if epilogue is not None:
+        epilogue()
 
 
 def _cli_parameter(parameter: inspect.Parameter) -> inspect.Parameter:
