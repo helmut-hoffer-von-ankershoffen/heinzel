@@ -3103,6 +3103,11 @@ export interface components {
          */
         ThemeList: {
             /**
+             * Conflicts
+             * @description Names an org and the site both offer with nothing more specific deciding; left out until one is.
+             */
+            conflicts?: string[];
+            /**
              * Next
              * @description What to run next.
              */

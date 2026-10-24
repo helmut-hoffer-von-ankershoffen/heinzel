@@ -46,6 +46,7 @@ def render(result: ThemeList) -> RenderableType:
     parts: list[RenderableType] = [table]
     if shadowed := [f"{v.name} hides the one in {', '.join(v.shadows)}" for v in result.themes if v.shadows]:
         parts.append(Text("Same name in several plugins, the more specific layer wins: " + "; ".join(shadowed)))
+    parts += [Text(f"Left out: {conflict}", style="yellow") for conflict in result.conflicts]
     if result.note:
         parts.append(Text(result.note, style="yellow"))
     if result.next:

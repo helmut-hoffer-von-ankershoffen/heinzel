@@ -97,7 +97,7 @@ def test_the_more_specific_layer_wins_a_theme_name_and_a_layer_beats_a_plugin_ou
 def test_a_plugin_outside_every_layer_offers_its_theme_when_no_layer_does(acme):
     code, listed = hz(acme("heinzel_acme_lisbon", extra=(outsider(),)), "system", "theme", "list")
     assert code == 0, listed
-    assert [(t["name"], t["title"]) for t in listed["themes"]] == [("default", "Default"), ("acme", "Lookalike")]
+    assert ("acme", "Lookalike") in [(t["name"], t["title"]) for t in listed["themes"]]
 
 
 def test_theme_use_writes_the_user_setting_and_the_list_follows(acme):
@@ -133,8 +133,39 @@ def test_the_environment_decides_and_the_list_says_so(acme, monkeypatch):
     code, listed = hz(acme("heinzel_acme"), "system", "theme", "list")
     assert code == 0, listed
     assert listed["selected"] == "acme"
-    assert "HZ_SYSTEM_THEME__NAME=acme in your environment decides" in listed["note"]
+    assert "HZ_SYSTEM_THEME__NAME in your environment decides the theme (acme)" in listed["note"]
     assert listed["next"] == ["unset HZ_SYSTEM_THEME__NAME"]
+
+
+@pytest.mark.parametrize("where", ["environment", "file"])
+def test_a_configured_name_that_is_no_theme_name_falls_back_to_the_default(acme, monkeypatch, where):
+    if where == "environment":
+        monkeypatch.setenv("HZ_SYSTEM_THEME__NAME", "Acme; }")
+    else:
+        user_config_dir().mkdir(parents=True, exist_ok=True)
+        (user_config_dir() / "config.toml").write_text('[system.theme]\nname = "Acme"\n', encoding="utf-8")
+    code, listed = hz(acme("heinzel_acme"), "system", "theme", "list")
+    assert code == 0, listed
+    assert listed["selected"] == "default"
+    assert "isn't a theme name" in listed["note"]
+    assert listed["next"] == ["hz system theme use default"]
+
+
+def test_an_org_and_the_site_offering_one_name_is_a_conflict_nobody_decided(acme):
+    code, listed = hz(acme(), "system", "theme", "list")
+    assert code == 0, listed
+    assert "acme-warm" not in [t["name"] for t in listed["themes"]]
+    (conflict,) = listed["conflicts"]
+    assert conflict.startswith("acme-warm: offered by acme-lisbon and acme-payments, an org and the site")
+    assert "until acme-payments-checkout offers it" in conflict
+    assert hz(acme(), "system", "theme", "use", "acme-warm")[0] != 0
+
+
+def test_an_org_alone_offers_its_theme_when_the_site_is_not_in_the_stack(acme):
+    code, listed = hz(acme("heinzel_acme", "heinzel_acme_payments"), "system", "theme", "list")
+    assert code == 0, listed
+    assert ("acme-warm", "Acme Payments warm") in [(t["name"], t["title"]) for t in listed["themes"]]
+    assert listed["conflicts"] == []
 
 
 def test_a_project_file_cannot_pick_the_theme(acme, tmp_path, monkeypatch):
@@ -158,7 +189,7 @@ def test_the_web_head_lists_the_themes_and_the_pick_round_trips(acme):
         web.build(acme("heinzel_acme"), port=8000, token=TOKEN, static=None), base_url="http://127.0.0.1:8000"
     )
     listed = client.get("/api/system/theme/list", headers=AUTH).json()
-    assert set(listed) == {"selected", "themes", "note", "next"}
+    assert set(listed) == {"selected", "themes", "conflicts", "note", "next"}
     assert set(listed["themes"][0]) == {
         "name",
         "title",

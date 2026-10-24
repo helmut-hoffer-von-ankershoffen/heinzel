@@ -3515,6 +3515,14 @@
       "ThemeList": {
         "description": "Every available theme and which one is in effect.",
         "properties": {
+          "conflicts": {
+            "description": "Names an org and the site both offer with nothing more specific deciding; left out until one is.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
           "next": {
             "description": "What to run next.",
             "items": {

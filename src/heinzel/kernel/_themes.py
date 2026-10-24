@@ -26,8 +26,17 @@ NAME = r"^[a-z](?:-?[a-z0-9])*$"
 HEX = r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$"
 LENGTH = r"^(?:0|(?:[0-9]{1,3}(?:\.[0-9]{1,4})?|\.[0-9]{1,4})(?:px|rem|em))$"
 """A CSS length: `0`, or a number with `px`, `rem` or `em`, e.g. `0.5rem` or `1px`; no `calc()`, no `var()`."""
-_FAMILY = re.compile(r'^(?:-?[A-Za-z][A-Za-z0-9-]*(?: [A-Za-z0-9][A-Za-z0-9-]*)*|"[A-Za-z0-9][A-Za-z0-9 ._-]*")$')
+_FAMILY = re.compile(r'^(?:-?[A-Za-z][A-Za-z0-9-]*(?: [A-Za-z][A-Za-z0-9-]*)*|"[A-Za-z0-9][A-Za-z0-9 ._-]*")$')
 """One family in a stack: unquoted identifiers (`system-ui`, `-apple-system`) or a double-quoted name (`"SF Mono"`)."""
+CSS_WIDE = frozenset({"inherit", "initial", "unset", "revert", "revert-layer", "default"})
+"""Keywords CSS reserves; unquoted inside a stack they make the whole declaration invalid."""
+_RULES = {
+    "string_pattern_mismatch": {
+        "name": "lowercase words joined by single dashes, e.g. acme",
+        "radius": "a CSS length: 0, or a number with px, rem or em, e.g. 0.75rem",
+        "border_width": "a CSS length: 0, or a number with px, rem or em, e.g. 1px",
+    },
+}
 
 Colour = Annotated[
     str, StringConstraints(pattern=HEX, to_lower=True), Field(description="A hex colour, `#rgb` or `#rrggbb`.")
@@ -38,15 +47,20 @@ Length = Annotated[str, Field(pattern=LENGTH, description="A CSS length: `0`, or
 def font_stack_problem(stack: str) -> str | None:
     """Why `stack` isn't a safe font-family stack, or None.
 
-    A stack is family names separated by commas. A name is unquoted words of letters, digits and dashes, or a
-    double-quoted name of letters, digits, spaces, dots, underscores and dashes. Nothing else passes: no `;`, `}`,
-    `(` (so no `url(` or `var(`), no backslash, no single quote, no quote inside a name.
+    A stack is printable ASCII: family names separated by commas. A name is unquoted words that start with a letter
+    (one leading dash allowed) and hold letters, digits and dashes, or a double-quoted name of letters, digits,
+    spaces, dots, underscores and dashes. Nothing else passes: no `;`, `}`, `(` (so no `url(` or `var(`), no
+    backslash, no single quote, no quote inside a name, no newline, and no CSS-wide keyword such as `inherit`.
     """
+    if not (stack.isascii() and stack.isprintable()):
+        return "a font stack is one line of printable ASCII characters"
     if not stack.strip():
         return "a font stack names at least one family, e.g. system-ui, sans-serif"
     if len(stack) > MAX_FONT_STACK:
         return f"a font stack is at most {MAX_FONT_STACK} characters"
     for family in stack.split(","):
+        if family.strip().lower() in CSS_WIDE:
+            return f"{family.strip()!r} is a CSS keyword, not a font family; quote it if a font has that name"
         if not _FAMILY.fullmatch(family.strip()):
             return (
                 f"{family.strip()!r} isn't a font family name: use letters, digits, spaces and dashes, and double "
@@ -74,7 +88,7 @@ FontStack = Annotated[str, AfterValidator(_font_stack)]
 class ThemeColours(BaseModel):
     """The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes)."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
     background: Colour
     foreground: Colour
@@ -97,7 +111,7 @@ class ThemeColours(BaseModel):
 class Theme(BaseModel):
     """A look for the web app: colours for light and dark, fonts, corner radius and border width (ADR 0044)."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
     name: str = Field(pattern=NAME, max_length=MAX_NAME, description="Lowercase words joined by dashes, e.g. `acme`.")
     title: Annotated[str, AfterValidator(_one_line)] = Field(
@@ -120,6 +134,39 @@ class ThemeLet(Let):
     """A theme a module offers (`module.theme`), named after it; consumed by `system.theme`."""
 
     theme: Theme
+
+    def __post_init__(self) -> None:
+        """Check the theme again, so one built with `model_construct` can't skip the grammar.
+
+        Raises:
+            ValueError: If the theme isn't valid, is called `default`, or the let isn't named after it.
+        """
+        try:
+            theme = Theme.model_validate(self.theme.model_dump())
+        except ValidationError as exc:
+            msg = f"Theme {self.theme.name!r} isn't valid: {problems_of(exc)}"
+            raise ValueError(msg) from exc
+        if theme.name == DEFAULT:
+            msg = f"No plugin can offer a theme named {DEFAULT!r}: that is the built-in one"
+            raise ValueError(msg)
+        if self.name != theme.name:
+            msg = f"A theme let is named after its theme: {theme.name!r}, not {self.name!r}"
+            raise ValueError(msg)
+        object.__setattr__(self, "theme", theme)
+
+
+def problems_of(exc: ValidationError) -> str:
+    """Each problem of a theme as `field: rule`, in words a person editing a theme file reads."""
+    problems: list[str] = []
+    for error in exc.errors():
+        where = ".".join(map(str, error["loc"])) or "theme"
+        field = str(error["loc"][-1]) if error["loc"] else ""
+        if error["type"] == "string_pattern_mismatch":
+            rule = _RULES["string_pattern_mismatch"].get(field, "a hex colour, #rgb or #rrggbb, e.g. #0f766e")
+        else:
+            rule = error["msg"].removeprefix("Value error, ")
+        problems.append(f"{where}: {rule}")
+    return "; ".join(problems)
 
 
 def themes_in(source: Path | Theme) -> tuple[Theme, ...]:
@@ -146,8 +193,7 @@ def themes_in(source: Path | Theme) -> tuple[Theme, ...]:
             msg = f"Theme file {file} isn't valid TOML: {exc}"
             raise ValueError(msg) from exc
         except ValidationError as exc:
-            problems = "; ".join(f"{'.'.join(map(str, e['loc'])) or 'theme'}: {e['msg']}" for e in exc.errors())
-            msg = f"Theme file {file} isn't a valid theme: {problems}"
+            msg = f"Theme file {file} isn't a valid theme: {problems_of(exc)}"
             raise ValueError(msg) from exc
     return tuple(themes)
 

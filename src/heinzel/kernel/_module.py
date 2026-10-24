@@ -41,7 +41,7 @@ from heinzel.kernel._lets import (
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, PlaybookSetup, templates_in
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._spec import hookimpl
-from heinzel.kernel._themes import DEFAULT, Theme, ThemeLet, themes_in
+from heinzel.kernel._themes import Theme, ThemeLet, themes_in
 
 RESERVED_NAMES = frozenset({"hz", "capabilities", "setup", "join"})
 """Names a module can't take: the kernel's and the capability bindings' tables, `hz setup` and `hz join`."""
@@ -521,9 +521,6 @@ class Module:
         """
         lets: list[ThemeLet] = []
         for theme in themes_in(source):
-            if theme.name == DEFAULT:
-                msg = f"Module {self.name!r} can't offer a theme named {DEFAULT!r}: that is the built-in one"
-                raise ValueError(msg)
             let = ThemeLet(name=theme.name, theme=theme)
             self.add(let)
             lets.append(let)

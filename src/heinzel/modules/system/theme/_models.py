@@ -51,5 +51,9 @@ class ThemeList(BaseModel):
 
     selected: str = Field(description="The name of the theme in effect.")
     themes: list[ThemeView] = Field(description="The built-in `default` first, then the plugins' themes.")
+    conflicts: list[str] = Field(
+        default_factory=list[str],
+        description="Names an org and the site both offer with nothing more specific deciding; left out until one is.",
+    )
     note: str | None = Field(default=None, description="Why the theme in effect isn't the one configured.")
     next: list[str] = Field(default_factory=list[str], description="What to run next.")

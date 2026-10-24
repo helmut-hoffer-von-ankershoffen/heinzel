@@ -71,14 +71,30 @@ def test_a_theme_has_every_token_and_nothing_else():
         Theme.model_validate(theme(css="body { display: none }"))
 
 
-@pytest.mark.parametrize("length", ["0", "1px", "0.5rem", ".75em", "12px", "1.125rem"])
+@pytest.mark.parametrize("length", ["0", "0px", "1px", ".5px", "000px", "0.5rem", ".75em", "12px", "1.125rem"])
 def test_lengths_are_plain_css_lengths(length):
     assert Theme.model_validate(theme(radius=length, border_width=length)).radius == length
 
 
 @pytest.mark.parametrize(
     "length",
-    ["", "1", "-1px", "1 px", "1px;", "1px}", "calc(1px + 1rem)", "var(--x)", "1%", "1vh", "1px\n", "1e3px", "9999px"],
+    [
+        "",
+        "1",
+        "0.px",
+        "1.12345rem",
+        "-1px",
+        "1 px",
+        "1px;",
+        "1px}",
+        "calc(1px + 1rem)",
+        "var(--x)",
+        "1%",
+        "1vh",
+        "1px\n",
+        "1e3px",
+        "9999px",
+    ],
 )
 def test_lengths_that_could_break_out_or_mean_anything_else_are_refused(length):
     with pytest.raises(ValidationError):
@@ -120,6 +136,14 @@ def test_font_stacks_of_family_names_pass(stack):
         '"a\\"',
         "Arial\\",
         "Arial\nsans-serif",
+        "system-ui\n, sans-serif",
+        "Arial\x1c,sans-serif",
+        "Arial\u00a0Black",
+        "\uff21rial",
+        "Foo 2",
+        "inherit",
+        "sans-serif, initial",
+        "Unset",
         "Arial/*x*/",
         "Arial !important",
         "Arial, , sans-serif",
@@ -188,6 +212,32 @@ def test_a_module_offers_themes_as_lets_named_after_them(tmp_path):
     assert [let.name for let in module.lets if isinstance(let, ThemeLet)] == ["acme", "acme-night"]
     with pytest.raises(ValueError, match="already has a ThemeLet named 'acme'"):
         module.theme(tmp_path / "acme.toml")
+
+
+def test_a_theme_built_without_validation_is_checked_again_when_offered():
+    evil = Theme.model_construct(**(dict(DEFAULT_THEME) | {"name": "acme", "radius": "1px;}body{display:none"}))
+    with pytest.raises(ValueError, match=r"Theme 'acme' isn't valid: radius: a CSS length"):
+        Module("acme", "Acme.").theme(evil)
+    with pytest.raises(ValueError, match="isn't valid"):
+        ThemeLet(name="acme", theme=evil)
+    with pytest.raises(ValueError, match="named after its theme"):
+        ThemeLet(name="other", theme=Theme.model_validate(theme()))
+    with pytest.raises(ValueError, match="that is the built-in one"):
+        ThemeLet(name="default", theme=DEFAULT_THEME)
+
+
+def test_a_nested_colour_set_built_without_validation_is_checked_again():
+    evil = ThemeColours.model_construct(**(COLOURS | {"primary": "red;}"}))
+    with pytest.raises(ValidationError):
+        Theme.model_validate(theme() | {"light": evil})
+
+
+def test_problems_in_a_theme_file_read_as_rules(tmp_path):
+    (tmp_path / "acme.toml").write_text(TOML.replace("#ffffff", "white").replace("0.75rem", "big"), encoding="utf-8")
+    with pytest.raises(ValueError, match=r"light\.card: a hex colour") as raised:
+        themes_in(tmp_path / "acme.toml")
+    assert "radius: a CSS length" in str(raised.value)
+    assert "Value error" not in str(raised.value)
 
 
 def test_no_module_may_offer_a_theme_called_default():
