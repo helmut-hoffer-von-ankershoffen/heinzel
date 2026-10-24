@@ -156,7 +156,8 @@ registers layers (installed parent and site, no cycle, one parent per layer, a p
 outside the layer's own line), the stack order
 for a team with an org chain and a site, the conflict finding and the combination of stacked recommended settings
 (`tests/unit/kernel/layers_test.py`); `hz system layer list` and `show`, `hz system info`, doctor naming a missing
-parent and an org–site conflict, and `hz setup` offering each setting with the layer that wins it, most specific first
+parent and an org–site conflict, `hz org sync` listing the stack's bindings beside the team repository's, and `hz setup` offering each setting with
+the layer that wins it, most specific first
 (`tests/integration/layer_test.py`, with made-up Acme layers in `tests/fixtures/layers`). Still to come: roles from the stack validated in the roster (today `hz system layer show` lists them); the playbook let's own tests (its record); the word
 "plugin" in CLI help and generated documentation (`tests/unit/documentation_test.py`); the reference company's
 plugins installed and the onboarding journeys run against them (`tests/e2e/reference_company_test.py`), with the

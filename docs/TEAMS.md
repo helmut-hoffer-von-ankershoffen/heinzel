@@ -71,6 +71,10 @@ what you chose otherwise switches only when you name it. Plugins and credentials
 `sync` names. `hz system doctor` says when recommendations wait for you. An entry hz can't check is dropped, and
 `hz team show` says which.
 
+Your team's layer plugins recommend too: `sync` lists the capability bindings their playbooks recommend, the most
+specific layer's for each capability, with the layer as the origin; the team repository's recommendation wins for the
+same capability ([Playbooks: layers](PLAYBOOKS.md#layers-company-org-site-team)).
+
 ## Add someone, show, leave
 
 - `hz team add theo --login theo-example --role engineer` adds someone to the roster, as an owner: a pull request, or a

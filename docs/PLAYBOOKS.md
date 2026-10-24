@@ -134,12 +134,14 @@ module.playbook("How Checkout tracks its work.", defaults={"capabilities.tracker
 - Name a layer by its path, joined with dashes: `acme`, `acme-payments`, `acme-payments-checkout`, and the site
   `acme-lisbon`. Doctor hints at a name that doesn't follow it; nothing refuses it.
 - List the parent's and the site's plugins as dependencies, so installing the team installs its stack. A missing
-  parent or site, a cycle, a layer two plugins declare and a site that is a parent are doctor findings with their fix.
+  parent or site, a cycle, a layer two plugins declare, a layer on a submodule and a site in the layer's own line are
+  doctor findings with their fix.
 - Your layer is the plugin your team repository's `hz.yaml` names, or `[team] layer` when you set it, or the only team
   layer installed. `hz system layer show` prints your stack, `acme → acme-payments + acme-lisbon →
   acme-payments-checkout`, the roles it adds and the settings its playbooks recommend, most specific first, each with
-  the more general layers' values as alternatives. `hz setup` walks the layers' playbooks in that order; a setting a
-  more specific layer recommends too is offered only with that layer's.
+  the more general layers' values as alternatives. `hz org sync` lists the bindings among them beside what you have
+  and writes the ones you accept; `hz setup` walks the layers' playbooks in that order, and a setting a more specific
+  layer recommends too is offered only with that layer's.
 - Where an org and the site recommend different values and the team is silent, nothing is offered: doctor names both
   layers and the key, and your file decides until the team's playbook sets it. That rule is
   `ORG_SITE_PRECEDENCE` (`team_decides`) in the kernel, the one place to change while the question is open; a

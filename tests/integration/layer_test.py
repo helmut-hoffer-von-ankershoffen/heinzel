@@ -249,3 +249,21 @@ def test_setup_offers_each_setting_with_the_layer_that_wins_it(acme, monkeypatch
     code, text = hz(acme(), "setup", "acme-payments-checkout", json_output=False, stdin="y\n")
     assert code == 0, text
     assert tomllib.loads(config.read_text())["capabilities"] == {"tracker": "acme-payments-checkout"}
+
+
+def test_org_sync_offers_your_layers_bindings_and_writes_only_what_you_accept(acme):
+    _, report = hz(acme("heinzel_acme"), "org", "sync")
+    items = {item["id"]: item for item in report["items"]}
+    assert items["binding:tracker"]["state"] == "pending"
+    assert items["binding:tracker"]["origin"] == "layer acme (heinzel-acme), its playbook"
+    assert items["binding:calendar"]["state"] == "by-hand"  # no installed plugin provides an acme calendar
+    code, report = hz(acme("heinzel_acme"), "org", "sync", "--accept", "binding:tracker")
+    assert code == 0, report
+    assert tomllib.loads((user_config_dir() / "config.toml").read_text())["capabilities"] == {"tracker": "acme"}
+
+
+def test_org_sync_offers_the_binding_the_stack_decides_and_leaves_the_undecided_out(acme):
+    _, report = hz(acme(), "org", "sync")
+    items = {item["id"]: item for item in report["items"]}
+    assert set(items) == {"binding:tracker"}  # the calendar is undecided between acme-payments and acme-lisbon
+    assert items["binding:tracker"]["recommended"] == "acme-payments-checkout"
