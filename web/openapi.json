@@ -6992,7 +6992,7 @@
     },
     "/system/notify/settings": {
       "post": {
-        "description": "Open the system's notification settings (macOS: System Settings > Notifications) to allow hz's pop-ups.",
+        "description": "Open the system's notification settings to allow hz's pop-ups (macOS: System Settings).",
         "operationId": "system_notify_settings",
         "responses": {
           "200": {
@@ -7006,7 +7006,7 @@
             "description": "Successful Response"
           }
         },
-        "summary": "Open the system's notification settings (macOS: System Settings > Notifications) to allow hz's pop-ups.",
+        "summary": "Open the system's notification settings to allow hz's pop-ups (macOS: System Settings).",
         "tags": [
           "system"
         ]
@@ -7014,7 +7014,7 @@
     },
     "/system/notify/test": {
       "post": {
-        "description": "Record an urgent test notice and say how each way of reaching you stands; exit 1 if nothing pops it up.\n\nThe open web app or the next daemon tick pops it up; `hz system notify install` pops one up at once, through the\nnative notifier only.\n\nRaises:\n    HeinzelError: If notifications are off, or quiet mode keeps it from popping up.",
+        "description": "Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up.\n\nThe open web app or the next daemon tick pops it up; `hz system notify install` pops one up at once, through the\nnative notifier only.\n\nRaises:\n    HeinzelError: If notifications are off, or quiet mode keeps it from popping up.",
         "operationId": "system_notify_test",
         "parameters": [
           {
@@ -7062,7 +7062,7 @@
             "description": "The result, when its exit code is non-zero."
           }
         },
-        "summary": "Record an urgent test notice and say how each way of reaching you stands; exit 1 if nothing pops it up.",
+        "summary": "Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up.",
         "tags": [
           "system"
         ]

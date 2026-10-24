@@ -84,7 +84,7 @@ def send_test(
         bool, Field(description="Pop it up through the native notifier now too, as the web app's test button does.")
     ] = False,
 ) -> Tested:
-    """Record an urgent test notice and say how each way of reaching you stands; exit 1 if nothing pops it up.
+    """Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up.
 
     The open web app or the next daemon tick pops it up; `hz system notify install` pops one up at once, through the
     native notifier only.
@@ -105,7 +105,7 @@ def install(service: NotifyService) -> Installed:
 # Opens a window on the machine hz runs on, for the person who clicked: the CLI and the web app, not agents.
 @module.operation(name="settings", read_only=False, heads={"cli", "web"})
 def open_settings(service: NotifyService) -> Opened:
-    """Open the system's notification settings (macOS: System Settings > Notifications) to allow hz's pop-ups."""
+    """Open the system's notification settings to allow hz's pop-ups (macOS: System Settings)."""
     return service.open_settings()
 
 

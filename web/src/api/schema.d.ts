@@ -646,8 +646,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Open the system's notification settings (macOS: System Settings > Notifications) to allow hz's pop-ups.
-         * @description Open the system's notification settings (macOS: System Settings > Notifications) to allow hz's pop-ups.
+         * Open the system's notification settings to allow hz's pop-ups (macOS: System Settings).
+         * @description Open the system's notification settings to allow hz's pop-ups (macOS: System Settings).
          */
         post: operations["system_notify_settings"];
         delete?: never;
@@ -666,8 +666,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Record an urgent test notice and say how each way of reaching you stands; exit 1 if nothing pops it up.
-         * @description Record an urgent test notice and say how each way of reaching you stands; exit 1 if nothing pops it up.
+         * Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up.
+         * @description Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up.
          *
          *     The open web app or the next daemon tick pops it up; `hz system notify install` pops one up at once, through the
          *     native notifier only.

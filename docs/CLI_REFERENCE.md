@@ -1368,7 +1368,7 @@ $ hz system notify [OPTIONS] COMMAND [ARGS]...
 * `install`: (expert) Install the native notifier...
 * `list`: (expert) Show the latest notices, whether...
 * `settings`: (expert) Open the system&#x27;s notification...
-* `test`: (expert) Record an urgent test notice and...
+* `test`: (expert) Record a test notice, report each...
 
 #### `hz system notify ack`
 
@@ -1426,7 +1426,7 @@ $ hz system notify list [OPTIONS]
 
 #### `hz system notify settings`
 
-(expert) Open the system&#x27;s notification settings (macOS: System Settings &gt; Notifications) to allow hz&#x27;s pop-ups.
+(expert) Open the system&#x27;s notification settings to allow hz&#x27;s pop-ups (macOS: System Settings).
 
 **Usage**:
 
@@ -1442,7 +1442,7 @@ $ hz system notify settings [OPTIONS]
 
 #### `hz system notify test`
 
-(expert) Record an urgent test notice and say how each way of reaching you stands; exit 1 if nothing pops it up.
+(expert) Record a test notice, report each way it can reach you, and exit 1 if nothing pops it up.
 
 **Usage**:
 
