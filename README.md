@@ -6,7 +6,6 @@
 |-------------------------------------------------------------- | -------: | -------: | -------: | -------: | ------: | --------: |
 | plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        1 |       30 |        2 |     98% |79-\>81, 226 |
 | plugins/heinzel-atlassian/src/heinzel\_atlassian/\_storage.py |      291 |        1 |      150 |        5 |     99% |245, 252-\>exit, 258-\>exit, 262-\>exit, 312-\>exit |
-| src/heinzel/\_\_main\_\_.py                                   |        1 |        1 |        0 |        0 |      0% |         3 |
 | src/heinzel/heads/api/\_\_init\_\_.py                         |       71 |        0 |       18 |        1 |     99% | 130-\>133 |
 | src/heinzel/heads/cli/\_\_init\_\_.py                         |      160 |        4 |       30 |        4 |     96% |116-\>118, 125-128, 133-\>exit, 166-\>160, 276-\>278 |
 | src/heinzel/heads/cli/\_command.py                            |       76 |        2 |       20 |        2 |     96% |   85, 146 |
@@ -31,9 +30,9 @@
 | src/heinzel/modules/workflow/\_render.py                      |      194 |       14 |       92 |        9 |     90% |97, 115, 158-\>160, 163, 164-\>166, 196-202, 228, 262, 283-293 |
 | src/heinzel/modules/workflow/\_retention.py                   |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
 | src/heinzel/modules/workflow/\_service.py                     |      623 |       10 |      202 |        3 |     98% |316, 406-407, 512-513, 872-873, 889-891 |
-| **TOTAL**                                                     | **9200** |   **75** | **2288** |   **44** | **99%** |           |
+| **TOTAL**                                                     | **9200** |   **74** | **2288** |   **44** | **99%** |           |
 
-92 files skipped due to complete coverage.
+93 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
