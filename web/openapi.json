@@ -5635,6 +5635,113 @@
         "title": "StackView",
         "type": "object"
       },
+      "StateStatus": {
+        "description": "Where this machine's state goes and how the last push went; asks nothing over the network.",
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "This machine's writer branch, hz/<handle>/<machine>; none without a handle.",
+            "title": "Branch"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the last push failed.",
+            "title": "Error"
+          },
+          "failures": {
+            "default": 0,
+            "description": "Failed pushes since the last that worked.",
+            "title": "Failures",
+            "type": "integer"
+          },
+          "last_attempt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When a push was last tried.",
+            "title": "Last Attempt"
+          },
+          "last_push": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When a push last succeeded.",
+            "title": "Last Push"
+          },
+          "machine": {
+            "description": "This machine's id: random, never its host name.",
+            "title": "Machine",
+            "type": "string"
+          },
+          "next": {
+            "description": "What to run next, if anything.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "refused": {
+            "default": false,
+            "description": "Whether pushing stopped because the branch holds lines this machine didn't write.",
+            "title": "Refused",
+            "type": "boolean"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your personal state repository; none when nothing leaves.",
+            "title": "Repository"
+          },
+          "streams": {
+            "description": "Each stream's lines.",
+            "items": {
+              "$ref": "#/components/schemas/StreamStatus"
+            },
+            "title": "Streams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "repository",
+          "branch",
+          "machine"
+        ],
+        "title": "StateStatus",
+        "type": "object"
+      },
       "Status": {
         "description": "Health of one check, or of everything: DOWN beats DEGRADED beats UP.",
         "enum": [
@@ -5664,6 +5771,33 @@
           "why"
         ],
         "title": "Step",
+        "type": "object"
+      },
+      "StreamStatus": {
+        "description": "One stream on this machine and what of it the state repository doesn't have yet.",
+        "properties": {
+          "lines": {
+            "description": "Lines this machine wrote.",
+            "title": "Lines",
+            "type": "integer"
+          },
+          "name": {
+            "description": "The stream: presence or adoption.",
+            "title": "Name",
+            "type": "string"
+          },
+          "pending": {
+            "description": "Lines the last push didn't carry yet.",
+            "title": "Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "lines",
+          "pending"
+        ],
+        "title": "StreamStatus",
         "type": "object"
       },
       "SystemInfo": {
@@ -8889,6 +9023,28 @@
           }
         },
         "summary": "Show a chat session: its context, messages, actions and costs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/state/status": {
+      "get": {
+        "description": "Show where this machine's state goes, what is still to push and how the last push went.",
+        "operationId": "system_state_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show where this machine's state goes, what is still to push and how the last push went.",
         "tags": [
           "system"
         ]

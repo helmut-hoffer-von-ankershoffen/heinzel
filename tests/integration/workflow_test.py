@@ -88,6 +88,12 @@ def kernel(make_kernel, contracts) -> Kernel:
     return make_kernel(builtins=True, fakes=fakes(), notes=notes(), config=config)
 
 
+def workflow_jobs(kernel: Kernel) -> tuple[int, list[dict]]:
+    """`hz system daemon jobs`, the workflow module's only: others, like `system.state:push`, aren't ours."""
+    code, jobs = hz(kernel, "system", "daemon", "jobs")
+    return code, [job for job in jobs if job["job"].startswith("workflow:")] if isinstance(jobs, list) else jobs
+
+
 def hz(kernel: Kernel, *args: str, json_output: bool = True) -> tuple[int, object]:
     result = CliRunner().invoke(build(kernel), [*args, "--json"] if json_output else list(args))
     try:
@@ -479,7 +485,7 @@ def test_an_unknown_contract_is_an_error(kernel):
 
 
 def test_the_daemon_runs_a_contract_and_writes_a_receipt_naming_the_draft(kernel):
-    code, jobs = hz(kernel, "system", "daemon", "jobs")
+    code, jobs = workflow_jobs(kernel)
     assert code == 0
     assert [j["job"] for j in jobs] == ["workflow:prune", "workflow:me-weekly-digest"]
     assert jobs[1]["timeout_seconds"] == timedelta(minutes=12).total_seconds()
@@ -518,7 +524,7 @@ def test_disabling_the_module_removes_its_jobs(make_kernel, contracts):
         },
     )
     disabled = make_kernel(builtins=True, fakes=fakes(), config=config, settings_=config.settings(Settings, "hz"))
-    code, jobs = hz(disabled, "system", "daemon", "jobs")
+    code, jobs = workflow_jobs(disabled)
     assert code == 0
     assert jobs == []
 
@@ -539,7 +545,7 @@ def test_a_project_file_cant_point_discovery_at_its_own_contracts(make_kernel, t
     code, listed = hz(kernel, "workflow", "list")
     assert (code, listed["contracts"]) == (0, [])
     assert listed["directories"][0]["path"] == str(user / "workflows")
-    assert [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]] == ["workflow:prune"]
+    assert [job["job"] for job in workflow_jobs(kernel)[1]] == ["workflow:prune"]
     _, report = hz(kernel, "system", "doctor")
     ignored = sorted(c["name"] for c in report["checks"]["system.doctor"] if c["name"].startswith("project setting"))
     assert ignored == [
@@ -558,7 +564,7 @@ def test_one_bad_schedule_leaves_the_other_jobs_and_matrix_rows_and_fails_check(
     code, report = hz(kernel, "workflow", "check")
     assert code == 1
     assert [(d["code"], d["field"]) for d in report["diagnostics"]] == [("HZC011", "hz.schedule")]
-    assert [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]] == [
+    assert [job["job"] for job in workflow_jobs(kernel)[1]] == [
         "workflow:prune",
         "workflow:me-weekly-digest",
     ]

@@ -33,6 +33,14 @@ from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_repo
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._git import (
+    GIT_HARDENING,
+    CommandFailed,
+    GitRunner,
+    RunCommand,
+    check_repository_url,
+    git_command,
+)
 from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
     CorePin,
@@ -76,6 +84,7 @@ from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, DiscoveryHint, PlaybookLet, PlaybookSetup
+from heinzel.kernel._presence import Presence
 from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
@@ -143,6 +152,7 @@ __all__ = [
     "ENTRY_POINT_GROUP",
     "FILENAME",
     "FONT_ROUTE",
+    "GIT_HARDENING",
     "HEINZEL_ID",
     "HOWS",
     "INTERRUPT",
@@ -172,6 +182,7 @@ __all__ = [
     "Chat",
     "Check",
     "CodeHost",
+    "CommandFailed",
     "CompiledJobs",
     "Config",
     "ConfigEditor",
@@ -191,6 +202,7 @@ __all__ = [
     "Emit",
     "EnvironmentBackend",
     "Event",
+    "GitRunner",
     "HealthLet",
     "HeinzelError",
     "How",
@@ -233,6 +245,7 @@ __all__ = [
     "PlaybookLet",
     "PlaybookSetup",
     "PostedMessage",
+    "Presence",
     "Progress",
     "Prompter",
     "ProposedCall",
@@ -247,6 +260,7 @@ __all__ = [
     "Requester",
     "Requirement",
     "RequirementLet",
+    "RunCommand",
     "RunStatus",
     "ScriptExhausted",
     "ScriptedPrompter",
@@ -279,6 +293,7 @@ __all__ = [
     "Verb",
     "Window",
     "boot",
+    "check_repository_url",
     "check_target",
     "clean_text",
     "discover",
@@ -287,6 +302,7 @@ __all__ = [
     "environment_variable",
     "font_stack_problem",
     "format_duration",
+    "git_command",
     "parse_duration",
     "parse_window",
     "redact_emails",

@@ -1140,6 +1140,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/state/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show where this machine's state goes, what is still to push and how the last push went.
+         * @description Show where this machine's state goes, what is still to push and how the last push went.
+         */
+        get: operations["system_state_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/theme/list": {
         parameters: {
             query?: never;
@@ -4744,6 +4764,64 @@ export interface components {
             stack: string;
         };
         /**
+         * StateStatus
+         * @description Where this machine's state goes and how the last push went; asks nothing over the network.
+         */
+        StateStatus: {
+            /**
+             * Branch
+             * @description This machine's writer branch, hz/<handle>/<machine>; none without a handle.
+             */
+            branch: string | null;
+            /**
+             * Error
+             * @description Why the last push failed.
+             */
+            error?: string | null;
+            /**
+             * Failures
+             * @description Failed pushes since the last that worked.
+             * @default 0
+             */
+            failures: number;
+            /**
+             * Last Attempt
+             * @description When a push was last tried.
+             */
+            last_attempt?: string | null;
+            /**
+             * Last Push
+             * @description When a push last succeeded.
+             */
+            last_push?: string | null;
+            /**
+             * Machine
+             * @description This machine's id: random, never its host name.
+             */
+            machine: string;
+            /**
+             * Next
+             * @description What to run next, if anything.
+             */
+            next?: string[];
+            /**
+             * Refused
+             * @description Whether pushing stopped because the branch holds lines this machine didn't write.
+             * @default false
+             */
+            refused: boolean;
+            /**
+             * Repository
+             * @description Your personal state repository; none when nothing leaves.
+             */
+            repository: string | null;
+            /**
+             * Streams
+             * @description Each stream's lines.
+             */
+            streams?: components["schemas"]["StreamStatus"][];
+        };
+        /**
          * Status
          * @description Health of one check, or of everything: DOWN beats DEGRADED beats UP.
          * @enum {string}
@@ -4764,6 +4842,27 @@ export interface components {
              * @description What it does for you.
              */
             why: string;
+        };
+        /**
+         * StreamStatus
+         * @description One stream on this machine and what of it the state repository doesn't have yet.
+         */
+        StreamStatus: {
+            /**
+             * Lines
+             * @description Lines this machine wrote.
+             */
+            lines: number;
+            /**
+             * Name
+             * @description The stream: presence or adoption.
+             */
+            name: string;
+            /**
+             * Pending
+             * @description Lines the last push didn't carry yet.
+             */
+            pending: number;
         };
         /**
          * SystemInfo
@@ -5533,8 +5632,10 @@ export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSkill = components['schemas']['Skill'];
 export type SchemaStackView = components['schemas']['StackView'];
+export type SchemaStateStatus = components['schemas']['StateStatus'];
 export type SchemaStatus = components['schemas']['Status'];
 export type SchemaStep = components['schemas']['Step'];
+export type SchemaStreamStatus = components['schemas']['StreamStatus'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
 export type SchemaTeamGraphDocument = components['schemas']['TeamGraphDocument'];
 export type SchemaTeamShow = components['schemas']['TeamShow'];
@@ -7003,6 +7104,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_state_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StateStatus"];
                 };
             };
         };

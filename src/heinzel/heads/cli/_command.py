@@ -12,6 +12,7 @@ from pydantic.fields import FieldInfo
 from rich.console import Console
 from rich.text import Text
 
+from heinzel.heads._presence import mark_presence
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, show, to_json
 from heinzel.heads.cli._setup import ConsolePrompter, has_terminal
@@ -37,13 +38,15 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
     *,
     prologue: Callable[[object], None] | None = None,
     epilogue: Callable[[], None] | None = None,
+    module: str | None = None,
 ) -> Callable[..., None]:
     """A Typer-compatible callable that runs the operation through the kernel and presents its result.
 
     The command's signature is the operation's, minus injected parameters, plus `--format` and its shorthand `--json`.
     Parameters without a default become arguments, the others options; `Field(description=...)` becomes their help
     text. Progress goes to stderr and is silent for JSON output, so stdout always holds just the result.
-    `prologue` runs before text output, with the result, and `epilogue` after it; neither runs for JSON.
+    `prologue` runs before text output, with the result, and `epilogue` after it; neither runs for JSON. `module`,
+    the operation's module, is what the command notes as used today (ADR 0062).
     """
     parameters = [
         _cli_parameter(parameter)
@@ -76,6 +79,8 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
         progress.enabled = not as_json
         # On a terminal, and not for scripts (--json), operations that ask (a plugin's preview) may ask.
         kernel.bind(Prompter, ConsolePrompter(console) if has_terminal() and not as_json else Prompter())
+        if module is not None:
+            mark_presence(kernel, module)
         try:
             result = kernel.invoke(operation, **kwargs)
         except HeinzelError as exc:

@@ -790,6 +790,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `release`: (expert) Ask where Heinzelmännchen was...
 * `runner`: Run bounded agent sessions with Claude...
 * `serve`: (expert) Serve every operation to coding...
+* `state`: (expert) Note how hz is used on this...
 * `theme`: (expert) Pick how the web app looks: the...
 * `update`: Update Heinzelmännchen, keeping plugins;...
 
@@ -1930,6 +1931,74 @@ $ hz system serve mcp [OPTIONS]
 * `--port <int>`: Port for streamable-http.  [default: 8765]
 * `--chat SESSION`: Serve the tools of this chat session: reads run, everything else waits for your confirmation in the chat. Started by `hz chat` for its agent, over stdio only.
 * `--project <path>`: Read the configuration as if started in this directory (its hz.toml), as the chat does.
+* `--help`: Show this message and exit.
+
+### `hz system state`
+
+(expert) Note how hz is used on this machine and push it to your own state repository.
+
+**Usage**:
+
+```console
+$ hz system state [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `push`: (expert) Push this machine&#x27;s new presence...
+* `reset`: (expert) Start this machine&#x27;s clone of its...
+* `status`: (expert) Show where this machine&#x27;s state...
+
+#### `hz system state push`
+
+(expert) Push this machine&#x27;s new presence and adoption lines to your personal state repository now.
+
+**Usage**:
+
+```console
+$ hz system state push [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system state reset`
+
+(expert) Start this machine&#x27;s clone of its branch afresh after a refused push; the old one is kept aside.
+
+**Usage**:
+
+```console
+$ hz system state reset [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system state status`
+
+(expert) Show where this machine&#x27;s state goes, what is still to push and how the last push went.
+
+**Usage**:
+
+```console
+$ hz system state status [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
 ### `hz system theme`

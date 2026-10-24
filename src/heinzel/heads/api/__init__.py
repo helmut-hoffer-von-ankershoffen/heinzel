@@ -26,6 +26,7 @@ from pydantic.fields import FieldInfo
 
 from heinzel import __version__
 from heinzel.heads._exposure import Exposed, exposed
+from heinzel.heads._presence import mark_presence
 from heinzel.heads._stream import streamed
 from heinzel.kernel import HeinzelError, Kernel, boot
 
@@ -172,6 +173,7 @@ def endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
     """A function with the operation's public parameters as query parameters, run through the kernel."""
 
     def run(response: Response, **kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
+        mark_presence(kernel, item.record.qualname)
         result = kernel.invoke(item.operation, **kwargs)
         if item.operation.exit_code is not None and item.operation.exit_code(result):
             response.status_code = UNAVAILABLE

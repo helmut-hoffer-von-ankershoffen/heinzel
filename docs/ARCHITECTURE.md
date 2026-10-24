@@ -81,6 +81,11 @@ capability `agent-runner`; core ships its Claude Code and generic command adapte
 served by the core's `hz-graph` adapter (`graph`), so a contract (the graph keeper) can read it; `graph` builds it
 from the kernel's `TeamPromises` (provided by `workflow`) and `TelemetryLog` (provided by `telemetry`, command
 `hz report`), whose entries are `TelemetryEntry` ([ADR 0054](adr/0054-observability-is-whether-each-team-promise-is-kept.md)).
+Every head but the daemon's notes that hz was used today through the kernel's `Presence` (provided by
+`system.state`) before it runs an operation; `system.state` keeps that and the hz version as local append-only
+streams and its daemon job pushes them, through the kernel's hardened `GitRunner` (shared with `team`), to the
+machine's writer branch `hz/<handle>/<machine>` of the person's own state repository, fast-forward only
+([ADR 0062](adr/0062-state-repositories-one-writer-per-branch-the-daemon-pushes.md)).
 
 **Head.** A view that boots the kernel and exposes operations ([ADR 0019](adr/0019-mcp-and-rest-heads.md)). All heads
 share one exposure rule (`heinzel.heads._exposure`): the same path, public parameters and `heads=` restrictions. The
@@ -138,6 +143,7 @@ hz system agent   skills | install | uninstall
 hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
 hz system notify  list | ack | test | install
 hz system serve   mcp | api | daemon
+hz system state   status | push | reset     your machine's presence and versions, to your own repository
 hz report <verb> | sync                    what a Heinzelmännchen did, for the team graph (ADR 0054)
 hz graph                                  are the team's promises kept, and where the flow waits
 hz <module> …     work: plugin modules and built-in workflow modules

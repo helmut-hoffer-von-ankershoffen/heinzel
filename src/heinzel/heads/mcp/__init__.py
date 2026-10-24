@@ -24,6 +24,7 @@ from pydantic_core import to_jsonable_python
 
 from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
+from heinzel.heads._presence import mark_presence
 from heinzel.kernel import ActionGate, HeinzelError, Kernel, ProposedCall, boot, redact_emails
 
 HEAD = "mcp"
@@ -72,6 +73,7 @@ def tool(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
     """A function with the operation's public signature that runs it through the kernel."""
 
     def run(**kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
+        mark_presence(kernel, item.record.qualname)
         try:
             return kernel.invoke(item.operation, **kwargs)
         except HeinzelError as exc:
@@ -84,6 +86,7 @@ def chat_tool(kernel: Kernel, item: Exposed, session: str) -> Callable[..., str]
     """The tool of one chat session: runs a read-only operation, and only proposes any other (ADR 0045)."""
 
     def run(**kwargs: Any) -> str:  # noqa: ANN401 - the operation's own parameters
+        mark_presence(kernel, item.record.qualname)
         try:
             if item.operation.read_only:
                 result = kernel.invoke(item.operation, **kwargs)

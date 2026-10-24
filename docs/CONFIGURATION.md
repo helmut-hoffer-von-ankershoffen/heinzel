@@ -190,6 +190,12 @@ Plugins add their own tables.
 | `keep_days` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS` | `30` | Days a chat session is kept after its last message, then removed. |
 | `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | Chat sessions kept at most; the oldest beyond are removed. |
 
+## `[system.state]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `personal` | `HZ_SYSTEM_STATE__PERSONAL` | `None` | Your own private state repository, which hz pushes this machine's presence and adoption to, on the branch hz/<your handle>/<machine>; e.g. https://github.com/mira-example/heinzel-state-mira. Unset, nothing leaves this machine. |
+
 ## `[system.theme]`
 
 | Key | Environment variable | Default | Description |

@@ -148,8 +148,9 @@ def make(make_kernel, tmp_path):
 
     def build_kernel(bindings: dict[str, str] = BINDINGS) -> Kernel:
         data = {"capabilities": bindings, "workflow": {"user_dir": str(tmp_path / "workflows")}}
-        # Without `graph`, whose graph keeper is the core's one playbook: these tests are about what plugins bring.
-        no_graph = Settings(disabled_modules=frozenset({"graph"}))
+        # Without `graph`, whose graph keeper is the core's one playbook: these tests are about what plugins bring;
+        # and without `system.state`, whose push job joins every tick at a quarter hour.
+        no_graph = Settings(disabled_modules=frozenset({"graph", "system.state"}))
         return make_kernel(
             builtins=True, teamwork=teamwork(), fakes=runner(), config=Config(files=(), data=data), settings_=no_graph
         )

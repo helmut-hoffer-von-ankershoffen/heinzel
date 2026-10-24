@@ -314,7 +314,14 @@ class _Mount:
         epilogue = None if key in QUIET else partial(print_notice, self.kernel, err_console)
         prologue = partial(print_changelog_header, self.kernel, console) if key == CHANGELOG else None
         return command(
-            self.kernel, operation, console, err_console, self.progress, prologue=prologue, epilogue=epilogue
+            self.kernel,
+            operation,
+            console,
+            err_console,
+            self.progress,
+            prologue=prologue,
+            epilogue=epilogue,
+            module=key[0],
         )
 
 

@@ -33,6 +33,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
+| [`system.state`](#systemstate) | Note how hz is used on this machine and push it to your own state repository. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`workflow`](#workflow) | Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one). |
@@ -355,6 +356,20 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |
 
 Settings: [`[system.runner.chat]`](CONFIGURATION.md#systemrunnerchat).
+
+## `system.state`
+
+Note how hz is used on this machine and push it to your own state repository.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Show where this machine's state goes, what is still to push and how the last push went. | `hz system state status` | `system_state_status` | — | `GET /api/system/state/status` |  | expert |
+| Push this machine's new presence and adoption lines to your personal state repository now. | `hz system state push` | `system_state_push` | — | — | yes | expert |
+| Start this machine's clone of its branch afresh after a refused push; the old one is kept aside. | `hz system state reset` | `system_state_reset` | — | — | yes | expert |
+
+Settings: [`[system.state]`](CONFIGURATION.md#systemstate).
+
+Health checks: reported by `hz system doctor`.
 
 ## `system.theme`
 

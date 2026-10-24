@@ -108,6 +108,24 @@ your log doesn't extend. Pushing is still yours; automatic sync is the next step
 The graph keeper watches it for you: `hz workflow new keeper --template graph:team-graph-keeper` writes a contract that
 reads the graph and drafts a morning note for you alone; uncomment its schedule when its drafts read right.
 
+## Your own state repository
+
+hz notes, on your machine, the days you used it (one line a day: no time, no count, no command) and each version it
+ran. Nothing of it leaves until you name a private repository of your own; then the daemon pushes what is new every
+15 minutes to this machine's branch `hz/<handle>/<machine>`, fast-forward only, with your git credentials
+([ADR 0062](adr/0062-state-repositories-one-writer-per-branch-the-daemon-pushes.md)):
+
+```bash
+hz system config set system.state.personal https://github.com/mira-example/heinzel-state-mira   # private, yours
+hz system state push                                             # now, rather than within 15 minutes
+hz system state status                                           # where it goes, what is pending, the last push
+```
+
+The machine id is random, never the host name. Each branch has one writer: a branch that moved to commits this
+machine didn't make stops the push (`HZS001`) instead of being overwritten; delete the branch if they aren't yours,
+then `hz system state reset`. Sharing with your team comes next, only after you say yes, and aggregate unless you say
+yes again to being named.
+
 ## What waits for your yes
 
 `new`, `join` and `add` show every step, with the command it runs, before it happens. Reading (a clone into hz's data
