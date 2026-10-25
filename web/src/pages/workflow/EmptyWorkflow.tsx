@@ -11,7 +11,7 @@ const stages = [
 
 export function EmptyWorkflow({ hasSources }: { hasSources: boolean }) {
   const commands = [
-    "hz workflow new weekly-digest",
+    "hz heinzel new weekly-digest",
     "hz system plugin search --text playbook",
     ...(hasSources ? [] : ["hz system capability list"]),
   ];

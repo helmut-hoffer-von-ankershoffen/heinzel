@@ -187,19 +187,19 @@ def test_the_report_commands_are_cli_and_mcp_only_and_the_graph_is_on_the_web_he
 
 
 def test_the_graph_keeper_is_a_playbook_template_whose_contract_reads_the_graph(kernel):
-    code, playbooks = hz(kernel, "workflow", "playbooks")
+    code, playbooks = hz(kernel, "heinzel", "playbooks")
     assert code == 0, playbooks
     (keeper,) = [p for p in playbooks["playbooks"] if p["module"] == "graph"]
     assert [t["template"] for t in keeper["templates"]] == ["graph:team-graph-keeper"]
-    code, created = hz(kernel, "workflow", "new", "keeper", "--template", "graph:team-graph-keeper")
+    code, created = hz(kernel, "heinzel", "new", "keeper", "--template", "graph:team-graph-keeper")
     assert code == 0, created
-    code, shown = hz(kernel, "workflow", "show", "me:keeper")
+    code, shown = hz(kernel, "heinzel", "show", "me:keeper")
     assert code == 0, shown
     assert shown["ready"] is True
     assert shown["diagnostics"] == []
     assert shown["publishes"] == []  # it nudges its own user; it publishes nothing
     assert {r["requirement"]: r["adapter"] for r in shown["requirements"]}["team-graph:read"] == "hz-graph"
-    code, run = hz(kernel, "workflow", "run", "me:keeper", "--dry-run")
+    code, run = hz(kernel, "heinzel", "wake", "me:keeper", "--dry-run")
     assert code == 0, run
     graph = run["packet"]["inputs"]["graph"]["data"]["graph"]
     assert graph["type"] == "hz-team"

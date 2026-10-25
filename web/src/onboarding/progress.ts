@@ -45,7 +45,7 @@ export const ROLES = [
   ["product-leadership", "Product Lead"],
 ] as const;
 
-/** "Send the weekly status to my team" → `send-the-weekly-status`: a contract name `hz workflow new` takes. */
+/** "Send the weekly status to my team" → `send-the-weekly-status`: a contract name `hz heinzel new` takes. */
 export function contractName(sentence: string): string {
   return sentence
     .toLowerCase()

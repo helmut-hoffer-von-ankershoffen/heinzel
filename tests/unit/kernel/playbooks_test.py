@@ -144,7 +144,7 @@ def test_filling_is_one_pass_and_cleans_and_escapes_references():
 
 def test_a_playbook_recommends_only_bindings_and_its_own_settings():
     PlaybookLet(name="teamwork", summary="s", defaults={"capabilities.code-host": "x", "teamwork.region": "eu"})
-    for key in ("capabilities.agent_runner", "system.runner.command", "workflow.max_usd", "capabilities.nope"):
+    for key in ("capabilities.agent_runner", "system.runner.command", "heinzel.max_usd", "capabilities.nope"):
         with pytest.raises(ValueError, match="can't recommend"):
             PlaybookLet(name="teamwork", summary="s", defaults={key: "x"})
 

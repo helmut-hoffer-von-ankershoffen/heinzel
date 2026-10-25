@@ -12,9 +12,9 @@ from rich.console import Console
 
 from heinzel import Config, Credentials, HeinzelError, Module, Status
 from heinzel.kernel import CAPABILITIES, user_config_dir
+from heinzel.modules.heinzel._contracts import read_contract
 from heinzel.modules.org import SyncService
 from heinzel.modules.org._sync import SyncItem, SyncReport, render_sync
-from heinzel.modules.workflow._contracts import read_contract
 
 pytestmark = pytest.mark.unit
 
@@ -129,7 +129,7 @@ def test_next_accepts_the_pending_ones_and_says_how_to_decide_the_rest(make):
     assert any(
         line.startswith("binding:chat: install the plugin that provides the slack adapter") for line in report.next
     )
-    assert any("changed since you pinned it; read it first: hz workflow show team:monthly" in x for x in report.next)
+    assert any("changed since you pinned it; read it first: hz heinzel show team:monthly" in x for x in report.next)
     assert (
         "credential:google/oauth-client: install the plugin that declares google/oauth-client first; "
         "hz system doctor then says how"
@@ -159,13 +159,13 @@ def test_a_binding_of_a_dashed_capability_uses_the_configuration_key(make):
 
 def test_accepted_contracts_are_all_pinned_to_the_content_workflow_compares(make, team):
     make(workflow={"schedule_team": ["other"]}).sync("contract:weekly-digest,contract:monthly")
-    assert user_file()["workflow"]["schedule_team"] == ["other", pin(team, "weekly-digest"), pin(team, "monthly")]
+    assert user_file()["heinzel"]["schedule_team"] == ["other", pin(team, "weekly-digest"), pin(team, "monthly")]
 
 
 def test_all_takes_only_what_you_have_no_choice_for_yet(make, team):
     report = make(capabilities={"tracker": "jira"}, workflow={"schedule_team": [STALE]}).sync("all")
     assert user_file()["capabilities"] == {"documents": "google", "code_host": "github"}
-    assert user_file()["workflow"]["schedule_team"] == [STALE, pin(team, "weekly-digest")]
+    assert user_file()["heinzel"]["schedule_team"] == [STALE, pin(team, "weekly-digest")]
     assert states(report)["binding:tracker"] == "differs"
     assert states(report)["contract:monthly"] == "differs"
 
@@ -174,7 +174,7 @@ def test_what_you_chose_otherwise_switches_only_by_its_id(make, team):
     service = make(capabilities={"tracker": "jira"}, workflow={"schedule_team": [STALE]})
     service.sync("binding:tracker,contract:monthly")
     assert user_file()["capabilities"] == {"tracker": "github"}
-    assert user_file()["workflow"]["schedule_team"] == [pin(team, "monthly")]
+    assert user_file()["heinzel"]["schedule_team"] == [pin(team, "monthly")]
 
 
 def test_accepting_what_sync_cannot_apply_says_why(make):

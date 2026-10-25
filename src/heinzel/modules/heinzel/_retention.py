@@ -1,4 +1,4 @@
-"""Retention of drafts and their records: files older than `[workflow] retention_days` expire (ADR 0021).
+"""Retention of drafts and their records: files older than `[heinzel] retention_days` expire (ADR 0021).
 
 Only files hz wrote are considered: names matching `DRAFT_NAME` in a contract's directory below
 `<data dir>/workflow/drafts/`, whose stamp is the render's time in UTC. Anything else there is left alone.
@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from heinzel import HeinzelError
-from heinzel.modules.workflow._models import DRAFT_NAME, DRAFT_STAMP, DRAFTS
+from heinzel.modules.heinzel._models import DRAFT_NAME, DRAFT_STAMP, DRAFTS
 
 NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | NOFOLLOW

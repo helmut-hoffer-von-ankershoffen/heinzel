@@ -128,6 +128,7 @@ try {
   for (const [name, path, heading] of [
     ["home", "/", "Today"],
     ["settings", "/settings", "Settings"],
+    ["heinzel", "/heinzel", "Heinzelmännchen"],
     ["contracts", "/contracts", "Workflow"],
     ["team-graph", "/graph", "Team graph"],
     ["team", "/team", "Team roster"],

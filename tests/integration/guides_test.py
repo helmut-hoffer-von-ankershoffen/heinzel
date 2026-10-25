@@ -131,10 +131,10 @@ def test_the_guides_exist_and_cite_commands():
 
 def test_the_checker_rejects_what_the_cli_rejects(check):
     assert check("hz nosuch") is not None
-    assert check("hz workflow run x --nope") is not None
+    assert check("hz heinzel wake x --nope") is not None
     assert check("hz team new") is not None  # a required argument is missing
     assert check("hz team new", mention=True) is None
-    assert check("hz workflow run x --dry-run") is None
+    assert check("hz heinzel wake x --dry-run") is None
     assert check("hz --version") is None
 
 

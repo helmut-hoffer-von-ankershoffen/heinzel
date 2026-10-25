@@ -94,7 +94,7 @@ def environment(tmp_path):
         "HZ_SYSTEM_DAEMON__UNIT_DIR": str(tmp_path / "units"),
         "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
         "HZ_PLUGINS_ENABLED": "false",
-        "HZ_WORKFLOW__USER_DIR": str(tmp_path / "workflows"),
+        "HZ_HEINZEL__USER_DIR": str(tmp_path / "workflows"),
         "HZ_ORG__HANDLE": "mira",
         "HZ_ORG__ROLE": "engineering-manager",
         "HZ_ORG__TIMEZONE": "Europe/Berlin",

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { useConfig, useContracts, useExpert, usePlaybooks } from "@/api/queries";
+import { Gnome } from "@/components/Gnome";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { contractPath, listed, sections, visibleSections } from "./navigation";
@@ -22,7 +23,7 @@ function useEntries(): Entry[] {
       for (const item of section.items) entries.push({ label: t(item.label), hint: t(section.label), to: item.to });
     }
     entries.push({ label: t("nav.profile"), hint: "", to: "/profile" });
-    for (const contract of contracts.data?.contracts ?? []) {
+    for (const contract of contracts.data?.heinzelmaennchen ?? []) {
       const qualified = `${contract.namespace}:${contract.name}`;
       entries.push({ label: contract.title ?? contract.name, hint: qualified, to: contractPath(qualified) });
     }
@@ -30,7 +31,7 @@ function useEntries(): Entry[] {
       const key = `${setting.section}.${setting.key}`;
       entries.push({ label: key, hint: setting.description, to: `?settings=&q=${encodeURIComponent(key)}` });
     }
-    const assetTypes = listed("workflow:playbooks", expert.data) ? (playbooks.data?.playbooks ?? []) : [];
+    const assetTypes = listed("heinzel:playbooks", expert.data) ? (playbooks.data?.playbooks ?? []) : [];
     for (const playbook of assetTypes) {
       for (const asset of playbook.assets) {
         entries.push({
@@ -113,7 +114,12 @@ export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenCha
             aria-label={t("search.label")}
             className="max-h-80 overflow-x-hidden overflow-y-auto p-1"
           >
-            {matches.length === 0 && <p className="p-3 text-sm text-muted-foreground">{t("search.none")}</p>}
+            {matches.length === 0 && (
+              <div role="presentation" className="flex items-center gap-3 p-3">
+                <Gnome state="thinking" view="bust" />
+                <p className="text-sm text-muted-foreground">{t("search.none")}</p>
+              </div>
+            )}
             {matches.map((entry, index) => (
               <div
                 key={`${entry.to}-${entry.label}`}
