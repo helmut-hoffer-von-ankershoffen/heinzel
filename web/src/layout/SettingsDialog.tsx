@@ -4,6 +4,7 @@ import {
   Bot,
   Building2,
   Cpu,
+  Download,
   FileCog,
   FolderOpen,
   type LucideIcon,
@@ -28,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
 import { AiAccessSetting } from "./AiAccessSetting";
 import { ConnectorsSection } from "./ConnectorsSection";
+import { FROM_CLAUDE, FromClaudeSection } from "./FromClaudeSection";
 import { PluginsSection, Provenance } from "./PluginsSection";
 import { Row, Switch } from "./SettingControls";
 import type { JsonSchema } from "./settingSchema";
@@ -135,7 +137,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
   // General's.
   const current = connector
     ? CONNECTORS
-    : preference || [FILES, PLUGINS, CONNECTORS].includes(section ?? "")
+    : preference || [FILES, PLUGINS, CONNECTORS, FROM_CLAUDE].includes(section ?? "")
       ? (section as string)
       : (nav.preferences[0]?.id ?? FILES);
   const needle = query.trim().toLowerCase();
@@ -189,6 +191,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
         {entry(PLUGINS, t("plugins.title"), Puzzle)}
         <p className="mt-4 mb-1 px-2.5 text-ui-sm text-muted-foreground">{t("settings.thisComputer")}</p>
         {entry(FILES, t("settings.filesTitle"), FileCog)}
+        {entry(FROM_CLAUDE, t("fromClaude.title"), Download)}
       </nav>
       <div className="min-w-0 flex-1 overflow-y-auto border-l border-border px-6 pt-5 pb-10">
         {needle ? (
@@ -197,6 +200,8 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
           <PluginsSection />
         ) : current === FILES ? (
           <Files report={report} />
+        ) : current === FROM_CLAUDE ? (
+          <FromClaudeSection />
         ) : current === CONNECTORS ? (
           <ConnectorsSection
             connectors={nav.connectors}

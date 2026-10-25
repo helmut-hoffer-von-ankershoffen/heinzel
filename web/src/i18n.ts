@@ -15,7 +15,7 @@ const en = {
   "nav.organisation": "Organisation",
   "nav.orgChart": "Org chart",
   "nav.team": "Team roster",
-  "nav.inventory": "Inventory",
+  "nav.artifacts": "Artifacts",
   "nav.assetTypes": "Asset types",
   "nav.assets": "Assets",
   "nav.doctor": "Doctor",
@@ -572,6 +572,26 @@ const en = {
   "teamGraph.copyMermaid": "Copy as Mermaid",
   "teamGraph.copied": "Copied",
   "teamGraph.empty": "No team graph yet — Heinzelmännchen report what they read and write; run:",
+  "fromClaude.title": "From Claude",
+  "fromClaude.intro":
+    "The MCP servers and skills you already set up for Claude on this computer. hz only lists them for now and uses none of them. Secret values are never read: you see the names of the variables and headers a server is given.",
+  "fromClaude.rescan": "Rescan",
+  "fromClaude.servers": "MCP servers",
+  "fromClaude.skills": "Skills",
+  "fromClaude.noServers": "No MCP servers found.",
+  "fromClaude.noSkills": "No skills found.",
+  "fromClaude.connectors":
+    "{count} claude.ai connectors are reachable only through Claude Code, so they are not listed.",
+  "fromClaude.skipped": "Left alone",
+  "fromClaude.self": "hz itself",
+  "fromClaude.gives": "Given: {names}",
+  "fromClaude.bundled": "Bundled: {files}",
+  "fromClaude.source.desktop": "Claude Desktop",
+  "fromClaude.source.desktop-extension": "Claude Desktop extension",
+  "fromClaude.source.code-user": "Claude Code, you",
+  "fromClaude.source.code-local": "Claude Code, project (local)",
+  "fromClaude.source.code-project": "Claude Code, project",
+  "fromClaude.source.code-plugin": "Claude Code, plugin",
 } as const;
 
 export type MessageKey = keyof typeof en;
