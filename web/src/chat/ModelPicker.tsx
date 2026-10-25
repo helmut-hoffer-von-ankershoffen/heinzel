@@ -103,7 +103,7 @@ export function ModelPicker({ value, onChange, disabled }: Props) {
           ref={panel}
           id={panelId}
           onKeyDown={onEscape}
-          className="absolute bottom-7 left-0 z-20 w-64 rounded-lg border border-border bg-popover p-1 shadow-md"
+          className="absolute bottom-7 left-0 z-(--layer-popover) w-64 rounded-lg border border-border bg-popover p-1 shadow-md"
         >
           <fieldset aria-label={t("chat.modelMenu", { access: list.title })}>
             <Option label={t("chat.modelDefault")} chosen={!value.model} onPick={() => pick({ model: "" })} />

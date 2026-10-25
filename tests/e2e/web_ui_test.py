@@ -94,6 +94,9 @@ def environment(tmp_path):
         "HZ_SYSTEM_DAEMON__UNIT_DIR": str(tmp_path / "units"),
         "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
         "HZ_PLUGINS_ENABLED": "false",
+        # Let the real server admit the stream origin before the offline iframe layer/playback probe runs.
+        "HZ_SYSTEM_SOUND__NAME": "claude-fm",
+        "HZ_SYSTEM_SOUND__FOLLOW_THEME": "false",
         "HZ_HEINZEL__USER_DIR": str(tmp_path / "workflows"),
         "HZ_ORG__HANDLE": "mira",
         "HZ_ORG__ROLE": "engineering-manager",

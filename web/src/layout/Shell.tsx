@@ -204,7 +204,7 @@ function Layout() {
             className={cn(
               "flex flex-col bg-background",
               full
-                ? "absolute inset-0 z-30"
+                ? "absolute inset-0"
                 : beside
                   ? "w-96 shrink-0 border-l border-border"
                   : "h-[min(36rem,55%)] shrink-0 border-t border-border",

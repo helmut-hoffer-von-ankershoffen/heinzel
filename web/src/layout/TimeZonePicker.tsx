@@ -82,7 +82,7 @@ export function TimeZonePicker({ id, value, disabled, label, onChange }: Props) 
         <ChevronDown aria-hidden className="ml-auto size-4 shrink-0 text-icon" />
       </button>
       {open && (
-        <div className="absolute top-full left-0 z-40 mt-1 w-72 rounded-xl border border-border bg-popover p-1.5 shadow-xl">
+        <div className="absolute top-full left-0 z-(--layer-popover) mt-1 w-72 rounded-xl border border-border bg-popover p-1.5 shadow-xl">
           <input
             role="combobox"
             aria-expanded

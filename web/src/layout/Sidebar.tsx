@@ -265,8 +265,9 @@ const ROLE_SHORT: Record<string, string> = {
 function Footer({ compact = false }: { compact?: boolean }) {
   const profile = useProfile();
   const me = profile.data;
-  const shown = me?.name?.split(" ")[0] ?? me?.handle;
-  const initial = (me?.name ?? me?.handle ?? "?").slice(0, 1).toUpperCase();
+  const name = me?.name?.trim() || me?.handle || t("nav.profile");
+  const shown = name.split(" ")[0];
+  const initial = name.slice(0, 1).toUpperCase();
   const role = me?.role ? (ROLE_SHORT[me.role] ?? me.role.replaceAll("-", " ")) : undefined;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -289,16 +290,16 @@ function Footer({ compact = false }: { compact?: boolean }) {
       ref={ref}
       className={cn(
         "relative flex items-center gap-1",
-        // 60px like the status bar, so the hairlines above both line up across the window.
-        "h-[60px] shrink-0 border-t-[0.5px] border-foreground/20",
-        compact ? "w-full flex-col justify-center gap-0.5" : "-mx-2 mt-2 px-2",
+        // The compact controls determine their own height; the divider stays above the whole cluster.
+        "shrink-0 border-t-[0.5px] border-foreground/20 [&>button]:shrink-0",
+        compact ? "w-full flex-col gap-1 py-2" : "-mx-2 mt-2 h-[60px] px-2",
       )}
     >
       {open && (
         <div
           role="menu"
           className={cn(
-            "absolute z-30 rounded-xl border border-border bg-popover p-1.5 shadow-xl",
+            "absolute z-(--layer-popover) rounded-xl border border-border bg-popover p-1.5 shadow-xl",
             compact ? "bottom-0 left-full ml-2 w-64" : "right-2 bottom-full left-2 mb-1.5",
           )}
         >
@@ -338,11 +339,11 @@ function Footer({ compact = false }: { compact?: boolean }) {
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={compact ? (me?.name ?? t("nav.profile")) : undefined}
-        title={[me?.name, me?.role?.replaceAll("-", " ")].filter(Boolean).join(" · ") || undefined}
+        aria-label={compact ? name : undefined}
+        title={[name, me?.role?.replaceAll("-", " ")].filter(Boolean).join(" · ")}
         className={cn(
           "flex min-w-0 items-center gap-2 rounded-lg text-left transition-colors hover:bg-accent/70",
-          compact ? "size-7 justify-center" : "flex-1 px-1.5 py-1.5",
+          compact ? "size-8 justify-center rounded-full" : "flex-1 px-1.5 py-1.5",
         )}
       >
         <span

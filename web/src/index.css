@@ -51,6 +51,10 @@
 
 /* A theme's backdrop behind the main area (ADR 0060), built by the web app from checked parts; none by default. */
 :root {
+  /* One order across body-portaled media and app overlays: content, media, popovers, then modal dialogs. */
+  --layer-media: 20;
+  --layer-popover: 40;
+  --layer-modal: 60;
   --theme-backdrop: none;
 }
 
