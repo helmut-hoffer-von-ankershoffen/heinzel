@@ -1,5 +1,6 @@
 // Settings as a dialog over the screen, as in Claude: search and sections on the left, one row per setting on the
 // right with its control. Every change is `hz system config set|unset` in the user's configuration.
+
 import {
   Bot,
   Building2,
@@ -22,11 +23,13 @@ import {
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { SchemaConfigReport, SchemaSettingInfo } from "@/api/client";
 import { useConfig, useExpert, useInfo, usePlugins, useRevealConfig, useSetExpert } from "@/api/queries";
+import { ContributionToggles } from "@/components/Contributions";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
+import { SoundSettings } from "@/sound/SoundControls";
 import { AiAccessSetting } from "./AiAccessSetting";
 import { ConnectorsSection } from "./ConnectorsSection";
 import { FROM_CLAUDE, FromClaudeSection } from "./FromClaudeSection";
@@ -219,6 +222,9 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 <ThemePreviews />
                 <AiAccessSetting />
                 <div className="mt-6">
+                  <SoundSettings />
+                </div>
+                <div className="mt-6">
                   <NotificationSettings />
                 </div>
                 <div className="mt-6">
@@ -234,6 +240,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 <Provenance plugin={preference?.plugin} version={info.data?.version} onOpen={() => go(PLUGINS)} />
               }
             />
+            <ContributionToggles module={current} />
           </>
         )}
       </div>

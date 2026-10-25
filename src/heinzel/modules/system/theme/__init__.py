@@ -12,7 +12,7 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from heinzel import Module, ThemeFonts
+from heinzel import Module, ThemeChoice, ThemeFonts
 from heinzel.modules.system.theme._models import (
     ThemeFontView,
     ThemeList,
@@ -27,6 +27,7 @@ module = Module("theme", "Pick how the web app looks: the built-in theme or one 
 module.settings(ThemeSettings)
 module.service(ThemeService)
 module.service(ThemeFonts, ThemeService)  # the web head serves the themes' fonts and logos through it (ADR 0044)
+module.service(ThemeChoice, ThemeService)  # system.sound follows the theme in effect through it (ADR 0058)
 
 
 def _swatch(view: ThemeView) -> Text:

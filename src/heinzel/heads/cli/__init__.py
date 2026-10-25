@@ -29,7 +29,7 @@ from typer.core import TyperGroup
 
 from heinzel import __version__
 from heinzel.heads._exposure import collapses, owns_path
-from heinzel.heads.cli import _update
+from heinzel.heads.cli import _playful, _update
 from heinzel.heads.cli._chat import CHAT, chat_callback
 from heinzel.heads.cli._chat import HELP as CHAT_HELP
 from heinzel.heads.cli._command import command
@@ -119,7 +119,7 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
             handlers=[RichHandler(console=err_console, show_path=False)],
         )
 
-    progress = ConsoleProgress(err_console)
+    progress = ConsoleProgress(err_console, playful=_playful.allowed(kernel.settings, err_console))
     kernel.bind(Progress, progress)
     mount = _Mount(kernel, progress, footer, plain=plain, expert=kernel.settings.expert)
     count = mount(app, None) + Count(commands=3)  # setup, join and ui: everyday, for everyone
@@ -168,6 +168,8 @@ def main() -> None:
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
     check = start_check(kernel)  # in the background, at most once an hour (ADR 0031)
+    if not sys.argv[1:]:
+        _banner(kernel)  # the bare `hz`: the start screen follows
     try:
         build(kernel)()
     finally:
@@ -402,9 +404,20 @@ def expert_hint(hidden: int) -> str:
     return f"[dim]{hidden} more {commands} hidden; [bold]hz system expert on[/bold] lists them.[/dim]"
 
 
+def _banner(kernel: Kernel) -> None:
+    """The Heinzelmännchen beside the name, version and tagline, where a person watches a colour terminal."""
+    if "--json" in sys.argv or "json" in sys.argv:
+        return  # the flag is parsed later; a script asking for JSON gets no art
+    if _playful.allowed(kernel.settings, console):
+        head, _, tail = TAGLINE.partition(" that ")
+        lines = ["Heinzelmännchen", f"hz {__version__}", head, *([f"that {tail}"] if tail else [])]
+        console.print(_playful.banner(lines), end="")
+
+
 def _print_version(kernel: Kernel, value: bool) -> None:
     if not value:
         return
+    _banner(kernel)
     origins = {(r.origin.distribution, r.origin.version, r.origin.url, r.origin.builtin) for r in kernel.modules}
     core = next((url for _, _, url, builtin in origins if builtin and url), None)
     lines = [f"hz {__version__}"]

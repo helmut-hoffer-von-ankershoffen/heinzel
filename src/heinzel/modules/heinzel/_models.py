@@ -460,9 +460,12 @@ class HeinzelSettings(ModuleSettings):
     daemon runs with your agent and your capabilities.
     """
 
+    section_title: ClassVar[str | None] = "Contracts"  # the heading in Settings
+
     user_dir: Path = Field(
         default_factory=lambda: user_config_dir() / "workflows",
-        description="Your own contracts, `<name>.prose.md`; they run on your daemon when they have a schedule.",
+        title="Your contracts",
+        description="The folder of your own contracts; those with a schedule run on your daemon.",
     )
     team_repository: Path | None = Field(
         default=None,
@@ -472,27 +475,32 @@ class HeinzelSettings(ModuleSettings):
     )
     schedule_team: list[str] = Field(
         default_factory=list,
-        description="Team contracts your daemon runs on their schedule, by name, or `name@sha256:<hex>` to run only "
-        "the content you approved (`hz heinzel show` prints it); the others run only by hand, so a team's contracts "
-        "don't run on every member's daemon.",
+        title="Team contracts you run",
+        description="Team contracts your daemon runs on their schedule, by name; add @sha256: and "
+        "a hash to run only the version you approved. The others run only when "
+        "started by hand, so a team's contracts don't run on everyone's daemon.",
+        json_schema_extra={"x-expert": True},
     )
 
     max_usd: float = Field(
         default=1.0,
         gt=0,
         allow_inf_nan=False,
-        description="Most one render may cost in US dollars, whatever a contract asks for: scheduled and manual runs, "
-        "in every head. A scheduled slot's retries share it.",
+        title="Most per run",
+        description="The most one run of a contract may cost in US dollars, scheduled or by hand, "
+        "whatever the contract asks for. A scheduled run's retries share it.",
+        json_schema_extra={"x-unit": "usd"},
     )
 
     retention_days: int = Field(
         default=90,
         ge=0,
         le=MAX_RETENTION_DAYS,
-        description="Days drafts and their `.record.json` files (the packet with the fetched inputs) are kept, "
-        "counted from the render; older ones are deleted by the daemon's daily `heinzel:prune` job or by "
-        "`hz heinzel prune`, never by reading them. 0 keeps them forever, at most 36500. Receipts are kept and hold "
-        "the draft's hash, not its text (ADR 0021).",
+        title="Keep drafts for",
+        description="How long drafts and the inputs they were made from are kept, counted from "
+        "when they were made; 0 keeps them forever. Receipts are always kept, with a "
+        "hash of the draft instead of its text.",
+        json_schema_extra={"x-unit": "days"},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(

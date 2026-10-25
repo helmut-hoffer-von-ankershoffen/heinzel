@@ -13,28 +13,56 @@ class NotifySettings(ModuleSettings):
     Your user configuration only: a project's `hz.toml` can't decide what interrupts you.
     """
 
-    enabled: bool = Field(default=True, description="Record notices at all; false turns every kind off.")
-    draft: bool = Field(default=True, description="Notify when a draft is ready to read and approve.")
-    failed: bool = Field(default=True, description="Notify when a contract run on your daemon failed.")
-    doctor: bool = Field(default=True, description="Notify when `hz system doctor` finds something degraded or down.")
-    release: bool = Field(default=False, description="Notify when a newer release of Heinzelmännchen is out.")
+    section_title: ClassVar[str | None] = "Notifications"  # the heading in Settings
+
+    enabled: bool = Field(
+        default=True, title="Notifications", description="Keep a list of notices at all; off turns every kind off."
+    )
+    draft: bool = Field(
+        default=True, title="Drafts to approve", description="Notify when a draft is ready to read and approve."
+    )
+    failed: bool = Field(
+        default=True, title="Failed runs", description="Notify when a contract run on your daemon failed."
+    )
+    doctor: bool = Field(
+        default=True,
+        title="Health problems",
+        description="Notify when a health check finds something degraded or down.",
+    )
+    release: bool = Field(
+        default=False, title="New releases", description="Notify when a newer release of Heinzelmännchen is out."
+    )
     quiet: bool = Field(
-        default=False, description="Quiet mode: record notices in the list, never pop one up, urgent ones included."
+        default=False,
+        title="Quiet mode",
+        description="Keep notices in the list but never pop one up, not even an urgent one.",
     )
     working_hours: bool = Field(
         default=True,
-        description="Hold notices that aren't urgent until your working hours ([org] working_hours, Monday to "
-        "Friday, in [org] timezone) start.",
+        title="Only in working hours",
+        description="Hold notices that aren't urgent until your working hours start, Monday to "
+        "Friday, in your time zone (both under Your profile).",
     )
     per_hour: int = Field(
-        default=6, ge=0, le=60, description="At most this many pop-ups an hour; more go to the list only."
+        default=6,
+        ge=0,
+        le=60,
+        title="Pop-ups per hour",
+        description="At most this many pop-ups an hour; the rest go to the list only.",
+        json_schema_extra={"x-unit": "per hour"},
     )
     repeat_hours: int = Field(
-        default=24, ge=0, le=24 * 30, description="The same notice again within this many hours is dropped."
+        default=24,
+        ge=0,
+        le=24 * 30,
+        title="Drop repeats within",
+        description="The same notice again within this many hours is dropped.",
+        json_schema_extra={"x-unit": "hours"},
     )
     native: bool = Field(
         default=True,
-        description="Let the daemon pop up native notifications (Heinzel Notifier on macOS, "
+        title="System notifications",
+        description="Let the daemon show system notifications (Heinzel Notifier on macOS, "
         "notify-send on Linux) when no web app is open.",
     )
 

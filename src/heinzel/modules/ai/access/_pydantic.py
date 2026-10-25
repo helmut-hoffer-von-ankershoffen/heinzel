@@ -1,10 +1,17 @@
-"""The `pydantic-ai` option: a model API reached through Pydantic AI with an API key (ADR 0050, 0057).
+"""The `pydantic-ai` option: a model API reached through Pydantic AI, with a key (ADR 0050, 0057).
 
-`[ai.access] model` names the model as Pydantic AI does, `<vendor>:<model>`, e.g. `anthropic:claude-sonnet-4-5`. The
-key is the credential `ai.access/api-key` (`hz system credential set ai.access api-key`) or the vendor's own variable,
-e.g. `ANTHROPIC_API_KEY`. The vendor's client comes with an extra (`heinzel[anthropic]`, `heinzel[openai]`); the core
-itself imports only `pydantic_ai`, never a vendor SDK. `status` reads configuration only; `test` sends one short
-request, capped at one request and a few output tokens.
+Three kinds of API, by configuration in `[ai.access]`:
+
+- a vendor's own API: `model = "anthropic:claude-sonnet-4-5"` or `"openai:gpt-5"`, as Pydantic AI names it;
+- an OpenAI-compatible endpoint: `base_url = "http://localhost:11434/v1"` (Ollama), LM Studio, vLLM or OpenRouter,
+  with `model` the name the endpoint knows (`llama3.1:8b`); the key is optional;
+- (with a ChatGPT login, a follow-up.)
+
+The key is the credential `ai.access/api-key` in the keychain (`hz system credential set ai.access api-key`) or the
+vendor's own variable, e.g. `ANTHROPIC_API_KEY`; it goes only over https, or over http to this machine. The vendor's
+client comes with an extra (`heinzel[anthropic]`, `heinzel[openai]`; endpoints use OpenAI's); the core itself imports
+only `pydantic_ai`, never a vendor SDK. `status` reads configuration and the last listing only. `test` lists the
+models the API offers (kept for the picker) and sends one short request, capped at one request and a few tokens.
 """
 
 import asyncio
@@ -12,16 +19,20 @@ import concurrent.futures
 import importlib.util
 import os
 import time
+import urllib.parse
 from collections.abc import Callable
 from typing import Any, cast
 
-from heinzel import AccessStatus, AccessTest, CredentialLet, Credentials
+from heinzel import AccessStatus, AccessTest, CredentialLet, Credentials, Settings
 from heinzel.kernel import clean_text
+from heinzel.modules.ai.access._discovery import Fetch, ModelCache, fetch, is_local, listing, safe_for_key
 from heinzel.modules.ai.access._models import AccessSettings
 
 NAME = "pydantic-ai"
 TITLE = "Model API"
-SUMMARY = "A model API such as Anthropic's or OpenAI's, called directly through Pydantic AI with your API key."
+SUMMARY = "A model API through Pydantic AI: Anthropic's or OpenAI's with your key, or an OpenAI-compatible endpoint."
+ENDPOINT = "openai-compatible"
+"""The vendor of a configured `base_url`: any server that speaks OpenAI's API."""
 VENDOR_KEYS = {
     "anthropic": "ANTHROPIC_API_KEY",
     "openai": "OPENAI_API_KEY",
@@ -30,22 +41,38 @@ VENDOR_KEYS = {
     "mistral": "MISTRAL_API_KEY",
 }
 """The variable each vendor's client reads its key from."""
-VENDOR_PACKAGES = {"anthropic": "anthropic", "openai": "openai", "google-gla": "google.genai"}
+KNOWN_VENDORS = frozenset(
+    {"anthropic", "openai", "google-gla", "google-vertex", "groq", "mistral", "cohere", "bedrock"}
+)
+"""Model prefixes Pydantic AI knows as vendors."""
+VENDOR_PACKAGES = {"anthropic": "anthropic", "openai": "openai", ENDPOINT: "openai", "google-gla": "google.genai"}
 """The client package Pydantic AI needs for a vendor; `heinzel[<extra>]` installs it."""
-EXTRAS = {"anthropic": "anthropic", "openai": "openai"}
+EXTRAS = {"anthropic": "anthropic", "openai": "openai", ENDPOINT: "openai"}
 TEST_INSTRUCTIONS = "Reply with the single word OK."
 TEST_OUTPUT_TOKENS = 16
 DETAIL_LIMIT = 300
 SET_MODEL = "hz system config set ai.access.model anthropic:claude-sonnet-4-5"
 SET_KEY = "hz system credential set ai.access api-key"
 
-ModelFactory = Callable[[str, str | None], Any]
-"""Builds a Pydantic AI model from the model name and the key; tests pass one returning `TestModel`."""
+ModelFactory = Callable[[str, str | None, str | None], Any]
+"""Builds a Pydantic AI model from the model name, the key and the endpoint; tests pass one returning `TestModel`."""
 
 
-def build_model(model: str, key: str | None) -> Any:  # noqa: ANN401 - a pydantic_ai Model, imported lazily
-    """The Pydantic AI model for `model`, its provider given `key` when there is one, else the vendor's variable."""
-    from pydantic_ai.models import infer_model  # noqa: PLC0415 - a heavy import, only on a test
+def build_model(model: str, key: str | None, base_url: str | None = None) -> Any:  # noqa: ANN401 - lazily imported
+    """The Pydantic AI model: an OpenAI-compatible one at `base_url`, else the vendor's, with `key` when given."""
+    if base_url is not None:
+        from pydantic_ai.models.openai import OpenAIChatModel  # noqa: PLC0415 - a heavy import, only on a test
+        from pydantic_ai.providers.openai import OpenAIProvider  # noqa: PLC0415
+
+        client = None
+        if is_local(base_url):  # never through a proxy: a key would cross the network in clear text
+            import httpx2  # noqa: PLC0415 - Pydantic AI's HTTP client, only for a test
+
+            client = httpx2.AsyncClient(trust_env=False)
+        # A local server needs no key, but OpenAI's client insists on one.
+        endpoint = OpenAIProvider(base_url=base_url, api_key=key or "none", http_client=client)
+        return OpenAIChatModel(endpoint_model(model), provider=endpoint)
+    from pydantic_ai.models import infer_model  # noqa: PLC0415
     from pydantic_ai.providers import infer_provider_class  # noqa: PLC0415
 
     if key is None:
@@ -68,9 +95,28 @@ VENDOR_HOSTS = {
 }
 
 
+def vendor_of(settings: AccessSettings) -> str:
+    """`openai-compatible` with a `base_url`, else the model's known vendor prefix, e.g. `anthropic`; else empty.
+
+    An endpoint's own names have colons too (`llama3.1:8b`): only a vendor Pydantic AI knows counts as one.
+    """
+    if settings.base_url:
+        return ENDPOINT
+    prefix = (settings.model or "").partition(":")[0]
+    return prefix if ":" in (settings.model or "") and prefix in KNOWN_VENDORS else ""
+
+
+def endpoint_model(model: str) -> str:
+    """The name an endpoint gets: without a vendor prefix someone left on it, e.g. `openai:gpt-5` is `gpt-5`."""
+    prefix, _, rest = model.partition(":")
+    return rest if rest and prefix in KNOWN_VENDORS else model
+
+
 def model_hosts(settings: AccessSettings) -> list[str]:
-    """The host the configured model's vendor API is at, for the capability matrix; none when unknown."""
-    host = VENDOR_HOSTS.get((settings.model or "").partition(":")[0])
+    """The host the configured API is at, for the capability matrix; none when unknown."""
+    if settings.base_url:
+        return [urllib.parse.urlsplit(settings.base_url).hostname or ""]
+    host = VENDOR_HOSTS.get(vendor_of(settings))
     return [host] if host else []
 
 
@@ -84,71 +130,116 @@ def _installed(package: str) -> bool:
 class PydanticAiAccess:
     """The `pydantic-ai` option of `ai-access`."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - the seams tests replace, all defaulted
         self,
         settings: AccessSettings,
         credentials: Credentials,
+        kernel_settings: Settings,
+        *,
         build: ModelFactory = build_model,
         installed: Callable[[str], bool] = _installed,
+        get: Fetch = fetch,
     ) -> None:
-        """Create the option; settings and credentials are injected, `build` and `installed` replace them in tests."""
+        """Create the option; settings and credentials are injected, the rest replace the world in tests."""
         self._settings = settings
         self._credentials = credentials
         self._build = build
         self._installed = installed
+        self._get = get
+        self._cache = ModelCache(kernel_settings.state_dir / "ai")
+
+    @property
+    def _source(self) -> str:
+        """Which API the cached listing is of: the endpoint, or the vendor."""
+        return (self._settings.base_url or "").rstrip("/") or vendor_of(self._settings)
 
     def _key(self) -> tuple[str | None, str]:
         """The key from the credential, else none (the vendor's variable then applies), and where it was found."""
         stored = self._credentials.get(API_KEY)
         if stored:
             return stored, "the credential ai.access/api-key"
-        vendor = (self._settings.model or "").partition(":")[0]
-        variable = VENDOR_KEYS.get(vendor)
+        variable = VENDOR_KEYS.get(vendor_of(self._settings))
         if variable and os.environ.get(variable):
-            return None, variable
+            return os.environ[variable], variable
         return None, ""
 
-    def status(self) -> AccessStatus:
-        """Whether a model is configured, its vendor's client installed and a key present; calls no model."""
-        model = self._settings.model
-        base = AccessStatus(title=TITLE, summary=SUMMARY, installed=False, models=[model] if model else [])
+    def status(self) -> AccessStatus:  # noqa: PLR0911 - one answer per thing that can be missing
+        """Whether a model is configured, its client installed and a key present where one is needed; offline."""
+        settings = self._settings
+        model, base, vendor = settings.model, settings.base_url, vendor_of(settings)
+        listed = self._cache.load(self._source) if model else []
+        models: list[str] = list(dict.fromkeys([*([model] if model else []), *listed]))
+        status = AccessStatus(title=TITLE, summary=SUMMARY, installed=False, models=models)
         if model is None:
-            return base.model_copy(update={"detail": "no model is configured", "fix": SET_MODEL})
-        vendor = model.partition(":")[0]
+            return status.model_copy(update={"detail": "no model is configured", "fix": SET_MODEL})
+        if not vendor:
+            fix = f"hz system config set ai.access.model openai:{model}, or set ai.access.base_url to its endpoint"
+            return status.model_copy(update={"detail": f"{model} names no vendor and no endpoint", "fix": fix})
         package = VENDOR_PACKAGES.get(vendor)
         if package and not self._installed(package):
             extra = EXTRAS.get(vendor)
             fix = (
                 f"uv tool install --reinstall 'heinzel[{extra}]'" if extra else f"Install the Python package {package}"
             )
-            return base.model_copy(update={"detail": f"{vendor}'s client ({package}) is not installed", "fix": fix})
-        _, source = self._key()
+            return status.model_copy(update={"detail": f"the {vendor} client ({package}) is not installed", "fix": fix})
+        key, source = self._key()
+        if base is not None:
+            if key and not safe_for_key(base):
+                detail = f"a key goes only over https, or over http to this machine; {base} is neither"
+                return status.model_copy(update={"installed": True, "signed_in": False, "detail": detail})
+            where = f"; key from {source}" if source else "; no key"
+            # A key is optional at an endpoint: whether it answers, only a test tells.
+            return status.model_copy(update={"installed": True, "detail": f"{model} at {base}{where}"})
         if not source:
             variable = VENDOR_KEYS.get(vendor)
             also = f" or set {variable}" if variable else ""
-            return base.model_copy(
-                update={
-                    "installed": True,
-                    "signed_in": False,
-                    "detail": f"no API key for {vendor}",
-                    "fix": SET_KEY + also,
-                }
-            )
-        return base.model_copy(update={"installed": True, "signed_in": True, "detail": f"{model}; key from {source}"})
+            update = {
+                "installed": True,
+                "signed_in": False,
+                "detail": f"no API key for {vendor}",
+                "fix": SET_KEY + also,
+            }
+            return status.model_copy(update=update)
+        detail = f"{model}; key from {source}"
+        return status.model_copy(update={"installed": True, "signed_in": True, "detail": detail, "billing": "api"})
+
+    def _discover(self, key: str | None) -> str:
+        """List the API's models and keep them; a note on what happened, empty when they were listed."""
+        vendor = vendor_of(self._settings)
+        try:
+            found = listing(vendor, self._settings.base_url, key, self._get)
+        except (OSError, ValueError) as exc:
+            return f"; models not listed: {self._redact(f'{type(exc).__name__}: {exc}', key)}"
+        if found:
+            self._cache.keep(self._source, found)
+        return f"; {len(found)} models listed" if found else ""
+
+    def _redact(self, text: str, key: str | None) -> str:
+        variable = VENDOR_KEYS.get(vendor_of(self._settings))
+        for secret in (key, os.environ.get(variable) if variable else None):
+            if secret:
+                text = text.replace(secret, "***")
+        return clean_text(text)[:DETAIL_LIMIT]
 
     def test(self) -> AccessTest:
-        """One request with a few output tokens; a failure is a result."""
-        model = self._settings.model
+        """List the API's models, then one request with a few output tokens; a failure is a result."""
+        settings = self._settings
+        model, base = settings.model, settings.base_url
         if model is None:
             return AccessTest(ok=False, detail="no model is configured", fix=SET_MODEL)
         key, _ = self._key()
+        if base is not None and key and not safe_for_key(base):
+            return AccessTest(ok=False, detail=f"a key goes only over https, or over http to this machine: {base}")
+        if not (found := self.status()).installed:  # nothing reaches the network for an option that can't run
+            return AccessTest(ok=False, detail=found.detail, fix=found.fix)
         started = time.monotonic()
+        listed = self._discover(key)
         try:
             import pydantic_ai  # noqa: PLC0415 - a heavy import, only on a test
             from pydantic_ai.usage import UsageLimits  # noqa: PLC0415
 
             pydantic_ai.BANNER_ENABLED = False  # hz owns its output: stdout may be the MCP head's protocol
-            agent = pydantic_ai.Agent(self._build(model, key), instructions=TEST_INSTRUCTIONS)
+            agent = pydantic_ai.Agent(self._build(model, key, base), instructions=TEST_INSTRUCTIONS)
             run = agent.run(
                 "Are you there?",
                 model_settings={"max_tokens": TEST_OUTPUT_TOKENS},
@@ -158,19 +249,13 @@ class PydanticAiAccess:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 result = pool.submit(asyncio.run, run).result()
         except Exception as exc:  # noqa: BLE001 - a vendor's or the library's error is a failed check
-            text = f"{type(exc).__name__}: {exc}"
-            variable = VENDOR_KEYS.get(model.partition(":")[0])
-            for secret in (key, os.environ.get(variable) if variable else None):
-                if secret:
-                    text = text.replace(secret, "***")
-            return AccessTest(
-                ok=False, detail=clean_text(text)[:DETAIL_LIMIT], duration_seconds=time.monotonic() - started
-            )
+            detail = self._redact(f"{type(exc).__name__}: {exc}", key) + listed
+            return AccessTest(ok=False, detail=detail[:DETAIL_LIMIT], duration_seconds=time.monotonic() - started)
         answer = clean_text(str(result.output)).strip()
         used = result.usage
         return AccessTest(
             ok=bool(answer),
-            detail=answer[:DETAIL_LIMIT] or "the model returned nothing",
+            detail=((answer or "the model returned nothing") + listed)[:DETAIL_LIMIT],
             model=model,
             duration_seconds=time.monotonic() - started,
             input_tokens=used.input_tokens,
@@ -180,5 +265,6 @@ class PydanticAiAccess:
 
 API_KEY = CredentialLet(
     name="api-key",
-    purpose="An API key for the model `[ai.access] model` names, from its vendor's console, e.g. console.anthropic.com",
+    purpose="An API key for the model API `[ai.access]` names: from the vendor's console (e.g. console.anthropic.com, "
+    "platform.openai.com) or the endpoint's own; optional for a local server",
 )

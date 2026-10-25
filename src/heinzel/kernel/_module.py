@@ -16,6 +16,21 @@ from rich.console import RenderableType
 
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Mode, Requirement, parse_requirements
 from heinzel.kernel._config import ConfigEditor, ModuleSettings
+from heinzel.kernel._contributions import (
+    MAX_PER_MODULE,
+    ORDER_DEFAULT,
+    ActionLet,
+    ContributionLet,
+    Icon,
+    Navigate,
+    OpenUrl,
+    RunCommand,
+    RunOperation,
+    Slot,
+    StatusLet,
+    View,
+    WidgetLet,
+)
 from heinzel.kernel._duration import parse_duration
 from heinzel.kernel._layers import LayerLet
 from heinzel.kernel._lets import (
@@ -40,6 +55,8 @@ from heinzel.kernel._lets import (
 )
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, PlaybookSetup, templates_in
 from heinzel.kernel._prompter import Prompter
+from heinzel.kernel._skills import SkillLet, skills_in
+from heinzel.kernel._soundscapes import Soundscape, SoundscapeLet, sourced_soundscapes
 from heinzel.kernel._spec import hookimpl
 from heinzel.kernel._theme_signals import SignalLet, ThemeSignals
 from heinzel.kernel._themes import Theme, ThemeLet, sourced_themes
@@ -51,6 +68,10 @@ SETUP = "setup"
 COMMANDS = frozenset({SETUP, "join"})
 """Reserved names that are top-level commands of the CLI head."""
 SERVICE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)*$")
+
+
+def _named(name: str | None, view: Callable[..., Any]) -> str:
+    return name or getattr(view, "__name__", "view").strip("_").replace("_", "-")
 
 
 class Module:
@@ -586,6 +607,55 @@ class Module:
             lets.append(let)
         return tuple(lets)
 
+    def soundscape(self, source: Path | Soundscape) -> tuple[SoundscapeLet, ...]:
+        """Offer soundscapes for the web app (ADR 0058): a `Soundscape`, a `*.toml` file of one, or a directory of them.
+
+        Data only, read and checked now, at import: `hz system sound list` lists them and `hz system sound use <name>`
+        picks one. A layered soundscape's audio files are relative to its file's directory and checked now (path,
+        size, licence, signature); a stream names a provider of `STREAM_PROVIDERS` and a video, never a URL. Two
+        modules offering one name: the more specific layer wins, as with themes (ADR 0044).
+
+        Example:
+            ```python
+            module.soundscape(Path(__file__).parent / "soundscapes")
+            ```
+
+        Raises:
+            ValueError: If a soundscape is malformed, is called `off`, an audio file doesn't pass its checks, or the
+                module already offers a soundscape of that name.
+            OSError: If a soundscape file can't be read.
+        """
+        lets: list[SoundscapeLet] = []
+        for soundscape, directory in sourced_soundscapes(source):
+            let = SoundscapeLet(name=soundscape.name, soundscape=soundscape, directory=directory)
+            self.add(let)
+            lets.append(let)
+        return tuple(lets)
+
+    def skill(self, source: Path) -> tuple[SkillLet, ...]:
+        """Offer skills (ADR 0061): a skill's directory with a `SKILL.md`, or a directory of them.
+
+        Data only, read and checked now, at import: `hz system skill list` lists them, Pydantic AI turns and MCP
+        clients read them through `Skills`, and `hz system skill export` hands chosen ones to Claude Code. Of two
+        modules offering a skill of the same name, the more specific layer of the person's stack wins (ADR 0040); a
+        plugin outside the stack never hides a core skill. Scripts a skill ships are text: nothing in hz runs them.
+
+        Example:
+            ```python
+            module.skill(Path(__file__).parent / "skills")
+            ```
+
+        Raises:
+            ValueError: If a skill breaks a rule of ADR 0061 (frontmatter, sizes, text only, links, a secret, its
+                name), or the module already offers a skill of that name.
+        """
+        lets: list[SkillLet] = []
+        for skill, directory in skills_in(source):
+            let = SkillLet(name=skill.name, skill=skill, directory=directory)
+            self.add(let)
+            lets.append(let)
+        return tuple(lets)
+
     def signals[F: Callable[..., ThemeSignals]](
         self, *, every: str | timedelta, name: str | None = None
     ) -> Callable[[F], F]:
@@ -618,6 +688,138 @@ class Module:
             return target
 
         return decorate
+
+    def status[F: View](
+        self,
+        *,
+        source: str,
+        name: str | None = None,
+        order: int = ORDER_DEFAULT,
+        refresh: str | timedelta = "60s",
+        slots: Mapping[Slot, bool] | None = None,
+    ) -> Callable[[F], F]:
+        """Add an item to the web app's status bar (ADR 0056): a pure view over one of this module's operations.
+
+        `system.ui` runs `source`, a read-only operation of this module that takes no required argument, as a head
+        would, and calls the view with its result; the view returns a `StatusItem`, or None to show nothing. The view
+        takes nothing injected and does no I/O: what it needs comes from the result.
+
+        Example:
+            ```python
+            @module.status(source="clock")
+            def primary_zone(times: list[ZoneTime]) -> StatusItem | None:
+                return StatusItem(text=times[0].zone, live=LiveClock(zone=times[0].zone)) if times else None
+            ```
+
+        Args:
+            source: The operation's name in this module, e.g. `clock`.
+            name: The item's name; defaults to the view's name with underscores as dashes.
+            order: Where it sits, 0 to 1000, lower first; 500 by default.
+            refresh: How often the app asks again, 15s to 1d, e.g. `60s` or `5m`.
+            slots: Where it appears and whether by default: `footer` (the status bar) and `sidebar` (the bottom of the
+                navigation); `{"footer": True}` by default. The person turns each on or off.
+
+        Raises:
+            ValueError: If the name, source, order, refresh or a slot is invalid, or the module offers three items
+                already.
+        """
+        interval = parse_duration(refresh)
+
+        def decorate(view: F) -> F:
+            let = StatusLet(
+                name=_named(name, view),
+                source=source,
+                view=view,
+                order=order,
+                refresh=interval,
+                slots=dict(slots or {"footer": True}),
+            )
+            self._contribute("status", let)
+            return view
+
+        return decorate
+
+    def widget[F: View](
+        self, *, source: str, name: str | None = None, order: int = ORDER_DEFAULT, refresh: str | timedelta = "5m"
+    ) -> Callable[[F], F]:
+        """Add a widget to the web app's Today screen (ADR 0056): a pure view over one of this module's operations.
+
+        Like `status`, but the view returns a `Card`, `ListWidget`, `Metric` or `Progress`, or None.
+
+        Args:
+            source: The operation's name in this module, e.g. `clock`.
+            name: The widget's name; defaults to the view's name with underscores as dashes.
+            order: Where it sits, 0 to 1000, lower first; 500 by default.
+            refresh: How often the app asks again, 60s to 1d; `5m` by default.
+
+        Raises:
+            ValueError: If the name, source, order or refresh is invalid, or the module offers four widgets already.
+        """
+        interval = parse_duration(refresh)
+
+        def decorate(view: F) -> F:
+            let = WidgetLet(
+                name=_named(name, view), source=source, view=view, order=order, refresh=interval, slots={"today": True}
+            )
+            self._contribute("widget", let)
+            return view
+
+        return decorate
+
+    def action(  # noqa: PLR0913 - keyword-only data of one action
+        self,
+        name: str,
+        *,
+        label: str,
+        icon: Icon,
+        effect: Navigate | OpenUrl | RunOperation | RunCommand,
+        order: int = ORDER_DEFAULT,
+        source: str | None = None,
+        badge: View | None = None,
+        refresh: str | timedelta = "60s",
+    ) -> ActionLet:
+        """Add a button to the web app's header (ADR 0056): a label, an icon and one effect, with an optional badge.
+
+        Example:
+            ```python
+            module.action("team-clock", label="Team clock", icon="clock", effect=RunCommand(command="hz clock"))
+            ```
+
+        Args:
+            name: Lowercase and dashed, e.g. `team-clock`.
+            label: Its accessible name and tooltip.
+            icon: One of `Icon`.
+            effect: What a click does: `Navigate`, `OpenUrl`, `RunOperation` (an operation of this module; one that
+                writes runs only after the person confirms the exact call) or `RunCommand`.
+            order: Where it sits, 0 to 1000, lower first.
+            source: A read-only operation of this module whose result `badge` views.
+            badge: A pure function of `source`'s result returning a count, up to four characters, or None.
+            refresh: How often the app asks for the badge again, 15s to 1d.
+
+        Raises:
+            ValueError: If a value is invalid, only one of source and badge is given, or the module offers two actions
+                already.
+        """
+        let = ActionLet(
+            name=name,
+            label=label,
+            icon=icon,
+            effect=effect,
+            order=order,
+            source=source,
+            badge=badge,
+            refresh=parse_duration(refresh),
+            slots={"header": True},
+        )
+        self._contribute("action", let)
+        return let
+
+    def _contribute(self, kind: str, let: ContributionLet) -> None:
+        limit = MAX_PER_MODULE[kind]
+        if sum(isinstance(existing, type(let)) for existing in self._lets) >= limit:
+            msg = f"Module {self.name!r} offers {limit} {kind} contributions already, the most one module may"
+            raise ValueError(msg)
+        self.add(let)
 
     @hookimpl
     def heinzel_lets(self) -> Sequence[Let]:

@@ -1,7 +1,7 @@
 """Capability specs and requirement strings (ADR 0028)."""
 
 import inspect
-from datetime import datetime
+from datetime import UTC, date, datetime
 from typing import get_type_hints
 
 import pytest
@@ -12,6 +12,8 @@ from heinzel.kernel._capabilities import capability_of, parse_requirements
 from heinzel.kernel._protocols import (
     Calendar,
     Chat,
+    CurrentWeather,
+    DailyForecast,
     Directory,
     Documents,
     Event,
@@ -29,7 +31,11 @@ from heinzel.kernel._protocols import (
     Tracker,
     Transcript,
     TranscriptSegment,
+    WeatherPlace,
+    WeatherReport,
+    WeatherSource,
     Window,
+    free_busy_people,
 )
 
 pytestmark = pytest.mark.unit
@@ -48,14 +54,26 @@ def test_issues_are_the_trackers_not_the_code_hosts():
     assert CAPABILITIES["code-host"].methods == {"merged_pull_requests": "read"}
 
 
-def test_only_documents_and_chat_can_write():
-    assert {name for name, spec in CAPABILITIES.items() if "write" in spec.modes} == {"chat", "documents"}
+def test_only_calendar_chat_documents_and_mail_can_write():
+    assert {name for name, spec in CAPABILITIES.items() if "write" in spec.modes} == {
+        "calendar",
+        "chat",
+        "documents",
+        "mail",
+    }
 
 
-def test_chat_meetings_and_calendar_read_in_windows_and_only_chat_posts():
+def test_chat_meetings_and_calendar_read_in_windows_and_meetings_only_read():
     assert CAPABILITIES["chat"].methods == {"messages": "read", "post": "write"}
     assert CAPABILITIES["meetings"].methods == {"ended": "read", "transcripts": "read", "transcript": "read"}
-    assert CAPABILITIES["calendar"].methods == {"events": "read"}
+    assert CAPABILITIES["calendar"].methods == {
+        "events": "read",
+        "free_busy": "read",
+        "create_event": "write",
+        "update_event": "write",
+        "cancel_event": "write",
+        "respond": "write",
+    }
     assert CAPABILITIES["chat"].protocol is Chat
     assert CAPABILITIES["meetings"].protocol is Meetings
     assert CAPABILITIES["calendar"].protocol is Calendar
@@ -88,6 +106,7 @@ def test_contract_shaped_reads_take_a_window_and_id_reads_serve_operations():
     }
     assert by_window == {
         ("calendar", "events"),
+        ("calendar", "free_busy"),
         ("chat", "messages"),
         ("code-host", "merged_pull_requests"),
         ("mail", "messages"),
@@ -111,6 +130,10 @@ def test_protocol_results_are_models_with_described_fields():
         MailQuery,
         Person,
         Relation,
+        WeatherPlace,
+        CurrentWeather,
+        DailyForecast,
+        WeatherReport,
     ):
         for field_name, info in model.model_fields.items():
             assert info.description, f"{model.__name__}.{field_name} has no description"
@@ -131,6 +154,7 @@ def test_argument_checks_name_a_str_argument_of_a_read_method():
             assert get_type_hints(getattr(spec.protocol, method))[argument] is str, f"{name}.{method}({argument})"
             assert callable(check)
     assert CAPABILITIES["mail"].checks["messages", "query"] == MailQuery.parse
+    assert CAPABILITIES["calendar"].checks["free_busy", "people"] == free_busy_people
 
 
 def test_the_directory_only_reads_and_names_people_as_participants():
@@ -143,10 +167,18 @@ def test_the_directory_only_reads_and_names_people_as_participants():
     assert "email" not in Relation.model_fields
 
 
-def test_mail_only_reads():
-    assert CAPABILITIES["mail"].methods == {"messages": "read", "read": "read"}
+def test_mail_reads_and_writes_drafts_sends_them_and_files_but_never_deletes():
+    assert CAPABILITIES["mail"].methods == {
+        "messages": "read",
+        "read": "read",
+        "thread": "read",
+        "draft": "read",
+        "create_draft": "write",
+        "send_draft": "write",
+        "relabel": "write",
+    }
     assert CAPABILITIES["mail"].protocol is Mail
-    assert CAPABILITIES["mail"].modes == {"read"}
+    assert not any("delete" in method or "trash" in method for method in CAPABILITIES["mail"].methods)
 
 
 def test_mail_senders_and_recipients_are_participants_so_packets_drop_their_addresses():
@@ -217,3 +249,27 @@ def test_one_capability_cannot_be_pinned_to_two_adapters():
 def test_documents_write_method_is_marked_write():
     assert CAPABILITIES["documents"].methods == {"read": "read", "replace_section": "write"}
     assert CAPABILITIES["documents"].protocol is Documents
+
+
+def test_weather_reads_one_report_a_place_at_a_time_and_no_contract_names_it():
+    spec = CAPABILITIES["weather"]
+    assert spec.protocol is WeatherSource
+    assert spec.methods == {"report": "read"}
+    assert get_type_hints(WeatherSource.report)["place"] is str
+    assert Window not in get_type_hints(WeatherSource.report).values()
+
+
+def test_weather_is_metric_timezone_aware_and_bounded():
+    now = datetime(2026, 10, 25, 12, tzinfo=UTC)
+    place = WeatherPlace(name="x", latitude=1, longitude=2)
+    current = {"summary": "s", "temperature_c": 1, "feels_like_c": 1, "wind_kmh": 0, "precipitation_mm": 0}
+    CurrentWeather(observed_at=now, **current)
+    with pytest.raises(ValidationError):
+        CurrentWeather(observed_at=datetime(2026, 10, 25, 12), **current)  # noqa: DTZ001 - the point of the test
+    with pytest.raises(ValidationError):
+        WeatherPlace(name="x", latitude=91, longitude=0)
+    day = {"day": date(2026, 10, 25), "summary": "s", "high_c": 2, "low_c": 1, "precipitation_mm": 0}
+    DailyForecast(rain_chance=1, **day)
+    with pytest.raises(ValidationError):
+        DailyForecast(rain_chance=1.5, **day)
+    assert WeatherReport(place=place, current=CurrentWeather(observed_at=now, **current), days=[]).days == []

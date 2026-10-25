@@ -78,7 +78,8 @@ FIRST_PARTY: Mapping[str, str] = MappingProxyType(
         "atlassian": "Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.",
         "clock": "What time it is for everyone on the team.",
         "github": "Read pull requests and issues from GitHub: the code-host and tracker capabilities.",
-        "google": "Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.",
+        "google": "Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.",
+        "openmeteo": "Weather from Open-Meteo, with no account and no key: the weather capability.",
         "zoom": "Read meetings from Zoom's meeting-summary emails: the meetings capability.",
     }
 )
@@ -779,8 +780,12 @@ class PluginService:
         return self._kernel.settings.data_dir / HISTORY
 
     def _changed(self, action: Action, distribution: str | None, candidate: PluginCandidate | None) -> PluginChange:
-        """A carried-out change, with the plugins as a fresh `hz` sees them; this process still has the old ones."""
-        return PluginChange(
+        """A carried-out change, with the plugins as a fresh `hz` sees them; this process still has the old ones.
+
+        The fresh `hz` also removes skill exports whose skill went or changed (ADR 0061); it never adds one, and a
+        failure there is a next step, not a failed change.
+        """
+        change = PluginChange(
             action=action,
             done=True,
             distribution=distribution,
@@ -789,6 +794,11 @@ class PluginService:
             restart_required=True,
             next=[],
         )
+        try:
+            self._installation.hz("system", "skill", "export", "--sync", "--json")
+        except HeinzelError:
+            change.next.append("hz system skill export --sync")
+        return change
 
     def _fresh_list(self) -> list[PluginInfo]:
         return [

@@ -18,13 +18,17 @@ class ThemeSettings(ModuleSettings):
     person's tool looks.
     """
 
+    section_title: ClassVar[str | None] = "Theme"  # the heading in Settings
+
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"name"})
 
     name: str = Field(
         default="default",
         pattern=NAME_PATTERN,
         max_length=64,
-        description="The theme of the web app, one `hz system theme list` shows, e.g. `acme`; `default` is built in.",
+        title="Theme",
+        description="The theme of the web app; default is the built-in one, and plugins can bring others.",
+        json_schema_extra={"x-hidden": True},
     )
 
 

@@ -24,6 +24,7 @@ from pydantic_core import to_jsonable_python
 
 from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
+from heinzel.heads.mcp._skills import add_skills
 from heinzel.kernel import ActionGate, HeinzelError, Kernel, ProposedCall, boot, redact_emails
 
 HEAD = "mcp"
@@ -44,11 +45,19 @@ RESULT_LIMIT = 20000
 Transport = Literal["stdio", "streamable-http"]
 
 
-def build(kernel: Kernel, transport: Transport = "stdio", *, chat: str | None = None) -> MCPServer:
+ChatTools = Literal["everyday", "all"]
+
+
+def build(
+    kernel: Kernel, transport: Transport = "stdio", *, chat: str | None = None, chat_tools: ChatTools = "everyday"
+) -> MCPServer:
     """An MCP server with one tool per exposed operation; for one chat session's agent when `chat` is given.
 
+    A chat's agent gets the everyday operations only (ADR 0041) unless `chat_tools` is `all`: every tool's schema is
+    sent with every message, so 24 tools instead of 75 halve what a short message costs (ADR 0057).
+
     Over streamable HTTP, which has no authentication, the operations restricted to stdio (`mcp-stdio` in their
-    `heads`, such as installing plugins) are left out.
+    `heads`, such as installing plugins) are left out. Over stdio, outside a chat, skills are prompts and resources.
     """
     server = MCPServer(
         name="heinzel",
@@ -59,6 +68,8 @@ def build(kernel: Kernel, transport: Transport = "stdio", *, chat: str | None = 
     items = exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP)
     names = {item.name for item in items}
     for item in items:
+        if chat is not None and chat_tools == "everyday" and item.operation.audience != "everyday":
+            continue
         annotations = ToolAnnotations(
             read_only_hint=item.operation.read_only, destructive_hint=not item.operation.read_only
         )
@@ -81,6 +92,8 @@ def build(kernel: Kernel, transport: Transport = "stdio", *, chat: str | None = 
                 f"{item.operation.summary}",
                 annotations=annotations,
             )
+    if transport == "stdio" and chat is None:  # skills may be internal: only for a client that started hz as you
+        add_skills(server, kernel)
     return server
 
 
@@ -151,7 +164,12 @@ def _signed[F: Callable[..., Any]](run: F, item: Exposed, returns: object, *, na
 
 
 def serve(
-    transport: Transport = "stdio", host: str = "127.0.0.1", port: int = 8765, *, chat: str | None = None
+    transport: Transport = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    *,
+    chat: str | None = None,
+    chat_tools: ChatTools = "everyday",
 ) -> None:
     """Boot the kernel and serve its operations over `transport` until interrupted; for one chat over stdio only.
 
@@ -161,7 +179,7 @@ def serve(
     if chat is not None and transport != "stdio":
         msg = "A chat's tools are served over stdio only, never on a port."
         raise HeinzelError(msg)
-    server = build(boot(), transport, chat=chat)
+    server = build(boot(), transport, chat=chat, chat_tools=chat_tools)
     if transport == "stdio":
         server.run("stdio")
     else:

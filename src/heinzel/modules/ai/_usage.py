@@ -36,8 +36,10 @@ class AiSettings(ModuleSettings):
         default=5.0,
         gt=0,
         allow_inf_nan=False,
+        title="Daily AI budget",
         description="What you mean to spend on AI a day, in US dollars: the footer's meter fills against it and turns "
         "amber at 75% and red at 100%. Nothing is stopped by it; each run keeps its own cap.",
+        json_schema_extra={"x-unit": "usd"},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"daily_budget_usd"})

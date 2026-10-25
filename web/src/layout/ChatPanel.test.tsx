@@ -24,7 +24,9 @@ describe("ChatPanel", () => {
     renderAt("/doctor");
     await user.type(screen.getByLabelText("Your message"), "Make me the lead{Enter}");
     expect(await screen.findByText("I proposed setting your role to lead.")).toBeInTheDocument();
-    expect(screen.getByText("claude-code · $0.0123")).toBeInTheDocument();
+    await user.hover(screen.getByRole("button", { name: "About this answer" }));
+    const about = screen.getByRole("tooltip");
+    expect(about).toHaveTextContent("$0.0123");
     const open = calls.find((request) => request.url.includes("/api/system/runner/chat/open"));
     expect(new URL(open?.url ?? "").searchParams.get("context")).toBe("route:/doctor");
     const send = calls.find((request) => request.url.includes("/api/stream/system/runner/chat/send"));
@@ -197,7 +199,8 @@ describe("ChatPanel, mid-answer", () => {
     };
     mockApi({ ...base, "/api/system/runner/chat/show": uncounted });
     renderAt("/doctor");
-    expect(await screen.findByText("command · cost not reported, counted as $0.25")).toBeInTheDocument();
+    await screen.findByText("Done.");
+    expect(screen.getByText("cost not reported, counted as $0.25")).toBeInTheDocument();
   });
 });
 

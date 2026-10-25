@@ -2,8 +2,8 @@
 
 Its submodule `access` lists the AI access options installed on this machine (Claude Code, a company gateway, a model
 API through Pydantic AI, ones plugins add), says which one is in use and whether each is signed in, tests one on
-request and switches between them. The module itself keeps what every run spent (`UsageLog`) and reports it with
-`hz ai usage`.
+request and switches between them. `hz ai models` lists the models and efforts of the one in use, for the chat's
+picker. The module itself keeps what every run spent (`UsageLog`) and reports it with `hz ai usage`.
 """
 
 from typing import Annotated
@@ -13,7 +13,10 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from heinzel import Module, UsageLog
+from heinzel import Adapters, AiAccess, Module, UsageLog
+from heinzel.kernel import CapabilityView
+from heinzel.modules.ai._models import EffortChoice, ModelChoice, ModelList
+from heinzel.modules.ai._models import models as listed
 from heinzel.modules.ai._usage import (
     AiSettings,
     Dimension,
@@ -25,7 +28,7 @@ from heinzel.modules.ai._usage import (
     report,
 )
 
-module = Module("ai", "How hz reaches AI, and what it spends: tokens and cost per run.")
+module = Module("ai", "How hz reaches AI, and what it spends: tokens and cost per run.", requires=["ai-access:read"])
 module.settings(AiSettings)
 module.service(UsageLedger)
 module.service(UsageLog, UsageLedger)  # runs record through the protocol; nothing imports this module
@@ -74,4 +77,29 @@ def usage(
     return report(ledger, settings, period, by)
 
 
-__all__ = ["AiSettings", "UsageLedger", "UsageReport", "module"]
+def render_models(result: ModelList) -> RenderableType:
+    """The AI access in use, its models and its efforts."""
+    plan = " · uses your plan" if result.billing == "plan" else ""
+    parts: list[RenderableType] = [Text(f"{result.title or 'No AI access'}{plan}", style="bold")]
+    if result.models:
+        parts.append(Text("Models: " + ", ".join(model.name for model in result.models)))
+    if result.efforts:
+        table = Table(box=None, pad_edge=False, show_header=False)
+        for effort in result.efforts:
+            extra = " (recommended)" if effort.recommended else (f" ({effort.warning})" if effort.warning else "")
+            table.add_row(Text(effort.name), Text(effort.title + extra, style="dim"))
+        parts += [Text("Efforts:"), table]
+    if result.note:
+        parts.append(Text(result.note, style="yellow"))
+    return Group(*parts)
+
+
+# What is installed and how it is billed is the person's own: the CLI, MCP and the web head, never the
+# unauthenticated REST head (ADR 0039).
+@module.operation(render=render_models, heads={"cli", "mcp", "web"})
+def models(options: Adapters[AiAccess], view: CapabilityView) -> ModelList:
+    """List the models and efforts of the AI access in use, for the chat's model and effort picker."""
+    return listed(options, view)
+
+
+__all__ = ["AiSettings", "EffortChoice", "ModelChoice", "ModelList", "UsageLedger", "UsageReport", "module"]

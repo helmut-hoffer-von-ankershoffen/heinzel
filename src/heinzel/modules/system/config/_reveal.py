@@ -70,25 +70,34 @@ class Revealer:
         return None
 
     def reveal(self, path: Path) -> Revealed:
-        """Show `path` selected in the file manager, or its nearest existing folder while it doesn't exist."""
+        """Open a folder, or show a file selected, in the file manager; its nearest existing folder while it is missing.
+
+        A file is only ever selected or its folder opened, never opened itself: that could run it.
+        """
         if problem := self.unsupported():
-            return Revealed(supported=False, opened=False, message=f"{problem}; the file is {path}")
+            return Revealed(supported=False, opened=False, message=f"{problem}; the path is {path}")
         executable = self.which(self._program) or self._program
+        # On macOS a folder with a suffix may be an app or a package, which `open` would launch: select it instead.
+        if path.is_dir() and not (self.platform == "darwin" and path.suffix):
+            return self._open([executable, str(path)], path, f"Opened {path} in {self.file_manager}.")
         folder = next((d for d in path.parents if d.is_dir()), Path(path.anchor))
-        exists = path.is_file()
+        exists = path.exists()
         if self.platform == "darwin":
             command = [executable, "-R", str(path)] if exists else [executable, str(folder)]
         elif self.platform == "win32":
             command = [executable, f"/select,{path}"] if exists else [executable, str(folder)]
         else:
             command = [executable, str(path.parent if exists else folder)]
-        try:
-            self.opener(command)
-        except OSError as exc:
-            message = f"{self._program} failed: {exc.strerror or exc}; the file is {path}"
-            return Revealed(supported=True, opened=False, message=message)
         if exists:
             message = f"Showed {path} in {self.file_manager}."
         else:
             message = f"{path} doesn't exist yet; opened {folder} in {self.file_manager}."
+        return self._open(command, path, message)
+
+    def _open(self, command: list[str], path: Path, message: str) -> Revealed:
+        try:
+            self.opener(command)
+        except OSError as exc:
+            message = f"{self._program} failed: {exc.strerror or exc}; the path is {path}"
+            return Revealed(supported=True, opened=False, message=message)
         return Revealed(supported=True, opened=True, message=message)

@@ -68,6 +68,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the models and efforts of the AI access in use, for the chat's model and effort picker.
+         * @description List the models and efforts of the AI access in use, for the chat's model and effort picker.
+         */
+        get: operations["ai_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai/usage": {
         parameters: {
             query?: never;
@@ -492,6 +512,29 @@ export interface paths {
          *     opens and the message names the file.
          */
         post: operations["system_config_reveal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/config/reveal-setting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show the file or folder a path setting names, such as hz.log_dir, in your file manager.
+         * @description Show the file or folder a path setting names, such as hz.log_dir, in your file manager.
+         *
+         *     A folder opens; a file is selected, never opened. On Linux without a desktop session nothing opens and the
+         *     message names the path.
+         */
+        post: operations["system_config_reveal_setting"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1320,6 +1363,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/skill/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the skills in effect: which module offers each, what it hides, and where it is exported.
+         * @description List the skills in effect: which module offers each, what it hides, and where it is exported.
+         */
+        get: operations["system_skill_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/skill/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a skill: where it comes from, its files and hints, and its body.
+         * @description Show a skill: where it comes from, its files and hints, and its body.
+         */
+        get: operations["system_skill_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/sound/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the soundscapes of the web app, where each comes from, which one is picked and which plays.
+         * @description List the soundscapes of the web app, where each comes from, which one is picked and which plays.
+         */
+        get: operations["system_sound_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/sound/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.
+         * @description Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.
+         */
+        post: operations["system_sound_use"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/theme/list": {
         parameters: {
             query?: never;
@@ -1380,6 +1503,141 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/ui/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the buttons modules add to the web app's header, with what each does and its badge.
+         * @description List the buttons modules add to the web app's header, with what each does and its badge.
+         *
+         *     Raises:
+         *         HeinzelError: If `item` names no action.
+         */
+        get: operations["system_ui_actions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/hide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hide a contribution from a slot of the web app, such as the clock from the footer.
+         * @description Hide a contribution from a slot of the web app, such as the clock from the footer.
+         *
+         *     Raises:
+         *         HeinzelError: If no contribution has that id, or it can't show in that slot.
+         */
+        post: operations["system_ui_hide"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every contribution to the web app, where it may show and whether it does; nothing runs.
+         * @description List every contribution to the web app, where it may show and whether it does; nothing runs.
+         */
+        get: operations["system_ui_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show a contribution in a slot of the web app, such as the clock in the sidebar.
+         * @description Show a contribution in a slot of the web app, such as the clock in the sidebar.
+         *
+         *     Raises:
+         *         HeinzelError: If no contribution has that id, or it can't show in that slot.
+         */
+        post: operations["system_ui_show"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the status items modules add to the web app's status bar, with what each shows now.
+         * @description List the status items modules add to the web app's status bar, with what each shows now.
+         *
+         *     Raises:
+         *         HeinzelError: If `item` names no status item.
+         */
+        get: operations["system_ui_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/widgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the widgets modules add to the web app's Today screen, with what each shows now.
+         * @description List the widgets modules add to the web app's Today screen, with what each shows now.
+         *
+         *     Raises:
+         *         HeinzelError: If `item` names no widget.
+         */
+        get: operations["system_ui_widgets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/update": {
         parameters: {
             query?: never;
@@ -1424,6 +1682,30 @@ export interface paths {
          * @description Show your team: its repository, checkout and members, and what is wrong with them.
          */
         get: operations["team_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/weather": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the weather now and the next days at your primary location, or at a place you name.
+         * @description Show the weather now and the next days at your primary location, or at a place you name.
+         *
+         *     Raises:
+         *         HeinzelError: If no weather adapter is connected, no location is set, the place is unknown, or the adapter
+         *             fails.
+         */
+        get: operations["weather"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1605,6 +1887,70 @@ export interface components {
             use: "chat" | "turns" | "coding";
         };
         /**
+         * ActionEntry
+         * @description An action: a labelled icon button with one effect and maybe a badge.
+         */
+        ActionEntry: {
+            /**
+             * Badge
+             * @description A count (0 shows none) or up to four characters.
+             */
+            badge?: number | string | null;
+            /**
+             * Effect
+             * @description What a click does; none when it can't work (`problem`).
+             */
+            effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Icon
+             * @description The icon the app shows.
+             * @enum {string}
+             */
+            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap";
+            /**
+             * Id
+             * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /**
+             * Label
+             * @description Its accessible name and tooltip.
+             */
+            label: string;
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Where it sits among its kind, 0 first; ties go by id.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Why it shows nothing: its source failed, or the declaration can't work.
+             */
+            problem?: string | null;
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does: what the app filters by.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
+        };
+        /**
          * AdapterCandidate
          * @description An adapter that can serve a capability, and the state of its connector.
          */
@@ -1703,6 +2049,11 @@ export interface components {
          * @description The outcome of one agent session, for the job's result and its receipt.
          */
         AgentResult: {
+            /**
+             * Billing
+             * @description `plan` when the agent ran on a subscription (its cost is at API prices, covered by the plan), `api` when on an API key; none when the runner can't tell.
+             */
+            billing?: ("plan" | "api") | null;
             /**
              * Detail
              * @description Why the run did not complete; empty when it did.
@@ -2034,6 +2385,39 @@ export interface components {
             requirement: string;
         };
         /**
+         * CardWidget
+         * @description A card: a title, a short body and up to three buttons.
+         */
+        CardWidget: {
+            /**
+             * Actions
+             * @description Up to three buttons.
+             */
+            actions?: components["schemas"]["WidgetAction"][];
+            /**
+             * Body
+             * @description Up to 280 characters under the title.
+             */
+            body?: string | null;
+            /**
+             * @description A card. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "card";
+            /**
+             * Title
+             * @description Its title, one line.
+             */
+            title: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+        };
+        /**
          * CatchUp
          * @description What a job does about schedule slots it missed while the machine slept or was off.
          * @enum {string}
@@ -2185,6 +2569,11 @@ export interface components {
          */
         ChatMessage: {
             /**
+             * Access
+             * @description The AI access in use when it answered, e.g. `claude-code`.
+             */
+            access?: string | null;
+            /**
              * Actions
              * @description Ids of the actions the agent proposed in it.
              */
@@ -2196,10 +2585,25 @@ export interface components {
              */
             at: string;
             /**
+             * Billing
+             * @description `plan`: on a subscription, so `cost_usd` is what it would cost at API prices, covered by the plan; `api`: billed per token; none when the runner can't tell.
+             */
+            billing?: ("plan" | "api") | null;
+            /**
              * Budget Usd
              * @description The cap the answer ran with; what it counts as against the session's cap when no cost is reported.
              */
             budget_usd?: number | null;
+            /**
+             * Cache Read Tokens
+             * @description Input tokens read from the prompt cache.
+             */
+            cache_read_tokens?: number | null;
+            /**
+             * Cache Write Tokens
+             * @description Input tokens written to the prompt cache.
+             */
+            cache_write_tokens?: number | null;
             /**
              * Cost Usd
              * @description What the answer cost in US dollars, if reported.
@@ -2212,11 +2616,36 @@ export interface components {
              */
             detail: string;
             /**
+             * Duration Seconds
+             * @description How long the answer took.
+             */
+            duration_seconds?: number | null;
+            /**
+             * Effort
+             * @description The effort it was asked for; none: the default.
+             */
+            effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
              * Fix
              * @description A command that fixes why it did not complete, if there is one.
              * @default
              */
             fix: string;
+            /**
+             * Input Tokens
+             * @description Tokens sent, without cache reads, if reported.
+             */
+            input_tokens?: number | null;
+            /**
+             * Model
+             * @description The model that answered, as the runner reported it.
+             */
+            model?: string | null;
+            /**
+             * Output Tokens
+             * @description Tokens produced, if reported.
+             */
+            output_tokens?: number | null;
             /**
              * Role
              * @description `user`, `assistant`, or `action`: what a confirmed or declined action did.
@@ -2274,6 +2703,11 @@ export interface components {
              */
             created: string;
             /**
+             * Effort
+             * @description The effort this chat asks for; none: the default.
+             */
+            effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
              * Id
              * @description The session's id, for `hz chat --session` and the web app.
              */
@@ -2283,6 +2717,11 @@ export interface components {
              * @description The conversation, oldest first.
              */
             messages?: components["schemas"]["ChatMessage"][];
+            /**
+             * Model
+             * @description The model this chat asks for; none: the runner's default.
+             */
+            model?: string | null;
             /**
              * Title
              * @description Its first message, shortened, or its context.
@@ -2873,6 +3312,47 @@ export interface components {
             unmaintained: components["schemas"]["Unmaintained"][];
         };
         /**
+         * ContributionInfo
+         * @description A contribution as Settings lists it: where it may show and whether it does, without running it.
+         */
+        ContributionInfo: {
+            /**
+             * Defaults
+             * @description Each slot and whether it shows there unless the person decides.
+             */
+            defaults: {
+                [key: string]: boolean;
+            };
+            /**
+             * Id
+             * @description `<module>:<name>`, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /**
+             * Kind
+             * @description A status item, a header action or a widget.
+             * @enum {string}
+             */
+            kind: "status" | "action" | "widget";
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does now.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
+            /**
+             * Title
+             * @description What people know it by: the action's label, or its name in words.
+             */
+            title: string;
+        };
+        /**
          * CredentialInfo
          * @description A declared credential and whether it has a value; never the value itself.
          */
@@ -2994,6 +3474,24 @@ export interface components {
          * @enum {string}
          */
         Delivery: "web" | "daemon";
+        /**
+         * DetailLine
+         * @description A line of an item's detail, shown on hover or focus.
+         */
+        DetailLine: {
+            /**
+             * Text
+             * @description One line, e.g. `New York 08:00, at work`.
+             */
+            text: string;
+            /**
+             * Tone
+             * @description `ok` shows it as good, `warn` and `bad` as needing attention.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+        };
         /**
          * Diagnostic
          * @description A problem in a contract file, with where it is and what to do.
@@ -3149,6 +3647,33 @@ export interface components {
             state: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;
         };
         /**
+         * EffortChoice
+         * @description An effort the AI access in use can be asked for.
+         */
+        EffortChoice: {
+            /**
+             * Name
+             * @description What `hz chat send --effort` takes, e.g. `medium`.
+             * @enum {string}
+             */
+            name: "low" | "medium" | "high" | "xhigh" | "max";
+            /**
+             * Recommended
+             * @description Whether it is the one to pick when unsure.
+             */
+            recommended: boolean;
+            /**
+             * Title
+             * @description What the picker shows, e.g. `Extra`.
+             */
+            title: string;
+            /**
+             * Warning
+             * @description What it costs beyond the others, e.g. `≈3.5x or more usage`.
+             */
+            warning?: string | null;
+        };
+        /**
          * Event
          * @description One occurrence of an entry in a calendar; a recurring entry is expanded into its occurrences.
          */
@@ -3185,8 +3710,24 @@ export interface components {
              * @description Identifier of this occurrence in the adapter's notation.
              */
             id: string;
+            /**
+             * Location
+             * @description Where it takes place, in the event's words; none if unset.
+             */
+            location?: string | null;
+            /**
+             * Organized By User
+             * @description Whether the user organizes it, and so may move or cancel it for everyone.
+             * @default false
+             */
+            organized_by_user: boolean;
             /** @description Who organizes it; none if the vendor doesn't say. */
             organizer?: components["schemas"]["Participant"] | null;
+            /**
+             * Response
+             * @description The user's own answer to the invitation: one of `RESPONSES`, or `pending` while unanswered; none when the user is not among the attendees.
+             */
+            response?: ("accepted" | "declined" | "tentative" | "pending") | null;
             /**
              * Start
              * Format: date-time
@@ -3921,6 +4462,105 @@ export interface components {
             site: string | null;
         };
         /**
+         * ListEntry
+         * @description A line of a list widget.
+         */
+        ListEntry: {
+            /**
+             * Detail
+             * @description A second, quieter line.
+             */
+            detail?: string | null;
+            /**
+             * Effect
+             * @description What a click does.
+             */
+            effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Text
+             * @description The line, e.g. `Review the Acme roadmap`.
+             */
+            text: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+        };
+        /**
+         * ListWidget
+         * @description A titled list of up to eight lines.
+         */
+        ListWidget: {
+            /**
+             * Items
+             * @description Up to eight lines.
+             */
+            items: components["schemas"]["ListEntry"][];
+            /**
+             * @description A list. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "list";
+            /**
+             * Title
+             * @description Its title, one line.
+             */
+            title: string;
+        };
+        /**
+         * LiveClock
+         * @description The time now in a zone, ticking in the app.
+         */
+        LiveClock: {
+            /**
+             * @description The time now in `zone`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "clock";
+            /**
+             * Zone
+             * @description An IANA time zone, e.g. Europe/Berlin.
+             */
+            zone: string;
+        };
+        /**
+         * LiveTime
+         * @description A moment, shown as a local time in the person's locale.
+         */
+        LiveTime: {
+            /**
+             * At
+             * Format: date-time
+             * @description The moment, with its offset.
+             */
+            at: string;
+            /**
+             * @description `at` as a local time. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "time";
+        };
+        /**
+         * LiveUntil
+         * @description A moment, shown relative to now: "in 12 min", "now", or its time when it isn't today.
+         */
+        LiveUntil: {
+            /**
+             * At
+             * Format: date-time
+             * @description The moment, with its offset.
+             */
+            at: string;
+            /**
+             * @description `at` relative to now. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "until";
+        };
+        /**
          * LogLine
          * @description One line of the daemon's JSON-lines log.
          */
@@ -4058,6 +4698,91 @@ export interface components {
             since: string;
         };
         /**
+         * MetricWidget
+         * @description One number with a label, and how it moved.
+         */
+        MetricWidget: {
+            /**
+             * Delta
+             * @description How it moved, as shown, e.g. `+3 this week`.
+             */
+            delta?: string | null;
+            /**
+             * @description A metric. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "metric";
+            /**
+             * Label
+             * @description What is measured, e.g. `Open reviews`.
+             */
+            label: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Value
+             * @description The figure as shown, up to 16 characters, e.g. `12` or `2/3`.
+             */
+            value: string;
+        };
+        /**
+         * ModelChoice
+         * @description A model the AI access in use offers.
+         */
+        ModelChoice: {
+            /**
+             * Name
+             * @description What `hz chat send --model` takes, e.g. `sonnet`.
+             */
+            name: string;
+            /**
+             * Title
+             * @description What the picker shows, e.g. `Sonnet`.
+             */
+            title: string;
+        };
+        /**
+         * ModelList
+         * @description The models and efforts of the AI access in use, for the chat's picker.
+         */
+        ModelList: {
+            /**
+             * Access
+             * @description The AI access in use, e.g. `claude-code`; none when none is.
+             */
+            access: string | null;
+            /**
+             * Billing
+             * @description `plan` when it uses a subscription, `api` when billed per token.
+             */
+            billing: ("plan" | "api") | null;
+            /**
+             * Efforts
+             * @description The efforts it takes, low to max; empty when it takes none.
+             */
+            efforts: components["schemas"]["EffortChoice"][];
+            /**
+             * Models
+             * @description Its models, current ones first; empty when it names none.
+             */
+            models: components["schemas"]["ModelChoice"][];
+            /**
+             * Note
+             * @description Why the list is empty or short.
+             */
+            note?: string | null;
+            /**
+             * Title
+             * @description Its title, e.g. `Claude Code`.
+             */
+            title: string;
+        };
+        /**
          * ModuleInfo
          * @description A registered module.
          */
@@ -4099,6 +4824,22 @@ export interface components {
              * @description Version of that distribution.
              */
             version: string;
+        };
+        /**
+         * Navigate
+         * @description Open a screen of the app.
+         */
+        Navigate: {
+            /**
+             * @description Open a screen of the app. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "navigate";
+            /**
+             * Path
+             * @description An in-app path, e.g. `/doctor`.
+             */
+            path: string;
         };
         /**
          * Node
@@ -4266,6 +5007,22 @@ export interface components {
             waiting: number;
         };
         /**
+         * OpenUrl
+         * @description Open an https link in a new tab.
+         */
+        OpenUrl: {
+            /**
+             * @description Open an https link in a new tab. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "open";
+            /**
+             * Url
+             * @description An https link without user information.
+             */
+            url: string;
+        };
+        /**
          * Opened
          * @description Whether the system's notification settings were opened.
          */
@@ -4302,6 +5059,141 @@ export interface components {
              * @description The operation's name within its module, e.g. `graph`.
              */
             operation: string;
+        };
+        /**
+         * OperationCall
+         * @description How the app runs an `operation` effect, built by `system.ui` from the operation itself, never by a plugin.
+         */
+        OperationCall: {
+            /**
+             * Command
+             * @description The same call as a person reads it, e.g. `hz clock`.
+             */
+            command: string;
+            /**
+             * Method
+             * @description `GET` for a read-only operation, `POST` for one that writes.
+             * @enum {string}
+             */
+            method: "GET" | "POST";
+            /**
+             * Path
+             * @description The operation's path under `/api`, e.g. `/clock`.
+             */
+            path: string;
+            /**
+             * Query
+             * @description The validated arguments, as query parameters.
+             */
+            query: {
+                [key: string]: boolean | number | string;
+            };
+            /**
+             * Read Only
+             * @description Whether it only reads; the app asks before running one that doesn't.
+             */
+            read_only: boolean;
+            /**
+             * Summary
+             * @description What the operation does: the first line of its docstring.
+             */
+            summary: string;
+        };
+        /**
+         * Outlook
+         * @description The weather now and the next days at one place, in the units you read.
+         */
+        Outlook: {
+            /**
+             * Adapter
+             * @description The adapter bound to `weather` that answered.
+             */
+            adapter: string;
+            /**
+             * Days
+             * @description The next days from today.
+             */
+            days: components["schemas"]["OutlookDay"][];
+            /**
+             * Feels Like
+             * @description What it feels like now.
+             */
+            feels_like: number;
+            /**
+             * Humidity Percent
+             * @description Relative humidity; none if the source has none.
+             */
+            humidity_percent: number | null;
+            /**
+             * Location
+             * @description The place, as the weather adapter resolved it.
+             */
+            location: string;
+            /**
+             * Observed At
+             * Format: date-time
+             * @description When the weather now was observed, in the place's time zone.
+             */
+            observed_at: string;
+            /**
+             * Precipitation
+             * @description Rain and snow in the last hour: mm (metric) or inches (imperial).
+             */
+            precipitation: number;
+            /**
+             * Summary
+             * @description The sky now in a few words.
+             */
+            summary: string;
+            /**
+             * Temperature
+             * @description Air temperature now.
+             */
+            temperature: number;
+            /** @description metric or imperial: the unit of every number below. */
+            units: components["schemas"]["Units"];
+            /**
+             * Wind
+             * @description Wind speed: km/h (metric) or mph (imperial).
+             */
+            wind: number;
+        };
+        /**
+         * OutlookDay
+         * @description One day of the forecast, in the report's units.
+         */
+        OutlookDay: {
+            /**
+             * Day
+             * Format: date
+             * @description The day, in the place's time zone.
+             */
+            day: string;
+            /**
+             * High
+             * @description The day's high.
+             */
+            high: number;
+            /**
+             * Low
+             * @description The day's low.
+             */
+            low: number;
+            /**
+             * Precipitation
+             * @description Rain and snow expected over the day.
+             */
+            precipitation: number;
+            /**
+             * Rain Chance
+             * @description Chance of rain or snow, 0 to 1; none if the source has none.
+             */
+            rain_chance: number | null;
+            /**
+             * Summary
+             * @description The sky in a few words.
+             */
+            summary: string;
         };
         /**
          * Participant
@@ -4724,6 +5616,39 @@ export interface components {
             working_hours_set: boolean;
         };
         /**
+         * ProgressWidget
+         * @description How much of something is done.
+         */
+        ProgressWidget: {
+            /**
+             * Done
+             * @description How many are done, at most `total`.
+             */
+            done: number;
+            /**
+             * @description Progress. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "progress";
+            /**
+             * Label
+             * @description What is done, e.g. `Release checklist`.
+             */
+            label: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Total
+             * @description How many there are.
+             */
+            total: number;
+        };
+        /**
          * PublishStatus
          * @description A publish operation a contract names, and whether an installed module provides it.
          */
@@ -4884,6 +5809,28 @@ export interface components {
             restarting: boolean;
         };
         /**
+         * RunCommand
+         * @description Open the terminal with an `hz` command.
+         */
+        RunCommand: {
+            /**
+             * Command
+             * @description e.g. `hz clock`.
+             */
+            command: string;
+            /**
+             * @description Open the terminal with an `hz` command. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "command";
+            /**
+             * Runs
+             * @description Filled in by `system.ui`: whether it names a read-only operation, so the terminal may press Enter; otherwise the person does.
+             * @default false
+             */
+            runs: boolean;
+        };
+        /**
          * RunMeasure
          * @description One draft, measured: how long drafting took, what it cost and read, and how much changed before sending.
          */
@@ -4929,6 +5876,31 @@ export interface components {
             };
         };
         /**
+         * RunOperation
+         * @description Run an operation of the contributing module with fixed arguments; one that writes only after confirmation.
+         */
+        RunOperation: {
+            /**
+             * Arguments
+             * @description Its arguments by parameter name: strings, numbers, booleans.
+             */
+            arguments?: {
+                [key: string]: boolean | number | string;
+            };
+            /** @description Filled in by `system.ui`; whatever a plugin sets here is replaced. */
+            call?: components["schemas"]["OperationCall"] | null;
+            /**
+             * @description Run an operation of the module. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "operation";
+            /**
+             * Operation
+             * @description The operation's name in its module, e.g. `sync`.
+             */
+            operation: string;
+        };
+        /**
          * SettingInfo
          * @description One effective setting.
          */
@@ -4940,7 +5912,7 @@ export interface components {
             default?: unknown;
             /**
              * Description
-             * @description What the setting controls.
+             * @description What the setting controls, in plain words.
              */
             description: string;
             /**
@@ -4966,6 +5938,11 @@ export interface components {
              */
             section: string;
             /**
+             * Section Title
+             * @description What Settings calls the setting's section: its settings model's section_title; none without one.
+             */
+            section_title?: string | null;
+            /**
              * Source
              * @description Where the value in effect comes from: `default`, a file's scope (`site`, `user`, `project`, `explicit`) or `env`.
              * @default default
@@ -4976,6 +5953,38 @@ export interface components {
              * @description Value in effect.
              */
             value: unknown;
+        };
+        /**
+         * SettingRevealed
+         * @description What `hz system config reveal-setting` did.
+         */
+        SettingRevealed: {
+            /**
+             * Key
+             * @description The setting, as section.key.
+             */
+            key: string;
+            /**
+             * Message
+             * @description What happened, or why nothing did, with the path.
+             */
+            message: string;
+            /**
+             * Opened
+             * @description Whether the file manager was opened.
+             */
+            opened: boolean;
+            /**
+             * Path
+             * Format: path
+             * @description The file or folder it names.
+             */
+            path: string;
+            /**
+             * Supported
+             * @description Whether this machine has a file manager hz can open.
+             */
+            supported: boolean;
         };
         /**
          * Skill
@@ -5000,6 +6009,115 @@ export interface components {
             path: string;
         };
         /**
+         * SkillDetail
+         * @description One skill with its body, as `hz system skill show` prints it.
+         */
+        SkillDetail: {
+            /**
+             * Body
+             * @description Its body, cleaned, without the frontmatter.
+             */
+            body: string;
+            /** @description The skill. */
+            skill: components["schemas"]["SkillView"];
+        };
+        /**
+         * SkillList
+         * @description Every skill in effect, the names nobody decided between, and personal skills that failed their checks.
+         */
+        SkillList: {
+            /**
+             * Conflicts
+             * @description Names left out: an org and the site both.
+             */
+            conflicts?: string[];
+            /**
+             * Next
+             * @description Commands worth running next.
+             */
+            next?: string[];
+            /**
+             * Problems
+             * @description Your skills that failed a check, and why.
+             */
+            problems?: string[];
+            /**
+             * Skills
+             * @description The skills in effect, by name.
+             */
+            skills: components["schemas"]["SkillView"][];
+        };
+        /**
+         * SkillView
+         * @description A skill in effect: what it is, where it comes from, and what it hides.
+         */
+        SkillView: {
+            /**
+             * Chat
+             * @description Whether the chat may use it (`[system.skill] chat`).
+             * @default false
+             */
+            chat: boolean;
+            /**
+             * Description
+             * @description When to use it, in one line.
+             */
+            description: string;
+            /**
+             * Exported
+             * @description Directories it is exported to, from `hz system skill export`.
+             */
+            exported?: string[];
+            /**
+             * Files
+             * @description Paths of the files beside its SKILL.md.
+             */
+            files?: string[];
+            /**
+             * Fingerprint
+             * @description SHA-256 over its files.
+             */
+            fingerprint: string;
+            /**
+             * Hints
+             * @description Frontmatter hints such as `allowed-tools`, never applied.
+             */
+            hints?: {
+                [key: string]: string;
+            };
+            /**
+             * Module
+             * @description The module offering it; none for a personal skill.
+             */
+            module?: string | null;
+            /**
+             * Name
+             * @description The skill's name, e.g. `review-pull-request`.
+             */
+            name: string;
+            /**
+             * Plugin
+             * @description The plugin's distribution; none for the core and yours.
+             */
+            plugin?: string | null;
+            /**
+             * Scripts
+             * @description How many of them are scripts, which hz never runs.
+             * @default 0
+             */
+            scripts: number;
+            /**
+             * Shadows
+             * @description Modules (or `personal`) whose skill of the same name this one hides.
+             */
+            shadows?: string[];
+            /**
+             * Source
+             * @description `core`, `plugin`, `layer` or `personal`.
+             */
+            source: string;
+        };
+        /**
          * Skipped
          * @description A file or directory the scan left alone, and why.
          */
@@ -5014,6 +6132,244 @@ export interface components {
              * @description Why: unreadable, not valid JSON, too large, or a link leaving its directory.
              */
             reason: string;
+        };
+        /**
+         * SoundEarconView
+         * @description A short sound for notices of one kind.
+         */
+        SoundEarconView: {
+            /**
+             * Attribution
+             * @description Who made it, to show beside it; set for CC-BY.
+             */
+            attribution: string | null;
+            /**
+             * Kind
+             * @description The notice kind it plays for, e.g. `draft` or `failed`.
+             */
+            kind: string;
+            /**
+             * Licence
+             * @description Its licence, an SPDX identifier, e.g. `CC0-1.0`.
+             */
+            licence: string;
+            /**
+             * Source
+             * @description Where it comes from, an https URL.
+             */
+            source: string | null;
+            /**
+             * Url
+             * @description Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.
+             */
+            url: string;
+        };
+        /**
+         * SoundLayerView
+         * @description One layer of a layered soundscape: a looped file whose gain follows a signal.
+         */
+        SoundLayerView: {
+            /**
+             * Attribution
+             * @description Who made it, to show beside it; set for CC-BY.
+             */
+            attribution: string | null;
+            /**
+             * Curve
+             * @description Points `[x, y]` for a weather signal, gains by part of the day for `daypart`; none for `none`.
+             */
+            curve: number[][] | {
+                [key: string]: number;
+            } | null;
+            /**
+             * Gain
+             * @description Its loudness, 0 to 1, before the curve.
+             */
+            gain: number;
+            /**
+             * Licence
+             * @description Its licence, an SPDX identifier, e.g. `CC0-1.0`.
+             */
+            licence: string;
+            /**
+             * Signal
+             * @description The signal its gain follows: `none`, `daypart`, `weather.rain`, `weather.wind`.
+             */
+            signal: string;
+            /**
+             * Source
+             * @description Where it comes from, an https URL.
+             */
+            source: string | null;
+            /**
+             * Url
+             * @description Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.
+             */
+            url: string;
+        };
+        /**
+         * SoundList
+         * @description Every available soundscape, which one is configured and which is in effect, and how it plays.
+         */
+        SoundList: {
+            /**
+             * Conflicts
+             * @description Names an org and the site both offer with nothing more specific deciding; left out until one is.
+             */
+            conflicts?: string[];
+            /**
+             * Duck While Typing
+             * @description Whether sound plays softer while you type in the chat.
+             */
+            duck_while_typing: boolean;
+            /**
+             * Effective
+             * @description The name of the soundscape in effect: `selected`, or the theme's own.
+             */
+            effective: string;
+            /**
+             * Follow Theme
+             * @description Whether the soundscape that goes with the theme in effect plays instead.
+             */
+            follow_theme: boolean;
+            /**
+             * Mute In Meetings
+             * @description Whether sound mutes during a meeting in your calendar.
+             */
+            mute_in_meetings: boolean;
+            /**
+             * Next
+             * @description What to run next.
+             */
+            next?: string[];
+            /**
+             * Note
+             * @description Why the soundscape in effect isn't the one configured.
+             */
+            note?: string | null;
+            /**
+             * Selected
+             * @description The name of the soundscape configured, after fallbacks; `off` for none.
+             */
+            selected: string;
+            /**
+             * Signals
+             * @description The signals layers follow, now: `daypart` always, `weather.*` once a plugin publishes them.
+             */
+            signals: {
+                [key: string]: string | number;
+            };
+            /**
+             * Soundscapes
+             * @description `off` first, then the core's and the plugins' soundscapes.
+             */
+            soundscapes: components["schemas"]["SoundscapeView"][];
+            /**
+             * Volume
+             * @description How loud, 0 to 100.
+             */
+            volume: number;
+        };
+        /**
+         * SoundStreamView
+         * @description A stream in the official player of an allowed host.
+         */
+        SoundStreamView: {
+            /**
+             * Embed Url
+             * @description The player to frame after Play, e.g. `https://www.youtube-nocookie.com/embed/...`.
+             */
+            embed_url: string;
+            /**
+             * Frame Origin
+             * @description The origin the page's CSP admits as a frame while it is in effect.
+             */
+            frame_origin: string;
+            /**
+             * Provider
+             * @description The host, e.g. `youtube`.
+             */
+            provider: string;
+            /**
+             * Video
+             * @description The video's id, e.g. `tRsQsTMvPNg`.
+             */
+            video: string;
+            /**
+             * Watch Url
+             * @description Where the video is on the host itself, to open it there instead.
+             */
+            watch_url: string;
+        };
+        /**
+         * SoundscapeView
+         * @description One available soundscape, ready for the web app to play.
+         */
+        SoundscapeView: {
+            /**
+             * Earcons
+             * @description Short sounds for notices, by kind.
+             */
+            earcons?: components["schemas"]["SoundEarconView"][];
+            /**
+             * Effective
+             * @description Whether it is the one in effect (follow my theme may pick another).
+             */
+            effective: boolean;
+            /**
+             * Fade Seconds
+             * @description How long a change fades, in seconds.
+             * @default 4
+             */
+            fade_seconds: number;
+            /**
+             * Kind
+             * @description `off`, `layers` (files mixed live) or `stream`.
+             * @enum {string}
+             */
+            kind: "off" | "layers" | "stream";
+            /**
+             * Layers
+             * @description The layers to mix.
+             */
+            layers?: components["schemas"]["SoundLayerView"][];
+            /**
+             * Module
+             * @description The qualified name of the module offering it; none for `off`.
+             */
+            module: string | null;
+            /**
+             * Name
+             * @description What `hz system sound use` takes, e.g. `claude-fm`; `off` is no sound.
+             */
+            name: string;
+            /**
+             * Pairs With
+             * @description Themes it goes with.
+             */
+            pairs_with?: string[];
+            /**
+             * Plugin
+             * @description The plugin it comes with, `heinzel` for the core's own; none for `off`.
+             */
+            plugin: string | null;
+            /**
+             * Selected
+             * @description Whether it is the one configured.
+             */
+            selected: boolean;
+            /**
+             * Shadows
+             * @description Modules that offer a soundscape of the same name, hidden by this one (layer order decides).
+             */
+            shadows?: string[];
+            /** @description The stream; none unless the kind is `stream`. */
+            stream?: components["schemas"]["SoundStreamView"] | null;
+            /**
+             * Title
+             * @description What people pick it by, e.g. `Claude FM`.
+             */
+            title: string;
         };
         /**
          * StackView
@@ -5072,6 +6428,94 @@ export interface components {
          * @enum {string}
          */
         Status: "up" | "degraded" | "down";
+        /**
+         * StatusEntry
+         * @description A status item, or the problem that keeps it from showing.
+         */
+        StatusEntry: {
+            /**
+             * Id
+             * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /** @description What to show; none when there is nothing to show. */
+            item?: components["schemas"]["StatusItem"] | null;
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Where it sits among its kind, 0 first; ties go by id.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Why it shows nothing: its source failed, or the declaration can't work.
+             */
+            problem?: string | null;
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does: what the app filters by.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
+        };
+        /**
+         * StatusItem
+         * @description A short item of the status bar: text, an optional live time after it, detail on hover, a click.
+         */
+        StatusItem: {
+            /**
+             * Actions
+             * @description Up to four buttons shown with the detail, e.g. Install and Logs.
+             */
+            actions?: components["schemas"]["WidgetAction"][];
+            /**
+             * Detail
+             * @description Up to eight lines shown on hover.
+             */
+            detail?: components["schemas"]["DetailLine"][];
+            /**
+             * Effect
+             * @description What a click does.
+             */
+            effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Icon
+             * @description An icon before the text.
+             */
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            /**
+             * Live
+             * @description A time the app renders after `text` and keeps current.
+             */
+            live?: (components["schemas"]["LiveClock"] | components["schemas"]["LiveTime"] | components["schemas"]["LiveUntil"]) | null;
+            /**
+             * Text
+             * @description What it says, one line, e.g. `Standup until`.
+             */
+            text: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+        };
         /**
          * Step
          * @description Something to do next: a command that works, and why.
@@ -5837,6 +7281,12 @@ export interface components {
             summary: string;
         };
         /**
+         * Units
+         * @description How temperatures and wind speeds are shown.
+         * @enum {string}
+         */
+        Units: "metric" | "imperial";
+        /**
          * Unmaintained
          * @description An input that reads a contract's output no contract maintains.
          */
@@ -6091,6 +7541,75 @@ export interface components {
              */
             week: string;
         };
+        /**
+         * WidgetAction
+         * @description A button of a widget.
+         */
+        WidgetAction: {
+            /**
+             * Effect
+             * @description What a click does.
+             */
+            effect: components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"];
+            /**
+             * Icon
+             * @description An icon before the label.
+             */
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            /**
+             * Label
+             * @description What the button says.
+             */
+            label: string;
+        };
+        /**
+         * WidgetEntry
+         * @description A widget, or the problem that keeps it from showing.
+         */
+        WidgetEntry: {
+            /**
+             * Id
+             * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Where it sits among its kind, 0 first; ties go by id.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Why it shows nothing: its source failed, or the declaration can't work.
+             */
+            problem?: string | null;
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does: what the app filters by.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
+            /**
+             * Widget
+             * @description What to show; none when there is nothing to show.
+             */
+            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"]) | null;
+        };
     };
     responses: never;
     parameters: never;
@@ -6102,6 +7621,7 @@ export type SchemaAccessList = components['schemas']['AccessList'];
 export type SchemaAccessOption = components['schemas']['AccessOption'];
 export type SchemaAccessTestReport = components['schemas']['AccessTestReport'];
 export type SchemaAccessUse = components['schemas']['AccessUse'];
+export type SchemaActionEntry = components['schemas']['ActionEntry'];
 export type SchemaAdapterCandidate = components['schemas']['AdapterCandidate'];
 export type SchemaAdapterInfo = components['schemas']['AdapterInfo'];
 export type SchemaAgenda = components['schemas']['Agenda'];
@@ -6113,6 +7633,7 @@ export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
+export type SchemaCardWidget = components['schemas']['CardWidget'];
 export type SchemaCatchUp = components['schemas']['CatchUp'];
 export type SchemaChannel = components['schemas']['Channel'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
@@ -6135,17 +7656,20 @@ export type SchemaConnectorCapability = components['schemas']['ConnectorCapabili
 export type SchemaConnectorReport = components['schemas']['ConnectorReport'];
 export type SchemaConnectorTest = components['schemas']['ConnectorTest'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
+export type SchemaContributionInfo = components['schemas']['ContributionInfo'];
 export type SchemaCredentialInfo = components['schemas']['CredentialInfo'];
 export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
 export type SchemaDefaultView = components['schemas']['DefaultView'];
 export type SchemaDelivered = components['schemas']['Delivered'];
 export type SchemaDelivery = components['schemas']['Delivery'];
+export type SchemaDetailLine = components['schemas']['DetailLine'];
 export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
 export type SchemaDisposition = components['schemas']['Disposition'];
 export type SchemaEdge = components['schemas']['Edge'];
 export type SchemaEdgeMetadata = components['schemas']['EdgeMetadata'];
+export type SchemaEffortChoice = components['schemas']['EffortChoice'];
 export type SchemaEvent = components['schemas']['Event'];
 export type SchemaExpertMode = components['schemas']['ExpertMode'];
 export type SchemaFilters = components['schemas']['Filters'];
@@ -6168,18 +7692,31 @@ export type SchemaLastTest = components['schemas']['LastTest'];
 export type SchemaLayerList = components['schemas']['LayerList'];
 export type SchemaLayerProblemView = components['schemas']['LayerProblemView'];
 export type SchemaLayerView = components['schemas']['LayerView'];
+export type SchemaListEntry = components['schemas']['ListEntry'];
+export type SchemaListWidget = components['schemas']['ListWidget'];
+export type SchemaLiveClock = components['schemas']['LiveClock'];
+export type SchemaLiveTime = components['schemas']['LiveTime'];
+export type SchemaLiveUntil = components['schemas']['LiveUntil'];
 export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaLogin = components['schemas']['Login'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
+export type SchemaMetricWidget = components['schemas']['MetricWidget'];
+export type SchemaModelChoice = components['schemas']['ModelChoice'];
+export type SchemaModelList = components['schemas']['ModelList'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
+export type SchemaNavigate = components['schemas']['Navigate'];
 export type SchemaNode = components['schemas']['Node'];
 export type SchemaNodeMetadata = components['schemas']['NodeMetadata'];
 export type SchemaNotice = components['schemas']['Notice'];
 export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
+export type SchemaOpenUrl = components['schemas']['OpenUrl'];
 export type SchemaOpened = components['schemas']['Opened'];
 export type SchemaOperationAudience = components['schemas']['OperationAudience'];
+export type SchemaOperationCall = components['schemas']['OperationCall'];
+export type SchemaOutlook = components['schemas']['Outlook'];
+export type SchemaOutlookDay = components['schemas']['OutlookDay'];
 export type SchemaParticipant = components['schemas']['Participant'];
 export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
@@ -6190,18 +7727,32 @@ export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaProfile = components['schemas']['Profile'];
+export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
 export type SchemaRecommendationView = components['schemas']['RecommendationView'];
 export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
 export type SchemaRestart = components['schemas']['Restart'];
+export type SchemaRunCommand = components['schemas']['RunCommand'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
+export type SchemaRunOperation = components['schemas']['RunOperation'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
+export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
 export type SchemaSkill = components['schemas']['Skill'];
+export type SchemaSkillDetail = components['schemas']['SkillDetail'];
+export type SchemaSkillList = components['schemas']['SkillList'];
+export type SchemaSkillView = components['schemas']['SkillView'];
 export type SchemaSkipped = components['schemas']['Skipped'];
+export type SchemaSoundEarconView = components['schemas']['SoundEarconView'];
+export type SchemaSoundLayerView = components['schemas']['SoundLayerView'];
+export type SchemaSoundList = components['schemas']['SoundList'];
+export type SchemaSoundStreamView = components['schemas']['SoundStreamView'];
+export type SchemaSoundscapeView = components['schemas']['SoundscapeView'];
 export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStatus = components['schemas']['Status'];
+export type SchemaStatusEntry = components['schemas']['StatusEntry'];
+export type SchemaStatusItem = components['schemas']['StatusItem'];
 export type SchemaStep = components['schemas']['Step'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
 export type SchemaTeamGraphDocument = components['schemas']['TeamGraphDocument'];
@@ -6221,6 +7772,7 @@ export type SchemaThemeWhen = components['schemas']['ThemeWhen'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
+export type SchemaUnits = components['schemas']['Units'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaUpdateResult = components['schemas']['UpdateResult'];
 export type SchemaUsageReport = components['schemas']['UsageReport'];
@@ -6229,6 +7781,8 @@ export type SchemaUsageTotal = components['schemas']['UsageTotal'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWaiting = components['schemas']['Waiting'];
 export type SchemaWeek = components['schemas']['Week'];
+export type SchemaWidgetAction = components['schemas']['WidgetAction'];
+export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
 export type $defs = Record<string, never>;
 export interface operations {
     ai_access_list: {
@@ -6311,6 +7865,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
                 };
             };
         };
@@ -6877,6 +8451,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConfigRevealed"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_config_reveal_setting: {
+        parameters: {
+            query: {
+                /** @description Setting as section.key, e.g. hz.log_level or example.greeting. */
+                key: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingRevealed"];
                 };
             };
             /** @description Validation Error */
@@ -7891,6 +9497,10 @@ export interface operations {
                 message: string;
                 /** @description Most this answer may cost in US dollars, within the per-message and session caps. */
                 budget_usd?: number | null;
+                /** @description The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default. */
+                model?: string | null;
+                /** @description The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default. */
+                effort?: ("" | "low" | "medium" | "high" | "xhigh" | "max") | null;
             };
             header?: never;
             path?: never;
@@ -7937,6 +9547,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_skill_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillList"];
+                };
+            };
+        };
+    };
+    system_skill_show: {
+        parameters: {
+            query: {
+                /** @description The skill, one `hz system skill list` shows, e.g. `explain-heinzel`. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_sound_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundList"];
+                };
+            };
+        };
+    };
+    system_sound_use: {
+        parameters: {
+            query: {
+                /** @description The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundList"];
                 };
             };
             /** @description Validation Error */
@@ -8022,6 +9736,190 @@ export interface operations {
             };
         };
     };
+    system_ui_actions: {
+        parameters: {
+            query?: {
+                /** @description Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_hide: {
+        parameters: {
+            query: {
+                /** @description The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item: string;
+                /** @description Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several. */
+                slot?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContributionInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContributionInfo"][];
+                };
+            };
+        };
+    };
+    system_ui_show: {
+        parameters: {
+            query: {
+                /** @description The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item: string;
+                /** @description Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several. */
+                slot?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContributionInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_status: {
+        parameters: {
+            query?: {
+                /** @description Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_widgets: {
+        parameters: {
+            query?: {
+                /** @description Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WidgetEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_update: {
         parameters: {
             query?: {
@@ -8072,6 +9970,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamShow"];
+                };
+            };
+        };
+    };
+    weather: {
+        parameters: {
+            query?: {
+                /** @description A place such as "Lisbon, PT" or coordinates such as "38.72,-9.14"; your primary one if left out. */
+                location?: string | null;
+                /** @description How many days of forecast, from today; the adapter may give fewer. */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Outlook"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

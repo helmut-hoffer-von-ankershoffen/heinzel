@@ -92,7 +92,7 @@ def test_mcp_runs_an_old_tool_name(kernel):
 
 def test_a_chat_gets_only_the_current_tool_names(kernel):
     async def listed() -> set[str]:
-        async with Client(mcp.build(kernel, chat="0123456789abcdef")) as client:
+        async with Client(mcp.build(kernel, chat="0123456789abcdef", chat_tools="all")) as client:
             return {tool.name for tool in (await client.list_tools()).tools}
 
     names = anyio.run(listed)

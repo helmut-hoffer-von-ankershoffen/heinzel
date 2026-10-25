@@ -25,6 +25,13 @@ class Transport(StrEnum):
     HTTP = "streamable-http"
 
 
+class ChatToolSet(StrEnum):
+    """Which operations a chat's agent gets as tools."""
+
+    EVERYDAY = "everyday"
+    ALL = "all"
+
+
 def serve_group(
     group_cls: type[TyperGroup], footer: str | None, kernel: Kernel, out_console: Console, err_console: Console
 ) -> typer.Typer:
@@ -38,7 +45,7 @@ def serve_group(
     )
 
     @serve.command(epilog=footer)
-    def mcp(
+    def mcp(  # noqa: PLR0913, PLR0917 - one parameter per command-line option
         transport: Annotated[
             Transport, typer.Option(help="stdio for agents that start hz; streamable-http to share.")
         ] = Transport.STDIO,
@@ -58,6 +65,10 @@ def serve_group(
                 help="Read the configuration as if started in this directory (its hz.toml), as the chat does."
             ),
         ] = None,
+        chat_tools: Annotated[
+            ChatToolSet,
+            typer.Option(help="With --chat: the everyday operations as tools (cheaper messages), or all of them."),
+        ] = ChatToolSet.EVERYDAY,
     ) -> None:
         """Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
 
@@ -71,7 +82,7 @@ def serve_group(
             raise typer.Exit(2)
         if project is not None:
             os.chdir(project)  # before the head boots its kernel, so it finds the same project file
-        head.serve(transport.value, host, port, chat=chat)
+        head.serve(transport.value, host, port, chat=chat, chat_tools=chat_tools.value)
 
     @serve.command(epilog=footer)
     def api(

@@ -19,7 +19,7 @@ flowchart LR
     subgraph Modules
         System["system (built-in)<br/>├ agent ├ changelog ├ config<br/>├ daemon └ doctor └ plugin"]
         Heinzel["heinzel (built-in)<br/>your Heinzelmännchen: contracts → daemon jobs"]
-        Clock["clock · github · atlassian · google · zoom<br/>(first-party plugins)"]
+        Clock["clock · github · atlassian · google · openmeteo · zoom<br/>(first-party plugins)"]
         Ext["heinzel-*<br/>(external plugins)"]
     end
     Discovery --> Registry
@@ -53,6 +53,7 @@ the kinds it understands.
 | `SetupLet` | `@module.setup(required=False)`, asking through an injected `Prompter` and writing through `ConfigEditor` and `Credentials` | the CLI head: `hz setup [MODULE]` ([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)) |
 | `PlaybookLet` | `module.playbook(summary, assets=..., templates=..., defaults=...)`: asset types with discovery hints, template contracts, recommended settings | `heinzel`: `hz heinzel playbooks`, `discover`, `new --template`; the setup step it declares ([ADR 0037](adr/0037-plugins-bring-playbooks.md)) |
 | `LayerLet` | `module.layer(parent=..., site=..., roles=...)`: the plugin sits in a company's tree, under its parent layer and at a site layer | the kernel: `Kernel.layers()` checks the tree, `Kernel.layer_stack()` stacks your layers general to specific, afresh on every call; `system.layer`: `hz system layer list`, `show`, doctor ([ADR 0040](adr/0040-layers-and-playbooks-are-plugins.md)) |
+| `SkillLet` | `module.skill(path)`: a `SKILL.md` directory or a directory of them, checked at import (frontmatter, sizes, text only, no links, no secrets) | `system.skill`: `hz system skill list`, `show`, `export`; the read-only `Skills` service for Pydantic AI turns (`skill_tools`) and the MCP head's prompts and resources ([ADR 0061](adr/0061-plugins-ship-skills-every-ai-path-can-use.md)) |
 | `JobLet` | `@module.job(schedule="0 9 * * MON")` | `hz system daemon tick`, run by launchd or systemd ([ADR 0020](adr/0020-daemon-head.md)) |
 | `ProviderLet` | `@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter class; `hosts=` takes a function of the module's settings when they decide the hosts | the kernel's capability bindings and `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
 | `RequirementLet` | `Module(..., requires=["tracker:read"])` (read only); operations and jobs take `requires=[...]`, and a read-only operation that degrades without its own takes `optional=True` | the kernel's capability handles and the doctor check of `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
@@ -67,12 +68,14 @@ declares ([ADR 0021](adr/0021-workflow-contracts.md)).
 by kind with their owning module, and injects dependencies by type: `Kernel`, `Settings`, `Config`, every type a
 `ServiceLet` provides and every `SettingsLet` model, plus `Installation` (the uv tool environment) and `Progress`
 (head-provided progress reporting: operations never print). Services are singletons per kernel and may depend on other services.
-A capability protocol (`Tracker`, `Documents`, `Chat`, `Meetings`, `Calendar`, `Mail`, `Directory`, ...) is injected as a handle
+A capability protocol (`Tracker`, `Documents`, `Chat`, `Meetings`, `Calendar`, `Mail`, `Directory`, `Weather`, ...) is injected as a handle
 on the adapter bound in `[capabilities]`, limited to the modes the asking operation, job or module declared; `write`
 reaches only publish operations (`read_only=False`); adapters pass every string they return through `clean_text`.
 Several adapters may provide one capability and the binding picks one; an adapter may build on another capability
 (meetings from summary emails, through `mail`) ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)).
-The org chart is the capability `directory`: a plugin's directory of record when one is bound, otherwise the core's
+The weather is the capability `weather`: the core's `weather` module (`hz weather`) asks for it and shows it in
+your units, the first-party `openmeteo` plugin serves it with no account and no key, and a company's own plugin can
+serve it instead. The org chart is the capability `directory`: a plugin's directory of record when one is bound, otherwise the core's
 `one-on-ones` adapter (`system.directory`), which guesses reporting lines from recurring 1:1s in the bound calendar
 and marks each as a guess (with no calendar bound the draft is empty and says why); setup steps and roster
 drafting call `draft_reporting_lines`. Agent sessions are the
@@ -141,6 +144,7 @@ hz system config  show | get | set | unset | init
 hz system plugin  list | add | remove | new
 hz system layer   list | show
 hz system agent   skills | install | uninstall
+hz system skill   list | show | export | unexport   skills for AI; export hands chosen ones to Claude Code (ADR 0061)
 hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
 hz system notify  list | ack | test | install
 hz system serve   mcp | api | daemon
@@ -182,7 +186,7 @@ Every plugin, first-party or external, is named the same way
 ([ADR 0025](adr/0025-plugin-distributions-are-named-heinzel-name.md)): distribution and repository `heinzel-<name>`,
 root package `heinzel_<name>`, entry point `<name>` in the `heinzel.modules` group. `hz system plugin add <name>`
 resolves the name of a first-party plugin. First-party plugins (`plugins/`: clock and the GitHub, Atlassian,
-Google and Zoom adapters) are released with the core but never installed by default; the core imports none of them
+Google, Open-Meteo and Zoom adapters) are released with the core but never installed by default; the core imports none of them
 ([ADR 0017](adr/0017-first-party-plugins-in-the-core-repository.md),
 [ADR 0028](adr/0028-integrations-are-capability-adapters.md)).
 

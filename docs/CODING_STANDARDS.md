@@ -24,8 +24,10 @@ Each rule has a reason. If a rule gets in your way, change the rule in a pull re
 - **Typing:** everything in `src/` is fully typed and passes `mypy --strict` and `pyright` strict. `Any` is allowed
   only for free-form JSON and forwarded `**kwargs`, with a `# noqa: ANN401` stating which. `cast` needs a reason
   if it isn't obvious. No `# type: ignore` without an error code.
-- **Configuration:** `ModuleSettings` subclasses declared with `@module.settings`, every field with a
-  `description`; never read `os.environ` directly in modules.
+- **Configuration:** `ModuleSettings` subclasses declared with `@module.settings`, every field with a plain `title`
+  and `description` and a schema that picks the right control in Settings
+  ([SETTINGS_UX](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/SETTINGS_UX.md)); never
+  read `os.environ` directly in modules.
 - **Data:** pydantic models for anything that crosses a boundary (operation results, settings, files).
   Frozen dataclasses with `slots=True` for internal value objects.
 - **Errors:** raise `HeinzelError` with a message written for the person or agent who will read it — what went wrong
@@ -111,8 +113,8 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 - Scopes are optional; Heinzelmännchen's are `kernel`, `cli`, `heads`, `ai`, `system`, `setup`, `heinzel`, `workflow`,
   `team`,
   `org`, `plugin`, `template`, `ci`, `docs`, `adr`, `agents`, `dx`, `security`, `release`, `deps`, `web`, `chat`,
-  `graph`, `report`, and the
-  first-party plugins `clock`, `github`, `atlassian`, `google`, `zoom`. A plugin's scopes are its own module and area names.
+  `graph`, `report`, `weather`, and the
+  first-party plugins `clock`, `github`, `atlassian`, `google`, `openmeteo`, `zoom`. A plugin's scopes are its own module and area names.
 - One logical change per commit; the body says *why*.
 - `main` changes only through pull requests ([ADR 0013](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/adr/0013-pull-request-based-development-and-releases.md)).
   They are squash-merged; the PR title must be a conventional commit and becomes the commit on `main`.

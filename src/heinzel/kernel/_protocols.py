@@ -20,8 +20,10 @@ recipients are participants too, so the workflow packet builder drops their addr
 """
 
 import re
-from datetime import datetime
-from typing import Any, Protocol, Self
+import unicodedata
+from collections.abc import Iterable
+from datetime import date, datetime
+from typing import Any, Literal, Protocol, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -203,6 +205,72 @@ class Event(BaseModel):
     )
     conference_url: str | None = Field(default=None, description="Link to join the conference; none without one.")
     url: str | None = Field(default=None, description="Where people open it; none if it has no web address.")
+    location: str | None = Field(default=None, description="Where it takes place, in the event's words; none if unset.")
+    response: Literal["accepted", "declined", "tentative", "pending"] | None = Field(
+        default=None,
+        description="The user's own answer to the invitation: one of `RESPONSES`, or `pending` while unanswered; "
+        "none when the user is not among the attendees.",
+    )
+    organized_by_user: bool = Field(
+        default=False, description="Whether the user organizes it, and so may move or cancel it for everyone."
+    )
+
+
+class WeatherPlace(BaseModel):
+    """A place weather is reported for, as the adapter resolved it from what was asked."""
+
+    name: str = Field(description="The place by name, e.g. `Berlin, Germany`; the coordinates when asked by them.")
+    latitude: float = Field(ge=-90, le=90, description="Degrees north of the equator.")
+    longitude: float = Field(ge=-180, le=180, description="Degrees east of the prime meridian.")
+
+
+class CurrentWeather(BaseModel):
+    """The weather at a place right now, in metric units (display units are the caller's business)."""
+
+    observed_at: AwareDatetime = Field(description="When it was observed or modelled, in the place's time zone.")
+    summary: str = Field(description="The sky in a few words, e.g. `light rain`.")
+    temperature_c: float = Field(description="Air temperature, degrees Celsius.")
+    feels_like_c: float = Field(description="Apparent temperature, degrees Celsius.")
+    humidity_percent: int | None = Field(default=None, description="Relative humidity; none if the source has none.")
+    wind_kmh: float = Field(ge=0, description="Wind speed, kilometres per hour.")
+    precipitation_mm: float = Field(ge=0, description="Rain and snow in the last hour, millimetres.")
+
+
+class DailyForecast(BaseModel):
+    """The forecast for one day at a place, in metric units."""
+
+    day: date = Field(description="The day, in the place's time zone.")
+    summary: str = Field(description="The sky in a few words, e.g. `overcast`.")
+    high_c: float = Field(description="The day's high, degrees Celsius.")
+    low_c: float = Field(description="The day's low, degrees Celsius.")
+    rain_chance: float | None = Field(
+        default=None, ge=0, le=1, description="Chance of rain or snow, 0 to 1; none if the source has none."
+    )
+    precipitation_mm: float = Field(ge=0, description="Rain and snow expected over the day, millimetres.")
+
+
+class WeatherReport(BaseModel):
+    """The weather now and a short daily forecast at one place."""
+
+    place: WeatherPlace = Field(description="Where, as the adapter resolved it.")
+    current: CurrentWeather = Field(description="The weather now.")
+    days: list[DailyForecast] = Field(
+        description="The next days from today, a few of them (an adapter decides how many), by day."
+    )
+
+
+class WeatherSource(Protocol):
+    """The weather at a place (capability `weather`).
+
+    Served by an adapter that needs no account when it can, such as the `openmeteo` plugin. A `place` is a name
+    such as `Lisbon, PT` (the adapter geocodes it) or coordinates `lat,lon` such as `38.72,-9.14`; the module that
+    asks knows the user's own places. Results are metric; the caller converts for display. It takes no window, so
+    no contract reads it; module operations do.
+    """
+
+    def report(self, place: str) -> WeatherReport:
+        """The weather now and the next days at `place`: a name to geocode, or `lat,lon`. Mode: read."""
+        ...
 
 
 class Chat(Protocol):
@@ -249,14 +317,235 @@ class Meetings(Protocol):
         ...
 
 
+RESPONSES = ("accepted", "declined", "tentative")
+"""The answers `Calendar.respond` gives an invitation."""
+_ADDRESS = re.compile(
+    r"^[^@\s<>,;:\"()\[\]\\\x00-\x1f\x7f]{1,64}@[A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63}){0,8}\.[A-Za-z]{2,24}$"
+)
+"""A plain email address: no display name, nothing that could end or extend a header line."""
+MAX_ATTENDEES = 100
+"""Most people one event or one free/busy question names."""
+MAX_TITLE = 300
+MAX_DESCRIPTION = 20_000
+
+
+def plain_addresses(values: Iterable[str], what: str = "Addresses") -> list[str]:
+    """`values` as plain, lower-case email addresses, each once, in order, blanks skipped.
+
+    Plain means nothing that could end or extend a header line: every address a draft or a free/busy question names
+    passes this, in the core and in adapters.
+
+    Raises:
+        ValueError: If one is no plain address (`ada@example.com`), or there are more than `MAX_ATTENDEES`.
+    """
+    found: list[str] = []
+    for value in values:
+        address = value.strip().lower()
+        if not address:
+            continue
+        if not _ADDRESS.fullmatch(address):
+            msg = f"{what}: {value[:100]!r} is not an email address such as ada@example.com"
+            raise ValueError(msg)
+        if address not in found:
+            found.append(address)
+    if len(found) > MAX_ATTENDEES:
+        msg = f"{what}: at most {MAX_ATTENDEES} addresses"
+        raise ValueError(msg)
+    return found
+
+
+def _one_line(value: str | None, what: str, limit: int) -> str | None:
+    if value is None:
+        return None
+    if len(value.splitlines()) > 1 or any(unicodedata.category(c) == "Cc" for c in value):
+        msg = f"{what} must be one line, without control characters"
+        raise ValueError(msg)
+    if len(value) > limit:
+        msg = f"{what} has more than {limit} characters"
+        raise ValueError(msg)
+    return value.strip()
+
+
+def _bounded(value: str | None, what: str, limit: int) -> str | None:
+    if value is not None and len(value) > limit:
+        msg = f"{what} has more than {limit:,} characters"
+        raise ValueError(msg)
+    return value
+
+
+def free_busy_people(people: str) -> list[str]:
+    """The addresses of `Calendar.free_busy`'s `people`: comma-separated plain addresses, checked like a draft's.
+
+    Raises:
+        ValueError: If one is no plain address, or there are more than `MAX_ATTENDEES`.
+    """
+    return plain_addresses(people.split(","), "People")
+
+
+class TimeSpan(BaseModel):
+    """A half-open span of time `[start, end)`."""
+
+    start: AwareDatetime = Field(description="When it starts, inclusive.")
+    end: AwareDatetime = Field(description="When it ends, exclusive.")
+
+
+class FreeBusy(BaseModel):
+    """When one person's calendar is busy within a window, as far as the user may see it."""
+
+    who: Participant = Field(description="Whose calendar: the user, or a person asked about by address.")
+    busy: list[TimeSpan] = Field(default_factory=list[TimeSpan], description="Busy spans in the window, by start.")
+    known: bool = Field(
+        default=True,
+        description="Whether the vendor showed this calendar; false when it is hidden from the user or unknown, and "
+        "then `busy` says nothing.",
+    )
+
+
+class EventDraft(BaseModel):
+    """A new event, as `Calendar.create_event` puts it in the user's calendar."""
+
+    model_config = ConfigDict(frozen=True)
+
+    title: str = Field(min_length=1, description="Title (summary) of the event, one line.")
+    start: AwareDatetime = Field(description="When it starts; midnight of the first day for an all-day event.")
+    end: AwareDatetime = Field(description="When it ends, exclusive; the next midnight for a one-day all-day event.")
+    all_day: bool = Field(default=False, description="Whether it is an all-day event (its times count as dates).")
+    attendees: list[str] = Field(
+        default_factory=list, description="Email addresses of the people to invite; the user organizes it."
+    )
+    location: str | None = Field(default=None, description="Where it takes place, one line; none to leave it unset.")
+    description: str | None = Field(default=None, description="Notes for the attendees, plain text; none for none.")
+    conference: bool = Field(
+        default=False, description="Whether to add a video call from the calendar's own conferencing (e.g. Meet)."
+    )
+    notify: bool = Field(default=True, description="Whether the attendees get an invitation by mail.")
+
+    @field_validator("title")
+    @classmethod
+    def _title_is_one_line(cls, title: str) -> str:
+        return _one_line(title, "The title", MAX_TITLE) or ""
+
+    @field_validator("location")
+    @classmethod
+    def _location_is_one_line(cls, location: str | None) -> str | None:
+        return _one_line(location, "The location", MAX_TITLE)
+
+    @field_validator("description")
+    @classmethod
+    def _description_is_bounded(cls, description: str | None) -> str | None:
+        return _bounded(description, "The description", MAX_DESCRIPTION)
+
+    @field_validator("attendees")
+    @classmethod
+    def _attendees_are_addresses(cls, attendees: list[str]) -> list[str]:
+        return plain_addresses(attendees, "Attendees")
+
+    @model_validator(mode="after")
+    def _ends_after_it_starts(self) -> Self:
+        if not self.title:
+            msg = "An event needs a title"
+            raise ValueError(msg)
+        if self.end <= self.start:
+            msg = f"The event ends ({self.end.isoformat()}) before it starts ({self.start.isoformat()})"
+            raise ValueError(msg)
+        return self
+
+
+class EventChange(BaseModel):
+    """What `Calendar.update_event` changes in an event; a field left unset stays as it is."""
+
+    model_config = ConfigDict(frozen=True)
+
+    title: str | None = Field(default=None, description="A new title, one line.")
+    start: AwareDatetime | None = Field(default=None, description="A new start; the end moves along if not given.")
+    end: AwareDatetime | None = Field(default=None, description="A new end, exclusive.")
+    location: str | None = Field(default=None, description="A new location, one line.")
+    description: str | None = Field(default=None, description="New notes for the attendees, plain text.")
+    attendees: list[str] | None = Field(
+        default=None, description="The full new list of people invited, by email address; the user stays organizer."
+    )
+    notify: bool = Field(default=True, description="Whether the attendees get the update by mail.")
+
+    @field_validator("title")
+    @classmethod
+    def _title_is_one_line(cls, title: str | None) -> str | None:
+        title = _one_line(title, "The title", MAX_TITLE)
+        if title == "":
+            msg = "A new title can't be empty"
+            raise ValueError(msg)
+        return title
+
+    @field_validator("location")
+    @classmethod
+    def _location_is_one_line(cls, location: str | None) -> str | None:
+        return _one_line(location, "The location", MAX_TITLE)
+
+    @field_validator("description")
+    @classmethod
+    def _description_is_bounded(cls, description: str | None) -> str | None:
+        return _bounded(description, "The description", MAX_DESCRIPTION)
+
+    @field_validator("attendees")
+    @classmethod
+    def _attendees_are_addresses(cls, attendees: list[str] | None) -> list[str] | None:
+        return None if attendees is None else plain_addresses(attendees, "Attendees")
+
+    @model_validator(mode="after")
+    def _changes_something_that_fits(self) -> Self:
+        changed = {name for name in type(self).model_fields if name != "notify" and getattr(self, name) is not None}
+        if not changed:
+            msg = "The change changes nothing: give a title, start, end, location, description or attendees"
+            raise ValueError(msg)
+        if self.start is not None and self.end is not None and self.end <= self.start:
+            msg = f"The event would end ({self.end.isoformat()}) before it starts ({self.start.isoformat()})"
+            raise ValueError(msg)
+        return self
+
+
+class EventCancellation(BaseModel):
+    """What `Calendar.cancel_event` cancelled."""
+
+    id: str = Field(description="The event (occurrence) that was cancelled.")
+    notified: bool = Field(description="Whether the attendees were told by mail.")
+
+
 class Calendar(Protocol):
-    """The user's calendar, such as Google Calendar (capability `calendar`)."""
+    """The user's calendar, such as Google Calendar (capability `calendar`).
+
+    Writes change the user's own calendar and, through invitations, other people's: only publish operations
+    (`read_only=False`) that declared `calendar:write` get a handle on which they work (ADR 0028), and Heinzelmännchen's
+    operations show what a write will do before the person confirms it (ADR 0038).
+    """
 
     def events(self, window: Window) -> list[Event]:
         """The user's events that overlap `window`, recurrences expanded, cancelled ones included, by start.
 
         Mode: read.
         """
+        ...
+
+    def free_busy(self, people: str, window: Window) -> list[FreeBusy]:
+        """When the user and `people` (comma-separated plain addresses, `free_busy_people`; empty: the user) are busy.
+
+        The user first, then each person in the order given; a calendar the vendor doesn't show is `known=False`.
+        Mode: read.
+        """
+        ...
+
+    def create_event(self, event: EventDraft) -> Event:
+        """Put `event` in the user's calendar, the user organizing it, and invite its attendees. Mode: write."""
+        ...
+
+    def update_event(self, event: str, change: EventChange) -> Event:
+        """Change the event `event` (an `Event.id`; one occurrence of a recurring one) as `change` says. Mode: write."""
+        ...
+
+    def cancel_event(self, event: str, notify: bool) -> EventCancellation:
+        """Cancel the event `event` (an `Event.id`) for everyone, telling the attendees if `notify`. Mode: write."""
+        ...
+
+    def respond(self, event: str, response: str) -> Event:
+        """Answer the invitation to `event` (an `Event.id`) with `response`, one of `RESPONSES`. Mode: write."""
         ...
 
 
@@ -402,11 +691,95 @@ class MailQuery(BaseModel):
         return self.label is None or self.label.casefold() in {label.casefold() for label in message.labels}
 
 
+MAX_MAIL_TEXT = 200_000
+"""Characters of the text of one message Heinzelmännchen writes."""
+
+
+class MailThread(BaseModel):
+    """A conversation: its messages with their text, oldest first."""
+
+    id: str = Field(description="Identifier of the conversation; `MailMessage.thread` of its messages.")
+    subject: str = Field(description="Subject of its first message, decoded; empty if it has none.")
+    messages: list[MailContent] = Field(
+        default_factory=list[MailContent], description="Its messages with their text, oldest first."
+    )
+
+
+class MailDraft(BaseModel):
+    """A message to write as a draft, new or a reply; `Mail.create_draft` keeps it in the mailbox, unsent."""
+
+    model_config = ConfigDict(frozen=True)
+
+    to: list[str] = Field(
+        default_factory=list,
+        description="Email addresses it goes to; for a reply, empty to answer the sender (or its Reply-To).",
+    )
+    cc: list[str] = Field(default_factory=list, description="Email addresses it is copied to.")
+    subject: str = Field(default="", description="Subject line, one line; for a reply, empty for `Re: <subject>`.")
+    text: str = Field(description="The body, plain text.")
+    reply_to: str | None = Field(
+        default=None, description="The `MailMessage.id` it answers: it joins that conversation; none for a new one."
+    )
+    reply_all: bool = Field(
+        default=False, description="For a reply with no `to`: answer every recipient of the message too, not you."
+    )
+
+    @field_validator("to", "cc")
+    @classmethod
+    def _plain_addresses(cls, addresses: list[str]) -> list[str]:
+        return plain_addresses(addresses, "Recipients")
+
+    @field_validator("subject")
+    @classmethod
+    def _subject_is_one_line(cls, subject: str) -> str:
+        return _one_line(subject, "The subject", MAX_TITLE) or ""
+
+    @field_validator("text")
+    @classmethod
+    def _text_is_bounded(cls, text: str) -> str:
+        return _bounded(text, "The text", MAX_MAIL_TEXT) or ""
+
+    @model_validator(mode="after")
+    def _goes_somewhere(self) -> Self:
+        if self.reply_to is None and not self.to:
+            msg = "A new message needs at least one address in `to`"
+            raise ValueError(msg)
+        if self.reply_to is None and not self.subject:
+            msg = "A new message needs a subject"
+            raise ValueError(msg)
+        return self
+
+
+class DraftedMail(BaseModel):
+    """A draft in the mailbox, as it stands now: what `Mail.send_draft` would send."""
+
+    id: str = Field(description="Identifier of the draft; what `Mail.send_draft` and `Mail.draft` take.")
+    content: MailContent = Field(description="The draft's message: recipients, subject and text, as saved.")
+    url: str | None = Field(default=None, description="Where people open and edit it; none if it has no address.")
+
+
+class SentMail(BaseModel):
+    """What `Mail.send_draft` sent."""
+
+    id: str = Field(description="Identifier of the sent message; what `Mail.read` takes.")
+    thread: str | None = Field(default=None, description="Its conversation; none if the vendor has none.")
+    url: str | None = Field(default=None, description="Where people open it; none if it has no web address.")
+
+
+class MailLabels(BaseModel):
+    """A conversation's labels after `Mail.relabel`."""
+
+    thread: str = Field(description="The conversation relabelled.")
+    labels: list[str] = Field(default_factory=list, description="Its labels now, in the vendor's words.")
+
+
 class Mail(Protocol):
     """A mailbox the user reads, such as Gmail or an IMAP account (capability `mail`).
 
-    Read only: nothing sends, files or deletes mail. Adapters bound the result like every window read, and bound
-    `MailContent.text` by a byte budget of their own, raising a `HeinzelError` past it rather than cutting it.
+    Adapters bound the result like every window read, and bound `MailContent.text` by a byte budget of their own,
+    raising a `HeinzelError` past it rather than cutting it. Writes keep drafts, send a draft and file conversations;
+    nothing deletes mail. Only publish operations (`read_only=False`) that declared `mail:write` get a handle on which
+    they work (ADR 0028), and Heinzelmännchen's operations send nothing the person hasn't seen and confirmed.
     """
 
     def messages(self, query: str, window: Window) -> list[MailMessage]:
@@ -418,6 +791,36 @@ class Mail(Protocol):
 
     def read(self, message: str) -> MailContent:
         """The message `message` (a `MailMessage.id`) with its text and headers, for operations. Mode: read."""
+        ...
+
+    def thread(self, thread: str) -> MailThread:
+        """The conversation `thread` (a `MailMessage.thread`) with every message's text, for operations. Mode: read."""
+        ...
+
+    def draft(self, draft: str) -> DraftedMail:
+        """The draft `draft` (a `DraftedMail.id`) as it stands, possibly edited since. Mode: read."""
+        ...
+
+    def create_draft(self, draft: MailDraft) -> DraftedMail:
+        """Keep `draft` as a draft in the mailbox, unsent; a reply joins its conversation. Mode: write."""
+        ...
+
+    def send_draft(self, draft: str, seen: str) -> SentMail:
+        """Send the draft `draft` (a `DraftedMail.id`) if its message is still `seen`. Mode: write.
+
+        `seen` is the `DraftedMail.content.message.id` the person was shown; a draft edited since has another, and
+        then nothing is sent: the adapter raises a `HeinzelError` saying to look again. An adapter whose vendor keeps
+        a draft's message id across edits must compare the content instead.
+        """
+        ...
+
+    def relabel(self, thread: str, add: list[str], remove: list[str]) -> MailLabels:
+        """File the conversation `thread`: add the labels `add` and remove `remove`, by name. Mode: write.
+
+        Every adapter knows the portable names `inbox` and `unread`, ignoring case: removing `inbox` archives a
+        conversation, removing `unread` marks it read. Other names are the vendor's labels or folders. Nothing deletes
+        a conversation or files it into spam or trash.
+        """
         ...
 
 

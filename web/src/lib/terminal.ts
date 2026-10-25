@@ -11,18 +11,29 @@ export const OPEN_TERMINAL = "hz:open-terminal";
  * Anything else (a value from a team repository with `;` or `$(`) is typed but left for the person to press Enter.
  */
 export function runsAsIs(command: string): boolean {
-  return /^hz( +([\w./:=@,+-]+|'([^']|'\\'')*'))*$/.test(command);
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it refuses
+  return /^hz( +([\w./:=@,+-]+|'([^'\u0000-\u001f\u007f-\u009f]|'\\'')*'))*$/.test(command);
 }
+
+/** `text` with control characters as spaces: a terminal acts on them (Ctrl-C, Enter, escapes) wherever they are. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what it replaces
+const withoutControls = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 
 /** Type `command` into the terminal, opening it; Enter only when `runsAsIs`. */
 export function runInTerminal(command: string): void {
   // A line break or other control character inside would run what comes before it: they become spaces.
-  const line = [...command]
-    .map((char) => (char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 ? " " : char))
-    .join("");
+  const line = withoutControls(command);
   const text = runsAsIs(line) ? `${line}\r` : line;
   if (sender) sender(text);
   else pending.push(text);
+  window.dispatchEvent(new Event(OPEN_TERMINAL));
+}
+
+/** Type `command` into the terminal, opening it, and never press Enter: the person reads it and decides. */
+export function typeInTerminal(command: string): void {
+  const typed = withoutControls(command);
+  if (sender) sender(typed);
+  else pending.push(typed);
   window.dispatchEvent(new Event(OPEN_TERMINAL));
 }
 

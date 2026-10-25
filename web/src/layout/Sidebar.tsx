@@ -1,5 +1,6 @@
 // The left sidebar: home and search on top, the navigation tree in the middle, profile and settings at the bottom.
 // Collapsed, it becomes a rail of icons with the same screens in the same order.
+
 import {
   ChevronDown,
   CircleHelp,
@@ -22,10 +23,12 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router";
 import { useContracts, useExpert, useProfile, useSetExpert } from "@/api/queries";
+import { StatusItems } from "@/components/Contributions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { InstallApp } from "@/pwa/InstallApp";
+import { SoundButton } from "@/sound/SoundControls";
 import { Branding } from "./Branding";
 import { BellButton } from "./NotificationCenter";
 import { CONTRACTS_SECTION, contractPath, railItems, sections, visibleSections } from "./navigation";
@@ -158,6 +161,7 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
           ))}
         </ul>
       </nav>
+      <StatusItems slot="sidebar" className="pb-1" />
       <Footer />
     </div>
   );
@@ -321,6 +325,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
           </MenuLink>
         </div>
       )}
+      {compact && <SoundButton compact />}
       {compact && <ThemeButton compact />}
       <button
         type="button"
@@ -348,6 +353,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
           </>
         )}
       </button>
+      {!compact && <SoundButton />}
       {!compact && <ThemeButton />}
     </div>
   );

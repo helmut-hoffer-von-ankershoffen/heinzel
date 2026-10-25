@@ -281,6 +281,176 @@
         "title": "AccessUse",
         "type": "object"
       },
+      "ActionEntry": {
+        "description": "An action: a labelled icon button with one effect and maybe a badge.",
+        "properties": {
+          "badge": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "maxLength": 4,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A count (0 shows none) or up to four characters.",
+            "title": "Badge"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a click does; none when it can't work (`problem`).",
+            "title": "Effect"
+          },
+          "icon": {
+            "description": "The icon the app shows.",
+            "enum": [
+              "activity",
+              "alarm-clock",
+              "bell",
+              "bot",
+              "calendar",
+              "calendar-clock",
+              "chart-line",
+              "circle-alert",
+              "circle-check",
+              "clock",
+              "cloud",
+              "code",
+              "file-text",
+              "git-pull-request",
+              "globe",
+              "heart",
+              "inbox",
+              "info",
+              "link",
+              "list-checks",
+              "mail",
+              "message-square",
+              "play",
+              "rocket",
+              "star",
+              "terminal",
+              "timer",
+              "users",
+              "video",
+              "zap"
+            ],
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "description": "`<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "description": "Its accessible name and tooltip.",
+            "title": "Label",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Where it sits among its kind, 0 first; ties go by id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it shows nothing: its source failed, or the declaration can't work.",
+            "title": "Problem"
+          },
+          "refresh": {
+            "description": "How often to ask again, in seconds.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does: what the app filters by.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "plugin",
+          "order",
+          "refresh",
+          "slots",
+          "label",
+          "icon"
+        ],
+        "title": "ActionEntry",
+        "type": "object"
+      },
       "AdapterCandidate": {
         "description": "An adapter that can serve a capability, and the state of its connector.",
         "properties": {
@@ -453,6 +623,22 @@
       "AgentResult": {
         "description": "The outcome of one agent session, for the job's result and its receipt.",
         "properties": {
+          "billing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan",
+                  "api"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`plan` when the agent ran on a subscription (its cost is at API prices, covered by the plan), `api` when on an API key; none when the runner can't tell.",
+            "title": "Billing"
+          },
           "detail": {
             "default": "",
             "description": "Why the run did not complete; empty when it did.",
@@ -987,6 +1173,66 @@
         "title": "CapabilityUse",
         "type": "object"
       },
+      "CardWidget": {
+        "additionalProperties": false,
+        "description": "A card: a title, a short body and up to three buttons.",
+        "properties": {
+          "actions": {
+            "description": "Up to three buttons.",
+            "items": {
+              "$ref": "#/components/schemas/WidgetAction"
+            },
+            "maxItems": 3,
+            "title": "Actions",
+            "type": "array"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "maxLength": 280,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Up to 280 characters under the title.",
+            "title": "Body"
+          },
+          "kind": {
+            "const": "card",
+            "default": "card",
+            "description": "A card.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "title": {
+            "description": "Its title, one line.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "CardWidget",
+        "type": "object"
+      },
       "CatchUp": {
         "description": "What a job does about schedule slots it missed while the machine slept or was off.",
         "enum": [
@@ -1221,6 +1467,18 @@
       "ChatMessage": {
         "description": "One message of a chat.",
         "properties": {
+          "access": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The AI access in use when it answered, e.g. `claude-code`.",
+            "title": "Access"
+          },
           "actions": {
             "description": "Ids of the actions the agent proposed in it.",
             "items": {
@@ -1235,6 +1493,22 @@
             "title": "At",
             "type": "string"
           },
+          "billing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan",
+                  "api"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`plan`: on a subscription, so `cost_usd` is what it would cost at API prices, covered by the plan; `api`: billed per token; none when the runner can't tell.",
+            "title": "Billing"
+          },
           "budget_usd": {
             "anyOf": [
               {
@@ -1246,6 +1520,30 @@
             ],
             "description": "The cap the answer ran with; what it counts as against the session's cap when no cost is reported.",
             "title": "Budget Usd"
+          },
+          "cache_read_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Input tokens read from the prompt cache.",
+            "title": "Cache Read Tokens"
+          },
+          "cache_write_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Input tokens written to the prompt cache.",
+            "title": "Cache Write Tokens"
           },
           "cost_usd": {
             "anyOf": [
@@ -1265,11 +1563,78 @@
             "title": "Detail",
             "type": "string"
           },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long the answer took.",
+            "title": "Duration Seconds"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effort it was asked for; none: the default.",
+            "title": "Effort"
+          },
           "fix": {
             "default": "",
             "description": "A command that fixes why it did not complete, if there is one.",
             "title": "Fix",
             "type": "string"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens sent, without cache reads, if reported.",
+            "title": "Input Tokens"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model that answered, as the runner reported it.",
+            "title": "Model"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens produced, if reported.",
+            "title": "Output Tokens"
           },
           "role": {
             "description": "`user`, `assistant`, or `action`: what a confirmed or declined action did.",
@@ -1355,6 +1720,25 @@
             "title": "Created",
             "type": "string"
           },
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effort this chat asks for; none: the default.",
+            "title": "Effort"
+          },
           "id": {
             "description": "The session's id, for `hz chat --session` and the web app.",
             "pattern": "^[a-f0-9]{16}$",
@@ -1368,6 +1752,18 @@
             },
             "title": "Messages",
             "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model this chat asks for; none: the runner's default.",
+            "title": "Model"
           },
           "title": {
             "description": "Its first message, shortened, or its context.",
@@ -2331,6 +2727,78 @@
         "title": "ContractGraph",
         "type": "object"
       },
+      "ContributionInfo": {
+        "description": "A contribution as Settings lists it: where it may show and whether it does, without running it.",
+        "properties": {
+          "defaults": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot and whether it shows there unless the person decides.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Defaults",
+            "type": "object"
+          },
+          "id": {
+            "description": "`<module>:<name>`, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "description": "A status item, a header action or a widget.",
+            "enum": [
+              "status",
+              "action",
+              "widget"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does now.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          },
+          "title": {
+            "description": "What people know it by: the action's label, or its name in words.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "kind",
+          "title",
+          "slots",
+          "defaults"
+        ],
+        "title": "ContributionInfo",
+        "type": "object"
+      },
       "CredentialInfo": {
         "description": "A declared credential and whether it has a value; never the value itself.",
         "properties": {
@@ -2517,6 +2985,36 @@
         ],
         "title": "Delivery",
         "type": "string"
+      },
+      "DetailLine": {
+        "additionalProperties": false,
+        "description": "A line of an item's detail, shown on hover or focus.",
+        "properties": {
+          "text": {
+            "description": "One line, e.g. `New York 08:00, at work`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "`ok` shows it as good, `warn` and `bad` as needing attention.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "DetailLine",
+        "type": "object"
       },
       "Diagnostic": {
         "description": "A problem in a contract file, with where it is and what to do.",
@@ -2768,6 +3266,52 @@
         "title": "EdgeMetadata",
         "type": "object"
       },
+      "EffortChoice": {
+        "description": "An effort the AI access in use can be asked for.",
+        "properties": {
+          "name": {
+            "description": "What `hz chat send --effort` takes, e.g. `medium`.",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "recommended": {
+            "description": "Whether it is the one to pick when unsure.",
+            "title": "Recommended",
+            "type": "boolean"
+          },
+          "title": {
+            "description": "What the picker shows, e.g. `Extra`.",
+            "title": "Title",
+            "type": "string"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What it costs beyond the others, e.g. `≈3.5x or more usage`.",
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "recommended"
+        ],
+        "title": "EffortChoice",
+        "type": "object"
+      },
       "Event": {
         "description": "One occurrence of an entry in a calendar; a recurring entry is expanded into its occurrences.",
         "properties": {
@@ -2820,6 +3364,24 @@
             "title": "Id",
             "type": "string"
           },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it takes place, in the event's words; none if unset.",
+            "title": "Location"
+          },
+          "organized_by_user": {
+            "default": false,
+            "description": "Whether the user organizes it, and so may move or cancel it for everyone.",
+            "title": "Organized By User",
+            "type": "boolean"
+          },
           "organizer": {
             "anyOf": [
               {
@@ -2830,6 +3392,24 @@
               }
             ],
             "description": "Who organizes it; none if the vendor doesn't say."
+          },
+          "response": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accepted",
+                  "declined",
+                  "tentative",
+                  "pending"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The user's own answer to the invitation: one of `RESPONSES`, or `pending` while unanswered; none when the user is not among the attendees.",
+            "title": "Response"
           },
           "start": {
             "description": "When it starts; midnight in the calendar's zone for an all-day event.",
@@ -4049,6 +4629,190 @@
         "title": "LayerView",
         "type": "object"
       },
+      "ListEntry": {
+        "additionalProperties": false,
+        "description": "A line of a list widget.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A second, quieter line.",
+            "title": "Detail"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a click does.",
+            "title": "Effect"
+          },
+          "text": {
+            "description": "The line, e.g. `Review the Acme roadmap`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "ListEntry",
+        "type": "object"
+      },
+      "ListWidget": {
+        "additionalProperties": false,
+        "description": "A titled list of up to eight lines.",
+        "properties": {
+          "items": {
+            "description": "Up to eight lines.",
+            "items": {
+              "$ref": "#/components/schemas/ListEntry"
+            },
+            "maxItems": 8,
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "const": "list",
+            "default": "list",
+            "description": "A list.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "title": {
+            "description": "Its title, one line.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "items"
+        ],
+        "title": "ListWidget",
+        "type": "object"
+      },
+      "LiveClock": {
+        "additionalProperties": false,
+        "description": "The time now in a zone, ticking in the app.",
+        "properties": {
+          "kind": {
+            "const": "clock",
+            "default": "clock",
+            "description": "The time now in `zone`.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "zone": {
+            "description": "An IANA time zone, e.g. Europe/Berlin.",
+            "title": "Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "zone"
+        ],
+        "title": "LiveClock",
+        "type": "object"
+      },
+      "LiveTime": {
+        "additionalProperties": false,
+        "description": "A moment, shown as a local time in the person's locale.",
+        "properties": {
+          "at": {
+            "description": "The moment, with its offset.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "const": "time",
+            "default": "time",
+            "description": "`at` as a local time.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "title": "LiveTime",
+        "type": "object"
+      },
+      "LiveUntil": {
+        "additionalProperties": false,
+        "description": "A moment, shown relative to now: \"in 12 min\", \"now\", or its time when it isn't today.",
+        "properties": {
+          "at": {
+            "description": "The moment, with its offset.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "const": "until",
+            "default": "until",
+            "description": "`at` relative to now.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "title": "LiveUntil",
+        "type": "object"
+      },
       "LogLine": {
         "description": "One line of the daemon's JSON-lines log.",
         "properties": {
@@ -4272,6 +5036,161 @@
         "title": "MemberView",
         "type": "object"
       },
+      "MetricWidget": {
+        "additionalProperties": false,
+        "description": "One number with a label, and how it moved.",
+        "properties": {
+          "delta": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How it moved, as shown, e.g. `+3 this week`.",
+            "title": "Delta"
+          },
+          "kind": {
+            "const": "metric",
+            "default": "metric",
+            "description": "A metric.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "description": "What is measured, e.g. `Open reviews`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "value": {
+            "description": "The figure as shown, up to 16 characters, e.g. `12` or `2/3`.",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "MetricWidget",
+        "type": "object"
+      },
+      "ModelChoice": {
+        "description": "A model the AI access in use offers.",
+        "properties": {
+          "name": {
+            "description": "What `hz chat send --model` takes, e.g. `sonnet`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "description": "What the picker shows, e.g. `Sonnet`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title"
+        ],
+        "title": "ModelChoice",
+        "type": "object"
+      },
+      "ModelList": {
+        "description": "The models and efforts of the AI access in use, for the chat's picker.",
+        "properties": {
+          "access": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The AI access in use, e.g. `claude-code`; none when none is.",
+            "title": "Access"
+          },
+          "billing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan",
+                  "api"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`plan` when it uses a subscription, `api` when billed per token.",
+            "title": "Billing"
+          },
+          "efforts": {
+            "description": "The efforts it takes, low to max; empty when it takes none.",
+            "items": {
+              "$ref": "#/components/schemas/EffortChoice"
+            },
+            "title": "Efforts",
+            "type": "array"
+          },
+          "models": {
+            "description": "Its models, current ones first; empty when it names none.",
+            "items": {
+              "$ref": "#/components/schemas/ModelChoice"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the list is empty or short.",
+            "title": "Note"
+          },
+          "title": {
+            "description": "Its title, e.g. `Claude Code`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access",
+          "title",
+          "billing",
+          "models",
+          "efforts"
+        ],
+        "title": "ModelList",
+        "type": "object"
+      },
       "ModuleInfo": {
         "description": "A registered module.",
         "properties": {
@@ -4334,6 +5253,29 @@
           "lets"
         ],
         "title": "ModuleInfo",
+        "type": "object"
+      },
+      "Navigate": {
+        "additionalProperties": false,
+        "description": "Open a screen of the app.",
+        "properties": {
+          "kind": {
+            "const": "navigate",
+            "default": "navigate",
+            "description": "Open a screen of the app.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "description": "An in-app path, e.g. `/doctor`.",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "Navigate",
         "type": "object"
       },
       "Node": {
@@ -4644,6 +5586,29 @@
         "title": "NoticeList",
         "type": "object"
       },
+      "OpenUrl": {
+        "additionalProperties": false,
+        "description": "Open an https link in a new tab.",
+        "properties": {
+          "kind": {
+            "const": "open",
+            "default": "open",
+            "description": "Open an https link in a new tab.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "url": {
+            "description": "An https link without user information.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "OpenUrl",
+        "type": "object"
+      },
       "Opened": {
         "description": "Whether the system's notification settings were opened.",
         "properties": {
@@ -4694,6 +5659,211 @@
           "audience"
         ],
         "title": "OperationAudience",
+        "type": "object"
+      },
+      "OperationCall": {
+        "additionalProperties": false,
+        "description": "How the app runs an `operation` effect, built by `system.ui` from the operation itself, never by a plugin.",
+        "properties": {
+          "command": {
+            "description": "The same call as a person reads it, e.g. `hz clock`.",
+            "title": "Command",
+            "type": "string"
+          },
+          "method": {
+            "description": "`GET` for a read-only operation, `POST` for one that writes.",
+            "enum": [
+              "GET",
+              "POST"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "description": "The operation's path under `/api`, e.g. `/clock`.",
+            "title": "Path",
+            "type": "string"
+          },
+          "query": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "maxLength": 280,
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "The validated arguments, as query parameters.",
+            "title": "Query",
+            "type": "object"
+          },
+          "read_only": {
+            "description": "Whether it only reads; the app asks before running one that doesn't.",
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "summary": {
+            "description": "What the operation does: the first line of its docstring.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "path",
+          "query",
+          "command",
+          "summary",
+          "read_only"
+        ],
+        "title": "OperationCall",
+        "type": "object"
+      },
+      "Outlook": {
+        "description": "The weather now and the next days at one place, in the units you read.",
+        "properties": {
+          "adapter": {
+            "description": "The adapter bound to `weather` that answered.",
+            "title": "Adapter",
+            "type": "string"
+          },
+          "days": {
+            "description": "The next days from today.",
+            "items": {
+              "$ref": "#/components/schemas/OutlookDay"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "feels_like": {
+            "description": "What it feels like now.",
+            "title": "Feels Like",
+            "type": "number"
+          },
+          "humidity_percent": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Relative humidity; none if the source has none.",
+            "title": "Humidity Percent"
+          },
+          "location": {
+            "description": "The place, as the weather adapter resolved it.",
+            "title": "Location",
+            "type": "string"
+          },
+          "observed_at": {
+            "description": "When the weather now was observed, in the place's time zone.",
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "precipitation": {
+            "description": "Rain and snow in the last hour: mm (metric) or inches (imperial).",
+            "title": "Precipitation",
+            "type": "number"
+          },
+          "summary": {
+            "description": "The sky now in a few words.",
+            "title": "Summary",
+            "type": "string"
+          },
+          "temperature": {
+            "description": "Air temperature now.",
+            "title": "Temperature",
+            "type": "number"
+          },
+          "units": {
+            "$ref": "#/components/schemas/Units",
+            "description": "metric or imperial: the unit of every number below."
+          },
+          "wind": {
+            "description": "Wind speed: km/h (metric) or mph (imperial).",
+            "title": "Wind",
+            "type": "number"
+          }
+        },
+        "required": [
+          "location",
+          "adapter",
+          "units",
+          "observed_at",
+          "summary",
+          "temperature",
+          "feels_like",
+          "humidity_percent",
+          "wind",
+          "precipitation",
+          "days"
+        ],
+        "title": "Outlook",
+        "type": "object"
+      },
+      "OutlookDay": {
+        "description": "One day of the forecast, in the report's units.",
+        "properties": {
+          "day": {
+            "description": "The day, in the place's time zone.",
+            "format": "date",
+            "title": "Day",
+            "type": "string"
+          },
+          "high": {
+            "description": "The day's high.",
+            "title": "High",
+            "type": "number"
+          },
+          "low": {
+            "description": "The day's low.",
+            "title": "Low",
+            "type": "number"
+          },
+          "precipitation": {
+            "description": "Rain and snow expected over the day.",
+            "title": "Precipitation",
+            "type": "number"
+          },
+          "rain_chance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Chance of rain or snow, 0 to 1; none if the source has none.",
+            "title": "Rain Chance"
+          },
+          "summary": {
+            "description": "The sky in a few words.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "day",
+          "summary",
+          "high",
+          "low",
+          "rain_chance",
+          "precipitation"
+        ],
+        "title": "OutlookDay",
         "type": "object"
       },
       "Participant": {
@@ -5494,6 +6664,57 @@
         "title": "Profile",
         "type": "object"
       },
+      "ProgressWidget": {
+        "additionalProperties": false,
+        "description": "How much of something is done.",
+        "properties": {
+          "done": {
+            "description": "How many are done, at most `total`.",
+            "minimum": 0.0,
+            "title": "Done",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "progress",
+            "default": "progress",
+            "description": "Progress.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "description": "What is done, e.g. `Release checklist`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "total": {
+            "description": "How many there are.",
+            "minimum": 1.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "done",
+          "total"
+        ],
+        "title": "ProgressWidget",
+        "type": "object"
+      },
       "PublishStatus": {
         "description": "A publish operation a contract names, and whether an installed module provides it.",
         "properties": {
@@ -5752,6 +6973,35 @@
         "title": "Restart",
         "type": "object"
       },
+      "RunCommand": {
+        "additionalProperties": false,
+        "description": "Open the terminal with an `hz` command.",
+        "properties": {
+          "command": {
+            "description": "e.g. `hz clock`.",
+            "title": "Command",
+            "type": "string"
+          },
+          "kind": {
+            "const": "command",
+            "default": "command",
+            "description": "Open the terminal with an `hz` command.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "runs": {
+            "default": false,
+            "description": "Filled in by `system.ui`: whether it names a read-only operation, so the terminal may press Enter; otherwise the person does.",
+            "title": "Runs",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "title": "RunCommand",
+        "type": "object"
+      },
       "RunMeasure": {
         "description": "One draft, measured: how long drafting took, what it cost and read, and how much changed before sending.",
         "properties": {
@@ -5836,6 +7086,65 @@
         "title": "RunMeasure",
         "type": "object"
       },
+      "RunOperation": {
+        "additionalProperties": false,
+        "description": "Run an operation of the contributing module with fixed arguments; one that writes only after confirmation.",
+        "properties": {
+          "arguments": {
+            "description": "Its arguments by parameter name: strings, numbers, booleans.",
+            "patternProperties": {
+              "^[a-z_][a-z0-9_]*$": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "maxLength": 280,
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "title": "Arguments",
+            "type": "object"
+          },
+          "call": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationCall"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Filled in by `system.ui`; whatever a plugin sets here is replaced."
+          },
+          "kind": {
+            "const": "operation",
+            "default": "operation",
+            "description": "Run an operation of the module.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The operation's name in its module, e.g. `sync`.",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "RunOperation",
+        "type": "object"
+      },
       "SettingInfo": {
         "description": "One effective setting.",
         "properties": {
@@ -5844,7 +7153,7 @@
             "title": "Default"
           },
           "description": {
-            "description": "What the setting controls.",
+            "description": "What the setting controls, in plain words.",
             "title": "Description",
             "type": "string"
           },
@@ -5876,6 +7185,18 @@
             "title": "Section",
             "type": "string"
           },
+          "section_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What Settings calls the setting's section: its settings model's section_title; none without one.",
+            "title": "Section Title"
+          },
           "source": {
             "default": "default",
             "description": "Where the value in effect comes from: `default`, a file's scope (`site`, `user`, `project`, `explicit`) or `env`.",
@@ -5895,6 +7216,46 @@
           "description"
         ],
         "title": "SettingInfo",
+        "type": "object"
+      },
+      "SettingRevealed": {
+        "description": "What `hz system config reveal-setting` did.",
+        "properties": {
+          "key": {
+            "description": "The setting, as section.key.",
+            "title": "Key",
+            "type": "string"
+          },
+          "message": {
+            "description": "What happened, or why nothing did, with the path.",
+            "title": "Message",
+            "type": "string"
+          },
+          "opened": {
+            "description": "Whether the file manager was opened.",
+            "title": "Opened",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "The file or folder it names.",
+            "format": "path",
+            "title": "Path",
+            "type": "string"
+          },
+          "supported": {
+            "description": "Whether this machine has a file manager hz can open.",
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "path",
+          "supported",
+          "opened",
+          "message"
+        ],
+        "title": "SettingRevealed",
         "type": "object"
       },
       "Skill": {
@@ -5925,6 +7286,169 @@
         "title": "Skill",
         "type": "object"
       },
+      "SkillDetail": {
+        "description": "One skill with its body, as `hz system skill show` prints it.",
+        "properties": {
+          "body": {
+            "description": "Its body, cleaned, without the frontmatter.",
+            "title": "Body",
+            "type": "string"
+          },
+          "skill": {
+            "$ref": "#/components/schemas/SkillView",
+            "description": "The skill."
+          }
+        },
+        "required": [
+          "skill",
+          "body"
+        ],
+        "title": "SkillDetail",
+        "type": "object"
+      },
+      "SkillList": {
+        "description": "Every skill in effect, the names nobody decided between, and personal skills that failed their checks.",
+        "properties": {
+          "conflicts": {
+            "description": "Names left out: an org and the site both.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "next": {
+            "description": "Commands worth running next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "problems": {
+            "description": "Your skills that failed a check, and why.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "skills": {
+            "description": "The skills in effect, by name.",
+            "items": {
+              "$ref": "#/components/schemas/SkillView"
+            },
+            "title": "Skills",
+            "type": "array"
+          }
+        },
+        "required": [
+          "skills"
+        ],
+        "title": "SkillList",
+        "type": "object"
+      },
+      "SkillView": {
+        "description": "A skill in effect: what it is, where it comes from, and what it hides.",
+        "properties": {
+          "chat": {
+            "default": false,
+            "description": "Whether the chat may use it (`[system.skill] chat`).",
+            "title": "Chat",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "When to use it, in one line.",
+            "title": "Description",
+            "type": "string"
+          },
+          "exported": {
+            "description": "Directories it is exported to, from `hz system skill export`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Exported",
+            "type": "array"
+          },
+          "files": {
+            "description": "Paths of the files beside its SKILL.md.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "fingerprint": {
+            "description": "SHA-256 over its files.",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "hints": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Frontmatter hints such as `allowed-tools`, never applied.",
+            "title": "Hints",
+            "type": "object"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The module offering it; none for a personal skill.",
+            "title": "Module"
+          },
+          "name": {
+            "description": "The skill's name, e.g. `review-pull-request`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin's distribution; none for the core and yours.",
+            "title": "Plugin"
+          },
+          "scripts": {
+            "default": 0,
+            "description": "How many of them are scripts, which hz never runs.",
+            "title": "Scripts",
+            "type": "integer"
+          },
+          "shadows": {
+            "description": "Modules (or `personal`) whose skill of the same name this one hides.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Shadows",
+            "type": "array"
+          },
+          "source": {
+            "description": "`core`, `plugin`, `layer` or `personal`.",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "source",
+          "fingerprint"
+        ],
+        "title": "SkillView",
+        "type": "object"
+      },
       "Skipped": {
         "description": "A file or directory the scan left alone, and why.",
         "properties": {
@@ -5944,6 +7468,399 @@
           "reason"
         ],
         "title": "Skipped",
+        "type": "object"
+      },
+      "SoundEarconView": {
+        "description": "A short sound for notices of one kind.",
+        "properties": {
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who made it, to show beside it; set for CC-BY.",
+            "title": "Attribution"
+          },
+          "kind": {
+            "description": "The notice kind it plays for, e.g. `draft` or `failed`.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "licence": {
+            "description": "Its licence, an SPDX identifier, e.g. `CC0-1.0`.",
+            "title": "Licence",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it comes from, an https URL.",
+            "title": "Source"
+          },
+          "url": {
+            "description": "Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "licence",
+          "attribution",
+          "source",
+          "kind"
+        ],
+        "title": "SoundEarconView",
+        "type": "object"
+      },
+      "SoundLayerView": {
+        "description": "One layer of a layered soundscape: a looped file whose gain follows a signal.",
+        "properties": {
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who made it, to show beside it; set for CC-BY.",
+            "title": "Attribution"
+          },
+          "curve": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Points `[x, y]` for a weather signal, gains by part of the day for `daypart`; none for `none`.",
+            "title": "Curve"
+          },
+          "gain": {
+            "description": "Its loudness, 0 to 1, before the curve.",
+            "title": "Gain",
+            "type": "number"
+          },
+          "licence": {
+            "description": "Its licence, an SPDX identifier, e.g. `CC0-1.0`.",
+            "title": "Licence",
+            "type": "string"
+          },
+          "signal": {
+            "description": "The signal its gain follows: `none`, `daypart`, `weather.rain`, `weather.wind`.",
+            "title": "Signal",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it comes from, an https URL.",
+            "title": "Source"
+          },
+          "url": {
+            "description": "Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "licence",
+          "attribution",
+          "source",
+          "gain",
+          "signal",
+          "curve"
+        ],
+        "title": "SoundLayerView",
+        "type": "object"
+      },
+      "SoundList": {
+        "description": "Every available soundscape, which one is configured and which is in effect, and how it plays.",
+        "properties": {
+          "conflicts": {
+            "description": "Names an org and the site both offer with nothing more specific deciding; left out until one is.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "duck_while_typing": {
+            "description": "Whether sound plays softer while you type in the chat.",
+            "title": "Duck While Typing",
+            "type": "boolean"
+          },
+          "effective": {
+            "description": "The name of the soundscape in effect: `selected`, or the theme's own.",
+            "title": "Effective",
+            "type": "string"
+          },
+          "follow_theme": {
+            "description": "Whether the soundscape that goes with the theme in effect plays instead.",
+            "title": "Follow Theme",
+            "type": "boolean"
+          },
+          "mute_in_meetings": {
+            "description": "Whether sound mutes during a meeting in your calendar.",
+            "title": "Mute In Meetings",
+            "type": "boolean"
+          },
+          "next": {
+            "description": "What to run next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the soundscape in effect isn't the one configured.",
+            "title": "Note"
+          },
+          "selected": {
+            "description": "The name of the soundscape configured, after fallbacks; `off` for none.",
+            "title": "Selected",
+            "type": "string"
+          },
+          "signals": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "description": "The signals layers follow, now: `daypart` always, `weather.*` once a plugin publishes them.",
+            "title": "Signals",
+            "type": "object"
+          },
+          "soundscapes": {
+            "description": "`off` first, then the core's and the plugins' soundscapes.",
+            "items": {
+              "$ref": "#/components/schemas/SoundscapeView"
+            },
+            "title": "Soundscapes",
+            "type": "array"
+          },
+          "volume": {
+            "description": "How loud, 0 to 100.",
+            "title": "Volume",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "selected",
+          "effective",
+          "soundscapes",
+          "signals",
+          "volume",
+          "follow_theme",
+          "mute_in_meetings",
+          "duck_while_typing"
+        ],
+        "title": "SoundList",
+        "type": "object"
+      },
+      "SoundStreamView": {
+        "description": "A stream in the official player of an allowed host.",
+        "properties": {
+          "embed_url": {
+            "description": "The player to frame after Play, e.g. `https://www.youtube-nocookie.com/embed/...`.",
+            "title": "Embed Url",
+            "type": "string"
+          },
+          "frame_origin": {
+            "description": "The origin the page's CSP admits as a frame while it is in effect.",
+            "title": "Frame Origin",
+            "type": "string"
+          },
+          "provider": {
+            "description": "The host, e.g. `youtube`.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "video": {
+            "description": "The video's id, e.g. `tRsQsTMvPNg`.",
+            "title": "Video",
+            "type": "string"
+          },
+          "watch_url": {
+            "description": "Where the video is on the host itself, to open it there instead.",
+            "title": "Watch Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "video",
+          "embed_url",
+          "frame_origin",
+          "watch_url"
+        ],
+        "title": "SoundStreamView",
+        "type": "object"
+      },
+      "SoundscapeView": {
+        "description": "One available soundscape, ready for the web app to play.",
+        "properties": {
+          "earcons": {
+            "description": "Short sounds for notices, by kind.",
+            "items": {
+              "$ref": "#/components/schemas/SoundEarconView"
+            },
+            "title": "Earcons",
+            "type": "array"
+          },
+          "effective": {
+            "description": "Whether it is the one in effect (follow my theme may pick another).",
+            "title": "Effective",
+            "type": "boolean"
+          },
+          "fade_seconds": {
+            "default": 4,
+            "description": "How long a change fades, in seconds.",
+            "title": "Fade Seconds",
+            "type": "integer"
+          },
+          "kind": {
+            "description": "`off`, `layers` (files mixed live) or `stream`.",
+            "enum": [
+              "off",
+              "layers",
+              "stream"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "layers": {
+            "description": "The layers to mix.",
+            "items": {
+              "$ref": "#/components/schemas/SoundLayerView"
+            },
+            "title": "Layers",
+            "type": "array"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The qualified name of the module offering it; none for `off`.",
+            "title": "Module"
+          },
+          "name": {
+            "description": "What `hz system sound use` takes, e.g. `claude-fm`; `off` is no sound.",
+            "title": "Name",
+            "type": "string"
+          },
+          "pairs_with": {
+            "description": "Themes it goes with.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Pairs With",
+            "type": "array"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, `heinzel` for the core's own; none for `off`.",
+            "title": "Plugin"
+          },
+          "selected": {
+            "description": "Whether it is the one configured.",
+            "title": "Selected",
+            "type": "boolean"
+          },
+          "shadows": {
+            "description": "Modules that offer a soundscape of the same name, hidden by this one (layer order decides).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Shadows",
+            "type": "array"
+          },
+          "stream": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SoundStreamView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The stream; none unless the kind is `stream`."
+          },
+          "title": {
+            "description": "What people pick it by, e.g. `Claude FM`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "module",
+          "plugin",
+          "selected",
+          "effective"
+        ],
+        "title": "SoundscapeView",
         "type": "object"
       },
       "StackView": {
@@ -6043,6 +7960,248 @@
         ],
         "title": "Status",
         "type": "string"
+      },
+      "StatusEntry": {
+        "description": "A status item, or the problem that keeps it from showing.",
+        "properties": {
+          "id": {
+            "description": "`<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusItem"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What to show; none when there is nothing to show."
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Where it sits among its kind, 0 first; ties go by id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it shows nothing: its source failed, or the declaration can't work.",
+            "title": "Problem"
+          },
+          "refresh": {
+            "description": "How often to ask again, in seconds.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does: what the app filters by.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "plugin",
+          "order",
+          "refresh",
+          "slots"
+        ],
+        "title": "StatusEntry",
+        "type": "object"
+      },
+      "StatusItem": {
+        "additionalProperties": false,
+        "description": "A short item of the status bar: text, an optional live time after it, detail on hover, a click.",
+        "properties": {
+          "actions": {
+            "description": "Up to four buttons shown with the detail, e.g. Install and Logs.",
+            "items": {
+              "$ref": "#/components/schemas/WidgetAction"
+            },
+            "maxItems": 4,
+            "title": "Actions",
+            "type": "array"
+          },
+          "detail": {
+            "description": "Up to eight lines shown on hover.",
+            "items": {
+              "$ref": "#/components/schemas/DetailLine"
+            },
+            "maxItems": 8,
+            "title": "Detail",
+            "type": "array"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a click does.",
+            "title": "Effect"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "activity",
+                  "alarm-clock",
+                  "bell",
+                  "bot",
+                  "calendar",
+                  "calendar-clock",
+                  "chart-line",
+                  "circle-alert",
+                  "circle-check",
+                  "clock",
+                  "cloud",
+                  "code",
+                  "file-text",
+                  "git-pull-request",
+                  "globe",
+                  "heart",
+                  "inbox",
+                  "info",
+                  "link",
+                  "list-checks",
+                  "mail",
+                  "message-square",
+                  "play",
+                  "rocket",
+                  "star",
+                  "terminal",
+                  "timer",
+                  "users",
+                  "video",
+                  "zap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An icon before the text.",
+            "title": "Icon"
+          },
+          "live": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "clock": "#/components/schemas/LiveClock",
+                    "time": "#/components/schemas/LiveTime",
+                    "until": "#/components/schemas/LiveUntil"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/LiveClock"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LiveTime"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LiveUntil"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A time the app renders after `text` and keeps current.",
+            "title": "Live"
+          },
+          "text": {
+            "description": "What it says, one line, e.g. `Standup until`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "StatusItem",
+        "type": "object"
       },
       "Step": {
         "description": "Something to do next: a command that works, and why.",
@@ -7436,6 +9595,15 @@
         "title": "Tool",
         "type": "object"
       },
+      "Units": {
+        "description": "How temperatures and wind speeds are shown.",
+        "enum": [
+          "metric",
+          "imperial"
+        ],
+        "title": "Units",
+        "type": "string"
+      },
       "Unmaintained": {
         "description": "An input that reads a contract's output no contract maintains.",
         "properties": {
@@ -7828,6 +9996,205 @@
         ],
         "title": "Week",
         "type": "object"
+      },
+      "WidgetAction": {
+        "additionalProperties": false,
+        "description": "A button of a widget.",
+        "properties": {
+          "effect": {
+            "description": "What a click does.",
+            "discriminator": {
+              "mapping": {
+                "command": "#/components/schemas/RunCommand",
+                "navigate": "#/components/schemas/Navigate",
+                "open": "#/components/schemas/OpenUrl",
+                "operation": "#/components/schemas/RunOperation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Navigate"
+              },
+              {
+                "$ref": "#/components/schemas/OpenUrl"
+              },
+              {
+                "$ref": "#/components/schemas/RunOperation"
+              },
+              {
+                "$ref": "#/components/schemas/RunCommand"
+              }
+            ],
+            "title": "Effect"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "activity",
+                  "alarm-clock",
+                  "bell",
+                  "bot",
+                  "calendar",
+                  "calendar-clock",
+                  "chart-line",
+                  "circle-alert",
+                  "circle-check",
+                  "clock",
+                  "cloud",
+                  "code",
+                  "file-text",
+                  "git-pull-request",
+                  "globe",
+                  "heart",
+                  "inbox",
+                  "info",
+                  "link",
+                  "list-checks",
+                  "mail",
+                  "message-square",
+                  "play",
+                  "rocket",
+                  "star",
+                  "terminal",
+                  "timer",
+                  "users",
+                  "video",
+                  "zap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An icon before the label.",
+            "title": "Icon"
+          },
+          "label": {
+            "description": "What the button says.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "effect"
+        ],
+        "title": "WidgetAction",
+        "type": "object"
+      },
+      "WidgetEntry": {
+        "description": "A widget, or the problem that keeps it from showing.",
+        "properties": {
+          "id": {
+            "description": "`<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Where it sits among its kind, 0 first; ties go by id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it shows nothing: its source failed, or the declaration can't work.",
+            "title": "Problem"
+          },
+          "refresh": {
+            "description": "How often to ask again, in seconds.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does: what the app filters by.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          },
+          "widget": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "card": "#/components/schemas/CardWidget",
+                    "list": "#/components/schemas/ListWidget",
+                    "metric": "#/components/schemas/MetricWidget",
+                    "progress": "#/components/schemas/ProgressWidget"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/CardWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ListWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProgressWidget"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What to show; none when there is nothing to show.",
+            "title": "Widget"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "plugin",
+          "order",
+          "refresh",
+          "slots"
+        ],
+        "title": "WidgetEntry",
+        "type": "object"
       }
     }
   },
@@ -7951,6 +10318,28 @@
           }
         },
         "summary": "Use an AI access option: sets capabilities.ai_access, and agent_runner if the option names one.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/ai/models": {
+      "get": {
+        "description": "List the models and efforts of the AI access in use, for the chat's model and effort picker.",
+        "operationId": "ai_models",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the models and efforts of the AI access in use, for the chat's model and effort picker.",
         "tags": [
           "ai"
         ]
@@ -8884,6 +11273,51 @@
           }
         },
         "summary": "Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/config/reveal-setting": {
+      "post": {
+        "description": "Show the file or folder a path setting names, such as hz.log_dir, in your file manager.\n\nA folder opens; a file is selected, never opened. On Linux without a desktop session nothing opens and the\nmessage names the path.",
+        "operationId": "system_config_reveal_setting",
+        "parameters": [
+          {
+            "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingRevealed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the file or folder a path setting names, such as hz.log_dir, in your file manager.",
         "tags": [
           "system"
         ]
@@ -10366,6 +12800,50 @@
               "description": "Most this answer may cost in US dollars, within the per-message and session caps.",
               "title": "Budget Usd"
             }
+          },
+          {
+            "description": "The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default.",
+              "title": "Model"
+            }
+          },
+          {
+            "description": "The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default.",
+            "in": "query",
+            "name": "effort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default.",
+              "title": "Effort"
+            }
           }
         ],
         "responses": {
@@ -10436,6 +12914,140 @@
           }
         },
         "summary": "Show a chat session: its context, messages, actions and costs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/skill/list": {
+      "get": {
+        "description": "List the skills in effect: which module offers each, what it hides, and where it is exported.",
+        "operationId": "system_skill_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the skills in effect: which module offers each, what it hides, and where it is exported.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/skill/show": {
+      "get": {
+        "description": "Show a skill: where it comes from, its files and hints, and its body.",
+        "operationId": "system_skill_show",
+        "parameters": [
+          {
+            "description": "The skill, one `hz system skill list` shows, e.g. `explain-heinzel`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The skill, one `hz system skill list` shows, e.g. `explain-heinzel`.",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a skill: where it comes from, its files and hints, and its body.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/sound/list": {
+      "get": {
+        "description": "List the soundscapes of the web app, where each comes from, which one is picked and which plays.",
+        "operationId": "system_sound_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the soundscapes of the web app, where each comes from, which one is picked and which plays.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/sound/use": {
+      "post": {
+        "description": "Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.",
+        "operationId": "system_sound_use",
+        "parameters": [
+          {
+            "description": "The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.",
         "tags": [
           "system"
         ]
@@ -10525,6 +13137,334 @@
           }
         },
         "summary": "Use a theme in the web app: writes `[system.theme] name` to your configuration file.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/actions": {
+      "get": {
+        "description": "List the buttons modules add to the web app's header, with what each does and its badge.\n\nRaises:\n    HeinzelError: If `item` names no action.",
+        "operationId": "system_ui_actions",
+        "parameters": [
+          {
+            "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ActionEntry"
+                  },
+                  "title": "Response System Ui Actions",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the buttons modules add to the web app's header, with what each does and its badge.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/hide": {
+      "post": {
+        "description": "Hide a contribution from a slot of the web app, such as the clock from the footer.\n\nRaises:\n    HeinzelError: If no contribution has that id, or it can't show in that slot.",
+        "operationId": "system_ui_hide",
+        "parameters": [
+          {
+            "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": true,
+            "schema": {
+              "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+            "in": "query",
+            "name": "slot",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+              "title": "Slot"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContributionInfo"
+                  },
+                  "title": "Response System Ui Hide",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Hide a contribution from a slot of the web app, such as the clock from the footer.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/list": {
+      "get": {
+        "description": "List every contribution to the web app, where it may show and whether it does; nothing runs.",
+        "operationId": "system_ui_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContributionInfo"
+                  },
+                  "title": "Response System Ui List",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List every contribution to the web app, where it may show and whether it does; nothing runs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/show": {
+      "post": {
+        "description": "Show a contribution in a slot of the web app, such as the clock in the sidebar.\n\nRaises:\n    HeinzelError: If no contribution has that id, or it can't show in that slot.",
+        "operationId": "system_ui_show",
+        "parameters": [
+          {
+            "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": true,
+            "schema": {
+              "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+            "in": "query",
+            "name": "slot",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+              "title": "Slot"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContributionInfo"
+                  },
+                  "title": "Response System Ui Show",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a contribution in a slot of the web app, such as the clock in the sidebar.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/status": {
+      "get": {
+        "description": "List the status items modules add to the web app's status bar, with what each shows now.\n\nRaises:\n    HeinzelError: If `item` names no status item.",
+        "operationId": "system_ui_status",
+        "parameters": [
+          {
+            "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StatusEntry"
+                  },
+                  "title": "Response System Ui Status",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the status items modules add to the web app's status bar, with what each shows now.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/widgets": {
+      "get": {
+        "description": "List the widgets modules add to the web app's Today screen, with what each shows now.\n\nRaises:\n    HeinzelError: If `item` names no widget.",
+        "operationId": "system_ui_widgets",
+        "parameters": [
+          {
+            "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WidgetEntry"
+                  },
+                  "title": "Response System Ui Widgets",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the widgets modules add to the web app's Today screen, with what each shows now.",
         "tags": [
           "system"
         ]
@@ -10623,6 +13563,70 @@
         "summary": "Show your team: its repository, checkout and members, and what is wrong with them.",
         "tags": [
           "team"
+        ]
+      }
+    },
+    "/weather": {
+      "get": {
+        "description": "Show the weather now and the next days at your primary location, or at a place you name.\n\nRaises:\n    HeinzelError: If no weather adapter is connected, no location is set, the place is unknown, or the adapter\n        fails.",
+        "operationId": "weather",
+        "parameters": [
+          {
+            "description": "A place such as \"Lisbon, PT\" or coordinates such as \"38.72,-9.14\"; your primary one if left out.",
+            "in": "query",
+            "name": "location",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A place such as \"Lisbon, PT\" or coordinates such as \"38.72,-9.14\"; your primary one if left out.",
+              "title": "Location"
+            }
+          },
+          {
+            "description": "How many days of forecast, from today; the adapter may give fewer.",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "How many days of forecast, from today; the adapter may give fewer.",
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Outlook"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the weather now and the next days at your primary location, or at a place you name.",
+        "tags": [
+          "weather"
         ]
       }
     }

@@ -76,7 +76,7 @@ export function parseAccessories(value: unknown): Accessory[] {
   return ACCESSORIES.filter((accessory) => given.includes(accessory));
 }
 
-export const VIEWS = ["full", "bust"] as const;
+export const VIEWS = ["full", "bust", "head"] as const;
 export type View = (typeof VIEWS)[number];
 
 /** The bust's square (x, y, side) on the canvas: the head, its cap and the shoulders, tight for each age's cap. */
@@ -113,6 +113,8 @@ export function viewBox(age: Age = "grown", view: View = "full", accessories: re
     return `0 ${y} 512 ${860 - y}`;
   }
   const [x, y, side] = BUST[age];
+  // The head: the bust without most of its shoulders, for the tiniest slots.
+  if (view === "head") return `${x + side * 0.12} ${y + side * 0.03} ${side * 0.76} ${side * 0.76}`;
   const reach = accessories.includes("umbrella") ? GRIP.canopyX + CANOPY.half + 10 : 0;
   const grow = Math.max(0, y - top, 2 * (reach - (x + side)));
   return `${x - grow / 2} ${y - grow} ${side + grow} ${side + grow}`;

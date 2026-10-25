@@ -36,9 +36,13 @@ def test_discovers_builtin_modules_and_submodules():
         "system.plugin",
         "system.runner",
         "system.runner.chat",
+        "system.skill",
+        "system.sound",
         "system.theme",
+        "system.ui",
         "team",
         "report",  # the package telemetry, named for what a Heinzelmännchen does with it
+        "weather",
     ]
     assert all(r.origin.builtin for r in records)
     assert errors == {}
@@ -85,5 +89,8 @@ def test_kernel_boots_from_discovery(settings):
         "system.notify",
         "system.plugin",
         "system.runner",
+        "system.skill",
+        "system.sound",
         "system.theme",
+        "system.ui",
     ]

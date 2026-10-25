@@ -14,6 +14,7 @@ members = [
     "heinzel-clock",
     "heinzel-github",
     "heinzel-google",
+    "heinzel-openmeteo",
     "heinzel-zoom",
 ]
 
@@ -982,6 +983,7 @@ dev = [
     { name = "heinzel-clock" },
     { name = "heinzel-github" },
     { name = "heinzel-google" },
+    { name = "heinzel-openmeteo" },
     { name = "heinzel-zoom" },
     { name = "httpx" },
     { name = "hypothesis" },
@@ -990,6 +992,7 @@ dev = [
     { name = "mypy" },
     { name = "pip-audit" },
     { name = "prek" },
+    { name = "pydantic-ai-slim", extra = ["openai"] },
     { name = "pyright", extra = ["nodejs"] },
     { name = "pytest" },
     { name = "pytest-timeout" },
@@ -1010,11 +1013,13 @@ test = [
     { name = "heinzel-clock" },
     { name = "heinzel-github" },
     { name = "heinzel-google" },
+    { name = "heinzel-openmeteo" },
     { name = "heinzel-zoom" },
     { name = "httpx" },
     { name = "hypothesis" },
     { name = "jsonschema" },
     { name = "prek" },
+    { name = "pydantic-ai-slim", extra = ["openai"] },
     { name = "pytest" },
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
@@ -1055,6 +1060,7 @@ dev = [
     { name = "heinzel-clock", editable = "plugins/heinzel-clock" },
     { name = "heinzel-github", editable = "plugins/heinzel-github" },
     { name = "heinzel-google", editable = "plugins/heinzel-google" },
+    { name = "heinzel-openmeteo", editable = "plugins/heinzel-openmeteo" },
     { name = "heinzel-zoom", editable = "plugins/heinzel-zoom" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "hypothesis", specifier = ">=6.140" },
@@ -1063,6 +1069,7 @@ dev = [
     { name = "mypy", specifier = ">=1.19.0,<3" },
     { name = "pip-audit", specifier = ">=2.10.0,<3" },
     { name = "prek", specifier = ">=0.2" },
+    { name = "pydantic-ai-slim", extras = ["openai"], specifier = ">=2.61,<3" },
     { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.408" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
@@ -1081,11 +1088,13 @@ test = [
     { name = "heinzel-clock", editable = "plugins/heinzel-clock" },
     { name = "heinzel-github", editable = "plugins/heinzel-github" },
     { name = "heinzel-google", editable = "plugins/heinzel-google" },
+    { name = "heinzel-openmeteo", editable = "plugins/heinzel-openmeteo" },
     { name = "heinzel-zoom", editable = "plugins/heinzel-zoom" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "hypothesis", specifier = ">=6.140" },
     { name = "jsonschema", specifier = ">=4.26" },
     { name = "prek", specifier = ">=0.2" },
+    { name = "pydantic-ai-slim", extras = ["openai"], specifier = ">=2.61,<3" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
     { name = "pytest-xdist", specifier = ">=3.8" },
@@ -1128,6 +1137,17 @@ requires-dist = [{ name = "heinzel", editable = "." }]
 name = "heinzel-google"
 version = "0.6.0"
 source = { editable = "plugins/heinzel-google" }
+dependencies = [
+    { name = "heinzel" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "heinzel", editable = "." }]
+
+[[package]]
+name = "heinzel-openmeteo"
+version = "0.6.0"
+source = { editable = "plugins/heinzel-openmeteo" }
 dependencies = [
     { name = "heinzel" },
 ]

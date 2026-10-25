@@ -206,13 +206,14 @@ Be kind, assume good intent, critique code and ideas, not people ([CODE_OF_CONDU
 
 ## For maintainers
 
-**Releases** are pull requests ([ADR 0013](docs/adr/0013-pull-request-based-development-and-releases.md)): Actions →
-**Release** → Run workflow (`auto` derives the bump from the commits, or force `patch`, `minor`, `major`; `make
-release` does the same from a workstation) opens `chore(release): vX.Y.Z` with the version and `CHANGELOG.md`
+**Releases** are pull requests ([ADR 0013](docs/adr/0013-pull-request-based-development-and-releases.md)): `make release`
+(`BUMP=minor`; or Actions → **Prepare release** → Run workflow) dispatches a GitHub runner that derives the bump from
+the commits (`auto`, or force `patch`, `minor`, `major`), prepares the branch, dispatches CI on it and enables squash
+auto-merge, so nothing runs on your machine (`make release-local` is the same script locally). It opens `chore(release): vX.Y.Z` with the version and `CHANGELOG.md`
 updated. The optional **intro** (`make release INTRO="..."`) becomes the release's introduction under its heading in
-`CHANGELOG.md` and in the release notes; edit it in the pull request like the rest. Introductions of earlier releases
-survive the regeneration; hand edits to their entries don't, because entries come from the commits. Merging the pull
-request tags the commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
+`CHANGELOG.md` and in the release notes; to change it, edit the pull request before CI turns green, or dispatch again with the intro. Introductions of earlier releases
+survive the regeneration; hand edits to their entries don't, because entries come from the commits. (If it ever doesn't tag, run **Release tag** by hand from `main`.) The pull request merges itself once
+`CI OK` is green; that tags the commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
 release with the changelog section as notes.
 
 **Pinned tools** live in [scripts/tools.toml](scripts/tools.toml); to bump one, change its version and run

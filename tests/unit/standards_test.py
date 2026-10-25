@@ -16,6 +16,7 @@ import heinzel_atlassian
 import heinzel_clock
 import heinzel_github
 import heinzel_google
+import heinzel_openmeteo
 import heinzel_zoom
 import pytest
 from packaging.requirements import Requirement
@@ -103,6 +104,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/demo_tape.py": "assembles the README demo from the core intro and its modules' snippets",
     "scripts/generate_docs.py": "generates Heinzelmännchen's CLI, module and configuration reference",
     "scripts/notifier.py": "builds Heinzel Notifier, the core's macOS notifier app (ADR 0043); plugins have none",
+    "scripts/terminal_art.py": "draws Heinzelmännchen for the terminal from the web app's drawing; plugins bring none",
     "scripts/sync_template.py": "generates the template from Heinzelmännchen's files",
     "scripts/template-test.sh": "renders and checks the template",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
@@ -214,6 +216,7 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         clock=heinzel_clock.module,
         github=heinzel_github.module,
         google=heinzel_google.module,
+        openmeteo=heinzel_openmeteo.module,
         zoom=heinzel_zoom.module,
     )
     known = {
@@ -370,6 +373,7 @@ def test_injected_parameters_come_first(make_kernel):
                 clock=heinzel_clock.module,
                 github=heinzel_github.module,
                 google=heinzel_google.module,
+                openmeteo=heinzel_openmeteo.module,
                 zoom=heinzel_zoom.module,
             )
         )

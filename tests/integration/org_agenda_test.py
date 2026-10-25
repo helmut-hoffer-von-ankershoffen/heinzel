@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from heinzel import Config, Event, HeinzelError, Module, Window
+from heinzel import Config, Event, FreeBusy, HeinzelError, Module, Window
 from heinzel.heads import api, web
 from heinzel.heads._exposure import exposed
 
@@ -30,6 +30,9 @@ class Diary:
             Event(id="1", title="Standup", start=now - timedelta(minutes=10), end=now + timedelta(minutes=5)),
             Event(id="2", title="Review", start=now + timedelta(hours=1), end=now + timedelta(hours=2)),
         ]
+
+    def free_busy(self, people: str, window: Window) -> list[FreeBusy]:
+        return []
 
 
 def diary() -> Module:
