@@ -35,6 +35,7 @@ from heinzel.kernel import (
     OperationLet,
     PlaybookLet,
     ProviderLet,
+    SignalLet,
     ThemeLet,
     subprocess_environment,
 )
@@ -184,7 +185,12 @@ class PluginService:
             capabilities = sorted({f"{let.adapter}:{let.capability}" for let in lets if isinstance(let, ProviderLet)})
             themes = sorted({let.name for let in lets if isinstance(let, ThemeLet)})
             playbooks = [r.qualname for r in mine if any(isinstance(let, PlaybookLet) for let in r.module.lets)]
-            features = any(isinstance(let, OperationLet) and let.name not in TEMPLATE_OPERATIONS for let in lets)
+            # Signals a theme follows (ADR 0060) are part of the look, not a capability of their own.
+            signals = {let.func for let in lets if isinstance(let, SignalLet)}
+            features = any(
+                isinstance(let, OperationLet) and let.name not in TEMPLATE_OPERATIONS and let.func not in signals
+                for let in lets
+            )
             plugins.append(
                 PluginInfo(
                     distribution=origin.distribution if origin else (dist.name if dist else name),
