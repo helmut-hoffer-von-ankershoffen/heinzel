@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { InstallApp } from "@/pwa/InstallApp";
+import { registerSlot } from "@/sound/dock";
 import { SoundButton } from "@/sound/SoundControls";
 import { Branding } from "./Branding";
 import { BellButton } from "./NotificationCenter";
@@ -164,6 +165,9 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
       </nav>
       <ZoneTicker />
       <StatusItems slot="sidebar" className="pb-1" except={NATIVE_SIDEBAR} />
+      {/* The docked sound player sits here, in the flow between the clock line and the account row: the full width of
+          the column, never over its neighbours. Empty (and invisible) when the player isn't docked. */}
+      <div ref={registerSlot} data-sound-dock className="-mx-2 shrink-0" />
       <Footer />
     </div>
   );

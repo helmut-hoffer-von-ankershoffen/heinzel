@@ -1,11 +1,14 @@
 // The sound's controls (ADR 0058): the speaker button beside the light/dark toggle (a click plays or pauses; its
 // chevron, a right-click or a long press opens the popover), and the same choices in Settings → General.
 import { Check, ChevronUp, Volume, Volume2, VolumeX } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Link } from "react-router";
 import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
 import { cn } from "@/lib/utils";
+import { placePopover } from "./dock";
 import { effective, useSetSound, useSoundSetting, useSoundscapes } from "./queries";
 import { toggle, useSound } from "./store";
 
@@ -92,6 +95,27 @@ function VolumeSlider({ list }: { list: SchemaSoundList }) {
   );
 }
 
+/** Sound on or off: "off" is the soundscape that plays nothing; on brings back the first one that does. */
+function OnOff({ list }: { list: SchemaSoundList }) {
+  const choose = useSetSound();
+  const id = useId();
+  const on = list.selected !== "off";
+  const first = list.soundscapes.find((soundscape) => soundscape.kind !== "off");
+  return (
+    <div className="flex items-center gap-3 px-2.5 py-1.5">
+      <span id={id} className="flex-1 text-ui">
+        {t("sound.on")}
+      </span>
+      <Switch
+        labelledBy={id}
+        on={on}
+        disabled={choose.isPending || (!on && !first)}
+        onToggle={() => choose.mutate(on ? "off" : (first?.name ?? "off"))}
+      />
+    </div>
+  );
+}
+
 /** One on/off setting of `[system.sound]` with its label. */
 function Toggle({
   list,
@@ -115,12 +139,51 @@ function Toggle({
   );
 }
 
+/** The popover, in the page's body so nothing stacks over it, above the mini-player, and always inside the window. */
+function Popover({
+  anchor,
+  side,
+  dialog,
+  children,
+}: {
+  anchor: RefObject<HTMLElement | null>;
+  side: "above" | "right";
+  dialog: RefObject<HTMLDivElement | null>;
+  children: ReactNode;
+}) {
+  const [at, setAt] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const place = () => {
+      const target = anchor.current?.getBoundingClientRect();
+      const box = dialog.current?.getBoundingClientRect();
+      if (!target || !box) return;
+      setAt(placePopover(target, { width: box.width, height: box.height }, side));
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [anchor, dialog, side]);
+  return createPortal(
+    <div
+      ref={dialog}
+      role="dialog"
+      aria-label={t("sound.title")}
+      style={at ? { left: at.left, top: at.top } : { left: 0, top: 0, visibility: "hidden" }}
+      className="fixed z-50 max-h-[calc(100vh-1rem)] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl"
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 /** The speaker button and its popover, beside the light/dark toggle; `compact` in the collapsed rail. */
 export function SoundButton({ compact = false }: { compact?: boolean }) {
   const list = useSoundscapes();
   const sound = useSound();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
   const press = useRef<ReturnType<typeof setTimeout>>(undefined);
   const pressed = useRef(false);
@@ -128,7 +191,8 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!ref.current?.contains(target) && !dialog.current?.contains(target)) setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -151,23 +215,26 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
   return (
     <div ref={ref} className={cn("relative flex items-center", compact && "flex-col")}>
       {open && list.data && (
-        <div
-          role="dialog"
-          aria-label={t("sound.title")}
-          className={cn(
-            "absolute z-30 w-72 rounded-xl border border-border bg-popover p-1.5 shadow-xl",
-            compact ? "bottom-0 left-full ml-2" : "right-0 bottom-full mb-1.5",
-          )}
-        >
+        <Popover anchor={ref} side={compact ? "right" : "above"} dialog={dialog}>
           <p className="px-2.5 pt-1 pb-1.5 text-ui-sm text-muted-foreground">{t("sound.title")}</p>
+          <OnOff list={list.data} />
           <SoundChoices list={list.data} />
           <Notes list={list.data} />
           <hr className="mx-2 my-1 border-border" />
           <VolumeSlider list={list.data} />
+          <Toggle list={list.data} field="duck_while_typing" label={t("sound.duckWhileTyping")} />
           <Toggle list={list.data} field="follow_theme" label={t("sound.followTheme")} />
           <Toggle list={list.data} field="mute_in_meetings" label={t("sound.muteInMeetings")} />
           {sound.problem && <p className="px-2.5 py-1 text-ui-sm text-bad">{sound.problem}</p>}
-        </div>
+          <hr className="mx-2 my-1 border-border" />
+          <Link
+            to="?settings=hz"
+            onClick={() => setOpen(false)}
+            className="flex min-h-7 items-center rounded-lg px-2.5 text-ui-sm text-primary underline hover:bg-accent"
+          >
+            {t("sound.more")}
+          </Link>
+        </Popover>
       )}
       <button
         type="button"

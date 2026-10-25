@@ -3,13 +3,13 @@
 // in the page: no frame, no request, no cookie. Mounted once, beside the theme's tokens.
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SchemaSoundscapeView } from "@/api/client";
 import { useThemes } from "@/api/queries";
 import { t } from "@/i18n";
 import { type Inputs, rampSeconds, type Signals, targetGain, type Why, why } from "./machine";
 import { type EarconView, type LayerView, Mixer } from "./mixer";
+import { PlayerCard, useDocked } from "./PlayerCard";
 import {
   effective,
   listSignals,
@@ -103,6 +103,10 @@ function StreamPlayer({
   const volume = useRef(0);
   const src = embedSrc(stream);
   const origin = stream.frame_origin;
+  // Docking or popping out puts the frame somewhere else in the page: a new frame, which says it is ready again.
+  const docked = useDocked();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a change of place is the trigger
+  useEffect(() => setReady(false), [docked]);
   useEffect(() => {
     const onMessage = (message: MessageEvent) => {
       const event = playerEvent(message, frame.current, origin);
@@ -143,35 +147,7 @@ function StreamPlayer({
   }, [ready, level.gain, level.seconds, level.playing, origin]);
   if (!src) return null;
   return (
-    <section
-      aria-label={t("sound.player", { title: soundscape.title })}
-      className="fixed bottom-[68px] left-3 z-40 w-72 overflow-hidden rounded-xl border border-border bg-popover shadow-xl"
-    >
-      <header className="flex items-center gap-2 px-3 py-1.5">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-ui-sm font-medium">{soundscape.title}</p>
-          <p className="truncate text-xs text-muted-foreground">{t("sound.playsFrom", { host: "YouTube" })}</p>
-        </div>
-        <a
-          href={stream.watch_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={t("sound.openOn", { host: "YouTube" })}
-          title={t("sound.openOn", { host: "YouTube" })}
-          className="flex size-7 items-center justify-center rounded-lg text-icon hover:bg-accent"
-        >
-          <ExternalLink aria-hidden className="size-3.5" />
-        </a>
-        <button
-          type="button"
-          onClick={stop}
-          aria-label={t("sound.close")}
-          title={t("sound.close")}
-          className="flex size-7 items-center justify-center rounded-lg text-icon hover:bg-accent"
-        >
-          <X aria-hidden className="size-3.5" />
-        </button>
-      </header>
+    <PlayerCard title={soundscape.title} watchUrl={stream.watch_url} host="YouTube">
       {blocked ? (
         <div className="flex flex-col items-start gap-2 p-3 text-ui-sm">
           <p>{t("sound.reloadNeeded")}</p>
@@ -195,7 +171,7 @@ function StreamPlayer({
           allow={FRAME_ATTRIBUTES.allow}
         />
       )}
-    </section>
+    </PlayerCard>
   );
 }
 
