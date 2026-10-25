@@ -19,12 +19,31 @@ Please report vulnerabilities privately, not through public issues:
 [open a private security advisory](../../security/advisories/new) for this repository (its Security tab →
 **Report a vulnerability**; GitHub explains the steps in
 [Privately reporting a security vulnerability](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/report-privately)).
-Expect an acknowledgement within a few working days. Include what is affected, how to reproduce it and what an
-attacker gains.
+Include what is affected (version, command, plugin), how to reproduce it and what an attacker gains. If you can't use
+GitHub, open a public issue that asks for a private contact, without any details of the vulnerability.
+
+## How we handle a report
+
+| Step | What happens | When |
+| --- | --- | --- |
+| Acknowledge | A maintainer replies in the advisory | Within 7 days of the report |
+| Assess | We confirm or reject the report, rate its severity with CVSS and tell you | Within 14 days of the report |
+| Fix | The fix is developed in the advisory's private fork, reviewed and tested like every change, and released | Critical and high: as fast as possible, at most 30 days; medium: within 60 days; low: in a regular release |
+| Disclose | The advisory is published with a CVE (GitHub assigns it), the affected and fixed versions; the release notes and `CHANGELOG.md` list the fix under **Security** and name the advisory | With the release that fixes it |
+| Credit | You are credited in the advisory and the release notes, unless you ask not to be | With the disclosure |
+
+We keep you informed at least every 14 days until the advisory is published, and ask you not to disclose the
+vulnerability before the fix is released or 90 days have passed, whichever comes first. Vulnerabilities in a
+dependency are fixed by updating it (Dependabot security updates, `make audit`) in a release, with the same
+deadlines: Dependabot security updates and weekly updates cover the Python packages, the web app's packages and the
+GitHub Actions, and `make audit` (pip-audit and `pnpm audit`) fails the build while a known vulnerability remains. Such
+a fix is committed as `fix(security): ...` or names the advisory (GHSA or CVE) in its body, so the release notes list
+it under **Security** too. A vulnerability in a plugin from another repository is reported to that plugin's
+repository.
 
 ## Supported versions
 
-Only the latest release receives security fixes while the project is on 0.x.
+Only the latest release receives security fixes while the project is on 0.x; update with `hz system update`.
 
 ## What Heinzelmännchen does on your machine
 
@@ -96,3 +115,12 @@ gh attestation verify heinzel-0.1.0-py3-none-any.whl --repo helmut-hoffer-von-an
 ```
 
 Plugins created from the template inherit the same hooks, checks and release workflow.
+
+## Cryptography
+
+Heinzelmännchen implements no cryptography of its own and calls only Python's standard library for it: `secrets` for
+every token and random identifier (256-bit session and device tokens for the local web app), `hashlib` SHA-256 for
+content digests and for storing device tokens (only their hash is kept, ADR 0046) and `hmac.compare_digest` to
+compare tokens in constant time. It stores no user passwords; credentials live in the OS keychain. Network access
+uses HTTPS through the standard TLS stack with certificate verification (Python's `ssl` defaults through `urllib`,
+and uv, git and the vendor CLIs), and the local servers listen on loopback (`127.0.0.1`) by default, without TLS.
