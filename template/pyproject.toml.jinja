@@ -35,7 +35,7 @@ test = [
     "httpx>=0.28",
     "hypothesis>=6.140",
     "jsonschema>=4.26",
-    # OpenAI's client, so a test turn through Pydantic AI reaches a fake OpenAI-compatible server end to end (ADR 0057).
+    # OpenAI's client, so the ChatGPT sign-in flow and a test turn through Pydantic AI run in tests (ADR 0057).
     "pydantic-ai-slim[openai]>=2.61,<3",
     "prek>=0.2",
     "pytest>=9.0.3,<10",

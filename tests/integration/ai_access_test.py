@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 from heinzel import Config, Kernel
-from heinzel.heads import api
+from heinzel.heads import api, mcp
+from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
 from heinzel.kernel import user_config_dir
 
@@ -76,6 +77,7 @@ def test_the_listing_shows_every_option_with_the_one_in_use(make_kernel, fakes):
         "claude-code": (True, "signed in", ["api.anthropic.com"]),
         "gateway": (False, "signed in", ["ai.acme.example"]),
         "pydantic-ai": (False, "not installed", []),
+        "chatgpt": (False, "not signed in", ["api.openai.com", "auth.openai.com"]),
     }
     assert [u["use"] for u in listing["uses"]] == ["chat", "turns", "coding"]
     assert set(fakes.read_text(encoding="utf-8").splitlines()) == {"claude auth status --json", "acme ai status"}
@@ -94,7 +96,7 @@ def test_use_binds_the_access_and_the_runner_it_names(make_kernel, fakes):
 def test_use_refuses_an_option_nobody_installed(make_kernel, fakes):
     result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ai", "access", "use", "nope"])
     assert result.exit_code != 0
-    assert "installed: claude-code, codex, gateway, pydantic-ai" in result.output
+    assert "installed: chatgpt, claude-code, codex, gateway, pydantic-ai" in result.output
 
 
 def test_a_test_is_explicit_kept_and_shown_in_the_listing(make_kernel, fakes):
@@ -160,3 +162,12 @@ def test_hz_ai_models_lists_the_models_and_efforts_of_the_access_in_use(make_ker
 def test_the_rest_head_has_no_models(make_kernel):
     client = TestClient(api.build(make_kernel(builtins=True)), base_url="http://localhost")
     assert client.get("/ai/models").status_code == 404
+
+
+def test_signing_in_to_chatgpt_is_a_terminal_act_only(make_kernel):
+    kernel = make_kernel(builtins=True)
+    names = {item.name for item in exposed(kernel, mcp.HEAD)}
+    assert "ai_access_list" in names
+    assert "ai_access_login" not in names
+    client = TestClient(api.build(kernel), base_url="http://localhost")
+    assert client.post("/ai/access/login").status_code in {404, 405}

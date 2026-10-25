@@ -71,6 +71,7 @@ $ hz ai access [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `list`: (expert) List the AI access options, the...
+* `login`: (expert) Sign in to ChatGPT in your...
 * `test`: (expert) Run one cheap live check of an AI...
 * `use`: (expert) Use an AI access option: sets...
 
@@ -82,6 +83,22 @@ $ hz ai access [OPTIONS] COMMAND [ARGS]...
 
 ```console
 $ hz ai access list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz ai access login`
+
+(expert) Sign in to ChatGPT in your browser, so the `chatgpt` option uses your plan instead of an API key.
+
+**Usage**:
+
+```console
+$ hz ai access login [OPTIONS]
 ```
 
 **Options**:

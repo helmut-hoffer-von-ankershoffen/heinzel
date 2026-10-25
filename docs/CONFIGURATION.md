@@ -58,6 +58,7 @@ Plugins add their own tables.
 | `gateway_hosts` | `HZ_AI_ACCESS__GATEWAY_HOSTS` | platform-specific | The hosts the gateway sends prompts to, as host names or addresses; shown wherever AI access is listed. Example: "ai.example.com". Never read from a project's hz.toml. |
 | `gateway_models` | `HZ_AI_ACCESS__GATEWAY_MODELS` | platform-specific | The models the gateway offers, when its status command doesn't say. Never read from a project's hz.toml. |
 | `gateway_env` | `HZ_AI_ACCESS__GATEWAY_ENV` | platform-specific | Environment variables the gateway's commands get besides PATH, HOME, LANG, LC_* and TMPDIR. Heinzelmännchen's credential variables are never passed. Never read from a project's hz.toml. |
+| `chatgpt_model` | `HZ_AI_ACCESS__CHATGPT_MODEL` | `None` | The model of the `chatgpt` option, one your ChatGPT plan offers through Sign in with ChatGPT; sign in first with `hz ai access login`. Never read from a project's hz.toml. |
 | `model` | `HZ_AI_ACCESS__MODEL` | `None` | The model Pydantic AI uses: vendor:model for a vendor's API, or the name your endpoint knows when a base address is set. Its key is the credential ai.access/api-key or the vendor's own variable. Example: "anthropic:claude-sonnet-4-5". Never read from a project's hz.toml. |
 | `base_url` | `HZ_AI_ACCESS__BASE_URL` | `None` | The address of an OpenAI-compatible endpoint, such as Ollama, LM Studio, vLLM or OpenRouter. A key is optional and goes only over https, or over http to this computer. Example: "http://localhost:11434/v1". Never read from a project's hz.toml. |
 
