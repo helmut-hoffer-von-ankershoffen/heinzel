@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from heinzel import Module, Theme, ThemeColours, ThemeFont, ThemeFonts, ThemeLet, ThemeLogo
+from heinzel import Module, Theme, ThemeColours, ThemeFont, ThemeFonts, ThemeHeinzel, ThemeLet, ThemeLogo
 from heinzel.kernel import (
     DEFAULT_LOGO,
     DEFAULT_THEME,
@@ -1036,3 +1036,25 @@ def test_the_weather_theme_of_the_guide_is_valid_and_readable():
     assert len(weather.variant) == 6
     assert weather.colours("dark", {"daypart": "night", "weather": "rain"}).background == "#0d1016"
     assert weather.colours("light", {"daypart": "day", "weather": "clear"}).main_tint == "#e0f2fe"
+
+
+def test_theme_can_decorate_core_avatars_without_changing_existing_themes():
+    assert DEFAULT_THEME.heinzel is None
+    look = ThemeHeinzel(palette={"hat": "#eef", "shirt": "#336699"}, decorations=("snow",))
+    decorated = Theme.model_validate(DEFAULT_THEME.model_dump() | {"heinzel": look})
+    assert decorated.heinzel == look
+
+
+@pytest.mark.parametrize(
+    "look",
+    [
+        {"palette": {"skin": "#fff"}},
+        {"palette": {"hat": "url(https://example.invalid/icon)"}},
+        {"decorations": ["rain"]},
+        {"decorations": ["snow", "snow"]},
+        {"html": "<script>"},
+    ],
+)
+def test_theme_avatar_table_refuses_unknown_parts_graphics_and_decorations(look):
+    with pytest.raises(ValidationError):
+        ThemeHeinzel.model_validate(look)

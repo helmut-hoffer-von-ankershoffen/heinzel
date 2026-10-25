@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useSearchParams } from "react-router";
 import { ChatProvider } from "@/chat/ChatContext";
+import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { t } from "@/i18n";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
@@ -63,7 +64,9 @@ export function fitsBeside(areaPx: number, remPx: number): boolean {
 export function Shell() {
   return (
     <ChatProvider>
-      <Layout />
+      <AvatarThemeProvider>
+        <Layout />
+      </AvatarThemeProvider>
     </ChatProvider>
   );
 }

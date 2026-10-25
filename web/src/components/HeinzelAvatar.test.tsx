@@ -192,3 +192,30 @@ describe("HeinzelAvatar idle life", () => {
     expect(container.querySelector("g.hz-wave")).toBeNull();
   });
 });
+
+describe("theme dressing", () => {
+  const winter = { palette: { hat: "#aabbcc", shirt: "#336699", scarf: "#ddeeff" }, decorations: ["snow"] as const };
+  it("dresses every age and build, preserves the baby's bare head and never duplicates a scarf", () => {
+    for (const age of AGES)
+      for (const build of BUILDS) {
+        const shapes = heinzelShapes({ age, build, accessories: ["scarf"], theme: winter });
+        expect(shapes.filter((shape) => shape.accessory === "scarf")).toHaveLength(1);
+        expect(fills(shapes)).toContain(winter.palette.shirt);
+        if (age === "baby") expect(fills(shapes)).not.toContain(winter.palette.hat);
+        else expect(fills(shapes)).toContain(winter.palette.hat);
+      }
+  });
+  it("keeps personal colours ahead of the palette, and returns to the original drawing without a theme", () => {
+    const personal = fills(heinzelShapes({ hat: "red", shirt: "green", theme: winter }));
+    expect(personal).toContain(HATS.red);
+    expect(personal).toContain(SHIRTS.green);
+    expect(personal).not.toContain(winter.palette.hat);
+    expect(heinzelShapes({ theme: undefined })).toEqual(heinzelShapes());
+  });
+  it("accepts a short hex palette without invalid mixed colours", () => {
+    const colours = fills(
+      heinzelShapes({ theme: { palette: { shirt: "#abc", scarf: "#def" }, decorations: ["snow"] } }),
+    );
+    expect(colours.some((colour) => colour.includes("NaN"))).toBe(false);
+  });
+});

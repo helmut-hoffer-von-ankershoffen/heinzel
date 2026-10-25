@@ -216,6 +216,7 @@ def test_the_web_head_lists_the_themes_and_the_pick_round_trips(acme):
         "logo",
         "variant",
         "shadows",
+        "heinzel",
     }
     assert client.get("/api/system/theme/list").status_code == 401
     used = client.post("/api/system/theme/use", params={"name": "acme"}, headers=AUTH)
@@ -639,3 +640,26 @@ def test_a_hanging_plugin_leaves_its_signals_unknown_and_holds_up_nobody(acme, m
     assert answers == [None] * 4
     assert time.monotonic() - started < 4  # the 5 s hang held up nobody
     assert len(calls) == 1  # one call in flight; the others got the last values, unknown
+
+
+def test_theme_avatar_decorations_reach_cli_and_web_json(acme):
+    winter = Module("winter", "A winter look.")
+    winter.theme(
+        Theme.model_validate(
+            DEFAULT_THEME.model_dump()
+            | {
+                "name": "winter",
+                "title": "Winter",
+                "heinzel": {"palette": {"hat": "#def"}, "decorations": ["snow"]},
+            }
+        )
+    )
+    kernel = acme(extra=(winter,))
+    code, listed = hz(kernel, "system", "theme", "list")
+    assert code == 0
+    look = next(theme for theme in listed["themes"] if theme["name"] == "winter")["heinzel"]
+    assert look == {"palette": {"hat": "#def"}, "decorations": ["snow"]}
+    client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url="http://127.0.0.1:8000")
+    response = client.get("/api/system/theme/list", headers=AUTH)
+    assert response.status_code == 200
+    assert next(theme for theme in response.json()["themes"] if theme["name"] == "winter")["heinzel"] == look

@@ -6915,6 +6915,25 @@ export interface components {
             weight: string;
         };
         /**
+         * ThemeHeinzel
+         * @description Checked colours and decorations for the core drawing; personal look choices stay in charge.
+         */
+        ThemeHeinzel: {
+            /**
+             * Decorations
+             * @description Optional decoration of every core avatar; snow adds a cap patch and scarf.
+             * @default []
+             */
+            decorations: "snow"[];
+            /**
+             * Palette
+             * @description Colours for default hat, shirt and scarf parts.
+             */
+            palette?: {
+                [key: string]: string;
+            };
+        };
+        /**
          * ThemeList
          * @description Every available theme and which one is in effect.
          */
@@ -7180,6 +7199,8 @@ export interface components {
              * @description The weight of headings (`--heading-weight`), 100 to 900, e.g. `600`.
              */
             heading_weight: number;
+            /** @description Core avatar colours and decorations. */
+            heinzel?: components["schemas"]["ThemeHeinzel"] | null;
             /**
              * Icon Size
              * @description The size of icons (`--icon-size`), e.g. `18px`.
@@ -7818,6 +7839,7 @@ export type SchemaTested = components['schemas']['Tested'];
 export type SchemaThemeBackdrop = components['schemas']['ThemeBackdrop'];
 export type SchemaThemeColours = components['schemas']['ThemeColours'];
 export type SchemaThemeFontView = components['schemas']['ThemeFontView'];
+export type SchemaThemeHeinzel = components['schemas']['ThemeHeinzel'];
 export type SchemaThemeList = components['schemas']['ThemeList'];
 export type SchemaThemeLogoView = components['schemas']['ThemeLogoView'];
 export type SchemaThemeOverrides = components['schemas']['ThemeOverrides'];

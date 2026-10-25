@@ -495,6 +495,21 @@ def contrast_problems(colours: ThemeColours) -> list[str]:
     ]
 
 
+class ThemeHeinzel(BaseModel):
+    """Checked colours and decorations for the core drawing; personal look choices stay in charge."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
+
+    palette: dict[Literal["hat", "shirt", "scarf"], Colour] = Field(
+        default_factory=dict, max_length=3, description="Colours for default hat, shirt and scarf parts."
+    )
+    decorations: tuple[Literal["snow"], ...] = Field(
+        default=(),
+        max_length=1,
+        description="Optional decoration of every core avatar; snow adds a cap patch and scarf.",
+    )
+
+
 class Theme(BaseModel):
     """A look for the web app: colours, fonts, type scale, density, radii and border width (ADR 0044)."""
 
@@ -504,6 +519,7 @@ class Theme(BaseModel):
     title: Annotated[str, AfterValidator(_one_line)] = Field(
         min_length=1, max_length=MAX_TITLE, description="What people pick it by, e.g. `Acme`."
     )
+    heinzel: ThemeHeinzel | None = Field(default=None, description="The core avatar palette and decorations.")
     light: ThemeColours = Field(description="The colours in light mode.")
     dark: ThemeColours = Field(description="The colours in dark mode.")
     font_sans: FontStack = Field(
