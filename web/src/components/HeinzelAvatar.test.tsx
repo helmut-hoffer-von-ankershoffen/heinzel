@@ -44,7 +44,7 @@ function fills(shapes: Shape[]): string[] {
 
 describe("Heinzelmännchen's drawing", () => {
   it("is what heinzel.svg and heinzel-swarm.svg hold, so the icons show the avatars' Heinzelmännchen (make icons)", () => {
-    expect(readFileSync(resolve(MACOS, "heinzel.svg"), "utf-8")).toBe(heinzelSvg());
+    expect(readFileSync(resolve(MACOS, "heinzel.svg"), "utf-8")).toBe(heinzelSvg({}, "bust", true));
     expect(readFileSync(resolve(MACOS, "heinzel-swarm.svg"), "utf-8")).toBe(heinzelSwarmSvg());
   });
 

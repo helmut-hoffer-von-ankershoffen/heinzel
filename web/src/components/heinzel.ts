@@ -576,11 +576,11 @@ function svg(viewBox: string, body: string[]): string {
 }
 
 /** One Heinzelmännchen as an SVG file; with no look and the bust, the app's icon (heinzel.svg). */
-export function heinzelSvg(look: HeinzelLook = {}, view: View = "bust"): string {
-  return svg(
-    viewBox(look.age, view, look.accessories),
-    heinzelShapes(look).map((shape) => svgShape(shape)),
-  );
+export function heinzelSvg(look: HeinzelLook = {}, view: View = "bust", white = false): string {
+  const box = viewBox(look.age, view, look.accessories);
+  const [x, y, width, height] = box.split(" ");
+  const backdrop = white ? [`  <rect x="${x}" y="${y}" width="${width}" height="${height}" fill="#ffffff"/>`] : [];
+  return svg(box, [...backdrop, ...heinzelShapes(look).map((shape) => svgShape(shape))]);
 }
 
 /** The product's logo: a busy swarm walking together, mostly young and grown, with one baby and one old one. */

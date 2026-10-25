@@ -8,7 +8,9 @@ import importlib.util
 import json
 import struct
 import subprocess
+import zlib
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -213,7 +215,7 @@ def test_the_web_icons_are_the_sizes_the_manifest_and_the_build_name():
         assert png_size((script.PUBLIC / name).read_bytes()) == (size, size)
     manifest = json.loads((script.PUBLIC / "manifest.webmanifest").read_text(encoding="utf-8"))
     for icon in manifest["icons"]:
-        size, style = script.WEB_ICONS[icon["src"].lstrip("/")]
+        size, style = script.WEB_ICONS[urlsplit(icon["src"]).path.lstrip("/")]
         assert icon["sizes"] == f"{size}x{size}"
         assert (icon["purpose"] == "maskable") == (style == "maskable")
     ico = (script.PUBLIC / "favicon.ico").read_bytes()
@@ -252,3 +254,88 @@ def test_a_failed_rebuild_says_why(tmp_path, bundled):
     assert NotifierApp(tmp_path / "home", bundled=bundled, runner=runner, build_script=script).rebuild() == (
         "swiftc not found"
     )
+
+
+def png_pixels(data: bytes) -> tuple[int, int, list[tuple[int, ...]]]:
+    """Decode tracked 8-bit RGB(A) PNG rows so Linux checks actual icon opacity, not the Swift source's words."""
+    width, height = png_size(data)
+    channels = {2: 3, 6: 4}[data[25]]
+    assert data[24] == 8
+    assert data[28] == 0
+    compressed = bytearray()
+    offset = 8
+    while offset < len(data):
+        size = int.from_bytes(data[offset : offset + 4])
+        if data[offset + 4 : offset + 8] == b"IDAT":
+            compressed.extend(data[offset + 8 : offset + 8 + size])
+        offset += size + 12
+    rows = zlib.decompress(compressed)
+    stride = width * channels
+    previous = bytearray(stride)
+    pixels = []
+    for y in range(height):
+        at = y * (stride + 1)
+        kind = rows[at]
+        current = bytearray(rows[at + 1 : at + 1 + stride])
+        for x in range(stride):
+            left = current[x - channels] if x >= channels else 0
+            up = previous[x]
+            corner = previous[x - channels] if x >= channels else 0
+            if kind == 1:
+                predictor = left
+            elif kind == 2:
+                predictor = up
+            elif kind == 3:
+                predictor = (left + up) // 2
+            elif kind == 4:
+                pivot = left + up - corner
+                distances = [abs(pivot - value) for value in (left, up, corner)]
+                predictor = (left, up, corner)[distances.index(min(distances))]
+            else:
+                assert kind == 0
+                predictor = 0
+            current[x] = (current[x] + predictor) % 256
+        pixels.extend(tuple(current[x : x + channels]) for x in range(0, stride, channels))
+        previous = current
+    return width, height, pixels
+
+
+def test_every_png_and_ico_frame_has_opaque_white_corners_and_a_real_portrait():
+    script = build_script()
+    images = [(name, (script.PUBLIC / name).read_bytes()) for name in script.WEB_ICONS]
+    ico = (script.PUBLIC / "favicon.ico").read_bytes()
+    for index, size in enumerate(script.FAVICON_SIZES):
+        _, _, _, _, _, _, length, offset = struct.unpack("<BBBBHHII", ico[6 + 16 * index : 22 + 16 * index])
+        images.append((f"favicon-{size}", ico[offset : offset + length]))
+    for name, data in images:
+        width, height, pixels = png_pixels(data)
+        assert all(len(pixel) == 3 or pixel[3] == 255 for pixel in pixels), f"{name} has transparent pixels"
+        for index in (0, width - 1, (height - 1) * width, width * height - 1):
+            assert pixels[index][:3] == (255, 255, 255), f"{name} has a nonwhite corner"
+        assert sum(pixel[:3] != (255, 255, 255) for pixel in pixels) > width, f"{name} lost its portrait"
+    svg = (script.PUBLIC / "favicon.svg").read_text("utf-8")
+    assert '<rect x="47.5" y="95" width="417" height="417" fill="#ffffff"/>' in svg
+
+
+def test_icon_urls_follow_the_actual_artwork_revision(tmp_path, monkeypatch):
+    script = build_script()
+    public = tmp_path / "web" / "public"
+    public.mkdir(parents=True)
+    for name in ("favicon.svg", "favicon.ico", "manifest.webmanifest", *script.WEB_ICONS):
+        target = public / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((script.PUBLIC / name).read_bytes())
+    page = tmp_path / "web" / "index.html"
+    page.write_bytes((ROOT / "web" / "index.html").read_bytes())
+    monkeypatch.setattr(script, "ROOT", tmp_path)
+    monkeypatch.setattr(script, "PUBLIC", public)
+    before = script.icon_revision()
+    assert page.read_text("utf-8").count(f"?v={before}") >= 5
+    manifest = json.loads((public / "manifest.webmanifest").read_text("utf-8"))
+    assert all(icon["src"].endswith(f"?v={before}") for icon in manifest["icons"])
+    (public / "favicon.svg").write_bytes((public / "favicon.svg").read_bytes() + b"\n")
+    script.stamp_icons()
+    after = script.icon_revision()
+    assert before != after
+    assert f"?v={before}" not in page.read_text("utf-8")
+    assert page.read_text("utf-8").count(f"?v={after}") >= 5
