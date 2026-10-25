@@ -21,8 +21,10 @@ class UiSettings(ModuleSettings):
 
     contributions: dict[str, dict[Slot, bool]] = Field(
         default_factory=dict[str, dict[Slot, bool]],
-        description='Per contribution id, each slot shown or hidden, e.g. { "clock:primary-zone" = { sidebar = true '
-        "} }; a slot not named keeps the contribution's default.",
+        title="What the app shows",
+        description="Which status items, actions and widgets show in which place of the app; anything you leave out "
+        "keeps the place its module chose.",
+        json_schema_extra={"x-expert": True},
     )
 
 

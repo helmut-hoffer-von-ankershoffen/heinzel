@@ -216,7 +216,7 @@ Plugins add their own tables.
 
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
-| `contributions` | `HZ_SYSTEM_UI__CONTRIBUTIONS` | platform-specific | Per contribution id, each slot shown or hidden, e.g. { "clock:primary-zone" = { sidebar = true } }; a slot not named keeps the contribution's default. Never read from a project's hz.toml. |
+| `contributions` | `HZ_SYSTEM_UI__CONTRIBUTIONS` | platform-specific | Which status items, actions and widgets show in which place of the app; anything you leave out keeps the place its module chose. Never read from a project's hz.toml. |
 
 ## `[team]`
 
