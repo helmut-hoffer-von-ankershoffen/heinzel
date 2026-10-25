@@ -148,7 +148,9 @@ class Kernel:
         for record, service in sorted(self.lets(ServiceLet), key=_builtins_first):
             self._provide(service.provides, service.factory, record)
         for record, declared in sorted(self.lets(SettingsLet), key=_builtins_first):
-            self._provide(declared.model, partial(self.config.settings, declared.model, record.qualname), record)
+            renamed = record.module.renamed_from if record.parent is None else None
+            factory = partial(self.config.settings, declared.model, record.qualname, renamed_from=renamed)
+            self._provide(declared.model, factory, record)
         self._records = dict(sorted(self._records.items(), key=lambda item: item[1].path))
         self.capability_settings = self.config.settings(CapabilitySettings, CAPABILITIES_SECTION)
         requesters, owners = self._requesters()
@@ -182,6 +184,12 @@ class Kernel:
     def module(self, qualname: str) -> ModuleRecord:
         """Look up a registered module by qualified name."""
         return self._records[qualname]
+
+    def renamed(self, old: str) -> str | None:
+        """The top-level module that was called `old` before a rename (`Module(renamed_from=...)`), if one is."""
+        return next(
+            (r.qualname for r in self._records.values() if r.parent is None and r.module.renamed_from == old), None
+        )
 
     def children(self, qualname: str | None) -> tuple[ModuleRecord, ...]:
         """Direct submodules of a module; top-level modules for None."""

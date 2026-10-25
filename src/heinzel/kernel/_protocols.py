@@ -248,7 +248,7 @@ class WeatherReport(BaseModel):
     )
 
 
-class Weather(Protocol):
+class WeatherSource(Protocol):
     """The weather at a place (capability `weather`).
 
     Served by an adapter that needs no account when it can, such as the `openmeteo` plugin. A `place` is a name

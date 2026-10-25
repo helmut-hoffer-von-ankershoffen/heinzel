@@ -9,13 +9,14 @@ import importlib
 import json
 import shutil
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from heinzel import Config, HeinzelError, Kernel, Module, ModuleRecord, Settings, Theme
+from heinzel import Config, HeinzelError, Kernel, Module, ModuleRecord, Settings, Theme, ThemeSignals
 from heinzel.heads import web
 from heinzel.heads.cli import build
 from heinzel.kernel import DEFAULT_THEME, Origin, discover, user_config_dir, walk
@@ -213,6 +214,7 @@ def test_the_web_head_lists_the_themes_and_the_pick_round_trips(acme):
         "spacing",
         "fonts",
         "logo",
+        "variant",
         "shadows",
     }
     assert client.get("/api/system/theme/list").status_code == 401
@@ -483,3 +485,157 @@ def test_a_logo_file_changed_after_import_is_left_out_and_not_served(acme, tmp_p
     (logos / "acme-light.svg").unlink()
     assert client.get("/api/system/theme/list", headers=AUTH).json()["themes"][1]["logo"] is None
     assert client.get("/theme-assets/acme/light.svg").status_code == 404
+
+
+def test_the_list_carries_each_themes_variants_with_their_backdrops(acme):
+    _, listed = hz(acme("heinzel_acme"), "system", "theme", "list")
+    themes = {view["name"]: view for view in listed["themes"]}  # type: ignore[index]
+    assert themes["default"]["variant"] == []
+    first, rain, night_rain = themes["acme"]["variant"]
+    assert first["when"] == {"daypart": ["evening", "night"], "weather": []}
+    assert rain["light"]["backdrop"] == {
+        "gradient": "linear",
+        "angle": 180,
+        "stops": ["#cfd8dc", "background"],
+        "opacity": 0.5,
+    }
+    assert night_rain["when"] == {"daypart": ["night"], "weather": ["rain"]}
+
+
+def test_signals_carry_the_daypart_in_the_persons_zone_and_what_a_plugin_publishes(acme, monkeypatch):
+    from heinzel.modules.system.theme import _service
+
+    monkeypatch.setenv("HZ_ORG__TIMEZONE", "Europe/Lisbon")
+    monkeypatch.setattr(_service, "utc_now", lambda: datetime(2026, 4, 1, 23, 0, tzinfo=UTC))
+    code, signals = hz(acme("heinzel_acme"), "system", "theme", "signals")
+    assert code == 0
+    assert signals == {
+        "daypart": "night",
+        "weather": "rain",
+        "sunrise": "2026-04-01T05:50:00+01:00",
+        "sunset": "2026-04-01T18:40:00+01:00",
+        "timezone": "Europe/Lisbon",
+        "sources": ["acme"],
+        "refresh": 60,
+    }
+    _, rendered = hz(acme("heinzel_acme"), "system", "theme", "signals", json_output=False)
+    assert "Weather: rain" in str(rendered)
+    assert "Sun: 05:50 to 18:40" in str(rendered)  # in Lisbon's time, not the publisher's UTC
+
+
+def test_without_a_plugin_the_daypart_still_moves_and_the_weather_is_unknown(acme, monkeypatch):
+    from heinzel.modules.system.theme import _service
+
+    monkeypatch.setenv("HZ_ORG__TIMEZONE", "Europe/Berlin")
+    monkeypatch.setattr(_service, "utc_now", lambda: datetime(2026, 6, 21, 10, 0, tzinfo=UTC))
+    _, signals = hz(acme("heinzel_acme_lisbon"), "system", "theme", "signals")
+    assert (signals["daypart"], signals["weather"], signals["sources"]) == ("day", None, [])  # type: ignore[index]
+
+
+def weather_plugin(answers: list[object]) -> tuple[Module, list[int]]:
+    """A plugin whose signals answer each of `answers` in turn, counting its calls."""
+    module = Module("skies", "Made-up weather.")
+    calls: list[int] = []
+
+    @module.signals(every="10m")
+    def now() -> ThemeSignals:
+        """The made-up weather now."""
+        calls.append(1)
+        answer = answers[min(len(calls), len(answers)) - 1]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer  # type: ignore[return-value]
+
+    return module, calls
+
+
+def test_a_plugins_signals_are_read_once_per_interval(acme, monkeypatch):
+    from heinzel.kernel import ThemeFonts
+    from heinzel.modules.system.theme import _service
+
+    clock = [datetime(2026, 6, 21, 10, 0, tzinfo=UTC)]
+    monkeypatch.setattr(_service, "utc_now", lambda: clock[0])
+    module, calls = weather_plugin([ThemeSignals(weather="snow"), ThemeSignals(weather="fog")])
+    kernel = acme("heinzel_acme_lisbon", extra=(module,))
+    service = kernel.resolve(ThemeFonts)
+    assert isinstance(service, _service.ThemeService)
+    assert service.signals().weather == "snow"
+    clock[0] += timedelta(minutes=9)
+    assert (service.signals().weather, len(calls)) == ("snow", 1)
+    clock[0] += timedelta(minutes=2)
+    assert (service.signals().weather, len(calls)) == ("fog", 2)
+
+
+@pytest.mark.parametrize("answer", [RuntimeError("offline"), {"weather": "sunny"}, "rain"])
+def test_signals_that_fail_or_are_malformed_stay_unknown(acme, answer):
+    from heinzel.kernel import ThemeFonts
+
+    module, _ = weather_plugin([answer])
+    service = acme("heinzel_acme_lisbon", extra=(module,)).resolve(ThemeFonts)
+    signals = service.signals()  # type: ignore[attr-defined]
+    assert (signals.weather, signals.sources) == (None, [])
+
+
+def test_the_first_module_publishing_a_signal_wins(acme):
+    from heinzel.kernel import ThemeFonts
+
+    module, _ = weather_plugin([ThemeSignals(weather="snow")])
+    signals = acme("heinzel_acme", extra=(module,)).resolve(ThemeFonts).signals()  # type: ignore[attr-defined]
+    assert (signals.weather, signals.sources) == ("rain", ["acme"])  # skies' snow is shadowed: not a source
+
+
+def test_the_web_head_serves_the_signals(acme):
+    client = TestClient(
+        web.build(acme("heinzel_acme"), port=8000, token=TOKEN, static=None), base_url="http://127.0.0.1:8000"
+    )
+    answer = client.get("/api/system/theme/signals", headers=AUTH)
+    assert answer.status_code == 200
+    assert answer.json()["weather"] == "rain"
+
+
+def test_a_failing_plugin_is_not_called_again_within_its_interval(acme, monkeypatch):
+    from heinzel.kernel import ThemeFonts
+    from heinzel.modules.system.theme import _service
+
+    clock = [datetime(2026, 6, 21, 10, 0, tzinfo=UTC)]
+    monkeypatch.setattr(_service, "utc_now", lambda: clock[0])
+    module, calls = weather_plugin([RuntimeError("offline"), ThemeSignals(weather="fog")])
+    service = acme("heinzel_acme_lisbon", extra=(module,)).resolve(ThemeFonts)
+    assert service.signals().weather is None  # type: ignore[attr-defined]
+    clock[0] += timedelta(minutes=9)
+    assert (service.signals().weather, len(calls)) == (None, 1)  # type: ignore[attr-defined]
+    clock[0] += timedelta(minutes=2)
+    assert (service.signals().weather, len(calls)) == ("fog", 2)  # type: ignore[attr-defined]
+
+
+def test_a_hanging_plugin_leaves_its_signals_unknown_and_holds_up_nobody(acme, monkeypatch):
+    import threading
+    import time
+
+    from heinzel.kernel import ThemeFonts
+    from heinzel.modules.system.theme import _service
+
+    monkeypatch.setattr(_service, "DEADLINE", timedelta(milliseconds=50))
+    release = threading.Event()
+    module = Module("stuck", "Made-up weather that never answers.")
+    calls: list[int] = []
+
+    @module.signals(every="10m")
+    def now() -> ThemeSignals:
+        """Hangs."""
+        calls.append(1)
+        release.wait(5)
+        return ThemeSignals(weather="clear")
+
+    service = acme("heinzel_acme_lisbon", extra=(module,)).resolve(ThemeFonts)
+    started = time.monotonic()
+    answers = []
+    threads = [threading.Thread(target=lambda: answers.append(service.signals().weather)) for _ in range(4)]  # type: ignore[attr-defined]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(2)
+    release.set()
+    assert answers == [None] * 4
+    assert time.monotonic() - started < 4  # the 5 s hang held up nobody
+    assert len(calls) == 1  # one call in flight; the others got the last values, unknown

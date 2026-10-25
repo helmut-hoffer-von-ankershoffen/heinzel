@@ -3,7 +3,7 @@
 import locale
 import os
 
-from heinzel import DailyForecast, HeinzelError, Weather, WeatherReport
+from heinzel import DailyForecast, HeinzelError, WeatherReport, WeatherSource
 from heinzel.kernel import CapabilityView, Requirement
 from heinzel.modules.weather._models import Outlook, OutlookDay, Units, WeatherSettings
 
@@ -59,7 +59,7 @@ class WeatherService:
             raise HeinzelError(NO_LOCATION)
         return self._settings.locations[0]
 
-    def outlook(self, weather: Weather, location: str | None, days: int) -> Outlook:
+    def outlook(self, weather: WeatherSource, location: str | None, days: int) -> Outlook:
         """The weather now and `days` days at `location` or the primary one, in your units.
 
         Raises:

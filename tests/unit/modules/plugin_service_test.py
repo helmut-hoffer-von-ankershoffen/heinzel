@@ -815,6 +815,94 @@ def test_metadata_never_carries_control_characters(make_kernel, tool_env, monkey
     assert (candidate.publisher, candidate.summary) == ("Ada[2K[1AExample", "CRM notes")
 
 
+def contents(text):
+    """A file as GitHub's contents API returns it."""
+    import base64
+
+    return {"encoding": "base64", "content": base64.b64encode(text.encode()).decode()}
+
+
+class MonorepoGitHub(FakeGitHub):
+    """Answers the search with one monorepo and its contents by URL suffix; anything else is a 404."""
+
+    def __init__(self, repo, files) -> None:
+        super().__init__()
+        self.answer = {"items": [repo]}
+        self.files = files
+
+    def get_json(self, url, token, timeout):
+        if "/contents/" in url:
+            self.requests.append((url, None, timeout))
+            try:
+                return self.files[url.split("/contents/")[1]]
+            except KeyError:
+                msg = "404"
+                raise OSError(msg) from None
+        return super().get_json(url, token, timeout)
+
+
+def monorepo(monkeypatch, files):
+    repo = repository("heinzel-contrib", 4) | {"full_name": "someone/heinzel-contrib", "default_branch": "main"}
+    fake = MonorepoGitHub(repo, files)
+    monkeypatch.setattr(_service, "get_json", fake.get_json)
+    return fake
+
+
+EXPECTED_SPEC = "heinzel-weather @ git+https://github.com/someone/heinzel-contrib#subdirectory=plugins/heinzel-weather"
+
+
+def test_search_lists_each_plugin_of_a_monorepo_from_its_manifest(make_kernel, tmp_path, monkeypatch):
+    manifest = """
+[[plugin]]
+name = "weather"
+path = "plugins/heinzel-weather"
+summary = "Weather where you are."
+
+[[plugin]]
+name = "heinzel-example"
+summary = "An example."
+"""
+    monorepo(monkeypatch, {"heinzel-plugins.toml": contents(manifest)})
+    community = [p for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
+    assert [(p.name, p.description, p.stars) for p in community] == [
+        ("heinzel-example", "An example.", 4),
+        ("heinzel-weather", "Weather where you are.", 4),
+    ]
+    assert community[1].install_spec == EXPECTED_SPEC
+    assert community[0].install_spec.endswith("#subdirectory=plugins/heinzel-example")
+    assert community[1].url == "https://github.com/someone/heinzel-contrib/tree/main/plugins/heinzel-weather"
+
+
+def test_search_discovers_monorepo_plugins_without_a_manifest(make_kernel, tmp_path, monkeypatch):
+    def pyproject(name):
+        return contents(f'[project]\nname = "{name}"\ndescription = "About {name}."\n')
+
+    monorepo(
+        monkeypatch,
+        {
+            "plugins": [
+                {"name": "heinzel-weather", "type": "dir"},
+                {"name": "tools", "type": "dir"},
+                {"name": "x", "type": "file"},
+            ],
+            "plugins/heinzel-weather/pyproject.toml": pyproject("heinzel-weather"),
+            "plugins/tools/pyproject.toml": pyproject("tools"),
+        },
+    )
+    community = [p for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
+    assert [(p.name, p.description, p.install_spec) for p in community] == [
+        ("heinzel-weather", "About heinzel-weather.", EXPECTED_SPEC)
+    ]
+
+
+def test_search_keeps_a_single_plugin_repository_as_one_entry(make_kernel, tmp_path, monkeypatch):
+    monorepo(monkeypatch, {})
+    community = [p for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
+    assert [(p.name, p.install_spec) for p in community] == [
+        ("heinzel-contrib", "git+https://github.com/someone/heinzel-contrib")
+    ]
+
+
 def test_a_first_party_preview_confirms_by_name_not_by_its_git_requirement(make_kernel, tool_env, monkeypatch):
     from heinzel.modules.system.plugin._render import render_change
 

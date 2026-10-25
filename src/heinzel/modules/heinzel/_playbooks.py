@@ -15,7 +15,7 @@ from pydantic_core import to_jsonable_python
 
 from heinzel import HeinzelError, Kernel, SetupLet, clean_text
 from heinzel.kernel import ContractTemplate, DiscoveryHint, PlaybookLet, Requester, Requirement, toml_value
-from heinzel.modules.workflow._models import Input, Step
+from heinzel.modules.heinzel._models import Input, Step
 
 MAX_CANDIDATES = 20
 """Candidates kept per hint: a proposal lists what a person can choose from, not a search result."""
@@ -24,7 +24,7 @@ REFERENCE_FIELDS = ("ref", "key", "id", "url")
 
 
 class HintView(BaseModel):
-    """A discovery hint as `hz workflow playbooks` shows it."""
+    """A discovery hint as `hz heinzel playbooks` shows it."""
 
     read: str = Field(description="The capability read method it calls.")
     args: dict[str, JsonValue] = Field(description="Its arguments besides the time window.")
@@ -38,7 +38,7 @@ class AssetView(BaseModel):
 
     name: str = Field(description="Its name; templates refer to it as `{{asset:<name>}}`.")
     description: str = Field(description="What it is.")
-    hints: list[HintView] = Field(description="Where `hz workflow discover` looks for candidates.")
+    hints: list[HintView] = Field(description="Where `hz heinzel discover` looks for candidates.")
     kept_by: str | None = Field(
         default=None, description="The template, `<module>:<name>`, whose output keeps it true; none if none does."
     )
@@ -72,7 +72,7 @@ class PlaybookView(BaseModel):
 
 
 class PlaybookList(BaseModel):
-    """`hz workflow playbooks`: every playbook the installed modules contribute."""
+    """`hz heinzel playbooks`: every playbook the installed modules contribute."""
 
     playbooks: list[PlaybookView] = Field(description="The playbooks, by module.")
     next: list[Step] = Field(description="What to do next, as commands.")
@@ -99,7 +99,7 @@ class HintProblem(BaseModel):
 
 
 class Discovery(BaseModel):
-    """`hz workflow discover`: candidates for each asset type, found through capabilities you can read."""
+    """`hz heinzel discover`: candidates for each asset type, found through capabilities you can read."""
 
     playbooks: list[str] = Field(description="The playbooks whose hints ran, by module.")
     candidates: list[Candidate] = Field(description="What the hints found, by asset type.")
@@ -131,18 +131,18 @@ def find_template(kernel: Kernel, name: str) -> tuple[str, ContractTemplate]:
     if not found:
         known = [f"{q}:{t.name}" for q, p in playbooks(kernel) for t in p.templates]
         listed = ", ".join(known) if known else "none: no installed plugin contributes a playbook"
-        msg = f"No template {name!r}; the templates are: {listed}. `hz workflow playbooks` lists them"
+        msg = f"No template {name!r}; the templates are: {listed}. `hz heinzel playbooks` lists them"
         raise HeinzelError(msg)
     return found[0]
 
 
 def listing(kernel: Kernel) -> PlaybookList:
-    """Every playbook as `hz workflow playbooks` shows it."""
+    """Every playbook as `hz heinzel playbooks` shows it."""
     views = [_view(qualname, playbook) for qualname, playbook in playbooks(kernel)]
     if not views:
         steps = NO_PLAYBOOKS
     else:
-        steps = [Step(command="hz workflow discover", why="find candidates for each asset type in what you can read")]
+        steps = [Step(command="hz heinzel discover", why="find candidates for each asset type in what you can read")]
         with_setup = {record.qualname for record, _ in kernel.lets(SetupLet)}
         steps += [
             Step(
@@ -182,7 +182,7 @@ def _view(qualname: str, playbook: PlaybookLet) -> PlaybookView:
                 template=f"{qualname}:{t.name}",
                 assets=t.placeholders(),
                 keeps=[a.name for a in playbook.assets if a.kept_by == t.name],
-                command=f"hz workflow new {t.name} --template {qualname}:{t.name}",
+                command=f"hz heinzel new {t.name} --template {qualname}:{t.name}",
             )
             for t in playbook.templates
         ],
@@ -232,7 +232,7 @@ def discover(kernel: Kernel, module: str, clock: Callable[[], datetime], only: s
     """
     chosen = [(q, p) for q, p in playbooks(kernel) if only in {None, q}]
     if only is not None and not chosen:
-        msg = f"No playbook {only!r}; `hz workflow playbooks` lists them"
+        msg = f"No playbook {only!r}; `hz heinzel playbooks` lists them"
         raise HeinzelError(msg)
     candidates: list[Candidate] = []
     problems: list[HintProblem] = []

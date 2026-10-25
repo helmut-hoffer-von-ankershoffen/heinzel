@@ -4,6 +4,8 @@ import { type ReactNode, useState } from "react";
 import { ApiError } from "@/api/client";
 import { t } from "@/i18n";
 import { runInTerminal, runsAsIs } from "@/lib/terminal";
+import { Gnome } from "./Gnome";
+import type { Age, HeinzelState } from "./heinzel";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/card";
 
@@ -51,9 +53,12 @@ export function Loaded<T>({
   }
   if (query.error) {
     return (
-      <p role="alert" className="rounded-md border border-bad/40 p-3 text-sm text-bad">
-        {t("state.error")} {query.error.message}
-      </p>
+      <div className="flex items-center gap-3 rounded-md border border-bad/40 p-3">
+        <p role="alert" className="min-w-0 flex-1 text-sm text-bad">
+          {t("state.error")} {query.error.message}
+        </p>
+        <Gnome state="blocked" view="bust" />
+      </div>
     );
   }
   if (query.isPending || query.data === undefined) {
@@ -104,13 +109,25 @@ export function CopyCommand({ command }: { command: string }) {
   );
 }
 
-export function Empty({ text, commands = [] }: { text: string; commands?: string[] }) {
+/** An empty list: what is missing and the command that fills it; `gnome` adds a small scene beside the words. */
+export function Empty({
+  text,
+  commands = [],
+  gnome,
+}: {
+  text: string;
+  commands?: string[];
+  gnome?: { state?: HeinzelState; age?: Age };
+}) {
   return (
-    <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border p-6 text-sm">
-      <p className="text-muted-foreground">{text}</p>
-      {commands.map((command) => (
-        <CopyCommand key={command} command={command} />
-      ))}
+    <div className="flex items-end gap-4 rounded-lg border border-dashed border-border p-6 text-sm">
+      <div className="flex min-w-0 flex-1 flex-col items-start gap-2">
+        <p className="text-muted-foreground">{text}</p>
+        {commands.map((command) => (
+          <CopyCommand key={command} command={command} />
+        ))}
+      </div>
+      {gnome && <Gnome {...gnome} className="-mb-6 max-sm:hidden" />}
     </div>
   );
 }

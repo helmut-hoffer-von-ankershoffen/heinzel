@@ -31,9 +31,9 @@ from heinzel.kernel._protocols import (
     Tracker,
     Transcript,
     TranscriptSegment,
-    Weather,
     WeatherPlace,
     WeatherReport,
+    WeatherSource,
     Window,
 )
 
@@ -230,10 +230,10 @@ def test_documents_write_method_is_marked_write():
 
 def test_weather_reads_one_report_a_place_at_a_time_and_no_contract_names_it():
     spec = CAPABILITIES["weather"]
-    assert spec.protocol is Weather
+    assert spec.protocol is WeatherSource
     assert spec.methods == {"report": "read"}
-    assert get_type_hints(Weather.report)["place"] is str
-    assert Window not in get_type_hints(Weather.report).values()
+    assert get_type_hints(WeatherSource.report)["place"] is str
+    assert Window not in get_type_hints(WeatherSource.report).values()
 
 
 def test_weather_is_metric_timezone_aware_and_bounded():

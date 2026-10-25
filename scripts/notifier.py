@@ -51,6 +51,8 @@ DRAWING = ROOT / "web" / "src" / "components" / "heinzel.ts"
 """Where Heinzelmännchen is drawn, as shapes the web app also draws its avatars from."""
 ARTWORK = SOURCES / "heinzel.svg"
 """One Heinzelmännchen, the default one (grown, cropped to the bust): what the icons show below SWARM_FROM pixels."""
+DANCE = ROOT / "web" / "public" / "loading-dance.svg"
+"""The four dancing in a ring while hz starts."""
 SWARM = SOURCES / "heinzel-swarm.svg"
 """A busy swarm of them, the product's logo: what the icons show from SWARM_FROM pixels on."""
 SWARM_FROM = 48
@@ -143,8 +145,9 @@ def artwork_for(pixels: int) -> Path:
 DRAW = (
     "const m = await import(process.argv[1]); const fs = await import('node:fs');"
     " fs.writeFileSync(process.argv[2], m.heinzelSvg()); fs.writeFileSync(process.argv[3], m.heinzelSwarmSvg());"
+    " fs.writeFileSync(process.argv[4], m.heinzelDanceSvg());"
 )
-"""Writes heinzel.svg and heinzel-swarm.svg from the drawing (node runs TypeScript without imports as it is)."""
+"""Writes heinzel.svg, heinzel-swarm.svg and loading-dance.svg from the drawing (node runs TypeScript as it is)."""
 
 
 def draw() -> None:
@@ -157,7 +160,7 @@ def draw() -> None:
     if node is None:
         msg = "node not found: make setup installs what the web app needs"
         raise SystemExit(msg)
-    _run(node, "--input-type=module", "-e", DRAW, DRAWING.as_uri(), str(ARTWORK), str(SWARM))
+    _run(node, "--input-type=module", "-e", DRAW, DRAWING.as_uri(), str(ARTWORK), str(SWARM), str(DANCE))
 
 
 def icons() -> None:

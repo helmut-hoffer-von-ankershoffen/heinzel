@@ -24,6 +24,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `github`: (expert) Read pull requests and issues...
 * `google`: (expert) Read Google Docs, Sheets, Drive,...
 * `graph`: Show your team&#x27;s promises: who keeps which...
+* `heinzel`: Your Heinzelmännchen: durable agents that...
 * `join`: Join a team from its invite line: finds...
 * `openmeteo`: (expert) Weather from Open-Meteo, with no...
 * `org`: Your profile, and the team, org and...
@@ -33,7 +34,6 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `team`: Your team&#x27;s repository: create one (`hz...
 * `ui`: Open the web app in your browser, served...
 * `weather`: Show the weather now and the next days at...
-* `workflow`: Workflow contracts: Markdown files an...
 * `zoom`: (expert) Read meetings from Zoom&#x27;s...
 
 ## `hz ai`
@@ -447,6 +447,243 @@ $ hz graph [OPTIONS]
 * `--heinzel <str>`: Only this Heinzelmännchen and what it reads and writes, by its id; with --artifact, both.
 * `--state <on_time|waiting_for_approval|late|fell_back|offline>`: Only nodes in this state: on_time, waiting_for_approval, late, fell_back or offline.
 * `--at ISO-8601`: The graph as of this time, ISO 8601 with offset; now by default.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz heinzel`
+
+Your Heinzelmännchen: durable agents that keep your team&#x27;s documents true.
+
+**Usage**:
+
+```console
+$ hz heinzel [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `check`: (expert) Check contracts and list every...
+* `discover`: (expert) Find candidates for each...
+* `drafts`: List the drafts runs saved locally, newest...
+* `graph`: (expert) Show the workflow your contracts...
+* `list`: List your Heinzelmännchen, one per...
+* `new`: Write a starter contract, or a playbook&#x27;s...
+* `playbooks`: (expert) List the playbooks plugins...
+* `prune`: (expert) Delete drafts and records older...
+* `sent`: (expert) Record how much of a draft you...
+* `show`: Show a contract as the daemon runs it:...
+* `wake`: Wake a Heinzelmännchen now: fetch its...
+
+### `hz heinzel check`
+
+(expert) Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
+
+**Usage**:
+
+```console
+$ hz heinzel check [OPTIONS]
+```
+
+**Options**:
+
+* `--path <path>`: A contract file, or a directory searched for *.prose.md; every contract found if none.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel discover`
+
+(expert) Find candidates for each playbook&#x27;s asset types through the capabilities you have bound; reads only.
+
+**Usage**:
+
+```console
+$ hz heinzel discover [OPTIONS]
+```
+
+**Options**:
+
+* `--playbook <str>`: Only this module&#x27;s playbook; every playbook&#x27;s if omitted.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel drafts`
+
+List the drafts runs saved locally, newest first, with their paths and records, or show the newest.
+
+**Usage**:
+
+```console
+$ hz heinzel drafts [OPTIONS]
+```
+
+**Options**:
+
+* `--name <str>`: Only this contract&#x27;s drafts; every contract&#x27;s if omitted.
+* `--latest / --no-latest`: Print the newest draft instead of the list.  [default: no-latest]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel graph`
+
+(expert) Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
+
+**Usage**:
+
+```console
+$ hz heinzel graph [OPTIONS]
+```
+
+**Options**:
+
+* `--mermaid / --no-mermaid`: Print only the Mermaid flowchart, to paste into a document or a pull request.  [default: no-mermaid]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel list`
+
+List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.
+
+**Usage**:
+
+```console
+$ hz heinzel list [OPTIONS]
+```
+
+**Options**:
+
+* `--state <scheduled|manual|blocked|broken>`: Only Heinzelmännchen in this state: scheduled, manual, blocked, broken.
+* `--contract <str>`: Only contracts whose name or `&lt;namespace&gt;:&lt;name&gt;` contains this, e.g. `team:` or `weekly`.
+* `--artifact <str>`: Only those that maintain or read this artifact, e.g. `contract:team/weekly-report#report`.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel new`
+
+Write a starter contract, or a playbook&#x27;s template (--template), into your workflows directory.
+
+**Usage**:
+
+```console
+$ hz heinzel new [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The contract&#x27;s name: lowercase words joined by dashes, e.g. weekly-digest.  [required]
+
+**Options**:
+
+* `--team / --no-team`: Write it into the team repository&#x27;s workflows/ instead of your own directory.  [default: no-team]
+* `--template <str>`: Start from a playbook&#x27;s template contract, `&lt;module&gt;:&lt;name&gt;` (`hz heinzel playbooks` lists them), instead of the blank starter.
+* `--asset <str>`: Fill a template&#x27;s asset placeholder as type=reference, e.g. weekly-report=doc-123 (`hz heinzel discover` finds candidates); repeat for each.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel playbooks`
+
+(expert) List the playbooks plugins contribute: asset types, template contracts and recommended settings.
+
+**Usage**:
+
+```console
+$ hz heinzel playbooks [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel prune`
+
+(expert) Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
+
+**Usage**:
+
+```console
+$ hz heinzel prune [OPTIONS]
+```
+
+**Options**:
+
+* `--dry-run / --no-dry-run`: Only list what would be deleted; delete nothing.  [default: no-dry-run]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel sent`
+
+(expert) Record how much of a draft you changed before sending it; `hz heinzel show` reports it.
+
+**Usage**:
+
+```console
+$ hz heinzel sent [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
+
+**Options**:
+
+* `--file <path>`: What you finally sent, saved as a text or Markdown file; or give --ref.
+* `--ref <str>`: The document the approved version lives in, read through the documents capability.
+* `--draft <path>`: The draft it was edited from; the contract&#x27;s newest draft if omitted.
+* `--edit-minutes <float>`: Your own estimate of the minutes you spent editing; optional.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel show`
+
+Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
+
+**Usage**:
+
+```console
+$ hz heinzel show [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel wake`
+
+Wake a Heinzelmännchen now: fetch its inputs, run the agent, save the draft; nothing is published.
+
+**Usage**:
+
+```console
+$ hz heinzel wake [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
+
+**Options**:
+
+* `--dry-run / --no-dry-run`: Only fetch the inputs and show the packet; run no agent.  [default: no-dry-run]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -1985,6 +2222,7 @@ $ hz system theme [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `list`: (expert) List the themes of the web app,...
+* `signals`: (expert) Show the signals themes follow...
 * `use`: (expert) Use a theme in the web app:...
 
 #### `hz system theme list`
@@ -1995,6 +2233,22 @@ $ hz system theme [OPTIONS] COMMAND [ARGS]...
 
 ```console
 $ hz system theme list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system theme signals`
+
+(expert) Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
+
+**Usage**:
+
+```console
+$ hz system theme signals [OPTIONS]
 ```
 
 **Options**:
@@ -2090,7 +2344,7 @@ $ hz team add [OPTIONS] {handle}
 
 ### `hz team adopt`
 
-(expert) Make an existing checkout your team repository; replaces the deprecated `workflow.team_repository`.
+(expert) Make an existing checkout your team repository; replaces the deprecated `heinzel.team_repository`.
 
 **Usage**:
 
@@ -2207,240 +2461,6 @@ $ hz weather [OPTIONS]
 
 * `--location <str>`: A place such as &quot;Lisbon, PT&quot; or coordinates such as &quot;38.72,-9.14&quot;; your primary one if left out.
 * `--days <int>`: How many days of forecast, from today; the adapter may give fewer.  [default: 3]
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-## `hz workflow`
-
-Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon&#x27;s schedule (`hz workflow new` starts one).
-
-**Usage**:
-
-```console
-$ hz workflow [OPTIONS] COMMAND [ARGS]...
-```
-
-**Options**:
-
-* `--help`: Show this message and exit.
-
-**Commands**:
-
-* `check`: (expert) Check contracts and list every...
-* `discover`: (expert) Find candidates for each...
-* `drafts`: List the drafts runs saved locally, newest...
-* `graph`: (expert) Show the workflow your contracts...
-* `list`: List the contracts in your and your team&#x27;s...
-* `new`: Write a starter contract, or a playbook&#x27;s...
-* `playbooks`: (expert) List the playbooks plugins...
-* `prune`: (expert) Delete drafts and records older...
-* `run`: Render a contract now: fetch its inputs,...
-* `sent`: (expert) Record how much of a draft you...
-* `show`: Show a contract as the daemon runs it:...
-
-### `hz workflow check`
-
-(expert) Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
-
-**Usage**:
-
-```console
-$ hz workflow check [OPTIONS]
-```
-
-**Options**:
-
-* `--path <path>`: A contract file, or a directory searched for *.prose.md; every contract found if none.
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz workflow discover`
-
-(expert) Find candidates for each playbook&#x27;s asset types through the capabilities you have bound; reads only.
-
-**Usage**:
-
-```console
-$ hz workflow discover [OPTIONS]
-```
-
-**Options**:
-
-* `--playbook <str>`: Only this module&#x27;s playbook; every playbook&#x27;s if omitted.
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz workflow drafts`
-
-List the drafts runs saved locally, newest first, with their paths and records, or show the newest.
-
-**Usage**:
-
-```console
-$ hz workflow drafts [OPTIONS]
-```
-
-**Options**:
-
-* `--name <str>`: Only this contract&#x27;s drafts; every contract&#x27;s if omitted.
-* `--latest / --no-latest`: Print the newest draft instead of the list.  [default: no-latest]
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz workflow graph`
-
-(expert) Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
-
-**Usage**:
-
-```console
-$ hz workflow graph [OPTIONS]
-```
-
-**Options**:
-
-* `--mermaid / --no-mermaid`: Print only the Mermaid flowchart, to paste into a document or a pull request.  [default: no-mermaid]
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz workflow list`
-
-List the contracts in your and your team&#x27;s workflows directories, with their schedule and problems.
-
-**Usage**:
-
-```console
-$ hz workflow list [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz workflow new`
-
-Write a starter contract, or a playbook&#x27;s template (--template), into your workflows directory.
-
-**Usage**:
-
-```console
-$ hz workflow new [OPTIONS] {name}
-```
-
-**Arguments**:
-
-* `name`: The contract&#x27;s name: lowercase words joined by dashes, e.g. weekly-digest.  [required]
-
-**Options**:
-
-* `--team / --no-team`: Write it into the team repository&#x27;s workflows/ instead of your own directory.  [default: no-team]
-* `--template <str>`: Start from a playbook&#x27;s template contract, `&lt;module&gt;:&lt;name&gt;` (`hz workflow playbooks` lists them), instead of the blank starter.
-* `--asset <str>`: Fill a template&#x27;s asset placeholder as type=reference, e.g. weekly-report=doc-123 (`hz workflow discover` finds candidates); repeat for each.
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz workflow playbooks`
-
-(expert) List the playbooks plugins contribute: asset types, template contracts and recommended settings.
-
-**Usage**:
-
-```console
-$ hz workflow playbooks [OPTIONS]
-```
-
-**Options**:
-
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz workflow prune`
-
-(expert) Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
-
-**Usage**:
-
-```console
-$ hz workflow prune [OPTIONS]
-```
-
-**Options**:
-
-* `--dry-run / --no-dry-run`: Only list what would be deleted; delete nothing.  [default: no-dry-run]
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz workflow run`
-
-Render a contract now: fetch its inputs, run the agent and save the draft; nothing is published.
-
-**Usage**:
-
-```console
-$ hz workflow run [OPTIONS] {name}
-```
-
-**Arguments**:
-
-* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
-
-**Options**:
-
-* `--dry-run / --no-dry-run`: Only fetch the inputs and show the packet; run no agent.  [default: no-dry-run]
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz workflow sent`
-
-(expert) Record how much of a draft you changed before sending it; `hz workflow show` reports it.
-
-**Usage**:
-
-```console
-$ hz workflow sent [OPTIONS] {name}
-```
-
-**Arguments**:
-
-* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
-
-**Options**:
-
-* `--file <path>`: What you finally sent, saved as a text or Markdown file; or give --ref.
-* `--ref <str>`: The document the approved version lives in, read through the documents capability.
-* `--draft <path>`: The draft it was edited from; the contract&#x27;s newest draft if omitted.
-* `--edit-minutes <float>`: Your own estimate of the minutes you spent editing; optional.
-* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
-* `--json`: Shorthand for --format json, for scripts and agents.
-* `--help`: Show this message and exit.
-
-### `hz workflow show`
-
-Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
-
-**Usage**:
-
-```console
-$ hz workflow show [OPTIONS] {name}
-```
-
-**Arguments**:
-
-* `name`: The contract&#x27;s name, or `&lt;namespace&gt;:&lt;name&gt;` (`team:` or `me:`) when both have it.  [required]
-
-**Options**:
-
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

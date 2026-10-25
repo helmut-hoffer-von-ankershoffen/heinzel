@@ -10,7 +10,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Check, Module, Status, Weather
+from heinzel import Check, Module, Status, WeatherSource
 from heinzel.kernel import CapabilityView
 from heinzel.modules.weather._models import Outlook, OutlookDay, Units, WeatherSettings
 from heinzel.modules.weather._render import render_outlook
@@ -37,7 +37,9 @@ Days = Annotated[
 @module.operation(
     render=render_outlook, heads={"cli", "mcp", "web"}, requires=["weather:read"], optional=True, audience="everyday"
 )
-def weather(service: WeatherService, handle: Weather, location: Location = None, days: Days = DEFAULT_DAYS) -> Outlook:
+def weather(
+    service: WeatherService, handle: WeatherSource, location: Location = None, days: Days = DEFAULT_DAYS
+) -> Outlook:
     """Show the weather now and the next days at your primary location, or at a place you name.
 
     Raises:

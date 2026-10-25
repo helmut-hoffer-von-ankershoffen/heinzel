@@ -21,11 +21,14 @@ change like a library release: an ADR for a new concept, unit tests for every br
 - `_credentials.py` — `Credentials`, the only way to secrets (ADR 0030), and the environment backend.
 - `_lets.py` — let types, `Check`/`Status` and `CatchUp`. A new let kind needs a head, the kernel, a `system`
   submodule or the built-in module that owns the concept to consume it (`JobLet`: `system.daemon`; `PlaybookLet`:
-  `workflow`, ADR 0037; `ThemeLet`: `system.theme`, ADR 0044).
+  `workflow`, ADR 0037; `ThemeLet`: `system.theme`, ADR 0044; `SignalLet`: `system.theme`, ADR 0060).
 - `_themes.py` — `Theme`, `ThemeColours`, `ThemeFont`, `ThemeLogo` and `ThemeLet` (`module.theme`), the grammar every
   value passes before it becomes a CSS custom property, the checks of a theme's font files and SVG logos
   (`ThemeLogoFiles`), `ThemeFonts` (the web head serves fonts and logos through it, `system.theme` implements it),
-  `DEFAULT_THEME`, the built-in look, and `DEFAULT_LOGO`, its logo in `assets/theme/`: data plugins ship (ADR 0044).
+  `DEFAULT_THEME`, the built-in look, and `DEFAULT_LOGO`, its logo in `assets/theme/`: data plugins ship (ADR 0044);
+  `ThemeVariant`, `ThemeBackdrop` and the contrast check of every variant (ADR 0060). `_theme_signals.py` — the
+  closed signal vocabulary (`Daypart`, `Weather`), `ThemeSignals`, `SignalLet` (`@module.signals`, read by
+  `system.theme`) and `daypart`.
 - `_playbooks.py` — `PlaybookLet` (`module.playbook`), `AssetType`, `DiscoveryHint`, `ContractTemplate` and the
   `PlaybookSetup` service: data plugins contribute, consumed by `workflow` (ADR 0037).
 - `_layers.py` — `LayerLet` (`module.layer`), the checked tree `Layers` (`Kernel.layers()`), the person's

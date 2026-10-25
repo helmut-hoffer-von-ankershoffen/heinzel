@@ -88,6 +88,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
+         * @description Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
+         */
+        get: operations["heinzel_check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find candidates for each playbook's asset types through the capabilities you have bound; reads only.
+         * @description Find candidates for each playbook's asset types through the capabilities you have bound; reads only.
+         */
+        get: operations["heinzel_discover"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
+         * @description Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
+         */
+        get: operations["heinzel_graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.
+         * @description List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.
+         */
+        get: operations["heinzel_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/playbooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the playbooks plugins contribute: asset types, template contracts and recommended settings.
+         * @description List the playbooks plugins contribute: asset types, template contracts and recommended settings.
+         */
+        get: operations["heinzel_playbooks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
+         * @description Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
+         */
+        get: operations["heinzel_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org/agenda": {
         parameters: {
             query?: never;
@@ -1160,6 +1280,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/theme/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
+         * @description Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
+         */
+        get: operations["system_theme_signals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/theme/use": {
         parameters: {
             query?: never;
@@ -1248,126 +1388,6 @@ export interface paths {
          *             fails.
          */
         get: operations["weather"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
-         * @description Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
-         */
-        get: operations["workflow_check"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/discover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Find candidates for each playbook's asset types through the capabilities you have bound; reads only.
-         * @description Find candidates for each playbook's asset types through the capabilities you have bound; reads only.
-         */
-        get: operations["workflow_discover"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/graph": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
-         * @description Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
-         */
-        get: operations["workflow_graph"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the contracts in your and your team's workflows directories, with their schedule and problems.
-         * @description List the contracts in your and your team's workflows directories, with their schedule and problems.
-         */
-        get: operations["workflow_list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/playbooks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the playbooks plugins contribute: asset types, template contracts and recommended settings.
-         * @description List the playbooks plugins contribute: asset types, template contracts and recommended settings.
-         */
-        get: operations["workflow_playbooks"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/show": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
-         * @description Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
-         */
-        get: operations["workflow_show"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1718,7 +1738,7 @@ export interface components {
             description: string;
             /**
              * Hints
-             * @description Where `hz workflow discover` looks for candidates.
+             * @description Where `hz heinzel discover` looks for candidates.
              */
             hints: components["schemas"]["HintView"][];
             /**
@@ -2305,7 +2325,7 @@ export interface components {
         };
         /**
          * CheckReport
-         * @description `hz workflow check`: every contract checked and every problem found.
+         * @description `hz heinzel check`: every contract checked and every problem found.
          */
         CheckReport: {
             /**
@@ -2326,7 +2346,7 @@ export interface components {
         };
         /**
          * CompiledContract
-         * @description `hz workflow show`: a contract as the daemon runs it.
+         * @description `hz heinzel show`: a contract as the daemon runs it.
          */
         CompiledContract: {
             /**
@@ -2378,7 +2398,7 @@ export interface components {
              * @description Most a manual run may cost: the lower of your cap and the contract's.
              */
             max_usd: number | null;
-            /** @description Its success test: how long drafting took, and how much was changed before sending (`hz workflow sent`); none without drafts. */
+            /** @description Its success test: how long drafting took, and how much was changed before sending (`hz heinzel sent`); none without drafts. */
             measurements?: components["schemas"]["Measurements"] | null;
             /**
              * Name
@@ -2430,7 +2450,7 @@ export interface components {
             scheduled: boolean;
             /**
              * Sha256
-             * @description SHA-256 of the file; `[workflow] schedule_team` can pin it.
+             * @description SHA-256 of the file; `[heinzel] schedule_team` can pin it.
              */
             sha256: string;
             /**
@@ -2721,7 +2741,7 @@ export interface components {
         };
         /**
          * ContractGraph
-         * @description `hz workflow graph`: contracts linked by what they read and maintain; the workflow nobody writes down.
+         * @description `hz heinzel graph`: contracts linked by what they read and maintain; the workflow nobody writes down.
          */
         ContractGraph: {
             /**
@@ -2754,80 +2774,6 @@ export interface components {
              * @description Inputs that read an output no contract maintains.
              */
             unmaintained: components["schemas"]["Unmaintained"][];
-        };
-        /**
-         * ContractList
-         * @description `hz workflow list`: the directories searched and every contract found in them.
-         */
-        ContractList: {
-            /**
-             * Contracts
-             * @description Every contract found, team ones first.
-             */
-            contracts: components["schemas"]["ContractSummary"][];
-            /**
-             * Directories
-             * @description Where contracts are read from, team first.
-             */
-            directories: components["schemas"]["Directory"][];
-            /**
-             * Next
-             * @description What to do next, as commands.
-             */
-            next: components["schemas"]["Step"][];
-        };
-        /**
-         * ContractSummary
-         * @description One contract in `hz workflow list`.
-         */
-        ContractSummary: {
-            /**
-             * Errors
-             * @description How many errors it has.
-             */
-            errors: number;
-            /**
-             * File
-             * Format: path
-             * @description The contract file.
-             */
-            file: string;
-            /**
-             * Name
-             * @description The contract's name.
-             */
-            name: string;
-            /**
-             * Namespace
-             * @description Where it was found: `me` (your directory) or `team`.
-             * @enum {string}
-             */
-            namespace: "me" | "team" | "path";
-            /**
-             * Schedule
-             * @description Its cron expression; none if it runs only by hand.
-             */
-            schedule: string | null;
-            /**
-             * Scheduled
-             * @description Whether your daemon runs it on its schedule.
-             */
-            scheduled: boolean;
-            /**
-             * Title
-             * @description Its display name; none if it doesn't parse.
-             */
-            title: string | null;
-            /**
-             * Valid
-             * @description Whether it has no errors, so it is compiled.
-             */
-            valid: boolean;
-            /**
-             * Warnings
-             * @description How many warnings it has.
-             */
-            warnings: number;
         };
         /**
          * CredentialInfo
@@ -3002,7 +2948,7 @@ export interface components {
         Directory: {
             /**
              * Exists
-             * @description Whether it exists; `hz workflow new` creates it.
+             * @description Whether it exists; `hz heinzel new` creates it.
              */
             exists: boolean;
             /**
@@ -3020,7 +2966,7 @@ export interface components {
         };
         /**
          * Discovery
-         * @description `hz workflow discover`: candidates for each asset type, found through capabilities you can read.
+         * @description `hz heinzel discover`: candidates for each asset type, found through capabilities you can read.
          */
         Discovery: {
             /**
@@ -3364,6 +3310,112 @@ export interface components {
             status: components["schemas"]["Status"];
         };
         /**
+         * HeinzelList
+         * @description `hz heinzel list`: the directories searched and one Heinzelmännchen per contract found in them.
+         */
+        HeinzelList: {
+            /**
+             * Directories
+             * @description Where contracts are read from, team first.
+             */
+            directories: components["schemas"]["Directory"][];
+            /**
+             * Filtered
+             * @description Whether a filter left some out.
+             * @default false
+             */
+            filtered: boolean;
+            /**
+             * Heinzelmaennchen
+             * @description Every Heinzelmännchen the filters keep, team first.
+             */
+            heinzelmaennchen: components["schemas"]["HeinzelSummary"][];
+            /**
+             * Next
+             * @description What to do next, as commands.
+             */
+            next: components["schemas"]["Step"][];
+        };
+        /**
+         * HeinzelSummary
+         * @description One Heinzelmännchen in `hz heinzel list`: a contract you have, with its state and its runs.
+         */
+        HeinzelSummary: {
+            /**
+             * Drafts
+             * @description How many drafts it has kept.
+             */
+            drafts: number;
+            /**
+             * Errors
+             * @description How many errors it has.
+             */
+            errors: number;
+            /**
+             * File
+             * Format: path
+             * @description The contract file.
+             */
+            file: string;
+            /**
+             * Last Run
+             * @description When its newest draft was rendered; none if it never ran.
+             */
+            last_run: string | null;
+            /**
+             * Name
+             * @description The contract's name.
+             */
+            name: string;
+            /**
+             * Namespace
+             * @description Where it was found: `me` (your directory) or `team`.
+             * @enum {string}
+             */
+            namespace: "me" | "team" | "path";
+            /**
+             * Next Run
+             * @description When your daemon runs it next, in local time; none unless scheduled.
+             */
+            next_run: string | null;
+            /**
+             * Schedule
+             * @description Its cron expression; none if it runs only by hand.
+             */
+            schedule: string | null;
+            /**
+             * Scheduled
+             * @description Whether your daemon runs it on its schedule.
+             */
+            scheduled: boolean;
+            /**
+             * State
+             * @description `scheduled` (your daemon runs it), `manual` (it runs when you wake it), `blocked` (a capability it reads isn't served) or `broken` (its contract has errors).
+             * @enum {string}
+             */
+            state: "scheduled" | "manual" | "blocked" | "broken";
+            /**
+             * Title
+             * @description Its display name; none if it doesn't parse.
+             */
+            title: string | null;
+            /**
+             * Unmet
+             * @description Requirements no bound adapter serves; why it is blocked.
+             */
+            unmet: string[];
+            /**
+             * Valid
+             * @description Whether it has no errors, so it is compiled.
+             */
+            valid: boolean;
+            /**
+             * Warnings
+             * @description How many warnings it has.
+             */
+            warnings: number;
+        };
+        /**
          * HintProblem
          * @description A hint that couldn't run, and what to do about it.
          */
@@ -3391,7 +3443,7 @@ export interface components {
         };
         /**
          * HintView
-         * @description A discovery hint as `hz workflow playbooks` shows it.
+         * @description A discovery hint as `hz heinzel playbooks` shows it.
          */
         HintView: {
             /**
@@ -4134,7 +4186,7 @@ export interface components {
         };
         /**
          * PlaybookList
-         * @description `hz workflow playbooks`: every playbook the installed modules contribute.
+         * @description `hz heinzel playbooks`: every playbook the installed modules contribute.
          */
         PlaybookList: {
             /**
@@ -5052,6 +5104,38 @@ export interface components {
             pops_up: boolean;
         };
         /**
+         * ThemeBackdrop
+         * @description A gradient behind the main area (`[light.backdrop]`), of hex colours and the theme's own colour tokens.
+         *
+         *     The web app builds the CSS from these typed parts: a kind, an angle in degrees and two to four stops, each a hex
+         *     colour or a token name it turns into `var(--color-<token>)`; no other text reaches CSS, and no `url()` exists.
+         */
+        ThemeBackdrop: {
+            /**
+             * Angle
+             * @description The direction of a linear gradient in degrees, e.g. `180`.
+             * @default 180
+             */
+            angle: number;
+            /**
+             * Gradient
+             * @description `linear` (along `angle`) or `radial` (from the centre).
+             * @enum {string}
+             */
+            gradient: "linear" | "radial";
+            /**
+             * Opacity
+             * @description How strongly it shows over `background`, 0 to 0.9, e.g. `0.6`.
+             * @default 0.6
+             */
+            opacity: number;
+            /**
+             * Stops
+             * @description Two to four colours: hex, e.g. `#fde68a`, or a token of the theme, e.g. `primary`.
+             */
+            stops: string[];
+        };
+        /**
          * ThemeColours
          * @description The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes).
          */
@@ -5066,6 +5150,8 @@ export interface components {
              * @description Text and icons of the active navigation item and of links; `foreground` when not given.
              */
             accent_foreground: string;
+            /** @description A gradient behind the main area only; sidebar and cards stay solid. */
+            backdrop?: components["schemas"]["ThemeBackdrop"] | null;
             /**
              * Background
              * @description A hex colour, `#rgb` or `#rrggbb`.
@@ -5241,6 +5327,163 @@ export interface components {
             mark: string | null;
         };
         /**
+         * ThemeOverrides
+         * @description What a variant changes in one mode: any colour token, the main tint and the backdrop; the rest stays.
+         */
+        ThemeOverrides: {
+            /**
+             * Accent
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            accent?: string | null;
+            /**
+             * Accent Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            accent_foreground?: string | null;
+            /** @description A backdrop that replaces the base's. */
+            backdrop?: components["schemas"]["ThemeBackdrop"] | null;
+            /**
+             * Background
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            background?: string | null;
+            /**
+             * Bad
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            bad?: string | null;
+            /**
+             * Border
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            border?: string | null;
+            /**
+             * Card
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            card?: string | null;
+            /**
+             * Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            foreground?: string | null;
+            /**
+             * Icon
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            icon?: string | null;
+            /**
+             * Input
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            input?: string | null;
+            /**
+             * Main Tint
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            main_tint?: string | null;
+            /**
+             * Muted
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            muted?: string | null;
+            /**
+             * Muted Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            muted_foreground?: string | null;
+            /**
+             * Ok
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            ok?: string | null;
+            /**
+             * Popover
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            popover?: string | null;
+            /**
+             * Primary
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            primary?: string | null;
+            /**
+             * Primary Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            primary_foreground?: string | null;
+            /**
+             * Ring
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            ring?: string | null;
+            /**
+             * Sidebar
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            sidebar?: string | null;
+            /**
+             * Warn
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            warn?: string | null;
+        };
+        /**
+         * ThemeSignalsView
+         * @description The signals now, which pick a theme's variant (ADR 0060).
+         */
+        ThemeSignalsView: {
+            /**
+             * Daypart
+             * @description The time of day in your time zone, e.g. `evening`.
+             * @enum {string}
+             */
+            daypart: "dawn" | "morning" | "day" | "dusk" | "evening" | "night";
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Sources
+             * @description The modules whose signals are known now.
+             */
+            sources: string[];
+            /**
+             * Sunrise
+             * @description Today's sunrise, when a module knows it.
+             */
+            sunrise: string | null;
+            /**
+             * Sunset
+             * @description Today's sunset, when a module knows it.
+             */
+            sunset: string | null;
+            /**
+             * Timezone
+             * @description The time zone the daypart is in, `[org] timezone` or this machine's.
+             */
+            timezone: string;
+            /**
+             * Weather
+             * @description The weather now, e.g. `rain`; none when no module publishes it.
+             */
+            weather: ("clear" | "clouds" | "rain" | "drizzle" | "thunder" | "snow" | "fog" | "wind" | "heat" | "cold") | null;
+        };
+        /**
+         * ThemeVariant
+         * @description A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0060).
+         */
+        ThemeVariant: {
+            /** @description What changes in dark mode. */
+            dark?: components["schemas"]["ThemeOverrides"] | null;
+            /** @description What changes in light mode. */
+            light?: components["schemas"]["ThemeOverrides"] | null;
+            /** @description The signals it follows, e.g. `{ daypart = "night" }`. */
+            when: components["schemas"]["ThemeWhen"];
+        };
+        /**
          * ThemeView
          * @description One available theme with every token value, ready to become the web app's CSS custom properties.
          */
@@ -5346,6 +5589,32 @@ export interface components {
              * @description What people pick it by, e.g. `Acme`.
              */
             title: string;
+            /**
+             * Variant
+             * @description Colours that apply when the signals match (ADR 0060); the one naming most signals wins.
+             */
+            variant?: components["schemas"]["ThemeVariant"][];
+        };
+        /**
+         * ThemeWhen
+         * @description When a variant applies, e.g. `when = { daypart = "night", weather = ["rain", "drizzle"] }`.
+         *
+         *     Every signal it names has one of its values. Signals are a closed vocabulary (ADR 0060), so a misspelt one is
+         *     refused at import.
+         */
+        ThemeWhen: {
+            /**
+             * Daypart
+             * @description Any of these dayparts, e.g. `night`.
+             * @default []
+             */
+            daypart: ("dawn" | "morning" | "day" | "dusk" | "evening" | "night")[];
+            /**
+             * Weather
+             * @description Any of these, e.g. `rain`.
+             * @default []
+             */
+            weather: ("clear" | "clouds" | "rain" | "drizzle" | "thunder" | "snow" | "fog" | "wind" | "heat" | "cold")[];
         };
         /**
          * Toggled
@@ -5596,8 +5865,6 @@ export type SchemaConnectorCapability = components['schemas']['ConnectorCapabili
 export type SchemaConnectorReport = components['schemas']['ConnectorReport'];
 export type SchemaConnectorTest = components['schemas']['ConnectorTest'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
-export type SchemaContractList = components['schemas']['ContractList'];
-export type SchemaContractSummary = components['schemas']['ContractSummary'];
 export type SchemaCredentialInfo = components['schemas']['CredentialInfo'];
 export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
 export type SchemaDefaultView = components['schemas']['DefaultView'];
@@ -5618,6 +5885,8 @@ export type SchemaGraphMetadata = components['schemas']['GraphMetadata'];
 export type SchemaGraphNode = components['schemas']['GraphNode'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthReport = components['schemas']['HealthReport'];
+export type SchemaHeinzelList = components['schemas']['HeinzelList'];
+export type SchemaHeinzelSummary = components['schemas']['HeinzelSummary'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
 export type SchemaHintView = components['schemas']['HintView'];
 export type SchemaInstalledSkill = components['schemas']['InstalledSkill'];
@@ -5668,11 +5937,16 @@ export type SchemaTeamGraphDocument = components['schemas']['TeamGraphDocument']
 export type SchemaTeamShow = components['schemas']['TeamShow'];
 export type SchemaTemplateView = components['schemas']['TemplateView'];
 export type SchemaTested = components['schemas']['Tested'];
+export type SchemaThemeBackdrop = components['schemas']['ThemeBackdrop'];
 export type SchemaThemeColours = components['schemas']['ThemeColours'];
 export type SchemaThemeFontView = components['schemas']['ThemeFontView'];
 export type SchemaThemeList = components['schemas']['ThemeList'];
 export type SchemaThemeLogoView = components['schemas']['ThemeLogoView'];
+export type SchemaThemeOverrides = components['schemas']['ThemeOverrides'];
+export type SchemaThemeSignalsView = components['schemas']['ThemeSignalsView'];
+export type SchemaThemeVariant = components['schemas']['ThemeVariant'];
 export type SchemaThemeView = components['schemas']['ThemeView'];
+export type SchemaThemeWhen = components['schemas']['ThemeWhen'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
@@ -5793,6 +6067,199 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamGraphDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_check: {
+        parameters: {
+            query?: {
+                /** @description A contract file, or a directory searched for *.prose.md; every contract found if none. */
+                path?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The result, when its exit code is non-zero. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckReport"];
+                };
+            };
+        };
+    };
+    heinzel_discover: {
+        parameters: {
+            query?: {
+                /** @description Only this module's playbook; every playbook's if omitted. */
+                playbook?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Discovery"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_graph: {
+        parameters: {
+            query?: {
+                /** @description Print only the Mermaid flowchart, to paste into a document or a pull request. */
+                mermaid?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractGraph"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_list: {
+        parameters: {
+            query?: {
+                /** @description Only Heinzelmännchen in this state: scheduled, manual, blocked, broken. */
+                state?: ("scheduled" | "manual" | "blocked" | "broken") | null;
+                /** @description Only contracts whose name or `<namespace>:<name>` contains this, e.g. `team:` or `weekly`. */
+                contract?: string | null;
+                /** @description Only those that maintain or read this artifact, e.g. `contract:team/weekly-report#report`. */
+                artifact?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeinzelList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_playbooks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaybookList"];
+                };
+            };
+        };
+    };
+    heinzel_show: {
+        parameters: {
+            query: {
+                /** @description The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompiledContract"];
                 };
             };
             /** @description Validation Error */
@@ -7156,6 +7623,26 @@ export interface operations {
             };
         };
     };
+    system_theme_signals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemeSignalsView"];
+                };
+            };
+        };
+    };
     system_theme_use: {
         parameters: {
             query: {
@@ -7263,183 +7750,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Outlook"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    workflow_check: {
-        parameters: {
-            query?: {
-                /** @description A contract file, or a directory searched for *.prose.md; every contract found if none. */
-                path?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CheckReport"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description The result, when its exit code is non-zero. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CheckReport"];
-                };
-            };
-        };
-    };
-    workflow_discover: {
-        parameters: {
-            query?: {
-                /** @description Only this module's playbook; every playbook's if omitted. */
-                playbook?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Discovery"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    workflow_graph: {
-        parameters: {
-            query?: {
-                /** @description Print only the Mermaid flowchart, to paste into a document or a pull request. */
-                mermaid?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ContractGraph"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    workflow_list: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ContractList"];
-                };
-            };
-        };
-    };
-    workflow_playbooks: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PlaybookList"];
-                };
-            };
-        };
-    };
-    workflow_show: {
-        parameters: {
-            query: {
-                /** @description The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it. */
-                name: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CompiledContract"];
                 };
             };
             /** @description Validation Error */

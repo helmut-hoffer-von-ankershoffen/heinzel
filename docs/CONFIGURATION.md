@@ -93,6 +93,16 @@ Plugins add their own tables.
 | `offline_after` | `HZ_GRAPH__OFFLINE_AFTER` | `'2d'` | How long a Heinzelmännchen may be silent (no entry, not even a heartbeat) before it shows as offline, e.g. 36h. |
 | `weeks` | `HZ_GRAPH__WEEKS` | `4` | How many weeks of kept promises the graph counts. |
 
+## `[heinzel]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `user_dir` | `HZ_HEINZEL__USER_DIR` | platform-specific | Your own contracts, `<name>.prose.md`; they run on your daemon when they have a schedule. |
+| `team_repository` | `HZ_HEINZEL__TEAM_REPOSITORY` | `None` | Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`. |
+| `schedule_team` | `HZ_HEINZEL__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name, or `name@sha256:<hex>` to run only the content you approved (`hz heinzel show` prints it); the others run only by hand, so a team's contracts don't run on every member's daemon. |
+| `max_usd` | `HZ_HEINZEL__MAX_USD` | `1.0` | Most one render may cost in US dollars, whatever a contract asks for: scheduled and manual runs, in every head. A scheduled slot's retries share it. |
+| `retention_days` | `HZ_HEINZEL__RETENTION_DAYS` | `90` | Days drafts and their `.record.json` files (the packet with the fetched inputs) are kept, counted from the render; older ones are deleted by the daemon's daily `heinzel:prune` job or by `hz heinzel prune`, never by reading them. 0 keeps them forever, at most 36500. Receipts are kept and hold the draft's hash, not its text (ADR 0021). |
+
 ## `[org]`
 
 | Key | Environment variable | Default | Description |
@@ -211,16 +221,6 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `locations` | `HZ_WEATHER__LOCATIONS` | `[]` | Where you want the weather for, yours first (the primary one): a place such as "Berlin, DE" or coordinates such as "52.52,13.405". |
 | `units` | `HZ_WEATHER__UNITS` | `None` | metric (°C, km/h) or imperial (°F, mph); unset: imperial where your locale is the US, Liberia or Myanmar, metric everywhere else. |
-
-## `[workflow]`
-
-| Key | Environment variable | Default | Description |
-| --- | --- | --- | --- |
-| `user_dir` | `HZ_WORKFLOW__USER_DIR` | platform-specific | Your own contracts, `<name>.prose.md`; they run on your daemon when they have a schedule. |
-| `team_repository` | `HZ_WORKFLOW__TEAM_REPOSITORY` | `None` | Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`. |
-| `schedule_team` | `HZ_WORKFLOW__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name, or `name@sha256:<hex>` to run only the content you approved (`hz workflow show` prints it); the others run only by hand, so a team's contracts don't run on every member's daemon. |
-| `max_usd` | `HZ_WORKFLOW__MAX_USD` | `1.0` | Most one render may cost in US dollars, whatever a contract asks for: scheduled and manual runs, in every head. A scheduled slot's retries share it. |
-| `retention_days` | `HZ_WORKFLOW__RETENTION_DAYS` | `90` | Days drafts and their `.record.json` files (the packet with the fetched inputs) are kept, counted from the render; older ones are deleted by the daemon's daily `workflow:prune` job or by `hz workflow prune`, never by reading them. 0 keeps them forever, at most 36500. Receipts are kept and hold the draft's hash, not its text (ADR 0021). |
 
 ## `[zoom]`
 

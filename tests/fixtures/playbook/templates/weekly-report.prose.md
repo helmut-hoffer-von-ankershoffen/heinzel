@@ -12,14 +12,14 @@ hz:
   schema: 1
   title: Team weekly report
   # Friday 17:00 in your time zone (five cron fields in local time). Uncomment once a
-  # manual run (`hz workflow run <name>`) reads right; until then it runs only by hand.
+  # manual run (`hz heinzel wake <name>`) reads right; until then it runs only by hand.
   # schedule: "0 17 * * FRI"
   # Capabilities, never vendors: configuration binds an adapter to each, e.g.
   #   hz system config set capabilities.code_host github
   #   hz system config set capabilities.tracker atlassian   (or github, if issues live there)
   #   hz system config set capabilities.documents <the adapter that reads your documents>
   requires: [code-host:read, tracker:read, documents:read]
-  # Each {{asset:...}} is filled by `hz workflow new --asset <type>=<ref>` or `hz workflow setup`.
+  # Each {{asset:...}} is filled by `hz heinzel new --asset <type>=<ref>` or `hz heinzel setup`.
   inputs:
     merged:
       read: code-host.merged_pull_requests
@@ -38,7 +38,7 @@ hz:
   outputs:
     report: {format: markdown}
   agent:
-    # The most one run may cost; your `[workflow] max_usd` caps it whatever it says.
+    # The most one run may cost; your `[heinzel] max_usd` caps it whatever it says.
     max_usd: 1.0
   timeout: 15m
   # A Friday missed while the machine slept is drafted at the next tick.
@@ -48,9 +48,9 @@ hz:
 # Team weekly report
 
 <!-- HTML comments are notes for authors; the agent never sees them. The draft is saved
-     locally (`hz workflow drafts --name <name> --latest`); you edit it and send it
-     yourself. Afterwards `hz workflow sent <name> --file <what you sent>` records how much
-     you changed, and `hz workflow show <name>` shows it next to how long drafting took. -->
+     locally (`hz heinzel drafts --name <name> --latest`); you edit it and send it
+     yourself. Afterwards `hz heinzel sent <name> --file <what you sent>` records how much
+     you changed, and `hz heinzel show <name>` shows it next to how long drafting took. -->
 
 ### Goal
 

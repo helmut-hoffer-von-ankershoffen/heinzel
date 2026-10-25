@@ -64,6 +64,7 @@ def test_leaves_handles_and_hosts_without_a_domain(text):
     assert redact_emails(text) == text
 
 
+@pytest.mark.perf
 def test_a_long_text_without_addresses_takes_linear_time():
     started = time.perf_counter()
     assert redact_emails("x" * 50_000 + "@" + "y" * 50_000) == "x" * 50_000 + "@" + "y" * 50_000
