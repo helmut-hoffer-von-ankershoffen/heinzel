@@ -61,15 +61,13 @@ afterEach(() => {
 });
 
 describe("the mini-player docked in the sidebar", () => {
-  it("sits in the column's flow between the clock line and the account row, as wide as the column", async () => {
+  it("is laid over the dock slot between the clock line and the account row, as wide as the column", async () => {
     api();
     const { card } = await play();
     const nav = screen.getAllByRole("navigation", { name: "Main" })[0] as HTMLElement;
-    expect(dockSlot().contains(card)).toBe(true);
+    expect(card.parentElement).toBe(document.body); // never moved in the DOM, so its iframe never reloads
     expect(card).toHaveAttribute("data-dock", "docked");
-    expect(card.className).toContain("w-full");
-    expect(card.className).not.toContain("fixed");
-    expect(card.className).not.toContain("absolute");
+    expect(card.style.width).toBe("0px"); // the slot's width (jsdom has no layout)
     expect(dockSlot().className).toContain("-mx-2"); // the full width of the column, past its padding
     const precedes = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     expect(precedes(nav, dockSlot())).toBe(true);
@@ -88,8 +86,32 @@ describe("the mini-player docked in the sidebar", () => {
     expect(floating.parentElement).toBe(document.body);
     expect(JSON.parse(localStorage.getItem("hz.sound.player") ?? "{}").docked).toBe(false);
     await user.click(within(floating).getByRole("button", { name: "Dock the player in the sidebar" }));
-    expect(dockSlot().contains(await player())).toBe(true);
+    expect(await player()).toHaveAttribute("data-dock", "docked");
     expect(JSON.parse(localStorage.getItem("hz.sound.player") ?? "{}").docked).toBe(true);
+  });
+
+  it("keeps playing: the very same frame stays mounted when it docks and undocks", async () => {
+    api();
+    const { user, card } = await play();
+    const frame = within(card).getByTitle("Claude FM player") as HTMLIFrameElement;
+    const mounted = vi.fn();
+    const watch = new MutationObserver((records) => {
+      for (const record of records) for (const node of record.removedNodes) if (node.contains(frame)) mounted();
+    });
+    watch.observe(document.body, { childList: true, subtree: true });
+    await user.click(within(card).getByRole("button", { name: "Pop the player out of the sidebar" }));
+    expect(await screen.findByRole("region", { name: "Claude FM player" })).toHaveAttribute("data-dock", "floating");
+    await user.click(screen.getByRole("button", { name: "Dock the player in the sidebar" }));
+    await waitFor(() => expect(card).toHaveAttribute("data-dock", "docked"));
+    await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
+    await waitFor(() => expect(card).toHaveAttribute("data-dock", "floating"));
+    await user.click(screen.getByRole("button", { name: "Expand navigation" }));
+    await waitFor(() => expect(card).toHaveAttribute("data-dock", "docked"));
+    watch.disconnect();
+    expect(mounted).not.toHaveBeenCalled(); // never removed from the page, not even for a moment
+    expect(frame.isConnected).toBe(true);
+    expect(within(card).getByTitle("Claude FM player")).toBe(frame);
+    expect(document.querySelectorAll("iframe")).toHaveLength(1);
   });
 
   it("detaches when dragged out and snaps back when dropped near the dock spot", async () => {
@@ -111,7 +133,7 @@ describe("the mini-player docked in the sidebar", () => {
     fireEvent.pointerDown(handle, { clientX: 420, clientY: 310, pointerId: 1 });
     fireEvent.pointerMove(handle, { clientX: 50, clientY: 520, pointerId: 1 });
     fireEvent.pointerUp(handle, { clientX: 50, clientY: 520, pointerId: 1 });
-    await waitFor(() => expect(dockSlot().querySelector("[data-dock='docked']")).not.toBeNull());
+    await waitFor(() => expect(document.querySelector("[data-dock='docked']")).not.toBeNull());
   });
 
   it("moves with the arrow keys when floating", async () => {
@@ -129,12 +151,12 @@ describe("the mini-player docked in the sidebar", () => {
   it("floats when the sidebar collapses and docks again when it expands", async () => {
     api();
     const { user, card } = await play();
-    expect(dockSlot().contains(card)).toBe(true);
+    expect(card).toHaveAttribute("data-dock", "docked");
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
     expect(await screen.findByRole("region", { name: "Claude FM player" })).toHaveAttribute("data-dock", "floating");
     expect(within(await player()).queryByRole("button", { name: "Dock the player in the sidebar" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Expand navigation" }));
-    await waitFor(() => expect(dockSlot().querySelector("[data-dock='docked']")).not.toBeNull());
+    await waitFor(() => expect(document.querySelector("[data-dock='docked']")).not.toBeNull());
   });
 
   it("stays floating after a collapse and an expand when it was popped out before", async () => {

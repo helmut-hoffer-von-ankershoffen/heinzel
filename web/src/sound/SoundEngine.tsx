@@ -9,7 +9,7 @@ import { useThemes } from "@/api/queries";
 import { t } from "@/i18n";
 import { type Inputs, rampSeconds, type Signals, targetGain, type Why, why } from "./machine";
 import { type EarconView, type LayerView, Mixer } from "./mixer";
-import { PlayerCard, useDocked } from "./PlayerCard";
+import { PlayerCard } from "./PlayerCard";
 import {
   effective,
   listSignals,
@@ -103,10 +103,6 @@ function StreamPlayer({
   const volume = useRef(0);
   const src = embedSrc(stream);
   const origin = stream.frame_origin;
-  // Docking or popping out puts the frame somewhere else in the page: a new frame, which says it is ready again.
-  const docked = useDocked();
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a change of place is the trigger
-  useEffect(() => setReady(false), [docked]);
   useEffect(() => {
     const onMessage = (message: MessageEvent) => {
       const event = playerEvent(message, frame.current, origin);
