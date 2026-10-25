@@ -103,6 +103,11 @@ def _detail(value: object, fallback: str = "") -> str:
     return clean_text(value).strip()[:DETAIL_LIMIT] if isinstance(value, str) and value.strip() else fallback
 
 
+def _count(value: object) -> int | None:
+    """A token count the gateway reported, if it is a whole, non-negative number."""
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
 def configured_hosts(settings: AccessSettings) -> list[str]:
     """The hosts `[ai.access] gateway_hosts` names, for the capability matrix."""
     return settings.gateway_hosts
@@ -200,4 +205,6 @@ class GatewayAccess:
             model=clean_text(model) if isinstance(model, str) else None,
             cost_usd=float(cost) if isinstance(cost, int | float) and not isinstance(cost, bool) else None,
             duration_seconds=duration,
+            input_tokens=_count(data.get("input_tokens")),
+            output_tokens=_count(data.get("output_tokens")),
         )

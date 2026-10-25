@@ -68,6 +68,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.
+         * @description Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.
+         */
+        get: operations["ai_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph": {
         parameters: {
             query?: never;
@@ -5632,6 +5652,129 @@ export interface components {
              */
             updated: boolean;
         };
+        /**
+         * UsageReport
+         * @description Today's and this week's tokens and cost, and one period broken down by access, model, Heinzelmännchen, cause.
+         */
+        UsageReport: {
+            /**
+             * Breakdowns
+             * @description The period's rows by access, model, Heinzelmännchen and cause, most tokens first.
+             */
+            breakdowns: {
+                [key: string]: components["schemas"]["UsageRow"][];
+            };
+            /**
+             * Budget Usd
+             * @description `[ai] daily_budget_usd`, what today's meter fills against.
+             */
+            budget_usd: number;
+            /**
+             * By
+             * @description The breakdown the CLI shows; all four are in `breakdowns`.
+             * @enum {string}
+             */
+            by: "access" | "model" | "heinzel" | "cause";
+            /**
+             * Label
+             * @description A short label for a status item, e.g. `182k tok`.
+             */
+            label: string;
+            /**
+             * Level
+             * @description Today's cost against the daily budget, 0 to 1 (capped), for a meter.
+             */
+            level: number;
+            /**
+             * Period
+             * @description The period the breakdowns cover: `today` or `week` (the last seven days).
+             * @enum {string}
+             */
+            period: "today" | "week";
+            /** @description Since local midnight. */
+            today: components["schemas"]["UsageTotal"];
+            /**
+             * Tone
+             * @description `ok` below 75% of the budget, `warn` to 100%, `over`.
+             * @enum {string}
+             */
+            tone: "ok" | "warn" | "over";
+            /** @description The last seven days. */
+            week: components["schemas"]["UsageTotal"];
+        };
+        /**
+         * UsageRow
+         * @description What one access option, model, Heinzelmännchen or cause spent in the period.
+         */
+        UsageRow: {
+            /**
+             * Cost Usd
+             * @description What the runs that report a cost cost, in US dollars.
+             */
+            cost_usd: number;
+            /**
+             * Input Tokens
+             * @description Tokens sent, without cache reads.
+             */
+            input_tokens: number;
+            /**
+             * Key
+             * @description The access option, model, Heinzelmännchen or cause; `unknown` when not reported.
+             */
+            key: string;
+            /**
+             * Output Tokens
+             * @description Tokens produced.
+             */
+            output_tokens: number;
+            /**
+             * Runs
+             * @description Runs counted.
+             */
+            runs: number;
+            /**
+             * Tokens
+             * @description Every token moved, cache reads and writes included.
+             */
+            tokens: number;
+            /**
+             * Unpriced
+             * @description Runs that reported no cost, so the cost is at least `cost_usd`.
+             */
+            unpriced: number;
+        };
+        /**
+         * UsageTotal
+         * @description What a period spent in all.
+         */
+        UsageTotal: {
+            /**
+             * Cost Usd
+             * @description What the priced runs cost, in US dollars.
+             */
+            cost_usd: number;
+            /**
+             * Runs
+             * @description Runs counted.
+             */
+            runs: number;
+            /**
+             * Since
+             * Format: date-time
+             * @description The start of the period, in UTC: local midnight today, or seven days ago.
+             */
+            since: string;
+            /**
+             * Tokens
+             * @description Every token moved.
+             */
+            tokens: number;
+            /**
+             * Unpriced
+             * @description Runs that reported no cost.
+             */
+            unpriced: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -5824,6 +5967,9 @@ export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaUpdateResult = components['schemas']['UpdateResult'];
+export type SchemaUsageReport = components['schemas']['UsageReport'];
+export type SchemaUsageRow = components['schemas']['UsageRow'];
+export type SchemaUsageTotal = components['schemas']['UsageTotal'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWaiting = components['schemas']['Waiting'];
 export type SchemaWeek = components['schemas']['Week'];
@@ -5900,6 +6046,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccessList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_usage: {
+        parameters: {
+            query?: {
+                /** @description `today` (since local midnight) or `week` (the last seven days). */
+                period?: "today" | "week";
+                /** @description Break down by `access`, `model`, `heinzel` or `cause`. */
+                by?: "access" | "model" | "heinzel" | "cause";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageReport"];
                 };
             };
             /** @description Validation Error */
