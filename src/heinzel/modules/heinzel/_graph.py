@@ -14,8 +14,8 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from heinzel.modules.workflow._contracts import Contract
-from heinzel.modules.workflow._models import (
+from heinzel.modules.heinzel._contracts import Contract
+from heinzel.modules.heinzel._models import (
     ContractGraph,
     Diagnostic,
     GraphEdge,
@@ -27,7 +27,7 @@ from heinzel.modules.workflow._models import (
 )
 
 CODES = frozenset({"HZC030", "HZC031", "HZC032"})
-"""The diagnostics only the whole set of contracts shows; `hz workflow check --path` can't find them."""
+"""The diagnostics only the whole set of contracts shows; `hz heinzel check --path` can't find them."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,7 +148,7 @@ def problems(contracts: Iterable[Contract]) -> dict[str, list[Diagnostic]]:
                 "HZC030",
                 "error",
                 f"it is on a cycle of {', '.join(cycle)}: a contract can't depend on itself, even through others",
-                "remove one of the inputs on the cycle; `hz workflow graph` shows it",
+                "remove one of the inputs on the cycle; `hz heinzel graph` shows it",
             )
         if problem is not None:
             code, severity, message, hint = problem
@@ -180,8 +180,8 @@ def _why(link: Link, contracts: list[Contract]) -> str:
 def _fix(link: Link, contracts: list[Contract]) -> str:
     namespace, name, _ = link.spec.upstream or ("", "", "")
     if any(c.namespace == namespace and c.name == name and c.frontmatter is None for c in contracts):
-        return "fix its errors: hz workflow check"
-    return f"fix the name, or write the contract: hz workflow new {name}{' --team' if namespace == 'team' else ''}"
+        return "fix its errors: hz heinzel check"
+    return f"fix the name, or write the contract: hz heinzel new {name}{' --team' if namespace == 'team' else ''}"
 
 
 def _cycles(declared: list[Contract], links: list[Link], maintainers: dict[str, Contract]) -> list[list[str]]:
@@ -224,11 +224,11 @@ def _reachable(graph: dict[str, set[str]], start: str) -> set[str]:
 
 def _next(cycles: list[list[str]], unmaintained: list[Unmaintained], declared: list[Contract]) -> list[Step]:
     if not declared:
-        return [Step(command="hz workflow new my-first-workflow", why="write a starter contract, with comments")]
+        return [Step(command="hz heinzel new my-first-heinzel", why="write a starter contract, with comments")]
     steps: list[Step] = []
     if cycles or unmaintained:
-        steps.append(Step(command="hz workflow check", why="each problem by file and line, with a hint"))
-    steps.append(Step(command="hz workflow graph --mermaid", why="the graph as a Mermaid flowchart to paste"))
+        steps.append(Step(command="hz heinzel check", why="each problem by file and line, with a hint"))
+    steps.append(Step(command="hz heinzel graph --mermaid", why="the graph as a Mermaid flowchart to paste"))
     return steps
 
 
