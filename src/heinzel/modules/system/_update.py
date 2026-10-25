@@ -547,7 +547,7 @@ class UpdateService:
 
 def _with_summary(message: str, updates: list[PluginUpdate]) -> str:
     """`message` and a line for each plugin that was upgraded or failed; the unchanged ones are in the plugins."""
-    lines = []
+    lines: list[str] = []
     for update in updates:
         if update.status == "upgraded":
             lines.append(f"Plugin {update.distribution}: upgraded {update.before} → {update.after}.")
