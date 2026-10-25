@@ -127,11 +127,12 @@ const fetchers = {
     unwrap(api.GET("/system/ui/widgets", { params: { query: item ? { item } : {} } })) as Promise<SchemaWidgetEntry[]>,
 };
 type Kind = keyof typeof fetchers;
+type ContributionEntries = SchemaStatusEntry[] | SchemaActionEntry[] | SchemaWidgetEntry[];
 type EntryOf<K extends Kind> = Awaited<ReturnType<(typeof fetchers)[K]>>[number];
 
 /** One kind's entries in `slot`, each kept current at its own refresh. */
 function useEntries<K extends Kind>(kind: K, slot: Slot): { entries: EntryOf<K>[]; updatedAt: number } {
-  const list = useQuery({
+  const list = useQuery<ContributionEntries>({
     queryKey: ["ui", kind],
     queryFn: () => fetchers[kind](),
     refetchInterval: LIST,
@@ -788,7 +789,7 @@ const KIND_OF = { status: "status", action: "actions", widget: "widgets" } as co
 function PlacementPreview({ info, slot, on }: { info: SchemaContributionInfo; slot: Slot; on: boolean }) {
   const key = KIND_OF[info.kind as keyof typeof KIND_OF];
   const now = useNow(1000);
-  const entry = useQuery({
+  const entry = useQuery<ContributionEntries>({
     queryKey: ["ui", key, info.id],
     queryFn: () => fetchers[key](info.id),
     enabled: Boolean(key),
