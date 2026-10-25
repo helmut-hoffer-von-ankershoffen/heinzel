@@ -12,8 +12,8 @@ describe("listed", () => {
   });
 
   it("lists screens of expert operations in expert mode only", () => {
-    expect(listed("workflow:graph", everyday)).toBe(false);
-    expect(listed("workflow:graph", expert)).toBe(true);
+    expect(listed("heinzel:graph", everyday)).toBe(false);
+    expect(listed("heinzel:graph", expert)).toBe(true);
   });
 
   it("lists no operation's screen before the mode is known, nor one the API doesn't have", () => {
@@ -29,6 +29,7 @@ describe("visibleSections", () => {
 
   it("drops expert screens, and sections left empty, outside it; the contracts section stays for its entries", () => {
     expect(labels(visibleSections(sections, everyday))).toEqual([
+      "nav.heinzelmaennchen",
       "nav.contracts",
       "nav.teamGraph",
       "nav.organisation",

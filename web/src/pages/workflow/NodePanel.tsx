@@ -27,7 +27,7 @@ export function commandsFor(node: WorkflowNode, graph: WorkflowGraph): string[] 
         ? ["hz system capability list"]
         : [`hz system plugin search --text ${shellWord(node.name)}`, "hz system capability list"];
     case "assetType":
-      return ["hz workflow discover", "hz workflow playbooks"];
+      return ["hz heinzel discover", "hz heinzel playbooks"];
     case "asset": {
       const templates = graph.nodes.filter(
         (other) => other.kind === "template" && other.template.assets.includes(node.candidate.asset),
@@ -38,22 +38,22 @@ export function commandsFor(node: WorkflowNode, graph: WorkflowGraph): string[] 
               ? `${other.template.command} --asset ${shellWord(`${node.candidate.asset}=${node.candidate.ref}`)}`
               : "",
           )
-        : ["hz workflow discover"];
+        : ["hz heinzel discover"];
     }
     case "template":
-      return [node.command, "hz workflow playbooks"];
+      return [node.command, "hz heinzel playbooks"];
     case "contract":
       return [
-        `hz workflow show ${node.qualified}`,
-        `hz workflow run ${node.qualified} --dry-run`,
-        `hz workflow check --path ${shellWord(node.summary?.file ?? node.qualified)}`,
+        `hz heinzel show ${node.qualified}`,
+        `hz heinzel wake ${node.qualified} --dry-run`,
+        `hz heinzel check --path ${shellWord(node.summary?.file ?? node.qualified)}`,
       ].slice(0, node.summary ? 3 : 2);
     case "output":
       if (node.suggested) return [];
-      if (!node.maintained) return ["hz workflow graph", "hz workflow new <name>"];
+      if (!node.maintained) return ["hz heinzel graph", "hz heinzel new <name>"];
       return node.contract
-        ? [`hz workflow drafts --name ${node.contract.split(":").at(-1)} --latest`, "hz workflow graph"]
-        : ["hz workflow graph"];
+        ? [`hz heinzel drafts --name ${node.contract.split(":").at(-1)} --latest`, "hz heinzel graph"]
+        : ["hz heinzel graph"];
   }
 }
 

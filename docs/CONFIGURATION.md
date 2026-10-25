@@ -92,6 +92,16 @@ Plugins add their own tables.
 | `offline_after` | `HZ_GRAPH__OFFLINE_AFTER` | `'2d'` | How long a Heinzelmännchen may be silent (no entry, not even a heartbeat) before it shows as offline, e.g. 36h. |
 | `weeks` | `HZ_GRAPH__WEEKS` | `4` | How many weeks of kept promises the graph counts. |
 
+## `[heinzel]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `user_dir` | `HZ_HEINZEL__USER_DIR` | platform-specific | Your own contracts, `<name>.prose.md`; they run on your daemon when they have a schedule. |
+| `team_repository` | `HZ_HEINZEL__TEAM_REPOSITORY` | `None` | Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`. |
+| `schedule_team` | `HZ_HEINZEL__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name, or `name@sha256:<hex>` to run only the content you approved (`hz heinzel show` prints it); the others run only by hand, so a team's contracts don't run on every member's daemon. |
+| `max_usd` | `HZ_HEINZEL__MAX_USD` | `1.0` | Most one render may cost in US dollars, whatever a contract asks for: scheduled and manual runs, in every head. A scheduled slot's retries share it. |
+| `retention_days` | `HZ_HEINZEL__RETENTION_DAYS` | `90` | Days drafts and their `.record.json` files (the packet with the fetched inputs) are kept, counted from the render; older ones are deleted by the daemon's daily `heinzel:prune` job or by `hz heinzel prune`, never by reading them. 0 keeps them forever, at most 36500. Receipts are kept and hold the draft's hash, not its text (ADR 0021). |
+
 ## `[org]`
 
 | Key | Environment variable | Default | Description |
@@ -169,6 +179,9 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `model` | `HZ_SYSTEM_RUNNER__MODEL` | `None` | Model for every run, e.g. `sonnet`; the agent's own default when not set. |
 | `claude_executable` | `HZ_SYSTEM_RUNNER__CLAUDE_EXECUTABLE` | `'claude'` | The Claude Code CLI, a name on PATH or a path. |
+| `codex_executable` | `HZ_SYSTEM_RUNNER__CODEX_EXECUTABLE` | `'codex'` | The Codex CLI, a name on PATH or a path. |
+| `codex_model` | `HZ_SYSTEM_RUNNER__CODEX_MODEL` | `None` | Model for every Codex run, e.g. `gpt-5-codex`; Codex's own default when not set. |
+| `codex_effort` | `HZ_SYSTEM_RUNNER__CODEX_EFFORT` | `None` | Reasoning effort for every Codex run; Codex's own default when not set. |
 | `read_only_tools` | `HZ_SYSTEM_RUNNER__READ_ONLY_TOOLS` | `['Read', 'Grep', 'Glob']` | Claude Code tools a run may use; a profile asking for anything else is refused. Add only tools that cannot change anything. |
 | `command` | `HZ_SYSTEM_RUNNER__COMMAND` | platform-specific | The `command` runner's command line, one argument per item, never through a shell. Placeholders: {prompt_file}, {contract_file}, {output_file}, {working_dir}, {tools}, {model}, {timeout_seconds}, {max_usd}, {mcp_config} (a JSON file of MCP servers in the `mcpServers` shape, for a chat's hz tools); `{{` and `}}` are literal braces; e.g. ["mytool", "ai", "run", "--prompt", "{prompt_file}"]. |
 | `command_output` | `HZ_SYSTEM_RUNNER__COMMAND_OUTPUT` | `'stdout'` | Where the `command` runner reads the result: stdout, or {output_file}. |
@@ -200,16 +213,6 @@ Plugins add their own tables.
 | `repository` | `HZ_TEAM__REPOSITORY` | `None` | Your team repository's URL, the invite others join with (`hz team join <url>`); none for a team repository that exists only on this machine. |
 | `checkout` | `HZ_TEAM__CHECKOUT` | `None` | The local checkout of your team repository; its `workflows/` holds the `team:` contracts. |
 | `layer` | `HZ_TEAM__LAYER` | `None` | Your team's layer plugin by module name, e.g. acme-payments-checkout (ADR 0040), when your team repository's hz.yaml names none or you want another; hz system layer show shows the stack it gives. |
-
-## `[workflow]`
-
-| Key | Environment variable | Default | Description |
-| --- | --- | --- | --- |
-| `user_dir` | `HZ_WORKFLOW__USER_DIR` | platform-specific | Your own contracts, `<name>.prose.md`; they run on your daemon when they have a schedule. |
-| `team_repository` | `HZ_WORKFLOW__TEAM_REPOSITORY` | `None` | Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`. |
-| `schedule_team` | `HZ_WORKFLOW__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name, or `name@sha256:<hex>` to run only the content you approved (`hz workflow show` prints it); the others run only by hand, so a team's contracts don't run on every member's daemon. |
-| `max_usd` | `HZ_WORKFLOW__MAX_USD` | `1.0` | Most one render may cost in US dollars, whatever a contract asks for: scheduled and manual runs, in every head. A scheduled slot's retries share it. |
-| `retention_days` | `HZ_WORKFLOW__RETENTION_DAYS` | `90` | Days drafts and their `.record.json` files (the packet with the fetched inputs) are kept, counted from the render; older ones are deleted by the daemon's daily `workflow:prune` job or by `hz workflow prune`, never by reading them. 0 keeps them forever, at most 36500. Receipts are kept and hold the draft's hash, not its text (ADR 0021). |
 
 ## `[zoom]`
 

@@ -108,7 +108,7 @@ def adopt(
     service: TeamService,
     path: Annotated[Path, Field(description="A checkout of your team repository you already have.")],
 ) -> Adopted:
-    """Make an existing checkout your team repository; replaces the deprecated `workflow.team_repository`."""
+    """Make an existing checkout your team repository; replaces the deprecated `heinzel.team_repository`."""
     return service.adopt(path)
 
 

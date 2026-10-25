@@ -5,7 +5,7 @@ name: Fuzz
 
 on:
   pull_request:
-    paths: ["src/heinzel/modules/workflow/**", "fuzz/**", ".github/workflows/fuzz.yml"]
+    paths: ["src/heinzel/modules/heinzel/**", "fuzz/**", ".github/workflows/fuzz.yml"]
   schedule:
     - cron: "23 5 * * 1"
   workflow_dispatch:

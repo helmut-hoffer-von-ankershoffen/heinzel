@@ -49,6 +49,66 @@
   --color-main-tint: transparent;
 }
 
+/* A theme's backdrop behind the main area (ADR 0060), built by the web app from checked parts; none by default. */
+:root {
+  --theme-backdrop: none;
+}
+
+/* The tokens a variant changes most, registered as colours so a change of variant can fade between them. */
+@property --color-background {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --color-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #1a1a1a;
+}
+@property --color-muted-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #6b6b6b;
+}
+@property --color-main-tint {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --color-primary {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #b4532f;
+}
+@property --color-sidebar {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #f3f3f3;
+}
+@property --color-card {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --color-border {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e4e4e4;
+}
+
+/* Set by ThemeTokens for two seconds when the variant changes: slow enough to notice, never a flash. */
+html.theme-shift {
+  transition:
+    --color-background 1.5s ease,
+    --color-foreground 1.5s ease,
+    --color-muted-foreground 1.5s ease,
+    --color-main-tint 1.5s ease,
+    --color-primary 1.5s ease,
+    --color-sidebar 1.5s ease,
+    --color-card 1.5s ease,
+    --color-border 1.5s ease;
+}
+
 .dark {
   --color-background: #181818;
   --color-foreground: #ececec;
