@@ -6,8 +6,15 @@ examples and takes the same time; `dev` explores new examples on every local run
 
 import os
 
+import pytest
 from hypothesis import settings
 
 settings.register_profile("dev", max_examples=40, deadline=None, database=None)
 settings.register_profile("ci", settings.get_profile("dev"), derandomize=True, print_blob=True)
 settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE") or ("ci" if os.environ.get("CI") else "dev"))
+
+
+@pytest.fixture(autouse=True)
+def no_paid_model_requests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests can use FunctionModel/TestModel, never a real paid provider by accident."""
+    monkeypatch.setattr("pydantic_ai.models.ALLOW_MODEL_REQUESTS", False)
