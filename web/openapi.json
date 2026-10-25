@@ -554,7 +554,7 @@
             "type": "string"
           },
           "hints": {
-            "description": "Where `hz workflow discover` looks for candidates.",
+            "description": "Where `hz heinzel discover` looks for candidates.",
             "items": {
               "$ref": "#/components/schemas/HintView"
             },
@@ -1481,7 +1481,7 @@
         "type": "object"
       },
       "CheckReport": {
-        "description": "`hz workflow check`: every contract checked and every problem found.",
+        "description": "`hz heinzel check`: every contract checked and every problem found.",
         "properties": {
           "diagnostics": {
             "description": "Every error and warning, by file and line.",
@@ -1517,7 +1517,7 @@
         "type": "object"
       },
       "CompiledContract": {
-        "description": "`hz workflow show`: a contract as the daemon runs it.",
+        "description": "`hz heinzel show`: a contract as the daemon runs it.",
         "properties": {
           "approve": {
             "anyOf": [
@@ -1609,7 +1609,7 @@
                 "type": "null"
               }
             ],
-            "description": "Its success test: how long drafting took, and how much was changed before sending (`hz workflow sent`); none without drafts."
+            "description": "Its success test: how long drafting took, and how much was changed before sending (`hz heinzel sent`); none without drafts."
           },
           "name": {
             "description": "The contract's name.",
@@ -1681,7 +1681,7 @@
             "type": "boolean"
           },
           "sha256": {
-            "description": "SHA-256 of the file; `[workflow] schedule_team` can pin it.",
+            "description": "SHA-256 of the file; `[heinzel] schedule_team` can pin it.",
             "title": "Sha256",
             "type": "string"
           },
@@ -2179,7 +2179,7 @@
         "type": "object"
       },
       "ContractGraph": {
-        "description": "`hz workflow graph`: contracts linked by what they read and maintain; the workflow nobody writes down.",
+        "description": "`hz heinzel graph`: contracts linked by what they read and maintain; the workflow nobody writes down.",
         "properties": {
           "cycles": {
             "description": "Contracts that depend on themselves, alone or through others, by cycle; they don't run.",
@@ -2239,125 +2239,6 @@
           "next"
         ],
         "title": "ContractGraph",
-        "type": "object"
-      },
-      "ContractList": {
-        "description": "`hz workflow list`: the directories searched and every contract found in them.",
-        "properties": {
-          "contracts": {
-            "description": "Every contract found, team ones first.",
-            "items": {
-              "$ref": "#/components/schemas/ContractSummary"
-            },
-            "title": "Contracts",
-            "type": "array"
-          },
-          "directories": {
-            "description": "Where contracts are read from, team first.",
-            "items": {
-              "$ref": "#/components/schemas/Directory"
-            },
-            "title": "Directories",
-            "type": "array"
-          },
-          "next": {
-            "description": "What to do next, as commands.",
-            "items": {
-              "$ref": "#/components/schemas/Step"
-            },
-            "title": "Next",
-            "type": "array"
-          }
-        },
-        "required": [
-          "directories",
-          "contracts",
-          "next"
-        ],
-        "title": "ContractList",
-        "type": "object"
-      },
-      "ContractSummary": {
-        "description": "One contract in `hz workflow list`.",
-        "properties": {
-          "errors": {
-            "description": "How many errors it has.",
-            "title": "Errors",
-            "type": "integer"
-          },
-          "file": {
-            "description": "The contract file.",
-            "format": "path",
-            "title": "File",
-            "type": "string"
-          },
-          "name": {
-            "description": "The contract's name.",
-            "title": "Name",
-            "type": "string"
-          },
-          "namespace": {
-            "description": "Where it was found: `me` (your directory) or `team`.",
-            "enum": [
-              "me",
-              "team",
-              "path"
-            ],
-            "title": "Namespace",
-            "type": "string"
-          },
-          "schedule": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Its cron expression; none if it runs only by hand.",
-            "title": "Schedule"
-          },
-          "scheduled": {
-            "description": "Whether your daemon runs it on its schedule.",
-            "title": "Scheduled",
-            "type": "boolean"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Its display name; none if it doesn't parse.",
-            "title": "Title"
-          },
-          "valid": {
-            "description": "Whether it has no errors, so it is compiled.",
-            "title": "Valid",
-            "type": "boolean"
-          },
-          "warnings": {
-            "description": "How many warnings it has.",
-            "title": "Warnings",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "name",
-          "namespace",
-          "title",
-          "file",
-          "schedule",
-          "scheduled",
-          "valid",
-          "errors",
-          "warnings"
-        ],
-        "title": "ContractSummary",
         "type": "object"
       },
       "CredentialInfo": {
@@ -2607,7 +2488,7 @@
         "description": "A directory contracts are read from.",
         "properties": {
           "exists": {
-            "description": "Whether it exists; `hz workflow new` creates it.",
+            "description": "Whether it exists; `hz heinzel new` creates it.",
             "title": "Exists",
             "type": "boolean"
           },
@@ -2637,7 +2518,7 @@
         "type": "object"
       },
       "Discovery": {
-        "description": "`hz workflow discover`: candidates for each asset type, found through capabilities you can read.",
+        "description": "`hz heinzel discover`: candidates for each asset type, found through capabilities you can read.",
         "properties": {
           "candidates": {
             "description": "What the hints found, by asset type.",
@@ -3227,6 +3108,186 @@
         "title": "HealthReport",
         "type": "object"
       },
+      "HeinzelList": {
+        "description": "`hz heinzel list`: the directories searched and one Heinzelmännchen per contract found in them.",
+        "properties": {
+          "directories": {
+            "description": "Where contracts are read from, team first.",
+            "items": {
+              "$ref": "#/components/schemas/Directory"
+            },
+            "title": "Directories",
+            "type": "array"
+          },
+          "filtered": {
+            "default": false,
+            "description": "Whether a filter left some out.",
+            "title": "Filtered",
+            "type": "boolean"
+          },
+          "heinzelmaennchen": {
+            "description": "Every Heinzelmännchen the filters keep, team first.",
+            "items": {
+              "$ref": "#/components/schemas/HeinzelSummary"
+            },
+            "title": "Heinzelmaennchen",
+            "type": "array"
+          },
+          "next": {
+            "description": "What to do next, as commands.",
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            },
+            "title": "Next",
+            "type": "array"
+          }
+        },
+        "required": [
+          "directories",
+          "heinzelmaennchen",
+          "next"
+        ],
+        "title": "HeinzelList",
+        "type": "object"
+      },
+      "HeinzelSummary": {
+        "description": "One Heinzelmännchen in `hz heinzel list`: a contract you have, with its state and its runs.",
+        "properties": {
+          "drafts": {
+            "description": "How many drafts it has kept.",
+            "title": "Drafts",
+            "type": "integer"
+          },
+          "errors": {
+            "description": "How many errors it has.",
+            "title": "Errors",
+            "type": "integer"
+          },
+          "file": {
+            "description": "The contract file.",
+            "format": "path",
+            "title": "File",
+            "type": "string"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When its newest draft was rendered; none if it never ran.",
+            "title": "Last Run"
+          },
+          "name": {
+            "description": "The contract's name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "namespace": {
+            "description": "Where it was found: `me` (your directory) or `team`.",
+            "enum": [
+              "me",
+              "team",
+              "path"
+            ],
+            "title": "Namespace",
+            "type": "string"
+          },
+          "next_run": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When your daemon runs it next, in local time; none unless scheduled.",
+            "title": "Next Run"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its cron expression; none if it runs only by hand.",
+            "title": "Schedule"
+          },
+          "scheduled": {
+            "description": "Whether your daemon runs it on its schedule.",
+            "title": "Scheduled",
+            "type": "boolean"
+          },
+          "state": {
+            "description": "`scheduled` (your daemon runs it), `manual` (it runs when you wake it), `blocked` (a capability it reads isn't served) or `broken` (its contract has errors).",
+            "enum": [
+              "scheduled",
+              "manual",
+              "blocked",
+              "broken"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its display name; none if it doesn't parse.",
+            "title": "Title"
+          },
+          "unmet": {
+            "description": "Requirements no bound adapter serves; why it is blocked.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Unmet",
+            "type": "array"
+          },
+          "valid": {
+            "description": "Whether it has no errors, so it is compiled.",
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "description": "How many warnings it has.",
+            "title": "Warnings",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "namespace",
+          "title",
+          "file",
+          "schedule",
+          "scheduled",
+          "valid",
+          "errors",
+          "warnings",
+          "state",
+          "unmet",
+          "last_run",
+          "next_run",
+          "drafts"
+        ],
+        "title": "HeinzelSummary",
+        "type": "object"
+      },
       "HintProblem": {
         "description": "A hint that couldn't run, and what to do about it.",
         "properties": {
@@ -3261,7 +3322,7 @@
         "type": "object"
       },
       "HintView": {
-        "description": "A discovery hint as `hz workflow playbooks` shows it.",
+        "description": "A discovery hint as `hz heinzel playbooks` shows it.",
         "properties": {
           "args": {
             "additionalProperties": {
@@ -4350,7 +4411,7 @@
         "type": "object"
       },
       "PlaybookList": {
-        "description": "`hz workflow playbooks`: every playbook the installed modules contribute.",
+        "description": "`hz heinzel playbooks`: every playbook the installed modules contribute.",
         "properties": {
           "next": {
             "description": "What to do next, as commands.",
@@ -4620,6 +4681,12 @@
             },
             "title": "Plugins",
             "type": "array"
+          },
+          "previewed": {
+            "default": false,
+            "description": "Whether a terminal already showed the preview and asked; the CLI says no more.",
+            "title": "Previewed",
+            "type": "boolean"
           },
           "restart_required": {
             "description": "Whether a running `hz ui` or MCP server must restart to load the change; the web app restarts its server with `POST /api/restart`. Every new `hz` command sees it at once.",
@@ -5936,6 +6003,53 @@
         "title": "Tested",
         "type": "object"
       },
+      "ThemeBackdrop": {
+        "additionalProperties": false,
+        "description": "A gradient behind the main area (`[light.backdrop]`), of hex colours and the theme's own colour tokens.\n\nThe web app builds the CSS from these typed parts: a kind, an angle in degrees and two to four stops, each a hex\ncolour or a token name it turns into `var(--color-<token>)`; no other text reaches CSS, and no `url()` exists.",
+        "properties": {
+          "angle": {
+            "default": 180,
+            "description": "The direction of a linear gradient in degrees, e.g. `180`.",
+            "maximum": 360.0,
+            "minimum": 0.0,
+            "title": "Angle",
+            "type": "integer"
+          },
+          "gradient": {
+            "description": "`linear` (along `angle`) or `radial` (from the centre).",
+            "enum": [
+              "linear",
+              "radial"
+            ],
+            "title": "Gradient",
+            "type": "string"
+          },
+          "opacity": {
+            "default": 0.6,
+            "description": "How strongly it shows over `background`, 0 to 0.9, e.g. `0.6`.",
+            "maximum": 0.9,
+            "minimum": 0.0,
+            "title": "Opacity",
+            "type": "number"
+          },
+          "stops": {
+            "description": "Two to four colours: hex, e.g. `#fde68a`, or a token of the theme, e.g. `primary`.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 2,
+            "title": "Stops",
+            "type": "array"
+          }
+        },
+        "required": [
+          "gradient",
+          "stops"
+        ],
+        "title": "ThemeBackdrop",
+        "type": "object"
+      },
       "ThemeColours": {
         "additionalProperties": false,
         "description": "The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes).",
@@ -5951,6 +6065,17 @@
             "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
             "title": "Accent Foreground",
             "type": "string"
+          },
+          "backdrop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeBackdrop"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A gradient behind the main area only; sidebar and cards stay solid."
           },
           "background": {
             "description": "A hex colour, `#rgb` or `#rrggbb`.",
@@ -6217,6 +6342,425 @@
         "title": "ThemeLogoView",
         "type": "object"
       },
+      "ThemeOverrides": {
+        "additionalProperties": false,
+        "description": "What a variant changes in one mode: any colour token, the main tint and the backdrop; the rest stays.",
+        "properties": {
+          "accent": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Accent"
+          },
+          "accent_foreground": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Accent Foreground"
+          },
+          "backdrop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeBackdrop"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A backdrop that replaces the base's."
+          },
+          "background": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Background"
+          },
+          "bad": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Bad"
+          },
+          "border": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Border"
+          },
+          "card": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Card"
+          },
+          "foreground": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Foreground"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Icon"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Input"
+          },
+          "main_tint": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Main Tint"
+          },
+          "muted": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Muted"
+          },
+          "muted_foreground": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Muted Foreground"
+          },
+          "ok": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Ok"
+          },
+          "popover": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Popover"
+          },
+          "primary": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Primary"
+          },
+          "primary_foreground": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Primary Foreground"
+          },
+          "ring": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Ring"
+          },
+          "sidebar": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Sidebar"
+          },
+          "warn": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Warn"
+          }
+        },
+        "title": "ThemeOverrides",
+        "type": "object"
+      },
+      "ThemeSignalsView": {
+        "description": "The signals now, which pick a theme's variant (ADR 0060).",
+        "properties": {
+          "daypart": {
+            "description": "The time of day in your time zone, e.g. `evening`.",
+            "enum": [
+              "dawn",
+              "morning",
+              "day",
+              "dusk",
+              "evening",
+              "night"
+            ],
+            "title": "Daypart",
+            "type": "string"
+          },
+          "refresh": {
+            "description": "How often to ask again, in seconds.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "sources": {
+            "description": "The modules whose signals are known now.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "sunrise": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Today's sunrise, when a module knows it.",
+            "title": "Sunrise"
+          },
+          "sunset": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Today's sunset, when a module knows it.",
+            "title": "Sunset"
+          },
+          "timezone": {
+            "description": "The time zone the daypart is in, `[org] timezone` or this machine's.",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "weather": {
+            "anyOf": [
+              {
+                "enum": [
+                  "clear",
+                  "clouds",
+                  "rain",
+                  "drizzle",
+                  "thunder",
+                  "snow",
+                  "fog",
+                  "wind",
+                  "heat",
+                  "cold"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The weather now, e.g. `rain`; none when no module publishes it.",
+            "title": "Weather"
+          }
+        },
+        "required": [
+          "daypart",
+          "weather",
+          "sunrise",
+          "sunset",
+          "timezone",
+          "sources",
+          "refresh"
+        ],
+        "title": "ThemeSignalsView",
+        "type": "object"
+      },
+      "ThemeVariant": {
+        "additionalProperties": false,
+        "description": "A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0060).",
+        "properties": {
+          "dark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeOverrides"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What changes in dark mode."
+          },
+          "light": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeOverrides"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What changes in light mode."
+          },
+          "when": {
+            "$ref": "#/components/schemas/ThemeWhen",
+            "description": "The signals it follows, e.g. `{ daypart = \"night\" }`."
+          }
+        },
+        "required": [
+          "when"
+        ],
+        "title": "ThemeVariant",
+        "type": "object"
+      },
       "ThemeView": {
         "description": "One available theme with every token value, ready to become the web app's CSS custom properties.",
         "properties": {
@@ -6353,6 +6897,14 @@
             "description": "What people pick it by, e.g. `Acme`.",
             "title": "Title",
             "type": "string"
+          },
+          "variant": {
+            "description": "Colours that apply when the signals match (ADR 0060); the one naming most signals wins.",
+            "items": {
+              "$ref": "#/components/schemas/ThemeVariant"
+            },
+            "title": "Variant",
+            "type": "array"
           }
         },
         "required": [
@@ -6377,6 +6929,54 @@
           "spacing"
         ],
         "title": "ThemeView",
+        "type": "object"
+      },
+      "ThemeWhen": {
+        "additionalProperties": false,
+        "description": "When a variant applies, e.g. `when = { daypart = \"night\", weather = [\"rain\", \"drizzle\"] }`.\n\nEvery signal it names has one of its values. Signals are a closed vocabulary (ADR 0060), so a misspelt one is\nrefused at import.",
+        "properties": {
+          "daypart": {
+            "default": [],
+            "description": "Any of these dayparts, e.g. `night`.",
+            "items": {
+              "enum": [
+                "dawn",
+                "morning",
+                "day",
+                "dusk",
+                "evening",
+                "night"
+              ],
+              "type": "string"
+            },
+            "maxItems": 6,
+            "title": "Daypart",
+            "type": "array"
+          },
+          "weather": {
+            "default": [],
+            "description": "Any of these, e.g. `rain`.",
+            "items": {
+              "enum": [
+                "clear",
+                "clouds",
+                "rain",
+                "drizzle",
+                "thunder",
+                "snow",
+                "fog",
+                "wind",
+                "heat",
+                "cold"
+              ],
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Weather",
+            "type": "array"
+          }
+        },
+        "title": "ThemeWhen",
         "type": "object"
       },
       "Toggled": {
@@ -6948,6 +7548,328 @@
         "summary": "Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.",
         "tags": [
           "graph"
+        ]
+      }
+    },
+    "/heinzel/check": {
+      "get": {
+        "description": "Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.",
+        "operationId": "heinzel_check",
+        "parameters": [
+          {
+            "description": "A contract file, or a directory searched for *.prose.md; every contract found if none.",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "path",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A contract file, or a directory searched for *.prose.md; every contract found if none.",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckReport"
+                }
+              }
+            },
+            "description": "The result, when its exit code is non-zero."
+          }
+        },
+        "summary": "Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/discover": {
+      "get": {
+        "description": "Find candidates for each playbook's asset types through the capabilities you have bound; reads only.",
+        "operationId": "heinzel_discover",
+        "parameters": [
+          {
+            "description": "Only this module's playbook; every playbook's if omitted.",
+            "in": "query",
+            "name": "playbook",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this module's playbook; every playbook's if omitted.",
+              "title": "Playbook"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Discovery"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Find candidates for each playbook's asset types through the capabilities you have bound; reads only.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/graph": {
+      "get": {
+        "description": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
+        "operationId": "heinzel_graph",
+        "parameters": [
+          {
+            "description": "Print only the Mermaid flowchart, to paste into a document or a pull request.",
+            "in": "query",
+            "name": "mermaid",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Print only the Mermaid flowchart, to paste into a document or a pull request.",
+              "title": "Mermaid",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractGraph"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/list": {
+      "get": {
+        "description": "List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.",
+        "operationId": "heinzel_list",
+        "parameters": [
+          {
+            "description": "Only Heinzelmännchen in this state: scheduled, manual, blocked, broken.",
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "scheduled",
+                    "manual",
+                    "blocked",
+                    "broken"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only Heinzelmännchen in this state: scheduled, manual, blocked, broken.",
+              "title": "State"
+            }
+          },
+          {
+            "description": "Only contracts whose name or `<namespace>:<name>` contains this, e.g. `team:` or `weekly`.",
+            "in": "query",
+            "name": "contract",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only contracts whose name or `<namespace>:<name>` contains this, e.g. `team:` or `weekly`.",
+              "title": "Contract"
+            }
+          },
+          {
+            "description": "Only those that maintain or read this artifact, e.g. `contract:team/weekly-report#report`.",
+            "in": "query",
+            "name": "artifact",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only those that maintain or read this artifact, e.g. `contract:team/weekly-report#report`.",
+              "title": "Artifact"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeinzelList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/playbooks": {
+      "get": {
+        "description": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
+        "operationId": "heinzel_playbooks",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybookList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/show": {
+      "get": {
+        "description": "Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.",
+        "operationId": "heinzel_show",
+        "parameters": [
+          {
+            "description": "The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it.",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompiledContract"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.",
+        "tags": [
+          "heinzel"
         ]
       }
     },
@@ -8910,6 +9832,28 @@
         ]
       }
     },
+    "/system/theme/signals": {
+      "get": {
+        "description": "Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.",
+        "operationId": "system_theme_signals",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeSignalsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/theme/use": {
       "post": {
         "description": "Use a theme in the web app: writes `[system.theme] name` to your configuration file.",
@@ -9048,256 +9992,6 @@
         "summary": "Show your team: its repository, checkout and members, and what is wrong with them.",
         "tags": [
           "team"
-        ]
-      }
-    },
-    "/workflow/check": {
-      "get": {
-        "description": "Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.",
-        "operationId": "workflow_check",
-        "parameters": [
-          {
-            "description": "A contract file, or a directory searched for *.prose.md; every contract found if none.",
-            "in": "query",
-            "name": "path",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "path",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "A contract file, or a directory searched for *.prose.md; every contract found if none.",
-              "title": "Path"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CheckReport"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          },
-          "503": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CheckReport"
-                }
-              }
-            },
-            "description": "The result, when its exit code is non-zero."
-          }
-        },
-        "summary": "Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.",
-        "tags": [
-          "workflow"
-        ]
-      }
-    },
-    "/workflow/discover": {
-      "get": {
-        "description": "Find candidates for each playbook's asset types through the capabilities you have bound; reads only.",
-        "operationId": "workflow_discover",
-        "parameters": [
-          {
-            "description": "Only this module's playbook; every playbook's if omitted.",
-            "in": "query",
-            "name": "playbook",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Only this module's playbook; every playbook's if omitted.",
-              "title": "Playbook"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Discovery"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Find candidates for each playbook's asset types through the capabilities you have bound; reads only.",
-        "tags": [
-          "workflow"
-        ]
-      }
-    },
-    "/workflow/graph": {
-      "get": {
-        "description": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
-        "operationId": "workflow_graph",
-        "parameters": [
-          {
-            "description": "Print only the Mermaid flowchart, to paste into a document or a pull request.",
-            "in": "query",
-            "name": "mermaid",
-            "required": false,
-            "schema": {
-              "default": false,
-              "description": "Print only the Mermaid flowchart, to paste into a document or a pull request.",
-              "title": "Mermaid",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ContractGraph"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.",
-        "tags": [
-          "workflow"
-        ]
-      }
-    },
-    "/workflow/list": {
-      "get": {
-        "description": "List the contracts in your and your team's workflows directories, with their schedule and problems.",
-        "operationId": "workflow_list",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ContractList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List the contracts in your and your team's workflows directories, with their schedule and problems.",
-        "tags": [
-          "workflow"
-        ]
-      }
-    },
-    "/workflow/playbooks": {
-      "get": {
-        "description": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
-        "operationId": "workflow_playbooks",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlaybookList"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
-        "tags": [
-          "workflow"
-        ]
-      }
-    },
-    "/workflow/show": {
-      "get": {
-        "description": "Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.",
-        "operationId": "workflow_show",
-        "parameters": [
-          {
-            "description": "The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it.",
-            "in": "query",
-            "name": "name",
-            "required": true,
-            "schema": {
-              "description": "The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it.",
-              "title": "Name",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CompiledContract"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.",
-        "tags": [
-          "workflow"
         ]
       }
     }

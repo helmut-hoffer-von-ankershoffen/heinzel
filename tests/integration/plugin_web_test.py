@@ -111,6 +111,19 @@ def test_confirmed_the_shown_requirement_is_installed_recorded_and_a_restart_ask
     assert [(e["action"], e["requirement"]) for e in history] == [("add", "heinzel-crm==1.1.0")]
 
 
+def test_a_first_party_catalog_entry_installs_through_the_add_endpoint_by_its_install_spec(client, kernel):
+    entry = next(p for p in kernel.resolve(PluginService).search("clock").plugins if p.short_name == "clock")
+    assert (entry.source, entry.install_spec) == ("first-party", "clock")
+    shown = client.post("/api/system/plugin/add", params={"spec": entry.install_spec}, headers=AUTH).json()
+    assert (shown["done"], shown["candidate"]["first_party"], shown["candidate"]["spec"]) == (False, True, "clock")
+    assert kernel.runs == []
+    params = {"spec": shown["candidate"]["spec"], "confirm": True}
+    answer = client.post("/api/system/plugin/add", params=params, headers=AUTH)
+    assert answer.status_code == 200
+    assert answer.json()["done"] is True
+    assert any("heinzel-clock" in part for part in kernel.runs[0])
+
+
 @pytest.mark.parametrize(
     "spec",
     [
@@ -239,10 +252,47 @@ def test_the_cli_shows_what_it_would_install_and_how_to_confirm(kernel):
     assert kernel.runs == []
     done = CliRunner().invoke(app, ["system", "plugin", "add", "heinzel-crm==1.1.0", "--confirm"])
     assert done.exit_code == 0, done.output
-    assert "Added heinzel-crm." in done.output
+    assert "Installed heinzel-crm 1.1.0." in done.output
     listed = CliRunner().invoke(app, ["system", "plugin", "list"])
     assert "heinzel-test" in listed.output
     assert "enabled" in listed.output
+
+
+def test_on_a_terminal_the_preview_asks_and_installs_on_yes_and_json_stays_two_step(kernel, monkeypatch):
+    from typer.testing import CliRunner
+
+    from heinzel.heads.cli import _command, build
+
+    monkeypatch.setattr(_command, "has_terminal", lambda: True)
+    app = build(kernel)
+    declined = CliRunner().invoke(app, ["system", "plugin", "add", "heinzel-crm"], input="n\n")
+    assert declined.exit_code == 0, declined.output
+    assert "Install heinzel-crm 1.1.0 now? [y/N]" in declined.output
+    assert "Not installed." in declined.output
+    assert "hz system plugin add heinzel-crm==1.1.0 --confirm" in declined.output
+    assert kernel.runs == []
+    accepted = CliRunner().invoke(app, ["system", "plugin", "add", "heinzel-crm"], input="y\n")
+    assert accepted.exit_code == 0, accepted.output
+    assert "✓ Installed heinzel-crm 1.1.0." in accepted.output
+    assert "Restart hz ui to load it (or click Restart in the app)." in accepted.output
+    assert len(kernel.runs) == 1
+    scripted = CliRunner().invoke(app, ["system", "plugin", "add", "heinzel-crm", "--json"], input="y\n")
+    assert '"done": false' in scripted.output
+    assert len(kernel.runs) == 1
+
+
+def test_off_a_terminal_the_preview_says_it_installed_nothing(kernel):
+    from typer.testing import CliRunner
+
+    from heinzel.heads.cli import build
+
+    shown = CliRunner().invoke(build(kernel), ["system", "plugin", "add", "heinzel-crm"])
+    assert "Not installed yet: this was a preview." in shown.output
+    assert (
+        "To install: hz system plugin add heinzel-crm==1.1.0 --confirm"
+        in shown.output.replace("\n", " ").replace("  ", " ")
+        or "--confirm" in shown.output
+    )
 
 
 def test_mcp_over_stdio_manages_plugins_and_unauthenticated_http_mcp_cannot(kernel):
@@ -252,7 +302,7 @@ def test_mcp_over_stdio_manages_plugins_and_unauthenticated_http_mcp_cannot(kern
     http = {tool.name for tool in asyncio.run(mcp.build(kernel, "streamable-http").list_tools())}
     assert stdio >= CHANGES
     assert not CHANGES & http
-    assert {"system_plugin_list", "system_plugin_search", "workflow_run"} <= http  # the rest stays as it was
+    assert {"system_plugin_list", "system_plugin_search", "heinzel_wake"} <= http  # the rest stays as it was
 
 
 def test_a_handed_over_socket_that_isnt_a_loopback_listener_starts_a_fresh_session(monkeypatch):

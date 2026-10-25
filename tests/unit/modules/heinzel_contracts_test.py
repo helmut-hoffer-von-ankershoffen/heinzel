@@ -11,9 +11,9 @@ import yaml
 
 from heinzel import JobLet, Window
 from heinzel.kernel import format_duration, schedule_problem
-from heinzel.modules.workflow import _contracts as contracts
-from heinzel.modules.workflow._contracts import _load, collect, contract_name, read_contract, sections
-from heinzel.modules.workflow._models import NAME, Frontmatter, cron_problem
+from heinzel.modules.heinzel import _contracts as contracts
+from heinzel.modules.heinzel._contracts import _load, collect, contract_name, read_contract, sections
+from heinzel.modules.heinzel._models import NAME, Frontmatter, cron_problem
 
 pytestmark = pytest.mark.unit
 

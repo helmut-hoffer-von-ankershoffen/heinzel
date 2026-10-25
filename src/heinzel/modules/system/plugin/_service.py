@@ -35,6 +35,7 @@ from heinzel.kernel import (
     OperationLet,
     PlaybookLet,
     ProviderLet,
+    SignalLet,
     ThemeLet,
     subprocess_environment,
 )
@@ -184,7 +185,12 @@ class PluginService:
             capabilities = sorted({f"{let.adapter}:{let.capability}" for let in lets if isinstance(let, ProviderLet)})
             themes = sorted({let.name for let in lets if isinstance(let, ThemeLet)})
             playbooks = [r.qualname for r in mine if any(isinstance(let, PlaybookLet) for let in r.module.lets)]
-            features = any(isinstance(let, OperationLet) and let.name not in TEMPLATE_OPERATIONS for let in lets)
+            # Signals a theme follows (ADR 0060) are part of the look, not a capability of their own.
+            signals = {let.func for let in lets if isinstance(let, SignalLet)}
+            features = any(
+                isinstance(let, OperationLet) and let.name not in TEMPLATE_OPERATIONS and let.func not in signals
+                for let in lets
+            )
             plugins.append(
                 PluginInfo(
                     distribution=origin.distribution if origin else (dist.name if dist else name),
@@ -316,6 +322,7 @@ class PluginService:
         """
         candidate = self.candidate(spec)
         if not confirm:
+            handle = candidate.spec if candidate.first_party else candidate.requirement
             return PluginChange(
                 action="add",
                 done=False,
@@ -323,7 +330,8 @@ class PluginService:
                 candidate=candidate,
                 plugins=self.installed(),
                 restart_required=False,
-                next=[f"hz system plugin add {shlex.quote(candidate.requirement)} --confirm"],
+                # A first-party plugin is added by the name asked for: its git requirement is refused as a spec.
+                next=[f"hz system plugin add {shlex.quote(handle)} --confirm"],
             )
         with self._exclusive():
             self._installation.run(
@@ -580,7 +588,7 @@ class PluginService:
             short = taken[0].removeprefix(PREFIX)
             msg = (
                 f"{spec!r} would install {taken[0]}, the name of a first-party plugin; add that one by name "
-                f"(`hz system plugin add {short}`), or a plugin with a name of its own."
+                f"({short}), or use a plugin with a name of its own."
             )
             raise HeinzelError(msg)
 

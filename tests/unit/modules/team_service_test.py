@@ -646,14 +646,14 @@ def test_left_members_are_not_shown(tmp_path, remote):
 
 
 def test_adopt_records_a_checkout_and_removes_the_deprecated_setting(tmp_path, remote):
-    editor = Editor({"workflow.team_repository": str(remote)})
+    editor = Editor({"heinzel.team_repository": str(remote)})
     (remote / ".git").mkdir()
     fake = Fake(remote)
     fake.origin[str(remote.resolve())] = URL
     adopted = service(tmp_path, fake, editor).adopt(remote)
     assert adopted.repository == URL
     assert editor.values == {"team.checkout": str(remote.resolve()), "team.repository": URL}
-    assert adopted.written == ["set team.checkout", "set team.repository", "removed workflow.team_repository"]
+    assert adopted.written == ["set team.checkout", "set team.repository", "removed heinzel.team_repository"]
     assert adopted.next == []
 
 
@@ -663,7 +663,7 @@ def test_adopt_of_a_legacy_checkout_says_what_is_left(tmp_path, remote):
     adopted = service(tmp_path, Fake(remote), Editor()).adopt(remote)
     assert adopted.repository is None
     assert adopted.written == ["set team.checkout"]
-    assert "HZ_WORKFLOW__TEAM_REPOSITORY" in adopted.next[0]
+    assert "HZ_HEINZEL__TEAM_REPOSITORY" in adopted.next[0]
     assert "has no hz.yaml yet" in adopted.next[1]
 
 
