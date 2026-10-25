@@ -9,15 +9,15 @@
 | plugins/heinzel-github/src/heinzel\_github/\_client.py        |      114 |        2 |       32 |        1 |     98% |   104-105 |
 | plugins/heinzel-google/src/heinzel\_google/\_mail.py          |      422 |        0 |      144 |        1 |     99% | 485-\>487 |
 | src/heinzel/heads/\_stream.py                                 |       56 |        6 |        4 |        0 |     87% | 42-46, 55 |
-| src/heinzel/heads/cli/\_\_init\_\_.py                         |      249 |        9 |       64 |        9 |     94% |137-\>145, 142-\>144, 145-\>155, 166-169, 172, 176-\>exit, 232-\>224, 410, 412-414, 424-\>426 |
+| src/heinzel/heads/cli/\_\_init\_\_.py                         |      248 |        8 |       64 |        9 |     95% |134-\>142, 139-\>141, 142-\>152, 163-166, 169, 173-\>exit, 229-\>221, 408, 410-411, 421-\>423 |
 | src/heinzel/heads/cli/\_chat.py                               |      144 |       13 |       40 |        5 |     90% |28-29, 70-71, 82, 106, 127-130, 154-\>exit, 166-\>exit, 185-187 |
 | src/heinzel/heads/cli/\_command.py                            |       83 |        3 |       22 |        3 |     94% |84, 92, 156 |
 | src/heinzel/heads/cli/\_join.py                               |      141 |        0 |       32 |        1 |     99% | 211-\>216 |
-| src/heinzel/heads/cli/\_serve.py                              |       94 |        5 |       26 |        4 |     92% |83-\>85, 93-95, 111-\>exit, 183, 205-206 |
+| src/heinzel/heads/cli/\_serve.py                              |       94 |        5 |       26 |        4 |     92% |83-\>85, 93-95, 111-\>exit, 187, 209-210 |
 | src/heinzel/heads/cli/\_setup.py                              |      319 |        6 |       96 |        6 |     97% |275, 342, 427, 434, 481-\>490, 504, 507 |
 | src/heinzel/heads/mcp/\_\_init\_\_.py                         |       85 |        2 |       20 |        2 |     96% |  151, 186 |
 | src/heinzel/heads/mcp/\_skills.py                             |       29 |        1 |        6 |        1 |     94% |        23 |
-| src/heinzel/heads/web/\_\_init\_\_.py                         |      248 |       15 |       54 |        3 |     94% |394-396, 440, 450-\>454, 461-463, 471-\>exit, 491-492, 495-500 |
+| src/heinzel/heads/web/\_\_init\_\_.py                         |      249 |       15 |       54 |        3 |     94% |395-397, 443, 453-\>457, 464-466, 474-\>exit, 494-495, 498-503 |
 | src/heinzel/heads/web/\_devices.py                            |      100 |        2 |       12 |        0 |     98% |   125-126 |
 | src/heinzel/heads/web/\_shutdown.py                           |       83 |        3 |       14 |        1 |     96% |112, 141-142 |
 | src/heinzel/heads/web/\_stream.py                             |       51 |        3 |       16 |        3 |     91% |48, 85-\>84, 95-96 |
@@ -70,7 +70,7 @@
 | src/heinzel/modules/system/daemon/\_render.py                 |       47 |        1 |       22 |        1 |     97% |        30 |
 | src/heinzel/modules/system/daemon/\_schedule.py               |       65 |        3 |       20 |        1 |     95% |43-44, 102 |
 | src/heinzel/modules/system/daemon/\_service.py                |      355 |        1 |      108 |        0 |     99% |       100 |
-| src/heinzel/modules/system/daemon/\_status\_item.py           |       41 |        1 |       16 |        1 |     96% |        30 |
+| src/heinzel/modules/system/daemon/\_status\_item.py           |       40 |        1 |       14 |        1 |     96% |        30 |
 | src/heinzel/modules/system/directory/\_guess.py               |       82 |        0 |       24 |        1 |     99% |  98-\>104 |
 | src/heinzel/modules/system/notify/\_\_init\_\_.py             |       34 |        2 |        0 |        0 |     94% |  102, 109 |
 | src/heinzel/modules/system/notify/\_channels.py               |       48 |        5 |       26 |        3 |     86% |45, 52, 68-70 |
@@ -109,9 +109,9 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| **TOTAL**                                                     | **25261** |  **583** | **6302** |  **249** | **97%** |           |
+| **TOTAL**                                                     | **25300** |  **582** | **6308** |  **249** | **97%** |           |
 
-140 files skipped due to complete coverage.
+142 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
