@@ -65,7 +65,7 @@
 | src/heinzel/modules/system/notify/\_watch.py                  |       34 |        7 |       10 |        4 |     75% |21-29, 40, 43-44, 59, 68 |
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py             |       48 |        3 |        4 |        0 |     94% |84, 102, 127 |
 | src/heinzel/modules/system/plugin/\_render.py                 |       83 |       12 |       30 |        7 |     80% |38, 47, 84, 86, 88-\>87, 104-106, 116-120 |
-| src/heinzel/modules/system/plugin/\_service.py                |      363 |        6 |      100 |        7 |     97% |118-\>120, 170-\>169, 405-406, 447-448, 461-\>466, 641-\>640, 658-\>657, 757-758 |
+| src/heinzel/modules/system/plugin/\_service.py                |      430 |       12 |      124 |       12 |     96% |121-\>123, 173-\>172, 408-409, 450-451, 464-\>469, 638, 713-\>712, 730-\>729, 803, 810, 813-814, 829, 864-865 |
 | src/heinzel/modules/system/plugin/\_sources.py                |      272 |        2 |       90 |        1 |     99% |253-\>255, 427-428 |
 | src/heinzel/modules/system/runner/\_\_init\_\_.py             |       62 |        1 |       14 |        1 |     97% |       122 |
 | src/heinzel/modules/system/runner/\_claude.py                 |      204 |        0 |       72 |        1 |     99% |204-\>exit |
@@ -85,7 +85,7 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| **TOTAL**                                                     | **20228** |  **431** | **5074** |  **181** | **97%** |           |
+| **TOTAL**                                                     | **20295** |  **437** | **5098** |  **186** | **97%** |           |
 
 131 files skipped due to complete coverage.
 
