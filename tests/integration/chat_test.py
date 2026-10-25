@@ -114,6 +114,8 @@ def test_hz_chat_streams_the_answer_and_runs_a_proposal_only_after_y(kernel, ran
     assert "Ran `hz fakeagent publish --title 'Week 43'`" in result.output
     assert ran == ["Week 43"]
     assert "fake · $0.0200" in result.output
+    usage = json.loads(hz(kernel, "ai", "usage", "--by", "cause", "--json").output)  # the message was recorded
+    assert [(row["key"], row["cost_usd"]) for row in usage["breakdowns"]["cause"]] == [("chat", 0.02)]
 
 
 def test_hz_chat_continue_resumes_and_anything_but_y_declines(kernel, ran, script):
