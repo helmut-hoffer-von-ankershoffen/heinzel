@@ -55,6 +55,8 @@ from heinzel.kernel import (
     Requester,
     Requirement,
     ToolProfile,
+    UsageEntry,
+    record_usage,
     toml_value,
 )
 from heinzel.modules.heinzel import _measure, _playbooks
@@ -1392,6 +1394,7 @@ class HeinzelService:
                 timeout=timedelta(seconds=packet.timeout_seconds),
                 budget=Budget(max_usd=packet.max_usd),
             )
+        record_usage(self._kernel, UsageEntry.of(result, "scheduled" if scheduled else "render", contract.qualified))
         if result.status != "completed":
             cost = f"; it cost {result.usage.cost_usd} USD" if result.usage.cost_usd is not None else ""
             msg = f"{contract.qualified}: the agent run ended {result.status}: {result.detail or 'no detail'}{cost}"

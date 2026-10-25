@@ -8,7 +8,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 
 | Module | What it does |
 | --- | --- |
-| [`ai`](#ai) | How hz reaches AI: the AI access in use, its status and a live test. |
+| [`ai`](#ai) | How hz reaches AI, and what it spends: tokens and cost per run. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
 | [`atlassian`](#atlassian) | Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. |
 | [`clock`](#clock) | What time it is for everyone on the team. |
@@ -41,7 +41,13 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 
 ## `ai`
 
-How hz reaches AI: the AI access in use, its status and a live test.
+How hz reaches AI, and what it spends: tokens and cost per run.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause. | `hz ai usage` | `ai_usage` | — | `GET /api/ai/usage` |  | expert |
+
+Settings: [`[ai]`](CONFIGURATION.md#ai).
 
 ## `ai.access`
 
