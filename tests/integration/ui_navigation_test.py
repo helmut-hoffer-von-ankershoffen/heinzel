@@ -1,11 +1,13 @@
 """Every authorized head sees provider navigation and private actions use the same flat JSON wire."""
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from enum import Enum
+from typing import Annotated
 
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typer.testing import CliRunner
 
 from heinzel import CurrentUser, Module, ModuleSettings, NavSettings, RunOperation
@@ -110,3 +112,38 @@ def test_private_nested_arguments_are_validated_serialized_and_forwarded_as_one_
     )
     assert response.status_code == 200
     assert response.json() == value
+
+
+class Season(Enum):
+    WINTER = "winter"
+
+
+def test_private_date_and_enum_arguments_use_the_same_declared_validation_as_http(make_kernel):
+    module = Module("harbor", "Harbor tools.")
+
+    @module.operation(private=True, read_only=False)
+    def choose(when: date, season: Season, limit: Annotated[int, Field(strict=True)]) -> dict[str, str | int]:
+        """Choose a dated view with a strict count."""
+        return {"when": when.isoformat(), "season": season.value, "limit": limit}
+
+    arguments = {"when": "2026-10-25", "season": "winter", "limit": 3}
+    module.nav(title="Harbor", icon="code", sidebar=RunOperation(operation="choose", arguments=arguments))
+    kernel = make_kernel(builtins=True, harbor=module)
+    user = kernel.resolve(CurrentUser)
+    token = ApiBearer.issue(user.owner(), "test", now=NOW)
+    client = TestClient(
+        api.build(kernel, credentials=token, audience="test", clock=lambda: NOW), base_url="http://localhost"
+    )
+    headers = {"Authorization": f"Bearer {token.secret}"}
+    direct = client.post("/harbor/choose", headers=headers, json=arguments)
+    assert direct.status_code == 200
+    assert direct.json() == arguments
+    assert client.post("/harbor/choose", headers=headers, json={**arguments, "limit": "3"}).status_code == 422
+    (entry,) = [entry for entry in kernel.resolve(UiService).navigation() if entry.module == "harbor"]
+    assert entry.problem is None
+    call = entry.sidebar.call
+    assert call.query == {}
+    assert call.body == arguments
+    projected = client.request(call.method, call.path, headers=headers, params=call.query, json=call.body)
+    assert projected.status_code == direct.status_code
+    assert projected.json() == direct.json()

@@ -365,7 +365,7 @@ class UiService:
         for name, value in effect.arguments.items():
             try:
                 adapter: TypeAdapter[Any] = TypeAdapter(parameters[name].annotation)
-                validated = adapter.validate_python(value, strict=operation.private)
+                validated = adapter.validate_python(value)
                 arguments[name] = adapter.dump_python(validated, mode="json")
             except ValidationError as exc:
                 msg = f"`{effect.operation}` argument {name}: {_problems(exc)}"

@@ -1,6 +1,9 @@
 """UI projection comes from active provider declarations and actual owned Settings lets."""
 
+from typing import Annotated
+
 import pytest
+from pydantic import Field
 
 from heinzel import Module, ModuleRecord, ModuleSettings, Navigate, NavSettings, RunOperation, Settings
 from heinzel.kernel import Origin
@@ -130,7 +133,7 @@ def test_private_operation_arguments_must_match_the_strict_json_body_type(make_k
     module = Module("harbor", "Harbor tools.")
 
     @module.operation(private=True, read_only=False)
-    def change(limit: int) -> int:
+    def change(limit: Annotated[int, Field(strict=True)]) -> int:
         """Change the limit."""
         return limit
 
