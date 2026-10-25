@@ -24,6 +24,7 @@ from pydantic_core import to_jsonable_python
 
 from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
+from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads.mcp._skills import add_skills
 from heinzel.kernel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, boot, redact_emails
 
@@ -107,6 +108,7 @@ def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., 
     def run(**kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
         try:
             with user.local("mcp-stdio") if local else user.using(None):
+                mark_authenticated_presence(kernel, item.record.qualname)
                 return kernel.invoke(item.operation, **kwargs)
         except HeinzelError as exc:
             raise ToolError(str(exc)) from exc

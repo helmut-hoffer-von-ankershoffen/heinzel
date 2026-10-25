@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.text import Text
 
+from heinzel.heads._presence import mark_presence
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.kernel import CurrentUser, HeinzelError, Kernel, OperationLet
@@ -71,6 +72,7 @@ class ChatRepl:
             raise HeinzelError(msg)
         # The chat's operations return pydantic models (a session) or lists of them; as JSON, they are plain dicts.
         with self.kernel.resolve(CurrentUser).local("cli"):
+            mark_presence(self.kernel, "system.runner.chat")
             return cast("Session", to_jsonable_python(self.kernel.invoke(operation, **kwargs)))
 
     def start(self, *, session: str | None, resume: bool, context: str | None, detail: str | None) -> Session:
