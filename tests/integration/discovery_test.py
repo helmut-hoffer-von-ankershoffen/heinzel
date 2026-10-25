@@ -38,6 +38,7 @@ def test_discovers_builtin_modules_and_submodules():
         "system.runner.chat",
         "system.skill",
         "system.sound",
+        "system.state",
         "system.theme",
         "system.ui",
         "team",
@@ -90,6 +91,7 @@ def test_kernel_boots_from_discovery(settings):
         "system.runner",
         "system.skill",
         "system.sound",
+        "system.state",
         "system.theme",
         "system.ui",
     ]

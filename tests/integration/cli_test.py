@@ -590,6 +590,7 @@ def test_commands_are_sorted(app):
         "serve",
         "skill",
         "sound",
+        "state",
         "theme",
         "ui",
         "update",

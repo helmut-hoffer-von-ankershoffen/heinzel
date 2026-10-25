@@ -230,6 +230,12 @@ Plugins add their own tables.
 | `mute_in_meetings` | `HZ_SYSTEM_SOUND__MUTE_IN_MEETINGS` | `True` | Mute while your calendar says you are in a meeting; needs a connected calendar. Never read from a project's hz.toml. |
 | `duck_while_typing` | `HZ_SYSTEM_SOUND__DUCK_WHILE_TYPING` | `True` | Play softer while you type in the chat. Never read from a project's hz.toml. |
 
+## `[system.state]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `personal` | `HZ_SYSTEM_STATE__PERSONAL` | `None` | Your own private state repository, which hz pushes this machine's presence and adoption to, on the branch hz/<your handle>/<machine>; e.g. https://github.com/mira-example/heinzel-state-mira. Unset, nothing leaves this machine. Never read from a project's hz.toml. |
+
 ## `[system.theme]`
 
 | Key | Environment variable | Default | Description |

@@ -131,3 +131,5 @@ content digests and for storing device tokens (only their hash is kept, ADR 0046
 compare tokens in constant time. It stores no user passwords; credentials live in the OS keychain. Network access
 uses HTTPS through the standard TLS stack with certificate verification (Python's `ssl` defaults through `urllib`,
 and uv, git and the vendor CLIs), and the local servers listen on loopback (`127.0.0.1`) by default, without TLS.
+
+When you explicitly configure a personal state repository, hz pushes day-granular presence, version and OS-family metadata with your roster handle and a random machine id in its writer branch. Commit identity uses the handle and an `hz.invalid` address; dates are day-only. Nothing is pushed by default; team upload requires separate consent in a later slice.

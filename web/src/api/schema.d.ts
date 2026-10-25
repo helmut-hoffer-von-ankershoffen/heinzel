@@ -1563,6 +1563,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/state/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Push this machine's new presence and adoption lines to your personal state repository now.
+         * @description Push this machine's new presence and adoption lines to your personal state repository now.
+         */
+        post: operations["system_state_push"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/state/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start this machine's clone of its branch afresh after a refused push; the old one is kept aside.
+         * @description Start this machine's clone of its branch afresh after a refused push; the old one is kept aside.
+         */
+        post: operations["system_state_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/state/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show where this machine's state goes, what is still to push and how the last push went.
+         * @description Show where this machine's state goes, what is still to push and how the last push went.
+         */
+        get: operations["system_state_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/theme/list": {
         parameters: {
             query?: never;
@@ -6246,6 +6306,42 @@ export interface components {
             provided: boolean;
         };
         /**
+         * Pushed
+         * @description What a push carried to your personal state repository.
+         */
+        Pushed: {
+            /**
+             * Branch
+             * @description This machine's writer branch.
+             */
+            branch: string;
+            /**
+             * Commit
+             * @description The branch's commit after the push; none when it is still empty.
+             */
+            commit: string | null;
+            /**
+             * Lines
+             * @description New lines it carried.
+             */
+            lines: number;
+            /**
+             * Pushed
+             * @description Whether anything went over the network; false when the branch was current.
+             */
+            pushed: boolean;
+            /**
+             * Repository
+             * @description Your personal state repository.
+             */
+            repository: string;
+            /**
+             * Segments
+             * @description Files those lines are in.
+             */
+            segments: number;
+        };
+        /**
          * Question
          * @description An answerable, stored question; answering it grants no new permission.
          */
@@ -7399,6 +7495,64 @@ export interface components {
             stack: string;
         };
         /**
+         * StateStatus
+         * @description Where this machine's state goes and how the last push went; asks nothing over the network.
+         */
+        StateStatus: {
+            /**
+             * Branch
+             * @description This machine's writer branch, hz/<handle>/<machine>; none without a handle.
+             */
+            branch: string | null;
+            /**
+             * Error
+             * @description Why the last push failed.
+             */
+            error?: string | null;
+            /**
+             * Failures
+             * @description Failed pushes since the last that worked.
+             * @default 0
+             */
+            failures: number;
+            /**
+             * Last Attempt
+             * @description When a push was last tried.
+             */
+            last_attempt?: string | null;
+            /**
+             * Last Push
+             * @description When a push last succeeded.
+             */
+            last_push?: string | null;
+            /**
+             * Machine
+             * @description This machine's id: random, never its host name.
+             */
+            machine: string;
+            /**
+             * Next
+             * @description What to run next, if anything.
+             */
+            next?: string[];
+            /**
+             * Refused
+             * @description Whether pushing stopped because the branch holds lines this machine didn't write.
+             * @default false
+             */
+            refused: boolean;
+            /**
+             * Repository
+             * @description Your personal state repository; none when nothing leaves.
+             */
+            repository: string | null;
+            /**
+             * Streams
+             * @description Each stream's lines.
+             */
+            streams?: components["schemas"]["StreamStatus"][];
+        };
+        /**
          * Status
          * @description Health of one check, or of everything: DOWN beats DEGRADED beats UP.
          * @enum {string}
@@ -7507,6 +7661,27 @@ export interface components {
              * @description What it does for you.
              */
             why: string;
+        };
+        /**
+         * StreamStatus
+         * @description One stream on this machine and what of it the state repository doesn't have yet.
+         */
+        StreamStatus: {
+            /**
+             * Lines
+             * @description Lines this machine wrote.
+             */
+            lines: number;
+            /**
+             * Name
+             * @description The stream: presence or adoption.
+             */
+            name: string;
+            /**
+             * Pending
+             * @description Lines the last push didn't carry yet.
+             */
+            pending: number;
         };
         /**
          * SystemInfo
@@ -8769,6 +8944,10 @@ export interface components {
              */
             session_id: string;
         };
+        /** system_state_push_Input */
+        system_state_push_Input: Record<string, never>;
+        /** system_state_reset_Input */
+        system_state_reset_Input: Record<string, never>;
     };
     responses: never;
     parameters: never;
@@ -8899,6 +9078,7 @@ export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaProfile = components['schemas']['Profile'];
 export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
+export type SchemaPushed = components['schemas']['Pushed'];
 export type SchemaQuestion = components['schemas']['Question'];
 export type SchemaRecipientPreview = components['schemas']['RecipientPreview'];
 export type SchemaRecommendationView = components['schemas']['RecommendationView'];
@@ -8930,10 +9110,12 @@ export type SchemaSoundList = components['schemas']['SoundList'];
 export type SchemaSoundStreamView = components['schemas']['SoundStreamView'];
 export type SchemaSoundscapeView = components['schemas']['SoundscapeView'];
 export type SchemaStackView = components['schemas']['StackView'];
+export type SchemaStateStatus = components['schemas']['StateStatus'];
 export type SchemaStatus = components['schemas']['Status'];
 export type SchemaStatusEntry = components['schemas']['StatusEntry'];
 export type SchemaStatusItem = components['schemas']['StatusItem'];
 export type SchemaStep = components['schemas']['Step'];
+export type SchemaStreamStatus = components['schemas']['StreamStatus'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
 export type SchemaTeamGraphDocument = components['schemas']['TeamGraphDocument'];
 export type SchemaTeamShow = components['schemas']['TeamShow'];
@@ -8968,6 +9150,8 @@ export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
+export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
+export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
 export type $defs = Record<string, never>;
 export interface operations {
     ai_access_list: {
@@ -11019,6 +11203,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_state_push: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["system_state_push_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pushed"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_state_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["system_state_reset_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StateStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_state_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StateStatus"];
                 };
             };
         };

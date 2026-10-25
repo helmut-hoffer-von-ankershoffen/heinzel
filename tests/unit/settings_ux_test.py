@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from heinzel import Config, Kernel, ModuleSettings, Settings, SettingsLet
+from heinzel import Config, CurrentUser, Kernel, ModuleSettings, Settings, SettingsLet
 from heinzel.kernel import discover
 from heinzel.kernel._bindings import CapabilitySettings
 from heinzel.modules.system.config import ConfigService, SettingInfo
@@ -49,7 +49,8 @@ FORMATS = {"iana-timezone", "path", "duration", "uri", "email", "password"}
 def _report() -> dict[str, SettingInfo]:
     """Every setting as the config report has it; built inside a test, so after the isolation of HZ_* variables."""
     kernel = Kernel(Config.empty().settings(Settings, "hz"), RECORDS, config=Config.empty())
-    return {f"{s.section}.{s.key}": s for s in ConfigService(kernel).report().settings}
+    with kernel.resolve(CurrentUser).local("cli"):
+        return {f"{s.section}.{s.key}": s for s in ConfigService(kernel).report().settings}
 
 
 @pytest.fixture(params=KEYS)

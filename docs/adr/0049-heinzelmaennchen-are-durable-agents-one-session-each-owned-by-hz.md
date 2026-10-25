@@ -3,7 +3,7 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer (product), architect (technical shape)
 amends: 0010, 0020, 0021, 0028, 0029, 0038, 0045, 0052
-amended-by: 0052
+amended-by: 0052, 0081
 related: 0012, 0022, 0024, 0027, 0030, 0035, 0037, 0040, 0043, 0046, 0050, 0051
 ---
 
