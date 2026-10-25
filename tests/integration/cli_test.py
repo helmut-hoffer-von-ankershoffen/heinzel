@@ -342,6 +342,8 @@ def fake_github(monkeypatch, answer):
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(_service, "get_json", get_json)
+    # The heinzel-contrib listing is a second GitHub read (Discover source); fake it as an empty-but-readable listing.
+    monkeypatch.setattr(_service.PluginService, "_contrib_plugins", lambda *_args, **_kwargs: [])
 
 
 CRM = {
