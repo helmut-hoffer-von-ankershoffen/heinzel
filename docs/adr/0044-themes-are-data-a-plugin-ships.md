@@ -4,6 +4,7 @@ date: 2026-10-24
 decision-makers: maintainer
 related: 0003, 0012, 0017, 0026, 0027, 0028, 0037, 0039, 0040
 amended-by: 0060
+amended-by: 0064
 ---
 
 # 0044: Themes are data a plugin ships: `module.theme(...)` offers them, `hz system theme use` picks one
