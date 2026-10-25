@@ -861,6 +861,28 @@
         "title": "AvailablePlugin",
         "type": "object"
       },
+      "Avatar": {
+        "additionalProperties": false,
+        "description": "A Heinzelmännchen drawn in a widget, dressed by data only.",
+        "properties": {
+          "accessories": {
+            "description": "What it wears or carries: umbrella, sunglasses, scarf.",
+            "items": {
+              "enum": [
+                "umbrella",
+                "sunglasses",
+                "scarf"
+              ],
+              "type": "string"
+            },
+            "maxItems": 3,
+            "title": "Accessories",
+            "type": "array"
+          }
+        },
+        "title": "Avatar",
+        "type": "object"
+      },
       "Candidate": {
         "description": "Something a hint found that may be an asset of its type.",
         "properties": {
@@ -1207,6 +1229,23 @@
             "description": "A card.",
             "title": "Kind",
             "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
           },
           "title": {
             "description": "Its title, one line.",
@@ -3967,6 +4006,137 @@
         "title": "GraphNode",
         "type": "object"
       },
+      "GraphicWidget": {
+        "additionalProperties": false,
+        "description": "A big value with a picture: an icon or a Heinzelmännchen, and a line under it.",
+        "properties": {
+          "avatar": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Avatar"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A Heinzelmännchen beside the value; wins over `icon`."
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A line under the value, e.g. `Light traffic`.",
+            "title": "Caption"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "activity",
+                  "alarm-clock",
+                  "bell",
+                  "bot",
+                  "calendar",
+                  "calendar-clock",
+                  "chart-line",
+                  "circle-alert",
+                  "circle-check",
+                  "clock",
+                  "cloud",
+                  "code",
+                  "file-text",
+                  "git-pull-request",
+                  "globe",
+                  "heart",
+                  "inbox",
+                  "info",
+                  "link",
+                  "list-checks",
+                  "mail",
+                  "message-square",
+                  "play",
+                  "rocket",
+                  "star",
+                  "terminal",
+                  "timer",
+                  "users",
+                  "video",
+                  "zap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An icon beside the value.",
+            "title": "Icon"
+          },
+          "kind": {
+            "const": "graphic",
+            "default": "graphic",
+            "description": "A graphic.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "description": "What it shows, e.g. `Commute home`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "value": {
+            "description": "The big figure as shown, up to 16 characters, e.g. `12 min`.",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "GraphicWidget",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -4728,6 +4898,23 @@
             "title": "Kind",
             "type": "string"
           },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
+          },
           "title": {
             "description": "Its title, one line.",
             "maxLength": 80,
@@ -5068,6 +5255,23 @@
             "minLength": 1,
             "title": "Label",
             "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
           },
           "tone": {
             "default": "neutral",
@@ -6550,6 +6754,23 @@
             "minLength": 1,
             "title": "Label",
             "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
           },
           "tone": {
             "default": "neutral",
@@ -10010,6 +10231,7 @@
                 "discriminator": {
                   "mapping": {
                     "card": "#/components/schemas/CardWidget",
+                    "graphic": "#/components/schemas/GraphicWidget",
                     "list": "#/components/schemas/ListWidget",
                     "metric": "#/components/schemas/MetricWidget",
                     "progress": "#/components/schemas/ProgressWidget"
@@ -10028,6 +10250,9 @@
                   },
                   {
                     "$ref": "#/components/schemas/ProgressWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GraphicWidget"
                   }
                 ]
               },

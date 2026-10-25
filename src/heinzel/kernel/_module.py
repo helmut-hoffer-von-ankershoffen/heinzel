@@ -744,7 +744,7 @@ class Module:
     ) -> Callable[[F], F]:
         """Add a widget to the web app's Today screen (ADR 0056): a pure view over one of this module's operations.
 
-        Like `status`, but the view returns a `Card`, `ListWidget`, `Metric` or `Progress`, or None.
+        Like `status`, but the view returns a card, list, metric, progress or graphic widget, or None.
 
         Args:
             source: The operation's name in this module, e.g. `clock`.

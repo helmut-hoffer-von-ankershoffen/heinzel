@@ -2173,6 +2173,17 @@ export interface components {
             url: string;
         };
         /**
+         * Avatar
+         * @description A Heinzelmännchen drawn in a widget, dressed by data only.
+         */
+        Avatar: {
+            /**
+             * Accessories
+             * @description What it wears or carries: umbrella, sunglasses, scarf.
+             */
+            accessories?: ("umbrella" | "sunglasses" | "scarf")[];
+        };
+        /**
          * Candidate
          * @description Something a hint found that may be an asset of its type.
          */
@@ -2380,6 +2391,11 @@ export interface components {
              * @enum {string}
              */
             kind: "card";
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
             /**
              * Title
              * @description Its title, one line.
@@ -4037,6 +4053,51 @@ export interface components {
              */
             maintained: boolean;
         };
+        /**
+         * GraphicWidget
+         * @description A big value with a picture: an icon or a Heinzelmännchen, and a line under it.
+         */
+        GraphicWidget: {
+            /** @description A Heinzelmännchen beside the value; wins over `icon`. */
+            avatar?: components["schemas"]["Avatar"] | null;
+            /**
+             * Caption
+             * @description A line under the value, e.g. `Light traffic`.
+             */
+            caption?: string | null;
+            /**
+             * Icon
+             * @description An icon beside the value.
+             */
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            /**
+             * @description A graphic. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "graphic";
+            /**
+             * Label
+             * @description What it shows, e.g. `Commute home`.
+             */
+            label: string;
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Value
+             * @description The big figure as shown, up to 16 characters, e.g. `12 min`.
+             */
+            value: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -4481,6 +4542,11 @@ export interface components {
              */
             kind: "list";
             /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
+            /**
              * Title
              * @description Its title, one line.
              */
@@ -4693,6 +4759,11 @@ export interface components {
              * @description What is measured, e.g. `Open reviews`.
              */
             label: string;
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
             /**
              * Tone
              * @description How it reads: neutral, ok, warn or bad.
@@ -5515,6 +5586,11 @@ export interface components {
              * @description What is done, e.g. `Release checklist`.
              */
             label: string;
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
             /**
              * Tone
              * @description How it reads: neutral, ok, warn or bad.
@@ -7482,7 +7558,7 @@ export interface components {
              * Widget
              * @description What to show; none when there is nothing to show.
              */
-            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"]) | null;
+            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"]) | null;
         };
     };
     responses: never;
@@ -7502,6 +7578,7 @@ export type SchemaAgenda = components['schemas']['Agenda'];
 export type SchemaAgentResult = components['schemas']['AgentResult'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
+export type SchemaAvatar = components['schemas']['Avatar'];
 export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
@@ -7553,6 +7630,7 @@ export type SchemaGraph = components['schemas']['Graph'];
 export type SchemaGraphEdge = components['schemas']['GraphEdge'];
 export type SchemaGraphMetadata = components['schemas']['GraphMetadata'];
 export type SchemaGraphNode = components['schemas']['GraphNode'];
+export type SchemaGraphicWidget = components['schemas']['GraphicWidget'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthReport = components['schemas']['HealthReport'];
 export type SchemaHeinzelList = components['schemas']['HeinzelList'];

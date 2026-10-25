@@ -68,6 +68,11 @@ Icon = Literal[
 ]
 """The icons a contribution may name; the web app maps each to its own icon, and only these."""
 ICONS: frozenset[str] = frozenset(get_args(Icon))
+Size = Literal["small", "medium", "wide"]
+"""How much room a widget asks of the Today grid: one column, a roomier one, or two columns; the app may give less on a
+narrow screen. Left out, each kind has its own default."""
+Accessory = Literal["umbrella", "sunglasses", "scarf"]
+"""What a Heinzelmännchen may wear or carry in a graphic widget; the web app draws each, and only these."""
 Slot = Literal["footer", "sidebar", "header", "today"]
 """Where the web app shows a contribution: the status bar under the screen, the bottom of the navigation sidebar, the
 header's buttons, or the Today screen."""
@@ -331,6 +336,8 @@ class CardWidget(_Data):
         default_factory=list[WidgetAction], max_length=MAX_ACTIONS, description="Up to three buttons."
     )
 
+    size: Size | None = Field(default=None, description="Room in the Today grid; each kind has a default.")
+
 
 class ListEntry(_Data):
     """A line of a list widget."""
@@ -348,6 +355,8 @@ class ListWidget(_Data):
     title: Text = Field(description="Its title, one line.")
     items: list[ListEntry] = Field(max_length=MAX_ITEMS, description="Up to eight lines.")
 
+    size: Size | None = Field(default=None, description="Room in the Today grid; each kind has a default.")
+
 
 class MetricWidget(_Data):
     """One number with a label, and how it moved."""
@@ -358,6 +367,8 @@ class MetricWidget(_Data):
     delta: Value | None = Field(default=None, description="How it moved, as shown, e.g. `+3 this week`.")
     tone: Tone = Field(default="neutral", description="How it reads: neutral, ok, warn or bad.")
 
+    size: Size | None = Field(default=None, description="Room in the Today grid; each kind has a default.")
+
 
 class ProgressWidget(_Data):
     """How much of something is done."""
@@ -367,6 +378,7 @@ class ProgressWidget(_Data):
     done: int = Field(ge=0, description="How many are done, at most `total`.")
     total: int = Field(ge=1, description="How many there are.")
     tone: Tone = Field(default="neutral", description="How it reads: neutral, ok, warn or bad.")
+    size: Size | None = Field(default=None, description="Room in the Today grid; each kind has a default.")
 
     @model_validator(mode="after")
     def _done_within_total(self) -> Self:
@@ -376,8 +388,31 @@ class ProgressWidget(_Data):
         return self
 
 
-Widget = Annotated[CardWidget | ListWidget | MetricWidget | ProgressWidget, Field(discriminator="kind")]
-"""What a widget shows: a card, a list, a metric or progress."""
+class Avatar(_Data):
+    """A Heinzelmännchen drawn in a widget, dressed by data only."""
+
+    accessories: list[Accessory] = Field(
+        default_factory=list[Accessory],
+        max_length=3,
+        description="What it wears or carries: umbrella, sunglasses, scarf.",
+    )
+
+
+class GraphicWidget(_Data):
+    """A big value with a picture: an icon or a Heinzelmännchen, and a line under it."""
+
+    kind: Literal["graphic"] = Field(default="graphic", description="A graphic.")
+    label: Text = Field(description="What it shows, e.g. `Commute home`.")
+    value: Value = Field(description="The big figure as shown, up to 16 characters, e.g. `12 min`.")
+    caption: Text | None = Field(default=None, description="A line under the value, e.g. `Light traffic`.")
+    icon: Icon | None = Field(default=None, description="An icon beside the value.")
+    avatar: Avatar | None = Field(default=None, description="A Heinzelmännchen beside the value; wins over `icon`.")
+    tone: Tone = Field(default="neutral", description="How it reads: neutral, ok, warn or bad.")
+    size: Size | None = Field(default=None, description="Room in the Today grid; each kind has a default.")
+
+
+Widget = Annotated[CardWidget | ListWidget | MetricWidget | ProgressWidget | GraphicWidget, Field(discriminator="kind")]
+"""What a widget shows: a card, a list, a metric, progress or a graphic."""
 View = Callable[[Any], Any]
 """A pure function of the source operation's result."""
 

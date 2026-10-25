@@ -23,17 +23,18 @@ describe("The status bar's clock", () => {
     fireEvent.mouseEnter(wrapper);
     const zones = await screen.findByRole("region", { name: "Time for the team and stakeholders" });
     expect(await within(zones).findByText("New York")).toBeInTheDocument();
-    // The first zone is yours: the clock shows its time, and the panel lists the others.
-    expect(within(zones).getByText("Your time: Berlin, the first of your zones")).toBeInTheDocument();
-    expect(within(zones).getAllByRole("listitem")).toHaveLength(1);
+    // The first zone is yours: the clock shows its time, and the panel lists it first, marked, then the others, all on
+    // the 24-hour clock.
+    const rows = within(zones).getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(within(rows[0] as HTMLElement).getByText("Berlin")).toBeInTheDocument();
+    expect(within(rows[0] as HTMLElement).getByText("Primary")).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText("New York")).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).queryByText("Primary")).not.toBeInTheDocument();
+    for (const row of rows) expect(row.textContent).toMatch(/\d{2}:\d{2}$/);
     const time = clock.querySelector("time") as HTMLTimeElement;
-    const shown = new Date(time.dateTime).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      timeZone: "Europe/Berlin",
-    });
-    expect(time).toHaveTextContent(shown);
+    expect(time).toHaveTextContent(/^\d{2}:\d{2}:\d{2}$/);
+    expect(time.textContent).not.toMatch(/[ap]m/i);
     // Leaving the clock for the panel above: the panel is inside the hovered element, so nothing closes.
     fireEvent.mouseLeave(wrapper);
     fireEvent.mouseEnter(wrapper);

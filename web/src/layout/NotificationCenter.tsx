@@ -9,6 +9,7 @@ import { Gnome } from "@/components/Gnome";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { zoneTime } from "@/lib/zoneTime";
 import { NotificationTest } from "@/notifications/NotificationTest";
 
 const SEEN = "hz.notify.seen";
@@ -23,7 +24,7 @@ function seenId(): string {
 }
 
 /** The id of the newest notice seen here; notice ids sort by time. */
-function useSeen(): [string, (id: string) => void] {
+export function useSeen(): [string, (id: string) => void] {
   const [seen, setSeen] = useState(seenId);
   useEffect(() => {
     const update = () => setSeen(seenId());
@@ -42,7 +43,7 @@ function useSeen(): [string, (id: string) => void] {
 }
 
 /** New notices arrive over the app's stream as `hz:notice` events; the list is read again at once. */
-function useLiveNotices() {
+export function useLiveNotices() {
   const notices = useNotices();
   const { refetch } = notices;
   useEffect(() => {
@@ -80,12 +81,10 @@ export function BellButton({ className, onOpen }: { className: string; onOpen: (
 
 const icons = { draft: FileText, failed: AlertTriangle, doctor: Stethoscope, release: Gift, test: BellRing } as const;
 
-function when(at: string): string {
+export function when(at: string): string {
   const date = new Date(at);
   const today = new Date().toDateString() === date.toDateString();
-  return today
-    ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : date.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+  return today ? zoneTime(date) : date.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
 }
 
 export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; navOpen: boolean }) {
