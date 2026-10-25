@@ -87,8 +87,10 @@ def test_on_a_default_port_a_host_without_a_port_works(make_kernel, port):
 def test_spending_and_unattended_operations_are_not_rest_endpoints(make_kernel):
     client = TestClient(api.build(make_kernel(builtins=True)), base_url="http://localhost")
     assert client.post("/system/daemon/tick").status_code == 404
+    assert client.post("/heinzel/wake", params={"name": "x"}).status_code == 404
     assert client.post("/workflow/run", params={"name": "x"}).status_code == 404
-    assert client.get("/workflow/list").status_code == 200
+    assert client.get("/heinzel/list").status_code == 404  # the module's HTTP API is the web app's (ADR 0051)
+    assert client.get("/system/info").status_code == 200
 
 
 def test_the_split_of_host_headers():
