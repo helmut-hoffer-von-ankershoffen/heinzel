@@ -61,7 +61,7 @@ def build(
     """
     server = MCPServer(
         name="heinzel",
-        title="🧝 Heinzelmännchen",
+        title="Heinzelmännchen",
         version=__version__,
         instructions=INSTRUCTIONS if chat is None else CHAT_INSTRUCTIONS,
     )

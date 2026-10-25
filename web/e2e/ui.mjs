@@ -139,6 +139,24 @@ try {
     // Not "networkidle": the notice stream keeps a request open for as long as the app is (ADR 0046). The screen is
     // ready once nothing says it is loading.
     await page.waitForFunction(() => !document.body.textContent?.includes("Loading…"));
+    if (name === "settings") {
+      const search = page.getByRole("searchbox", { name: "Filter settings" });
+      await search.pressSequentially("volume");
+      const focused = await search.evaluate((input) => ({
+        inputOutline: getComputedStyle(input).outlineStyle,
+        inputShadow: getComputedStyle(input).boxShadow,
+        parentShadow: getComputedStyle(input.closest("label")).boxShadow,
+      }));
+      if (focused.inputOutline !== "none" || focused.inputShadow !== "none" || focused.parentShadow === "none") {
+        result.errors.push(`Settings search must have one parent focus indicator: ${JSON.stringify(focused)}`);
+      }
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Shift+Tab");
+      if (!(await search.evaluate((input) => getComputedStyle(input.closest("label")).boxShadow !== "none"))) {
+        result.errors.push("Settings search lost its keyboard focus indicator");
+      }
+      await search.fill("");
+    }
     await audit(name);
   }
 

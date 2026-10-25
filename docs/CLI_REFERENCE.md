@@ -1,6 +1,6 @@
 # CLI reference
 
-🧝 Heinzelmännchen: open-source helpers that keep product teams running. Every operation accepts --json. Commands marked (expert) run like any other but are listed in help and completion only in expert mode: hz system expert on.
+Heinzelmännchen: helpers accelerating product teams. Every operation accepts --json. Commands marked (expert) run like any other but are listed in help and completion only in expert mode: hz system expert on.
 
 **Usage**:
 
