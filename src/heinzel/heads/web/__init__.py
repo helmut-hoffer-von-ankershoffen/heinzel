@@ -51,6 +51,7 @@ from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _terminal
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._pairing import add_pairing
+from heinzel.heads.web._ports import wait_for_port
 from heinzel.heads.web._shutdown import GRACE_SECONDS, Stopping
 from heinzel.heads.web._shutdown import server as stopping_server
 from heinzel.heads.web._stream import add_stream
@@ -412,6 +413,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     base: str | None = None,
     restartable: bool = True,
     execute: Execute = os.execve,
+    waiting: Callable[[str], None] = print,
 ) -> None:
     """Serve the web head on localhost until Ctrl-C stops it, with a new token, and open the browser at it.
 
@@ -430,6 +432,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
         restartable: Whether `POST /api/restart` runs this process's command again; false where the command isn't
             `hz ui` (`make web-dev`).
         execute: Replaces the process on restart; a fake in tests.
+        waiting: Reports a bounded wait when a recently stopped UI still holds the requested port.
 
     Raises:
         HeinzelError: If the app isn't built.
@@ -439,7 +442,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     if static is not None and not (static / "index.html").is_file():
         raise HeinzelError(NOT_BUILT)  # before binding a port, so nothing is left open
     # Read and removed at once, so nothing this process starts inherits the token.
-    sock, token, resumed = _session(os.environ.pop(RESUME, None), port)
+    sock, token, resumed = _session(os.environ.pop(RESUME, None), port, waiting)
     browser = browser and not resumed
     bound = int(sock.getsockname()[1])
     handover: list[int] = []
@@ -500,11 +503,14 @@ def _listening_on_loopback(sock: socket.socket) -> bool:
         return False
 
 
-def _session(handed_over: str | None, port: int) -> tuple[socket.socket, str, bool]:
+def _session(
+    handed_over: str | None, port: int, waiting: Callable[[str], None] = print
+) -> tuple[socket.socket, str, bool]:
     """The listening socket and token: those a restarting `hz ui` handed over, else new ones; and whether resumed.
 
     Raises:
-        OSError: If `port` is taken.
+        HeinzelError: If a fixed port stays busy after the bounded wait.
+        OSError: If binding fails for another reason.
     """
     fd, _, token = (handed_over or "").partition(":")
     if fd.isdigit() and TOKEN_PATTERN.match(token):
@@ -517,4 +523,4 @@ def _session(handed_over: str | None, port: int) -> tuple[socket.socket, str, bo
                 os.set_inheritable(sock.fileno(), False)  # noqa: FBT003 - os API; a restart hands it on explicitly
                 return sock, token, True
             sock.detach()  # not ours to close: whatever handed it over keeps it
-    return free_socket(HOST, port), secrets.token_urlsafe(32), False
+    return wait_for_port(lambda: free_socket(HOST, port), port, waiting), secrets.token_urlsafe(32), False

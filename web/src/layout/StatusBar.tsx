@@ -2,13 +2,14 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
-import { Calendar, CalendarClock, Ellipsis, Globe, Video } from "lucide-react";
+import { Calendar, CalendarClock, Ellipsis, Video } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
 import { FooterItem } from "@/components/FooterItem";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { useWidth } from "@/lib/useWidth";
@@ -190,7 +191,6 @@ function Clock({ now }: { now: Date }) {
         aria-describedby={`${panelId}-hint`}
         className="rounded px-1 font-mono text-foreground/80 tabular-nums hover:bg-accent/60"
       >
-        <Globe aria-hidden className="mr-1 inline size-3.5 align-text-bottom" />
         <time dateTime={now.toISOString()}>{zoneClock(now, primary)}</time>
         <span id={`${panelId}-hint`} className="sr-only">
           {t("status.zones")}
@@ -334,6 +334,14 @@ function ReleaseNotes({ version }: { version: string }) {
   const changelog = useChangelog(false);
   return (
     <div className="px-1.5 pb-1">
+      <section aria-label={t("status.about")} className="mb-3 border-b border-border pb-3">
+        <div className="flex items-center gap-3">
+          <HeinzelAvatar label={t("app.name")} className="h-20 w-12" />
+          <p className="min-w-0 font-medium">{t("status.tagline")}</p>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">{t("status.origin")}</p>
+        <p className="mt-2 text-xs text-muted-foreground">{t("status.built")}</p>
+      </section>
       <p className="mb-1 text-xs text-muted-foreground">{t("status.whatChanged")}</p>
       {typeof changelog.data === "string" && (
         <div className="max-h-64 overflow-y-auto pr-1 text-xs">
@@ -483,6 +491,10 @@ export function StatusBar() {
         </>
       )}
       {clock && <Clock now={now} />}
+      <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-ui-sm" title={t("status.built")}>
+        <span aria-hidden>🐻</span>
+        <span className={mode === "full" ? undefined : "sr-only"}>{t("status.built")}</span>
+      </span>
     </footer>
   );
 }

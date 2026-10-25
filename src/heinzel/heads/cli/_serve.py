@@ -167,7 +167,11 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
 
         try:
             web.serve(
-                kernel, port=kernel.settings.ui_port if port is None else port, browser=browser, announce=announce
+                kernel,
+                port=kernel.settings.ui_port if port is None else port,
+                browser=browser,
+                announce=announce,
+                waiting=lambda text: err_console.print(text, highlight=False, markup=False),
             )
         except KeyboardInterrupt:  # Ctrl-C before the server took it over: stopped all the same
             pass

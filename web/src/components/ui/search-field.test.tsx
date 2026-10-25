@@ -16,14 +16,14 @@ describe("SearchField", () => {
       </>,
     );
     expect(screen.getByRole("searchbox")).toHaveClass("outline-none");
-    expect(box()).not.toHaveClass("ring-2");
+    expect(box()).not.toHaveClass("ring-1");
     await user.tab();
     await user.tab();
     expect(screen.getByRole("searchbox")).toHaveFocus();
-    expect(box()).toHaveClass("ring-2");
+    expect(box()).toHaveClass("ring-1");
     await expectAccessible(container);
     await user.tab();
-    expect(box()).not.toHaveClass("ring-2");
+    expect(box()).not.toHaveClass("ring-1");
   });
 
   it("shows no ring when it is focused for you on opening, and again once you leave and return", async () => {
@@ -35,9 +35,12 @@ describe("SearchField", () => {
       </>,
     );
     expect(screen.getByRole("searchbox")).toHaveFocus();
-    expect(box()).not.toHaveClass("ring-2");
+    expect(box()).not.toHaveClass("ring-1");
+    await user.type(screen.getByRole("searchbox"), "clock");
+    expect(box()).toHaveClass("ring-1");
+    expect(screen.getByRole("searchbox")).toHaveAttribute("data-focus-ring", "parent");
     await user.tab();
     await user.tab({ shift: true });
-    expect(box()).toHaveClass("ring-2");
+    expect(box()).toHaveClass("ring-1");
   });
 });

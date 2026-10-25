@@ -103,10 +103,12 @@ type BodyProps = {
 function Body({ report, query, setQuery, searchRef, section, onSection }: BodyProps) {
   const plugins = usePlugins();
   const info = useInfo();
+  const expert = useExpert().data?.expert === true;
   // Deprecated settings are never shown: hz migrates them, and doctor names the fix when one is still set.
-  const settings = report.settings.filter(
-    (setting) => !(setting.json_schema as JsonSchema | null | undefined)?.deprecated,
-  );
+  const settings = report.settings.filter((setting) => {
+    const schema = setting.json_schema as JsonSchema | null | undefined;
+    return !schema?.deprecated && !schema?.["x-hidden"] && (expert || !schema?.["x-expert"]);
+  });
   const groups = [...new Set(settings.map((setting) => group(setting.section)))];
   const nav = settingsNav(groups, plugins.data ?? []);
   const connector = nav.connectors.find((entry) => entry.id === section || entry.groups.includes(section ?? ""));
@@ -192,7 +194,9 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 </ul>
               </section>
             )}
-            <Sections settings={matching} heading={t("settings.results")} />
+            {(matching.length > 0 || pageHits.length === 0) && (
+              <Sections settings={matching} heading={t("settings.results")} />
+            )}
           </>
         ) : current === PLUGINS ? (
           <PluginsSection />
@@ -230,12 +234,16 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
             )}
             {current === "ai" && <AiAccessSetting />}
             {current === "notifications" && <NotificationSettings />}
-            <Sections
-              settings={matching}
-              heading={page.title}
-              header={current === "appearance" || current === "ai" || current === "notifications" ? undefined : header}
-              summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
-            />
+            {(matching.length > 0 || !["appearance", "ai", "notifications"].includes(current)) && (
+              <Sections
+                settings={matching}
+                heading={page.title}
+                header={
+                  current === "appearance" || current === "ai" || current === "notifications" ? undefined : header
+                }
+                summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
+              />
+            )}
             {TOGGLES[current] && <ContributionToggles module={TOGGLES[current]} />}
           </>
         )}

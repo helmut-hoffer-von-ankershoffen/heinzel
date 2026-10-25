@@ -124,3 +124,8 @@ def test_choices_have_a_label_each_and_units_and_formats_are_known(setting):
     for branch in [*_branches(schema), schema.get("items", {})]:
         if "format" in branch:
             assert branch["format"] in FORMATS
+
+
+@pytest.mark.parametrize("key", ["name", "volume", "follow_theme", "mute_in_meetings", "duck_while_typing"])
+def test_custom_sound_controls_do_not_also_get_generic_setting_rows(key):
+    assert _report()[f"system.sound.{key}"].json_schema["x-hidden"] is True
