@@ -33,7 +33,7 @@ def fakes(tmp_path, monkeypatch):
     claude = bin_dir / "claude"
     claude.write_text(
         f'#!/bin/sh\necho "claude $*" >> {calls}\n'
-        'case "$1" in auth) echo \'{"loggedIn": true}\';;\n'
+        'case "$1" in auth) echo \'{"loggedIn": true, "authMethod": "claude.ai"}\';;\n'
         '*) echo \'{"type": "result", "subtype": "success", "result": "OK", "total_cost_usd": 0.001}\';; esac\n',
         encoding="utf-8",
     )
@@ -142,3 +142,21 @@ def test_every_run_is_recorded_and_hz_ai_usage_reports_it(make_kernel, fakes):
     assert {row["key"] for row in usage["breakdowns"]["cause"]} == {"test", "ask"}
     assert [row["key"] for row in usage["breakdowns"]["access"]] == ["claude-code"]
     assert usage["tone"] == "ok"
+
+
+def test_hz_ai_models_lists_the_models_and_efforts_of_the_access_in_use(make_kernel, fakes):
+    code, listed = hz(make_kernel(builtins=True), "ai", "models")
+    assert code == 0
+    assert (listed["access"], listed["title"], listed["billing"]) == ("claude-code", "Claude Code", "plan")
+    assert [model["name"] for model in listed["models"]][:2] == ["fable", "opus"]
+    efforts = {effort["name"]: effort for effort in listed["efforts"]}
+    assert list(efforts) == ["low", "medium", "high", "xhigh", "max"]
+    assert efforts["medium"]["recommended"] is True
+    assert efforts["xhigh"]["title"] == "Extra"
+    assert efforts["max"]["warning"] == "≈3.5x or more usage"
+    assert set(fakes.read_text(encoding="utf-8").splitlines()) == {"claude auth status --json"}  # nothing spent
+
+
+def test_the_rest_head_has_no_models(make_kernel):
+    client = TestClient(api.build(make_kernel(builtins=True)), base_url="http://localhost")
+    assert client.get("/ai/models").status_code == 404

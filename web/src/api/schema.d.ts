@@ -68,6 +68,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the models and efforts of the AI access in use, for the chat's model and effort picker.
+         * @description List the models and efforts of the AI access in use, for the chat's model and effort picker.
+         */
+        get: operations["ai_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai/usage": {
         parameters: {
             query?: never;
@@ -1966,6 +1986,11 @@ export interface components {
          */
         AgentResult: {
             /**
+             * Billing
+             * @description `plan` when the agent ran on a subscription (its cost is at API prices, covered by the plan), `api` when on an API key; none when the runner can't tell.
+             */
+            billing?: ("plan" | "api") | null;
+            /**
              * Detail
              * @description Why the run did not complete; empty when it did.
              * @default
@@ -2480,6 +2505,11 @@ export interface components {
          */
         ChatMessage: {
             /**
+             * Access
+             * @description The AI access in use when it answered, e.g. `claude-code`.
+             */
+            access?: string | null;
+            /**
              * Actions
              * @description Ids of the actions the agent proposed in it.
              */
@@ -2491,10 +2521,25 @@ export interface components {
              */
             at: string;
             /**
+             * Billing
+             * @description `plan`: on a subscription, so `cost_usd` is what it would cost at API prices, covered by the plan; `api`: billed per token; none when the runner can't tell.
+             */
+            billing?: ("plan" | "api") | null;
+            /**
              * Budget Usd
              * @description The cap the answer ran with; what it counts as against the session's cap when no cost is reported.
              */
             budget_usd?: number | null;
+            /**
+             * Cache Read Tokens
+             * @description Input tokens read from the prompt cache.
+             */
+            cache_read_tokens?: number | null;
+            /**
+             * Cache Write Tokens
+             * @description Input tokens written to the prompt cache.
+             */
+            cache_write_tokens?: number | null;
             /**
              * Cost Usd
              * @description What the answer cost in US dollars, if reported.
@@ -2507,11 +2552,36 @@ export interface components {
              */
             detail: string;
             /**
+             * Duration Seconds
+             * @description How long the answer took.
+             */
+            duration_seconds?: number | null;
+            /**
+             * Effort
+             * @description The effort it was asked for; none: the default.
+             */
+            effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
              * Fix
              * @description A command that fixes why it did not complete, if there is one.
              * @default
              */
             fix: string;
+            /**
+             * Input Tokens
+             * @description Tokens sent, without cache reads, if reported.
+             */
+            input_tokens?: number | null;
+            /**
+             * Model
+             * @description The model that answered, as the runner reported it.
+             */
+            model?: string | null;
+            /**
+             * Output Tokens
+             * @description Tokens produced, if reported.
+             */
+            output_tokens?: number | null;
             /**
              * Role
              * @description `user`, `assistant`, or `action`: what a confirmed or declined action did.
@@ -2569,6 +2639,11 @@ export interface components {
              */
             created: string;
             /**
+             * Effort
+             * @description The effort this chat asks for; none: the default.
+             */
+            effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
              * Id
              * @description The session's id, for `hz chat --session` and the web app.
              */
@@ -2578,6 +2653,11 @@ export interface components {
              * @description The conversation, oldest first.
              */
             messages?: components["schemas"]["ChatMessage"][];
+            /**
+             * Model
+             * @description The model this chat asks for; none: the runner's default.
+             */
+            model?: string | null;
             /**
              * Title
              * @description Its first message, shortened, or its context.
@@ -3501,6 +3581,33 @@ export interface components {
              * @description For `writes`: the writer's current promise; for `reads`: the state of what is read.
              */
             state: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;
+        };
+        /**
+         * EffortChoice
+         * @description An effort the AI access in use can be asked for.
+         */
+        EffortChoice: {
+            /**
+             * Name
+             * @description What `hz chat send --effort` takes, e.g. `medium`.
+             * @enum {string}
+             */
+            name: "low" | "medium" | "high" | "xhigh" | "max";
+            /**
+             * Recommended
+             * @description Whether it is the one to pick when unsure.
+             */
+            recommended: boolean;
+            /**
+             * Title
+             * @description What the picker shows, e.g. `Extra`.
+             */
+            title: string;
+            /**
+             * Warning
+             * @description What it costs beyond the others, e.g. `≈3.5x or more usage`.
+             */
+            warning?: string | null;
         };
         /**
          * Event
@@ -4558,6 +4665,58 @@ export interface components {
              * @description The figure as shown, up to 16 characters, e.g. `12` or `2/3`.
              */
             value: string;
+        };
+        /**
+         * ModelChoice
+         * @description A model the AI access in use offers.
+         */
+        ModelChoice: {
+            /**
+             * Name
+             * @description What `hz chat send --model` takes, e.g. `sonnet`.
+             */
+            name: string;
+            /**
+             * Title
+             * @description What the picker shows, e.g. `Sonnet`.
+             */
+            title: string;
+        };
+        /**
+         * ModelList
+         * @description The models and efforts of the AI access in use, for the chat's picker.
+         */
+        ModelList: {
+            /**
+             * Access
+             * @description The AI access in use, e.g. `claude-code`; none when none is.
+             */
+            access: string | null;
+            /**
+             * Billing
+             * @description `plan` when it uses a subscription, `api` when billed per token.
+             */
+            billing: ("plan" | "api") | null;
+            /**
+             * Efforts
+             * @description The efforts it takes, low to max; empty when it takes none.
+             */
+            efforts: components["schemas"]["EffortChoice"][];
+            /**
+             * Models
+             * @description Its models, current ones first; empty when it names none.
+             */
+            models: components["schemas"]["ModelChoice"][];
+            /**
+             * Note
+             * @description Why the list is empty or short.
+             */
+            note?: string | null;
+            /**
+             * Title
+             * @description Its title, e.g. `Claude Code`.
+             */
+            title: string;
         };
         /**
          * ModuleInfo
@@ -7235,6 +7394,7 @@ export type SchemaDiscovery = components['schemas']['Discovery'];
 export type SchemaDisposition = components['schemas']['Disposition'];
 export type SchemaEdge = components['schemas']['Edge'];
 export type SchemaEdgeMetadata = components['schemas']['EdgeMetadata'];
+export type SchemaEffortChoice = components['schemas']['EffortChoice'];
 export type SchemaEvent = components['schemas']['Event'];
 export type SchemaExpertMode = components['schemas']['ExpertMode'];
 export type SchemaFilters = components['schemas']['Filters'];
@@ -7267,6 +7427,8 @@ export type SchemaLogin = components['schemas']['Login'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
 export type SchemaMetricWidget = components['schemas']['MetricWidget'];
+export type SchemaModelChoice = components['schemas']['ModelChoice'];
+export type SchemaModelList = components['schemas']['ModelList'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
 export type SchemaNavigate = components['schemas']['Navigate'];
 export type SchemaNode = components['schemas']['Node'];
@@ -7422,6 +7584,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
                 };
             };
         };
@@ -9034,6 +9216,10 @@ export interface operations {
                 message: string;
                 /** @description Most this answer may cost in US dollars, within the per-message and session caps. */
                 budget_usd?: number | null;
+                /** @description The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default. */
+                model?: string | null;
+                /** @description The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default. */
+                effort?: ("" | "low" | "medium" | "high" | "xhigh" | "max") | null;
             };
             header?: never;
             path?: never;

@@ -48,6 +48,7 @@ How hz reaches AI, and what it spends: tokens and cost per run.
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause. | `hz ai usage` | `ai_usage` | — | `GET /api/ai/usage` |  | expert |
+| List the models and efforts of the AI access in use, for the chat's model and effort picker. | `hz ai models` | `ai_models` | — | `GET /api/ai/models` |  | expert |
 
 Settings: [`[ai]`](CONFIGURATION.md#ai).
 

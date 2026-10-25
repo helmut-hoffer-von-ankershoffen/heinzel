@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from heinzel import AgentResult, Budget, Check, Emit, HeinzelError, Progress, Status, TokenUsage, ToolProfile
-from heinzel.kernel import RunStatus, clean_text, subprocess_environment
+from heinzel.kernel import Billing, Effort, RunStatus, clean_text, subprocess_environment
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import MAX_OUTPUT, Execute, Outcome, amount, run_bounded, whole_number
 
@@ -60,6 +60,8 @@ SILENT = Progress()
 """Progress for a runner built outside a kernel (tests); the kernel injects the head's own."""
 QUIET = {"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_AUTOUPDATER": "1"}
 """No telemetry, error reporting or self-update from a run Heinzelmännchen starts."""
+LEAN_PROMPT = "You are a helpful assistant. Answer briefly."
+"""The system prompt of a lean run that brings none of its own."""
 
 
 def working_dir(tools: ToolProfile) -> Path | None:
@@ -102,11 +104,24 @@ class ClaudeCodeRunner:
         self._progress = progress
         self._execute = execute
         self._which = which
+        self._login: Billing | bool | None = False
+        """How the login is billed, asked once per runner when a run used no API key; False: not asked yet."""
 
-    def command(
-        self, *, contract_file: Path | None, tools: ToolProfile, budget: Budget, mcp_file: Path | None = None
+    def command(  # noqa: PLR0913 - everything a run's command line holds
+        self,
+        *,
+        contract_file: Path | None,
+        tools: ToolProfile,
+        budget: Budget,
+        mcp_file: Path | None = None,
+        model: str | None = None,
+        effort: Effort | None = None,
     ) -> list[str]:
         """The command line of a run; the prompt goes to standard input and the contract to a file.
+
+        A run without file tools (a chat, a question, a test) is lean: the contract replaces Claude Code's own system
+        prompt, which describes coding tools the run doesn't have, so a short message sends a few hundred tokens of
+        instructions instead of thousands.
 
         Raises:
             HeinzelError: If the CLI is missing, or the profile asks for a tool not configured as read-only.
@@ -130,14 +145,27 @@ class ClaudeCodeRunner:
         if mcp_file is not None:
             command += ["--mcp-config", str(mcp_file)]
         if contract_file is not None:
-            command += ["--append-system-prompt-file", str(contract_file)]
-        if self._settings.model:
-            command += ["--model", self._settings.model]
+            flag = "--append-system-prompt-file" if tools.read_files else "--system-prompt-file"
+            command += [flag, str(contract_file)]
+        if chosen := model or self._settings.model:
+            command += ["--model", chosen]
+        if effort is not None:
+            command += ["--effort", effort]
         if budget.max_usd is not None:
             command += ["--max-budget-usd", f"{budget.max_usd:g}"]
         return command
 
-    def run(self, prompt: str, *, contract: str, tools: ToolProfile, timeout: timedelta, budget: Budget) -> AgentResult:
+    def run(  # noqa: PLR0913 - the protocol's run, by keyword
+        self,
+        prompt: str,
+        *,
+        contract: str,
+        tools: ToolProfile,
+        timeout: timedelta,
+        budget: Budget,
+        model: str | None = None,
+        effort: Effort | None = None,
+    ) -> AgentResult:
         """Run `prompt` under `contract` with read-only `tools`; stop at `timeout` or `budget`.
 
         Raises:
@@ -146,14 +174,16 @@ class ClaudeCodeRunner:
         cwd = working_dir(tools)
         with tempfile.TemporaryDirectory(prefix="hz-run-") as directory:  # 0700: only this user reads the contract
             contract_file = None
-            if contract:
+            if contract or not tools.read_files:  # a lean run always brings its own short system prompt
                 contract_file = Path(directory) / "contract.md"
-                contract_file.write_text(contract, encoding="utf-8")
+                contract_file.write_text(contract or LEAN_PROMPT, encoding="utf-8")
             mcp_file = None
             if tools.mcp_servers:
                 mcp_file = Path(directory) / "mcp.json"
                 mcp_file.write_text(json.dumps(mcp_config(tools)), encoding="utf-8")
-            command = self.command(contract_file=contract_file, tools=tools, budget=budget, mcp_file=mcp_file)
+            command = self.command(
+                contract_file=contract_file, tools=tools, budget=budget, mcp_file=mcp_file, model=model, effort=effort
+            )
             started = time.monotonic()
             outcome = self._execute(
                 command,
@@ -163,7 +193,13 @@ class ClaudeCodeRunner:
                 timeout=timeout.total_seconds(),
                 on_line=Relay(self._progress.emitter()),
             )
-        return interpret(outcome, timeout, time.monotonic() - started)
+        result = interpret(outcome, timeout, time.monotonic() - started)
+        if result.billing is None and _no_api_key(outcome.stdout):
+            # No API key: a claude.ai subscription, or a cloud provider's login. Only `auth status` tells them apart.
+            if self._login is False:
+                self._login = auth_status(command[0], self._execute)[1]
+            result = result.model_copy(update={"billing": self._login or None})
+        return result
 
 
 def servers(tools: ToolProfile) -> list[str]:
@@ -244,9 +280,15 @@ def _events(lines: Iterable[str]) -> Iterator[dict[str, Any]]:
             yield cast("dict[str, Any]", event)  # checked to be a dict just before
 
 
+def _no_api_key(stdout: str) -> bool:
+    """Whether Claude Code's init event says the run used no API key (`apiKeySource` is `none`)."""
+    return any(e.get("type") == "system" and e.get("apiKeySource") == "none" for e in _events(stdout.splitlines()))
+
+
 def parse_events(lines: Iterable[str], duration: float) -> AgentResult:
     """An `AgentResult` from Claude Code's stream-json events; fields it doesn't report stay none."""
     model: str | None = None
+    billing: Billing | None = None
     calls: Counter[str] = Counter()
     final: dict[str, Any] | None = None
     api_error: str | None = None
@@ -254,6 +296,9 @@ def parse_events(lines: Iterable[str], duration: float) -> AgentResult:
         kind = event.get("type")
         if kind == "system" and isinstance(event.get("model"), str):
             model = event["model"]
+            source = event.get("apiKeySource")
+            if isinstance(source, str) and source != "none":  # an API key; `none` alone doesn't mean a plan
+                billing = "api"
         elif kind == "assistant":
             calls.update(_tool_uses(event))
             if isinstance(event.get("error"), str):
@@ -264,6 +309,7 @@ def parse_events(lines: Iterable[str], duration: float) -> AgentResult:
         return AgentResult(
             runner=NAME,
             model=model,
+            billing=billing,
             status="failed",
             tool_calls=dict(calls),
             duration_seconds=duration,
@@ -279,6 +325,7 @@ def parse_events(lines: Iterable[str], duration: float) -> AgentResult:
     return AgentResult(
         runner=NAME,
         model=model,
+        billing=billing,
         status=status,
         draft=str(final.get("result", "")) if status == "completed" else "",
         tool_calls=dict(calls),
@@ -358,7 +405,14 @@ LOGIN_TIMEOUT = 10.0
 
 
 def login_check(executable: str, execute: Execute = run_bounded) -> Check:
-    """Whether Claude Code is logged in, from `claude auth status --json`; spends nothing.
+    """Whether Claude Code is logged in, from `claude auth status --json`; spends nothing."""
+    return auth_status(executable, execute)[0]
+
+
+def auth_status(executable: str, execute: Execute = run_bounded) -> tuple[Check, Billing | None]:
+    """Whether Claude Code is logged in, and how it is billed: `plan` for a claude.ai login, `api` for a key.
+
+    From `claude auth status --json`, which spends nothing.
 
     Best effort: a Claude Code without `auth status`, or output it can't read, is reported as unknown, not as a
     problem. A login that expired on the server may still show as logged in until a run tries it; the chat then
@@ -380,25 +434,30 @@ def login_check(executable: str, execute: Execute = run_bounded) -> Check:
             status=Status.DEGRADED,
             detail=f"`claude auth status` didn't start: {exc}",
             fix=f"Reinstall Claude Code ({DOCS})",
-        )
+        ), None
     status: object = None
+    method: object = None
     try:  # it exits with 1 when not logged in, so the JSON decides, not the exit code
         data = json.loads(outcome.stdout)
     except json.JSONDecodeError:
         data = None
     if isinstance(data, dict):
         status = cast("dict[str, Any]", data).get("loggedIn")  # checked to be a dict just before
+        method = cast("dict[str, Any]", data).get("authMethod")
+    billing: Billing | None = None
+    if isinstance(method, str):  # `claude.ai`: the person's subscription; an API key otherwise
+        billing = "plan" if method == "claude.ai" else "api"
     if status is True:
-        return Check(name="claude-code login", status=Status.UP, detail="logged in")
+        return Check(name="claude-code login", status=Status.UP, detail="logged in"), billing
     if status is False:
         return Check(
             name="claude-code login",
             status=Status.DEGRADED,
             detail="Claude Code isn't logged in, so the chat and agent runs fail",
             fix=LOGIN,
-        )
+        ), None
     return Check(
         name="claude-code login",
         status=Status.UP,
         detail="unknown: this Claude Code has no `auth status`; a run says when it isn't logged in",
-    )
+    ), None
