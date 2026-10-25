@@ -85,7 +85,7 @@ describe("Onboarding", { timeout: 20_000 }, () => {
     expect(JSON.parse(localStorage.getItem("hz.onboarding") ?? "{}")).toMatchObject({ step: "team", closed: true });
   });
 
-  it("walks every step to the end, turning a sentence into hz workflow new", async () => {
+  it("walks every step to the end, turning a sentence into hz heinzel new", async () => {
     mockApi({ ...answers, "/api/org/show": newcomer });
     const user = userEvent.setup();
     renderAt("/doctor");
@@ -96,7 +96,7 @@ describe("Onboarding", { timeout: 20_000 }, () => {
     await user.type(within(dialog).getByLabelText("Or in one sentence"), "Weekly status for Acme");
     expect(within(dialog).getByText("Its contract will be called weekly-status-for-acme.")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Create it" }));
-    expect(within(dialog).getByText("hz workflow new weekly-status-for-acme")).toBeInTheDocument();
+    expect(within(dialog).getByText("hz heinzel new weekly-status-for-acme")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Back" }));
     expect(within(dialog).getByRole("heading", { name: "Notifications" })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Install the daemon" })).toBeInTheDocument();
@@ -112,9 +112,9 @@ describe("runInTerminal", () => {
     const sent: string[] = [];
     connectTerminal((text) => sent.push(text));
     runInTerminal("hz team join https://github.com/acme/team");
-    runInTerminal("hz workflow new x\nrm -rf ~");
+    runInTerminal("hz heinzel new x\nrm -rf ~");
     connectTerminal(null);
-    expect(sent).toEqual(["hz team join https://github.com/acme/team\r", "hz workflow new x rm -rf ~"]);
+    expect(sent).toEqual(["hz team join https://github.com/acme/team\r", "hz heinzel new x rm -rf ~"]);
   });
 });
 

@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 from heinzel import HeinzelError
-from heinzel.modules.workflow import _retention as retention
-from heinzel.modules.workflow._models import DRAFT_NAME
-from heinzel.modules.workflow._retention import expired
+from heinzel.modules.heinzel import _retention as retention
+from heinzel.modules.heinzel._models import DRAFT_NAME
+from heinzel.modules.heinzel._retention import expired
 
 pytestmark = pytest.mark.unit
 

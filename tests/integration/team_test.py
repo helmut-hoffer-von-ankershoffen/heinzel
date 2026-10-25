@@ -18,8 +18,8 @@ from typer.testing import CliRunner
 
 from heinzel.heads.cli import build
 from heinzel.kernel import boot, user_config_dir
+from heinzel.modules.heinzel import HeinzelService
 from heinzel.modules.team import TeamService
-from heinzel.modules.workflow import WorkflowService
 
 pytestmark = pytest.mark.integration
 
@@ -161,7 +161,7 @@ def test_new_creates_the_repository_with_the_creator_as_owner_and_a_drafted_rost
     assert "handle: theo-example" in roster
     assert "/team/ @mira-example" in bare_file(created, "CODEOWNERS")
     assert "name: payments" in bare_file(created, "hz.yaml")
-    assert "hz workflow check --path workflows" in bare_file(created, ".github/workflows/hz-team.yml")
+    assert "hz heinzel check --path workflows" in bare_file(created, ".github/workflows/hz-team.yml")
     assert team_config() == {"checkout": team_config()["checkout"], "repository": URL}
     assert ["api", "--paginate", "orgs/acme-example/teams/payments/members", "--jq", ".[].login"] in gh_calls(tmp_path)
 
@@ -242,7 +242,7 @@ def test_a_hostile_team_repository_schedules_installs_and_binds_nothing(created,
     contract = Path(__file__).parents[1] / "fixtures" / "workflows" / "weekly-digest.prose.md"
     (checkout / "workflows" / "weekly-digest.prose.md").write_text(contract.read_text())
     (checkout / "hz.toml").write_text(
-        '[capabilities]\ntracker = "evil"\n[workflow]\nschedule_team = ["weekly-digest"]\n'
+        '[capabilities]\ntracker = "evil"\n[heinzel]\nschedule_team = ["weekly-digest"]\n'
     )
     git("-C", str(checkout), "add", "--all")
     git("-C", str(checkout), "commit", "--quiet", "-m", "Schedule a contract on every daemon")
@@ -252,9 +252,9 @@ def test_a_hostile_team_repository_schedules_installs_and_binds_nothing(created,
     assert hz("team", "join", URL, "--yes")[0] == 0
     assert gh_calls(tmp_path)[before:] == [["api", "user", "--jq", ".login"]]
     assert set(user_config()) == {"team"}
-    code, listed = hz("workflow", "list")
+    code, listed = hz("heinzel", "list")
     assert code == 0
-    [team_contract] = [c for c in listed["contracts"] if c["namespace"] == "team"]
+    [team_contract] = [c for c in listed["heinzelmaennchen"] if c["namespace"] == "team"]
     assert not team_contract["scheduled"]
 
 
@@ -276,7 +276,7 @@ def test_a_url_git_would_run_as_a_command_is_refused_before_anything_runs(github
 def test_workflow_finds_the_team_contracts_in_the_joined_checkout(created, tmp_path, monkeypatch):
     person(monkeypatch, tmp_path, "theo-example")
     assert hz("team", "join", URL, "--yes")[0] == 0
-    code, listed = hz("workflow", "list")
+    code, listed = hz("heinzel", "list")
     assert code == 0
     team = next(d for d in listed["directories"] if d["namespace"] == "team")
     assert team == {"namespace": "team", "path": str(Path(team_config()["checkout"]) / "workflows"), "exists": True}
@@ -288,4 +288,4 @@ def test_a_team_made_yours_counts_at_once_in_the_same_process(github, tmp_path, 
     git("init", "--quiet", str(checkout))
     kernel = boot()
     kernel.resolve(TeamService).adopt(checkout)
-    assert kernel.resolve(WorkflowService).directories["team"] == checkout.resolve() / "workflows"
+    assert kernel.resolve(HeinzelService).directories["team"] == checkout.resolve() / "workflows"
