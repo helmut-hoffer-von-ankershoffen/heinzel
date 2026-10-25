@@ -253,7 +253,6 @@ def test_system_info_json(app):
             "org agenda → calendar:read": "optional: not connected: no adapter bound",
             "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
             "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
-            "weather weather → weather:read": "optional: not connected: no adapter bound",
         },
     }
     assert {m["qualname"] for m in info["modules"]} >= {"system", "system.changelog", "system.plugin", "example.ping"}
@@ -364,7 +363,6 @@ def test_plugin_search_lists_first_party_and_community_plugins(app, monkeypatch)
         ("heinzel-clock", "first-party", False, "clock"),
         ("heinzel-github", "first-party", False, "github"),
         ("heinzel-google", "first-party", False, "google"),
-        ("heinzel-openmeteo", "first-party", False, "openmeteo"),
         ("heinzel-zoom", "first-party", False, "zoom"),
         ("heinzel-crm", "github", True, "git+https://github.com/someone/heinzel-crm"),
     ]
@@ -392,7 +390,6 @@ def test_plugin_search_offline_shows_first_party_plugins_and_a_warning(app, monk
         "heinzel-clock",
         "heinzel-github",
         "heinzel-google",
-        "heinzel-openmeteo",
         "heinzel-zoom",
     ]
     assert found["warnings"] == [

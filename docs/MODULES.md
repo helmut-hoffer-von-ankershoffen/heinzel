@@ -16,7 +16,6 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`google`](#google) | Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
 | [`graph`](#graph) | Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits. |
 | [`heinzel`](#heinzel) | Your Heinzelmännchen: durable agents that keep your team's documents true. |
-| [`openmeteo`](#openmeteo) | Weather from Open-Meteo, with no account and no key: the weather capability. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
 | [`report`](#report) | Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`). |
 | [`system`](#system) | Inspect, configure, diagnose and update Heinzelmännchen itself. |
@@ -41,7 +40,6 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
-| [`weather`](#weather) | The weather where you are, from whichever adapter serves the weather capability. |
 | [`zoom`](#zoom) | Read meetings from Zoom's meeting-summary emails: the meetings capability. |
 
 ## `ai`
@@ -162,20 +160,6 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 Settings: [`[heinzel]`](CONFIGURATION.md#heinzel).
 
 Health checks: reported by `hz system doctor`.
-
-## `openmeteo`
-
-Weather from Open-Meteo, with no account and no key: the weather capability.
-
-First-party plugin `heinzel-openmeteo`: `hz system plugin add openmeteo --confirm`.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and where its weather comes from. | `hz openmeteo info` | `openmeteo_info` | `GET /openmeteo/info` | `GET /api/openmeteo/info` |  | expert |
-
-Health checks: reported by `hz system doctor`.
-
-Setup: `hz setup openmeteo` (optional), also part of `hz setup`.
 
 ## `org`
 
@@ -486,18 +470,6 @@ Your team's repository: create one (`hz team new`), join one by its URL (`hz tea
 | Make an existing checkout your team repository; replaces the deprecated `heinzel.team_repository`. | `hz team adopt` | `team_adopt` | — | — | yes | expert |
 
 Settings: [`[team]`](CONFIGURATION.md#team).
-
-Health checks: reported by `hz system doctor`.
-
-## `weather`
-
-The weather where you are, from whichever adapter serves the weather capability.
-
-| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show the weather now and the next days at your primary location, or at a place you name. | `hz weather` | `weather` | — | `GET /api/weather` |  |  |
-
-Settings: [`[weather]`](CONFIGURATION.md#weather).
 
 Health checks: reported by `hz system doctor`.
 

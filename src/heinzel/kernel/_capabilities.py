@@ -24,7 +24,6 @@ from heinzel.kernel._protocols import (
     Meetings,
     TeamGraph,
     Tracker,
-    WeatherSource,
     free_busy_people,
 )
 
@@ -175,15 +174,6 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 protocol=Tracker,
                 summary="Issues in an issue tracker.",
                 methods=MappingProxyType({"issues_updated": "read"}),
-            ),
-            Capability(
-                name="weather",
-                title="Weather",
-                purpose="the weather where you are",
-                protocol=WeatherSource,
-                summary="The weather at a place: now, and a short daily forecast. Needs no account when the adapter "
-                "doesn't.",
-                methods=MappingProxyType({"report": "read"}),
             ),
         )
     }

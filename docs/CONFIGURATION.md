@@ -39,7 +39,6 @@ Plugins add their own tables.
 | `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | The connector for meeting summaries, such as Zoom. Never read from a project's hz.toml. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | The connector for issues, such as GitHub or Jira. Never read from a project's hz.toml. |
 | `team_graph` | `HZ_CAPABILITIES__TEAM_GRAPH` | `'hz-graph'` | What draws your team's graph: the built-in graph of your team's contracts and telemetry (the default), or one a plugin brings. Never read from a project's hz.toml. |
-| `weather` | `HZ_CAPABILITIES__WEATHER` | `None` | The connector for the weather where you are, such as Open-Meteo. Never read from a project's hz.toml. |
 
 ## `[ai]`
 
@@ -248,13 +247,6 @@ Plugins add their own tables.
 | `repository` | `HZ_TEAM__REPOSITORY` | `None` | Your team repository's address, the invite others join with; empty for a team repository that exists only on this computer. Example: "https://github.com/example/team.git". Never read from a project's hz.toml. |
 | `checkout` | `HZ_TEAM__CHECKOUT` | `None` | The folder your team repository is checked out in; its workflows folder holds the team's contracts. Never read from a project's hz.toml. |
 | `layer` | `HZ_TEAM__LAYER` | `None` | The layer plugin your team uses, by module name, when your team repository names none or you want another. Never read from a project's hz.toml. |
-
-## `[weather]`
-
-| Key | Environment variable | Default | Description |
-| --- | --- | --- | --- |
-| `locations` | `HZ_WEATHER__LOCATIONS` | `[]` | Where you want the weather for, yours first (the primary one): a place such as "Berlin, DE" or coordinates such as "52.52,13.405". |
-| `units` | `HZ_WEATHER__UNITS` | `None` | metric (°C, km/h) or imperial (°F, mph); unset: imperial where your locale is the US, Liberia or Myanmar, metric everywhere else. Choices: metric, imperial. |
 
 ## `[zoom]`
 

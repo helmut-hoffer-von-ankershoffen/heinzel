@@ -1,7 +1,7 @@
 """Capability specs and requirement strings (ADR 0028)."""
 
 import inspect
-from datetime import UTC, date, datetime
+from datetime import datetime
 from typing import get_type_hints
 
 import pytest
@@ -12,8 +12,6 @@ from heinzel.kernel._capabilities import capability_of, parse_requirements
 from heinzel.kernel._protocols import (
     Calendar,
     Chat,
-    CurrentWeather,
-    DailyForecast,
     Directory,
     Documents,
     Event,
@@ -31,9 +29,6 @@ from heinzel.kernel._protocols import (
     Tracker,
     Transcript,
     TranscriptSegment,
-    WeatherPlace,
-    WeatherReport,
-    WeatherSource,
     Window,
     free_busy_people,
 )
@@ -130,10 +125,6 @@ def test_protocol_results_are_models_with_described_fields():
         MailQuery,
         Person,
         Relation,
-        WeatherPlace,
-        CurrentWeather,
-        DailyForecast,
-        WeatherReport,
     ):
         for field_name, info in model.model_fields.items():
             assert info.description, f"{model.__name__}.{field_name} has no description"
@@ -249,27 +240,3 @@ def test_one_capability_cannot_be_pinned_to_two_adapters():
 def test_documents_write_method_is_marked_write():
     assert CAPABILITIES["documents"].methods == {"read": "read", "replace_section": "write"}
     assert CAPABILITIES["documents"].protocol is Documents
-
-
-def test_weather_reads_one_report_a_place_at_a_time_and_no_contract_names_it():
-    spec = CAPABILITIES["weather"]
-    assert spec.protocol is WeatherSource
-    assert spec.methods == {"report": "read"}
-    assert get_type_hints(WeatherSource.report)["place"] is str
-    assert Window not in get_type_hints(WeatherSource.report).values()
-
-
-def test_weather_is_metric_timezone_aware_and_bounded():
-    now = datetime(2026, 10, 25, 12, tzinfo=UTC)
-    place = WeatherPlace(name="x", latitude=1, longitude=2)
-    current = {"summary": "s", "temperature_c": 1, "feels_like_c": 1, "wind_kmh": 0, "precipitation_mm": 0}
-    CurrentWeather(observed_at=now, **current)
-    with pytest.raises(ValidationError):
-        CurrentWeather(observed_at=datetime(2026, 10, 25, 12), **current)  # noqa: DTZ001 - the point of the test
-    with pytest.raises(ValidationError):
-        WeatherPlace(name="x", latitude=91, longitude=0)
-    day = {"day": date(2026, 10, 25), "summary": "s", "high_c": 2, "low_c": 1, "precipitation_mm": 0}
-    DailyForecast(rain_chance=1, **day)
-    with pytest.raises(ValidationError):
-        DailyForecast(rain_chance=1.5, **day)
-    assert WeatherReport(place=place, current=CurrentWeather(observed_at=now, **current), days=[]).days == []

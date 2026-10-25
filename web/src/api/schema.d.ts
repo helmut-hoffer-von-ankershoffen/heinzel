@@ -1690,30 +1690,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/weather": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Show the weather now and the next days at your primary location, or at a place you name.
-         * @description Show the weather now and the next days at your primary location, or at a place you name.
-         *
-         *     Raises:
-         *         HeinzelError: If no weather adapter is connected, no location is set, the place is unknown, or the adapter
-         *             fails.
-         */
-        get: operations["weather"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5100,102 +5076,6 @@ export interface components {
             summary: string;
         };
         /**
-         * Outlook
-         * @description The weather now and the next days at one place, in the units you read.
-         */
-        Outlook: {
-            /**
-             * Adapter
-             * @description The adapter bound to `weather` that answered.
-             */
-            adapter: string;
-            /**
-             * Days
-             * @description The next days from today.
-             */
-            days: components["schemas"]["OutlookDay"][];
-            /**
-             * Feels Like
-             * @description What it feels like now.
-             */
-            feels_like: number;
-            /**
-             * Humidity Percent
-             * @description Relative humidity; none if the source has none.
-             */
-            humidity_percent: number | null;
-            /**
-             * Location
-             * @description The place, as the weather adapter resolved it.
-             */
-            location: string;
-            /**
-             * Observed At
-             * Format: date-time
-             * @description When the weather now was observed, in the place's time zone.
-             */
-            observed_at: string;
-            /**
-             * Precipitation
-             * @description Rain and snow in the last hour: mm (metric) or inches (imperial).
-             */
-            precipitation: number;
-            /**
-             * Summary
-             * @description The sky now in a few words.
-             */
-            summary: string;
-            /**
-             * Temperature
-             * @description Air temperature now.
-             */
-            temperature: number;
-            /** @description metric or imperial: the unit of every number below. */
-            units: components["schemas"]["Units"];
-            /**
-             * Wind
-             * @description Wind speed: km/h (metric) or mph (imperial).
-             */
-            wind: number;
-        };
-        /**
-         * OutlookDay
-         * @description One day of the forecast, in the report's units.
-         */
-        OutlookDay: {
-            /**
-             * Day
-             * Format: date
-             * @description The day, in the place's time zone.
-             */
-            day: string;
-            /**
-             * High
-             * @description The day's high.
-             */
-            high: number;
-            /**
-             * Low
-             * @description The day's low.
-             */
-            low: number;
-            /**
-             * Precipitation
-             * @description Rain and snow expected over the day.
-             */
-            precipitation: number;
-            /**
-             * Rain Chance
-             * @description Chance of rain or snow, 0 to 1; none if the source has none.
-             */
-            rain_chance: number | null;
-            /**
-             * Summary
-             * @description The sky in a few words.
-             */
-            summary: string;
-        };
-        /**
          * Participant
          * @description Someone in a chat, a meeting or an event: how the vendor addresses them, nothing more (ADR 0024).
          */
@@ -7281,12 +7161,6 @@ export interface components {
             summary: string;
         };
         /**
-         * Units
-         * @description How temperatures and wind speeds are shown.
-         * @enum {string}
-         */
-        Units: "metric" | "imperial";
-        /**
          * Unmaintained
          * @description An input that reads a contract's output no contract maintains.
          */
@@ -7715,8 +7589,6 @@ export type SchemaOpenUrl = components['schemas']['OpenUrl'];
 export type SchemaOpened = components['schemas']['Opened'];
 export type SchemaOperationAudience = components['schemas']['OperationAudience'];
 export type SchemaOperationCall = components['schemas']['OperationCall'];
-export type SchemaOutlook = components['schemas']['Outlook'];
-export type SchemaOutlookDay = components['schemas']['OutlookDay'];
 export type SchemaParticipant = components['schemas']['Participant'];
 export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
@@ -7772,7 +7644,6 @@ export type SchemaThemeWhen = components['schemas']['ThemeWhen'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
-export type SchemaUnits = components['schemas']['Units'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaUpdateResult = components['schemas']['UpdateResult'];
 export type SchemaUsageReport = components['schemas']['UsageReport'];
@@ -9970,40 +9841,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamShow"];
-                };
-            };
-        };
-    };
-    weather: {
-        parameters: {
-            query?: {
-                /** @description A place such as "Lisbon, PT" or coordinates such as "38.72,-9.14"; your primary one if left out. */
-                location?: string | null;
-                /** @description How many days of forecast, from today; the adapter may give fewer. */
-                days?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Outlook"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

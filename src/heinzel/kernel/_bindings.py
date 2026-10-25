@@ -130,12 +130,6 @@ class CapabilitySettings(ModuleSettings):
         ),
         json_schema_extra=_options("team-graph"),
     )
-    weather: str | None = Field(
-        default=None,
-        title="Weather",
-        description="The connector for the weather where you are, such as Open-Meteo.",
-        json_schema_extra=_options("weather"),
-    )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
         {
@@ -150,7 +144,6 @@ class CapabilitySettings(ModuleSettings):
             "meetings",
             "team_graph",
             "tracker",
-            "weather",
         }
     )
 

@@ -80,7 +80,6 @@ FIRST_PARTY: Mapping[str, str] = MappingProxyType(
         "clock": "What time it is for everyone on the team.",
         "github": "Read pull requests and issues from GitHub: the code-host and tracker capabilities.",
         "google": "Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.",
-        "openmeteo": "Weather from Open-Meteo, with no account and no key: the weather capability.",
         "zoom": "Read meetings from Zoom's meeting-summary emails: the meetings capability.",
     }
 )

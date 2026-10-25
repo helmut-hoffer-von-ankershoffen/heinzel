@@ -26,7 +26,6 @@ def test_plugin_search_queries_github():
         "heinzel-clock",
         "heinzel-github",
         "heinzel-google",
-        "heinzel-openmeteo",
         "heinzel-zoom",
     ]
     assert [p["name"] for p in found["plugins"][: len(first_party)]] == first_party  # listed first
