@@ -1,4 +1,4 @@
-"""WorkflowService with test-only adapters and a fake agent runner: never a real agent, never the network."""
+"""HeinzelService with test-only adapters and a fake agent runner: never a real agent, never the network."""
 
 import json
 import os
@@ -33,8 +33,8 @@ from heinzel import (
     TranscriptSegment,
     Window,
 )
-from heinzel.modules.workflow import WorkflowService, WorkflowSettings
-from heinzel.modules.workflow import _service as service_module
+from heinzel.modules.heinzel import HeinzelService, HeinzelSettings
+from heinzel.modules.heinzel import _service as service_module
 
 pytestmark = pytest.mark.unit
 
@@ -154,16 +154,16 @@ OFF = dict.fromkeys(("code_host", "tracker", "documents", "calendar", "mail", "m
 def make(make_kernel, host, runner, dirs, tmp_path):
     """A service over a kernel with the fakes bound; `bindings` and `workflow` override the configuration."""
 
-    def build(*, bindings: dict[str, str] | None = None, now: datetime = NOW, **workflow: object) -> WorkflowService:
+    def build(*, bindings: dict[str, str] | None = None, now: datetime = NOW, **workflow: object) -> HeinzelService:
         me, team = dirs
         table = {"user_dir": str(me), "team_repository": str(team)} | dict(workflow.items())
         capabilities = (
             {"agent_runner": "fake", "code_host": "host", "tracker": "host"} if bindings is None else OFF | bindings
         )
-        config = Config(files=(), data={"capabilities": capabilities, "workflow": table})
+        config = Config(files=(), data={"capabilities": capabilities, "heinzel": table})
         kernel = make_kernel(builtins=True, fakes=adapters(host, runner), notes=notes(), config=config)
         settings = Config(files=(), data={}).settings(Settings, "hz")  # HZ_DATA_DIR: a temporary directory
-        return WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings, clock=lambda: now)
+        return HeinzelService(kernel, kernel.resolve(HeinzelSettings), settings, clock=lambda: now)
 
     return build
 
@@ -187,22 +187,22 @@ def test_contracts_are_found_in_the_team_repository_and_your_directory(make, dir
 def test_the_team_checkout_comes_from_the_org_context_before_the_deprecated_setting(make_kernel, dirs, tmp_path):
     me, legacy = dirs
     joined = tmp_path / "joined"
-    data = {"workflow": {"user_dir": str(me), "team_repository": str(legacy)}, "team": {"checkout": str(joined)}}
+    data = {"heinzel": {"user_dir": str(me), "team_repository": str(legacy)}, "team": {"checkout": str(joined)}}
     kernel = make_kernel(builtins=True, config=Config(files=(), data=data))
-    service = WorkflowService(
-        kernel, kernel.resolve(WorkflowSettings), Config(files=(), data={}).settings(Settings, "hz")
+    service = HeinzelService(
+        kernel, kernel.resolve(HeinzelSettings), Config(files=(), data={}).settings(Settings, "hz")
     )
     assert service.directories == {"team": joined / "workflows", "me": me}
     fixes = {c.name: c.fix for c in service.health()}
-    assert fixes["workflow team_repository"].startswith("hz system config unset workflow.team_repository")
+    assert fixes["heinzel team_repository"].startswith("hz system config unset heinzel.team_repository")
 
 
 def test_the_deprecated_team_repository_setting_is_reported_with_its_migration(make, dirs):
     _, team = dirs
-    check = {c.name: c for c in make().health()}["workflow team_repository"]
+    check = {c.name: c for c in make().health()}["heinzel team_repository"]
     assert check.status is Status.DEGRADED
     assert check.fix == f"hz team adopt {team}"
-    assert "workflow team_repository" not in {c.name for c in make(team_repository=None).health()}
+    assert "heinzel team_repository" not in {c.name for c in make(team_repository=None).health()}
 
 
 def test_one_name_in_both_places_is_two_valid_contracts_that_need_their_prefix(make, dirs):
@@ -260,7 +260,7 @@ def test_your_scheduled_contracts_compile_to_daemon_jobs(make, dirs):
 def test_the_kernel_hands_the_daemon_the_compiled_jobs(make, dirs):
     put(dirs[0])
     kernel = make()._kernel
-    assert [(module, job.name) for module, job in kernel.compiled_jobs()] == [("workflow", "me-weekly-digest")]
+    assert [(module, job.name) for module, job in kernel.compiled_jobs()] == [("heinzel", "me-weekly-digest")]
 
 
 def test_a_compiled_job_renders_its_contract_and_its_result_holds_the_drafts_hash_not_its_text(make, dirs, runner):
@@ -283,7 +283,7 @@ def test_a_scheduled_render_tells_you_a_draft_is_ready_and_a_failed_one_that_it_
     notifications = service._kernel.resolve(Notifications)
     ready = notifications.recent()[0]
     assert (ready.kind, ready.route) == (NoticeKind.DRAFT, "/contracts/me%3Aweekly-digest")
-    assert ready.command == "hz workflow drafts --name me:weekly-digest --latest"
+    assert ready.command == "hz heinzel drafts --name me:weekly-digest --latest"
     runner.status = "budget"
     with pytest.raises(HeinzelError):
         service.compiled().jobs[0].func()
@@ -314,7 +314,7 @@ def test_find_takes_bare_and_qualified_names(make, dirs):
 def test_show_reports_requirements_with_their_adapters_and_what_is_unmet(make, dirs):
     put(dirs[0])
     shown = make(bindings={"agent_runner": "fake", "code_host": "host"}).show("weekly-digest")
-    assert shown.job == "workflow:me-weekly-digest"
+    assert shown.job == "heinzel:me-weekly-digest"
     assert shown.sha256.startswith("sha256:")
     assert shown.approve is None
     assert [(s.requirement, s.adapter, s.problem) for s in shown.requirements] == [
@@ -539,12 +539,12 @@ def test_the_requester_reads_only_what_the_contract_declares(make, dirs):
     service = make()
     requester = service.requester(service.find("weekly-digest"))
     assert (requester.module, requester.kind, requester.name, requester.publishes) == (
-        "workflow",
+        "heinzel",
         "job",
         "me-weekly-digest",
         False,
     )
-    with pytest.raises(HeinzelError, match="workflow me-weekly-digest asks for Documents without declaring it"):
+    with pytest.raises(HeinzelError, match="heinzel me-weekly-digest asks for Documents without declaring it"):
         service._kernel.handle_for(requester, "documents")
 
 
@@ -555,18 +555,18 @@ def test_health_reports_broken_and_unservable_contracts(make, dirs):
     put(me, "manual", EXAMPLE.read_text().replace("weekly-digest", "manual").replace('  schedule: "0 7 * * MON"\n', ""))
     put(me, "broken", "no frontmatter")
     checks = {c.name: c for c in make(bindings={"agent_runner": "fake"}).health()}
-    assert checks["workflow me:broken"].status is Status.DEGRADED
-    assert checks["workflow me:broken"].fix.startswith("hz workflow check --path ")
-    assert checks["workflow me:weekly-digest"].status is Status.DEGRADED
-    assert "code-host:read: no adapter bound" in checks["workflow me:weekly-digest"].detail
-    assert checks["workflow me:manual"].status is Status.UP  # unmet, but nothing runs it unattended
-    assert {c.name: c.detail for c in make().health()}["workflow me:weekly-digest"] == "scheduled"
+    assert checks["heinzel me:broken"].status is Status.DEGRADED
+    assert checks["heinzel me:broken"].fix.startswith("hz heinzel check --path ")
+    assert checks["heinzel me:weekly-digest"].status is Status.DEGRADED
+    assert "code-host:read: no adapter bound" in checks["heinzel me:weekly-digest"].detail
+    assert checks["heinzel me:manual"].status is Status.UP  # unmet, but nothing runs it unattended
+    assert {c.name: c.detail for c in make().health()}["heinzel me:weekly-digest"] == "scheduled"
 
 
 def test_for_user_reads_the_drafts_directory_from_user_scope(make_kernel, tmp_path, monkeypatch):
     monkeypatch.setenv("HZ_DATA_DIR", str(tmp_path / "user-data"))
     kernel = make_kernel(builtins=True)
-    service = WorkflowService.for_user(kernel, kernel.resolve(WorkflowSettings))
+    service = HeinzelService.for_user(kernel, kernel.resolve(HeinzelSettings))
     assert service.drafts_dir == tmp_path / "user-data" / "workflow" / "drafts"
 
 
@@ -595,7 +595,7 @@ def test_a_pinned_team_contract_runs_only_while_its_content_is_the_approved_one(
     path.write_text(path.read_text().replace("300 words", "250 words"))
     service = make(schedule_team=[shown.approve])
     assert service.compiled().jobs == ()
-    check = {c.name: c for c in service.health()}["workflow team:weekly-digest"]
+    check = {c.name: c for c in service.health()}["heinzel team:weekly-digest"]
     assert check.status is Status.DEGRADED
     assert "changed since you approved" in check.detail
 
@@ -603,9 +603,9 @@ def test_a_pinned_team_contract_runs_only_while_its_content_is_the_approved_one(
 def test_schedule_team_names_matching_nothing_are_reported(make, dirs):
     put(dirs[1] / "workflows")
     checks = {c.name: c for c in make(schedule_team=["weekly-digest", "typo"]).health()}
-    assert checks["workflow schedule_team"].detail == "names no team contract: typo"
+    assert checks["heinzel schedule_team"].detail == "names no team contract: typo"
     with pytest.raises(ValueError, match="must be a contract name"):
-        WorkflowSettings(schedule_team=["Bad Name"])
+        HeinzelSettings(schedule_team=["Bad Name"])
 
 
 def test_an_unbound_runner_fails_before_any_input_is_fetched(make, dirs, host):
@@ -624,12 +624,12 @@ def test_tools_the_bound_runner_refuses_are_a_warning(make_kernel, dirs):
         data={
             "capabilities": {"agent_runner": "claude-code"},
             "system": {"runner": {"read_only_tools": ["Read"]}},
-            "workflow": {"user_dir": str(dirs[0])},
+            "heinzel": {"user_dir": str(dirs[0])},
         },
     )
     kernel = make_kernel(builtins=True, notes=notes(), config=config)
     settings = Config(files=(), data={}).settings(Settings, "hz")
-    found = WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings).contracts()[0].diagnostics
+    found = HeinzelService(kernel, kernel.resolve(HeinzelSettings), settings).contracts()[0].diagnostics
     assert [(d.code, d.severity, d.field) for d in found] == [("HZC024", "warning", "hz.agent.tools.1")]
     assert "'Grep'" in found[0].message
 
@@ -704,7 +704,7 @@ def test_a_manual_run_says_it_has_no_receipt(make, dirs):
     result = make().run("weekly-digest")
     assert result.rendered is not None
     assert result.note.startswith(f"unreceipted; the record is at {result.rendered.record}")
-    assert "hz system daemon tick --job workflow:me-weekly-digest" in result.note
+    assert "hz system daemon tick --job heinzel:me-weekly-digest" in result.note
 
 
 def test_a_contract_that_cant_compile_leaves_the_others_compiled(make, dirs, monkeypatch):
@@ -777,11 +777,11 @@ def test_new_writes_a_starter_that_passes_every_check_and_creates_the_directory(
     assert (contract.frontmatter.hz.schedule, contract.frontmatter.hz.inputs) == (None, {})
     assert service.check().diagnostics == []
     assert service.show("weekly-digest").ready is True
-    assert "docs/WORKFLOWS.md" in result.file.read_text()
+    assert "docs/HEINZELMAENNCHEN.md" in result.file.read_text()
     assert [s.command for s in result.next][1:] == [
-        "hz workflow show me:weekly-digest",
-        "hz workflow run me:weekly-digest --dry-run",
-        "hz workflow run me:weekly-digest",
+        "hz heinzel show me:weekly-digest",
+        "hz heinzel wake me:weekly-digest --dry-run",
+        "hz heinzel wake me:weekly-digest",
     ]
 
 
@@ -792,25 +792,23 @@ def test_new_dry_runs_with_only_the_runner_bound(make, dirs, runner):
     assert result.packet is not None
     assert result.packet.inputs == {}
     assert result.note.startswith("no agent ran and nothing was spent")
-    assert "hz workflow run me:standup-notes" in result.note
+    assert "hz heinzel wake me:standup-notes" in result.note
     assert str(service.drafts_dir / "me-standup-notes") in result.note
     assert runner.runs == []
 
 
 def test_new_refuses_bad_names_existing_files_and_links_with_a_command_that_works(make, dirs, tmp_path):
     service = make()
-    with pytest.raises(HeinzelError, match=r"Try: hz workflow new weekly-digest$"):
+    with pytest.raises(HeinzelError, match=r"Try: hz heinzel new weekly-digest$"):
         service.new("Weekly Digest.prose.md")
-    with pytest.raises(HeinzelError, match=r"Try: hz workflow new my-workflow --team$"):
+    with pytest.raises(HeinzelError, match=r"Try: hz heinzel new my-workflow --team$"):
         service.new("---", team=True)
     put(dirs[0])
-    with pytest.raises(HeinzelError, match=r"exists; edit it, or write another: hz workflow new weekly-digest-2$"):
+    with pytest.raises(HeinzelError, match=r"exists; edit it, or write another: hz heinzel new weekly-digest-2$"):
         service.new("weekly-digest")
     link = tmp_path / "link"
     link.symlink_to(dirs[0])
-    with pytest.raises(
-        HeinzelError, match=f"symbolic link.*hz system config set workflow.user_dir {dirs[0].resolve()}"
-    ):
+    with pytest.raises(HeinzelError, match=f"symbolic link.*hz system config set heinzel.user_dir {dirs[0].resolve()}"):
         make(user_dir=str(link)).new("other")
     assert not (dirs[0] / "other.prose.md").exists()
 
@@ -826,8 +824,8 @@ def test_new_for_the_team_needs_a_repository_and_says_how_to_contribute(make, di
     assert result.namespace == "team"
     commands = [s.command for s in result.next]
     assert f"git -C {team} add workflows/retro-agenda.prose.md" in commands
-    assert "hz system config set workflow.schedule_team '[\"retro-agenda\"]'" in commands
-    assert str(make().scheduled(make().find("team:retro-agenda"))).endswith("hz workflow run team:retro-agenda")
+    assert "hz system config set heinzel.schedule_team '[\"retro-agenda\"]'" in commands
+    assert str(make().scheduled(make().find("team:retro-agenda"))).endswith("hz heinzel wake team:retro-agenda")
 
 
 def test_listing_and_check_say_which_directories_were_searched_and_whether_they_exist(make, dirs, tmp_path):
@@ -839,14 +837,14 @@ def test_listing_and_check_say_which_directories_were_searched_and_whether_they_
         ("team", team / "workflows", True),
         ("me", missing, False),
     ]
-    assert listing.contracts == []
-    assert [s.command for s in listing.next] == ["hz workflow new my-first-workflow", "hz workflow check"]
+    assert listing.heinzelmaennchen == []
+    assert [s.command for s in listing.next] == ["hz heinzel new my-first-heinzel", "hz heinzel playbooks"]
     assert service.check().searched == listing.directories
     assert service.check(team).searched == []
     put(me)
     listing = make().listing()
-    assert [c.name for c in listing.contracts] == ["weekly-digest"]
-    assert [s.command for s in listing.next] == ["hz workflow show me:weekly-digest"]
+    assert [c.name for c in listing.heinzelmaennchen] == ["weekly-digest"]
+    assert [s.command for s in listing.next] == ["hz heinzel show me:weekly-digest"]
 
 
 def test_why_not_scheduled_ends_in_a_command(make, dirs):
@@ -856,27 +854,27 @@ def test_why_not_scheduled_ends_in_a_command(make, dirs):
     path = put(team / "workflows", "ours")
     service = make()
     why = {c.qualified: str(service.scheduled(c)) for c in service.contracts()}
-    assert why["me:broken"].endswith(f"hz workflow check --path {me / 'broken.prose.md'}")
-    assert why["me:manual"].endswith("or run it by hand: hz workflow run me:manual")
+    assert why["me:broken"].endswith(f"hz heinzel check --path {me / 'broken.prose.md'}")
+    assert why["me:manual"].endswith("or run it by hand: hz heinzel wake me:manual")
     assert 'add `schedule: "0 7 * * MON"` under `hz:`' in why["me:manual"]
     sha = service.find("team:ours").sha256
-    assert "hz system config set workflow.schedule_team '[\"ours\"]'" in why["team:ours"]
-    assert f"hz system config set workflow.schedule_team '[\"ours@{sha}\"]'" in why["team:ours"]
+    assert "hz system config set heinzel.schedule_team '[\"ours\"]'" in why["team:ours"]
+    assert f"hz system config set heinzel.schedule_team '[\"ours@{sha}\"]'" in why["team:ours"]
     path.write_text(path.read_text().replace("300 words", "250 words"))
     changed = make(schedule_team=[f"ours@{sha}"])
     contract = changed.find("team:ours")
     assert str(changed.scheduled(contract)).endswith(
-        f"hz system config set workflow.schedule_team '[\"ours@{contract.sha256}\"]'"
+        f"hz system config set heinzel.schedule_team '[\"ours@{contract.sha256}\"]'"
     )
-    assert {c.name: c.status for c in changed.health()}["workflow team:ours"] is Status.DEGRADED
+    assert {c.name: c.status for c in changed.health()}["heinzel team:ours"] is Status.DEGRADED
 
 
 def test_an_unmet_requirement_is_fixed_by_binding_an_installed_adapter_or_finding_a_plugin(make_kernel, dirs):
     put(dirs[0])
-    config = Config(files=(), data={"workflow": {"user_dir": str(dirs[0])}})
+    config = Config(files=(), data={"heinzel": {"user_dir": str(dirs[0])}})
     kernel = make_kernel(builtins=True, config=config)
     settings = Config(files=(), data={}).settings(Settings, "hz")
-    service = WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings)
+    service = HeinzelService(kernel, kernel.resolve(HeinzelSettings), settings)
     shown = service.show("weekly-digest")
     fixes = {s.requirement: s.fix for s in shown.requirements if s.problem}
     assert fixes == {
@@ -894,16 +892,16 @@ def test_show_of_a_ready_scheduled_contract_says_how_to_try_run_and_schedule_it(
     assert shown.drafts.name == "me-weekly-digest"
     assert shown.draft_count == 0
     assert [s.command for s in shown.next] == [
-        "hz workflow run me:weekly-digest --dry-run",
-        "hz workflow run me:weekly-digest",
+        "hz heinzel wake me:weekly-digest --dry-run",
+        "hz heinzel wake me:weekly-digest",
         "hz system daemon status",
-        "hz system daemon tick --job workflow:me-weekly-digest",
+        "hz system daemon tick --job heinzel:me-weekly-digest",
     ]
     assert "0.5 USD" in shown.next[1].why
     assert "hz system daemon install" in shown.next[2].why
     put(dirs[0], "broken", "no frontmatter")
     broken = make().show("broken")
-    assert [s.command for s in broken.next] == [f"hz workflow check --path {dirs[0] / 'broken.prose.md'}"]
+    assert [s.command for s in broken.next] == [f"hz heinzel check --path {dirs[0] / 'broken.prose.md'}"]
 
 
 def test_drafts_are_listed_newest_first_filtered_by_contract_and_the_latest_can_be_read(make, dirs, runner):
@@ -912,12 +910,12 @@ def test_drafts_are_listed_newest_first_filtered_by_contract_and_the_latest_can_
     put(team / "workflows", "ours")
     service = make()
     assert service.drafts().drafts == []
-    assert service.drafts().next[0].command == "hz workflow run <name>"
-    assert service.drafts("ours").next[0].command == "hz workflow run ours"
+    assert service.drafts().next[0].command == "hz heinzel wake <name>"
+    assert service.drafts("ours").next[0].command == "hz heinzel wake ours"
     first = service.run("weekly-digest").rendered
     runner.draft = "# Later"
     settings = Config(files=(), data={}).settings(Settings, "hz")
-    later = WorkflowService(service._kernel, service._workflow, settings, clock=lambda: NOW + timedelta(hours=1))
+    later = HeinzelService(service._kernel, service._workflow, settings, clock=lambda: NOW + timedelta(hours=1))
     second = later.run("weekly-digest").rendered
     team_draft = later.run("team:ours").rendered  # same time as `second`: paths break the tie
     assert first
@@ -933,7 +931,7 @@ def test_drafts_are_listed_newest_first_filtered_by_contract_and_the_latest_can_
     assert listed.drafts[1].record == second.record
     assert listed.drafts[1].bytes == len("# Later")
     assert listed.latest is None
-    assert listed.next[0].command == "hz workflow drafts --name team:ours --latest"
+    assert listed.next[0].command == "hz heinzel drafts --name team:ours --latest"
     assert [d.draft for d in service.drafts("weekly-digest").drafts] == [second.draft, first.draft]
     assert [d.draft for d in service.drafts("team:ours").drafts] == [team_draft.draft]
     assert service.drafts("me:ours").drafts == []
@@ -970,21 +968,21 @@ def test_the_latest_draft_that_cant_be_read_is_an_error(make, dirs, monkeypatch)
 
 def test_a_missing_contract_says_how_to_write_one(make, dirs):
     service = make()
-    with pytest.raises(HeinzelError, match=r"Write one: hz workflow new daily-notes$"):
+    with pytest.raises(HeinzelError, match=r"Write one: hz heinzel new daily-notes$"):
         service.find("Daily Notes")
-    with pytest.raises(HeinzelError, match=r"Write one: hz workflow new ours --team$"):
+    with pytest.raises(HeinzelError, match=r"Write one: hz heinzel new ours --team$"):
         service.find("team:ours")
 
 
 def test_a_contract_with_errors_says_how_to_recheck_it(make, dirs):
     path = put(dirs[0], "broken", "no frontmatter")
-    with pytest.raises(HeinzelError, match=f"hz workflow check --path {path}"):
+    with pytest.raises(HeinzelError, match=f"hz heinzel check --path {path}"):
         make().run("broken", dry_run=True)
 
 
 def test_health_without_contracts_says_how_to_write_one(make):
     check = make().health()[0]
-    assert (check.status, check.fix) == (Status.UP, "hz workflow new my-first-workflow")
+    assert (check.status, check.fix) == (Status.UP, "hz heinzel new my-first-heinzel")
 
 
 def test_commands_quote_paths_with_spaces_as_the_default_macos_directory_has(make, tmp_path):
@@ -994,18 +992,18 @@ def test_commands_quote_paths_with_spaces_as_the_default_macos_directory_has(mak
     written = service.new("weekly-digest")
     quoted = shlex.quote(str(written.file))
     assert " " in str(written.file)
-    assert written.next[0].command == f"hz workflow check --path {quoted}"
+    assert written.next[0].command == f"hz heinzel check --path {quoted}"
     put(me, "broken", "no frontmatter")
     broken = service.find("broken")
-    recheck = f"hz workflow check --path {shlex.quote(str(broken.path))}"
+    recheck = f"hz heinzel check --path {shlex.quote(str(broken.path))}"
     assert service.show("broken").next[0].command == recheck
     assert str(service.scheduled(broken)).endswith(recheck)
-    assert {c.name: c.fix for c in service.health()}["workflow me:broken"] == recheck
+    assert {c.name: c.fix for c in service.health()}["heinzel me:broken"] == recheck
     with pytest.raises(HeinzelError, match=re.escape(recheck)):
         service.run("broken", dry_run=True)
     link = tmp_path / "a link"
     link.symlink_to(me)
-    with pytest.raises(HeinzelError, match=re.escape(f"workflow.user_dir {shlex.quote(str(me.resolve()))}")):
+    with pytest.raises(HeinzelError, match=re.escape(f"heinzel.user_dir {shlex.quote(str(me.resolve()))}")):
         make(user_dir=str(link)).new("other")
 
 
@@ -1024,10 +1022,10 @@ def test_an_alternative_adapter_is_named_in_the_step_not_the_command(make_kernel
     second = Module("more", "Another tracker.")
     second.provides("tracker", modes={"read"}, name="other")(lambda: host)
     bindings = OFF | {"agent_runner": "fake"}
-    config = Config(files=(), data={"capabilities": bindings, "workflow": {"user_dir": str(dirs[0])}})
+    config = Config(files=(), data={"capabilities": bindings, "heinzel": {"user_dir": str(dirs[0])}})
     kernel = make_kernel(builtins=True, fakes=adapters(host, runner), more=second, config=config)
     settings = Config(files=(), data={}).settings(Settings, "hz")
-    shown = WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings).show("weekly-digest")
+    shown = HeinzelService(kernel, kernel.resolve(HeinzelSettings), settings).show("weekly-digest")
     steps = {s.command: s.why for s in shown.next}
     assert steps["hz system config set capabilities.tracker host"].endswith("(or bind other)")
     assert steps["hz system config set capabilities.code_host host"].endswith("runs fail until it is")
@@ -1037,13 +1035,13 @@ def test_an_alternative_adapter_is_named_in_the_step_not_the_command(make_kernel
 
 
 def test_retention_is_90_days_by_default_never_negative_and_at_most_a_century():
-    assert WorkflowSettings().retention_days == 90
-    assert WorkflowSettings(retention_days=0).retention_days == 0
+    assert HeinzelSettings().retention_days == 90
+    assert HeinzelSettings(retention_days=0).retention_days == 0
     with pytest.raises(ValueError, match="greater than or equal to 0"):
-        WorkflowSettings(retention_days=-1)
+        HeinzelSettings(retention_days=-1)
     with pytest.raises(ValueError, match="less than or equal to 36500"):
-        WorkflowSettings(retention_days=36_501)
-    assert "retention_days" in WorkflowSettings.ignored_in_project
+        HeinzelSettings(retention_days=36_501)
+    assert "retention_days" in HeinzelSettings.ignored_in_project
 
 
 def test_prune_deletes_drafts_and_records_older_than_the_retention_and_keeps_the_rest(make, dirs):
@@ -1070,7 +1068,7 @@ def test_a_dry_run_lists_what_prune_would_delete_and_deletes_nothing(make, dirs)
     report = make(now=NOW + timedelta(days=91)).prune(dry_run=True)
     assert report.dry_run
     assert report.files == [old.draft, old.record]
-    assert report.next[0].command == "hz workflow prune"
+    assert report.next[0].command == "hz heinzel prune"
     assert old.draft.exists()
     assert old.record.exists()
 
@@ -1081,9 +1079,9 @@ def test_retention_zero_keeps_drafts_forever(make, dirs):
     service = make(now=NOW + timedelta(days=10_000), retention_days=0)
     report = service.prune()
     assert (report.files, report.cutoff) == ([], None)
-    assert report.next[0].command == "hz system config set workflow.retention_days 90"
+    assert report.next[0].command == "hz system config set heinzel.retention_days 90"
     assert old.draft.exists()
-    check = {c.name: c for c in service.health()}["workflow retention"]
+    check = {c.name: c for c in service.health()}["heinzel retention"]
     assert (check.status, check.detail) == (Status.UP, "drafts and records are kept forever (retention_days = 0)")
 
 
@@ -1103,16 +1101,16 @@ def test_reading_drafts_contracts_and_health_never_deletes_expired_drafts(make, 
 def test_doctor_reports_what_would_be_pruned_and_degrades_once_nothing_pruned_it_for_two_days(make, dirs):
     put(dirs[0])
     make().run("weekly-digest")
-    assert {c.name: c.detail for c in make().health()}["workflow retention"] == "nothing older than 90 days"
-    fresh = {c.name: c for c in make(now=NOW + timedelta(days=91, hours=23)).health()}["workflow retention"]
+    assert {c.name: c.detail for c in make().health()}["heinzel retention"] == "nothing older than 90 days"
+    fresh = {c.name: c for c in make(now=NOW + timedelta(days=91, hours=23)).health()}["heinzel retention"]
     assert fresh.status is Status.UP
     assert re.fullmatch(
-        r"1 draft\(s\) and 1 record\(s\), \d+ KiB, older than 90 days; hz workflow prune deletes them", fresh.detail
+        r"1 draft\(s\) and 1 record\(s\), \d+ KiB, older than 90 days; hz heinzel prune deletes them", fresh.detail
     )
-    stale = {c.name: c for c in make(now=NOW + timedelta(days=92, hours=1)).health()}["workflow retention"]
+    stale = {c.name: c for c in make(now=NOW + timedelta(days=92, hours=1)).health()}["heinzel retention"]
     assert stale.status is Status.DEGRADED
     assert stale.detail.endswith("nothing has pruned them for 2 days")
-    assert stale.fix.startswith("hz workflow prune")
+    assert stale.fix.startswith("hz heinzel prune")
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root reads any directory")
@@ -1124,7 +1122,7 @@ def test_a_contract_directory_that_cant_be_read_is_a_problem_of_its_own(make, di
     locked.chmod(0o000)
     try:
         service = make(now=NOW + timedelta(days=91))
-        check = {c.name: c for c in service.health()}["workflow retention"]
+        check = {c.name: c for c in service.health()}["heinzel retention"]
         report = service.prune()
     finally:
         locked.chmod(0o700)
@@ -1138,7 +1136,7 @@ def test_doctor_reports_a_drafts_directory_that_cant_be_pruned(make, tmp_path):
     service = make()
     service.drafts_dir.parent.mkdir(parents=True)
     service.drafts_dir.symlink_to(tmp_path, target_is_directory=True)
-    check = {c.name: c for c in service.health()}["workflow retention"]
+    check = {c.name: c for c in service.health()}["heinzel retention"]
     assert check.status is Status.DEGRADED
     assert "symbolic link" in check.detail
     with pytest.raises(HeinzelError, match="symbolic link"):
@@ -1184,7 +1182,7 @@ def test_a_contract_reads_the_newest_draft_of_the_contract_it_depends_on(make, d
     put(dirs[0])
     put(dirs[0], "newsletter", NEWSLETTER)
     service = make()
-    with pytest.raises(HeinzelError, match="has no draft yet; draft it first: hz workflow run me:weekly-digest"):
+    with pytest.raises(HeinzelError, match="has no draft yet; draft it first: hz heinzel wake me:weekly-digest"):
         service.run("newsletter", dry_run=True)
     service.run("weekly-digest")
     runner.draft = "# Newer digest"
@@ -1289,7 +1287,7 @@ def test_a_contract_on_a_cycle_doesnt_run_by_hand_and_says_to_check_them_all(mak
     put(dirs[0], text=looped.replace("### Requires\n\n", "### Requires\n\n- `news`: the newsletter.\n"))
     with pytest.raises(HeinzelError, match=r"HZC030") as raised:
         make().run("newsletter", dry_run=True)
-    assert "(`hz workflow check` rechecks it)" in str(raised.value)
+    assert "(`hz heinzel check` rechecks it)" in str(raised.value)
     assert "--path" not in str(raised.value)
 
 
@@ -1344,11 +1342,64 @@ def test_a_forward_window_asks_the_calendar_for_the_coming_days(make_kernel, dir
     fakes.provides("agent-runner", modes={"read"}, name="fake")(lambda: runner)
     put(dirs[0], "week-ahead", AGENDA)
     bindings = {"agent_runner": "fake", "calendar": "agenda"}
-    config = Config(files=(), data={"capabilities": bindings, "workflow": {"user_dir": str(dirs[0])}})
+    config = Config(files=(), data={"capabilities": bindings, "heinzel": {"user_dir": str(dirs[0])}})
     kernel = make_kernel(builtins=True, fakes=fakes, config=config)
     settings = Config(files=(), data={}).settings(Settings, "hz")
-    service = WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings, clock=lambda: NOW)
+    service = HeinzelService(kernel, kernel.resolve(HeinzelSettings), settings, clock=lambda: NOW)
     packet = service.run("week-ahead", dry_run=True).packet
     assert agenda.windows == [Window(since=NOW, until=NOW + timedelta(days=7))]
     window = packet.inputs["week"].arguments["window"]
     assert Window.model_validate(window) == Window(since=NOW, until=NOW + timedelta(days=7))
+
+
+def test_each_heinzelmaennchen_has_a_state_and_its_next_run(make, dirs):
+    me, team = dirs
+    put(me)
+    put(me, "bad", "no frontmatter")
+    put(team / "workflows", "ours")
+    listed = {f"{h.namespace}:{h.name}": h for h in make().listing().heinzelmaennchen}
+    assert {name: h.state for name, h in listed.items()} == {
+        "team:ours": "manual",  # not in schedule_team: it runs when woken
+        "me:weekly-digest": "scheduled",
+        "me:bad": "broken",
+    }
+    scheduled = listed["me:weekly-digest"]
+    assert scheduled.next_run is not None
+    assert scheduled.next_run > NOW
+    assert (scheduled.last_run, scheduled.drafts, listed["team:ours"].next_run) == (None, 0, None)
+    blocked = make(bindings={"agent_runner": "fake", "code_host": "host"}).listing().heinzelmaennchen
+    assert [(h.name, h.state, h.unmet) for h in blocked if h.name == "weekly-digest"] == [
+        ("weekly-digest", "blocked", ["tracker:read"])
+    ]
+
+
+def test_listing_filters_by_state_contract_and_artifact(make, dirs):
+    me, team = dirs
+    put(me)
+    put(team / "workflows", "ours")
+    service = make()
+    manual = service.listing(state="manual")
+    assert ([h.name for h in manual.heinzelmaennchen], manual.filtered) == (["ours"], True)
+    assert [h.name for h in service.listing(contract="me:week").heinzelmaennchen] == ["weekly-digest"]
+    by_artifact = service.listing(artifact="contract:me/weekly-digest#digest").heinzelmaennchen
+    assert [h.name for h in by_artifact] == ["weekly-digest"]
+    none = service.listing(state="blocked")
+    assert (none.heinzelmaennchen, [s.command for s in none.next]) == ([], ["hz heinzel list"])
+    assert service.listing().filtered is False
+
+
+def test_a_schedule_that_never_fires_has_no_next_run(make):
+    service = make()
+    assert service._next_run("0 0 30 2 *") is None
+    assert service._next_run("not cron") is None
+
+
+def test_doctor_names_settings_still_under_the_old_name(make, monkeypatch):
+    service = make()
+    assert service.renamed_settings(Config(files=(), data={})) == []
+    monkeypatch.setenv("HZ_WORKFLOW__MAX_USD", "1")
+    (check,) = service.renamed_settings(Config(files=(), data={"workflow": {"retention_days": 30}}))
+    assert (check.name, check.status) == ("heinzel renamed settings", Status.DEGRADED)
+    assert "workflow.retention_days, HZ_WORKFLOW__MAX_USD" in check.detail
+    assert "hz system config unset workflow.retention_days" in check.fix
+    assert "rename HZ_WORKFLOW__MAX_USD to HZ_HEINZEL__MAX_USD" in check.fix

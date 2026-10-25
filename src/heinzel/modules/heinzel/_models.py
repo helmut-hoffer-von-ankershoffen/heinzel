@@ -42,7 +42,7 @@ from heinzel.kernel import (
     schedule_problem,
     user_config_dir,
 )
-from heinzel.modules.workflow._measure import Measurements
+from heinzel.modules.heinzel._measure import Measurements
 
 SCHEMA_VERSION = 1
 """The version of the frontmatter format this Heinzelmännchen reads (`hz.schema`)."""
@@ -62,7 +62,7 @@ DRAFT_NAME = re.compile(r"(?P<stamp>\d{8}T\d{6}Z)(?:-(?P<n>[1-9]\d*))?(?P<suffix
 RUNNER_IS_CONFIGURATION = (
     "the runner and model are configuration: `[capabilities] agent_runner`, `[system.runner] model`"
 )
-GUIDE = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/WORKFLOWS.md"
+GUIDE = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/blob/main/docs/HEINZELMAENNCHEN.md"
 """The guide every empty state and starter contract points at: the journey and the contract reference."""
 
 NAME = r"^[a-z](?:-?[a-z0-9])*$"
@@ -297,7 +297,7 @@ class Agent(_Strict):
         default=None,
         gt=0,
         allow_inf_nan=False,
-        description="Most one run may cost in US dollars; your `[workflow] max_usd` caps it whatever it says.",
+        description="Most one run may cost in US dollars; your `[heinzel] max_usd` caps it whatever it says.",
     )
 
 
@@ -311,7 +311,7 @@ class Hz(_Strict):
                 ("owner", "maintainers"),
                 "owners and maintainers come with the team state repository and people (ADR 0024)",
             ),
-            (("tags",), "tags come with `hz workflow list --tag`"),
+            (("tags",), "tags come with `hz heinzel list --tag`"),
             (("freshness", "on", "idempotency"), "memo keys and input wakes come with fingerprints (ADR 0020)"),
             (("tools",), "the agent gets no hz tools in this version; inputs are fetched before it starts (ADR 0029)"),
             (("concurrency",), "concurrency comes with leases in the team state repository (ADR 0020)"),
@@ -330,7 +330,7 @@ class Hz(_Strict):
     schedule: str | None = Field(
         default=None,
         description="When the daemon runs it: five cron fields in local time, e.g. `0 7 * * MON`. Without one it runs "
-        "only with `hz workflow run`.",
+        "only with `hz heinzel wake`.",
     )
     requires: list[str] = Field(
         default_factory=list,
@@ -453,8 +453,8 @@ def cron_problem(schedule: str) -> str | None:
     return None
 
 
-class WorkflowSettings(ModuleSettings):
-    """Where contracts are found: the `[workflow]` table or `HZ_WORKFLOW__*` variables.
+class HeinzelSettings(ModuleSettings):
+    """Where contracts are found: the `[heinzel]` table or `HZ_HEINZEL__*` variables.
 
     A project `hz.toml` can't set any of them: a repository someone else controls must not decide which prompts your
     daemon runs with your agent and your capabilities.
@@ -473,7 +473,7 @@ class WorkflowSettings(ModuleSettings):
     schedule_team: list[str] = Field(
         default_factory=list,
         description="Team contracts your daemon runs on their schedule, by name, or `name@sha256:<hex>` to run only "
-        "the content you approved (`hz workflow show` prints it); the others run only by hand, so a team's contracts "
+        "the content you approved (`hz heinzel show` prints it); the others run only by hand, so a team's contracts "
         "don't run on every member's daemon.",
     )
 
@@ -490,8 +490,8 @@ class WorkflowSettings(ModuleSettings):
         ge=0,
         le=MAX_RETENTION_DAYS,
         description="Days drafts and their `.record.json` files (the packet with the fetched inputs) are kept, "
-        "counted from the render; older ones are deleted by the daemon's daily `workflow:prune` job or by "
-        "`hz workflow prune`, never by reading them. 0 keeps them forever, at most 36500. Receipts are kept and hold "
+        "counted from the render; older ones are deleted by the daemon's daily `heinzel:prune` job or by "
+        "`hz heinzel prune`, never by reading them. 0 keeps them forever, at most 36500. Receipts are kept and hold "
         "the draft's hash, not its text (ADR 0021).",
     )
 
@@ -543,7 +543,7 @@ class Directory(BaseModel):
 
     namespace: Namespace = Field(description="`me` (your workflows directory) or `team` (the team repository's).")
     path: Path = Field(description="The directory.")
-    exists: bool = Field(description="Whether it exists; `hz workflow new` creates it.")
+    exists: bool = Field(description="Whether it exists; `hz heinzel new` creates it.")
 
 
 class Step(BaseModel):
@@ -554,7 +554,7 @@ class Step(BaseModel):
 
 
 class ContractSummary(BaseModel):
-    """One contract in `hz workflow list`."""
+    """One contract in `hz heinzel list`."""
 
     name: str = Field(description="The contract's name.")
     namespace: Namespace = Field(description="Where it was found: `me` (your directory) or `team`.")
@@ -567,16 +567,37 @@ class ContractSummary(BaseModel):
     warnings: int = Field(description="How many warnings it has.")
 
 
-class ContractList(BaseModel):
-    """`hz workflow list`: the directories searched and every contract found in them."""
+HeinzelState = Literal["scheduled", "manual", "blocked", "broken"]
+"""How a Heinzelmännchen stands: its daemon runs it, it runs when woken, a capability it reads isn't served, or its
+contract has errors."""
+
+
+class HeinzelSummary(ContractSummary):
+    """One Heinzelmännchen in `hz heinzel list`: a contract you have, with its state and its runs."""
+
+    state: HeinzelState = Field(
+        description="`scheduled` (your daemon runs it), `manual` (it runs when you wake it), `blocked` (a capability "
+        "it reads isn't served) or `broken` (its contract has errors)."
+    )
+    unmet: list[str] = Field(description="Requirements no bound adapter serves; why it is blocked.")
+    last_run: datetime | None = Field(description="When its newest draft was rendered; none if it never ran.")
+    next_run: datetime | None = Field(
+        description="When your daemon runs it next, in local time; none unless scheduled."
+    )
+    drafts: int = Field(description="How many drafts it has kept.")
+
+
+class HeinzelList(BaseModel):
+    """`hz heinzel list`: the directories searched and one Heinzelmännchen per contract found in them."""
 
     directories: list[Directory] = Field(description="Where contracts are read from, team first.")
-    contracts: list[ContractSummary] = Field(description="Every contract found, team ones first.")
+    heinzelmaennchen: list[HeinzelSummary] = Field(description="Every Heinzelmännchen the filters keep, team first.")
+    filtered: bool = Field(default=False, description="Whether a filter left some out.")
     next: list[Step] = Field(description="What to do next, as commands.")
 
 
 class NewContract(BaseModel):
-    """`hz workflow new`: the starter contract written, and what to do with it."""
+    """`hz heinzel new`: the starter contract written, and what to do with it."""
 
     file: Path = Field(description="The contract file written.")
     namespace: Namespace = Field(description="Where it was written: `me` or `team`.")
@@ -599,7 +620,7 @@ class Draft(BaseModel):
 
 
 class PruneReport(BaseModel):
-    """`hz workflow prune`: the drafts and records past `[workflow] retention_days`, deleted unless a dry run."""
+    """`hz heinzel prune`: the drafts and records past `[heinzel] retention_days`, deleted unless a dry run."""
 
     dry_run: bool = Field(description="Whether only what would be deleted was listed.")
     retention_days: int = Field(description="Days drafts and records are kept; 0 keeps them forever.")
@@ -616,7 +637,7 @@ class PruneReport(BaseModel):
 
 
 class DraftList(BaseModel):
-    """`hz workflow drafts`: the drafts saved so far, newest first."""
+    """`hz heinzel drafts`: the drafts saved so far, newest first."""
 
     directory: Path = Field(description="Where drafts are saved, one directory per contract.")
     drafts: list[Draft] = Field(description="The drafts, newest first.")
@@ -643,7 +664,7 @@ class PublishStatus(BaseModel):
 
 
 class CompiledContract(BaseModel):
-    """`hz workflow show`: a contract as the daemon runs it."""
+    """`hz heinzel show`: a contract as the daemon runs it."""
 
     name: str = Field(description="The contract's name.")
     namespace: Namespace = Field(description="Where it was found: `me` or `team`.")
@@ -663,7 +684,7 @@ class CompiledContract(BaseModel):
     timeout_seconds: float | None = Field(description="How long the agent session may take.")
     max_usd: float | None = Field(description="Most a manual run may cost: the lower of your cap and the contract's.")
     diagnostics: list[Diagnostic] = Field(description="Its errors and warnings.")
-    sha256: str = Field(description="SHA-256 of the file; `[workflow] schedule_team` can pin it.")
+    sha256: str = Field(description="SHA-256 of the file; `[heinzel] schedule_team` can pin it.")
     approve: str | None = Field(
         description="For team contracts: the `schedule_team` entry that runs exactly this content on your daemon."
     )
@@ -673,13 +694,13 @@ class CompiledContract(BaseModel):
     measurements: Measurements | None = Field(
         default=None,
         description="Its success test: how long drafting took, and how much was changed before sending "
-        "(`hz workflow sent`); none without drafts.",
+        "(`hz heinzel sent`); none without drafts.",
     )
     next: list[Step] = Field(description="What to do next, as commands: fixes while not ready, then how to run it.")
 
 
 class CheckReport(BaseModel):
-    """`hz workflow check`: every contract checked and every problem found."""
+    """`hz heinzel check`: every contract checked and every problem found."""
 
     files: list[Path] = Field(description="The contract files checked.")
     diagnostics: list[Diagnostic] = Field(description="Every error and warning, by file and line.")
@@ -725,7 +746,7 @@ class Unmaintained(BaseModel):
 
 
 class ContractGraph(BaseModel):
-    """`hz workflow graph`: contracts linked by what they read and maintain; the workflow nobody writes down."""
+    """`hz heinzel graph`: contracts linked by what they read and maintain; the workflow nobody writes down."""
 
     nodes: list[GraphNode] = Field(description="Contracts, assets and sources.")
     edges: list[GraphEdge] = Field(description="Who maintains what, and who reads what.")
@@ -781,7 +802,7 @@ class Rendered(BaseModel):
 
 
 class RunResult(BaseModel):
-    """`hz workflow run`: the packet of a dry run, or the finished render."""
+    """`hz heinzel wake`: the packet of a dry run, or the finished render."""
 
     dry_run: bool = Field(description="Whether only the packet was built and no agent ran.")
     packet: Packet | None = Field(default=None, description="The packet, in a dry run.")

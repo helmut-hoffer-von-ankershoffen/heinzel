@@ -102,7 +102,7 @@ describe("Today's notices", () => {
     title: "The weekly digest failed",
     body: "The tracker refused the token.",
     route: "/contracts",
-    command: "hz workflow list",
+    command: "hz heinzel list",
     key: "weekly",
     urgent: false,
     at: new Date().toISOString(),

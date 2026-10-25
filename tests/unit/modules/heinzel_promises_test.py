@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from heinzel import Config, Settings, TeamPromises
-from heinzel.modules.workflow import ContractPromises, WorkflowService, WorkflowSettings
+from heinzel.modules.heinzel import ContractPromises, HeinzelService, HeinzelSettings
 
 pytestmark = pytest.mark.unit
 
@@ -18,10 +18,10 @@ def test_valid_team_contracts_promise_their_artifact_and_personal_or_broken_ones
     shutil.copytree(TEAM, team / "workflows")
     (team / "workflows" / "broken.prose.md").write_text("---\nname: broken\n---\n", encoding="utf-8")
     shutil.copytree(TEAM, me)
-    data = {"workflow": {"user_dir": str(me), "team_repository": str(team)}}
+    data = {"heinzel": {"user_dir": str(me), "team_repository": str(team)}}
     kernel = make_kernel(builtins=True, config=Config(files=(), data=data))
-    service = WorkflowService(
-        kernel, kernel.resolve(WorkflowSettings), Config(files=(), data={}).settings(Settings, "hz")
+    service = HeinzelService(
+        kernel, kernel.resolve(HeinzelSettings), Config(files=(), data={}).settings(Settings, "hz")
     )
     promises = ContractPromises(service).promises()
     assert [p.contract for p in promises] == ["team:tracker-update", "team:weekly-report"]

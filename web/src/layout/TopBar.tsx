@@ -13,12 +13,13 @@ import { cn } from "@/lib/utils";
 const screens: { path: string; title: MessageKey; command: string }[] = [
   { path: "/", title: "nav.home", command: "hz system info" },
   { path: "/settings", title: "nav.settings", command: "hz system config show" },
-  { path: "/contracts", title: "nav.graph", command: "hz workflow graph" },
+  { path: "/heinzel", title: "nav.heinzelmaennchen", command: "hz heinzel list" },
+  { path: "/contracts", title: "nav.graph", command: "hz heinzel graph" },
   { path: "/graph", title: "nav.teamGraph", command: "hz graph" },
   { path: "/org", title: "nav.orgChart", command: "hz org show" },
   { path: "/team", title: "nav.team", command: "hz team show" },
-  { path: "/inventory/types", title: "nav.assetTypes", command: "hz workflow playbooks" },
-  { path: "/inventory/assets", title: "nav.assets", command: "hz workflow discover" },
+  { path: "/inventory/types", title: "nav.assetTypes", command: "hz heinzel playbooks" },
+  { path: "/inventory/assets", title: "nav.assets", command: "hz heinzel discover" },
   { path: "/doctor", title: "nav.doctor", command: "hz system doctor" },
   { path: "/profile", title: "nav.profile", command: "hz org show" },
 ];
@@ -28,7 +29,7 @@ function useScreen(): { title: string; command: string } {
   const contract = matchPath("/contracts/:name", pathname);
   if (contract?.params.name) {
     const name = decodeURIComponent(contract.params.name);
-    return { title: name, command: `hz workflow show ${name}` };
+    return { title: name, command: `hz heinzel show ${name}` };
   }
   const screen = screens.find((s) => matchPath({ path: s.path, end: true }, pathname));
   return screen ? { title: t(screen.title), command: screen.command } : { title: "", command: "hz --help" };
