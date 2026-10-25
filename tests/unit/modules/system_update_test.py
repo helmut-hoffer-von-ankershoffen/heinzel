@@ -58,11 +58,11 @@ class FakeUv:
             core = command[command.index(PYTHON) + 1]
             self.version = core.rsplit("@v", 1)[-1] if "@v" in core else self.version
             self.hz_starts = True
-            withs = [command[i + 1] for i, part in enumerate(command) if part == "--with"]
+            plugin_specs = [command[i + 1] for i, part in enumerate(command) if part == "--with"]
             self.plugins = {
-                name: version if f"{name}=={version}" in withs else self.available[name]
+                name: version if f"{name}=={version}" in plugin_specs else self.available[name]
                 for name, version in self.plugins.items()
-                if any(w.startswith(name) for w in withs)
+                if any(w.startswith(name) for w in plugin_specs)
             }
         return subprocess.CompletedProcess(command, 0, "", "")
 
