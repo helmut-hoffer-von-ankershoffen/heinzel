@@ -26,6 +26,8 @@ Location = Annotated[
         description='A place such as "Lisbon, PT" or coordinates such as "38.72,-9.14"; your primary one if left out.'
     ),
 ]
+MAX_TEXT = 80
+"""The longest text of a status item (ADR 0056)."""
 FIX_LOCATION = "hz system config set weather.locations '[\"Berlin, DE\"]'"
 Days = Annotated[
     int, Field(ge=1, le=MAX_DAYS, description="How many days of forecast, from today; the adapter may give fewer.")
@@ -60,21 +62,22 @@ def conditions(service: WeatherService, handle: WeatherSource) -> Conditions:
     return service.conditions(handle)
 
 
-@module.status(source="conditions", order=800, slots={"footer": True, "sidebar": True})
+@module.status(source="conditions", order=800, refresh="10m", slots={"footer": True, "sidebar": True})
 def weather_now(result: Conditions) -> StatusItem | None:
     """The temperature and sky now, linking to the weather page; "Set a location" until a place is named."""
     if result.needs_location:
-        return StatusItem(text="Set a location", icon="cloud", effect=Navigate(path="/?settings=weather"))
+        return StatusItem(text="Set a location", icon="cloud", tone="warn", effect=Navigate(path="/?settings=weather"))
     outlook = result.outlook
     if outlook is None:
         return None
     degree = outlook.units.degree
+    text = f"{round(outlook.temperature) + 0}{degree} {outlook.summary}"
     return StatusItem(
-        text=f"{outlook.temperature:.0f}{degree} {outlook.summary}",
+        text=text if len(text) <= MAX_TEXT else text[: MAX_TEXT - 1] + "…",
         icon="cloud",
         detail=[
-            DetailLine(text=outlook.location),
-            DetailLine(text=f"Feels like {outlook.feels_like:.0f}{degree}"),
+            DetailLine(text=outlook.location[:MAX_TEXT]),
+            DetailLine(text=f"Feels like {round(outlook.feels_like) + 0}{degree}"),
         ],
         effect=Navigate(path="/weather"),
     )

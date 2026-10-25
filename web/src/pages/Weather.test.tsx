@@ -33,4 +33,11 @@ describe("Weather", () => {
     renderAt("/weather");
     expect(await screen.findByText(/weather.locations/)).toBeInTheDocument();
   });
+
+  it("shows a failing adapter as an error, not as a setup step", async () => {
+    mockApi({ ...shell, "/api/weather": { status: 500, body: { error: "Open-Meteo is down." } } });
+    renderAt("/weather");
+    await screen.findByRole("alert", {}, { timeout: 5000 });
+    expect(screen.queryByText(/weather.locations/)).not.toBeInTheDocument();
+  });
 });

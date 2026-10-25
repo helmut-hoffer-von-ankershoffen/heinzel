@@ -10,7 +10,7 @@ const degrees = (value: number, units: string) => `${Math.round(value)}${units =
 export function Weather() {
   const weather = useWeather();
   // No adapter or no place is a state to act on, not a failure: say what to run.
-  if (weather.error instanceof ApiError && weather.error.status !== 401) {
+  if (weather.error instanceof ApiError && weather.error.status === 400) {
     return (
       <Page title={t("weather.title")} intro={t("weather.intro")}>
         <Empty
@@ -37,7 +37,7 @@ export function Weather() {
                   humidity: w.humidity_percent ?? "–",
                   wind: Math.round(w.wind),
                   speed: w.units === "imperial" ? "mph" : "km/h",
-                  rain: w.precipitation,
+                  rain: Number(w.precipitation.toFixed(1)),
                   length: w.units === "imperial" ? "in" : "mm",
                 })}
               </p>

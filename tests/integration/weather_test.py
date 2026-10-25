@@ -144,3 +144,37 @@ def test_the_status_item_asks_for_a_location_while_none_is_set_and_is_absent_wit
     bare = build(make_kernel(builtins=True))
     _, entries = hz(bare, "system", "ui", "status")
     assert next(e for e in entries if e["id"] == "weather:weather-now")["item"] is None
+
+
+def test_a_failing_adapter_is_a_problem_not_a_broken_bar(make_kernel):
+    app = build(kernel(make_kernel, weather={"locations": ["Nowhere"]}, capabilities={"weather": "almanac"}))
+    code, entries = hz(app, "system", "ui", "status")
+    assert code == 0, entries
+    entry = next(e for e in entries if e["id"] == "weather:weather-now")
+    assert entry["item"] is None
+    assert "Nowhere" in entry["problem"]
+
+
+def test_no_adapter_with_a_location_shows_nothing_and_is_not_a_problem(make_kernel):
+    app = build(make_kernel(builtins=True, config=Config(files=(), data={"weather": {"locations": ["Oslo"]}})))
+    _, entries = hz(app, "system", "ui", "status")
+    entry = next(e for e in entries if e["id"] == "weather:weather-now")
+    assert (entry["item"], entry["problem"]) == (None, None)
+
+
+def test_the_conditions_are_behind_the_token_and_not_on_the_rest_head(make_kernel):
+    k = kernel(make_kernel, weather={"locations": ["Oslo"]}, capabilities={"weather": "almanac"})
+    assert "weather_conditions" in {item.name for item in exposed(k, web.HEAD)}
+    assert "weather_conditions" not in {item.name for item in exposed(k, api.HEAD)}
+    client = TestClient(web.build(k, port=8000, token=TOKEN, static=None), base_url=BASE)
+    assert client.get("/api/weather/conditions").status_code == 401
+    answer = client.get("/api/weather/conditions", headers={"Authorization": f"Bearer {TOKEN}"})
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["outlook"]["summary"] == "sunny"
+
+
+def test_an_unset_location_answers_the_page_with_a_client_error(make_kernel):
+    k = kernel(make_kernel, capabilities={"weather": "almanac"})
+    client = TestClient(web.build(k, port=8000, token=TOKEN, static=None), base_url=BASE)
+    answer = client.get("/api/weather", headers={"Authorization": f"Bearer {TOKEN}"})
+    assert answer.status_code == 400, answer.text
