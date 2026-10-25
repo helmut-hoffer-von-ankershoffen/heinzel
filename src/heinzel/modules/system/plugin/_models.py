@@ -1,7 +1,7 @@
 """Models of the plugin module."""
 
 from datetime import datetime
-from typing import Literal
+from typing import ClassVar, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, SecretStr
 from pydantic_settings import SettingsConfigDict
@@ -21,13 +21,17 @@ class PluginSettings(ModuleSettings):
 
     # The aliases are environment variable names; the field name still works in the TOML table and in code.
     model_config = SettingsConfigDict(populate_by_name=True)
+    section_title: ClassVar[str | None] = "Plugins"  # the heading in Settings
 
     github_token: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("HZ_SYSTEM_PLUGIN__GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"),
-        description="GitHub token for `hz system plugin search` and for reading a public repository's metadata "
-        "before `add` when the gh CLI isn't installed, which work without one at a lower rate limit; also read from "
-        "GH_TOKEN or GITHUB_TOKEN. Sent to api.github.com only.",
+        title="GitHub token",
+        description="A GitHub token for searching plugins and reading a repository before adding "
+        "a plugin from it, when the GitHub CLI isn't installed; both work without one "
+        "at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, and sent to "
+        "GitHub only.",
+        json_schema_extra={"x-expert": True},
     )
 
 
@@ -102,9 +106,9 @@ class AvailablePlugin(BaseModel):
         "also what `hz system plugin add` takes."
     )
     description: str = Field(description="What the plugin does, in its authors' words.")
-    source: Literal["first-party", "github"] = Field(
-        description="Where it was found: `first-party` (maintained with Heinzelmännchen) or `github` (a repository "
-        "with the topic heinzel-plugin)."
+    source: Literal["first-party", "contrib", "github"] = Field(
+        description="Where it was found: `first-party` (maintained with Heinzelmännchen), `contrib` (the "
+        "heinzel-contrib monorepo) or `github` (a repository with the topic heinzel-plugin)."
     )
     community: bool = Field(description="Whether it is a community plugin, not maintained with Heinzelmännchen.")
     install_spec: str = Field(description="What to pass to `hz system plugin add` to install it.")

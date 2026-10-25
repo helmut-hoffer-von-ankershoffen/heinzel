@@ -7,7 +7,7 @@
 - The badges between `<!-- badges:start -->` and `<!-- badges:end -->`: one set on every top-level page GitHub renders
   (BADGE_PAGES), and the same set for a plugin's own repository in the template's README.md and SECURITY.md.
 - docs/plugins/<distribution>/index.md and its theme swatches: the page of every first-party plugin, written by
-  `hz system plugin docs build` from the kernel (ADR 0058), and docs/plugins/README.md, the gallery: those pages, then
+  `hz system plugin docs build` from the kernel (ADR 0082), and docs/plugins/README.md, the gallery: those pages, then
   the plugins the core knows of but doesn't ship (the reference company, docs/plugins/registry.toml).
 - docs/schemas/contract-frontmatter-1.json: the JSON Schema of workflow contract frontmatter (ADR 0021).
 - docs/schemas/team-graph-1.json and telemetry-entry-1.json: `hz graph --json` (JSON Graph Format v2, profile
@@ -21,11 +21,13 @@ Usage: uv run python scripts/generate_docs.py [--check]
 
 import importlib
 import json
+import re
 import subprocess
 import sys
 import tomllib
+from html import escape
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined, to_jsonable_python
@@ -36,11 +38,14 @@ from heinzel.heads.cli import build
 from heinzel.heads.cli._chat import command_words
 from heinzel.kernel import Origin, discover, env_prefix, walk
 from heinzel.modules.graph import TeamGraphDocument
+from heinzel.modules.heinzel._models import SCHEMA_VERSION, Frontmatter
+from heinzel.modules.system.config._schema import reference_hints, setting_schemas
 from heinzel.modules.system.plugin._service import FIRST_PARTY, REFERENCE
 from heinzel.modules.system.plugin.docs._build import rendered
+from heinzel.modules.system.plugin.docs._files import write_pages
+from heinzel.modules.system.plugin.docs._models import PluginPage
 from heinzel.modules.system.plugin.docs._render import gallery
 from heinzel.modules.system.plugin.docs._service import DocsService
-from heinzel.modules.workflow._models import SCHEMA_VERSION, Frontmatter
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -109,6 +114,8 @@ def configuration_reference() -> str:
     """Every setting as a table per section."""
     lines = [CONFIGURATION_HEADER]
     for section, settings in kernel().settings_of():
+        schemas = setting_schemas(type(settings))
+        user_only = type(settings).ignored_in_project
         lines += [
             f"## `[{section}]`",
             "",
@@ -117,7 +124,10 @@ def configuration_reference() -> str:
         ]
         for key, field in type(settings).model_fields.items():
             default = "platform-specific" if field.default is PydanticUndefined else f"`{_default(field.default)}`"
-            lines.append(f"| `{key}` | `{env_prefix(section)}{key.upper()}` | {default} | {field.description or ''} |")
+            text = (field.description or "") + reference_hints(schemas.get(key))
+            if key in user_only and "project" not in text:
+                text += " Never read from a project's hz.toml."
+            lines.append(f"| `{key}` | `{env_prefix(section)}{key.upper()}` | {default} | {text.replace('|', '\\|')} |")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -192,14 +202,18 @@ def plugin_pages() -> dict[Path, str]:
     return files
 
 
-def plugin_gallery(pages: list[object]) -> str:
-    """The gallery: the first-party pages, then every plugin the core knows of but doesn't ship."""
+def plugin_gallery(pages: list[PluginPage]) -> str:
+    """The gallery: first-party pages and registered community plugins.
+
+    Raises:
+        ValueError: If a registry distribution or HTTPS link is unsafe.
+    """
     registry = tomllib.loads(REGISTRY.read_text(encoding="utf-8")) if REGISTRY.is_file() else {}
     lines = [
-        gallery(pages, title="Plugin gallery").rstrip(),  # type: ignore[arg-type] - PluginPage, from the service
+        gallery(pages, title="Plugin gallery").rstrip(),
         "",
         (
-            "Every page is generated from the installed plugin by `hz system plugin docs build` (ADR 0058); CI fails "
+            "Every page is generated from the installed plugin by `hz system plugin docs build` (ADR 0082); CI fails "
             "when one is out of date. A plugin's own repository documents it the same way: `make docs-plugins` there "
             "writes the same page, `make docs-record` its recordings."
         ),
@@ -220,10 +234,49 @@ def plugin_gallery(pages: list[object]) -> str:
             f"| `heinzel-{name}` | {summary} | <{url}> | [page]({url}/blob/main/docs/plugins/heinzel-{name}/index.md) |"
         )
     for entry in sorted(registry.get("plugin", []), key=lambda item: str(item.get("name", ""))):
+        name = entry.get("name", "")
+        if not isinstance(name, str) or re.fullmatch(r"heinzel-[a-z0-9]+(?:-[a-z0-9]+)*", name) is None:
+            msg = "Plugin registry names must be lowercase heinzel-<name> distributions"
+            raise ValueError(msg)
+        for field in ("repository", "docs"):
+            value = entry.get(field)
+            if value is None and field == "docs":
+                continue
+            if not _registry_url(value):
+                msg = f"Plugin registry {field} must be an HTTPS URL without credentials or Markdown delimiters"
+                raise ValueError(msg)
         docs = entry.get("docs")
         link = f"[page]({docs})" if docs else f"[README]({entry['repository']}#readme)"
-        lines.append(f"| `{entry['name']}` | {entry.get('summary', '')} | <{entry['repository']}> | {link} |")
+        summary = _registry_summary(entry.get("summary", ""))
+        lines.append(f"| `{name}` | {summary} | <{entry['repository']}> | {link} |")
     return "\n".join(lines) + "\n"
+
+
+def _registry_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        url = urlsplit(value)
+        _ = url.port  # Reject malformed or out-of-range ports before publishing a broken link.
+    except ValueError:
+        return False
+    return bool(
+        url.scheme == "https"
+        and url.hostname
+        and not url.username
+        and not url.password
+        and all(
+            character.isprintable() and not character.isspace() and character not in '<>()\\|`[]"'
+            for character in value
+        )
+    )
+
+
+def _registry_summary(value: object) -> str:
+    text = escape("".join(character if character.isprintable() else " " for character in str(value)), quote=False)
+    for character in ("\\", "`", "[", "]", "*", "_", "!"):
+        text = text.replace(character, "\\" + character)
+    return text.replace("|", "&#124;")
 
 
 def with_block(text: str, start_marker: str, end_marker: str, body: str) -> str:
@@ -336,8 +389,10 @@ def model_schema(model: type[BaseModel], urn: str, title: str) -> str:
 
 def main() -> int:
     """Write the references, or with --check only compare them."""
+    check = "--check" in sys.argv
+    plugin_outputs = {path.relative_to(PLUGINS).as_posix(): text for path, text in plugin_pages().items()}
+    plugin_stale, _ = write_pages(plugin_outputs, PLUGINS, check=check)
     outputs = {
-        **plugin_pages(),
         DOCS / "MODULES.md": module_catalog(),
         DOCS / "CLI_REFERENCE.md": cli_reference(),
         DOCS / "CONFIGURATION.md": configuration_reference(),
@@ -357,9 +412,9 @@ def main() -> int:
     outputs[readme] = with_block(readme.read_text(encoding="utf-8"), BADGES_START, BADGES_END, template_badges())
     outputs[TEMPLATE / "SECURITY.md.jinja"] = template_security()
     stale = [path for path, content in outputs.items() if not path.exists() or path.read_text("utf-8") != content]
-    if "--check" in sys.argv:
-        if stale:
-            print("Out of date; run `make docs`:", *(p.name for p in stale), sep="\n  ", file=sys.stderr)
+    if check:
+        if stale or plugin_stale:
+            print("Out of date; run `make docs`:", *plugin_stale, *(p.name for p in stale), sep="\n  ", file=sys.stderr)
             return 1
         return 0
     for path in stale:

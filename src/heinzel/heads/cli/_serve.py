@@ -25,6 +25,13 @@ class Transport(StrEnum):
     HTTP = "streamable-http"
 
 
+class ChatToolSet(StrEnum):
+    """Which operations a chat's agent gets as tools."""
+
+    EVERYDAY = "everyday"
+    ALL = "all"
+
+
 def serve_group(
     group_cls: type[TyperGroup], footer: str | None, kernel: Kernel, out_console: Console, err_console: Console
 ) -> typer.Typer:
@@ -38,7 +45,7 @@ def serve_group(
     )
 
     @serve.command(epilog=footer)
-    def mcp(
+    def mcp(  # noqa: PLR0913, PLR0917 - one parameter per command-line option
         transport: Annotated[
             Transport, typer.Option(help="stdio for agents that start hz; streamable-http to share.")
         ] = Transport.STDIO,
@@ -58,6 +65,10 @@ def serve_group(
                 help="Read the configuration as if started in this directory (its hz.toml), as the chat does."
             ),
         ] = None,
+        chat_tools: Annotated[
+            ChatToolSet,
+            typer.Option(help="With --chat: the everyday operations as tools (cheaper messages), or all of them."),
+        ] = ChatToolSet.EVERYDAY,
     ) -> None:
         """Serve every operation as an MCP tool, e.g. `claude mcp add hz -- hz system serve mcp`.
 
@@ -71,17 +82,22 @@ def serve_group(
             raise typer.Exit(2)
         if project is not None:
             os.chdir(project)  # before the head boots its kernel, so it finds the same project file
-        head.serve(transport.value, host, port, chat=chat)
+        head.serve(transport.value, host, port, chat=chat, chat_tools=chat_tools.value)
 
     @serve.command(epilog=footer)
     def api(
         host: Annotated[str, typer.Option(help="Interface to listen on.")] = "127.0.0.1",
         port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
+        private: Annotated[
+            bool, typer.Option("--private", help="Require a server-scoped bearer for private operations.")
+        ] = False,
+        credential_file: Annotated[
+            Path | None,
+            typer.Option(help="New owner-only file for the private API credential; never put the token in arguments."),
+        ] = None,
     ) -> None:
         """Serve every operation as a REST endpoint; OpenAPI docs at /docs."""
-        from heinzel.heads import api as head  # noqa: PLC0415 - heavy import, only when serving
-
-        head.serve(host, port)
+        _serve_api(host, port, private, credential_file, err_console)
 
     @serve.command(epilog=footer)
     def daemon(
@@ -106,6 +122,8 @@ def serve_group(
 
 
 UI_HELP = "Open the web app in your browser, served on localhost; Ctrl-C stops it."
+UI_STOPPED = "Heinzelmännchen stopped. Run `hz ui` to start it again."
+"""What `hz ui` says when Ctrl-C stops it: its normal end, so it exits 0, unlike an interrupted `hz setup` (130)."""
 
 
 def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
@@ -133,6 +151,8 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
         It listens on one port (`[hz] ui_port`), so an installed app keeps its address and, once paired, reopens
         without a new link; `--devices` lists the paired ones and `--revoke` unpairs them.
 
+        Ctrl-C stops it; that is its normal end, so it exits 0.
+
         Raises:
             typer.Exit: With 1 when the app isn't built, the port is taken or there is no such device.
         """
@@ -152,8 +172,14 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
 
         try:
             web.serve(
-                kernel, port=kernel.settings.ui_port if port is None else port, browser=browser, announce=announce
+                kernel,
+                port=kernel.settings.ui_port if port is None else port,
+                browser=browser,
+                announce=announce,
+                waiting=lambda text: err_console.print(text, highlight=False, markup=False),
             )
+        except KeyboardInterrupt:  # Ctrl-C before the server took it over: stopped all the same
+            pass
         except HeinzelError as exc:
             err_console.print(message("Can't start the web app:", str(exc)))
             raise typer.Exit(1) from exc
@@ -162,6 +188,9 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
                 message("Can't listen:", f"{exc}; is `hz ui` running already? Or try another --port, 0 for a free one")
             )
             raise typer.Exit(1) from exc
+        if err_console.is_terminal:
+            err_console.print()  # past the ^C the terminal echoed
+        err_console.print(UI_STOPPED, highlight=False, markup=False)
 
     return ui
 
@@ -196,3 +225,15 @@ def _duration(value: str) -> str:
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     return value
+
+
+def _serve_api(host: str, port: int, private: bool, credential_file: Path | None, err_console: Console) -> None:
+    from heinzel.heads import api as head  # noqa: PLC0415 - heavy import, only when serving
+
+    if not private and credential_file is not None:
+        err_console.print(message("Can't serve:", "--credential-file requires --private."))
+        raise typer.Exit(2)
+    if private:
+        head.serve(host, port, private=True, credential_file=credential_file, announce=err_console.print)
+    else:
+        head.serve(host, port)

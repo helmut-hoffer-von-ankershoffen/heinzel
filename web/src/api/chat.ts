@@ -29,12 +29,20 @@ export async function openChat(context: string | null, detail?: string): Promise
   return unwrap(api.POST("/system/runner/chat/open", { params: { query: { context, detail: detail || null } } }));
 }
 
+/** The model and effort the composer's picker chose; kept by the session for its later messages too. */
+export type ModelChoice = { model?: string | null; effort?: string | null };
+
 export async function sendChat(
   session: string,
   message: string,
   onEvent: (event: StreamEvent) => void,
+  choice: ModelChoice = {},
 ): Promise<SchemaChatSession> {
-  return stream<SchemaChatSession>("/system/runner/chat/send", { session, message }, onEvent);
+  return stream<SchemaChatSession>(
+    "/system/runner/chat/send",
+    { session, message, model: choice.model, effort: choice.effort },
+    onEvent,
+  );
 }
 
 /** Confirm or decline an action; the answer is the session, which replaces the cached one. */

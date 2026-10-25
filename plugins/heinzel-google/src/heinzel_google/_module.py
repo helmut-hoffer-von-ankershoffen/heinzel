@@ -3,5 +3,5 @@
 from heinzel import Module
 
 module = Module(
-    "google", "Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities."
+    "google", "Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities."
 )

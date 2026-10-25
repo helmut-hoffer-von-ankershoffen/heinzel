@@ -24,6 +24,7 @@ from heinzel.kernel._protocols import (
     Meetings,
     TeamGraph,
     Tracker,
+    free_busy_people,
 )
 
 Mode = Literal["read", "write"]
@@ -50,6 +51,9 @@ class Capability:
     """Its name for people, e.g. `Code host`: what settings and the web app show, without backticks."""
     purpose: str = ""
     """What it is for, in a few plain words after the title, e.g. `pull requests and reviews`."""
+    automatic: bool = True
+    """Whether its only installed adapter serves it without a binding (ADR 0055). Not for `mail`: reading a mailbox
+    is the person's explicit choice, whatever happens to be installed."""
 
     @property
     def modes(self) -> frozenset[Mode]:
@@ -80,8 +84,19 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
                 title="Calendar",
                 purpose="where your meetings and free time come from",
                 protocol=Calendar,
-                summary="The user's calendar: events in a window, with attendees and conferencing.",
-                methods=MappingProxyType({"events": "read"}),
+                summary="The user's calendar: events in a window, with attendees and conferencing, free and busy "
+                "times; create, move, cancel and answer events through publish operations.",
+                methods=MappingProxyType(
+                    {
+                        "events": "read",
+                        "free_busy": "read",
+                        "create_event": "write",
+                        "update_event": "write",
+                        "cancel_event": "write",
+                        "respond": "write",
+                    }
+                ),
+                checks=MappingProxyType({("free_busy", "people"): free_busy_people}),
             ),
             Capability(
                 name="chat",
@@ -117,11 +132,23 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
             ),
             Capability(
                 name="mail",
+                automatic=False,
                 title="Mail",
                 purpose="the mailbox messages and meeting summaries come from",
                 protocol=Mail,
-                summary="A mailbox the user reads: messages in a window by sender, subject or label, and their text.",
-                methods=MappingProxyType({"messages": "read", "read": "read"}),
+                summary="A mailbox the user reads: messages in a window by sender, subject or label, their text and "
+                "conversations; drafts, sending a draft and filing through publish operations.",
+                methods=MappingProxyType(
+                    {
+                        "messages": "read",
+                        "read": "read",
+                        "thread": "read",
+                        "draft": "read",
+                        "create_draft": "write",
+                        "send_draft": "write",
+                        "relabel": "write",
+                    }
+                ),
                 checks=MappingProxyType({("messages", "query"): MailQuery.parse}),
             ),
             Capability(

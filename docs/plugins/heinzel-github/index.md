@@ -7,7 +7,7 @@ Read pull requests and issues from GitHub: the code-host and tracker capabilitie
 | | |
 | --- | --- |
 | Kind | **connector** |
-| Version | `0.4.0` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.2` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-github> |
 | Licence | MIT |
 | Install | `hz system plugin add github --confirm` |
@@ -32,11 +32,11 @@ hz github --help
 
 ## Operations
 
-An operation is a `hz` command, an MCP tool (`hz system serve mcp`), a REST endpoint (`hz system serve api`) and an endpoint of the web app's API, unless it restricts its heads. Every command takes `--json`.
+Each column follows the kernel's actual exposure rules. MCP over stdio runs as its caller; HTTP MCP and public REST exclude private operations. Private API and web endpoints require their scoped bearer or paired session. Authentication does not grant human approval. Every CLI command takes `--json`.
 
-| Operation | CLI | MCP tool | REST | Web | Changes state | Audience |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and the GitHub host it reads. | `hz github info` | `github_info` | `GET /github/info` | `GET /api/github/info` |  | expert |
+| Operation | CLI | MCP stdio | MCP HTTP | REST | Private API | Web | Changes state | Audience |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Show this plugin's version, the Heinzelmännchen it runs on and the GitHub host it reads. | `hz github info` | `github_info` | `github_info` | `GET /github/info` | `GET /github/info` | `GET /api/github/info` |  | expert |
 
 ### `hz github info`
 
@@ -67,9 +67,9 @@ In your configuration file (`hz system config set <key> <value>`), or as environ
 
 | Key | Type | Default | Environment variable | Description |
 | --- | --- | --- | --- | --- |
-| `host` | string | `"github.com"` | `HZ_GITHUB__HOST` | The GitHub host `gh` talks to: `github.com`, or the host name of a GitHub Enterprise Server such as `ghe.example.com`; passed to `gh` as `--hostname` and `GH_HOST`, so `gh` uses its login for that host. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml. (user scope only) |
-| `gh` | string | `"gh"` | `HZ_GITHUB__GH` | The GitHub CLI to run: a name looked up on PATH (absolute entries only) or an absolute path. (user scope only) |
-| `timeout` | number | `60.0` | `HZ_GITHUB__TIMEOUT` | Seconds to wait for each `gh` call before stopping it. (user scope only) |
+| `host` | string | `"github.com"` | `HZ_GITHUB__HOST` | The GitHub host to use: github.com, or your GitHub Enterprise Server's host name. The GitHub CLI's sign-in for that host is used. Only your own settings can set it, never a project's. (user scope only) |
+| `gh` | string | `"gh"` | `HZ_GITHUB__GH` | The GitHub CLI to run: a name found on your PATH, or the full path to it. (user scope only) |
+| `timeout` | number | `60.0` | `HZ_GITHUB__TIMEOUT` | How long to wait for each GitHub CLI call before stopping it. (user scope only) |
 
 ## Capabilities served
 
@@ -82,3 +82,7 @@ In your configuration file (`hz system config set <key> <value>`), or as environ
 
 - Health: `github` reports to `hz system doctor`.
 - Info: `github` adds a section to `hz system info`.
+
+## Also declares
+
+- `SkillLet` `review-pull-request` in `github`

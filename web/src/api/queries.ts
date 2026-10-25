@@ -1,5 +1,6 @@
 // One query per operation the screens read; TanStack Query caches them, so screens share what they fetched.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { splash, unreachableError } from "@/splash/store";
 import { api, unwrap } from "./client";
 
 export const keys = {
@@ -7,11 +8,11 @@ export const keys = {
   config: ["system", "config", "show"],
   profile: ["org", "show"],
   team: ["team", "show"],
-  contracts: ["workflow", "list"],
-  graph: ["workflow", "graph"],
-  contract: (name: string) => ["workflow", "show", name],
-  playbooks: ["workflow", "playbooks"],
-  discover: ["workflow", "discover"],
+  contracts: ["heinzel", "list"],
+  graph: ["heinzel", "graph"],
+  contract: (name: string) => ["heinzel", "show", name],
+  playbooks: ["heinzel", "playbooks"],
+  discover: ["heinzel", "discover"],
   jobs: ["system", "daemon", "jobs"],
   expert: ["system", "expert"],
 } as const;
@@ -19,21 +20,30 @@ export const keys = {
 export const useDoctor = () => useQuery({ queryKey: keys.doctor, queryFn: () => unwrap(api.GET("/system/doctor")) });
 export const useConfig = () =>
   useQuery({ queryKey: keys.config, queryFn: () => unwrap(api.GET("/system/config/show")) });
+/** Whether the Heinzelmännchen play along: `hz system config set playful false` (Settings → General) turns them off. */
+export function usePlayful(): boolean {
+  const config = useConfig();
+  const value = config.data?.settings.find((s) => s.section === "hz" && s.key === "playful")?.value;
+  return config.data !== undefined && value !== false;
+}
 export const useProfile = () => useQuery({ queryKey: keys.profile, queryFn: () => unwrap(api.GET("/org/show")) });
 export const useTeam = () => useQuery({ queryKey: keys.team, queryFn: () => unwrap(api.GET("/team/show")) });
+/** `hz heinzel list`: your Heinzelmännchen, one per contract; the sidebar and search read the same list. */
+export const useHeinzelmaennchen = () =>
+  useQuery({ queryKey: keys.contracts, queryFn: () => unwrap(api.GET("/heinzel/list")) });
 export const useContracts = () =>
-  useQuery({ queryKey: keys.contracts, queryFn: () => unwrap(api.GET("/workflow/list")) });
-export const useGraph = () => useQuery({ queryKey: keys.graph, queryFn: () => unwrap(api.GET("/workflow/graph")) });
+  useQuery({ queryKey: keys.contracts, queryFn: () => unwrap(api.GET("/heinzel/list")) });
+export const useGraph = () => useQuery({ queryKey: keys.graph, queryFn: () => unwrap(api.GET("/heinzel/graph")) });
 export const useContract = (name: string) =>
   useQuery({
     queryKey: keys.contract(name),
-    queryFn: () => unwrap(api.GET("/workflow/show", { params: { query: { name } } })),
+    queryFn: () => unwrap(api.GET("/heinzel/show", { params: { query: { name } } })),
   });
 export const usePlaybooks = () =>
-  useQuery({ queryKey: keys.playbooks, queryFn: () => unwrap(api.GET("/workflow/playbooks")) });
+  useQuery({ queryKey: keys.playbooks, queryFn: () => unwrap(api.GET("/heinzel/playbooks")) });
 /** Discovery reads your systems through bound capabilities; it runs when asked, not on every visit. */
 export const useDiscover = (enabled: boolean) =>
-  useQuery({ queryKey: keys.discover, queryFn: () => unwrap(api.GET("/workflow/discover")), enabled });
+  useQuery({ queryKey: keys.discover, queryFn: () => unwrap(api.GET("/heinzel/discover")), enabled });
 export const useJobs = () => useQuery({ queryKey: keys.jobs, queryFn: () => unwrap(api.GET("/system/daemon/jobs")) });
 
 /** Expert mode and every operation's audience: which screens the navigation lists (ADR 0041). */
@@ -98,6 +108,14 @@ export const useInfo = () =>
 export const useThemes = () =>
   useQuery({ queryKey: ["system", "theme", "list"], queryFn: () => unwrap(api.GET("/system/theme/list")) });
 
+/** `hz system theme signals`: the daypart and the weather the theme's variants follow, asked again every minute. */
+export const useThemeSignals = () =>
+  useQuery({
+    queryKey: ["system", "theme", "signals"],
+    queryFn: () => unwrap(api.GET("/system/theme/signals")),
+    refetchInterval: (query) => (query.state.data?.refresh ?? 60) * 1000,
+  });
+
 /** `hz system theme use <name>`; the app applies it as soon as the list is read again. */
 export const useSetTheme = () => {
   const client = useQueryClient();
@@ -106,6 +124,31 @@ export const useSetTheme = () => {
     onSettled: () => client.invalidateQueries({ queryKey: ["system", "theme", "list"] }),
   });
 };
+
+/** `hz ai access list`: every AI access option, its status and the one in use (ADR 0057). */
+export const useAiAccess = () =>
+  useQuery({ queryKey: ["ai", "access", "list"], queryFn: () => unwrap(api.GET("/ai/access/list")) });
+
+/** `hz ai access use <name>`: the one choice, like the theme; it binds the runner the option names too. */
+export const useSetAiAccess = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => unwrap(api.POST("/ai/access/use", { params: { query: { name } } })),
+    onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access", "list"] }),
+  });
+};
+
+/** `hz ai access test --name <name>`: one cheap live check, only when asked; it may cost a little. */
+export const useTestAiAccess = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => unwrap(api.POST("/ai/access/test", { params: { query: { name } } })),
+    onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access", "list"] }),
+  });
+};
+/** `hz ai models`: the models and efforts of the AI access in use, for the chat's picker (ADR 0057). */
+export const useAiModels = () =>
+  useQuery({ queryKey: ["ai", "models"], queryFn: () => unwrap(api.GET("/ai/models")), staleTime: 5 * 60 * 1000 });
 
 /** `hz system notify list`: the latest notices, newest first as the store keeps them (ADR 0043). */
 export const useNotices = () =>
@@ -196,8 +239,21 @@ export const useRestartServer = ({
 } = {}) =>
   useMutation({
     mutationFn: async () => {
-      await unwrap(api.POST("/restart"));
-      if (!(await waitForServer(interval))) throw new Error("hz ui didn't answer again; start it in a terminal: hz ui");
+      // Over the app from the moment it is asked, until the reload brings it back.
+      splash.send({ type: "restart", at: performance.now() });
+      try {
+        await unwrap(api.POST("/restart"));
+      } catch (error) {
+        // The connection dropped as the process replaced itself: it is restarting all the same.
+        if (!unreachableError(error)) {
+          splash.send({ type: "restart-refused" });
+          throw error;
+        }
+      }
+      if (!(await waitForServer(interval))) {
+        splash.send({ type: "restart-failed" });
+        throw new Error("hz ui didn't answer again; start it in a terminal: hz ui");
+      }
       reload();
     },
   });

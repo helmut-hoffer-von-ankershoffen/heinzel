@@ -9,6 +9,8 @@ that fails, so does the build: a wheel is complete or absent. Editable installs 
 """
 
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -68,6 +70,11 @@ class WebAppHook(BuildHookInterface[Any]):
         # Heinzel Notifier (ADR 0043), built by `make notifier` on macOS: shipped when it matches its sources. A wheel
         # without it still works; macOS then falls back to osascript. CI's release build checks that it is there.
         notifier = _script("notifier")
+        if sys.platform == "darwin" and not notifier.current():  # e.g. `uv tool install` from git on a Mac
+            try:
+                notifier.build()
+            except (SystemExit, subprocess.SubprocessError, OSError) as error:
+                print(f"Heinzel Notifier not built into the package: {error}", file=sys.stderr)  # noqa: T201
         if notifier.APP.is_dir() and notifier.current():
             packaged = notifier.PACKAGED if self.target_name == "wheel" else f"src/{notifier.PACKAGED}"
             build_data["force_include"][str(notifier.APP)] = packaged

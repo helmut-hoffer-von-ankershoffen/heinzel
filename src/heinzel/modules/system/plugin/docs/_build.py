@@ -1,7 +1,9 @@
-"""Write the pages: one directory per distribution with its `index.md`, swatches and recordings (ADR 0058)."""
+"""Write the pages: one directory per distribution with its `index.md`, swatches and recordings (ADR 0082)."""
 
 from pathlib import Path
+from shlex import quote
 
+from heinzel.modules.system.plugin.docs._files import write_pages
 from heinzel.modules.system.plugin.docs._models import BuildResult, Documentation
 from heinzel.modules.system.plugin.docs._render import gallery, page, swatches
 from heinzel.modules.system.plugin.docs._service import ASSETS
@@ -23,20 +25,13 @@ def rendered(documentation: Documentation, *, index: bool) -> dict[str, str]:
 
 
 def build_pages(documentation: Documentation, directory: Path, *, index: bool, check: bool) -> BuildResult:
-    """Write the files that differ, or with `check` only report them (a page that doesn't exist yet is stale too)."""
-    files = rendered(documentation, index=index)
-    stale: list[str] = []
-    unchanged = 0
-    for relative, text in files.items():
-        path = directory / relative
-        if path.is_file() and path.read_text(encoding="utf-8") == text:
-            unchanged += 1
-            continue
-        stale.append(relative)
-        if not check:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text, encoding="utf-8")
-    next_steps = [f"hz system plugin docs build --directory {directory}"] if check and stale else []
+    """Write generated files that differ, or with `check` only report them.
+
+    Raises:
+        HeinzelError: If an output escapes the directory, follows a link or would replace a custom file.
+    """
+    stale, unchanged = write_pages(rendered(documentation, index=index), directory, check=check)
+    next_steps = [f"hz system plugin docs build --directory {quote(str(directory))}"] if check and stale else []
     unrecorded = [
         f"{doc.distribution}: {scene.name}"
         for doc in documentation.pages

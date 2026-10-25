@@ -12,7 +12,8 @@ from datetime import timedelta
 from pathlib import Path
 
 from heinzel import AccessStatus, AccessTest, Budget, HeinzelError, Progress, Status, ToolProfile
-from heinzel.modules.system.runner._claude import DOCS, LOGIN, NAME, SILENT, ClaudeCodeRunner, login_check
+from heinzel.kernel import Effort
+from heinzel.modules.system.runner._claude import DOCS, LOGIN, NAME, SILENT, ClaudeCodeRunner, auth_status
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import Execute, run_bounded
 
@@ -23,6 +24,11 @@ TEST_TIMEOUT = timedelta(seconds=90)
 TEST_MAX_USD = 0.05
 """Most a test may cost: one short answer, no tools."""
 ANSWER_LIMIT = 200
+MODELS = ("fable", "opus", "sonnet", "haiku")
+"""The aliases Claude Code takes for the latest model of each family (`claude --help`, 2.1); a full model name works
+too."""
+EFFORTS: tuple[Effort, ...] = ("low", "medium", "high", "xhigh", "max")
+"""The efforts `claude --effort` takes (Claude Code 2.1)."""
 
 
 class ClaudeCodeAccess:
@@ -43,7 +49,8 @@ class ClaudeCodeAccess:
 
     def status(self) -> AccessStatus:
         """Whether the CLI is on PATH and logged in, from `claude auth status`; calls no model."""
-        models = [self._settings.model] if self._settings.model else []
+        configured = [self._settings.model] if self._settings.model else []
+        models = list(dict.fromkeys([*configured, *MODELS]))
         found = self._which(self._settings.claude_executable)
         if found is None:
             return AccessStatus(
@@ -53,9 +60,10 @@ class ClaudeCodeAccess:
                 detail=f"{self._settings.claude_executable} is not on PATH",
                 fix=f"Install Claude Code: {DOCS}",
                 models=models,
+                efforts=list(EFFORTS),
                 runner=NAME,
             )
-        login = login_check(found, self._execute)
+        login, billing = auth_status(found, self._execute)
         signed_in: bool | None = None
         if login.status is Status.UP and login.detail == "logged in":
             signed_in = True
@@ -69,7 +77,9 @@ class ClaudeCodeAccess:
             detail=f"{found}; {login.detail}",
             fix=login.fix,
             models=models,
+            efforts=list(EFFORTS),
             runner=NAME,
+            billing=billing,
         )
 
     def test(self) -> AccessTest:
@@ -94,4 +104,6 @@ class ClaudeCodeAccess:
             model=result.model,
             cost_usd=result.usage.cost_usd,
             duration_seconds=result.duration_seconds,
+            input_tokens=result.usage.input_tokens,
+            output_tokens=result.usage.output_tokens,
         )

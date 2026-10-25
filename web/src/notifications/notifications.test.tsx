@@ -17,7 +17,7 @@ const notice: SchemaNotice = {
   title: "Draft ready: Weekly digest",
   body: "Read it, edit what is wrong, then send it.",
   route: "/contracts/me%3Aweekly-digest",
-  command: "hz workflow drafts --name me:weekly-digest --latest",
+  command: "hz heinzel drafts --name me:weekly-digest --latest",
   key: "draft:me:weekly-digest:sha256:1",
   urgent: false,
   at: "2026-10-21T10:00:00Z",
@@ -147,6 +147,7 @@ describe("desktop notifications", () => {
       body: notice.body,
       tag: notice.id,
       icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
       data: { path: `/contracts/me%3Aweekly-digest?event=${notice.id}` },
     });
   });

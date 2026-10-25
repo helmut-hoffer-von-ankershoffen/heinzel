@@ -35,6 +35,66 @@ describe("Home", () => {
     expect(within(card).getByRole("link", { name: "Open" })).toHaveAttribute("href", "/doctor");
   });
 
+  it("teases the unread notifications: a count, the latest few and a link to all of them", async () => {
+    const notice = (n: number) => ({
+      id: `20261025T10000${n}000000Z-abc${n}`,
+      kind: "failed",
+      title: `Run ${n} failed`,
+      body: "",
+      route: `/runs/${n}`,
+      command: "hz system doctor",
+      key: `failed:${n}`,
+      urgent: false,
+      at: "2026-10-25T10:00:00Z",
+      due: "2026-10-25T10:00:00Z",
+      popup: true,
+      held: null,
+      delivered_by: null,
+      delivered_at: null,
+    });
+    mockApi({ ...base, "/api/system/notify/list": { notices: [1, 2, 3, 4].map(notice), waiting: 0, native: "" } });
+    const { container } = renderAt("/");
+    const card = (await screen.findByRole("heading", { name: /^Notifications.*unread$/ })).closest("li") as HTMLElement;
+    expect(within(card).getByText("4 unread")).toBeInTheDocument();
+    expect(within(card).getAllByRole("link", { name: /^Run \d failed/ })).toHaveLength(3);
+    expect(within(card).getByRole("link", { name: "All notifications" })).toHaveAttribute(
+      "href",
+      "/?panel=notifications",
+    );
+    await expectAccessible(container);
+  });
+
+  it("teases a repeated notice once", async () => {
+    const notice = (n: number) => ({
+      id: `20261025T10000${n}000000Z-abc${n}`,
+      kind: "test",
+      title: "Notifications work",
+      body: "",
+      route: "/",
+      command: "hz system notify test",
+      key: `test:${n}`,
+      urgent: false,
+      at: "2026-10-25T10:00:00Z",
+      due: "2026-10-25T10:00:00Z",
+      popup: true,
+      held: null,
+      delivered_by: null,
+      delivered_at: null,
+    });
+    mockApi({ ...base, "/api/system/notify/list": { notices: [1, 2, 3].map(notice), waiting: 0, native: "" } });
+    renderAt("/");
+    const card = (await screen.findByRole("heading", { name: /^Notifications.*unread$/ })).closest("li") as HTMLElement;
+    expect(within(card).getByText("3 unread")).toBeInTheDocument();
+    expect(within(card).getAllByText("Notifications work")).toHaveLength(1);
+  });
+
+  it("shows no notifications card when nothing is unread", async () => {
+    mockApi({ ...base, "/api/system/notify/list": { notices: [], waiting: 0, native: "" } });
+    renderAt("/");
+    await screen.findByRole("heading", { name: "Today" });
+    expect(screen.queryByRole("heading", { name: /^Notifications.*unread$/ })).not.toBeInTheDocument();
+  });
+
   it("opens a chat about a card with what it says, and keeps the conversation below", async () => {
     const about = { ...empty, context: { kind: "route" as const, ref: "/doctor", detail: "" } };
     const { calls } = mockApi({ ...base, "/api/system/runner/chat/open": about });
@@ -102,7 +162,7 @@ describe("Today's notices", () => {
     title: "The weekly digest failed",
     body: "The tracker refused the token.",
     route: "/contracts",
-    command: "hz workflow list",
+    command: "hz heinzel list",
     key: "weekly",
     urgent: false,
     at: new Date().toISOString(),

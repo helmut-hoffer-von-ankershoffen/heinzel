@@ -12,6 +12,11 @@ from typing import Annotated, Literal, Protocol
 from pydantic import BaseModel, Field, StringConstraints
 
 RunStatus = Literal["completed", "timeout", "budget", "failed"]
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
+"""How hard the model thinks: more effort, better answers to hard questions, and more tokens."""
+Billing = Literal["plan", "api"]
+"""Who pays: `plan`, a subscription the agent is signed in with (the cost it reports is what the run would cost at
+API prices); `api`, an API key, billed per token."""
 
 
 class McpServer(BaseModel):
@@ -88,13 +93,31 @@ class AgentResult(BaseModel):
     warnings: list[str] = Field(
         default_factory=list, description="Limits the runner could not enforce, e.g. a budget the agent ignores."
     )
+    billing: Billing | None = Field(
+        default=None,
+        description="`plan` when the agent ran on a subscription (its cost is at API prices, covered by the plan), "
+        "`api` when on an API key; none when the runner can't tell.",
+    )
 
 
 class AgentRunner(Protocol):
     """Runs one bounded agent session with read-only tools (capability `agent-runner`)."""
 
-    def run(self, prompt: str, *, contract: str, tools: ToolProfile, timeout: timedelta, budget: Budget) -> AgentResult:
+    def run(  # noqa: PLR0913 - a run's whole contract, by keyword
+        self,
+        prompt: str,
+        *,
+        contract: str,
+        tools: ToolProfile,
+        timeout: timedelta,
+        budget: Budget,
+        model: str | None = None,
+        effort: Effort | None = None,
+    ) -> AgentResult:
         """Run `prompt` under `contract` with read-only `tools`; stop at `timeout` or `budget`. Mode: read.
+
+        `model` and `effort` override the runner's configured ones for this run (a chat's picker, ADR 0057); a runner
+        that can't set one says so in the result's warnings.
 
         Raises:
             HeinzelError: If the runner is misconfigured (its CLI is missing, a tool isn't read-only); a session that

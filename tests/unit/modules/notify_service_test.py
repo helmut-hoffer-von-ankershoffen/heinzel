@@ -11,7 +11,8 @@ import pytest
 from heinzel import Check, Delivery, Module, NoticeKind, Notifications, Status
 from heinzel.modules.system.notify import NotifyService, NotifySettings
 from heinzel.modules.system.notify._macos import NotifierApp
-from heinzel.modules.system.notify._native import HEINZEL, Native
+from heinzel.modules.system.notify._native import ALLOW, DENIED, HEINZEL, Native
+from heinzel.modules.system.notify._render import render_installed
 from heinzel.modules.system.notify._store import MAX_NOTICES
 
 pytestmark = pytest.mark.unit
@@ -69,7 +70,7 @@ def draft(service: NotifyService, key: str = "draft:me:weekly", **values: object
         "Draft ready: Weekly",
         "Read it.",
         route="/contracts/me%3Aweekly",
-        command="hz workflow drafts --name me:weekly --latest",
+        command="hz heinzel drafts --name me:weekly --latest",
         key=key,
         **values,
     )
@@ -143,7 +144,7 @@ def test_the_daemon_pops_up_due_notices_natively_and_marks_them(make, runner):
     assert service.post_native() == 1
     title, body = runner.commands[0][-2:]
     assert title == "Draft ready: Weekly"
-    assert body == "Read it. Run: hz workflow drafts --name me:weekly --latest"  # notify-send can't open a link
+    assert body == "Read it. Run: hz heinzel drafts --name me:weekly --latest"  # notify-send can't open a link
     assert service.recent()[0].delivered_by is Delivery.DAEMON
     assert service.post_native() == 0
 
@@ -238,7 +239,8 @@ def test_the_base_class_only_declares():
             call()
 
 
-def test_once_an_hour_the_tick_reports_what_doctor_finds(make_kernel, monkeypatch):
+@pytest.mark.timeout(30)  # runs every built-in module's real doctor checks: ~3 s idle, more under load
+def test_once_an_hour_the_tick_reports_what_doctor_finds(make_kernel, monkeypatch, clock):
     monkeypatch.setenv("HZ_SYSTEM_NOTIFY__DOCTOR", "true")  # tests turn it off (heinzel.testing)
     sick = Module("sick", "A module whose check fails.")
 
@@ -250,10 +252,13 @@ def test_once_an_hour_the_tick_reports_what_doctor_finds(make_kernel, monkeypatc
     kernel = make_kernel(builtins=True, sick=sick)
     service = kernel.resolve(NotifyService)
     monkeypatch.setattr(service, "_notifier", Native(None, detail="none in tests"))
+    monkeypatch.setattr(
+        service, "_clock", clock
+    )  # a pinned clock: the hour passes when the test says so, not under load
     service.post_native()
     assert len(service.recent()) == 1
     assert service.look() == 0  # not again within the hour
-    service.store.looked(service.recent()[0].at - timedelta(hours=2))
+    clock.now += timedelta(hours=2)
     assert service.look() == 1  # the same notice again, not a new one
     assert len(service.recent()) == 1
     notice = service.recent()[0]
@@ -278,19 +283,46 @@ def test_doctor_reports_a_refused_pop_up_until_one_works(make, runner):
     assert len(service.health()) == 1
 
 
-def heinzel_service(settings, clock, tmp_path, said: str, *, quarantined: bool = False) -> NotifyService:
+def heinzel_service(  # noqa: PLR0913 - a test double with switches
+    settings,
+    clock,
+    tmp_path,
+    said: str,
+    *,
+    quarantined: bool = False,
+    posted: str = "posted",
+    stale: bool = False,
+    wheel: bool = False,
+    build_error: str | None = None,
+) -> NotifyService:
     bundle = tmp_path / "HeinzelNotifier.app"
     (bundle / "Contents" / "MacOS").mkdir(parents=True)
     (bundle / "Contents" / "MacOS" / "notifier").write_bytes(b"app")
 
     def run(command, timeout=None):
         if "--stdout" in command:
-            answer = said if "--status" in command else "posted"
+            answer = said if "--status" in command else posted
             Path(command[command.index("--stdout") + 1]).write_text(answer, encoding="utf-8")
         code = 0 if command[0] != "/usr/bin/xattr" or quarantined else 1
         return subprocess.CompletedProcess(command, code, "", "")
 
-    app = NotifierApp(tmp_path / "home", bundled=bundle, runner=run)
+    script = None
+    if build_error is not None:  # a source checkout whose rebuild fails
+        script = tmp_path / "notifier.py"
+        script.write_text("", encoding="utf-8")
+        inner = run
+
+        def run(command, timeout=None):
+            if str(script) in command:
+                return subprocess.CompletedProcess(command, 1, "", build_error)
+            return inner(command, timeout)
+
+    app = NotifierApp(
+        tmp_path / "home", bundled=tmp_path / "none" if wheel else bundle, runner=run, build_script=script
+    )
+    if stale:  # an older app is installed already
+        (app.path / "Contents" / "MacOS").mkdir(parents=True)
+        (app.path / "Contents" / "MacOS" / "notifier").write_bytes(b"old app")
     notifier = Native(HEINZEL, str(app.path), clicks=True, app=app)
     return NotifyService(settings, NotifySettings(), ORG, clock=clock, notifier=notifier)
 
@@ -332,8 +364,57 @@ def test_install_puts_heinzel_notifier_in_place_and_pops_up_a_test(settings, clo
     installed = service.install()
     assert (installed.notifier, installed.state, installed.shown) == (HEINZEL, "installed", True)
     assert installed.path == str(tmp_path / "home" / "Applications" / "Heinzel Notifier.app")
-    assert any("choose Allow" in step for step in installed.next)
+    assert installed.next == []  # sent and nothing to fix
     assert service.recent() == []  # a test of the notifier, not a notice
+
+
+def shown(service: NotifyService) -> list[str]:
+    return [line.plain for line in render_installed(service.install()).renderables]
+
+
+def test_install_replaces_an_outdated_notifier_and_says_so(settings, clock, tmp_path):
+    service = heinzel_service(settings, clock, tmp_path, "authorized", stale=True)
+    assert shown(service) == [
+        "Updated Heinzel Notifier (new icon).",
+        "Sent a test notification \u2014 you should see it now.",
+        "macOS may show the old icon until you remove Heinzel Notifier there once and run this again.",
+    ]
+    assert service.notifier.app.inspect().state == "current"
+
+
+def test_install_says_so_when_a_wheel_ships_no_notifier(settings, clock, tmp_path):
+    service = heinzel_service(settings, clock, tmp_path, "authorized", stale=True, wheel=True)
+    lines = shown(service)
+    assert lines[0].startswith("Couldn't update Heinzel Notifier: this installation carries no Heinzel Notifier")
+    assert "xcode-select --install" in lines[0]
+    assert not any("new icon" in line for line in lines)
+
+
+def test_install_does_not_claim_an_update_when_the_rebuild_fails(settings, clock, tmp_path):
+    service = heinzel_service(settings, clock, tmp_path, "authorized", stale=True, build_error="swiftc not found")
+    lines = shown(service)
+    assert lines[0].startswith("Couldn't update Heinzel Notifier: building it failed (swiftc not found)")
+
+
+def test_install_reads_the_notifiers_success_output_as_success(settings, clock, tmp_path):
+    service = heinzel_service(settings, clock, tmp_path, "authorized", posted="posted error=nil")
+    installed = service.install()
+    assert (installed.shown, installed.problem) == (True, None)
+
+
+def test_install_golden_output_when_up_to_date_and_when_refused(settings, clock, tmp_path):
+    service = heinzel_service(settings, clock, tmp_path, "authorized")
+    service.install()
+    assert shown(service) == [
+        "Heinzel Notifier is installed and up to date.",
+        "Sent a test notification \u2014 you should see it now.",
+    ]
+    refused = heinzel_service(settings, clock, tmp_path / "other", "denied", posted="denied")
+    assert shown(refused) == [
+        "Installed Heinzel Notifier.",
+        "The test notification failed: " + DENIED,
+        ALLOW,
+    ]
 
 
 def test_install_without_a_notifier_says_why(make, settings, clock):

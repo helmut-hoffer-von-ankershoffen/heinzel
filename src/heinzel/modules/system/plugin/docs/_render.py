@@ -1,4 +1,4 @@
-"""Render a plugin's page as GitHub-flavoured Markdown, and a theme's swatches as SVG (ADR 0058).
+"""Render a plugin's page as GitHub-flavoured Markdown, and a theme's swatches as SVG (ADR 0082).
 
 The page is written for people first: what the plugin is, how to install it and what it looks like, then the
 reference an agent or an integrator needs. Everything comes from the `PluginPage` model; nothing is read here.
@@ -175,6 +175,18 @@ def _theme(theme: ThemeDoc) -> list[str]:
         + (", with its own logo." if theme.logo else "."),
         "",
     ]
+    if theme.definition is not None:
+        lines += [
+            "<details>",
+            "<summary>Complete theme data</summary>",
+            "",
+            "```json",
+            json.dumps(theme.definition.model_dump(mode="json", exclude_none=True), indent=2, ensure_ascii=False),
+            "```",
+            "",
+            "</details>",
+            "",
+        ]
     return lines
 
 
@@ -185,18 +197,20 @@ def _operations(doc: PluginPage) -> list[str]:
     lines = ["## Operations", ""]
     lines += [
         (
-            "An operation is a `hz` command, an MCP tool (`hz system serve mcp`), a REST endpoint "
-            "(`hz system serve api`) and an endpoint of the web app's API, unless it restricts its heads. Every "
-            "command takes `--json`."
+            "Each column follows the kernel's actual exposure rules. MCP over stdio runs as its caller; HTTP MCP "
+            "and public REST exclude private operations. Private API and web endpoints require their scoped bearer "
+            "or paired session. Authentication does not grant human approval. Every CLI command takes `--json`."
         ),
         "",
-        "| Operation | CLI | MCP tool | REST | Web | Changes state | Audience |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| Operation | CLI | MCP stdio | MCP HTTP | REST | Private API | Web | Changes state | Audience |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for op in operations:
         lines.append(
             f"| {op.summary} | {f'`{op.command}`' if op.command else '—'} | {f'`{op.tool}`' if op.tool else '—'} | "
-            f"{f'`{op.endpoint}`' if op.endpoint else '—'} | {f'`{op.web_endpoint}`' if op.web_endpoint else '—'} | "
+            f"{f'`{op.http_tool}`' if op.http_tool else '—'} | {f'`{op.endpoint}`' if op.endpoint else '—'} | "
+            f"{f'`{op.private_endpoint}`' if op.private_endpoint else '—'} | "
+            f"{f'`{op.web_endpoint}`' if op.web_endpoint else '—'} | "
             f"{'' if op.read_only else 'yes'} | {op.audience} |"
         )
     lines.append("")
@@ -370,6 +384,7 @@ def swatches(theme: ThemeDoc) -> str:
     label = escape(f"{theme.title}: colours in light and dark mode", quote=True)
     box = f'width="{width}" height="{height}" viewBox="0 0 {width} {height}"'
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" {box} role="img" aria-label="{label}">']
+    parts.append(GENERATED)
     parts.append(f"<title>{escape(theme.title)}</title>")
     for row, mode in enumerate(("light", "dark")):
         for column, colour in enumerate(tokens):

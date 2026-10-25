@@ -195,9 +195,9 @@ def test_one_drawing_an_original_one_shows_heinzelmaennchen_everywhere():
             assert embedded not in artwork.read_bytes()
     for copy, source in script.COPIES.items():
         assert copy.read_bytes() == source.read_bytes(), f"{copy.relative_to(ROOT)} is stale: run make icons"
-    # One Heinzelmännchen where the swarm wouldn't read, the swarm where it does.
+    # An app icon is one Heinzelmännchen at every size; the swarm is the logo, not an icon.
     assert script.artwork_for(32) == script.ARTWORK
-    assert script.artwork_for(script.SWARM_FROM) == script.SWARM
+    assert script.artwork_for(512) == script.ARTWORK
     for name, (background, fill) in script.WORDMARKS.items():
         made = (script.THEME_LOGO / name).read_text(encoding="utf-8")
         assert made == script.wordmark(background, fill), f"{name} is stale: run make icons"
@@ -222,3 +222,33 @@ def test_the_web_icons_are_the_sizes_the_manifest_and_the_build_name():
     for index, size in enumerate(script.FAVICON_SIZES):
         _, _, _, _, _, _, length, offset = struct.unpack("<BBBBHHII", ico[6 + 16 * index : 22 + 16 * index])
         assert png_size(ico[offset : offset + length]) == (size, size)
+
+
+def test_a_source_checkout_rebuilds_the_bundled_app_only_when_its_sources_changed(tmp_path, bundled):
+    script = tmp_path / "notifier.py"
+    script.write_text("", encoding="utf-8")
+    commands: list[list[str]] = []
+    current = [False]
+
+    def runner(command, timeout=None):
+        commands.append(list(command))
+        return subprocess.CompletedProcess(command, 0 if current[0] or command[-1] != "--check" else 1, "", "")
+
+    app = NotifierApp(tmp_path / "home", bundled=bundled, runner=runner, build_script=script)
+    assert app.rebuild() is None
+    assert [c[-1] for c in commands] == ["--check", str(script)]
+    current[0] = True
+    assert app.rebuild() is None  # up to date: no second build
+    assert NotifierApp(tmp_path / "h", bundled=bundled, runner=runner, build_script=None).rebuild() is None
+
+
+def test_a_failed_rebuild_says_why(tmp_path, bundled):
+    script = tmp_path / "notifier.py"
+    script.write_text("", encoding="utf-8")
+
+    def runner(command, timeout=None):
+        return subprocess.CompletedProcess(command, 1, "", "swiftc not found\n")
+
+    assert NotifierApp(tmp_path / "home", bundled=bundled, runner=runner, build_script=script).rebuild() == (
+        "swiftc not found"
+    )

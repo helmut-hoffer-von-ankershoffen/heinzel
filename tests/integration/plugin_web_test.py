@@ -60,6 +60,9 @@ def kernel(make_kernel, tmp_path, monkeypatch):
         "info": {"version": "1.1.0", "summary": "CRM notes.", "author": "Ada Example"},
         "releases": {"1.1.0": [{}]},
     }
+    # The real first-party catalog stays in use; community discovery has its own tests and never goes online here.
+    monkeypatch.setattr(PluginService, "_github_repositories", lambda *_args: [])
+    monkeypatch.setattr(PluginService, "_contrib_plugins", lambda *_args: [])
     kernel.runs = runs  # type: ignore[attr-defined] - for the assertions
     return kernel
 
@@ -302,7 +305,7 @@ def test_mcp_over_stdio_manages_plugins_and_unauthenticated_http_mcp_cannot(kern
     http = {tool.name for tool in asyncio.run(mcp.build(kernel, "streamable-http").list_tools())}
     assert stdio >= CHANGES
     assert not CHANGES & http
-    assert {"system_plugin_list", "system_plugin_search", "workflow_run"} <= http  # the rest stays as it was
+    assert {"system_plugin_list", "system_plugin_search", "heinzel_wake"} <= http  # the rest stays as it was
 
 
 def test_a_handed_over_socket_that_isnt_a_loopback_listener_starts_a_fresh_session(monkeypatch):

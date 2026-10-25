@@ -1,4 +1,4 @@
-// Playbooks' asset types (`hz workflow playbooks`) and the assets found for them (`hz workflow discover`).
+// Playbooks' asset types (`hz heinzel playbooks`) and the assets found for them (`hz heinzel discover`).
 import { Search } from "lucide-react";
 import { useState } from "react";
 import { useDiscover, usePlaybooks } from "@/api/queries";
@@ -17,6 +17,7 @@ export function AssetTypes() {
           data.playbooks.length === 0 ? (
             <Empty
               text={t("inventory.typesEmpty")}
+              gnome={{ state: "thinking" }}
               commands={[...data.next.map((step) => step.command), "hz system plugin search"].slice(0, 3)}
             />
           ) : (
@@ -90,6 +91,7 @@ export function Assets() {
               {data.candidates.length === 0 ? (
                 <Empty
                   text={t("inventory.assetsEmpty")}
+                  gnome={{ state: "thinking" }}
                   commands={data.next.flatMap((step) => commandsIn(step.command))}
                 />
               ) : (

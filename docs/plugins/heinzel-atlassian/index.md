@@ -7,7 +7,7 @@ Read Jira issues and Confluence pages through acli: the tracker and documents ca
 | | |
 | --- | --- |
 | Kind | **connector** |
-| Version | `0.4.0` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.2` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-atlassian> |
 | Licence | MIT |
 | Install | `hz system plugin add atlassian --confirm` |
@@ -32,11 +32,11 @@ hz atlassian --help
 
 ## Operations
 
-An operation is a `hz` command, an MCP tool (`hz system serve mcp`), a REST endpoint (`hz system serve api`) and an endpoint of the web app's API, unless it restricts its heads. Every command takes `--json`.
+Each column follows the kernel's actual exposure rules. MCP over stdio runs as its caller; HTTP MCP and public REST exclude private operations. Private API and web endpoints require their scoped bearer or paired session. Authentication does not grant human approval. Every CLI command takes `--json`.
 
-| Operation | CLI | MCP tool | REST | Web | Changes state | Audience |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Atlassian site and the acli commands it runs. | `hz atlassian info` | `atlassian_info` | `GET /atlassian/info` | `GET /api/atlassian/info` |  | expert |
+| Operation | CLI | MCP stdio | MCP HTTP | REST | Private API | Web | Changes state | Audience |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Show this plugin's version, the Atlassian site and the acli commands it runs. | `hz atlassian info` | `atlassian_info` | `atlassian_info` | `GET /atlassian/info` | `GET /atlassian/info` | `GET /api/atlassian/info` |  | expert |
 
 ### `hz atlassian info`
 
@@ -67,9 +67,9 @@ In your configuration file (`hz system config set <key> <value>`), or as environ
 
 | Key | Type | Default | Environment variable | Description |
 | --- | --- | --- | --- | --- |
-| `site_url` | string or null | `null` | `HZ_ATLASSIAN__SITE_URL` | The Atlassian Cloud site acli is logged in to, `https://<site>.atlassian.net`: issue and page links are built on it, and page URLs must name it. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml. (user scope only) |
-| `acli` | string | `"acli"` | `HZ_ATLASSIAN__ACLI` | Atlassian's CLI: a name looked up on PATH (only absolute PATH entries count) or an absolute path. Never read from a project hz.toml. (user scope only) |
-| `timeout` | number | `60.0` | `HZ_ATLASSIAN__TIMEOUT` | Seconds to wait for each acli command before stopping it. (user scope only) |
+| `site_url` | string or null | `null` | `HZ_ATLASSIAN__SITE_URL` | The Atlassian Cloud site you are signed in to with the Atlassian CLI; links to issues and pages are built on it. Only your own settings can set it, never a project's. (user scope only) |
+| `acli` | string | `"acli"` | `HZ_ATLASSIAN__ACLI` | The Atlassian CLI to run: a name found on your PATH, or the full path to it. Never read from a project's settings. (user scope only) |
+| `timeout` | number | `60.0` | `HZ_ATLASSIAN__TIMEOUT` | How long to wait for each Atlassian CLI command before stopping it. (user scope only) |
 
 ## Capabilities served
 

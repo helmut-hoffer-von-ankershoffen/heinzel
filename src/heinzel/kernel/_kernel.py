@@ -5,6 +5,7 @@ import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
+from pathlib import Path
 from typing import Any, cast, get_args, get_origin
 
 import pluggy
@@ -22,6 +23,7 @@ from heinzel.kernel._bindings import (
 from heinzel.kernel._capabilities import CAPABILITIES, Capability, capability_of
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE, CurrentUser
 from heinzel.kernel._installation import Installation
 from heinzel.kernel._jobs import CompiledJobs
 from heinzel.kernel._layers import Declared, Label, LayerLet, LayerProblem, LayerProblemKind, Layers, LayerStack
@@ -85,6 +87,14 @@ class ModuleRecord:
         return tuple(self.qualname.split("."))
 
 
+def _current_user() -> CurrentUser:
+    """Build identity from trusted user settings only when a head actually needs it."""
+    home = Path.home()
+    state = Config.load(home).settings(Settings, KERNEL_SECTION).state_dir.expanduser()
+    # Relative user settings must not implicitly select the repository a head happened to start in.
+    return CurrentUser((state if state.is_absolute() else home / state) / "identity")
+
+
 class Kernel:
     """Holds the registered modules, hands out their lets and injects services."""
 
@@ -139,6 +149,7 @@ class Kernel:
         }
         self._factories: dict[type[Any], Callable[..., Any]] = {
             Installation: Installation,
+            CurrentUser: _current_user,
         }
         self._layers: Layers | None = None
         self._providers: dict[type[Any], str] = {}
@@ -148,7 +159,9 @@ class Kernel:
         for record, service in sorted(self.lets(ServiceLet), key=_builtins_first):
             self._provide(service.provides, service.factory, record)
         for record, declared in sorted(self.lets(SettingsLet), key=_builtins_first):
-            self._provide(declared.model, partial(self.config.settings, declared.model, record.qualname), record)
+            renamed = record.module.renamed_from if record.parent is None else None
+            factory = partial(self.config.settings, declared.model, record.qualname, renamed_from=renamed)
+            self._provide(declared.model, factory, record)
         self._records = dict(sorted(self._records.items(), key=lambda item: item[1].path))
         self.capability_settings = self.config.settings(CapabilitySettings, CAPABILITIES_SECTION)
         requesters, owners = self._requesters()
@@ -182,6 +195,12 @@ class Kernel:
     def module(self, qualname: str) -> ModuleRecord:
         """Look up a registered module by qualified name."""
         return self._records[qualname]
+
+    def renamed(self, old: str) -> str | None:
+        """The top-level module that was called `old` before a rename (`Module(renamed_from=...)`), if one is."""
+        return next(
+            (r.qualname for r in self._records.values() if r.parent is None and r.module.renamed_from == old), None
+        )
 
     def children(self, qualname: str | None) -> tuple[ModuleRecord, ...]:
         """Direct submodules of a module; top-level modules for None."""
@@ -365,6 +384,11 @@ class Kernel:
         Raises:
             HeinzelError: If an argument is invalid, with a message naming it.
         """
+        if operation.private:
+            permission = PRIVATE_READ if operation.read_only else PRIVATE_WRITE
+            if permission not in self.resolve(CurrentUser).context().permissions:
+                msg = "This credential does not permit the requested private operation"
+                raise HeinzelError(msg)
         func = operation.func
         signature = inspect.signature(func, eval_str=True)
         # What the kernel injects is its own and not validated; everything the caller passes is, before anything is

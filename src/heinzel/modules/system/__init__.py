@@ -6,7 +6,14 @@ from pydantic import Field
 
 from heinzel import Kernel, Module
 from heinzel.kernel import Installation, ReleaseSource
-from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo, UpdateResult
+from heinzel.modules.system._models import (
+    ModuleInfo,
+    PluginUpdate,
+    ReleaseCheck,
+    ReleaseNotes,
+    SystemInfo,
+    UpdateResult,
+)
 from heinzel.modules.system._render import render_info, render_modules, render_release, render_update
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
 from heinzel.modules.system._update import UpdateService
@@ -58,7 +65,7 @@ def update(
         ),
     ] = None,
 ) -> UpdateResult:
-    """Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
+    """Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.
 
     Installed from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases
     only if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`
@@ -66,6 +73,10 @@ def update(
     `update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,
     it changes nothing and says which `--source` moves it. It never moves or suggests a release older than the
     installed version.
+
+    Plugins are updated in the same run, each from the install spec it was added with (a git spec pinned to `@main`
+    gets its newest commit). A plugin that doesn't allow the new hz never blocks it: it is kept at its version if that
+    still works, else taken out with the command that brings it back. The result reports each plugin.
     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
     version, the error names it and the previous version stays installed.
 
@@ -78,6 +89,7 @@ def update(
 __all__ = [
     "GitHubReleases",
     "ModuleInfo",
+    "PluginUpdate",
     "ReleaseCheck",
     "ReleaseNotes",
     "SystemInfo",

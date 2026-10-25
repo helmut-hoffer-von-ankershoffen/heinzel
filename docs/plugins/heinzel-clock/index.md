@@ -7,7 +7,7 @@ What time it is for everyone on the team: a Heinzelmännchen plugin.
 | | |
 | --- | --- |
 | Kind | **capability** |
-| Version | `0.4.0` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.2` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock> |
 | Licence | MIT |
 | Install | `hz system plugin add clock --confirm` |
@@ -98,11 +98,11 @@ $ hz clock --json
 
 ## Operations
 
-An operation is a `hz` command, an MCP tool (`hz system serve mcp`), a REST endpoint (`hz system serve api`) and an endpoint of the web app's API, unless it restricts its heads. Every command takes `--json`.
+Each column follows the kernel's actual exposure rules. MCP over stdio runs as its caller; HTTP MCP and public REST exclude private operations. Private API and web endpoints require their scoped bearer or paired session. Authentication does not grant human approval. Every CLI command takes `--json`.
 
-| Operation | CLI | MCP tool | REST | Web | Changes state | Audience |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show the time in each of the team's time zones. | `hz clock` | `clock` | `GET /clock` | `GET /api/clock` |  | everyday |
+| Operation | CLI | MCP stdio | MCP HTTP | REST | Private API | Web | Changes state | Audience |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Show the time in each of the team's time zones. | `hz clock` | `clock` | `clock` | `GET /clock` | `GET /clock` | `GET /api/clock` |  | everyday |
 
 ### `hz clock`
 
@@ -152,10 +152,17 @@ In your configuration file (`hz system config set <key> <value>`), or as environ
 
 | Key | Type | Default | Environment variable | Description |
 | --- | --- | --- | --- | --- |
-| `zones` | array of Zone | `[{"name": "Europe/Berlin", "hours": [9, 18]}, {"name": "America/New_York", "hours": [9, 18]}, {"name": "America/Los_Angeles", "hours": [9, 18]}]` | `HZ_CLOCK__ZONES` | The team's time zones, yours first: IANA names, or tables with hours, e.g. { name = "Asia/Tokyo", hours = [10, 19] }. The first zone is your own (primary) one. |
+| `zones` | array of Zone | `[{"name": "Europe/Berlin", "hours": [9, 18]}, {"name": "America/New_York", "hours": [9, 18]}, {"name": "America/Los_Angeles", "hours": [9, 18]}]` | `HZ_CLOCK__ZONES` | The time zones your team works in, with the working hours in each. The first one is yours. |
 | `working_hours` | array or null | `null` | `HZ_CLOCK__WORKING_HOURS` | Deprecated: the hours of every zone given by name only. Give each zone its hours instead. |
 
 ## Setup and health
 
 - Setup: `hz setup clock` (optional, phase connect), also part of `hz setup`: Pick the team's time zones and the working hours in each.
 - Health: `clock` reports to `hz system doctor`.
+
+## Also declares
+
+- `NavLet` `main` in `clock`
+- `StatusLet` `primary-zone` in `clock`
+- `ActionLet` `team-clock` in `clock`
+- `WidgetLet` `at-work` in `clock`

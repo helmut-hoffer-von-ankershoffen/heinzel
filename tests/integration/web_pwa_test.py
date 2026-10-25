@@ -1,6 +1,7 @@
 """The installable app (ADR 0046): manifest, service worker and icons served with the right types, headers and CSP."""
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from heinzel.heads import web
 from heinzel.heads.web._devices import Devices
+from heinzel.kernel import DEFAULT_THEME
 
 pytestmark = pytest.mark.integration
 
@@ -46,13 +48,29 @@ def test_the_manifest_makes_an_installable_standalone_app():
     manifest = json.loads((PUBLIC / "manifest.webmanifest").read_text(encoding="utf-8"))
     assert (manifest["name"], manifest["short_name"], manifest["display"]) == ("Heinzelmännchen", "hz", "standalone")
     assert manifest["start_url"] == "/"
-    assert manifest["theme_color"] == manifest["background_color"] == "#181818"
+    assert manifest["theme_color"] == manifest["background_color"] == "#ffffff"
     sizes = {(icon["sizes"], icon["purpose"]) for icon in manifest["icons"]}
     assert {("192x192", "any"), ("512x512", "any"), ("512x512", "maskable")} <= sizes
     for icon in manifest["icons"]:
         assert (PUBLIC / icon["src"].lstrip("/")).is_file()
     assert (PUBLIC / "icons" / "apple-touch-icon.png").is_file()
     assert (PUBLIC / "favicon.ico").is_file()
+
+
+def test_the_os_launch_is_white_and_the_page_splash_follows_the_theme():
+    # The installed app opens on the white icon background; the page splash follows the chosen mode.
+    manifest = json.loads((PUBLIC / "manifest.webmanifest").read_text(encoding="utf-8"))
+    assert manifest["background_color"] == manifest["theme_color"] == "#ffffff"
+    page = (PUBLIC.parent / "index.html").read_text(encoding="utf-8")
+    metas = dict(
+        re.findall(r'<meta name="theme-color" content="(#[0-9a-f]+)" media="\(prefers-color-scheme: (\w+)\)"', page)
+    )
+    assert metas == {DEFAULT_THEME.light.background: "light", DEFAULT_THEME.dark.background: "dark"}
+    light, dark = re.findall(r"--splash-background: (#[0-9a-f]+);", page)
+    assert (light, dark) == (DEFAULT_THEME.light.background, DEFAULT_THEME.dark.background)
+    for mode in (DEFAULT_THEME.light, DEFAULT_THEME.dark):
+        assert f"--splash-primary: {mode.primary};" in page
+        assert f"--splash-muted-foreground: {mode.muted_foreground};" in page
 
 
 def test_the_worker_never_caches_api_data_or_leaves_this_origin():

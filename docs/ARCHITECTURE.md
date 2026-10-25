@@ -18,7 +18,7 @@ flowchart LR
     end
     subgraph Modules
         System["system (built-in)<br/>├ agent ├ changelog ├ config<br/>├ daemon └ doctor └ plugin"]
-        Workflow["workflow (built-in)<br/>contracts → daemon jobs"]
+        Heinzel["heinzel (built-in)<br/>your Heinzelmännchen: contracts → daemon jobs"]
         Clock["clock · github · atlassian · google · zoom<br/>(first-party plugins)"]
         Ext["heinzel-*<br/>(external plugins)"]
     end
@@ -51,14 +51,15 @@ the kinds it understands.
 | `HealthLet` | `@module.health` returning `Check`s | `hz system doctor` |
 | `CredentialLet` | `module.credential(name, purpose=...)` | `Credentials` (injected) and `hz system credential` with its doctor check ([ADR 0030](adr/0030-credentials-live-in-the-os-keychain.md)) |
 | `SetupLet` | `@module.setup(required=False)`, asking through an injected `Prompter` and writing through `ConfigEditor` and `Credentials` | the CLI head: `hz setup [MODULE]` ([ADR 0032](adr/0032-modules-declare-interactive-setup-steps.md)) |
-| `PlaybookLet` | `module.playbook(summary, assets=..., templates=..., defaults=...)`: asset types with discovery hints, template contracts, recommended settings | `workflow`: `hz workflow playbooks`, `discover`, `new --template`; the setup step it declares ([ADR 0037](adr/0037-plugins-bring-playbooks.md)) |
+| `PlaybookLet` | `module.playbook(summary, assets=..., templates=..., defaults=...)`: asset types with discovery hints, template contracts, recommended settings | `heinzel`: `hz heinzel playbooks`, `discover`, `new --template`; the setup step it declares ([ADR 0037](adr/0037-plugins-bring-playbooks.md)) |
 | `LayerLet` | `module.layer(parent=..., site=..., roles=...)`: the plugin sits in a company's tree, under its parent layer and at a site layer | the kernel: `Kernel.layers()` checks the tree, `Kernel.layer_stack()` stacks your layers general to specific, afresh on every call; `system.layer`: `hz system layer list`, `show`, doctor ([ADR 0040](adr/0040-layers-and-playbooks-are-plugins.md)) |
+| `SkillLet` | `module.skill(path)`: a `SKILL.md` directory or a directory of them, checked at import (frontmatter, sizes, text only, no links, no secrets) | `system.skill`: `hz system skill list`, `show`, `export`; the read-only `Skills` service for Pydantic AI turns (`skill_tools`) and the MCP head's prompts and resources ([ADR 0061](adr/0061-plugins-ship-skills-every-ai-path-can-use.md)) |
 | `JobLet` | `@module.job(schedule="0 9 * * MON")` | `hz system daemon tick`, run by launchd or systemd ([ADR 0020](adr/0020-daemon-head.md)) |
 | `ProviderLet` | `@module.provides("tracker", modes={"read"}, hosts=[...])` on an adapter class; `hosts=` takes a function of the module's settings when they decide the hosts | the kernel's capability bindings and `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
 | `RequirementLet` | `Module(..., requires=["tracker:read"])` (read only); operations and jobs take `requires=[...]`, and a read-only operation that degrades without its own takes `optional=True` | the kernel's capability handles and the doctor check of `hz system capability` ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)) |
 
 New kinds of lets (watchers) extend Heinzelmännchen without changing existing heads; see
-[ADR 0010](adr/0010-towards-a-reactive-workflow-engine.md). Workflow contracts are data, not lets: the `workflow`
+[ADR 0010](adr/0010-towards-a-reactive-workflow-engine.md). Contracts are data, not lets: the `heinzel`
 module reads them and provides `CompiledJobs`, which the kernel compiles afresh whenever the daemon lists its jobs and
 runs beside the declared `JobLet`s; each compiled job reads through `Kernel.handle_for` as the requester its contract
 declares ([ADR 0021](adr/0021-workflow-contracts.md)).
@@ -85,7 +86,18 @@ from the kernel's `TeamPromises` (provided by `workflow`) and `TelemetryLog` (pr
 **Head.** A view that boots the kernel and exposes operations ([ADR 0019](adr/0019-mcp-and-rest-heads.md)). All heads
 share one exposure rule (`heinzel.heads._exposure`): the same path, public parameters and `heads=` restrictions. The
 **MCP head** makes each operation a tool (`system_doctor`), the **REST head** an endpoint (`GET /system/doctor`,
-OpenAPI at `/docs`). The **web head** (`hz ui`, `heinzel.heads.web`) serves a
+OpenAPI at `/docs`). An operation declared `private=True` is omitted from public REST and network MCP and
+requires trusted identity before dependency injection or execution. `hz system serve api --private` exposes those
+operations behind a server-scoped expiring bearer, written once to an owner-only file. A server restart retires its old credentials; credentials expire after
+twelve hours, and their raw values never appear in generated tool results or status output. The client sends it in the
+Authorization header; it is never a URL parameter or an approval proof. Private API OpenAPI remains authenticated,
+with CDN-backed interactive docs disabled. CLI, stdio MCP and paired web use the same immutable `CurrentUser`
+context. New private mutations and private streams take a flat JSON object of public arguments, reject unknown fields,
+and keep message/attachment/proof input out of URL query strings. Existing operations retain their wire shape.
+Read and write scopes are enforced in the kernel; services still check each resource's owner. Installation
+identity and default API credentials use user-scope settings, so a project cannot redirect them. See
+[ADR 0068](adr/0068-human-approval-proofs-and-head-parity.md); human-proof issuance and consumption remain proposed.
+The **web head** (`hz ui`, `heinzel.heads.web`) serves a
 React app (`web/`, built into the package) at `/` and the API head's endpoints for head `web` under `/api`, on
 localhost only, behind a token made per process and sent as `Authorization: Bearer`; every response carries a strict
 CSP. Operations hidden from the unauthenticated REST head because they read your profile or your systems list `web`
@@ -111,6 +123,12 @@ shell completion and the web app's navigation and search list only everyday oper
 many are hidden. Hidden is never disabled: every command runs and answers `--help`, and MCP and REST list every
 operation ([ADR 0041](adr/0041-expert-mode-newcomers-see-the-everyday-commands.md)).
 
+**Renames.** A renamed module keeps its old name working for one minor release
+([ADR 0051](adr/0051-the-workflow-module-becomes-the-heinzel-module.md)): `Module(..., renamed_from="workflow")` reads
+the old settings table and `HZ_<OLD>__*` variables beneath the new ones and lets the daemon run a job asked for by its
+old id; `@module.operation(aliases=["workflow run"])` keeps an old command path as a hidden CLI command that names the
+new one on stderr, and as an MCP tool marked deprecated.
+
 **Configuration.** Layered TOML files (site, user, project `hz.toml`, `$HZ_CONFIG`) under environment variables;
 the `[hz]` table holds kernel settings, `[capabilities]` the capability bindings, `[<module>]` tables module settings
 ([ADR 0012](adr/0012-layered-configuration.md)). Settings that decide what runs or where data goes (the bindings, the
@@ -135,6 +153,7 @@ hz system config  show | get | set | unset | init
 hz system plugin  list | add | remove | new | docs show | docs build
 hz system layer   list | show
 hz system agent   skills | install | uninstall
+hz system skill   list | show | export | unexport   skills for AI; export hands chosen ones to Claude Code (ADR 0061)
 hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
 hz system notify  list | ack | test | install
 hz system serve   mcp | api | daemon
@@ -187,3 +206,14 @@ Enforced by [import-linter](https://import-linter.readthedocs.io) (`make lint`):
 - `heinzel.kernel` must not import `heinzel.heads` or `heinzel.modules`.
 - `heinzel.modules` must not import `heinzel.heads`.
 - `heinzel.heads` must not import `heinzel.modules` — heads only know what the kernel discovered.
+
+## World Clock
+
+The clock plugin's header button opens the local World Clock in the right panel (`?panel=world-clock`). It shows
+configured zones on a draggable globe, with a 24-hour time list and approximate daylight. Reduced motion or missing
+WebGL uses a static map. Orange marks the primary zone; selecting a place centres it. Markers are the representative
+locations of IANA time-zone names, never people's locations. No map service is contacted.
+
+The fallback land outline is simplified [Natural Earth land](https://www.naturalearthdata.com/about/terms-of-use/)
+(public domain), and representative zone points are from IANA's public-domain `zone.tab`. See
+[ADR 0063](adr/0063-world-clock-is-a-local-interactive-globe.md).

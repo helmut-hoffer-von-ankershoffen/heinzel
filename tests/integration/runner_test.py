@@ -76,6 +76,7 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
     assert code == 0
     assert isinstance(info, dict)
     assert info["sections"]["system.capability"] == {
+        "ai → ai-access:read": "claude-code → api.anthropic.com",
         "ai.access → ai-access:read": "claude-code → api.anthropic.com",
         "digest → agent-runner:read": "claude-code → api.anthropic.com",
         "org agenda → calendar:read": "optional: not connected: no adapter bound",
@@ -84,6 +85,7 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
     }
     kernel = make_kernel(builtins=True, digest=digest(), config=command_config(tmp_path))
     assert hz(kernel, "system", "info")[1]["sections"]["system.capability"] == {  # type: ignore[index]
+        "ai → ai-access:read": "claude-code → api.anthropic.com",
         "ai.access → ai-access:read": "claude-code → api.anthropic.com",
         "digest → agent-runner:read": "command → unknown (configured)",
         "org agenda → calendar:read": "optional: not connected: no adapter bound",

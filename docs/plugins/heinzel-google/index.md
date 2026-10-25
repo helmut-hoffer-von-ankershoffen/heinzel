@@ -2,12 +2,12 @@
 
 # heinzel-google
 
-Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
+Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
 
 | | |
 | --- | --- |
 | Kind | **connector**, **capability** |
-| Version | `0.4.0` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.2` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-google> |
 | Licence | MIT |
 | Install | `hz system plugin add google --confirm` |
@@ -35,12 +35,12 @@ hz google files --json
 
 ## Operations
 
-An operation is a `hz` command, an MCP tool (`hz system serve mcp`), a REST endpoint (`hz system serve api`) and an endpoint of the web app's API, unless it restricts its heads. Every command takes `--json`.
+Each column follows the kernel's actual exposure rules. MCP over stdio runs as its caller; HTTP MCP and public REST exclude private operations. Private API and web endpoints require their scoped bearer or paired session. Authentication does not grant human approval. Every CLI command takes `--json`.
 
-| Operation | CLI | MCP tool | REST | Web | Changes state | Audience |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and the gws, scopes and APIs it uses. | `hz google info` | `google_info` | `GET /google/info` | `GET /api/google/info` |  | expert |
-| List the Google Docs and Sheets you can open that changed recently, newest first. | `hz google files` | `google_files` | `GET /google/files` | `GET /api/google/files` |  | expert |
+| Operation | CLI | MCP stdio | MCP HTTP | REST | Private API | Web | Changes state | Audience |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Show this plugin's version, the Heinzelmännchen it runs on and the gws, scopes and APIs it uses. | `hz google info` | `google_info` | `google_info` | `GET /google/info` | `GET /google/info` | `GET /api/google/info` |  | expert |
+| List the Google Docs and Sheets you can open that changed recently, newest first. | `hz google files` | `google_files` | `google_files` | `GET /google/files` | `GET /google/files` | `GET /api/google/files` |  | expert |
 
 ### `hz google info`
 
@@ -119,19 +119,19 @@ In your configuration file (`hz system config set <key> <value>`), or as environ
 
 | Key | Type | Default | Environment variable | Description |
 | --- | --- | --- | --- | --- |
-| `gws_path` | string or null | `null` | `HZ_GOOGLE__GWS_PATH` | Absolute path of the Google Workspace CLI (`gws`) executable; `gws` on PATH when not set. Only the site, user and HZ_CONFIG files and the environment can set it, never a project hz.toml. (user scope only) |
-| `timeout` | number | `60.0` | `HZ_GOOGLE__TIMEOUT` | Seconds to wait for each `gws` run before stopping it. (user scope only) |
+| `gws_path` | string or null | `null` | `HZ_GOOGLE__GWS_PATH` | The full path to the Google Workspace CLI; the one on your PATH when not set. Only your own settings can set it, never a project's. (user scope only) |
+| `timeout` | number | `60.0` | `HZ_GOOGLE__TIMEOUT` | How long to wait for each Google Workspace CLI run before stopping it. (user scope only) |
 
 ## Capabilities served
 
 | Adapter | Capability | Modes | Sends data to | Bind it |
 | --- | --- | --- | --- | --- |
 | `google` | `documents` | read | `www.googleapis.com`, `docs.googleapis.com`, `sheets.googleapis.com`, `oauth2.googleapis.com` | `hz system config set capabilities.documents google` |
-| `google` | `calendar` | read | `www.googleapis.com`, `oauth2.googleapis.com` | `hz system config set capabilities.calendar google` |
-| `google` | `mail` | read | `gmail.googleapis.com`, `oauth2.googleapis.com` | `hz system config set capabilities.mail google` |
+| `google` | `calendar` | read, write | `www.googleapis.com`, `oauth2.googleapis.com` | `hz system config set capabilities.calendar google` |
+| `google` | `mail` | read, write | `gmail.googleapis.com`, `oauth2.googleapis.com` | `hz system config set capabilities.mail google` |
 
 ## Setup and health
 
-- Setup: `hz setup google` (optional, phase connect), also part of `hz setup`: Find the Google Workspace CLI, sign it in read-only and read documents, calendar and, if you like, mail from it.
+- Setup: `hz setup google` (optional, phase connect), also part of `hz setup`: Find the Google Workspace CLI, sign it in and read documents, calendar and, if you like, mail from it.
 - Health: `google` reports to `hz system doctor`.
 - Info: `google` adds a section to `hz system info`.

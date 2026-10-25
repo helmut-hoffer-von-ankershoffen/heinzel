@@ -1,4 +1,4 @@
-"""The documentation module: what each installed plugin brings, as a model and as Markdown pages (ADR 0058).
+"""The documentation module: what each installed plugin brings, as a model and as Markdown pages (ADR 0082).
 
 `hz system plugin docs show` is the model, for people and agents; `hz system plugin docs build` writes the pages a
 repository commits (`docs/plugins/<distribution>/index.md`) and checks them in CI. `hz system modules` stays the
@@ -20,8 +20,7 @@ module = Module("docs", "Document installed plugins: what each brings, as a mode
 module.service(DocsService)
 
 # What was installed from where, with its settings' keys and defaults, is yours to see, not any local page's: the
-# same heads as `hz system plugin list` (ADR 0019, 0039).
-SHOWN = frozenset({"cli", "mcp-stdio", "web"})
+# trusted local and authenticated heads (ADR 0019, 0039, 0068).
 WRITES = frozenset({"cli", "mcp-stdio"})
 
 Plugin = Annotated[
@@ -34,14 +33,14 @@ DEFAULT_SCENES = Path("docs") / "scenes.toml"
 Scenes = Annotated[
     Path,
     Field(
-        description="The `docs/scenes.toml` declaring what to record for the plugin (ADR 0058); when the default "
+        description="The `docs/scenes.toml` declaring what to record for the plugin (ADR 0082); when the default "
         "doesn't exist, a CLI scene is derived from the operations."
     ),
 ]
 Builtin = Annotated[bool, Field(description="Include Heinzelmännchen's own modules as the page `heinzel`.")]
 
 
-@module.operation(heads=SHOWN, render=render_documentation)
+@module.operation(private=True, render=render_documentation)
 def show(
     service: DocsService, plugin: Plugin = None, scenes: Scenes = DEFAULT_SCENES, builtin: Builtin = False
 ) -> Documentation:
@@ -53,7 +52,7 @@ def show(
     return service.documentation(plugin=plugin, scenes=_scenes(scenes), builtin=builtin)
 
 
-@module.operation(read_only=False, heads=WRITES)
+@module.operation(private=True, read_only=False, heads=WRITES)
 def build(  # noqa: PLR0913, PLR0917 - what to document, where, and how; all with defaults, options on the CLI
     service: DocsService,
     directory: Annotated[

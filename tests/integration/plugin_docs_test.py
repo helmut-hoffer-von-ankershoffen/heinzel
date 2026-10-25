@@ -1,4 +1,4 @@
-"""`hz system plugin docs` through the CLI head: the model as JSON, and the pages a repository commits (ADR 0058).
+"""`hz system plugin docs` through the CLI head: the model as JSON, and the pages a repository commits (ADR 0082).
 
 The Acme test plugin in `tests/fixtures/layers` is a real package with a layer, an adapter, a playbook and a theme.
 """
@@ -9,9 +9,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from heinzel import Config, Kernel, Settings
+from heinzel import Config, CurrentUser, Kernel, Settings
+from heinzel.heads import api
+from heinzel.heads.api._auth import ApiBearer
 from heinzel.heads.cli import build
 from heinzel.kernel import Origin, discover, walk
 
@@ -60,6 +63,19 @@ def test_show_describes_the_plugin_in_every_head(kernel):
     assert page["playbooks"][0]["defaults"] == {"capabilities.tracker": "acme", "capabilities.calendar": "acme"}
     (scene,) = page["scenes"]
     assert scene["commands"][0] == "hz acme --help"
+
+
+def test_the_same_documentation_is_available_only_through_authenticated_network_heads(kernel):
+    credential = ApiBearer.issue(kernel.resolve(CurrentUser).owner(), "docs-test")
+    private = TestClient(api.build(kernel, credentials=credential, audience="docs-test"), base_url="http://localhost")
+    path = "/system/plugin/docs/show"
+    assert private.get(path, params={"plugin": "acme"}).status_code == 401
+    response = private.get(path, params={"plugin": "acme"}, headers={"Authorization": f"Bearer {credential.secret}"})
+    assert response.status_code == 200
+    code, cli_documentation = hz(kernel, "system", "plugin", "docs", "show", "--plugin", "acme")
+    assert code == 0
+    assert response.json() == cli_documentation
+    assert TestClient(api.build(kernel), base_url="http://localhost").get(path).status_code == 404
 
 
 def test_build_writes_the_pages_and_check_finds_them_current(kernel, tmp_path):

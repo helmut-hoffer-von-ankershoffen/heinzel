@@ -2,7 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["playwright==1.64.1"]
 # ///
-"""Record the scenes of every plugin's documentation page, and the README's intro (ADR 0058).
+"""Record the scenes of every plugin's documentation page, and the README's intro (ADR 0082).
 
 For each page `hz system plugin docs show` describes, every scene becomes a recording beside the page, in
 `docs/plugins/<distribution>/assets/`: `<scene>.gif`, `.webp` and `.mp4`, a still `<scene>.png` for people who turn
@@ -11,8 +11,9 @@ scene is `hz ui` driven by Playwright, one screenshot per step, in light and the
 
 Everything runs in a sandbox like the README demo's: its own uv tool directory, its own `HZ_*` directories, a made-up
 profile, no update check, the `environment` credential backend and no real connector, so a recording shows no
-machine's settings and nothing leaves it. `hz` is installed editable from this checkout (the core), or Heinzelmännchen
-as the test group pins it plus this plugin (a plugin repository, one plugin or a `plugins/*` workspace).
+machine's settings. Scene execution retains the caller's OS permissions; review scenes before recording. `hz` is
+installed editable from this checkout (the core), or Heinzelmännchen as the test group pins it plus this plugin
+(a plugin repository, one plugin or a `plugins/*` workspace).
 
 Tools: vhs, ttyd, ffmpeg and jq from scripts/tools.toml (group `demo`, installed on demand), Playwright's Chromium
 (`playwright install chromium`, pinned by Playwright's version). Transcripts pass scripts/check_confidentiality.py.
@@ -26,9 +27,14 @@ Usage: uv run --script scripts/docs_record.py [--plugin NAME] [--scene NAME] [--
 import argparse
 import contextlib
 import json
+import math
 import os
 import re
+import selectors
+import shlex
 import shutil
+import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -40,7 +46,6 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-SANDBOX = Path("/tmp/hz-docs")  # noqa: S108 - a short, fixed path: `hz system doctor` shows it in recordings
 SCENES = ROOT / "docs" / "scenes.toml"
 INTRO_TAPE = ROOT / "docs" / "assets" / "demo.tape"
 INTRO_OUT = ROOT / "docs" / "assets" / "demo"
@@ -51,7 +56,9 @@ WIDTH, HEIGHT = 1200, 720
 FRAMERATE = 12
 GIF_FPS = 10
 BUDGET_MB = 2.0
-SCALES = (1.0, 0.8, 0.6)
+ASSET_BUDGET = 480 * 1024
+"""Every committed recording leaves headroom below the unchanged 500 KiB large-file hook."""
+SCALES = (1.0, 0.8, 0.6, 0.4)
 """Sizes tried until a recording fits the budget."""
 TAPE_HEADER = """\
 Set Shell bash
@@ -135,6 +142,8 @@ SHOWN_MB = 0.1
 """Files at least this large are reported with their size."""
 TRANSCRIPT_LINES = 40
 """How many lines of a command's output the transcript keeps."""
+STARTUP_TIMEOUT = 60.0
+STOP_TIMEOUT = 5.0
 
 
 class RecordError(Exception):
@@ -166,8 +175,39 @@ class Page:
 
 def environment(sandbox: Path) -> dict[str, str]:
     """The sandbox's environment: no `HZ_*` of this machine, its own directories, the made-up profile."""
-    env = {key: value for key, value in os.environ.items() if not key.startswith("HZ_")}
+    allowed = {
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "TERM",
+        "COLORTERM",
+        "TMPDIR",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+        "REQUESTS_CA_BUNDLE",
+        "CURL_CA_BUNDLE",
+        "UV_CACHE_DIR",
+        "UV_PYTHON",
+        "UV_PYTHON_DOWNLOADS",
+        "UV_NATIVE_TLS",
+        "UV_HTTP_TIMEOUT",
+        "UV_OFFLINE",
+        "UV_NO_PROGRESS",
+        "CONFIDENTIAL_TERMS",
+    }
+    env = {key: value for key, value in os.environ.items() if key in allowed}
+    home = sandbox / "home"
+    paths = [part for part in os.environ.get("PATH", os.defpath).split(os.pathsep) if Path(part).is_absolute()]
     env |= {
+        "HOME": str(home),
+        "XDG_CONFIG_HOME": str(home / ".config"),
+        "XDG_DATA_HOME": str(home / ".local" / "share"),
+        "XDG_CACHE_HOME": str(home / ".cache"),
+        "XDG_STATE_HOME": str(home / ".local" / "state"),
+        "BASH_ENV": "/dev/null",
+        "ENV": "/dev/null",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
         "UV_TOOL_DIR": str(sandbox / "tools"),
         "UV_TOOL_BIN_DIR": str(sandbox / "bin"),
         "HZ_CONFIG_HOME": str(sandbox / "config"),
@@ -176,8 +216,8 @@ def environment(sandbox: Path) -> dict[str, str]:
         "HZ_STATE_DIR": str(sandbox / "state"),
         "HZ_LOG_DIR": str(sandbox / "log"),
         "HZ_SYSTEM_DAEMON__UNIT_DIR": str(sandbox / "units"),
-        "HZ_WORKFLOW__USER_DIR": str(sandbox / "workflows"),
-        "PATH": f"{sandbox / 'bin'}{os.pathsep}{ROOT / '.tools' / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}",
+        "HZ_HEINZEL__USER_DIR": str(sandbox / "workflows"),
+        "PATH": os.pathsep.join([str(sandbox / "bin"), str(ROOT / ".tools" / "bin"), *paths]),
     }
     env |= PROFILE
     return env
@@ -185,7 +225,7 @@ def environment(sandbox: Path) -> dict[str, str]:
 
 def seed(sandbox: Path, env: dict[str, str]) -> None:
     """Two made-up contracts, one reading the other, so the workflow and team graph screens show a flow."""
-    workflows = Path(env["HZ_WORKFLOW__USER_DIR"])
+    workflows = Path(env["HZ_HEINZEL__USER_DIR"])
     workflows.mkdir(parents=True, exist_ok=True)
     digest = (
         "  requires: [tracker:read]\n"
@@ -202,8 +242,8 @@ def seed(sandbox: Path, env: dict[str, str]) -> None:
     ):
         text = CONTRACT.format(name=name, title=title, description=description, body=body, output=output)
         (workflows / f"{name}.prose.md").write_text(text, encoding="utf-8")
-    for key in ("config", "data", "cache", "state", "log"):
-        (sandbox / key).mkdir(parents=True, exist_ok=True)
+    for key in ("home", "config", "data", "cache", "state", "log"):
+        (sandbox / key).mkdir(mode=0o700, parents=True, exist_ok=True)
     # The core's test team (made-up people, their contracts and telemetry) gives the team graph something to show.
     team = ROOT / "tests" / "fixtures" / "graph" / "team"
     if team.is_dir():
@@ -265,7 +305,7 @@ def which(program: str, env: dict[str, str]) -> str:
         RecordError: If it isn't there.
     """
     found = shutil.which(program, path=env["PATH"])
-    if found is None:
+    if found is None or not Path(found).is_absolute():
         msg = f"{program} not found on PATH; `uv run --script scripts/tools.py doctor` says how to install it"
         raise RecordError(msg)
     return found
@@ -377,13 +417,25 @@ def transcript_cli(scene: Scene, env: dict[str, str]) -> str:
     parts = []
     plain = env | {"TERM": "dumb", "COLUMNS": "100", "NO_COLOR": "1"}
     for command in scene.commands:
-        result = subprocess.run(  # noqa: S602 - the scene's own `hz ...` lines, checked by `hz system plugin docs show`
-            command, shell=True, env=plain, check=False, capture_output=True, text=True, timeout=600
-        )
-        output = [line.rstrip() for line in ANSI.sub("", result.stdout or result.stderr).rstrip().splitlines()]
-        if len(output) > TRANSCRIPT_LINES:
-            output = [*output[:TRANSCRIPT_LINES], f"… ({len(output) - TRANSCRIPT_LINES} more lines)"]
-        parts.append("```console\n$ " + command + "\n" + "\n".join(output) + "\n```")
+        output = ""
+        diagnostics: list[str] = []
+        for segment in command.split("|"):
+            executable, *arguments = shlex.split(segment)
+            result = subprocess.run(  # noqa: S603 - validated scene, no shell; executable resolved in sandbox
+                [which(executable, plain), *arguments],
+                input=output,
+                env=plain,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            output = result.stdout
+            diagnostics.append(result.stderr)
+        shown = [line.rstrip() for line in ANSI.sub("", "".join(diagnostics) + output).rstrip().splitlines()]
+        if len(shown) > TRANSCRIPT_LINES:
+            shown = [*shown[:TRANSCRIPT_LINES], f"… ({len(shown) - TRANSCRIPT_LINES} more lines)"]
+        parts.append("```console\n$ " + command + "\n" + "\n".join(shown) + "\n```")
     return "\n\n".join(parts) + "\n"
 
 
@@ -404,29 +456,44 @@ def web_app(env: dict[str, str]) -> Iterator[str]:
         [which("hz", env), "ui", "--no-browser", "--port", "0"],
         env=env,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
     )
     try:
         assert process.stdout is not None  # noqa: S101 - Popen with PIPE
         url = ""
-        deadline = time.monotonic() + 60
-        while time.monotonic() < deadline:
-            line = process.stdout.readline()
-            if line.startswith("http"):
-                url = line.strip()
-                break
-            if process.poll() is not None:
-                break
+        deadline = time.monotonic() + STARTUP_TIMEOUT
+        pending = b""
+        with selectors.DefaultSelector() as ready:
+            ready.register(process.stdout, selectors.EVENT_READ)
+            while not url and time.monotonic() < deadline and process.poll() is None:
+                for key, _events in ready.select(timeout=min(0.1, max(0, deadline - time.monotonic()))):
+                    chunk = os.read(key.fd, 4096)
+                    if not chunk:
+                        ready.unregister(key.fileobj)
+                        continue
+                    pending = (pending + chunk)[-65536:]
+                    while b"\n" in pending:
+                        raw, pending = pending.split(b"\n", 1)
+                        line = raw.decode("utf-8", errors="replace").strip()
+                        if re.fullmatch(r"http://127\.0\.0\.1:[0-9]+/#token=[A-Za-z0-9_-]+", line):
+                            url = line
+                            break
         if not url:
-            error = process.stderr.read() if process.stderr else ""
-            msg = f"hz ui didn't start: {error[-800:]}"
+            msg = "The isolated hz ui backend did not become ready; run with --keep to inspect its temporary profile"
             raise RecordError(msg)
         yield url
     finally:
-        process.terminate()
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGTERM)
         with contextlib.suppress(subprocess.TimeoutExpired):
-            process.wait(30)
+            process.wait(STOP_TIMEOUT)
+        # A backend may exit before a descendant; the session was created for this invocation alone.
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(STOP_TIMEOUT)
+        if process.stdout is not None:
+            process.stdout.close()
 
 
 def heading_of(page: Any) -> str:  # noqa: ANN401 - Playwright's page, imported lazily
@@ -442,6 +509,8 @@ def heading_of(page: Any) -> str:  # noqa: ANN401 - Playwright's page, imported 
 def settled(page: Any) -> None:  # noqa: ANN401 - Playwright's page, imported lazily
     """Wait until nothing on the screen says it is loading; the app's CSP forbids polling a script, so a locator."""
     page.get_by_text("Loading…").first.wait_for(state="hidden", timeout=30000)
+    page.locator("#splash").wait_for(state="hidden", timeout=30000)
+    page.locator("#root[inert]").wait_for(state="detached", timeout=30000)
 
 
 def record_ui(scene: Scene, url: str, work: Path, *, dark: bool) -> tuple[list[tuple[Path, float]], str]:
@@ -558,38 +627,137 @@ def concat_videos(videos: list[Path], output: Path, env: dict[str, str]) -> None
     )
 
 
-def publish(video: Path, target: Path, env: dict[str, str], *, budget_mb: float, still: str = "last") -> list[Path]:
-    """From an MP4: `target.gif`, `.webp`, `.mp4` and a `.png` still, each inside the size budget.
+def encode(video: Path, staging: Path, env: dict[str, str], *, limit: int, still: str) -> list[Path]:
+    """Fit every format in a private staging directory before replacing any published asset.
 
-    The still is for people who turn motion off: the last frame of a CLI scene, where the output stands, or the
-    first screen of a UI scene.
+    Raises:
+        RecordError: If one format or the reduced-motion still cannot fit its size limit.
     """
-    target.parent.mkdir(parents=True, exist_ok=True)
-    written: list[Path] = []
-    budget = int(budget_mb * 1024 * 1024)
+    written = []
     for extension, arguments in ENCODINGS:
-        out = target.with_suffix(f".{extension}")
+        out = staging / f"recording.{extension}"
         for scale in SCALES:
             width = int(WIDTH * scale) // 2 * 2
             filled = [a.format(fps=GIF_FPS, w=width) for a in arguments]
             run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(video), *filled, str(out)], env=env)
-            if out.stat().st_size <= budget:
+            if out.stat().st_size <= limit:
                 break
         else:
-            print(
-                f"! {out.relative_to(ROOT)} is {out.stat().st_size / 1e6:.1f} MB, over the {budget_mb} MB budget",
-                file=sys.stderr,
-            )
+            msg = f"Recording {out.name} cannot fit its size limit; shorten its scenes or reduce their hold times"
+            raise RecordError(msg)
         written.append(out)
-    frame = target.with_suffix(".png")
+    frame = staging / "recording.png"
     seek = ["-sseof", "-0.3"] if still == "last" else []
-    scale = f"scale={WIDTH}:-1"
-    run(
-        ["ffmpeg", "-y", "-loglevel", "error", *seek, "-i", str(video), "-frames:v", "1", "-vf", scale, str(frame)],
-        env=env,
-    )
+    for scale in SCALES:
+        width = int(WIDTH * scale) // 2 * 2
+        run(
+            [
+                "ffmpeg",
+                "-y",
+                "-loglevel",
+                "error",
+                *seek,
+                "-i",
+                str(video),
+                "-frames:v",
+                "1",
+                "-vf",
+                f"scale={width}:-1",
+                str(frame),
+            ],
+            env=env,
+        )
+        if frame.stat().st_size <= limit:
+            break
+    else:
+        msg = "The reduced-motion still cannot fit its size limit; simplify the scene"
+        raise RecordError(msg)
     written.append(frame)
     return written
+
+
+@contextlib.contextmanager
+def output_directory(path: Path) -> Iterator[int]:
+    """An anchored output directory; no directory component can redirect export through a symlink.
+
+    Yields:
+        The checked directory descriptor, closed when the export finishes.
+
+    Raises:
+        RecordError: If an output directory is linked, nonregular or unavailable.
+    """
+    absolute = path.absolute()
+    descriptor = os.open(absolute.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in absolute.parts[1:]:
+            with contextlib.suppress(FileExistsError):
+                os.mkdir(part, dir_fd=descriptor)
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        yield descriptor
+    except OSError as error:
+        msg = "Recording output cannot follow a symlink or use an unavailable directory"
+        raise RecordError(msg) from error
+    finally:
+        os.close(descriptor)
+
+
+def export_asset(source: Path, destination: Path, parent: int, limit: int) -> None:
+    """Copy verified bytes into an exclusive local temporary file, then replace only the owned directory entry.
+
+    Raises:
+        RecordError: If the source exceeds its checked size limit or the destination is linked or nonregular.
+    """
+    with contextlib.suppress(FileNotFoundError):
+        entry = os.stat(destination.name, dir_fd=parent, follow_symlinks=False)
+        if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
+            msg = "Recording output cannot replace a linked or nonregular asset"
+            raise RecordError(msg)
+    with source.open("rb") as stream:
+        data = stream.read(limit + 1)
+    if len(data) > limit:
+        msg = "A recording changed beyond its size limit before export"
+        raise RecordError(msg)
+    temporary = f".hz-docs-{os.urandom(16).hex()}.tmp"
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=parent)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, destination.name, src_dir_fd=parent, dst_dir_fd=parent)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary, dir_fd=parent)
+
+
+def publish(video: Path, target: Path, env: dict[str, str], *, budget_mb: float, still: str = "last") -> list[Path]:
+    """Verify every format and still before replacing the scene's regular assets, each below the large-file hook.
+
+    Raises:
+        RecordError: If the budget, encoding or output directory is unsafe or an asset cannot fit its size limit.
+    """
+    if not math.isfinite(budget_mb) or budget_mb <= 0:
+        msg = "The recording size limit must be a finite positive number"
+        raise RecordError(msg)
+    limit = int(min(budget_mb, ASSET_BUDGET / (1024 * 1024)) * 1024 * 1024)
+    with (
+        output_directory(target.parent) as parent,
+        tempfile.TemporaryDirectory(prefix="hz-docs-export-", dir=video.parent) as temporary,
+    ):
+        staged = encode(video, Path(temporary), env, limit=limit, still=still)
+        destinations = [target.with_suffix(path.suffix) for path in staged]
+        for destination in destinations:
+            with contextlib.suppress(FileNotFoundError):
+                entry = os.stat(destination.name, dir_fd=parent, follow_symlinks=False)
+                if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
+                    msg = "Recording output cannot replace a linked or nonregular asset"
+                    raise RecordError(msg)
+        for source, destination in zip(staged, destinations, strict=True):
+            export_asset(source, destination, parent, limit)
+        os.fsync(parent)
+        return destinations
 
 
 def confidential(text: str, env: dict[str, str]) -> None:
@@ -624,9 +792,15 @@ def record_page(  # noqa: PLR0913 - the page, where it goes, the sandbox, and wh
     Raises:
         RecordError: If a tool fails or a transcript holds a confidential term.
     """
+    if re.fullmatch(r"heinzel(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?", page.distribution) is None:
+        msg = "A recording distribution must be heinzel or a lowercase heinzel-<name> package"
+        raise RecordError(msg)
     assets = directory / page.distribution / "assets"
     written: list[Path] = []
     for scene in page.scenes:
+        if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", scene.name) is None:
+            msg = "A recording scene name must be lowercase ASCII words joined by dashes"
+            raise RecordError(msg)
         if only and scene.name != only:
             continue
         print(f"  {page.distribution}: {scene.kind} scene {scene.name!r}", flush=True)
@@ -646,8 +820,13 @@ def record_page(  # noqa: PLR0913 - the page, where it goes, the sandbox, and wh
                 video = scene_work / f"{scene.name}{suffix}.mp4"
                 frames_to_video(shots, video, env)
                 written += publish(video, assets / f"{scene.name}{suffix}.x", env, budget_mb=budget_mb, still="first")
-        (assets / f"{scene.name}.md").write_text(transcript, encoding="utf-8")
-        written.append(assets / f"{scene.name}.md")
+        staged = scene_work / "transcript.md"
+        staged.write_text(transcript, encoding="utf-8")
+        destination = assets / f"{scene.name}.md"
+        with output_directory(assets) as parent:
+            export_asset(staged, destination, parent, ASSET_BUDGET)
+            os.fsync(parent)
+        written.append(destination)
     return written
 
 
@@ -701,19 +880,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--intro", action="store_true", help="also render the README's intro (the core only)")
     parser.add_argument("--intro-only", action="store_true", help="render the intro and no plugin page's scenes")
     parser.add_argument("--keep", action="store_true", help="keep the sandbox and the work directory")
-    parser.add_argument("--budget", type=float, default=BUDGET_MB, help="size budget per recording, in MB")
+    parser.add_argument("--budget", type=float, default=BUDGET_MB, help="size budget per file in MB, capped at 480 KiB")
     args = parser.parse_args(argv)
+    if not math.isfinite(args.budget) or args.budget <= 0:
+        parser.error("--budget must be a finite positive number")
     args.intro = args.intro or args.intro_only
     if args.intro and not is_core(ROOT):
         print("✗ --intro renders the README's intro of Heinzelmännchen itself; a plugin has none", file=sys.stderr)
         return 2
-    sandbox = SANDBOX
-    shutil.rmtree(sandbox, ignore_errors=True)
+    sandbox = Path(tempfile.mkdtemp(prefix="hz-docs-sandbox-"))
     env = environment(sandbox)
     work = Path(tempfile.mkdtemp(prefix="hz-docs-work-"))
     try:
-        tools(env)
         seed(sandbox, env)
+        tools(env)
         web_app_built(ROOT, env)
         print("installing hz into the sandbox", flush=True)
         install(ROOT, env)
@@ -734,7 +914,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"kept {sandbox} and {work}")
     for path in written:
         size = path.stat().st_size / 1e6
-        print(f"✓ {path.relative_to(ROOT)} ({size:.1f} MB)" if size >= SHOWN_MB else f"✓ {path.relative_to(ROOT)}")
+        shown = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+        print(f"✓ {shown} ({size:.1f} MB)" if size >= SHOWN_MB else f"✓ {shown}")
     return 0
 
 

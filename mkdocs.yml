@@ -1,5 +1,5 @@
 # The documentation site: the Markdown in docs/ as GitHub renders it, as a searchable site on GitHub Pages
-# (ADR 0058). `make docs-site` builds it into site/; the Docs workflow deploys it. Nothing here is hand-written
+# (ADR 0082). `make docs-site` builds it into site/; the Docs workflow deploys it. Nothing here is hand-written
 # content: every page is a file in docs/ or at the root, so GitHub and the site show the same thing.
 site_name: Heinzelmännchen
 site_description: Open-source helpers that keep product development teams running.

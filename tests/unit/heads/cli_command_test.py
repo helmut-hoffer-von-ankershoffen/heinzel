@@ -3,7 +3,7 @@ from typing import Annotated, get_args
 
 import pytest
 import typer
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
 
 from heinzel import Kernel, Module, OperationLet
@@ -30,6 +30,42 @@ def test_parameters_with_defaults_become_options():
     _, info = get_args(converted.annotation)
     assert isinstance(info, typer.models.OptionInfo)
     assert converted.default == 3
+
+
+class Look(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    hat: str
+
+
+@pytest.mark.parametrize(
+    ("annotation", "value", "expected"),
+    [
+        (Look, '{"hat":"blue"}', Look(hat="blue")),
+        (Look | None, "null", None),
+        (dict[str, int], '{"one":1}', {"one": 1}),
+        (list[Look], '[{"hat":"teal"}]', [Look(hat="teal")]),
+    ],
+)
+def test_structured_parameters_accept_typed_json_without_changing_api_models(annotation, value, expected):
+    converted = _cli_parameter(_parameter(annotation, default=None))
+    base, info = get_args(converted.annotation)
+    assert base in (str, str | None)
+    assert info.metavar == "JSON"
+    assert info.parser(value) == expected
+
+
+@pytest.mark.parametrize("value", ['{"unknown":"private-input"}', '{"hat":', '"private-input"'])
+def test_bad_structured_json_refuses_without_echoing_private_input(value):
+    _, info = get_args(_cli_parameter(_parameter(Look)).annotation)
+    with pytest.raises(typer.BadParameter, match="Expected JSON matching") as failure:
+        info.parser(value)
+    assert "private-input" not in str(failure.value)
+
+
+def test_repeated_primitive_lists_keep_their_native_cli_shape():
+    base, info = get_args(_cli_parameter(_parameter(list[str], default=None)).annotation)
+    assert base == list[str]
+    assert info.parser is None
 
 
 def test_command_hides_injected_parameters_and_adds_json(make_kernel):

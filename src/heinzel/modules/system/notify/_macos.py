@@ -17,6 +17,7 @@ import os
 import plistlib
 import shutil
 import subprocess
+import sys
 import tempfile
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -35,6 +36,9 @@ TIMEOUT = 10
 ASKING_TIMEOUT = 90
 """Seconds `install` waits while macOS asks the person; the app itself gives up after 60."""
 QUARANTINE = "com.apple.quarantine"
+BUILD_SCRIPT = SOURCES.parents[5] / "scripts" / "notifier.py"
+"""The build script of a source checkout (`make notifier`); a wheel has none, it ships the built app."""
+BUILD_TIMEOUT = 600
 
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 """Runs a command: `runner(command)` or `runner(command, timeout)`."""
@@ -103,17 +107,35 @@ class NotifierApp:
         bundled: Path = BUNDLED,
         runner: Runner = run,
         open_command: str = "/usr/bin/open",
+        build_script: Path | None = BUILD_SCRIPT,
     ) -> None:
         """Install into `home`/Applications (the user's home by default) from `bundled`."""
         self.bundled = bundled
         self.path = (home or Path.home()) / "Applications" / INSTALLED_NAME
         self._runner = runner
         self._open = open_command
+        self._build_script = build_script
 
     @property
     def available(self) -> bool:
         """Whether there is an app to use: bundled with this installation, or installed before."""
         return tree_digest(self.bundled) is not None or tree_digest(self.path) is not None
+
+    def rebuild(self) -> str | None:
+        """In a source checkout, rebuild the bundled app when its sources changed; why it failed, else None.
+
+        A wheel ships the app built when it was installed and has no build script: nothing to do there.
+        """
+        script = self._build_script
+        if script is None or not script.is_file():
+            return None
+        if self._runner([sys.executable, str(script), "--check"]).returncode == 0:
+            return None
+        built = self._runner([sys.executable, str(script)], BUILD_TIMEOUT)
+        if built.returncode == 0:
+            return None
+        lines = (built.stderr or built.stdout).strip().splitlines()
+        return lines[-1] if lines else f"the build exited with {built.returncode}"
 
     def inspect(self) -> Install:
         """Whether the installed app matches the bundled one, without changing anything."""
@@ -130,7 +152,12 @@ class NotifierApp:
         have = tree_digest(self.path)
         if wanted is None:
             state = "outdated" if have is not None else "missing"
-            return Install(self.path, state, "this installation carries no Heinzel Notifier (built on macOS only)")
+            return Install(
+                self.path,
+                state,
+                "this installation carries no Heinzel Notifier: install hz again on a Mac with the Xcode Command Line "
+                "Tools (xcode-select --install)",
+            )
         if have == wanted:
             return Install(self.path, "current")
         try:

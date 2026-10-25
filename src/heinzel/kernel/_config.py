@@ -26,7 +26,7 @@ from typing import Any, ClassVar, Literal, cast
 
 import platformdirs
 from pydantic.fields import FieldInfo
-from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+from pydantic_settings import BaseSettings, EnvSettingsSource, PydanticBaseSettingsSource, SettingsConfigDict
 
 from heinzel.kernel._errors import HeinzelError
 
@@ -67,6 +67,9 @@ class ModuleSettings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(extra="ignore", frozen=True)
+
+    section_title: ClassVar[str | None] = None
+    """What Settings in the web app calls the module's section, e.g. `Notifications`; its name when none."""
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset()
     """Fields a project `hz.toml` may not set, because a repository someone else controls must not decide what runs
@@ -164,11 +167,35 @@ class Config:
         table = Config(files=(), data=project[0]).section(section) if project else {}
         return sorted(key for key in table if _field(key) in fields)
 
-    def settings[S: ModuleSettings](self, model: type[S], section: str) -> S:
+    def settings[S: ModuleSettings](self, model: type[S], section: str, *, renamed_from: str | None = None) -> S:
         """Build `model` from this configuration's `section` and the section's environment variables.
 
-        Fields in `model.ignored_in_project` ignore what a project file sets and keep the other files' values.
+        Fields in `model.ignored_in_project` ignore what a project file sets and keep the other files' values. With
+        `renamed_from`, the section's old name, the old table and its `HZ_<OLD>__*` variables fill in every key the
+        new ones don't set, for the one release a renamed module reads both (ADR 0051).
         """
+        table = self._trusted(model, section)
+        if renamed_from is not None:
+            legacy = (
+                self._trusted(model, renamed_from) | EnvSettingsSource(model, env_prefix=env_prefix(renamed_from))()
+            )
+            # Keyed by field, so `retention-days` in the new table overrides `retention_days` from the old one.
+            table = {_field(k): v for k, v in legacy.items()} | {_field(k): v for k, v in table.items()}
+        token = _section.set(table)
+        try:
+            return model(_env_prefix=env_prefix(section))  # pyright: ignore[reportCallIssue] - pydantic-settings init option
+        finally:
+            _section.reset(token)
+
+    def renamed_keys(self, model: type[ModuleSettings], renamed_from: str) -> list[str]:
+        """What still sets `model`'s settings under a renamed section: `old.key` in a file, `HZ_OLD__KEY` variables."""
+        keys = [f"{renamed_from}.{key}" for key in self.section(renamed_from) if _field(key) in model.model_fields]
+        prefix = env_prefix(renamed_from)
+        names = {f"{prefix}{name}".upper() for name in model.model_fields}
+        return sorted(keys) + sorted(name for name in os.environ if name.upper() in names)
+
+    def _trusted(self, model: type[ModuleSettings], section: str) -> dict[str, Any]:
+        """`section`'s table, with the keys of `model.ignored_in_project` taken from every file but the project's."""
         table = self.section(section)
         if model.ignored_in_project and self.project_keys(section, model.ignored_in_project):
             trusted: dict[str, Any] = {}
@@ -178,11 +205,7 @@ class Config:
             others = Config(files=(), data=trusted).section(section)
             table = {k: v for k, v in table.items() if _field(k) not in model.ignored_in_project}
             table |= {k: v for k, v in others.items() if _field(k) in model.ignored_in_project}
-        token = _section.set(table)
-        try:
-            return model(_env_prefix=env_prefix(section))  # pyright: ignore[reportCallIssue] - pydantic-settings init option
-        finally:
-            _section.reset(token)
+        return table
 
 
 def config_files(cwd: Path) -> tuple[ConfigFile, ...]:

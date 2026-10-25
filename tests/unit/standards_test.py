@@ -101,6 +101,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     "scripts/demo_tape.py": "assembles the README demo from the core intro and its modules' snippets",
     "scripts/generate_docs.py": "generates Heinzelmännchen's CLI, module and configuration reference",
     "scripts/notifier.py": "builds Heinzel Notifier, the core's macOS notifier app (ADR 0043); plugins have none",
+    "scripts/terminal_art.py": "draws Heinzelmännchen for the terminal from the web app's drawing; plugins bring none",
     "scripts/sync_template.py": "generates the template from Heinzelmännchen's files",
     "scripts/template-test.sh": "renders and checks the template",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
@@ -180,6 +181,7 @@ NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's
     "HZ_URL": "a constant in tests/e2e/docs_test.py, not a variable",
     "HZ_CREDENTIAL_": "credentials in the environment fallback, named per declared credential (ADR 0030)",
     "HZ_EXAMPLE__": "settings of the `example` module tests define",
+    "HZ_WORKFLOW__": "the heinzel module's old prefix, read for one minor release (ADR 0051)",
     "HZ_A_B__": "the variable prefix of a module named `a-b`, in a test of env_prefix",
     "HZ_SYSTEM_CHANGELOG__": "the variable prefix of a nested module, in a test of env_prefix",
 }

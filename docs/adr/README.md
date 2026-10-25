@@ -55,13 +55,23 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0047](0047-plugins-are-managed-from-the-web-app-after-a-confirmation.md) | Plugins are managed from the web app, and adding one shows what it installs before it is confirmed | proposed | 2026-10-24 |
 | [0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md) | Heinzelmännchen are durable agents: one session each, owned by hz | proposed | 2026-10-24 |
 | [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) | Pydantic AI runs a turn; a coding agent is a handoff | proposed | 2026-10-24 |
-| [0051](0051-the-workflow-module-becomes-the-heinzel-module.md) | The workflow module becomes the heinzel module | proposed | 2026-10-24 |
+| [0051](0051-the-workflow-module-becomes-the-heinzel-module.md) | The workflow module becomes the heinzel module | accepted | 2026-10-24 |
 | [0052](0052-the-graph-emerges-from-recorded-reads-and-writes.md) | The graph emerges from recorded reads and writes | proposed | 2026-10-24 |
 | [0053](0053-the-team-graph-is-drawn-with-react-flow-and-elk.md) | The team graph is drawn with React Flow and laid out by elk; Mermaid is only an export | proposed | 2026-10-24 |
 | [0054](0054-observability-is-whether-each-team-promise-is-kept.md) | Observability is whether each team promise is kept: telemetry in, a graph out | proposed | 2026-10-24 |
 | [0055](0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md) | Connectors show their sign-in, test live on demand, and bind themselves when they are alone | accepted | 2026-10-24 |
+| [0056](0056-modules-contribute-status-items-actions-and-widgets-as-data.md) | Modules contribute status items, header actions and Today widgets as data, viewed from their own operations | proposed | 2026-10-24 |
 | [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) | AI access is a module: one choice like the theme, options are adapters of `ai-access` | proposed | 2026-10-24 |
-| [0058](0058-plugin-documentation-is-generated-from-the-kernel-and-recorded-by-shared-tooling.md) | Plugin documentation is generated from the kernel and recorded by the tooling every plugin shares | proposed | 2026-10-24 |
+| [0058](0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md) | Soundscapes are data a plugin ships, chosen like a theme: `module.soundscape(...)`, `hz system sound use` | proposed | 2026-10-24 |
+| [0059](0059-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md) | The calendar and the mail write through hz, after a confirmation | proposed | 2026-10-24 |
+| [0060](0060-themes-follow-the-time-of-day-and-the-weather.md) | Themes follow the time of day and the weather: variants on a closed vocabulary of signals | proposed | 2026-10-24 |
+| [0062](0062-heinzelmaennchen-find-the-mcp-servers-and-skills-you-gave-claude.md) | Heinzelmännchen find the MCP servers and skills you already gave Claude, read-only first | proposed | 2026-10-25 |
+| [0061](0061-plugins-ship-skills-every-ai-path-can-use.md) | Plugins ship skills every AI path can use: `module.skill(...)`, read-only tools, an explicit export | proposed | 2026-10-24 |
+| [0065](0065-plugins-may-ship-versioned-react-views.md) | Plugins may ship versioned React views alongside their Python declarations | proposed | 2026-10-25 |
+| [0067](0067-hz-owns-sessions-across-pydantic-and-native-cli-turns.md) | hz owns sessions across Pydantic and native CLI turns | proposed | 2026-10-25 |
+| [0068](0068-human-approval-proofs-and-head-parity.md) | Human approval is a scoped proof carriable by every authorized head | proposed | 2026-10-25 |
+| [0072](0072-plugins-declare-navigation-and-settings-as-data.md) | Plugins declare navigation and Settings metadata as checked data | proposed | 2026-10-25 |
+| [0082](0082-plugin-documentation-is-generated-from-the-kernel-and-recorded-by-shared-tooling.md) | Plugin documentation is generated from the kernel and recorded by the tooling every plugin shares | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -118,7 +128,21 @@ amends [0028](0028-integrations-are-capability-adapters.md) (a sole installed ad
 automatically);
 [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) amends
 [0029](0029-agent-runners-are-capability-adapters.md) (an AI access option names the agent runner that serves it) and
-[0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (`[heinzel] model` gives way to `[ai]` routing).
+[0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (`[heinzel] model` gives way to `[ai]` routing);
+[0058](0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md) amends
+[0027](0027-nothing-is-sent-home.md), [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) and
+[0046](0046-an-installable-web-app-with-paired-devices.md) (one allowlisted frame origin while a stream soundscape is in
+effect, from Play onwards);
+[0060](0060-themes-follow-the-time-of-day-and-the-weather.md) amends [0044](0044-themes-are-data-a-plugin-ships.md)
+(variants that follow signals; a base theme is checked for contrast too);
+[0059](0059-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md) amends
+[0028](0028-integrations-are-capability-adapters.md) (a `write` mode and three reads for `calendar` and `mail`),
+[0038](0038-drafts-are-approved-in-place.md) (no `place_draft` for them: a mail draft is placed in the mailbox, a
+calendar write is confirmed) and [0042](0042-google-workspace-through-the-gws-cli.md) (writes and their scopes).
+[0061](0061-plugins-ship-skills-every-ai-path-can-use.md) amends
+[0014](0014-agent-skills-and-the-claude-code-plugin.md) (plugin skills reach Claude Code through `hz system skill
+export`) and [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (skills are `SkillLet`s; a turn gets
+an index and loads bodies on demand).
 ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
@@ -145,3 +169,7 @@ Drivers, status annotations became `amends`/`amended-by` front matter, and each 
 names the checks that exist in the repository. Where no alternatives were written down, the record says so instead
 of inventing them. Two factual corrections came with it: ADR 0004 names the pluggy hook `heinzel_lets` (renamed from
 `joy_lets`), and ADR 0017, already implemented with the clock plugin (`plugins/heinzel-clock`), was accepted.
+
+| [0063](0063-world-clock-is-a-local-interactive-globe.md) | World Clock is a local interactive globe in the right panel | proposed | 2026-10-25 |
+| [0064](0064-themes-can-dress-the-core-heinzelmaennchen.md) | Themes can dress the core Heinzelmännchen with a palette and snow | proposed | 2026-10-25 |
+| [0071](0071-text-branding-uses-the-name-and-original-artwork.md) | Text branding uses the name and original artwork | proposed | 2026-10-25 |

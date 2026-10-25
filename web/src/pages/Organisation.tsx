@@ -9,7 +9,7 @@ import { commandsIn } from "@/lib/utils";
 export function OrgChart() {
   return (
     <Page title={t("org.title")} intro={t("org.intro")}>
-      <Empty text={t("org.notYet")} commands={["hz system capability list"]} />
+      <Empty text={t("org.notYet")} commands={["hz system capability list"]} gnome={{ age: "baby" }} />
     </Page>
   );
 }
@@ -23,6 +23,7 @@ export function Team() {
           !data.exists ? (
             <Empty
               text={t("team.none")}
+              gnome={{ age: "baby" }}
               commands={
                 data.next?.length ? data.next.flatMap(commandsIn) : ["hz team join <url>", "hz team new <name>"]
               }

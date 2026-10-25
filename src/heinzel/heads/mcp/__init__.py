@@ -24,7 +24,8 @@ from pydantic_core import to_jsonable_python
 
 from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
-from heinzel.kernel import ActionGate, HeinzelError, Kernel, ProposedCall, boot, redact_emails
+from heinzel.heads.mcp._skills import add_skills
+from heinzel.kernel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, boot, redact_emails
 
 HEAD = "mcp"
 log = logging.getLogger(__name__)
@@ -44,36 +45,69 @@ RESULT_LIMIT = 20000
 Transport = Literal["stdio", "streamable-http"]
 
 
-def build(kernel: Kernel, transport: Transport = "stdio", *, chat: str | None = None) -> MCPServer:
+ChatTools = Literal["everyday", "all"]
+
+
+def build(
+    kernel: Kernel, transport: Transport = "stdio", *, chat: str | None = None, chat_tools: ChatTools = "everyday"
+) -> MCPServer:
     """An MCP server with one tool per exposed operation; for one chat session's agent when `chat` is given.
 
+    A chat's agent gets the everyday operations only (ADR 0041) unless `chat_tools` is `all`: every tool's schema is
+    sent with every message, so 24 tools instead of 75 halve what a short message costs (ADR 0057).
+
     Over streamable HTTP, which has no authentication, the operations restricted to stdio (`mcp-stdio` in their
-    `heads`, such as installing plugins) are left out.
+    `heads`, such as installing plugins) are left out. Over stdio, outside a chat, skills are prompts and resources.
     """
     server = MCPServer(
         name="heinzel",
-        title="🧝 Heinzelmännchen",
+        title="Heinzelmännchen",
         version=__version__,
         instructions=INSTRUCTIONS if chat is None else CHAT_INSTRUCTIONS,
     )
-    for item in exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP):
+    items = exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP)
+    names = {item.name for item in items}
+    for item in items:
+        if chat is not None and item.operation.private:
+            continue  # Private session data is granted by the durable engine, never ambient chat tools.
+        if chat is not None and chat_tools == "everyday" and item.operation.audience != "everyday":
+            continue
+        annotations = ToolAnnotations(
+            read_only_hint=item.operation.read_only, destructive_hint=not item.operation.read_only
+        )
         server.add_tool(
-            tool(kernel, item) if chat is None else chat_tool(kernel, item, chat),
+            tool(kernel, item, local=transport == "stdio") if chat is None else chat_tool(kernel, item, chat),
             name=item.name,
             description=item.operation.summary,
-            annotations=ToolAnnotations(
-                read_only_hint=item.operation.read_only, destructive_hint=not item.operation.read_only
-            ),
+            annotations=annotations,
         )
+        # Old tool names of renamed operations, for the one minor release both work (ADR 0051); a chat gets the
+        # current names only, and a name a current tool has stays that tool's.
+        for old in () if chat is not None else item.operation.aliases:
+            if (alias := old.replace(" ", "_").replace("-", "_")) in names:
+                continue
+            names.add(alias)
+            server.add_tool(
+                _signed(tool(kernel, item, local=transport == "stdio"), item, item.returns, name=alias),
+                name=alias,
+                description=f"Deprecated: use `{item.name}`, which this runs; goes in the next minor release. "
+                f"{item.operation.summary}",
+                annotations=annotations,
+            )
+    if transport == "stdio" and chat is None:  # skills may be internal: only for a client that started hz as you
+        add_skills(server, kernel)
     return server
 
 
-def tool(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
+def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., Any]:
     """A function with the operation's public signature that runs it through the kernel."""
+    # Resolve once at server construction, before concurrent tool calls can race lazy service creation.
+    user = kernel.resolve(CurrentUser)
 
     def run(**kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
         try:
-            return kernel.invoke(item.operation, **kwargs)
+            with user.local("mcp-stdio") if local else user.using(None):
+                return kernel.invoke(item.operation, **kwargs)
         except HeinzelError as exc:
             raise ToolError(str(exc)) from exc
 
@@ -125,17 +159,22 @@ def command_line(item: Exposed, arguments: dict[str, Any]) -> str:
     return " ".join(words)
 
 
-def _signed[F: Callable[..., Any]](run: F, item: Exposed, returns: object) -> F:
+def _signed[F: Callable[..., Any]](run: F, item: Exposed, returns: object, *, name: str | None = None) -> F:
     run.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
         [p.replace(kind=inspect.Parameter.KEYWORD_ONLY) for p in item.parameters], return_annotation=returns
     )
     run.__doc__ = inspect.getdoc(item.operation.func)
-    run.__name__ = item.name
+    run.__name__ = name or item.name
     return run
 
 
 def serve(
-    transport: Transport = "stdio", host: str = "127.0.0.1", port: int = 8765, *, chat: str | None = None
+    transport: Transport = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    *,
+    chat: str | None = None,
+    chat_tools: ChatTools = "everyday",
 ) -> None:
     """Boot the kernel and serve its operations over `transport` until interrupted; for one chat over stdio only.
 
@@ -145,7 +184,7 @@ def serve(
     if chat is not None and transport != "stdio":
         msg = "A chat's tools are served over stdio only, never on a port."
         raise HeinzelError(msg)
-    server = build(boot(), transport, chat=chat)
+    server = build(boot(), transport, chat=chat, chat_tools=chat_tools)
     if transport == "stdio":
         server.run("stdio")
     else:

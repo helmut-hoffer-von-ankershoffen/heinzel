@@ -12,6 +12,7 @@ from heinzel.modules.system.config._models import (
     ConfigRevealed,
     RevealScope,
     SettingInfo,
+    SettingRevealed,
 )
 from heinzel.modules.system.config._render import render_report
 from heinzel.modules.system.config._service import ConfigService, Scope
@@ -79,4 +80,22 @@ def reveal(
     return service.reveal(scope)
 
 
-__all__ = ["ConfigFileInfo", "ConfigReport", "ConfigRevealed", "ConfigService", "SettingInfo", "module"]
+@module.operation(read_only=False, heads={"cli", "web"})
+def reveal_setting(service: ConfigService, key: Key) -> SettingRevealed:
+    """Show the file or folder a path setting names, such as hz.log_dir, in your file manager.
+
+    A folder opens; a file is selected, never opened. On Linux without a desktop session nothing opens and the
+    message names the path.
+    """
+    return service.reveal_setting(key)
+
+
+__all__ = [
+    "ConfigFileInfo",
+    "ConfigReport",
+    "ConfigRevealed",
+    "ConfigService",
+    "SettingInfo",
+    "SettingRevealed",
+    "module",
+]

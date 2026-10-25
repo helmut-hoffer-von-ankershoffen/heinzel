@@ -1,8 +1,10 @@
-"""Models of the documentation module: what a plugin brings, as the kernel holds it, ready to render (ADR 0058)."""
+"""Models of the documentation module: what a plugin brings, as the kernel holds it, ready to render (ADR 0082)."""
 
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from heinzel import Theme
 
 Kind = Literal["connector", "theme", "capability", "playbook", "layer"]
 """What a plugin is; `PluginInfo.kinds` plus `layer` for a plugin whose module sits in a company's tree (ADR 0040)."""
@@ -20,10 +22,13 @@ class OperationDoc(BaseModel):
     command: str = Field(description="The CLI command, e.g. `hz system plugin list`.")
     usage: str = Field(description="The CLI command with its arguments and options, e.g. `hz clock [--zone TEXT]`.")
     tool: str | None = Field(description="The MCP tool's name, e.g. `system_plugin_list`; none if MCP doesn't have it.")
+    http_tool: str | None = Field(default=None, description="The tool in unauthenticated HTTP MCP; none if absent.")
     endpoint: str | None = Field(
         description="The REST endpoint, e.g. `GET /system/plugin/list`; none if REST lacks it."
     )
     web_endpoint: str | None = Field(description="The web app's API endpoint, e.g. `GET /api/clock`; none if absent.")
+    private_endpoint: str | None = Field(default=None, description="The scoped, authenticated private API endpoint.")
+    private: bool = Field(default=False, description="Whether this operation requires a trusted authenticated head.")
     read_only: bool = Field(description="Whether it only reads; otherwise it changes state.")
     audience: str = Field(description="`everyday` or `expert` (ADR 0041).")
     heads: list[str] | None = Field(description="The heads it is restricted to; none means every head.")
@@ -96,6 +101,9 @@ class ThemeDoc(BaseModel):
     fonts: list[str] = Field(description="Font families it ships files for.")
     logo: bool = Field(description="Whether it ships a logo.")
     command: str = Field(description="How to pick it, e.g. `hz system theme use acme`.")
+    definition: Theme | None = Field(
+        default=None, description="The complete checked theme, including variants and backdrops."
+    )
 
 
 class AssetTypeDoc(BaseModel):

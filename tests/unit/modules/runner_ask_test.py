@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from heinzel import AgentResult, Budget, HeinzelError, ToolProfile
+from heinzel import AgentResult, Budget, HeinzelError, Kernel, ToolProfile
 from heinzel.modules.system.runner import ASK_TIMEOUT, ask
 from heinzel.modules.system.runner._models import RunnerSettings
 
@@ -29,11 +29,11 @@ class Recorder:
 
 def test_asks_read_only_in_an_empty_directory_within_the_cap():
     runner = Recorder()
-    result = ask(runner, RunnerSettings(), "User: How healthy is hz?")
+    result = ask(runner, Kernel(), RunnerSettings(), "User: How healthy is hz?")
     assert result.draft == "Run `hz system doctor`."
     [call] = runner.calls
     assert str(call["prompt"]).endswith("User: How healthy is hz?")
-    assert call["contract"] == "chat"
+    assert call["contract"] == ""  # lean: its own short system prompt, the preamble is in the prompt
     assert call["tools"].tools == []  # type: ignore[attr-defined] - the runner's read-only default
     assert call["timeout"] == ASK_TIMEOUT
     assert call["budget"] == Budget(max_usd=0.25)
@@ -42,12 +42,12 @@ def test_asks_read_only_in_an_empty_directory_within_the_cap():
 @pytest.mark.parametrize(("asked", "cap"), [(0.05, 0.05), (5.0, 0.25), (None, 0.25)])
 def test_a_budget_can_only_lower_the_configured_cap(asked, cap):
     runner = Recorder()
-    ask(runner, RunnerSettings(), "Hi", budget_usd=asked)
+    ask(runner, Kernel(), RunnerSettings(), "Hi", budget_usd=asked)
     assert runner.calls[0]["budget"] == Budget(max_usd=cap)
 
 
 def test_a_blank_prompt_is_refused_before_anything_runs():
     runner = Recorder()
     with pytest.raises(HeinzelError, match="the prompt is empty"):
-        ask(runner, RunnerSettings(), "   ")
+        ask(runner, Kernel(), RunnerSettings(), "   ")
     assert runner.calls == []

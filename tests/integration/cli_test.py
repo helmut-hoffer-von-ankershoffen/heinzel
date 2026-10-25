@@ -140,21 +140,24 @@ def top_level(app: typer.Typer, *args: str) -> set[str]:
 
 def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app, make_kernel):
     screen = runner.invoke(app, []).output
-    assert {"join", "setup", "ui", "system", "team", "org", "workflow"} <= top_level(app)
+    assert {"join", "setup", "ui", "system", "team", "org", "heinzel"} <= top_level(app)
+    assert "workflow" not in top_level(app)  # the old name runs, hidden (ADR 0051)
     assert "example" not in top_level(app)  # a module of expert operations only
     assert top_level(app, "system") >= {"doctor", "update", "expert"}
     assert not top_level(app, "system") & {"info", "config", "plugin", "serve", "changelog"}
-    assert top_level(app, "workflow") >= {"list", "show", "drafts", "run"}
-    assert "graph" not in top_level(app, "workflow")
+    assert top_level(app, "heinzel") >= {"list", "show", "drafts", "wake"}
+    assert "graph" not in top_level(app, "heinzel")
     kernel = make_kernel(builtins=True, **example_modules())
     expert = sum(let.audience == "expert" for _, let in kernel.lets(OperationLet) if kernel.available(let.func))
     hidden = expert + 3  # and `hz system serve mcp | api | daemon`
     last = screen.strip().splitlines()[-1].strip()
-    assert last == f"{hidden} more commands for experts are hidden; hz system expert on lists them."
+    assert f"{hidden} more commands for experts are hidden; hz system expert on lists them." in screen
+    assert last.startswith(f"v{__version__}")
+    assert last.endswith("🐻 built with AI in Berlin")
 
 
 def test_a_group_that_hides_commands_says_how_many(app):
-    last = runner.invoke(app, ["workflow", "--help"]).output.strip().splitlines()[-1].strip()
+    last = runner.invoke(app, ["heinzel", "--help"]).output.strip().splitlines()[-1].strip()
     assert re.fullmatch(r"\d+ more commands? for experts (are|is) hidden; hz system expert on lists them\.", last)
     assert "are hidden" not in runner.invoke(app, ["system", "plugin", "--help"]).output  # hides nothing itself
 
@@ -247,6 +250,7 @@ def test_system_info_json(app):
     assert info["sections"] == {  # an empty section is left out
         "example": {"greeting": "hi"},
         "system.capability": {
+            "ai → ai-access:read": "claude-code → api.anthropic.com",
             "ai.access → ai-access:read": "claude-code → api.anthropic.com",
             "org agenda → calendar:read": "optional: not connected: no adapter bound",
             "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
@@ -340,6 +344,8 @@ def fake_github(monkeypatch, answer):
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(_service, "get_json", get_json)
+    # The heinzel-contrib listing is a second GitHub read (Discover source); fake it as an empty-but-readable listing.
+    monkeypatch.setattr(_service.PluginService, "_contrib_plugins", lambda *_args, **_kwargs: [])
 
 
 CRM = {
@@ -567,6 +573,7 @@ def test_commands_are_sorted(app):
         "agent",
         "capability",
         "changelog",
+        "claude",
         "config",
         "connector",
         "credential",
@@ -581,7 +588,10 @@ def test_commands_are_sorted(app):
         "release",
         "runner",
         "serve",
+        "skill",
+        "sound",
         "theme",
+        "ui",
         "update",
     ]
     assert system.list_commands(None) == expected

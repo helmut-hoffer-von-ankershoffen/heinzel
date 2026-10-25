@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo docs-plugins docs-record docs-site notifier icons web-build web-dev test-web build changelog ci-logs pr sync release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web build changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -26,10 +26,10 @@ LINT := \
 		"&confidential=uv run --script scripts/check_confidentiality.py"
 TYPES := "&mypy=uv run mypy" "&pyright=uv run pyright"
 # Unit, then integration (the suite orders them), on 4 workers, stopping at the first failure; coverage is in make test.
-TESTS := "&tests=uv run pytest -m 'unit or integration' -n 4 -x -q --session-timeout=120"
+TESTS := "&tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=120"
 # The same suite measured, on the same 4 workers: each xdist worker is a Python subprocess, which coverage measures
 # ([tool.coverage.run] patch = ["subprocess"]) into its own data file; `coverage combine` merges them afterwards.
-COVERED := uv run coverage erase && uv run coverage run -m pytest -m 'unit or integration' -n 4 -q --session-timeout=300
+COVERED := uv run coverage erase && uv run coverage run -m pytest -m '(unit or integration) and not perf' -n 4 -q --session-timeout=300
 # The web head's app in web/ (ADR 0039): pnpm from scripts/tools.toml on the Node.js of uv.lock, through scripts/web_build.py,
 # which installs web/'s dependencies first when they are stale. Plugins have no web/; the template leaves these out.
 WEB := uv run --quiet --script scripts/web_build.py
@@ -71,7 +71,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(WEB_LINT) $(WEB_TYPES) \
-		"unit=uv run pytest -m unit -n auto -x -q --session-timeout=60" $(WEB_TESTS)
+		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=60" $(WEB_TESTS)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(WEB_TESTS) \
@@ -111,7 +111,7 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 	@uv run --quiet coverage report --format=total | xargs printf '  coverage %s%%\n'
 
 test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
-	$(STEPS) "tests=uv run pytest -m 'unit or integration' -n 4 -x -q --session-timeout=300"
+	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=300"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \
@@ -121,13 +121,16 @@ commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conve
 		'&branch=[ -z "$$BRANCH" ] || uv run --script scripts/check_confidentiality.py --text "$$BRANCH"'
 
 test-all-pythons: ## Run unit and integration tests on every supported Python, in isolated environments
-	$(STEPS) $(foreach python,3.12 3.13 3.14 3.15,"python-$(python)=uv run --isolated --python $(python) pytest -m 'unit or integration' -q -p no:cacheprovider")
+	$(STEPS) $(foreach python,3.12 3.13 3.14 3.15,"python-$(python)=uv run --isolated --python $(python) pytest -m '(unit or integration) and not perf' -q -p no:cacheprovider")
 
 test-unit: ## Run unit tests
 	uv run pytest -m unit
 
 test-integration: ## Run integration tests
 	uv run pytest -m integration
+
+test-perf: ## Run the performance tests (timing assertions such as linear time); CI only, they flake on a loaded machine
+	$(STEPS) "perf=uv run pytest -m perf -q --session-timeout=120"
 
 test-e2e: ## Run end-to-end tests (needs network), on 3 workers
 	$(STEPS) "e2e=uv run pytest -m e2e -n 3 -q --session-timeout=600"
@@ -158,7 +161,7 @@ demo: ## Render the README's intro, docs/assets/demo.{gif,webp,mp4}: the demo ta
 	uv run --quiet --script scripts/demo_tape.py
 	uv run --quiet --script scripts/docs_record.py --intro-only
 
-docs-plugins: ## Write the page of every installed plugin into docs/plugins (ADR 0058); here part of `make docs`, which also writes the gallery
+docs-plugins: ## Write the page of every installed plugin into docs/plugins (ADR 0082); here part of `make docs`, which also writes the gallery
 	env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py
 
 docs-record: ## Record every plugin page's scenes (CLI with VHS, UI with Playwright) into docs/plugins/*/assets, and the README's intro; PLUGIN=name, SCENE=name narrow it
@@ -185,6 +188,9 @@ notifier: ## Build Heinzel Notifier, the macOS notifier app the wheel ships (mac
 icons: ## Make every image of Heinzelmännchen from heinzel.svg: the web app's icons, the favicon, the theme's logo (macOS 14+)
 	@uv run --quiet --script scripts/notifier.py icons
 
+terminal-art: ## Redraw Heinzelmännchen for the terminal from web/src/components/heinzel.ts (needs node, rsvg-convert, magick)
+	@uv run --quiet --script scripts/terminal_art.py && uv run --quiet ruff format --quiet src/heinzel/heads/cli/_art_data.py
+
 build: web-build ## Build wheels and sdists into dist/ (the core and every first-party plugin; the web app first)
 	uv build --all-packages
 
@@ -200,7 +206,15 @@ pr: ## Push this branch and open a squash-merged, auto-merging pull request to m
 sync: ## Rebase this branch onto the latest main (upstream's, in a fork)
 	@git fetch --quiet $(REMOTE) && git rebase --quiet $(REMOTE)/main && git log --oneline $(REMOTE)/main..HEAD
 
-release: ## Open a release pull request from main: BUMP=auto|patch|minor|major (default auto), INTRO="prose"
+release: ## Open a release pull request on GitHub (workflow "Prepare release"): BUMP=auto|patch|minor|major (default auto), INTRO="prose"
+	@since="$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+		gh workflow run prepare-release.yml -f bump=$(or $(BUMP),auto) -f intro="$$INTRO" && \
+		for _ in 1 2 3 4 5 6 7 8 9 10; do sleep 2; \
+			url="$$(gh run list --workflow prepare-release.yml --event workflow_dispatch --limit 5 --json url,createdAt --jq "map(select(.createdAt >= \"$$since\")) | .[0].url // empty")"; \
+			[ -z "$$url" ] || { echo "$$url"; exit 0; }; done; echo "dispatched; see the Actions tab"
+
+release-local: ## Open a release pull request from this machine, from an up-to-date main: BUMP=auto|patch|minor|major, INTRO="prose"
+	@echo "Local path: no CI is dispatched and nothing auto-merges; merge the pull request after its checks (dispatch ci.yml on the branch)."
 	bash scripts/release.sh $(or $(BUMP),auto) --open-pr
 
 clean: ## Remove build and test artifacts

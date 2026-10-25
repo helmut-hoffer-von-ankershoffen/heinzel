@@ -25,7 +25,7 @@ def makefile() -> str:
     text = text.replace(" release clean\n", " release clean update-template\n", 1)
     text = text.replace(" (KEEP=dir keeps it)", "")
     text = re.sub(r"\n(template-test|template-sync|docs|attributions|fuzz|demo):.*?\n(?:\t.*\n)+", "\n", text)
-    # The core's generate_docs.py writes the plugin pages with everything else; a plugin runs the builder (ADR 0058).
+    # The core's generate_docs.py writes the plugin pages with everything else; a plugin runs the builder (ADR 0082).
     text = text.replace(
         '"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check"',
         '"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins --check"',
@@ -36,11 +36,11 @@ def makefile() -> str:
     )
     # A plugin writes its pages with the builder, and has no README intro to record.
     text = text.replace(
-        "docs-plugins: ## Write the page of every installed plugin into docs/plugins (ADR 0058); here part of `make "
+        "docs-plugins: ## Write the page of every installed plugin into docs/plugins (ADR 0082); here part of `make "
         "docs`, which also writes the gallery\n"
         "\tenv -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py",
         "docs-plugins: ## Write the page of every installed plugin into docs/plugins with "
-        "`hz system plugin docs build` (ADR 0058)\n"
+        "`hz system plugin docs build` (ADR 0082)\n"
         "\tuv run --quiet hz system plugin docs build --directory docs/plugins",
     )
     text = text.replace(", and the README's intro; PLUGIN=name", "; PLUGIN=name")
@@ -69,6 +69,9 @@ def makefile() -> str:
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
     text = re.sub(r"\nnotifier:.*?\n(?:\t.*\n)+", "\n", text)
+    # The terminal art is drawn from the web app's drawing: plugins have none.
+    text = re.sub(r"(?m)^(\.PHONY:.*?) terminal-art\b", r"\1", text)
+    text = re.sub(r"\nterminal-art:.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text + (
         "\nupdate-template: ## Update this plugin to the latest Heinzelmännchen template (needs a clean working tree)\n"

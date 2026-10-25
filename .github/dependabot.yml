@@ -23,3 +23,15 @@ updates:
     groups:
       dependencies:
         patterns: ["*"]
+  - package-ecosystem: npm # the web app (web/pnpm-lock.yaml); Dependabot updates pnpm lockfiles too
+    directory: /web
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: build
+      prefix-development: build
+    groups:
+      web:
+        patterns: ["*"]

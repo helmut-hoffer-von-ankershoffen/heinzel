@@ -1,4 +1,4 @@
-"""Service of the documentation module: the model of what each plugin brings, read from the kernel (ADR 0058).
+"""Service of the documentation module: the model of what each plugin brings, read from the kernel (ADR 0082).
 
 Nothing here parses source. Modules, lets and the exposure rule come from the kernel; what was installed from where
 comes from the plugin service; the scenes come from `docs/scenes.toml` when the plugin declares them.
@@ -7,6 +7,7 @@ comes from the plugin service; the scenes come from `docs/scenes.toml` when the 
 import inspect
 import json
 import re
+import shlex
 import tomllib
 from collections import defaultdict
 from collections.abc import Iterable
@@ -44,6 +45,7 @@ from heinzel.kernel import (
 )
 from heinzel.modules.system.plugin._models import PluginInfo
 from heinzel.modules.system.plugin._service import FIRST_PARTY, REPOSITORY, PluginService, short_name
+from heinzel.modules.system.plugin.docs._files import read_recording
 from heinzel.modules.system.plugin.docs._models import (
     AdapterDoc,
     AssetTypeDoc,
@@ -70,7 +72,7 @@ SCENES_FILE = Path("docs") / "scenes.toml"
 """Where a plugin declares what to record, relative to its repository."""
 ASSETS = "assets"
 """The directory beside a page that holds its recordings and swatches."""
-HEADS = ("cli", "mcp", "api", "web")
+HEADS = ("cli", "mcp", "mcp-http", "api", "api-private", "web")
 DERIVED_COMMANDS = 4
 """How many operations the derived CLI scene runs after `--help`."""
 SECTIONED_LETS = (
@@ -321,8 +323,11 @@ class DocsService:
             command=command,
             usage=" ".join((command, *(p.option for p in parameters))) if command else "",
             tool=item.name if in_head["mcp"] else None,
+            http_tool=item.name if in_head["mcp-http"] else None,
             endpoint=f"{verb} /{path}" if in_head["api"] else None,
+            private_endpoint=f"{verb} /{path}" if in_head["api-private"] else None,
             web_endpoint=f"{verb} /api/{path}" if in_head["web"] else None,
+            private=operation.private,
             read_only=operation.read_only,
             audience=operation.audience,
             heads=sorted(operation.heads) if operation.heads is not None else None,
@@ -495,7 +500,7 @@ def _theme(record: ModuleRecord, let: ThemeLet) -> ThemeDoc:
         name=theme.name,
         title=theme.title,
         module=record.qualname,
-        colours=[ColourDoc(token=token, light=light[token], dark=dark[token]) for token in light],
+        colours=[ColourDoc(token=key, light=light[key], dark=dark[key]) for key in light if key != "backdrop"],
         font_sans=theme.font_sans,
         font_mono=theme.font_mono,
         radius=theme.radius,
@@ -503,6 +508,7 @@ def _theme(record: ModuleRecord, let: ThemeLet) -> ThemeDoc:
         fonts=sorted({font.family for font in theme.fonts}),
         logo=theme.logo is not None,
         command=f"hz system theme use {theme.name}",
+        definition=theme,
     )
 
 
@@ -588,7 +594,7 @@ def scenes_from(data: dict[str, Any], *, where: str = "docs/scenes.toml") -> dic
 def scene_problems(scene: Scene) -> list[str]:
     """Why a scene can't be recorded: a bad name, a command that isn't `hz`, a UI scene without a screenshot."""
     problems: list[str] = []
-    if not all(part.isalnum() for part in scene.name.split("-")) or not scene.name or scene.name != scene.name.lower():
+    if re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", scene.name) is None:
         problems.append("name must be lowercase words joined by dashes")
     if scene.kind == "cli":
         if not scene.commands:
@@ -607,28 +613,61 @@ def scene_problems(scene: Scene) -> list[str]:
 
 PIPE_INTO = frozenset({"jq", "head", "tail", "grep", "sort", "wc", "less", "cat"})
 """What a scene's `hz` command may be piped into: nothing that runs or writes anything else."""
-SHELL_SYNTAX = re.compile(r"[;&<>`$\\]")
+SHELL_SYNTAX = re.compile(r"[;&<>`$\\\x00-\x1f\x7f-\x9f]")
+READER_FLAGS = {
+    "jq": re.compile(
+        r"-(?:[crseMSaC]+)|--(?:compact-output|raw-output|slurp|exit-status|monochrome-output|sort-keys|ascii-output|color-output)"
+    ),
+    "head": re.compile(r"-(?:[0-9]+|[nc][0-9]+|[qv])|--(?:lines|bytes)=[0-9]+|--(?:quiet|verbose)"),
+    "tail": re.compile(r"-(?:[0-9]+|[nc][0-9]+|[qv])|--(?:lines|bytes)=[0-9]+|--(?:quiet|verbose)"),
+    "grep": re.compile(r"-[ivnch]+|--(?:invert-match|ignore-case|line-number|count|no-filename)"),
+    "sort": re.compile(r"-[nrufb]+|--(?:numeric-sort|reverse|unique|ignore-case|ignore-leading-blanks)"),
+    "wc": re.compile(r"-[lwcLm]+|--(?:lines|words|bytes|chars|max-line-length)"),
+    "less": re.compile(r"-[FRX]+"),
+    "cat": re.compile(r"-[nbsETv]+|--(?:number|number-nonblank|squeeze-blank|show-ends|show-tabs|show-nonprinting)"),
+}
+"""Only stdin filters and flags with no filesystem, output-file or code-loading operands."""
 
 
 def _is_hz(line: str) -> bool:
     """Whether a command line is `hz ...`, at most piped into a reader (`hz clock --json | jq`): nothing else runs."""
-    if SHELL_SYNTAX.search(line):
+    if SHELL_SYNTAX.search(line) or not line.isprintable():
         return False
-    first, *rest = (part.strip() for part in line.split("|"))
-    return first.startswith("hz ") and all(part and part.split()[0] in PIPE_INTO for part in rest)
+    try:
+        first, *rest = (shlex.split(part) for part in line.split("|"))
+    except ValueError:
+        return False
+    if not first or first[0] != "hz" or not first[1:]:
+        return False
+    return all(
+        part and part[0] in READER_FLAGS and all(READER_FLAGS[part[0]].fullmatch(arg) for arg in part[1:])
+        for part in rest
+    )
 
 
 def recording(scene: Scene, directory: Path | None) -> Recording:
-    """The files a rendered scene left in a page's assets directory, as relative paths; none while not recorded."""
+    """The files a rendered scene left in a page's assets directory, as relative paths; none while not recorded.
+
+    Raises:
+        HeinzelError: If a recording is unsafe, oversized or its transcript is not UTF-8 text.
+    """
     base = f"{ASSETS}/{scene.name}"
     if directory is None:
         return Recording(scene=scene.name, animation=None, still=None, video=None)
     assets = directory / ASSETS
 
     def found(suffix: str, extension: str) -> str | None:
-        return f"{base}{suffix}.{extension}" if (assets / f"{scene.name}{suffix}.{extension}").is_file() else None
+        return (
+            f"{base}{suffix}.{extension}"
+            if read_recording(assets / f"{scene.name}{suffix}.{extension}") is not None
+            else None
+        )
 
-    transcript = (assets / f"{scene.name}.md").read_text(encoding="utf-8") if found("", "md") else ""
+    try:
+        transcript = (read_recording(assets / f"{scene.name}.md") or b"").decode("utf-8")
+    except UnicodeError:
+        msg = "Recording transcripts must be UTF-8 text; record the scene again"
+        raise HeinzelError(msg) from None
     return Recording(
         scene=scene.name,
         animation=found("", "gif") or found("", "webp"),

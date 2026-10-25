@@ -1,4 +1,4 @@
-# What the documentation records of Heinzelmännchen itself (ADR 0058): the README's intro and the core's scenes.
+# What the documentation records of Heinzelmännchen itself (ADR 0082): the README's intro and the core's scenes.
 # `make demo` renders the intro into docs/assets/demo.{gif,webp,mp4}: the CLI part comes from docs/assets/demo.tape
 # (the intro tape and the modules' demo.tape snippets, assembled by `make fix`), then the `[intro] scenes` below.
 # A plugin's own docs/scenes.toml holds its [[cli]] and [[ui]] scenes the same way; `hz system plugin docs show`
@@ -71,7 +71,7 @@ hold = 2.5
 name = "equivalents"
 title = "The same from the terminal"
 commands = [
-  "hz workflow show weekly-digest",
+  "hz heinzel show weekly-digest",
   "hz graph",
   "hz system theme list",
 ]

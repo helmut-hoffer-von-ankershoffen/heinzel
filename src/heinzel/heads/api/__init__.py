@@ -4,30 +4,39 @@ Read-only operations are `GET`, the others `POST`; parameters are query paramete
 `HeinzelError` becomes `400 {"error": ...}`; an operation whose exit code would be non-zero answers `503`, so
 `GET /system/doctor` doubles as a health probe.
 
-The server has no authentication, so it answers only requests that name a loopback host (or one listed in
+The default server has no authentication, so it answers only requests that name a loopback host (or one listed in
 `[hz] api_allowed_hosts`) on its own port, and refuses requests from another origin with `403`: a web page in your
 browser can reach `127.0.0.1` too, directly or through DNS rebinding, and must not be able to call operations.
-Operations that spend money or act unattended (`hz workflow run`, `hz system daemon tick`) aren't exposed here.
+Operations that spend money or act unattended (`hz heinzel wake`, `hz system daemon tick`) aren't exposed here.
 
 The web head (`hz ui`) mounts the same endpoints with `head="web"` and a per-session `token`: every request must then
 carry the token as `Authorization: Bearer <token>` as well, and the operations that list the `web` head are exposed too.
-It also gets `POST /stream/<path>` for each of them: the same operation, answering with server-sent events as it runs
+An explicit private API uses an expiring server-scoped bearer (`hz system serve api --private`), includes declared
+private operations, and shares the kernel's trusted CurrentUser context (ADR 0068). It never treats a bearer as
+human approval. Authenticated heads also get `POST /stream/<path>` for each operation, answering with server-sent
+events as it runs
 (`heinzel.heads._stream`, ADR 0045).
 """
 
 import hmac
 import inspect
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Annotated, Any, get_args, get_origin
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Annotated, Any, Literal, get_args, get_origin
 
-from fastapi import FastAPI, Query, Request, Response
+from fastapi import Body, Depends, FastAPI, Query, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer
+from pydantic import ConfigDict, create_model
 from pydantic.fields import FieldInfo
 
 from heinzel import __version__
-from heinzel.heads._exposure import Exposed, exposed
+from heinzel.heads._exposure import API_PRIVATE, Exposed, exposed
 from heinzel.heads._stream import streamed
-from heinzel.kernel import HeinzelError, Kernel, boot
+from heinzel.heads.api._auth import ApiBearer
+from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, boot
+from heinzel.kernel._identity import LOCAL_PERMISSIONS
 
 HEAD = "api"
 UNAVAILABLE = 503
@@ -47,6 +56,9 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
     token: str | None = None,
     docs: bool = True,
     accept: Callable[[str], str | None] | None = None,
+    credentials: ApiBearer | None = None,
+    audience: str | None = None,
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> FastAPI:
     """A FastAPI app with one endpoint per exposed operation, answering only local, same-origin requests.
 
@@ -60,13 +72,26 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
         accept: With a `token`, which other bearer token is accepted too (the web head's device tokens): it returns
             the device's id, or None. A request records what it carried in `request.state.auth` (`session` or
             `device`) and, for a device, its id in `request.state.device`.
+        credentials: A dedicated expiring private-API bearer; requires its exact server audience.
+        audience: The identity of this server, independent of caller-supplied headers.
+        clock: The trusted clock for credential expiry checks.
+
+    Raises:
+        HeinzelError: If a private head has no credential or a credential has no server audience.
     """
+    _validate_auth(head, token, credentials, audience)
+    selected = API_PRIVATE if credentials is not None and head == HEAD else head
+    user = kernel.resolve(CurrentUser)
     app = FastAPI(
-        title="🧝 Heinzelmännchen",
+        title="Heinzelmännchen",
         version=__version__,
-        description="Open-source helpers that keep product teams running. Every endpoint is also a `hz` command.",
-        docs_url="/docs" if docs else None,
-        redoc_url="/redoc" if docs else None,
+        description="Helpers accelerating product teams. Every endpoint is also a `hz` command.",
+        docs_url="/docs" if docs and credentials is None else None,
+        redoc_url="/redoc" if docs and credentials is None else None,
+        # Middleware verifies the credential; this dependency describes its header in authenticated OpenAPI.
+        dependencies=[Depends(HTTPBearer(auto_error=False, scheme_name="PrivateApiBearer"))]
+        if credentials is not None
+        else [],
     )
     hosts = LOOPBACK | {host.strip().lower() for host in allowed_hosts}
     bearer = f"Bearer {token}".encode() if token is not None else b""
@@ -78,14 +103,25 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
             headers.get("host", ""), headers.get("origin"), hosts, port, headers.get("sec-fetch-site")
         ):
             return JSONResponse(status_code=FORBIDDEN, content={"error": problem})
-        if token is not None and not _authorized(request, headers.get("authorization", ""), bearer, accept):
-            # A header, not a cookie: another site can make the browser send cookies along, never this header.
-            problem = "Refused: send the session token `hz ui` opened the app with, as `Authorization: Bearer <token>`."
+        identity: CallIdentity | None = None
+        if credentials is not None:
+            identity = credentials.authenticate(headers.get("authorization", ""), audience or "", now=clock())
+        elif token is not None and _authorized(request, headers.get("authorization", ""), bearer, accept):
+            method: Literal["web-device", "web-session"] = (
+                "web-device" if request.state.auth == "device" else "web-session"
+            )
+            identity = CallIdentity(
+                user.owner(), method, getattr(request.state, "device", "session"), "hz-web", LOCAL_PERMISSIONS
+            )
+        if (token is not None or credentials is not None) and identity is None:
+            problem = "Refused: supply Authorization: Bearer with a valid, unexpired credential for this server"
             return JSONResponse(
                 status_code=UNAUTHORIZED, content={"error": problem}, headers={"WWW-Authenticate": "Bearer"}
             )
-        response = await call_next(request)
-        if token is not None:
+        # Explicitly clear inherited identity for public REST, even if its server was started from a local call.
+        with user.using(identity):
+            response = await call_next(request)
+        if token is not None or credentials is not None:
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -93,7 +129,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
     async def heinzel_error(request: object, exc: HeinzelError) -> JSONResponse:  # noqa: ARG001 - FastAPI signature
         return JSONResponse(status_code=400, content={"error": str(exc)})
 
-    for item in exposed(kernel, head):
+    for item in exposed(kernel, selected):
         returns = item.returns if item.returns is not inspect.Signature.empty else None
         app.add_api_route(
             "/" + "/".join(item.path),
@@ -109,7 +145,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
             tags=[item.record.path[0]],
             operation_id=item.name,
         )
-        if token is not None:  # streams only behind a token: the web head's
+        if token is not None or credentials is not None:  # Streams retain the authenticated call context.
             app.add_api_route(
                 "/stream/" + "/".join(item.path),
                 stream_endpoint(kernel, item),
@@ -117,6 +153,23 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
                 include_in_schema=False,
             )
     return app
+
+
+def _validate_auth(head: str, token: str | None, credentials: ApiBearer | None, audience: str | None) -> None:
+    if head not in {HEAD, "web", API_PRIVATE}:
+        msg = "The API can expose only public, authenticated private or paired web operations"
+        raise HeinzelError(msg)
+    if head == API_PRIVATE and credentials is None:
+        msg = "The private API head requires an expiring server-scoped credential"
+        raise HeinzelError(msg)
+    if head == "web" and token is None and credentials is None:
+        msg = "Private API and web heads require authentication before routes are built"
+        raise HeinzelError(msg)
+    if token == "" or (
+        credentials is not None and (token is not None or not audience or audience != credentials.audience)
+    ):
+        msg = "Private API authentication requires a nonempty credential and matching server audience"
+        raise HeinzelError(msg)
 
 
 def _authorized(request: Request, header: str, bearer: bytes, accept: Callable[[str], str | None] | None) -> bool:
@@ -169,17 +222,18 @@ def _split(host: str) -> tuple[str, str]:
 
 
 def endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
-    """A function with the operation's public parameters as query parameters, run through the kernel."""
+    """Bind public parameters, keeping private mutation input in a strict JSON body."""
+    body = item.operation.private and not item.operation.read_only
 
     def run(response: Response, **kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
-        result = kernel.invoke(item.operation, **kwargs)
+        result = kernel.invoke(item.operation, **_arguments(item, kwargs, body=body))
         if item.operation.exit_code is not None and item.operation.exit_code(result):
             response.status_code = UNAVAILABLE
         return result
 
     response_parameter = inspect.Parameter("response", inspect.Parameter.KEYWORD_ONLY, annotation=Response)
     run.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
-        [_query(p) for p in item.parameters] + [response_parameter], return_annotation=item.returns
+        [*_parameters(item, body=body), response_parameter], return_annotation=item.returns
     )
     run.__name__ = item.name
     return run
@@ -189,11 +243,39 @@ def stream_endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
     """Like `endpoint`, but the answer is the operation's events as a server-sent event stream."""
 
     async def run(**kwargs: Any) -> Any:  # noqa: ANN401 - a streaming response
-        return streamed(kernel, item.operation, kwargs)
+        return streamed(kernel, item.operation, _arguments(item, kwargs, body=item.operation.private))
 
-    run.__signature__ = inspect.Signature([_query(p) for p in item.parameters])  # type: ignore[attr-defined]
+    run.__signature__ = inspect.Signature(_parameters(item, body=item.operation.private))  # type: ignore[attr-defined]
     run.__name__ = f"{item.name}_stream"
     return run
+
+
+def _parameters(item: Exposed, *, body: bool) -> list[inspect.Parameter]:
+    if not body:
+        return [_query(parameter) for parameter in item.parameters]
+    fields: dict[str, Any] = {  # runtime function annotations become Pydantic field definitions
+        parameter.name: (
+            parameter.annotation,
+            ... if parameter.default is inspect.Parameter.empty else parameter.default,
+        )
+        for parameter in item.parameters
+    }
+    model = create_model(f"{item.name}_Input", __config__=ConfigDict(extra="forbid"), **fields)
+    return [
+        inspect.Parameter(
+            "_input",
+            inspect.Parameter.KEYWORD_ONLY,
+            annotation=Annotated[model, Body()],
+            default=inspect.Parameter.empty if item.parameters else model(),
+        )
+    ]
+
+
+def _arguments(item: Exposed, values: dict[str, Any], *, body: bool) -> dict[str, Any]:
+    if not body:
+        return values
+    # FastAPI's strict model refuses unknown fields; the kernel still owns operation validation and enforcement.
+    return {parameter.name: getattr(values["_input"], parameter.name) for parameter in item.parameters}
 
 
 def _query(parameter: inspect.Parameter) -> inspect.Parameter:
@@ -206,9 +288,40 @@ def _query(parameter: inspect.Parameter) -> inspect.Parameter:
     )
 
 
-def serve(host: str = "127.0.0.1", port: int = 8000) -> None:
-    """Boot the kernel and serve its operations over HTTP until interrupted."""
+def serve(
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    *,
+    private: bool = False,
+    credential_file: Path | None = None,
+    announce: Callable[[str], None] | None = None,
+) -> None:
+    """Boot the kernel and serve public operations, or authenticated private operations with an owner-only credential.
+
+    Raises:
+        HeinzelError: If private identity or credential storage is unsafe.
+    """
+    import secrets  # noqa: PLC0415 - only needed when starting a private server
+
     import uvicorn  # noqa: PLC0415 - only needed when serving
 
     kernel = boot()
-    uvicorn.run(build(kernel, port=port, allowed_hosts=kernel.settings.api_allowed_hosts), host=host, port=port)
+    if not private:
+        uvicorn.run(build(kernel, port=port, allowed_hosts=kernel.settings.api_allowed_hosts), host=host, port=port)
+        return
+    audience = f"hz-private-api:{secrets.token_hex(16)}"
+    credential = ApiBearer.issue(kernel.resolve(CurrentUser).owner(), audience)
+    destination = (
+        credential_file or kernel.resolve(CurrentUser).directory.parent / "api" / f"{credential.credential_id}.json"
+    )
+    credential.write(destination)
+    if announce is not None:
+        announce(f"Private API credential saved to {destination}; expires {credential.expires_at.isoformat()}")
+    app = build(
+        kernel,
+        port=port,
+        allowed_hosts=kernel.settings.api_allowed_hosts,
+        credentials=credential,
+        audience=audience,
+    )
+    uvicorn.run(app, host=host, port=port)

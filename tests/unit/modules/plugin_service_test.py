@@ -178,6 +178,11 @@ def test_first_party_names_default_to_the_release_tag(make_kernel, tmp_path, mon
     )
 
 
+@pytest.fixture(autouse=True)
+def _fresh_contrib_cache():
+    _service._CONTRIB_CACHE.clear()
+
+
 def repository(name, stars, **extra):
     """A repository as GitHub's search API returns it."""
     url = f"https://github.com/someone/{name}"
@@ -220,7 +225,7 @@ def test_search_lists_first_party_first_then_community_plugins_by_stars(make_ker
         ("heinzel-many", "github", True, 50),
         ("heinzel-few", "github", True, 1),
     ]
-    assert result.warnings == []
+    assert result.warnings == ["The heinzel-contrib plugins could not be read from GitHub."]
 
 
 def test_search_tells_how_to_install_each_plugin(make_kernel, tmp_path, github):
@@ -270,7 +275,7 @@ def test_search_filters_first_party_plugins_and_passes_the_text_to_github(make_k
     service = service_for(make_kernel, tmp_path)
     assert [p.name for p in service.search("TIME team").plugins] == ["heinzel-clock"]
     assert service.search("invoicing").plugins == []
-    url, token, timeout = github.requests[-1]
+    url, token, timeout = next(r for r in reversed(github.requests) if "/search/" in r[0])
     assert url.startswith("https://api.github.com/search/repositories?q=topic%3Aheinzel-plugin+invoicing&")
     assert (token, timeout) == (None, 10)
 
@@ -303,7 +308,10 @@ def test_search_falls_back_to_first_party_plugins_with_a_warning(make_kernel, tm
         "heinzel-google",
         "heinzel-zoom",
     ]
-    assert result.warnings == [f"GitHub could not be searched ({reason}); showing first-party plugins only."]
+    assert result.warnings == [
+        f"GitHub could not be searched ({reason}); showing first-party plugins only.",
+        "The heinzel-contrib plugins could not be read from GitHub.",
+    ]
 
 
 def test_a_ref_with_slashes_or_a_subdirectory_still_names_the_plugin_it_replaces(make_kernel, tool_env):
@@ -522,6 +530,7 @@ def test_remove_records_what_was_removed(make_kernel, tool_env, monkeypatch):
     service, runs = installing(make_kernel, tool_env, monkeypatch)
     change = service.remove("heinzel-old")
     assert (change.action, change.done, change.restart_required, len(runs)) == ("remove", True, True, 1)
+    assert change.next == []  # the skill sync of the fresh hz succeeded: nothing to do
     assert [(e.action, e.distribution, e.version) for e in service.history()] == [("remove", "heinzel-old", "1.0.0")]
 
 
@@ -810,6 +819,94 @@ def test_metadata_never_carries_control_characters(make_kernel, tool_env, monkey
     assert (candidate.publisher, candidate.summary) == ("Ada[2K[1AExample", "CRM notes")
 
 
+def contents(text):
+    """A file as GitHub's contents API returns it."""
+    import base64
+
+    return {"encoding": "base64", "content": base64.b64encode(text.encode()).decode()}
+
+
+class MonorepoGitHub(FakeGitHub):
+    """Answers the search with one monorepo and its contents by URL suffix; anything else is a 404."""
+
+    def __init__(self, repo, files) -> None:
+        super().__init__()
+        self.answer = {"items": [repo]}
+        self.files = files
+
+    def get_json(self, url, token, timeout):
+        if "/contents/" in url:
+            self.requests.append((url, None, timeout))
+            try:
+                return self.files[url.split("/contents/")[1]]
+            except KeyError:
+                msg = "404"
+                raise OSError(msg) from None
+        return super().get_json(url, token, timeout)
+
+
+def monorepo(monkeypatch, files):
+    repo = repository("heinzel-contrib", 4) | {"full_name": "someone/heinzel-contrib", "default_branch": "main"}
+    fake = MonorepoGitHub(repo, files)
+    monkeypatch.setattr(_service, "get_json", fake.get_json)
+    return fake
+
+
+EXPECTED_SPEC = "heinzel-weather @ git+https://github.com/someone/heinzel-contrib#subdirectory=plugins/heinzel-weather"
+
+
+def test_search_lists_each_plugin_of_a_monorepo_from_its_manifest(make_kernel, tmp_path, monkeypatch):
+    manifest = """
+[[plugin]]
+name = "weather"
+path = "plugins/heinzel-weather"
+summary = "Weather where you are."
+
+[[plugin]]
+name = "heinzel-example"
+summary = "An example."
+"""
+    monorepo(monkeypatch, {"heinzel-plugins.toml": contents(manifest)})
+    community = [p for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
+    assert [(p.name, p.description, p.stars) for p in community] == [
+        ("heinzel-example", "An example.", 4),
+        ("heinzel-weather", "Weather where you are.", 4),
+    ]
+    assert community[1].install_spec == EXPECTED_SPEC
+    assert community[0].install_spec.endswith("#subdirectory=plugins/heinzel-example")
+    assert community[1].url == "https://github.com/someone/heinzel-contrib/tree/main/plugins/heinzel-weather"
+
+
+def test_search_discovers_monorepo_plugins_without_a_manifest(make_kernel, tmp_path, monkeypatch):
+    def pyproject(name):
+        return contents(f'[project]\nname = "{name}"\ndescription = "About {name}."\n')
+
+    monorepo(
+        monkeypatch,
+        {
+            "plugins": [
+                {"name": "heinzel-weather", "type": "dir"},
+                {"name": "tools", "type": "dir"},
+                {"name": "x", "type": "file"},
+            ],
+            "plugins/heinzel-weather/pyproject.toml": pyproject("heinzel-weather"),
+            "plugins/tools/pyproject.toml": pyproject("tools"),
+        },
+    )
+    community = [p for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
+    assert [(p.name, p.description, p.install_spec) for p in community] == [
+        ("heinzel-weather", "About heinzel-weather.", EXPECTED_SPEC)
+    ]
+
+
+def test_search_keeps_a_single_plugin_repository_as_one_entry(make_kernel, tmp_path, monkeypatch):
+    monorepo(monkeypatch, {})
+    community = [p for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
+    assert [(p.name, p.install_spec) for p in community] == [
+        ("heinzel-contrib", "git+https://github.com/someone/heinzel-contrib")
+    ]
+
+
 def test_a_first_party_preview_confirms_by_name_not_by_its_git_requirement(make_kernel, tool_env, monkeypatch):
     from heinzel.modules.system.plugin._render import render_change
 
@@ -840,3 +937,78 @@ def test_a_community_preview_still_confirms_by_its_requirement_and_warns(make_ke
     console = Console(record=True, width=200)
     console.print(render_change(preview))
     assert "not reviewed" in console.export_text()
+
+
+def test_a_change_removes_stale_skill_exports_in_the_fresh_hz_and_survives_its_failure(
+    make_kernel, tool_env, monkeypatch
+):
+    service, _ = installing(make_kernel, tool_env, monkeypatch)
+    calls = []
+
+    def fresh(*args):
+        calls.append(args)
+        if args[:3] == ("system", "skill", "export"):
+            msg = "no skill module"
+            raise HeinzelError(msg)
+        return "[]"
+
+    monkeypatch.setattr(service._installation, "hz", fresh)
+    change = service.remove("heinzel-old")
+    assert ("system", "skill", "export", "--sync", "--json") in calls
+    assert change.done
+    assert change.next == ["hz system skill export --sync"]
+
+
+def test_search_lists_the_contrib_monorepo_without_the_topic(make_kernel, tmp_path, monkeypatch):
+    manifest = """
+[[plugin]]
+name = "weather"
+path = "plugins/heinzel-weather"
+summary = "Weather where you are."
+
+[[plugin]]
+name = "example"
+path = "plugins/heinzel-example"
+summary = "An example."
+"""
+    monorepo(monkeypatch, {"heinzel-plugins.toml": contents(manifest)}).answer = {"items": []}
+    service = service_for(make_kernel, tmp_path)
+    contrib = [p for p in service.search().plugins if p.source == "contrib"]
+    base = "git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib"
+    assert [(p.name, p.community, p.installed) for p in contrib] == [
+        ("heinzel-example", True, False),
+        ("heinzel-weather", True, False),
+    ]
+    assert contrib[1].install_spec == f"heinzel-weather @ {base}@main#subdirectory=plugins/heinzel-weather"
+    assert contrib[1].url.endswith("/heinzel-contrib/tree/main/plugins/heinzel-weather")
+    assert [p.name for p in service.search("weather").plugins if p.source == "contrib"] == ["heinzel-weather"]
+
+
+def test_search_does_not_list_contrib_twice_when_it_has_the_topic(make_kernel, tmp_path, monkeypatch):
+    manifest = '[[plugin]]\nname = "weather"\npath = "plugins/heinzel-weather"\nsummary = "W."\n'
+    fake = monorepo(monkeypatch, {"heinzel-plugins.toml": contents(manifest)})
+    fake.answer = {
+        "items": [
+            repository("heinzel-contrib", 4)
+            | {"full_name": "helmut-hoffer-von-ankershoffen/heinzel-contrib", "default_branch": "main"}
+        ]
+    }
+    names = [(p.name, p.source) for p in service_for(make_kernel, tmp_path).search().plugins if p.community]
+    assert names == [("heinzel-weather", "contrib")]
+
+
+def test_search_warns_when_contrib_cannot_be_read_and_keeps_the_rest(make_kernel, tmp_path, github):
+    github.answer = {"items": [repository("heinzel-many", 50)]}
+    result = service_for(make_kernel, tmp_path).search()
+    assert "The heinzel-contrib plugins could not be read from GitHub." in result.warnings
+    assert [p.name for p in result.plugins if p.community] == ["heinzel-many"]
+
+
+def test_search_reads_contrib_once_while_it_is_cached(make_kernel, tmp_path, monkeypatch):
+    manifest = '[[plugin]]\nname = "weather"\npath = "plugins/heinzel-weather"\nsummary = "W."\n'
+    fake = monorepo(monkeypatch, {"heinzel-plugins.toml": contents(manifest)})
+    fake.answer = {"items": []}
+    service = service_for(make_kernel, tmp_path)
+    service.search()
+    service.search("weather")
+    assert len([r for r in fake.requests if "/contents/" in r[0]]) == 1

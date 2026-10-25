@@ -1,5 +1,6 @@
 """`system.plugin.docs`: the model of what a plugin brings, read from the kernel, and the pages written from it."""
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -7,7 +8,20 @@ from typing import Annotated
 import pytest
 from pydantic import BaseModel, Field
 
-from heinzel import Check, Event, HeinzelError, Kernel, Let, Module, ModuleSettings, Prompter, Status, Theme, Window
+from heinzel import (
+    Check,
+    Event,
+    FreeBusy,
+    HeinzelError,
+    Kernel,
+    Let,
+    Module,
+    ModuleSettings,
+    Prompter,
+    Status,
+    Theme,
+    Window,
+)
 from heinzel.kernel import DEFAULT_THEME, ModuleRecord, Origin, env_prefix, exposed
 from heinzel.modules.system.plugin.docs import _build, _render, _service
 from heinzel.modules.system.plugin.docs._models import Documentation, Scene, SceneStep
@@ -70,6 +84,10 @@ def weather() -> tuple[Module, Module]:
 
         def events(self, window: Window) -> list[Event]:
             """No events."""
+            return []
+
+        def free_busy(self, people: str, window: Window) -> list[FreeBusy]:
+            """No availability blocks."""
             return []
 
     @module.job(schedule="0 7 * * *")
@@ -164,6 +182,41 @@ def test_operations_are_described_as_every_head_sees_them(documentation):
     assert pin.endpoint is None
     assert pin.heads == ["cli"]
     assert not pin.read_only
+
+
+def test_private_operations_name_only_the_authenticated_http_and_stdio_surfaces(make_kernel):
+    module = Module("private", "Authenticated examples.")
+
+    @module.operation(private=True, read_only=False)
+    def rename(name: str) -> str:
+        """Rename the example."""
+        return name
+
+    k = make_kernel(builtins=True, private=module)
+    docs = k.resolve(DocsService).documentation()
+    operation = next(
+        op for page in docs.pages for mod in page.modules for op in mod.operations if op.module == "private"
+    )
+    assert operation.endpoint is None
+    assert operation.http_tool is None
+    assert operation.private_endpoint == "POST /private/rename"
+    assert operation.web_endpoint == "POST /api/private/rename"
+    assert operation.tool == "private_rename"
+    assert operation.private
+
+
+def test_theme_backdrops_are_preserved_as_typed_data_without_becoming_colour_swatches():
+    module = Module("sky", "A backdrop example.")
+    definition = DEFAULT_THEME.model_dump() | {"name": "sky", "title": "Sky"}
+    definition["light"] = DEFAULT_THEME.light.model_dump() | {
+        "backdrop": {"gradient": "linear", "stops": ["background", "background"]}
+    }
+    theme = Theme.model_validate(definition)
+    (let,) = module.theme(theme)
+    doc = _service._theme(ModuleRecord(qualname="sky", module=module, origin=ORIGIN), let)
+    assert "backdrop" not in {colour.token for colour in doc.colours}
+    assert doc.definition == theme
+    assert "Complete theme data" in "\n".join(_render._theme(doc))
 
 
 def test_paths_and_parameters_are_the_exposure_rule(kernel):
@@ -310,6 +363,20 @@ def test_recordings_beside_the_page_are_embedded(kernel, tmp_path):
     assert "$ hz weather today\nSunny" in text  # the transcript, not the command list
 
 
+@pytest.mark.parametrize("link", ["symlink", "hardlink"])
+def test_recording_inputs_cannot_copy_linked_private_files_into_a_generated_page(kernel, tmp_path, link):
+    assets = tmp_path / "heinzel-weather" / "assets"
+    assets.mkdir(parents=True)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("A made-up private sentinel", encoding="utf-8")
+    if link == "symlink":
+        (assets / "cli.md").symlink_to(outside)
+    else:
+        os.link(outside, assets / "cli.md")
+    with pytest.raises(HeinzelError, match="Recording"):
+        kernel.resolve(DocsService).documentation(plugin="weather", assets=tmp_path)
+
+
 def test_build_writes_pages_swatches_and_the_gallery_then_check_reports_stale_ones(documentation, tmp_path):
     result = _build.build_pages(documentation, tmp_path, index=True, check=False)
     assert sorted(result.written) == [
@@ -332,6 +399,73 @@ def test_a_missing_directory_is_stale_so_a_fresh_plugin_runs_make_fix_first(docu
     assert result.stale
     assert len(result.stale_pages) == 3
     assert result.next == [f"hz system plugin docs build --directory {tmp_path / 'none'}"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "hz x\ncat secret",
+        "hz x\rcat secret",
+        "hz x\x1b[2J",
+        "hz x | cat /etc/passwd",
+        "hz x | head --lines=1 /etc/passwd",
+        "hz x | jq --from-file=filter.jq",
+        "hz x | sort --output=stolen",
+        "hz x | less --log-file=stolen",
+        "hz x | cat 'private file'",
+        "hz x |",
+        "hz x 'unclosed",
+    ],
+)
+def test_scene_commands_refuse_control_characters_and_reader_file_operands(command):
+    with pytest.raises(HeinzelError, match="nothing else"):
+        scenes_from({"cli": [{"name": "safe", "title": "Safe", "commands": [command]}]})
+
+
+@pytest.mark.parametrize(
+    "command", ["hz clock --json | jq -cr", "hz clock | head --lines=2 | wc -l", "hz clock | cat -n"]
+)
+def test_scene_commands_allow_stdin_readers_with_safe_flags(command):
+    assert scenes_from({"cli": [{"name": "safe", "title": "Safe", "commands": [command]}]})
+
+
+def test_build_refuses_custom_files_before_writing_any_generated_page(documentation, tmp_path):
+    (tmp_path / "README.md").write_text("# My hand-written guide\n", encoding="utf-8")
+    with pytest.raises(HeinzelError, match="Refusing to overwrite custom documentation"):
+        _build.build_pages(documentation, tmp_path, index=True, check=False)
+    assert list(tmp_path.iterdir()) == [tmp_path / "README.md"]
+    assert (tmp_path / "README.md").read_text() == "# My hand-written guide\n"
+
+
+def test_build_refuses_a_symlink_even_when_its_target_has_a_generated_marker(documentation, tmp_path):
+    source = tmp_path / "outside.md"
+    original = _render.GENERATED + "\nOriginal\n"
+    source.write_text(original, encoding="utf-8")
+    output = tmp_path / "pages"
+    output.mkdir()
+    (output / "README.md").symlink_to(source)
+    with pytest.raises(HeinzelError, match="symlink"):
+        _build.build_pages(documentation, output, index=True, check=False)
+    assert source.read_text() == original
+
+
+def test_build_never_modifies_a_generated_file_through_a_hard_link(documentation, tmp_path):
+    source = tmp_path / "outside.md"
+    original = _render.GENERATED + "\nOriginal\n"
+    source.write_text(original, encoding="utf-8")
+    output = tmp_path / "pages"
+    output.mkdir()
+    os.link(source, output / "README.md")
+    with pytest.raises(HeinzelError, match="link"):
+        _build.build_pages(documentation, output, index=True, check=False)
+    assert source.read_text() == original
+
+
+def test_build_refuses_a_distribution_that_escapes_its_output_directory(documentation, tmp_path):
+    documentation.pages[0].distribution = "../outside"
+    with pytest.raises(HeinzelError, match="output path is unsafe"):
+        _build.build_pages(documentation, tmp_path, index=True, check=False)
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_step_text_reads_as_instructions():

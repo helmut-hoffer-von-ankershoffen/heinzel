@@ -38,9 +38,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
         "unzip -l ": "asserts that the released wheel ships Heinzel Notifier",
     },
-    "release.yml": {
+    "prepare-release.yml": {
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",
         "gh workflow run ci.yml": "starts CI on the release pull request, which the bot's token doesn't",
+        "gh pr merge": "enables squash auto-merge on the release pull request once CI OK is green",
     },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {'files="$(git diff': "picks the review tier from the changed files"},
@@ -103,7 +104,7 @@ def test_every_not_make_exemption_is_used():
 # A script named by path needs its executable bit, which copier drops when it follows the template's symlinks into a
 # plugin's scripts/. Through an interpreter, a script runs without it.
 SCRIPT = re.compile(r"(?<![\w/.-])(?:\./)?scripts/[\w.-]+\.(?:sh|py)\b")
-INTERPRETER = re.compile(r"(?:\bbash|\bpython3?|\buv run(?: --?[\w-]+)*(?: --script| python3?))\s+$")
+INTERPRETER = re.compile(r"(?:\bbash|\bpython3?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
 
 
 def scripts_run_by_path(run: str) -> list[str]:
@@ -275,9 +276,12 @@ def test_the_release_keeps_changelog_introductions():
     )
     assert save < regenerate < restore < commit < notes
     assert '--intro "${INTRO:-}"' in script
-    release = yaml.safe_load((REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8"))
+    release = yaml.safe_load((REPO / ".github" / "workflows" / "prepare-release.yml").read_text(encoding="utf-8"))
     assert "intro" in release[True]["workflow_dispatch"]["inputs"]  # YAML 1.1 reads the key `on` as True
     step = next(s for s in release["jobs"]["pull-request"]["steps"] if "release.sh" in s.get("run", ""))
+    assert any(
+        "gh pr merge" in s.get("run", "") and "--auto" in s["run"] for s in release["jobs"]["pull-request"]["steps"]
+    )
     assert step["env"]["INTRO"] == "${{ inputs.intro }}"
     assert (REPO / "template" / "scripts" / "changelog_intros.py").resolve() == REPO / "scripts" / "changelog_intros.py"
 
@@ -318,6 +322,16 @@ def test_claude_review_skips_events_sent_by_bots():
         "github.event.pull_request.head.repo.full_name == github.repository",
     ):
         assert clause in condition
+
+
+def test_claude_review_prefers_the_api_key():
+    """Each review step authenticates with ANTHROPIC_API_KEY and uses the subscription token only without one."""
+    spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
+    actions = [step for step in spec["jobs"]["review"]["steps"] if "claude-code-action" in step.get("uses", "")]
+    assert actions
+    for step in actions:
+        assert step["with"]["anthropic_api_key"] == "${{ secrets.ANTHROPIC_API_KEY }}"
+        assert step["with"]["claude_code_oauth_token"].startswith("${{ secrets.ANTHROPIC_API_KEY == '' && ")
 
 
 def _generated_plugin_ci() -> dict:

@@ -13,25 +13,44 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 <!-- badges:end -->
 
-**Heinzelmännchen are open-source helpers that keep product development teams running.** They draft the busywork of
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.svg">
+    <img src="docs/assets/hero-light.svg" alt="Heinzelmännchen: a small crowd of gnome-like helpers, old and young, walking along together" width="860">
+  </picture>
+</p>
+
+**Heinzelmännchen are helpers accelerating product teams.** They draft the busywork of
 running a team — status, tracker updates, agendas, reports — in the background, and people approve it. Like the
 [Heinzelmännchen of Cologne](https://en.wikipedia.org/wiki/Heinzelm%C3%A4nnchen), who finished the town's work at
 night. Why it exists and where it is going: [INTENT.md](INTENT.md). It is built on open source, and we are
 grateful: [thank you](#standing-on-the-shoulders-of-giants) to everyone in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+
+<img src="docs/assets/meet.svg" alt="Seven Heinzelmännchen, each showing a state: at rest, working, thinking, waiting for you, asleep, blocked and done" width="100%">
+
+**Meet the Heinzelmännchen.** In the web app each one shows what it is up to: **working** on a draft, **thinking** it
+over, **waiting for you** to approve, **asleep** when there is nothing to do, **blocked** until you fix something,
+**done** with a happy smile. In `hz` a small one greets you, walks along during long work and marks a finished line.
+They are garnish, never a replacement for words: `hz system config set hz.playful false` (or Settings → General) turns
+them all off, and they stay away from JSON, pipes, CI and `NO_COLOR` anyway.
 
 This release is the foundation — kernel, heads, plugins and release automation; the first team workflows arrive in
 0.x ([roadmap](INTENT.md#where-we-are)).
 
 ![hz from install to the first commands: version, system info, adding the clock plugin, clock, JSON into jq, doctor](docs/assets/demo.gif)
 
+<!-- recording: a short CLI + web UI walkthrough (hz, then the app) goes here once it is recorded -->
+
 **What you can do today:**
 
-- **Write an operation once, use it everywhere.** A typed Python function is a `hz` command, an MCP tool for coding
-  agents and a REST endpoint at once — with help text, validation and `--json`.
+- <img src="docs/assets/marker-working.svg" alt="" width="22" align="absmiddle"> **Write an operation once, use it
+  everywhere.** A typed Python function is a `hz` command, an MCP tool for coding agents and a REST endpoint at once —
+  with help text, validation and `--json`.
 - **Extend it with plugins.** `hz system plugin add github --confirm` adds a [first-party plugin](#first-party-plugins);
   `hz system plugin new` scaffolds your own `heinzel-*` repository with tests, CI/CD and agent setup.
-- **Run it with confidence.** `hz system doctor` checks every module's health, `hz system config` manages layered
-  settings, `hz system update` updates in place and keeps your plugins.
+- <img src="docs/assets/marker-done.svg" alt="" width="22" align="absmiddle"> **Run it with confidence.**
+  `hz system doctor` checks every module's health, `hz system config` manages layered settings, `hz system update`
+  updates in place and keeps your plugins.
 
 You talk to them with **`hz`**, a small modulith: the kernel discovers *modules* and the *lets* they advertise — typed
 declarations of operations, services, settings and health checks — and *heads* expose them.
@@ -77,6 +96,12 @@ Your configuration files stay; `hz system config show` lists them before you uni
 
 ## Use
 
+<img src="docs/assets/terminal-art.png" alt="A terminal: the command hz prints a pixel-art Heinzelmännchen in a red hat beside the name, version and tagline; after adding the clock plugin, a small one marks the done line" width="560">
+
+On a colour terminal `hz` greets you with a small Heinzelmännchen and a walking one keeps you company during long
+work. `hz system config set hz.playful false` (see [Configure](#configure)), `NO_COLOR`, CI, a pipe or `--json` keep
+the output plain.
+
 <!-- docs-test -->
 ```bash
 hz --version
@@ -96,7 +121,7 @@ hz system agent install               # install the skills for coding agents
 
 Every operation takes `--json` (or `--format json`; `HZ_OUTPUT_FORMAT=json` makes it the default) for scripts and
 agents; the long-running `serve` commands are the exception. Exit codes: `0` success, `1` an error with a readable message, `2` a usage error, `78` invalid
-configuration. All commands: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
+configuration; `hz ui` exits `0` when Ctrl-C stops it, an interrupted `hz setup` `130`. All commands: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
 `hz --help` lists the everyday commands; `hz system expert on` lists every command in help, shell completion and the
 web app, and `hz system expert off` goes back. Commands for experts run either way, and MCP and REST always offer
@@ -122,7 +147,7 @@ flowchart TB
     end
     subgraph Modules["Modules and plugins"]
         System["system<br/>(built-in)"]
-        Clock["clock · github · atlassian · google<br/>(first-party)"]
+        Clock["clock · github · atlassian · google · zoom<br/>(first-party)"]
         Ext["heinzel-*<br/>(external)"]
     end
     CLI & MCP & REST & Web & Daemon --> Core
@@ -140,19 +165,21 @@ that says what it may cost before it runs. Modules can also advertise jobs that
 rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SECURITY.md)). Built in today:
 
 <!-- modules:start -->
-- [`ai`](docs/MODULES.md#ai) — How hz reaches AI: the AI access in use, its status and a live test.
+- [`ai`](docs/MODULES.md#ai) — How hz reaches AI, and what it spends: tokens and cost per run.
 - [`ai.access`](docs/MODULES.md#aiaccess) — Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds.
 - [`atlassian`](docs/MODULES.md#atlassian) — Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. *First-party plugin: `hz system plugin add atlassian --confirm`.*
-- [`clock`](docs/MODULES.md#clock) — What time it is for everyone on the team. *First-party plugin: `hz system plugin add clock --confirm`.*
+- [`clock`](docs/MODULES.md#clock) — World Clock: what time it is for everyone on the team. *First-party plugin: `hz system plugin add clock --confirm`.*
 - [`github`](docs/MODULES.md#github) — Read pull requests and issues from GitHub: the code-host and tracker capabilities. *First-party plugin: `hz system plugin add github --confirm`.*
-- [`google`](docs/MODULES.md#google) — Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. *First-party plugin: `hz system plugin add google --confirm`.*
+- [`google`](docs/MODULES.md#google) — Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. *First-party plugin: `hz system plugin add google --confirm`.*
 - [`graph`](docs/MODULES.md#graph) — Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.
+- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable agents that keep your team's documents true.
 - [`org`](docs/MODULES.md#org) — Your profile, and the team, org and company you work with.
 - [`report`](docs/MODULES.md#report) — Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
 - [`system.agent`](docs/MODULES.md#systemagent) — Install the Heinzelmännchen skills for coding agents.
 - [`system.capability`](docs/MODULES.md#systemcapability) — Show which adapters serve which capabilities, and who reads and writes what.
 - [`system.changelog`](docs/MODULES.md#systemchangelog) — Release notes of the installed version and of newer releases.
+- [`system.claude`](docs/MODULES.md#systemclaude) — See the MCP servers and skills you already set up for Claude, without using any of them.
 - [`system.config`](docs/MODULES.md#systemconfig) — Show, get, set and initialize configuration.
 - [`system.connector`](docs/MODULES.md#systemconnector) — Show whether each connector is signed in and serves something, and test one live.
 - [`system.credential`](docs/MODULES.md#systemcredential) — Store and check the credentials modules need, in the OS keychain.
@@ -166,9 +193,11 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.plugin.docs`](docs/MODULES.md#systemplugindocs) — Document installed plugins: what each brings, as a model and as Markdown pages.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
 - [`system.runner.chat`](docs/MODULES.md#systemrunnerchat) — Chat with the agent runner about where you are; it acts through hz once you confirm.
+- [`system.skill`](docs/MODULES.md#systemskill) — List the skills plugins ship for AI, and hand chosen ones to Claude Code.
+- [`system.sound`](docs/MODULES.md#systemsound) — Pick the web app's soundscape: off, Claude FM or one a plugin offers.
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
+- [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
-- [`workflow`](docs/MODULES.md#workflow) — Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one).
 - [`zoom`](docs/MODULES.md#zoom) — Read meetings from Zoom's meeting-summary emails: the meetings capability. *First-party plugin: `hz system plugin add zoom --confirm`.*
 <!-- modules:end -->
 
@@ -197,7 +226,7 @@ Plugins useful to many but not to everyone live in [heinzel-contrib](https://git
 
 | Plugin | What it does | Install |
 | --- | --- | --- |
-| [heinzel-weather](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-weather) | Weather from OpenWeather: now, the next hours and days, and a notice when it turns | `hz system plugin add "heinzel-weather @ git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib#subdirectory=plugins/heinzel-weather" --confirm` |
+| [heinzel-weather](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-weather) | Weather from Open-Meteo, with no key: footer item, page, Today widget, notices and a dressed-for-the-weather avatar | `hz system plugin add "heinzel-weather @ git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib#subdirectory=plugins/heinzel-weather" --confirm` |
 | [heinzel-example](https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-example) | How a plugin is built: the template's example | `hz system plugin add "heinzel-example @ git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib#subdirectory=plugins/heinzel-example" --confirm` |
 
 Company plugins live in their own `heinzel-*` repositories, scaffolded with `hz system plugin new`.
@@ -207,15 +236,15 @@ state repository) names the capabilities it reads, the inputs to fetch and the a
 the draft must achieve. Drafts are saved locally; nothing is published by itself.
 
 ```bash
-hz workflow new weekly-digest             # a starter contract, valid as written, with comments; creates the directory
-hz workflow check                         # every problem by file and line
-hz workflow show weekly-digest            # what it requires, what is bound, whether it is ready, what to run next
-hz workflow run weekly-digest --dry-run   # the packet the agent would get; nothing is spent
-hz workflow run weekly-digest             # draft it now; then `hz workflow drafts`
+hz heinzel new weekly-digest             # a starter contract, valid as written, with comments; creates the directory
+hz heinzel check                         # every problem by file and line
+hz heinzel show weekly-digest            # what it requires, what is bound, whether it is ready, what to run next
+hz heinzel wake weekly-digest --dry-run   # the packet the agent would get; nothing is spent
+hz heinzel wake weekly-digest             # draft it now; then `hz heinzel drafts`
 ```
 
 Give it a `schedule:` and the daemon runs it. The journey from nothing to a scheduled team contract, and the contract
-reference: [docs/WORKFLOWS.md](docs/WORKFLOWS.md). Decisions: [ADR 0021](docs/adr/0021-workflow-contracts.md).
+reference: [docs/HEINZELMAENNCHEN.md](docs/HEINZELMAENNCHEN.md). Decisions: [ADR 0021](docs/adr/0021-workflow-contracts.md).
 
 ## Configure
 
@@ -309,4 +338,10 @@ app runs on [React](https://react.dev), [React Flow](https://reactflow.dev), [xt
 You need git, make and [uv](https://docs.astral.sh/uv/); `make setup` installs everything else.
 [CONTRIBUTING.md](CONTRIBUTING.md) takes you from a clone to a merged pull request; [AGENTS.md](AGENTS.md) is the guide for coding agents;
 [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md) the rules; [docs/adr/](docs/adr/) the decisions.
-Security issues: [SECURITY.md](SECURITY.md).
+Bugs and ideas: [open an issue](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues/new/choose);
+security issues privately, as [SECURITY.md](SECURITY.md) describes.
+
+## License
+
+Heinzelmännchen is free and open-source software under the [MIT license](LICENSE). The packages it ships keep their
+own licenses, listed in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).

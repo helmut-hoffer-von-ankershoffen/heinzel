@@ -68,6 +68,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the models and efforts of the AI access in use, for the chat's model and effort picker.
+         * @description List the models and efforts of the AI access in use, for the chat's model and effort picker.
+         */
+        get: operations["ai_models"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.
+         * @description Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.
+         */
+        get: operations["ai_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/graph": {
         parameters: {
             query?: never;
@@ -80,6 +120,226 @@ export interface paths {
          * @description Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.
          */
         get: operations["graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.
+         * @description Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.
+         */
+        post: operations["heinzel_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
+         * @description Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
+         */
+        get: operations["heinzel_check"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find candidates for each playbook's asset types through the capabilities you have bound; reads only.
+         * @description Find candidates for each playbook's asset types through the capabilities you have bound; reads only.
+         */
+        get: operations["heinzel_discover"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
+         * @description Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
+         */
+        get: operations["heinzel_graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.
+         * @description List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run.
+         */
+        get: operations["heinzel_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/new-chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a durable personal Heinzel with an idempotent request, name and look.
+         * @description Create a durable personal Heinzel with an idempotent request, name and look.
+         */
+        post: operations["heinzel_new_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/playbooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the playbooks plugins contribute: asset types, template contracts and recommended settings.
+         * @description List the playbooks plugins contribute: asset types, template contracts and recommended settings.
+         */
+        get: operations["heinzel_playbooks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save this Heinzel's name or look against the exact profile revision you saw.
+         * @description Save this Heinzel's name or look against the exact profile revision you saw.
+         */
+        post: operations["heinzel_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.
+         * @description Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.
+         */
+        get: operations["heinzel_session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your durable personal Heinzels, including new conversations without an approved contract.
+         * @description List your durable personal Heinzels, including new conversations without an approved contract.
+         */
+        get: operations["heinzel_sessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
+         * @description Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
+         */
+        get: operations["heinzel_show"];
         put?: never;
         post?: never;
         delete?: never;
@@ -255,6 +515,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/claude/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.
+         * @description List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.
+         */
+        get: operations["system_claude_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/claude/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Count the MCP servers and skills found in Claude's configuration per source, without their names.
+         * @description Count the MCP servers and skills found in Claude's configuration per source, without their names.
+         */
+        get: operations["system_claude_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/config/get": {
         parameters: {
             query?: never;
@@ -312,6 +612,29 @@ export interface paths {
          *     opens and the message names the file.
          */
         post: operations["system_config_reveal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/config/reveal-setting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show the file or folder a path setting names, such as hz.log_dir, in your file manager.
+         * @description Show the file or folder a path setting names, such as hz.log_dir, in your file manager.
+         *
+         *     A folder opens; a file is selected, never opened. On Linux without a desktop session nothing opens and the
+         *     message names the path.
+         */
+        post: operations["system_config_reveal_setting"];
         delete?: never;
         options?: never;
         head?: never;
@@ -492,6 +815,26 @@ export interface paths {
          * @description Pause the daemon: ticks run no job until resumed.
          */
         post: operations["system_daemon_pause"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/daemon/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restart the daemon so it runs with the installed hz.
+         * @description Restart the daemon so it runs with the installed hz.
+         */
+        post: operations["system_daemon_restart"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1163,6 +1506,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/skill/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the skills in effect: which module offers each, what it hides, and where it is exported.
+         * @description List the skills in effect: which module offers each, what it hides, and where it is exported.
+         */
+        get: operations["system_skill_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/skill/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a skill: where it comes from, its files and hints, and its body.
+         * @description Show a skill: where it comes from, its files and hints, and its body.
+         */
+        get: operations["system_skill_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/sound/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the soundscapes of the web app, where each comes from, which one is picked and which plays.
+         * @description List the soundscapes of the web app, where each comes from, which one is picked and which plays.
+         */
+        get: operations["system_sound_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/sound/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.
+         * @description Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.
+         */
+        post: operations["system_sound_use"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/theme/list": {
         parameters: {
             query?: never;
@@ -1175,6 +1598,26 @@ export interface paths {
          * @description List the themes of the web app, with every colour, font and size, and which one is in effect.
          */
         get: operations["system_theme_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/theme/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
+         * @description Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
+         */
+        get: operations["system_theme_signals"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1203,6 +1646,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/ui/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the buttons modules add to the web app's header, with what each does and its badge.
+         * @description List the buttons modules add to the web app's header, with what each does and its badge.
+         *
+         *     Raises:
+         *         HeinzelError: If `item` names no action.
+         */
+        get: operations["system_ui_actions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/hide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hide a contribution from a slot of the web app, such as the clock from the footer.
+         * @description Hide a contribution from a slot of the web app, such as the clock from the footer.
+         *
+         *     Raises:
+         *         HeinzelError: If no contribution has that id, or it can't show in that slot.
+         */
+        post: operations["system_ui_hide"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List every contribution to the web app, where it may show and whether it does; nothing runs.
+         * @description List every contribution to the web app, where it may show and whether it does; nothing runs.
+         */
+        get: operations["system_ui_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/navigation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active providers' navigation and owned Settings metadata without running their operations.
+         * @description List active providers' navigation and owned Settings metadata without running their operations.
+         */
+        get: operations["system_ui_navigation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Show a contribution in a slot of the web app, such as the clock in the sidebar.
+         * @description Show a contribution in a slot of the web app, such as the clock in the sidebar.
+         *
+         *     Raises:
+         *         HeinzelError: If no contribution has that id, or it can't show in that slot.
+         */
+        post: operations["system_ui_show"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the status items modules add to the web app's status bar, with what each shows now.
+         * @description List the status items modules add to the web app's status bar, with what each shows now.
+         *
+         *     Raises:
+         *         HeinzelError: If `item` names no status item.
+         */
+        get: operations["system_ui_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/ui/widgets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the widgets modules add to the web app's Today screen, with what each shows now.
+         * @description List the widgets modules add to the web app's Today screen, with what each shows now.
+         *
+         *     Raises:
+         *         HeinzelError: If `item` names no widget.
+         */
+        get: operations["system_ui_widgets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/update": {
         parameters: {
             query?: never;
@@ -1213,8 +1811,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
-         * @description Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
+         * Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.
+         * @description Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.
          *
          *     Installed from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases
          *     only if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`
@@ -1222,6 +1820,10 @@ export interface paths {
          *     `update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,
          *     it changes nothing and says which `--source` moves it. It never moves or suggests a release older than the
          *     installed version.
+         *
+         *     Plugins are updated in the same run, each from the install spec it was added with (a git spec pinned to `@main`
+         *     gets its newest commit). A plugin that doesn't allow the new hz never blocks it: it is kept at its version if that
+         *     still works, else taken out with the command that brings it back. The result reports each plugin.
          *     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
          *     version, the error names it and the previous version stays installed.
          *
@@ -1247,126 +1849,6 @@ export interface paths {
          * @description Show your team: its repository, checkout and members, and what is wrong with them.
          */
         get: operations["team_show"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
-         * @description Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.
-         */
-        get: operations["workflow_check"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/discover": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Find candidates for each playbook's asset types through the capabilities you have bound; reads only.
-         * @description Find candidates for each playbook's asset types through the capabilities you have bound; reads only.
-         */
-        get: operations["workflow_discover"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/graph": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
-         * @description Show the workflow your contracts make: what each maintains and reads, cycles, unmaintained inputs.
-         */
-        get: operations["workflow_graph"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/list": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the contracts in your and your team's workflows directories, with their schedule and problems.
-         * @description List the contracts in your and your team's workflows directories, with their schedule and problems.
-         */
-        get: operations["workflow_list"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/playbooks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List the playbooks plugins contribute: asset types, template contracts and recommended settings.
-         * @description List the playbooks plugins contribute: asset types, template contracts and recommended settings.
-         */
-        get: operations["workflow_playbooks"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/workflow/show": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
-         * @description Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps.
-         */
-        get: operations["workflow_show"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1548,6 +2030,194 @@ export interface components {
             use: "chat" | "turns" | "coding";
         };
         /**
+         * ActionEntry
+         * @description An action: a labelled icon button with one effect and maybe a badge.
+         */
+        ActionEntry: {
+            /**
+             * Badge
+             * @description A count (0 shows none) or up to four characters.
+             */
+            badge?: number | string | null;
+            /**
+             * Effect
+             * @description What a click does; none when it can't work (`problem`).
+             */
+            effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Icon
+             * @description The icon the app shows.
+             * @enum {string}
+             */
+            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap";
+            /**
+             * Id
+             * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /**
+             * Label
+             * @description Its accessible name and tooltip.
+             */
+            label: string;
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Where it sits among its kind, 0 first; ties go by id.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Why it shows nothing: its source failed, or the declaration can't work.
+             */
+            problem?: string | null;
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does: what the app filters by.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
+        };
+        /**
+         * ActionPreview
+         * @description Service-produced text and recipients; the client never infers a target or recipient list.
+         */
+        ActionPreview: {
+            /**
+             * After
+             * @description The proposed replacement section text.
+             */
+            after?: string | null;
+            /**
+             * Before
+             * @description The original section text, when applicable.
+             */
+            before?: string | null;
+            /**
+             * Diff
+             * @description The service-produced exact change for review.
+             */
+            diff?: string | null;
+            /**
+             * Kind
+             * @description The kind of proposed external change.
+             * @enum {string}
+             */
+            kind: "operation" | "document-section" | "email";
+            /**
+             * Recipient Snapshot Hash
+             * @description The hash of that resolved recipient snapshot.
+             */
+            recipient_snapshot_hash?: string | null;
+            /**
+             * Recipients
+             * @description The exact recipient snapshot awaiting approval.
+             */
+            recipients?: components["schemas"]["RecipientPreview"][];
+            /**
+             * Revision
+             * @description The immutable preview revision.
+             */
+            revision: number;
+            /**
+             * Sha256
+             * @description The exact preview hash bound to a human decision.
+             */
+            sha256: string;
+            /**
+             * Source Revision
+             * @description The source revision the draft was based on.
+             */
+            source_revision?: string | null;
+            /**
+             * Target
+             * @description The exact operation target.
+             */
+            target: string;
+            /**
+             * Title
+             * @description A short description of the change.
+             */
+            title: string;
+        };
+        /**
+         * ActionProposal
+         * @description The exact stored call a human may authorize; no decision proof is returned in a snapshot.
+         */
+        ActionProposal: {
+            /**
+             * Argument Hash
+             * @description The canonical argument hash bound to approval.
+             */
+            argument_hash: string;
+            /**
+             * Arguments
+             * @description The exact stored operation arguments.
+             */
+            arguments?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Command
+             * @description A readable equivalent command for review.
+             */
+            command: string;
+            /**
+             * Contract Version
+             * @description The approved contract version, when present.
+             */
+            contract_version?: number | null;
+            /**
+             * Grant Revision
+             * @description The effective grant revision bound to this proposal.
+             */
+            grant_revision: number;
+            /**
+             * Id
+             * @description The stable stored action proposal id.
+             */
+            id: string;
+            /**
+             * Operation
+             * @description The declared installed operation to invoke.
+             */
+            operation: string;
+            /**
+             * Policy Revision
+             * @description The effective policy revision bound to this proposal.
+             */
+            policy_revision: number;
+            /** @description The exact server-produced change and recipient preview. */
+            preview?: components["schemas"]["ActionPreview"] | null;
+            /**
+             * Status
+             * @description The durable decision or execution state.
+             * @default pending
+             * @enum {string}
+             */
+            status: "pending" | "running" | "done" | "failed" | "declined" | "uncertain";
+            /**
+             * Turn Id
+             * @description The turn that proposed this action.
+             */
+            turn_id: string;
+        };
+        /**
          * AdapterCandidate
          * @description An adapter that can serve a capability, and the state of its connector.
          */
@@ -1683,6 +2353,11 @@ export interface components {
          */
         AgentResult: {
             /**
+             * Billing
+             * @description `plan` when the agent ran on a subscription (its cost is at API prices, covered by the plan), `api` when on an API key; none when the runner can't tell.
+             */
+            billing?: ("plan" | "api") | null;
+            /**
              * Detail
              * @description Why the run did not complete; empty when it did.
              * @default
@@ -1779,7 +2454,7 @@ export interface components {
             description: string;
             /**
              * Hints
-             * @description Where `hz workflow discover` looks for candidates.
+             * @description Where `hz heinzel discover` looks for candidates.
              */
             hints: components["schemas"]["HintView"][];
             /**
@@ -1792,6 +2467,49 @@ export interface components {
              * @description Its name; templates refer to it as `{{asset:<name>}}`.
              */
             name: string;
+        };
+        /**
+         * AttachmentRef
+         * @description One session's immutable private upload; no server path or arbitrary URL is exposed.
+         */
+        AttachmentRef: {
+            /**
+             * Bytes
+             * @description The retained content size in bytes.
+             */
+            bytes: number;
+            /**
+             * Id
+             * @description The opaque retained upload id.
+             */
+            id: string;
+            /**
+             * Mime
+             * @description The validated media type.
+             */
+            mime: string;
+            /**
+             * Name
+             * @description The display filename; never a server path.
+             */
+            name: string;
+            /**
+             * Session Id
+             * @description The owning durable session id.
+             */
+            session_id: string;
+            /**
+             * Sha256
+             * @description The exact retained content hash.
+             */
+            sha256: string;
+            /**
+             * State
+             * @description Whether private content remains available.
+             * @default retained
+             * @enum {string}
+             */
+            state: "retained" | "expired";
         };
         /**
          * AvailablePlugin
@@ -1835,10 +2553,10 @@ export interface components {
             short_name: string;
             /**
              * Source
-             * @description Where it was found: `first-party` (maintained with Heinzelmännchen) or `github` (a repository with the topic heinzel-plugin).
+             * @description Where it was found: `first-party` (maintained with Heinzelmännchen), `contrib` (the heinzel-contrib monorepo) or `github` (a repository with the topic heinzel-plugin).
              * @enum {string}
              */
-            source: "first-party" | "github";
+            source: "first-party" | "contrib" | "github";
             /**
              * Stars
              * @description GitHub stars; none for first-party plugins.
@@ -1849,6 +2567,55 @@ export interface components {
              * @description Where to read about it.
              */
             url: string;
+        };
+        /**
+         * Avatar
+         * @description A Heinzelmännchen drawn in a widget, dressed by data only.
+         */
+        Avatar: {
+            /**
+             * Accessories
+             * @description What it wears or carries: umbrella, sunglasses, scarf.
+             */
+            accessories?: ("umbrella" | "sunglasses" | "scarf")[];
+        };
+        /**
+         * BackendBinding
+         * @description The effective choice pinned to a turn; changing it takes effect between turns.
+         */
+        BackendBinding: {
+            /**
+             * Backend
+             * @description The selected installed AI backend.
+             */
+            backend: string;
+            /**
+             * Capabilities
+             * @description Capabilities the selected adapter has proved it supports.
+             */
+            capabilities?: string[];
+            /**
+             * Effort
+             * @description The selected reasoning effort, when supported.
+             */
+            effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
+             * Mode
+             * @description Whether the turn uses direct API, a CLI model bridge or a native CLI loop.
+             * @enum {string}
+             */
+            mode: "api" | "cli-model" | "native-cli";
+            /**
+             * Model
+             * @description The selected model, when explicitly configured.
+             */
+            model?: string | null;
+            /**
+             * Revision
+             * @description The binding revision pinned to this turn.
+             * @default 1
+             */
+            revision: number;
         };
         /**
          * Candidate
@@ -2039,6 +2806,44 @@ export interface components {
             requirement: string;
         };
         /**
+         * CardWidget
+         * @description A card: a title, a short body and up to three buttons.
+         */
+        CardWidget: {
+            /**
+             * Actions
+             * @description Up to three buttons.
+             */
+            actions?: components["schemas"]["WidgetAction"][];
+            /**
+             * Body
+             * @description Up to 280 characters under the title.
+             */
+            body?: string | null;
+            /**
+             * @description A card. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "card";
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
+            /**
+             * Title
+             * @description Its title, one line.
+             */
+            title: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+        };
+        /**
          * CatchUp
          * @description What a job does about schedule slots it missed while the machine slept or was off.
          * @enum {string}
@@ -2190,6 +2995,11 @@ export interface components {
          */
         ChatMessage: {
             /**
+             * Access
+             * @description The AI access in use when it answered, e.g. `claude-code`.
+             */
+            access?: string | null;
+            /**
              * Actions
              * @description Ids of the actions the agent proposed in it.
              */
@@ -2201,10 +3011,25 @@ export interface components {
              */
             at: string;
             /**
+             * Billing
+             * @description `plan`: on a subscription, so `cost_usd` is what it would cost at API prices, covered by the plan; `api`: billed per token; none when the runner can't tell.
+             */
+            billing?: ("plan" | "api") | null;
+            /**
              * Budget Usd
              * @description The cap the answer ran with; what it counts as against the session's cap when no cost is reported.
              */
             budget_usd?: number | null;
+            /**
+             * Cache Read Tokens
+             * @description Input tokens read from the prompt cache.
+             */
+            cache_read_tokens?: number | null;
+            /**
+             * Cache Write Tokens
+             * @description Input tokens written to the prompt cache.
+             */
+            cache_write_tokens?: number | null;
             /**
              * Cost Usd
              * @description What the answer cost in US dollars, if reported.
@@ -2217,11 +3042,36 @@ export interface components {
              */
             detail: string;
             /**
+             * Duration Seconds
+             * @description How long the answer took.
+             */
+            duration_seconds?: number | null;
+            /**
+             * Effort
+             * @description The effort it was asked for; none: the default.
+             */
+            effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
              * Fix
              * @description A command that fixes why it did not complete, if there is one.
              * @default
              */
             fix: string;
+            /**
+             * Input Tokens
+             * @description Tokens sent, without cache reads, if reported.
+             */
+            input_tokens?: number | null;
+            /**
+             * Model
+             * @description The model that answered, as the runner reported it.
+             */
+            model?: string | null;
+            /**
+             * Output Tokens
+             * @description Tokens produced, if reported.
+             */
+            output_tokens?: number | null;
             /**
              * Role
              * @description `user`, `assistant`, or `action`: what a confirmed or declined action did.
@@ -2279,6 +3129,11 @@ export interface components {
              */
             created: string;
             /**
+             * Effort
+             * @description The effort this chat asks for; none: the default.
+             */
+            effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
              * Id
              * @description The session's id, for `hz chat --session` and the web app.
              */
@@ -2288,6 +3143,11 @@ export interface components {
              * @description The conversation, oldest first.
              */
             messages?: components["schemas"]["ChatMessage"][];
+            /**
+             * Model
+             * @description The model this chat asks for; none: the runner's default.
+             */
+            model?: string | null;
             /**
              * Title
              * @description Its first message, shortened, or its context.
@@ -2366,7 +3226,7 @@ export interface components {
         };
         /**
          * CheckReport
-         * @description `hz workflow check`: every contract checked and every problem found.
+         * @description `hz heinzel check`: every contract checked and every problem found.
          */
         CheckReport: {
             /**
@@ -2384,6 +3244,67 @@ export interface components {
              * @description The directories searched, when no path was given.
              */
             searched?: components["schemas"]["Directory"][];
+        };
+        /**
+         * ClaudeScan
+         * @description `hz system claude list`: what Claude has configured on this computer. Nothing here is switched on.
+         */
+        ClaudeScan: {
+            /**
+             * Connectors
+             * @description claude.ai connectors you have connected: reachable only through Claude Code, so only counted.
+             */
+            connectors: number;
+            /**
+             * Next
+             * @description What to run next.
+             */
+            next: string[];
+            /**
+             * Servers
+             * @description MCP servers, by source then name.
+             */
+            servers: components["schemas"]["FoundServer"][];
+            /**
+             * Skills
+             * @description Skills, by source then name.
+             */
+            skills: components["schemas"]["FoundSkill"][];
+            /**
+             * Skipped
+             * @description Files and directories left alone, each with its reason.
+             */
+            skipped: components["schemas"]["Skipped"][];
+        };
+        /**
+         * ClaudeSummary
+         * @description `hz system claude summary`: counts only, no names (names can reveal employers and customers).
+         */
+        ClaudeSummary: {
+            /**
+             * Connectors
+             * @description claude.ai connectors you have connected.
+             */
+            connectors: number;
+            /**
+             * Servers
+             * @description MCP servers found per source.
+             */
+            servers: {
+                [key: string]: number;
+            };
+            /**
+             * Skills
+             * @description Skills found per source.
+             */
+            skills: {
+                [key: string]: number;
+            };
+            /**
+             * Skipped
+             * @description Files and directories left alone.
+             */
+            skipped: number;
         };
         /**
          * ColourDoc
@@ -2408,7 +3329,7 @@ export interface components {
         };
         /**
          * CompiledContract
-         * @description `hz workflow show`: a contract as the daemon runs it.
+         * @description `hz heinzel show`: a contract as the daemon runs it.
          */
         CompiledContract: {
             /**
@@ -2460,7 +3381,7 @@ export interface components {
              * @description Most a manual run may cost: the lower of your cap and the contract's.
              */
             max_usd: number | null;
-            /** @description Its success test: how long drafting took, and how much was changed before sending (`hz workflow sent`); none without drafts. */
+            /** @description Its success test: how long drafting took, and how much was changed before sending (`hz heinzel sent`); none without drafts. */
             measurements?: components["schemas"]["Measurements"] | null;
             /**
              * Name
@@ -2512,7 +3433,7 @@ export interface components {
             scheduled: boolean;
             /**
              * Sha256
-             * @description SHA-256 of the file; `[workflow] schedule_team` can pin it.
+             * @description SHA-256 of the file; `[heinzel] schedule_team` can pin it.
              */
             sha256: string;
             /**
@@ -2803,7 +3724,7 @@ export interface components {
         };
         /**
          * ContractGraph
-         * @description `hz workflow graph`: contracts linked by what they read and maintain; the workflow nobody writes down.
+         * @description `hz heinzel graph`: contracts linked by what they read and maintain; the workflow nobody writes down.
          */
         ContractGraph: {
             /**
@@ -2838,78 +3759,104 @@ export interface components {
             unmaintained: components["schemas"]["Unmaintained"][];
         };
         /**
-         * ContractList
-         * @description `hz workflow list`: the directories searched and every contract found in them.
+         * ContractVersion
+         * @description A versioned contract artifact; only an explicit approval can activate its schedule.
          */
-        ContractList: {
+        ContractVersion: {
             /**
-             * Contracts
-             * @description Every contract found, team ones first.
+             * Approved At
+             * @description When this exact version was approved, if ever.
              */
-            contracts: components["schemas"]["ContractSummary"][];
+            approved_at?: string | null;
             /**
-             * Directories
-             * @description Where contracts are read from, team first.
+             * Created At
+             * Format: date-time
+             * @description When this version was proposed.
              */
-            directories: components["schemas"]["Directory"][];
+            created_at: string;
             /**
-             * Next
-             * @description What to do next, as commands.
+             * Id
+             * @description The stable contract artifact id.
              */
-            next: components["schemas"]["Step"][];
-        };
-        /**
-         * ContractSummary
-         * @description One contract in `hz workflow list`.
-         */
-        ContractSummary: {
+            id: string;
             /**
-             * Errors
-             * @description How many errors it has.
+             * Parent Version
+             * @description The approved version this amendment follows.
              */
-            errors: number;
+            parent_version?: number | null;
             /**
-             * File
-             * Format: path
-             * @description The contract file.
+             * Reason
+             * @description The recorded reason for the amendment or decision.
              */
-            file: string;
+            reason?: string | null;
             /**
-             * Name
-             * @description The contract's name.
+             * Sha256
+             * @description The exact artifact hash.
              */
-            name: string;
+            sha256: string;
             /**
-             * Namespace
-             * @description Where it was found: `me` (your directory) or `team`.
+             * Status
+             * @description The proposal or approval state of this version.
+             * @default proposed
              * @enum {string}
              */
-            namespace: "me" | "team" | "path";
+            status: "proposed" | "approved" | "superseded" | "rejected";
             /**
-             * Schedule
-             * @description Its cron expression; none if it runs only by hand.
+             * Text
+             * @description The versioned OpenProse contract text.
              */
-            schedule: string | null;
-            /**
-             * Scheduled
-             * @description Whether your daemon runs it on its schedule.
-             */
-            scheduled: boolean;
+            text: string;
             /**
              * Title
-             * @description Its display name; none if it doesn't parse.
+             * @description The human-readable responsibility title.
              */
-            title: string | null;
+            title: string;
             /**
-             * Valid
-             * @description Whether it has no errors, so it is compiled.
+             * Version
+             * @description The immutable contract version.
              */
-            valid: boolean;
+            version: number;
+        };
+        /**
+         * ContributionInfo
+         * @description A contribution as Settings lists it: where it may show and whether it does, without running it.
+         */
+        ContributionInfo: {
             /**
-             * Warnings
-             * @description How many warnings it has.
+             * Defaults
+             * @description Each slot and whether it shows there unless the person decides.
              */
-            warnings: number;
+            defaults: {
+                [key: string]: boolean;
+            };
+            /**
+             * Id
+             * @description `<module>:<name>`, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /**
+             * Kind
+             * @description A status item, a header action or a widget.
+             * @enum {string}
+             */
+            kind: "status" | "action" | "widget";
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does now.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
+            /**
+             * Title
+             * @description What people know it by: the action's label, or its name in words.
+             */
+            title: string;
         };
         /**
          * CredentialDoc
@@ -3023,6 +3970,17 @@ export interface components {
              * @description The platform's service manager: darwin (launchd) or linux (systemd).
              */
             platform: string;
+            /**
+             * Version
+             * @description The hz version the daemon was started with (installed or last restarted); none if it isn't installed or was installed by an older hz.
+             */
+            version?: string | null;
+            /**
+             * Version Mismatch
+             * @description Whether `version` differs from the hz that answers: after `hz system update` the daemon should be restarted (`hz system daemon restart`).
+             * @default false
+             */
+            version_mismatch: boolean;
         };
         /**
          * DefaultView
@@ -3059,6 +4017,24 @@ export interface components {
          * @enum {string}
          */
         Delivery: "web" | "daemon";
+        /**
+         * DetailLine
+         * @description A line of an item's detail, shown on hover or focus.
+         */
+        DetailLine: {
+            /**
+             * Text
+             * @description One line, e.g. `New York 08:00, at work`.
+             */
+            text: string;
+            /**
+             * Tone
+             * @description `ok` shows it as good, `warn` and `bad` as needing attention.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+        };
         /**
          * Diagnostic
          * @description A problem in a contract file, with where it is and what to do.
@@ -3110,7 +4086,7 @@ export interface components {
         Directory: {
             /**
              * Exists
-             * @description Whether it exists; `hz workflow new` creates it.
+             * @description Whether it exists; `hz heinzel new` creates it.
              */
             exists: boolean;
             /**
@@ -3128,7 +4104,7 @@ export interface components {
         };
         /**
          * Discovery
-         * @description `hz workflow discover`: candidates for each asset type, found through capabilities you can read.
+         * @description `hz heinzel discover`: candidates for each asset type, found through capabilities you can read.
          */
         Discovery: {
             /**
@@ -3230,6 +4206,33 @@ export interface components {
             state: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;
         };
         /**
+         * EffortChoice
+         * @description An effort the AI access in use can be asked for.
+         */
+        EffortChoice: {
+            /**
+             * Name
+             * @description What `hz chat send --effort` takes, e.g. `medium`.
+             * @enum {string}
+             */
+            name: "low" | "medium" | "high" | "xhigh" | "max";
+            /**
+             * Recommended
+             * @description Whether it is the one to pick when unsure.
+             */
+            recommended: boolean;
+            /**
+             * Title
+             * @description What the picker shows, e.g. `Extra`.
+             */
+            title: string;
+            /**
+             * Warning
+             * @description What it costs beyond the others, e.g. `≈3.5x or more usage`.
+             */
+            warning?: string | null;
+        };
+        /**
          * Event
          * @description One occurrence of an entry in a calendar; a recurring entry is expanded into its occurrences.
          */
@@ -3266,8 +4269,24 @@ export interface components {
              * @description Identifier of this occurrence in the adapter's notation.
              */
             id: string;
+            /**
+             * Location
+             * @description Where it takes place, in the event's words; none if unset.
+             */
+            location?: string | null;
+            /**
+             * Organized By User
+             * @description Whether the user organizes it, and so may move or cancel it for everyone.
+             * @default false
+             */
+            organized_by_user: boolean;
             /** @description Who organizes it; none if the vendor doesn't say. */
             organizer?: components["schemas"]["Participant"] | null;
+            /**
+             * Response
+             * @description The user's own answer to the invitation: one of `RESPONSES`, or `pending` while unanswered; none when the user is not among the attendees.
+             */
+            response?: ("accepted" | "declined" | "tentative" | "pending") | null;
             /**
              * Start
              * Format: date-time
@@ -3337,6 +4356,140 @@ export interface components {
              * @description Only nodes in this state.
              */
             state: ("on_time" | "waiting_for_approval" | "late" | "fell_back" | "offline") | null;
+        };
+        /**
+         * FoundServer
+         * @description An MCP server entry found in a Claude client's configuration.
+         */
+        FoundServer: {
+            /**
+             * Arguments
+             * @description How many arguments the command takes; their text may hold secrets, so unshown.
+             */
+            arguments: number;
+            /**
+             * Auth
+             * @description How it authenticates: no secret, environment variables, a header, a token in its URL, the keychain of Claude Desktop, or (an http server without any) none or a login Claude Code keeps.
+             * @enum {string}
+             */
+            auth: "none" | "env" | "header" | "url" | "keychain" | "none-or-oauth";
+            /**
+             * Command
+             * @description The program a stdio server starts, without its path or arguments.
+             */
+            command: string | null;
+            /**
+             * Env Keys
+             * @description Names of the environment variables it is given; never their values.
+             */
+            env_keys: string[];
+            /**
+             * File
+             * @description The configuration file it was read from, with your home directory as `~`.
+             */
+            file: string;
+            /**
+             * Fingerprint
+             * @description A hash of its shape (transport, program, argument count, host, variable and header names): no secret and no argument text goes into it, so a changed argument is not noticed yet.
+             */
+            fingerprint: string;
+            /**
+             * Header Keys
+             * @description Names of the headers it sends; never their values.
+             */
+            header_keys: string[];
+            /**
+             * Host
+             * @description The scheme and host of an http server; never the path, query or user info.
+             */
+            host: string | null;
+            /**
+             * Id
+             * @description `<source>[:<origin>]:<name>`, stable while the entry keeps its place.
+             */
+            id: string;
+            /**
+             * Name
+             * @description The name the entry has in its configuration.
+             */
+            name: string;
+            /**
+             * Origin
+             * @description The project directory or plugin it belongs to; none for user-wide ones.
+             */
+            origin: string | null;
+            /**
+             * Source
+             * @description Which Claude configuration it was found in.
+             * @enum {string}
+             */
+            source: "desktop" | "desktop-extension" | "code-user" | "code-local" | "code-project" | "code-plugin";
+            /**
+             * Status
+             * @description `self` is Heinzelmännchen's own server, which is never offered back to itself.
+             * @enum {string}
+             */
+            status: "found" | "self";
+            /**
+             * Transport
+             * @description How it is reached: a local process (stdio) or a URL (http, sse).
+             * @enum {string}
+             */
+            transport: "stdio" | "http" | "sse" | "unknown";
+        };
+        /**
+         * FoundSkill
+         * @description A skill directory (`SKILL.md` and what sits beside it) found in a Claude client's skill locations.
+         */
+        FoundSkill: {
+            /**
+             * Description
+             * @description Its description, cut and cleaned; third-party text, never an instruction.
+             */
+            description: string;
+            /**
+             * Files
+             * @description Bundled files by kind (scripts, references, resources, assets, templates); never run or read.
+             */
+            files: {
+                [key: string]: number;
+            };
+            /**
+             * Fingerprint
+             * @description A hash of SKILL.md and the names and sizes of its bundled files.
+             */
+            fingerprint: string;
+            /**
+             * Frontmatter Keys
+             * @description The keys its frontmatter sets, e.g. `allowed-tools`.
+             */
+            frontmatter_keys: string[];
+            /**
+             * Id
+             * @description `<source>[:<origin>]:<name>`.
+             */
+            id: string;
+            /**
+             * Name
+             * @description The skill's name from its frontmatter, else its directory's name.
+             */
+            name: string;
+            /**
+             * Origin
+             * @description The project directory or plugin it belongs to; none for yours.
+             */
+            origin: string | null;
+            /**
+             * Path
+             * @description The skill's directory, with your home directory as `~`.
+             */
+            path: string;
+            /**
+             * Source
+             * @description Where it was found: your skills, a project's or an enabled plugin's.
+             * @enum {string}
+             */
+            source: "code-user" | "code-project" | "code-plugin";
         };
         /**
          * Graph
@@ -3467,6 +4620,51 @@ export interface components {
              */
             maintained: boolean;
         };
+        /**
+         * GraphicWidget
+         * @description A big value with a picture: an icon or a Heinzelmännchen, and a line under it.
+         */
+        GraphicWidget: {
+            /** @description A Heinzelmännchen beside the value; wins over `icon`. */
+            avatar?: components["schemas"]["Avatar"] | null;
+            /**
+             * Caption
+             * @description A line under the value, e.g. `Light traffic`.
+             */
+            caption?: string | null;
+            /**
+             * Icon
+             * @description An icon beside the value.
+             */
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            /**
+             * @description A graphic. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "graphic";
+            /**
+             * Label
+             * @description What it shows, e.g. `Commute home`.
+             */
+            label: string;
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Value
+             * @description The big figure as shown, up to 16 characters, e.g. `12 min`.
+             */
+            value: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -3486,6 +4684,152 @@ export interface components {
             };
             /** @description Overall status: the worst of all checks. */
             status: components["schemas"]["Status"];
+        };
+        /**
+         * HeinzelAppearance
+         * @description Personal appearance on the renderer's closed vocabulary; state and theme are application-owned.
+         */
+        HeinzelAppearance: {
+            /**
+             * Accessories
+             * @description Personal decorations from the supported closed vocabulary.
+             */
+            accessories?: ("umbrella" | "sunglasses" | "scarf")[];
+            /**
+             * Age
+             * @description The chosen age of this personal character.
+             * @default grown
+             * @enum {string}
+             */
+            age: "baby" | "young" | "grown" | "old";
+            /**
+             * Beard
+             * @description The explicit beard style; null inherits the age default.
+             */
+            beard?: ("none" | "short" | "medium" | "long") | null;
+            /**
+             * Build
+             * @description The chosen body shape.
+             * @default regular
+             * @enum {string}
+             */
+            build: "slim" | "regular" | "round";
+            /**
+             * Hat
+             * @description The personal hat colour; null inherits the installed theme.
+             */
+            hat?: ("red" | "rust" | "ochre" | "green" | "teal" | "blue" | "purple" | "slate") | null;
+            /**
+             * Shirt
+             * @description The personal shirt colour; null inherits the installed theme.
+             */
+            shirt?: ("green" | "blue" | "purple" | "red-brown" | "ochre" | "teal" | "slate" | "rose") | null;
+        };
+        /**
+         * HeinzelList
+         * @description `hz heinzel list`: the directories searched and one Heinzelmännchen per contract found in them.
+         */
+        HeinzelList: {
+            /**
+             * Directories
+             * @description Where contracts are read from, team first.
+             */
+            directories: components["schemas"]["Directory"][];
+            /**
+             * Filtered
+             * @description Whether a filter left some out.
+             * @default false
+             */
+            filtered: boolean;
+            /**
+             * Heinzelmaennchen
+             * @description Every Heinzelmännchen the filters keep, team first.
+             */
+            heinzelmaennchen: components["schemas"]["HeinzelSummary"][];
+            /**
+             * Next
+             * @description What to do next, as commands.
+             */
+            next: components["schemas"]["Step"][];
+        };
+        /**
+         * HeinzelSummary
+         * @description One Heinzelmännchen in `hz heinzel list`: a contract you have, with its state and its runs.
+         */
+        HeinzelSummary: {
+            /**
+             * Drafts
+             * @description How many drafts it has kept.
+             */
+            drafts: number;
+            /**
+             * Errors
+             * @description How many errors it has.
+             */
+            errors: number;
+            /**
+             * File
+             * Format: path
+             * @description The contract file.
+             */
+            file: string;
+            /**
+             * Last Run
+             * @description When its newest draft was rendered; none if it never ran.
+             */
+            last_run: string | null;
+            /**
+             * Name
+             * @description The contract's name.
+             */
+            name: string;
+            /**
+             * Namespace
+             * @description Where it was found: `me` (your directory) or `team`.
+             * @enum {string}
+             */
+            namespace: "me" | "team" | "path";
+            /**
+             * Next Run
+             * @description When your daemon runs it next, in local time; none unless scheduled.
+             */
+            next_run: string | null;
+            /**
+             * Schedule
+             * @description Its cron expression; none if it runs only by hand.
+             */
+            schedule: string | null;
+            /**
+             * Scheduled
+             * @description Whether your daemon runs it on its schedule.
+             */
+            scheduled: boolean;
+            /**
+             * State
+             * @description `scheduled` (your daemon runs it), `manual` (it runs when you wake it), `blocked` (a capability it reads isn't served) or `broken` (its contract has errors).
+             * @enum {string}
+             */
+            state: "scheduled" | "manual" | "blocked" | "broken";
+            /**
+             * Title
+             * @description Its display name; none if it doesn't parse.
+             */
+            title: string | null;
+            /**
+             * Unmet
+             * @description Requirements no bound adapter serves; why it is blocked.
+             */
+            unmet: string[];
+            /**
+             * Valid
+             * @description Whether it has no errors, so it is compiled.
+             */
+            valid: boolean;
+            /**
+             * Warnings
+             * @description How many warnings it has.
+             */
+            warnings: number;
         };
         /**
          * HintProblem
@@ -3515,7 +4859,7 @@ export interface components {
         };
         /**
          * HintView
-         * @description A discovery hint as `hz workflow playbooks` shows it.
+         * @description A discovery hint as `hz heinzel playbooks` shows it.
          */
         HintView: {
             /**
@@ -3856,6 +5200,110 @@ export interface components {
             summary: string;
         };
         /**
+         * ListEntry
+         * @description A line of a list widget.
+         */
+        ListEntry: {
+            /**
+             * Detail
+             * @description A second, quieter line.
+             */
+            detail?: string | null;
+            /**
+             * Effect
+             * @description What a click does.
+             */
+            effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Text
+             * @description The line, e.g. `Review the Acme roadmap`.
+             */
+            text: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+        };
+        /**
+         * ListWidget
+         * @description A titled list of up to eight lines.
+         */
+        ListWidget: {
+            /**
+             * Items
+             * @description Up to eight lines.
+             */
+            items: components["schemas"]["ListEntry"][];
+            /**
+             * @description A list. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "list";
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
+            /**
+             * Title
+             * @description Its title, one line.
+             */
+            title: string;
+        };
+        /**
+         * LiveClock
+         * @description The time now in a zone, ticking in the app.
+         */
+        LiveClock: {
+            /**
+             * @description The time now in `zone`. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "clock";
+            /**
+             * Zone
+             * @description An IANA time zone, e.g. Europe/Berlin.
+             */
+            zone: string;
+        };
+        /**
+         * LiveTime
+         * @description A moment, shown as a local time in the person's locale.
+         */
+        LiveTime: {
+            /**
+             * At
+             * Format: date-time
+             * @description The moment, with its offset.
+             */
+            at: string;
+            /**
+             * @description `at` as a local time. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "time";
+        };
+        /**
+         * LiveUntil
+         * @description A moment, shown relative to now: "in 12 min", "now", or its time when it isn't today.
+         */
+        LiveUntil: {
+            /**
+             * At
+             * Format: date-time
+             * @description The moment, with its offset.
+             */
+            at: string;
+            /**
+             * @description `at` relative to now. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "until";
+        };
+        /**
          * LogLine
          * @description One line of the daemon's JSON-lines log.
          */
@@ -3993,6 +5441,128 @@ export interface components {
             since: string;
         };
         /**
+         * MessageAccepted
+         * @description The inbox acknowledgement; it reports durable acceptance, not completed model work.
+         */
+        MessageAccepted: {
+            /**
+             * Disposition
+             * @description Acceptance or dispatch state; queued does not mean a completed answer.
+             * @enum {string}
+             */
+            disposition: "started" | "queued" | "steered";
+            /**
+             * Inbox Position
+             * @description The committed control-journal position of the accepted message.
+             */
+            inbox_position: number;
+            /**
+             * Request Id
+             * @description The exact accepted client request id.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable conversation that owns the inbox entry.
+             */
+            session_id: string;
+            /**
+             * Turn Id
+             * @description The assigned turn id, when work has started.
+             */
+            turn_id?: string | null;
+        };
+        /**
+         * MetricWidget
+         * @description One number with a label, and how it moved.
+         */
+        MetricWidget: {
+            /**
+             * Delta
+             * @description How it moved, as shown, e.g. `+3 this week`.
+             */
+            delta?: string | null;
+            /**
+             * @description A metric. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "metric";
+            /**
+             * Label
+             * @description What is measured, e.g. `Open reviews`.
+             */
+            label: string;
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Value
+             * @description The figure as shown, up to 16 characters, e.g. `12` or `2/3`.
+             */
+            value: string;
+        };
+        /**
+         * ModelChoice
+         * @description A model the AI access in use offers.
+         */
+        ModelChoice: {
+            /**
+             * Name
+             * @description What `hz chat send --model` takes, e.g. `sonnet`.
+             */
+            name: string;
+            /**
+             * Title
+             * @description What the picker shows, e.g. `Sonnet`.
+             */
+            title: string;
+        };
+        /**
+         * ModelList
+         * @description The models and efforts of the AI access in use, for the chat's picker.
+         */
+        ModelList: {
+            /**
+             * Access
+             * @description The AI access in use, e.g. `claude-code`; none when none is.
+             */
+            access: string | null;
+            /**
+             * Billing
+             * @description `plan` when it uses a subscription, `api` when billed per token.
+             */
+            billing: ("plan" | "api") | null;
+            /**
+             * Efforts
+             * @description The efforts it takes, low to max; empty when it takes none.
+             */
+            efforts: components["schemas"]["EffortChoice"][];
+            /**
+             * Models
+             * @description Its models, current ones first; empty when it names none.
+             */
+            models: components["schemas"]["ModelChoice"][];
+            /**
+             * Note
+             * @description Why the list is empty or short.
+             */
+            note?: string | null;
+            /**
+             * Title
+             * @description Its title, e.g. `Claude Code`.
+             */
+            title: string;
+        };
+        /**
          * ModuleDoc
          * @description One module of a plugin with everything it advertises.
          */
@@ -4082,6 +5652,94 @@ export interface components {
              * @description Version of that distribution.
              */
             version: string;
+        };
+        /**
+         * NavEntry
+         * @description Checked navigation metadata from one active provider, without running an operation.
+         */
+        NavEntry: {
+            /**
+             * Declared
+             * @description True for an explicit NavLet; false for generic legacy Settings metadata.
+             */
+            declared: boolean;
+            /**
+             * Icon
+             * @description The provider's checked semantic icon.
+             * @enum {string}
+             */
+            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap";
+            /**
+             * Id
+             * @description Stable `<qualified-module>:<name>` identity; legacy Settings use reserved `:@settings`.
+             */
+            id: string;
+            /**
+             * Module
+             * @description The qualified module that declared this entry.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Display order; ties are sorted by stable id.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description Its distribution, or none for a built-in provider.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Why this declaration has no executable target.
+             */
+            problem?: string | null;
+            /** @description Owned Settings prefixes and their group. */
+            settings?: components["schemas"]["NavSettings"] | null;
+            /**
+             * Sidebar
+             * @description The canonical sidebar effect; no new route is registered.
+             */
+            sidebar?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Title
+             * @description The provider's checked display title.
+             */
+            title: string;
+        };
+        /**
+         * NavSettings
+         * @description The module-owned Settings sections a navigation entry groups under an existing heading.
+         */
+        NavSettings: {
+            /**
+             * Group
+             * @description The existing Settings heading under which the entry appears.
+             * @default preferences
+             * @enum {string}
+             */
+            group: "preferences" | "customize" | "organisation" | "computer";
+            /**
+             * Sections
+             * @description Qualified module prefixes owned by this provider.
+             */
+            sections: string[];
+        };
+        /**
+         * Navigate
+         * @description Open a screen of the app.
+         */
+        Navigate: {
+            /**
+             * @description Open a screen of the app. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "navigate";
+            /**
+             * Path
+             * @description An in-app path, e.g. `/doctor`.
+             */
+            path: string;
         };
         /**
          * Node
@@ -4249,6 +5907,22 @@ export interface components {
             waiting: number;
         };
         /**
+         * OpenUrl
+         * @description Open an https link in a new tab.
+         */
+        OpenUrl: {
+            /**
+             * @description Open an https link in a new tab. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "open";
+            /**
+             * Url
+             * @description An https link without user information.
+             */
+            url: string;
+        };
+        /**
          * Opened
          * @description Whether the system's notification settings were opened.
          */
@@ -4287,6 +5961,52 @@ export interface components {
             operation: string;
         };
         /**
+         * OperationCall
+         * @description How the app runs an `operation` effect, built by `system.ui` from the operation itself, never by a plugin.
+         */
+        OperationCall: {
+            /**
+             * Body
+             * @description Validated flat JSON arguments for a private mutation; never a query fallback.
+             */
+            body?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Command
+             * @description The same call as a person reads it, e.g. `hz clock`.
+             */
+            command: string;
+            /**
+             * Method
+             * @description `GET` for a read-only operation, `POST` for one that writes.
+             * @enum {string}
+             */
+            method: "GET" | "POST";
+            /**
+             * Path
+             * @description The operation's path under `/api`, e.g. `/clock`.
+             */
+            path: string;
+            /**
+             * Query
+             * @description Validated query arguments; empty for private mutations.
+             */
+            query: {
+                [key: string]: boolean | number | string;
+            };
+            /**
+             * Read Only
+             * @description Whether it only reads; the app asks before running one that doesn't.
+             */
+            read_only: boolean;
+            /**
+             * Summary
+             * @description What the operation does: the first line of its docstring.
+             */
+            summary: string;
+        };
+        /**
          * OperationDoc
          * @description One operation as every head sees it.
          */
@@ -4318,6 +6038,11 @@ export interface components {
              */
             heads: string[] | null;
             /**
+             * Http Tool
+             * @description The tool in unauthenticated HTTP MCP; none if absent.
+             */
+            http_tool?: string | null;
+            /**
              * Input Schema
              * @description The JSON Schema of what a caller supplies: the MCP input schema.
              */
@@ -4339,6 +6064,17 @@ export interface components {
              * @description Its public parameters, in order.
              */
             parameters: components["schemas"]["ParameterDoc"][];
+            /**
+             * Private
+             * @description Whether this operation requires a trusted authenticated head.
+             * @default false
+             */
+            private: boolean;
+            /**
+             * Private Endpoint
+             * @description The scoped, authenticated private API endpoint.
+             */
+            private_endpoint?: string | null;
             /**
              * Read Only
              * @description Whether it only reads; otherwise it changes state.
@@ -4457,7 +6193,7 @@ export interface components {
         };
         /**
          * PlaybookList
-         * @description `hz workflow playbooks`: every playbook the installed modules contribute.
+         * @description `hz heinzel playbooks`: every playbook the installed modules contribute.
          */
         PlaybookList: {
             /**
@@ -4900,6 +6636,49 @@ export interface components {
             warnings: string[];
         };
         /**
+         * PluginUpdate
+         * @description What `hz system update` did to one installed plugin.
+         */
+        PluginUpdate: {
+            /**
+             * After
+             * @description Version installed now; none if the plugin is no longer installed.
+             */
+            after: string | null;
+            /**
+             * Before
+             * @description Version installed before; none if it couldn't be told.
+             */
+            before: string | null;
+            /**
+             * Disabled
+             * @description Whether the plugin does not work with the new hz at all and was taken out of the installation: it is not loaded until a release that allows the new hz is added (`next`).
+             * @default false
+             */
+            disabled: boolean;
+            /**
+             * Distribution
+             * @description Distribution name, e.g. heinzel-clock.
+             */
+            distribution: string;
+            /**
+             * Next
+             * @description Commands that bring a failed plugin back.
+             */
+            next?: string[];
+            /**
+             * Reason
+             * @description Why it failed, and what became of it.
+             */
+            reason?: string | null;
+            /**
+             * Status
+             * @description `upgraded` (a newer version or commit is installed), `unchanged` (it is as new as its install spec allows) or `failed` (it couldn't be moved to the new hz; see `reason`).
+             * @enum {string}
+             */
+            status: "upgraded" | "unchanged" | "failed";
+        };
+        /**
          * Profile
          * @description Your profile as hz knows it, and what is still missing.
          */
@@ -4966,6 +6745,44 @@ export interface components {
             working_hours_set: boolean;
         };
         /**
+         * ProgressWidget
+         * @description How much of something is done.
+         */
+        ProgressWidget: {
+            /**
+             * Done
+             * @description How many are done, at most `total`.
+             */
+            done: number;
+            /**
+             * @description Progress. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "progress";
+            /**
+             * Label
+             * @description What is done, e.g. `Release checklist`.
+             */
+            label: string;
+            /**
+             * Size
+             * @description Room in the Today grid; each kind has a default.
+             */
+            size?: ("small" | "medium" | "wide") | null;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+            /**
+             * Total
+             * @description How many there are.
+             */
+            total: number;
+        };
+        /**
          * PublishStatus
          * @description A publish operation a contract names, and whether an installed module provides it.
          */
@@ -4990,6 +6807,78 @@ export interface components {
              * @description Whether an enabled module provides it as a publish operation.
              */
             provided: boolean;
+        };
+        /**
+         * Question
+         * @description An answerable, stored question; answering it grants no new permission.
+         */
+        Question: {
+            /**
+             * Answer Schema
+             * @description The validated answer shape, when constrained.
+             */
+            answer_schema?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Choices
+             * @description Suggested explicit answer choices.
+             */
+            choices?: string[];
+            /**
+             * Id
+             * @description The stable question id.
+             */
+            id: string;
+            /**
+             * Prompt
+             * @description The question shown to the user.
+             */
+            prompt: string;
+            /**
+             * Revision
+             * @description The exact question revision an answer must reference.
+             * @default 1
+             */
+            revision: number;
+            /**
+             * Status
+             * @description Whether the question is still waiting, answered or cancelled.
+             * @default waiting
+             * @enum {string}
+             */
+            status: "waiting" | "answered" | "cancelled";
+            /**
+             * Turn Id
+             * @description The turn that is waiting for this answer.
+             */
+            turn_id: string;
+        };
+        /**
+         * RecipientPreview
+         * @description A resolved recipient in the exact snapshot awaiting human review.
+         */
+        RecipientPreview: {
+            /**
+             * Address
+             * @description The exact destination address awaiting approval.
+             */
+            address: string;
+            /**
+             * Name
+             * @description The recipient display name.
+             */
+            name: string;
+            /**
+             * Principal Id
+             * @description The resolved recipient identity.
+             */
+            principal_id: string;
+            /**
+             * Role
+             * @description The resolved role used to select this recipient.
+             */
+            role: string;
         };
         /**
          * RecommendationView
@@ -5064,6 +6953,32 @@ export interface components {
             video: string | null;
         };
         /**
+         * ReferenceBlock
+         * @description A question, proposal or attachment whose state is held by the application service.
+         */
+        ReferenceBlock: {
+            /**
+             * Fallback
+             * @description Plain-text explanation of the referenced object.
+             */
+            fallback: string;
+            /**
+             * Id
+             * @description The stable block id within its message.
+             */
+            id: string;
+            /**
+             * @description Whether this block references a question, proposal or attachment. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "attachment" | "proposal" | "question";
+            /**
+             * Ref
+             * @description The application-owned object id.
+             */
+            ref: string;
+        };
+        /**
          * ReleaseCheck
          * @description The installed version, the latest release and whether updating would bring something new.
          */
@@ -5126,6 +7041,44 @@ export interface components {
             version: string;
         };
         /**
+         * RendererBlock
+         * @description Validated data for an installed renderer; executable markup is never a message block.
+         */
+        RendererBlock: {
+            /**
+             * Data
+             * @description Validated renderer data without executable markup.
+             */
+            data: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Fallback
+             * @description Plain-text content for heads without this renderer.
+             */
+            fallback: string;
+            /**
+             * Id
+             * @description The stable block id within its message.
+             */
+            id: string;
+            /**
+             * @description A block for an installed data renderer. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "renderer";
+            /**
+             * Manifest Sha256
+             * @description The exact renderer manifest fingerprint.
+             */
+            manifest_sha256: string;
+            /**
+             * Renderer
+             * @description The installed renderer identifier.
+             */
+            renderer: string;
+        };
+        /**
          * RequirementStatus
          * @description A capability a contract requires, and whether configuration serves it.
          */
@@ -5166,6 +7119,49 @@ export interface components {
              * @description Always true: poll any endpoint until it answers again.
              */
             restarting: boolean;
+        };
+        /**
+         * Restarted
+         * @description What `restart` did.
+         */
+        Restarted: {
+            /**
+             * Interval Minutes
+             * @description Minutes between ticks, as installed; none if not installed.
+             */
+            interval_minutes: number | null;
+            /**
+             * Restarted
+             * @description Whether the daemon was reloaded; false if it isn't installed.
+             */
+            restarted: boolean;
+            /**
+             * Version
+             * @description The hz version the daemon runs with now.
+             */
+            version: string;
+        };
+        /**
+         * RunCommand
+         * @description Open the terminal with an `hz` command.
+         */
+        RunCommand: {
+            /**
+             * Command
+             * @description e.g. `hz clock`.
+             */
+            command: string;
+            /**
+             * @description Open the terminal with an `hz` command. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "command";
+            /**
+             * Runs
+             * @description Filled in by `system.ui`: whether it names a read-only operation, so the terminal may press Enter; otherwise the person does.
+             * @default false
+             */
+            runs: boolean;
         };
         /**
          * RunMeasure
@@ -5211,6 +7207,31 @@ export interface components {
             inputs: {
                 [key: string]: string;
             };
+        };
+        /**
+         * RunOperation
+         * @description Run an operation of the contributing module with fixed arguments; one that writes only after confirmation.
+         */
+        RunOperation: {
+            /**
+             * Arguments
+             * @description Fixed JSON arguments by parameter name; structured values require a private mutation.
+             */
+            arguments?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** @description Filled in by `system.ui`; whatever a plugin sets here is replaced. */
+            call?: components["schemas"]["OperationCall"] | null;
+            /**
+             * @description Run an operation of the module. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "operation";
+            /**
+             * Operation
+             * @description The operation's name in its module, e.g. `sync`.
+             */
+            operation: string;
         };
         /**
          * Scene
@@ -5305,6 +7326,254 @@ export interface components {
             value: string;
         };
         /**
+         * SessionCosts
+         * @description The same visible budget for every head and backend, with plan estimates labelled separately.
+         */
+        SessionCosts: {
+            /**
+             * Message Max Usd
+             * @description The current allowed cap for the next model turn.
+             */
+            message_max_usd: number;
+            /**
+             * Session Max Usd
+             * @description The current policy cap for the whole conversation.
+             */
+            session_max_usd: number;
+            /**
+             * Spent Usd
+             * @description Accounted usage in US dollars across this conversation.
+             * @default 0
+             */
+            spent_usd: number;
+            /**
+             * Unknown Turns
+             * @description Turns whose actual spend requires reconciliation.
+             * @default 0
+             */
+            unknown_turns: number;
+        };
+        /**
+         * SessionList
+         * @description The personal conversations visible to this installation's current identity.
+         */
+        SessionList: {
+            /**
+             * Sessions
+             * @description Personal conversations visible to the authenticated owner, newest first.
+             */
+            sessions?: components["schemas"]["SessionSummary"][];
+        };
+        /**
+         * SessionMessage
+         * @description A visible message or an explicit gap where private body content expired.
+         */
+        SessionMessage: {
+            /**
+             * At
+             * Format: date-time
+             * @description When the message was durably recorded.
+             */
+            at: string;
+            /**
+             * Attachment Ids
+             * @description Retained uploads attached to this message.
+             */
+            attachment_ids?: string[];
+            /** @description The exact backend choice used for this turn. */
+            backend_binding?: components["schemas"]["BackendBinding"] | null;
+            /**
+             * Billing
+             * @description Whether usage came from a subscription plan or direct API billing.
+             */
+            billing?: ("plan" | "api") | null;
+            /**
+             * Blocks
+             * @description Validated rich blocks with portable text fallbacks.
+             */
+            blocks?: (components["schemas"]["TextBlock"] | components["schemas"]["RendererBlock"] | components["schemas"]["ReferenceBlock"])[];
+            /**
+             * Cost Usd
+             * @description Reported or priced cost in US dollars; absent when unknown.
+             */
+            cost_usd?: number | null;
+            /**
+             * Id
+             * @description The stable message id; accepted user messages retain their request id.
+             */
+            id: string;
+            /**
+             * Role
+             * @description Who produced this visible message.
+             * @enum {string}
+             */
+            role: "user" | "assistant" | "tool" | "system";
+            /**
+             * Seq
+             * @description The authoritative control-journal position; gaps are permitted.
+             */
+            seq: number;
+            /**
+             * Status
+             * @description The persisted state of this message or its expired body.
+             * @default completed
+             * @enum {string}
+             */
+            status: "pending" | "completed" | "failed" | "interrupted" | "expired" | "timeout" | "budget";
+            /**
+             * Text
+             * @description The portable plain-text content.
+             * @default
+             */
+            text: string;
+            /**
+             * Turn Id
+             * @description The owning turn id, when one has been assigned.
+             */
+            turn_id?: string | null;
+        };
+        /**
+         * SessionSnapshot
+         * @description Current metadata plus one message page; a fresh Heinzel can chat before it has an approved contract.
+         */
+        SessionSnapshot: {
+            /** @description The persisted personal character overrides. */
+            appearance?: components["schemas"]["HeinzelAppearance"];
+            /**
+             * Attachments
+             * @description Retained uploads owned by this conversation.
+             */
+            attachments?: components["schemas"]["AttachmentRef"][];
+            /** @description The effective backend choice for the next safe turn boundary. */
+            backend_binding?: components["schemas"]["BackendBinding"] | null;
+            /**
+             * Contract Version
+             * @description The currently approved contract version, if any.
+             */
+            contract_version?: number | null;
+            /**
+             * Contracts
+             * @description The versioned contract history visible to this owner.
+             */
+            contracts?: components["schemas"]["ContractVersion"][];
+            /** @description The shared usage accounting and current policy limits. */
+            costs: components["schemas"]["SessionCosts"];
+            /**
+             * Has More
+             * @description Whether another message page remains.
+             * @default false
+             */
+            has_more: boolean;
+            /**
+             * Heinzel Id
+             * @description The same stable identity as session_id.
+             */
+            heinzel_id: string;
+            /**
+             * Kind
+             * @description The durable conversation kind.
+             * @default heinzel
+             * @constant
+             */
+            kind: "heinzel";
+            /**
+             * Last Seq
+             * @description The latest acknowledged control-journal sequence.
+             * @default 0
+             */
+            last_seq: number;
+            /**
+             * Messages
+             * @description One ordered page of visible messages.
+             */
+            messages?: components["schemas"]["SessionMessage"][];
+            /**
+             * Name
+             * @description The persisted personal display name.
+             */
+            name: string;
+            /**
+             * Next After Seq
+             * @description The last returned control sequence when another page remains.
+             */
+            next_after_seq?: number | null;
+            /**
+             * Next Cursor
+             * @description Opaque cursor for the next message page; absent at the end.
+             */
+            next_cursor?: string | null;
+            /**
+             * Pending Actions
+             * @description Stored actions awaiting a decision or reconciliation.
+             */
+            pending_actions?: components["schemas"]["ActionProposal"][];
+            /**
+             * Profile Revision
+             * @description The exact name and appearance revision for optimistic updates.
+             * @default 1
+             */
+            profile_revision: number;
+            /**
+             * Questions
+             * @description Stored questions and their exact answer revisions.
+             */
+            questions?: components["schemas"]["Question"][];
+            /** @description The authoritative schedule and effective eligibility, when available. */
+            schedule?: components["schemas"]["WakeScheduleView"] | null;
+            /**
+             * Session Id
+             * @description The stable hz-owned conversation identity.
+             */
+            session_id: string;
+            /**
+             * State
+             * @description The authoritative projected lifecycle state.
+             * @default proposed
+             * @enum {string}
+             */
+            state: "proposed" | "asleep" | "awake" | "waiting" | "paused" | "retired";
+        };
+        /**
+         * SessionSummary
+         * @description Picker metadata, including proposed chats with no approved contract.
+         */
+        SessionSummary: {
+            /** @description The persisted character overrides for the session picker. */
+            appearance?: components["schemas"]["HeinzelAppearance"];
+            /**
+             * Contract Version
+             * @description The approved contract version, when one exists.
+             */
+            contract_version?: number | null;
+            /**
+             * Last Seq
+             * @description The latest acknowledged control-journal sequence.
+             */
+            last_seq: number;
+            /**
+             * Name
+             * @description The persisted personal display name.
+             */
+            name: string;
+            /**
+             * Session Id
+             * @description The stable personal conversation identity.
+             */
+            session_id: string;
+            /**
+             * State
+             * @description The authoritative projected lifecycle state.
+             * @enum {string}
+             */
+            state: "proposed" | "asleep" | "awake" | "waiting" | "paused" | "retired";
+            /**
+             * Updated At
+             * Format: date-time
+             * @description When the latest acknowledged control was recorded.
+             */
+            updated_at: string;
+        };
+        /**
          * SettingDoc
          * @description One setting of a module's settings model.
          */
@@ -5353,7 +7622,7 @@ export interface components {
             default?: unknown;
             /**
              * Description
-             * @description What the setting controls.
+             * @description What the setting controls, in plain words.
              */
             description: string;
             /**
@@ -5379,6 +7648,11 @@ export interface components {
              */
             section: string;
             /**
+             * Section Title
+             * @description What Settings calls the setting's section: its settings model's section_title; none without one.
+             */
+            section_title?: string | null;
+            /**
              * Source
              * @description Where the value in effect comes from: `default`, a file's scope (`site`, `user`, `project`, `explicit`) or `env`.
              * @default default
@@ -5389,6 +7663,38 @@ export interface components {
              * @description Value in effect.
              */
             value: unknown;
+        };
+        /**
+         * SettingRevealed
+         * @description What `hz system config reveal-setting` did.
+         */
+        SettingRevealed: {
+            /**
+             * Key
+             * @description The setting, as section.key.
+             */
+            key: string;
+            /**
+             * Message
+             * @description What happened, or why nothing did, with the path.
+             */
+            message: string;
+            /**
+             * Opened
+             * @description Whether the file manager was opened.
+             */
+            opened: boolean;
+            /**
+             * Path
+             * Format: path
+             * @description The file or folder it names.
+             */
+            path: string;
+            /**
+             * Supported
+             * @description Whether this machine has a file manager hz can open.
+             */
+            supported: boolean;
         };
         /**
          * SetupDoc
@@ -5442,6 +7748,369 @@ export interface components {
              * @description Directory containing SKILL.md.
              */
             path: string;
+        };
+        /**
+         * SkillDetail
+         * @description One skill with its body, as `hz system skill show` prints it.
+         */
+        SkillDetail: {
+            /**
+             * Body
+             * @description Its body, cleaned, without the frontmatter.
+             */
+            body: string;
+            /** @description The skill. */
+            skill: components["schemas"]["SkillView"];
+        };
+        /**
+         * SkillList
+         * @description Every skill in effect, the names nobody decided between, and personal skills that failed their checks.
+         */
+        SkillList: {
+            /**
+             * Conflicts
+             * @description Names left out: an org and the site both.
+             */
+            conflicts?: string[];
+            /**
+             * Next
+             * @description Commands worth running next.
+             */
+            next?: string[];
+            /**
+             * Problems
+             * @description Your skills that failed a check, and why.
+             */
+            problems?: string[];
+            /**
+             * Skills
+             * @description The skills in effect, by name.
+             */
+            skills: components["schemas"]["SkillView"][];
+        };
+        /**
+         * SkillView
+         * @description A skill in effect: what it is, where it comes from, and what it hides.
+         */
+        SkillView: {
+            /**
+             * Chat
+             * @description Whether the chat may use it (`[system.skill] chat`).
+             * @default false
+             */
+            chat: boolean;
+            /**
+             * Description
+             * @description When to use it, in one line.
+             */
+            description: string;
+            /**
+             * Exported
+             * @description Directories it is exported to, from `hz system skill export`.
+             */
+            exported?: string[];
+            /**
+             * Files
+             * @description Paths of the files beside its SKILL.md.
+             */
+            files?: string[];
+            /**
+             * Fingerprint
+             * @description SHA-256 over its files.
+             */
+            fingerprint: string;
+            /**
+             * Hints
+             * @description Frontmatter hints such as `allowed-tools`, never applied.
+             */
+            hints?: {
+                [key: string]: string;
+            };
+            /**
+             * Module
+             * @description The module offering it; none for a personal skill.
+             */
+            module?: string | null;
+            /**
+             * Name
+             * @description The skill's name, e.g. `review-pull-request`.
+             */
+            name: string;
+            /**
+             * Plugin
+             * @description The plugin's distribution; none for the core and yours.
+             */
+            plugin?: string | null;
+            /**
+             * Scripts
+             * @description How many of them are scripts, which hz never runs.
+             * @default 0
+             */
+            scripts: number;
+            /**
+             * Shadows
+             * @description Modules (or `personal`) whose skill of the same name this one hides.
+             */
+            shadows?: string[];
+            /**
+             * Source
+             * @description `core`, `plugin`, `layer` or `personal`.
+             */
+            source: string;
+        };
+        /**
+         * Skipped
+         * @description A file or directory the scan left alone, and why.
+         */
+        Skipped: {
+            /**
+             * Path
+             * @description What was skipped, with your home directory as `~`.
+             */
+            path: string;
+            /**
+             * Reason
+             * @description Why: unreadable, not valid JSON, too large, or a link leaving its directory.
+             */
+            reason: string;
+        };
+        /**
+         * SoundEarconView
+         * @description A short sound for notices of one kind.
+         */
+        SoundEarconView: {
+            /**
+             * Attribution
+             * @description Who made it, to show beside it; set for CC-BY.
+             */
+            attribution: string | null;
+            /**
+             * Kind
+             * @description The notice kind it plays for, e.g. `draft` or `failed`.
+             */
+            kind: string;
+            /**
+             * Licence
+             * @description Its licence, an SPDX identifier, e.g. `CC0-1.0`.
+             */
+            licence: string;
+            /**
+             * Source
+             * @description Where it comes from, an https URL.
+             */
+            source: string | null;
+            /**
+             * Url
+             * @description Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.
+             */
+            url: string;
+        };
+        /**
+         * SoundLayerView
+         * @description One layer of a layered soundscape: a looped file whose gain follows a signal.
+         */
+        SoundLayerView: {
+            /**
+             * Attribution
+             * @description Who made it, to show beside it; set for CC-BY.
+             */
+            attribution: string | null;
+            /**
+             * Curve
+             * @description Points `[x, y]` for a weather signal, gains by part of the day for `daypart`; none for `none`.
+             */
+            curve: number[][] | {
+                [key: string]: number;
+            } | null;
+            /**
+             * Gain
+             * @description Its loudness, 0 to 1, before the curve.
+             */
+            gain: number;
+            /**
+             * Licence
+             * @description Its licence, an SPDX identifier, e.g. `CC0-1.0`.
+             */
+            licence: string;
+            /**
+             * Signal
+             * @description The signal its gain follows: `none`, `daypart`, `weather.rain`, `weather.wind`.
+             */
+            signal: string;
+            /**
+             * Source
+             * @description Where it comes from, an https URL.
+             */
+            source: string | null;
+            /**
+             * Url
+             * @description Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.
+             */
+            url: string;
+        };
+        /**
+         * SoundList
+         * @description Every available soundscape, which one is configured and which is in effect, and how it plays.
+         */
+        SoundList: {
+            /**
+             * Conflicts
+             * @description Names an org and the site both offer with nothing more specific deciding; left out until one is.
+             */
+            conflicts?: string[];
+            /**
+             * Duck While Typing
+             * @description Whether sound plays softer while you type in the chat.
+             */
+            duck_while_typing: boolean;
+            /**
+             * Effective
+             * @description The name of the soundscape in effect: `selected`, or the theme's own.
+             */
+            effective: string;
+            /**
+             * Follow Theme
+             * @description Whether the soundscape that goes with the theme in effect plays instead.
+             */
+            follow_theme: boolean;
+            /**
+             * Mute In Meetings
+             * @description Whether sound mutes during a meeting in your calendar.
+             */
+            mute_in_meetings: boolean;
+            /**
+             * Next
+             * @description What to run next.
+             */
+            next?: string[];
+            /**
+             * Note
+             * @description Why the soundscape in effect isn't the one configured.
+             */
+            note?: string | null;
+            /**
+             * Selected
+             * @description The name of the soundscape configured, after fallbacks; `off` for none.
+             */
+            selected: string;
+            /**
+             * Signals
+             * @description The signals layers follow, now: `daypart` always, `weather.*` once a plugin publishes them.
+             */
+            signals: {
+                [key: string]: string | number;
+            };
+            /**
+             * Soundscapes
+             * @description `off` first, then the core's and the plugins' soundscapes.
+             */
+            soundscapes: components["schemas"]["SoundscapeView"][];
+            /**
+             * Volume
+             * @description How loud, 0 to 100.
+             */
+            volume: number;
+        };
+        /**
+         * SoundStreamView
+         * @description A stream in the official player of an allowed host.
+         */
+        SoundStreamView: {
+            /**
+             * Embed Url
+             * @description The player to frame after Play, e.g. `https://www.youtube-nocookie.com/embed/...`.
+             */
+            embed_url: string;
+            /**
+             * Frame Origin
+             * @description The origin the page's CSP admits as a frame while it is in effect.
+             */
+            frame_origin: string;
+            /**
+             * Provider
+             * @description The host, e.g. `youtube`.
+             */
+            provider: string;
+            /**
+             * Video
+             * @description The video's id, e.g. `tRsQsTMvPNg`.
+             */
+            video: string;
+            /**
+             * Watch Url
+             * @description Where the video is on the host itself, to open it there instead.
+             */
+            watch_url: string;
+        };
+        /**
+         * SoundscapeView
+         * @description One available soundscape, ready for the web app to play.
+         */
+        SoundscapeView: {
+            /**
+             * Earcons
+             * @description Short sounds for notices, by kind.
+             */
+            earcons?: components["schemas"]["SoundEarconView"][];
+            /**
+             * Effective
+             * @description Whether it is the one in effect (follow my theme may pick another).
+             */
+            effective: boolean;
+            /**
+             * Fade Seconds
+             * @description How long a change fades, in seconds.
+             * @default 4
+             */
+            fade_seconds: number;
+            /**
+             * Kind
+             * @description `off`, `layers` (files mixed live) or `stream`.
+             * @enum {string}
+             */
+            kind: "off" | "layers" | "stream";
+            /**
+             * Layers
+             * @description The layers to mix.
+             */
+            layers?: components["schemas"]["SoundLayerView"][];
+            /**
+             * Module
+             * @description The qualified name of the module offering it; none for `off`.
+             */
+            module: string | null;
+            /**
+             * Name
+             * @description What `hz system sound use` takes, e.g. `claude-fm`; `off` is no sound.
+             */
+            name: string;
+            /**
+             * Pairs With
+             * @description Themes it goes with.
+             */
+            pairs_with?: string[];
+            /**
+             * Plugin
+             * @description The plugin it comes with, `heinzel` for the core's own; none for `off`.
+             */
+            plugin: string | null;
+            /**
+             * Selected
+             * @description Whether it is the one configured.
+             */
+            selected: boolean;
+            /**
+             * Shadows
+             * @description Modules that offer a soundscape of the same name, hidden by this one (layer order decides).
+             */
+            shadows?: string[];
+            /** @description The stream; none unless the kind is `stream`. */
+            stream?: components["schemas"]["SoundStreamView"] | null;
+            /**
+             * Title
+             * @description What people pick it by, e.g. `Claude FM`.
+             */
+            title: string;
         };
         /**
          * StackView
@@ -5500,6 +8169,94 @@ export interface components {
          * @enum {string}
          */
         Status: "up" | "degraded" | "down";
+        /**
+         * StatusEntry
+         * @description A status item, or the problem that keeps it from showing.
+         */
+        StatusEntry: {
+            /**
+             * Id
+             * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /** @description What to show; none when there is nothing to show. */
+            item?: components["schemas"]["StatusItem"] | null;
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Where it sits among its kind, 0 first; ties go by id.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Why it shows nothing: its source failed, or the declaration can't work.
+             */
+            problem?: string | null;
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does: what the app filters by.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
+        };
+        /**
+         * StatusItem
+         * @description A short item of the status bar: text, an optional live time after it, detail on hover, a click.
+         */
+        StatusItem: {
+            /**
+             * Actions
+             * @description Up to four buttons shown with the detail, e.g. Install and Logs.
+             */
+            actions?: components["schemas"]["WidgetAction"][];
+            /**
+             * Detail
+             * @description Up to eight lines shown on hover.
+             */
+            detail?: components["schemas"]["DetailLine"][];
+            /**
+             * Effect
+             * @description What a click does.
+             */
+            effect?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Icon
+             * @description An icon before the text.
+             */
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            /**
+             * Live
+             * @description A time the app renders after `text` and keeps current.
+             */
+            live?: (components["schemas"]["LiveClock"] | components["schemas"]["LiveTime"] | components["schemas"]["LiveUntil"]) | null;
+            /**
+             * Text
+             * @description What it says, one line, e.g. `Standup until`.
+             */
+            text: string;
+            /**
+             * Tone
+             * @description How it reads: neutral, ok, warn or bad.
+             * @default neutral
+             * @enum {string}
+             */
+            tone: "neutral" | "ok" | "warn" | "bad";
+        };
         /**
          * Step
          * @description Something to do next: a command that works, and why.
@@ -5683,6 +8440,164 @@ export interface components {
             pops_up: boolean;
         };
         /**
+         * TextBlock
+         * @description A portable text answer, also the fallback for heads without rich rendering.
+         */
+        TextBlock: {
+            /**
+             * Id
+             * @description The stable block id within its message.
+             */
+            id: string;
+            /**
+             * @description A portable plain-text block. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "text";
+            /**
+             * Text
+             * @description The plain text to render.
+             */
+            text: string;
+        };
+        /**
+         * Theme
+         * @description A look for the web app: colours, fonts, type scale, density, radii and border width (ADR 0044).
+         */
+        Theme: {
+            /**
+             * Border Width
+             * @description The width of borders, e.g. `1px`.
+             */
+            border_width: string;
+            /** @description The colours in dark mode. */
+            dark: components["schemas"]["ThemeColours"];
+            /**
+             * Font Mono
+             * @description The font-family stack of code, installed or shipped fonts, e.g. `ui-monospace, monospace`.
+             */
+            font_mono: string;
+            /**
+             * Font Sans
+             * @description The font-family stack of text, installed or shipped fonts, e.g. `system-ui, sans-serif`.
+             */
+            font_sans: string;
+            /**
+             * Font Size
+             * @description The size of the app's text, e.g. `15px`.
+             * @default 15px
+             */
+            font_size: string;
+            /**
+             * Font Size Small
+             * @description The size of secondary text, e.g. `13px`.
+             * @default 13px
+             */
+            font_size_small: string;
+            /**
+             * Fonts
+             * @description Font files the theme ships (`[[fonts]]` in its file); its stacks name their families.
+             * @default []
+             */
+            fonts: components["schemas"]["ThemeFont"][];
+            /**
+             * Heading Tracking
+             * @description The letter spacing of headings, e.g. `-0.5px` or `0`.
+             * @default 0
+             */
+            heading_tracking: string;
+            /**
+             * Heading Weight
+             * @description The weight of headings, e.g. `600`.
+             * @default 600
+             */
+            heading_weight: number;
+            /** @description The core avatar palette and decorations. */
+            heinzel?: components["schemas"]["ThemeHeinzel"] | null;
+            /**
+             * Icon Size
+             * @description The size of icons, e.g. `18px`.
+             * @default 18px
+             */
+            icon_size: string;
+            /** @description The colours in light mode. */
+            light: components["schemas"]["ThemeColours"];
+            /** @description The logo the theme ships (`[logo]` in its file), SVG files beside it; none if not. */
+            logo?: components["schemas"]["ThemeLogo"] | null;
+            /**
+             * Name
+             * @description Lowercase words joined by dashes, e.g. `acme`.
+             */
+            name: string;
+            /**
+             * Radius
+             * @description The corner radius of cards and dialogs, e.g. `0.75rem`.
+             * @default 0.75rem
+             */
+            radius: string;
+            /**
+             * Radius Control
+             * @description The corner radius of buttons, inputs and navigation items, e.g. `0.5rem`.
+             * @default 0.5rem
+             */
+            radius_control: string;
+            /**
+             * Row Height
+             * @description The height of navigation and list rows, e.g. `36px`.
+             * @default 36px
+             */
+            row_height: string;
+            /**
+             * Spacing
+             * @description The base step of gaps and padding, e.g. `0.25rem`.
+             * @default 0.25rem
+             */
+            spacing: string;
+            /**
+             * Title
+             * @description What people pick it by, e.g. `Acme`.
+             */
+            title: string;
+            /**
+             * Variant
+             * @description Colours that follow the time of day and the weather (`[[variant]]` in its file, ADR 0060).
+             * @default []
+             */
+            variant: components["schemas"]["ThemeVariant"][];
+        };
+        /**
+         * ThemeBackdrop
+         * @description A gradient behind the main area (`[light.backdrop]`), of hex colours and the theme's own colour tokens.
+         *
+         *     The web app builds the CSS from these typed parts: a kind, an angle in degrees and two to four stops, each a hex
+         *     colour or a token name it turns into `var(--color-<token>)`; no other text reaches CSS, and no `url()` exists.
+         */
+        ThemeBackdrop: {
+            /**
+             * Angle
+             * @description The direction of a linear gradient in degrees, e.g. `180`.
+             * @default 180
+             */
+            angle: number;
+            /**
+             * Gradient
+             * @description `linear` (along `angle`) or `radial` (from the centre).
+             * @enum {string}
+             */
+            gradient: "linear" | "radial";
+            /**
+             * Opacity
+             * @description How strongly it shows over `background`, 0 to 0.9, e.g. `0.6`.
+             * @default 0.6
+             */
+            opacity: number;
+            /**
+             * Stops
+             * @description Two to four colours: hex, e.g. `#fde68a`, or a token of the theme, e.g. `primary`.
+             */
+            stops: string[];
+        };
+        /**
          * ThemeColours
          * @description The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes).
          */
@@ -5697,6 +8612,8 @@ export interface components {
              * @description Text and icons of the active navigation item and of links; `foreground` when not given.
              */
             accent_foreground: string;
+            /** @description A gradient behind the main area only; sidebar and cards stay solid. */
+            backdrop?: components["schemas"]["ThemeBackdrop"] | null;
             /**
              * Background
              * @description A hex colour, `#rgb` or `#rrggbb`.
@@ -5803,6 +8720,8 @@ export interface components {
              * @description How to pick it, e.g. `hz system theme use acme`.
              */
             command: string;
+            /** @description The complete checked theme, including variants and backdrops. */
+            definition?: components["schemas"]["Theme"] | null;
             /**
              * Font Mono
              * @description The font stack of code.
@@ -5845,6 +8764,35 @@ export interface components {
             title: string;
         };
         /**
+         * ThemeFont
+         * @description A font file a theme ships, a `.woff2` inside its theme's directory; the web app loads it with `FontFace`.
+         */
+        ThemeFont: {
+            /**
+             * Family
+             * @description The family name the theme's font stacks use for it, e.g. `Acme Sans`.
+             */
+            family: string;
+            /**
+             * File
+             * @description The `.woff2` file, relative to the theme file's directory, e.g. `fonts/acme-sans.woff2`.
+             */
+            file: string;
+            /**
+             * Style
+             * @description `normal` or `italic`.
+             * @default normal
+             * @enum {string}
+             */
+            style: "normal" | "italic";
+            /**
+             * Weight
+             * @description The weight it covers, e.g. `400`, or a variable font's range, e.g. `100 900`.
+             * @default 400
+             */
+            weight: string;
+        };
+        /**
          * ThemeFontView
          * @description A font file a theme ships, where the web head serves it, for a `FontFace` in the web app.
          */
@@ -5869,6 +8817,25 @@ export interface components {
              * @description The weight it covers, e.g. `400`, or a variable font's range, e.g. `100 900`.
              */
             weight: string;
+        };
+        /**
+         * ThemeHeinzel
+         * @description Checked colours and decorations for the core drawing; personal look choices stay in charge.
+         */
+        ThemeHeinzel: {
+            /**
+             * Decorations
+             * @description Optional decoration of every core avatar; snow adds a cap patch and scarf.
+             * @default []
+             */
+            decorations: "snow"[];
+            /**
+             * Palette
+             * @description Colours for default hat, shirt and scarf parts.
+             */
+            palette?: {
+                [key: string]: string;
+            };
         };
         /**
          * ThemeList
@@ -5902,6 +8869,38 @@ export interface components {
             themes: components["schemas"]["ThemeView"][];
         };
         /**
+         * ThemeLogo
+         * @description A theme's logo (`[logo]` in its file): SVG files inside its theme's directory, served by the web head.
+         */
+        ThemeLogo: {
+            /**
+             * Alt
+             * @description What the logo says, for screen readers, e.g. `Acme`.
+             */
+            alt: string;
+            /**
+             * Dark
+             * @description The logo on a dark background; `light` when not given.
+             */
+            dark?: string | null;
+            /**
+             * Height
+             * @description How tall the logo is shown, e.g. `24px`.
+             * @default 24px
+             */
+            height: string;
+            /**
+             * Light
+             * @description The logo on a light background, relative to the theme file's directory, e.g. `logo/light.svg`.
+             */
+            light: string;
+            /**
+             * Mark
+             * @description A square logo for narrow places such as a collapsed sidebar; none when not given.
+             */
+            mark?: string | null;
+        };
+        /**
          * ThemeLogoView
          * @description A theme's logo, where the web head serves each file, for an `<img>` in the web app.
          */
@@ -5931,6 +8930,163 @@ export interface components {
              * @description A square logo for a collapsed sidebar; none when the theme has none.
              */
             mark: string | null;
+        };
+        /**
+         * ThemeOverrides
+         * @description What a variant changes in one mode: any colour token, the main tint and the backdrop; the rest stays.
+         */
+        ThemeOverrides: {
+            /**
+             * Accent
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            accent?: string | null;
+            /**
+             * Accent Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            accent_foreground?: string | null;
+            /** @description A backdrop that replaces the base's. */
+            backdrop?: components["schemas"]["ThemeBackdrop"] | null;
+            /**
+             * Background
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            background?: string | null;
+            /**
+             * Bad
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            bad?: string | null;
+            /**
+             * Border
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            border?: string | null;
+            /**
+             * Card
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            card?: string | null;
+            /**
+             * Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            foreground?: string | null;
+            /**
+             * Icon
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            icon?: string | null;
+            /**
+             * Input
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            input?: string | null;
+            /**
+             * Main Tint
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            main_tint?: string | null;
+            /**
+             * Muted
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            muted?: string | null;
+            /**
+             * Muted Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            muted_foreground?: string | null;
+            /**
+             * Ok
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            ok?: string | null;
+            /**
+             * Popover
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            popover?: string | null;
+            /**
+             * Primary
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            primary?: string | null;
+            /**
+             * Primary Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            primary_foreground?: string | null;
+            /**
+             * Ring
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            ring?: string | null;
+            /**
+             * Sidebar
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            sidebar?: string | null;
+            /**
+             * Warn
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            warn?: string | null;
+        };
+        /**
+         * ThemeSignalsView
+         * @description The signals now, which pick a theme's variant (ADR 0060).
+         */
+        ThemeSignalsView: {
+            /**
+             * Daypart
+             * @description The time of day in your time zone, e.g. `evening`.
+             * @enum {string}
+             */
+            daypart: "dawn" | "morning" | "day" | "dusk" | "evening" | "night";
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Sources
+             * @description The modules whose signals are known now.
+             */
+            sources: string[];
+            /**
+             * Sunrise
+             * @description Today's sunrise, when a module knows it.
+             */
+            sunrise: string | null;
+            /**
+             * Sunset
+             * @description Today's sunset, when a module knows it.
+             */
+            sunset: string | null;
+            /**
+             * Timezone
+             * @description The time zone the daypart is in, `[org] timezone` or this machine's.
+             */
+            timezone: string;
+            /**
+             * Weather
+             * @description The weather now, e.g. `rain`; none when no module publishes it.
+             */
+            weather: ("clear" | "clouds" | "rain" | "drizzle" | "thunder" | "snow" | "fog" | "wind" | "heat" | "cold") | null;
+        };
+        /**
+         * ThemeVariant
+         * @description A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0060).
+         */
+        ThemeVariant: {
+            /** @description What changes in dark mode. */
+            dark?: components["schemas"]["ThemeOverrides"] | null;
+            /** @description What changes in light mode. */
+            light?: components["schemas"]["ThemeOverrides"] | null;
+            /** @description The signals it follows, e.g. `{ daypart = "night" }`. */
+            when: components["schemas"]["ThemeWhen"];
         };
         /**
          * ThemeView
@@ -5979,6 +9135,8 @@ export interface components {
              * @description The weight of headings (`--heading-weight`), 100 to 900, e.g. `600`.
              */
             heading_weight: number;
+            /** @description Core avatar colours and decorations. */
+            heinzel?: components["schemas"]["ThemeHeinzel"] | null;
             /**
              * Icon Size
              * @description The size of icons (`--icon-size`), e.g. `18px`.
@@ -6038,6 +9196,32 @@ export interface components {
              * @description What people pick it by, e.g. `Acme`.
              */
             title: string;
+            /**
+             * Variant
+             * @description Colours that apply when the signals match (ADR 0060); the one naming most signals wins.
+             */
+            variant?: components["schemas"]["ThemeVariant"][];
+        };
+        /**
+         * ThemeWhen
+         * @description When a variant applies, e.g. `when = { daypart = "night", weather = ["rain", "drizzle"] }`.
+         *
+         *     Every signal it names has one of its values. Signals are a closed vocabulary (ADR 0060), so a misspelt one is
+         *     refused at import.
+         */
+        ThemeWhen: {
+            /**
+             * Daypart
+             * @description Any of these dayparts, e.g. `night`.
+             * @default []
+             */
+            daypart: ("dawn" | "morning" | "day" | "dusk" | "evening" | "night")[];
+            /**
+             * Weather
+             * @description Any of these, e.g. `rain`.
+             * @default []
+             */
+            weather: ("clear" | "clouds" | "rain" | "drizzle" | "thunder" | "snow" | "fog" | "wind" | "heat" | "cold")[];
         };
         /**
          * Toggled
@@ -6170,10 +9354,138 @@ export interface components {
              */
             pinned_to: string | null;
             /**
+             * Plugins
+             * @description What happened to each installed plugin: upgraded together with hz, unchanged or failed. A plugin that doesn't allow the new hz never blocks it.
+             */
+            plugins?: components["schemas"]["PluginUpdate"][];
+            /**
              * Updated
              * @description Whether Heinzelmännchen was reinstalled.
              */
             updated: boolean;
+        };
+        /**
+         * UsageReport
+         * @description Today's and this week's tokens and cost, and one period broken down by access, model, Heinzelmännchen, cause.
+         */
+        UsageReport: {
+            /**
+             * Breakdowns
+             * @description The period's rows by access, model, Heinzelmännchen and cause, most tokens first.
+             */
+            breakdowns: {
+                [key: string]: components["schemas"]["UsageRow"][];
+            };
+            /**
+             * Budget Usd
+             * @description `[ai] daily_budget_usd`, what today's meter fills against.
+             */
+            budget_usd: number;
+            /**
+             * By
+             * @description The breakdown the CLI shows; all four are in `breakdowns`.
+             * @enum {string}
+             */
+            by: "access" | "model" | "heinzel" | "cause";
+            /**
+             * Label
+             * @description A short label for a status item, e.g. `182k tok`.
+             */
+            label: string;
+            /**
+             * Level
+             * @description Today's cost against the daily budget, 0 to 1 (capped), for a meter.
+             */
+            level: number;
+            /**
+             * Period
+             * @description The period the breakdowns cover: `today` or `week` (the last seven days).
+             * @enum {string}
+             */
+            period: "today" | "week";
+            /** @description Since local midnight. */
+            today: components["schemas"]["UsageTotal"];
+            /**
+             * Tone
+             * @description `ok` below 75% of the budget, `warn` to 100%, `over`.
+             * @enum {string}
+             */
+            tone: "ok" | "warn" | "over";
+            /** @description The last seven days. */
+            week: components["schemas"]["UsageTotal"];
+        };
+        /**
+         * UsageRow
+         * @description What one access option, model, Heinzelmännchen or cause spent in the period.
+         */
+        UsageRow: {
+            /**
+             * Cost Usd
+             * @description What the runs that report a cost cost, in US dollars.
+             */
+            cost_usd: number;
+            /**
+             * Input Tokens
+             * @description Tokens sent, without cache reads.
+             */
+            input_tokens: number;
+            /**
+             * Key
+             * @description The access option, model, Heinzelmännchen or cause; `unknown` when not reported.
+             */
+            key: string;
+            /**
+             * Output Tokens
+             * @description Tokens produced.
+             */
+            output_tokens: number;
+            /**
+             * Runs
+             * @description Runs counted.
+             */
+            runs: number;
+            /**
+             * Tokens
+             * @description Every token moved, cache reads and writes included.
+             */
+            tokens: number;
+            /**
+             * Unpriced
+             * @description Runs that reported no cost, so the cost is at least `cost_usd`.
+             */
+            unpriced: number;
+        };
+        /**
+         * UsageTotal
+         * @description What a period spent in all.
+         */
+        UsageTotal: {
+            /**
+             * Cost Usd
+             * @description What the priced runs cost, in US dollars.
+             */
+            cost_usd: number;
+            /**
+             * Runs
+             * @description Runs counted.
+             */
+            runs: number;
+            /**
+             * Since
+             * Format: date-time
+             * @description The start of the period, in UTC: local midnight today, or seven days ago.
+             */
+            since: string;
+            /**
+             * Tokens
+             * @description Every token moved.
+             */
+            tokens: number;
+            /**
+             * Unpriced
+             * @description Runs that reported no cost.
+             */
+            unpriced: number;
         };
         /** ValidationError */
         ValidationError: {
@@ -6210,6 +9522,68 @@ export interface components {
             summary: string;
         };
         /**
+         * WakeScheduleView
+         * @description An authoritative schedule preview or active contract; the browser never runs its own wake timer.
+         */
+        WakeScheduleView: {
+            /**
+             * Blocked Reason
+             * @description Why the daemon or effective authority currently prevents a wake.
+             */
+            blocked_reason?: string | null;
+            /**
+             * Contract Version
+             * @description The exact contract version behind this schedule.
+             */
+            contract_version: number;
+            /**
+             * Cron
+             * @description The approved or proposed cron expression.
+             */
+            cron: string;
+            /**
+             * Last Run
+             * @description The last recorded scheduled run, when one exists.
+             */
+            last_run?: string | null;
+            /**
+             * Next Wake
+             * @description The effective next eligible wake, when known.
+             */
+            next_wake?: string | null;
+            /**
+             * Notification Status
+             * @description The recorded notification policy or delivery summary.
+             */
+            notification_status?: string | null;
+            /**
+             * Preview Hash
+             * @description The exact preview hash for activation or control review.
+             */
+            preview_hash: string;
+            /**
+             * Revision
+             * @description The immutable control or proposal revision.
+             */
+            revision: number;
+            /**
+             * Status
+             * @description Whether this schedule is proposed, active or paused.
+             * @enum {string}
+             */
+            status: "proposed" | "active" | "paused";
+            /**
+             * Summary
+             * @description The authoritative responsibility and schedule summary.
+             */
+            summary: string;
+            /**
+             * Timezone
+             * @description The IANA time zone used for schedule interpretation.
+             */
+            timezone: string;
+        };
+        /**
          * Week
          * @description Promises due in one ISO week, by how they ended: the team's flow, never anyone's performance.
          */
@@ -6240,6 +9614,141 @@ export interface components {
              */
             week: string;
         };
+        /**
+         * WidgetAction
+         * @description A button of a widget.
+         */
+        WidgetAction: {
+            /**
+             * Effect
+             * @description What a click does.
+             */
+            effect: components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"];
+            /**
+             * Icon
+             * @description An icon before the label.
+             */
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            /**
+             * Label
+             * @description What the button says.
+             */
+            label: string;
+        };
+        /**
+         * WidgetEntry
+         * @description A widget, or the problem that keeps it from showing.
+         */
+        WidgetEntry: {
+            /**
+             * Id
+             * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
+             */
+            id: string;
+            /**
+             * Module
+             * @description The qualified name of the contributing module, e.g. `clock`.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Where it sits among its kind, 0 first; ties go by id.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Why it shows nothing: its source failed, or the declaration can't work.
+             */
+            problem?: string | null;
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Slots
+             * @description Each slot it may show in, and whether it does: what the app filters by.
+             */
+            slots: {
+                [key: string]: boolean;
+            };
+            /**
+             * Widget
+             * @description What to show; none when there is nothing to show.
+             */
+            widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"]) | null;
+        };
+        /** heinzel_chat_Input */
+        heinzel_chat_Input: {
+            /**
+             * Message
+             * @description Your message to this Heinzel, retained privately.
+             */
+            message: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+            /**
+             * When Busy
+             * @description Queue a follow-up or request steering at the next safe boundary.
+             * @default follow_up
+             * @enum {string}
+             */
+            when_busy: "follow_up" | "steer";
+        };
+        /** heinzel_new_chat_Input */
+        heinzel_new_chat_Input: {
+            /** @description The complete personal appearance overrides; null leaves the current look unchanged. */
+            appearance?: components["schemas"]["HeinzelAppearance"] | null;
+            /**
+             * Name
+             * @description Your personal display name for this Heinzel.
+             * @default New Heinzel
+             */
+            name: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+        };
+        /** heinzel_profile_Input */
+        heinzel_profile_Input: {
+            /** @description The complete personal appearance overrides; null leaves the current look unchanged. */
+            appearance?: components["schemas"]["HeinzelAppearance"] | null;
+            /**
+             * Expected Revision
+             * @description The exact profile_revision you last read.
+             */
+            expected_revision: number;
+            /**
+             * Name
+             * @description The new personal display name; null leaves it unchanged.
+             */
+            name?: string | null;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -6251,6 +9760,9 @@ export type SchemaAccessList = components['schemas']['AccessList'];
 export type SchemaAccessOption = components['schemas']['AccessOption'];
 export type SchemaAccessTestReport = components['schemas']['AccessTestReport'];
 export type SchemaAccessUse = components['schemas']['AccessUse'];
+export type SchemaActionEntry = components['schemas']['ActionEntry'];
+export type SchemaActionPreview = components['schemas']['ActionPreview'];
+export type SchemaActionProposal = components['schemas']['ActionProposal'];
 export type SchemaAdapterCandidate = components['schemas']['AdapterCandidate'];
 export type SchemaAdapterDoc = components['schemas']['AdapterDoc'];
 export type SchemaAdapterInfo = components['schemas']['AdapterInfo'];
@@ -6258,12 +9770,16 @@ export type SchemaAgenda = components['schemas']['Agenda'];
 export type SchemaAgentResult = components['schemas']['AgentResult'];
 export type SchemaAssetTypeDoc = components['schemas']['AssetTypeDoc'];
 export type SchemaAssetView = components['schemas']['AssetView'];
+export type SchemaAttachmentRef = components['schemas']['AttachmentRef'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
+export type SchemaAvatar = components['schemas']['Avatar'];
+export type SchemaBackendBinding = components['schemas']['BackendBinding'];
 export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
 export type SchemaCapabilityReport = components['schemas']['CapabilityReport'];
 export type SchemaCapabilityUse = components['schemas']['CapabilityUse'];
+export type SchemaCardWidget = components['schemas']['CardWidget'];
 export type SchemaCatchUp = components['schemas']['CatchUp'];
 export type SchemaChannel = components['schemas']['Channel'];
 export type SchemaChatAction = components['schemas']['ChatAction'];
@@ -6274,6 +9790,8 @@ export type SchemaChatSession = components['schemas']['ChatSession'];
 export type SchemaChatSummary = components['schemas']['ChatSummary'];
 export type SchemaCheck = components['schemas']['Check'];
 export type SchemaCheckReport = components['schemas']['CheckReport'];
+export type SchemaClaudeScan = components['schemas']['ClaudeScan'];
+export type SchemaClaudeSummary = components['schemas']['ClaudeSummary'];
 export type SchemaColourDoc = components['schemas']['ColourDoc'];
 export type SchemaCompiledContract = components['schemas']['CompiledContract'];
 export type SchemaConfigFileInfo = components['schemas']['ConfigFileInfo'];
@@ -6285,14 +9803,15 @@ export type SchemaConnectorCapability = components['schemas']['ConnectorCapabili
 export type SchemaConnectorReport = components['schemas']['ConnectorReport'];
 export type SchemaConnectorTest = components['schemas']['ConnectorTest'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
-export type SchemaContractList = components['schemas']['ContractList'];
-export type SchemaContractSummary = components['schemas']['ContractSummary'];
+export type SchemaContractVersion = components['schemas']['ContractVersion'];
+export type SchemaContributionInfo = components['schemas']['ContributionInfo'];
 export type SchemaCredentialDoc = components['schemas']['CredentialDoc'];
 export type SchemaCredentialInfo = components['schemas']['CredentialInfo'];
 export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
 export type SchemaDefaultView = components['schemas']['DefaultView'];
 export type SchemaDelivered = components['schemas']['Delivered'];
 export type SchemaDelivery = components['schemas']['Delivery'];
+export type SchemaDetailLine = components['schemas']['DetailLine'];
 export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
@@ -6300,15 +9819,22 @@ export type SchemaDisposition = components['schemas']['Disposition'];
 export type SchemaDocumentation = components['schemas']['Documentation'];
 export type SchemaEdge = components['schemas']['Edge'];
 export type SchemaEdgeMetadata = components['schemas']['EdgeMetadata'];
+export type SchemaEffortChoice = components['schemas']['EffortChoice'];
 export type SchemaEvent = components['schemas']['Event'];
 export type SchemaExpertMode = components['schemas']['ExpertMode'];
 export type SchemaFilters = components['schemas']['Filters'];
+export type SchemaFoundServer = components['schemas']['FoundServer'];
+export type SchemaFoundSkill = components['schemas']['FoundSkill'];
 export type SchemaGraph = components['schemas']['Graph'];
 export type SchemaGraphEdge = components['schemas']['GraphEdge'];
 export type SchemaGraphMetadata = components['schemas']['GraphMetadata'];
 export type SchemaGraphNode = components['schemas']['GraphNode'];
+export type SchemaGraphicWidget = components['schemas']['GraphicWidget'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthReport = components['schemas']['HealthReport'];
+export type SchemaHeinzelAppearance = components['schemas']['HeinzelAppearance'];
+export type SchemaHeinzelList = components['schemas']['HeinzelList'];
+export type SchemaHeinzelSummary = components['schemas']['HeinzelSummary'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
 export type SchemaHintView = components['schemas']['HintView'];
 export type SchemaInstalledSkill = components['schemas']['InstalledSkill'];
@@ -6321,19 +9847,33 @@ export type SchemaLayerList = components['schemas']['LayerList'];
 export type SchemaLayerProblemView = components['schemas']['LayerProblemView'];
 export type SchemaLayerView = components['schemas']['LayerView'];
 export type SchemaLetDoc = components['schemas']['LetDoc'];
+export type SchemaListEntry = components['schemas']['ListEntry'];
+export type SchemaListWidget = components['schemas']['ListWidget'];
+export type SchemaLiveClock = components['schemas']['LiveClock'];
+export type SchemaLiveTime = components['schemas']['LiveTime'];
+export type SchemaLiveUntil = components['schemas']['LiveUntil'];
 export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaLogin = components['schemas']['Login'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
+export type SchemaMessageAccepted = components['schemas']['MessageAccepted'];
+export type SchemaMetricWidget = components['schemas']['MetricWidget'];
+export type SchemaModelChoice = components['schemas']['ModelChoice'];
+export type SchemaModelList = components['schemas']['ModelList'];
 export type SchemaModuleDoc = components['schemas']['ModuleDoc'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
+export type SchemaNavEntry = components['schemas']['NavEntry'];
+export type SchemaNavSettings = components['schemas']['NavSettings'];
+export type SchemaNavigate = components['schemas']['Navigate'];
 export type SchemaNode = components['schemas']['Node'];
 export type SchemaNodeMetadata = components['schemas']['NodeMetadata'];
 export type SchemaNotice = components['schemas']['Notice'];
 export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
+export type SchemaOpenUrl = components['schemas']['OpenUrl'];
 export type SchemaOpened = components['schemas']['Opened'];
 export type SchemaOperationAudience = components['schemas']['OperationAudience'];
+export type SchemaOperationCall = components['schemas']['OperationCall'];
 export type SchemaOperationDoc = components['schemas']['OperationDoc'];
 export type SchemaParameterDoc = components['schemas']['ParameterDoc'];
 export type SchemaParticipant = components['schemas']['Participant'];
@@ -6347,43 +9887,88 @@ export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
 export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
+export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaProfile = components['schemas']['Profile'];
+export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
+export type SchemaQuestion = components['schemas']['Question'];
+export type SchemaRecipientPreview = components['schemas']['RecipientPreview'];
 export type SchemaRecommendationView = components['schemas']['RecommendationView'];
 export type SchemaRecording = components['schemas']['Recording'];
+export type SchemaReferenceBlock = components['schemas']['ReferenceBlock'];
 export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
+export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
 export type SchemaRestart = components['schemas']['Restart'];
+export type SchemaRestarted = components['schemas']['Restarted'];
+export type SchemaRunCommand = components['schemas']['RunCommand'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
+export type SchemaRunOperation = components['schemas']['RunOperation'];
 export type SchemaScene = components['schemas']['Scene'];
 export type SchemaSceneStep = components['schemas']['SceneStep'];
+export type SchemaSessionCosts = components['schemas']['SessionCosts'];
+export type SchemaSessionList = components['schemas']['SessionList'];
+export type SchemaSessionMessage = components['schemas']['SessionMessage'];
+export type SchemaSessionSnapshot = components['schemas']['SessionSnapshot'];
+export type SchemaSessionSummary = components['schemas']['SessionSummary'];
 export type SchemaSettingDoc = components['schemas']['SettingDoc'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
+export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
 export type SchemaSetupDoc = components['schemas']['SetupDoc'];
 export type SchemaSkill = components['schemas']['Skill'];
+export type SchemaSkillDetail = components['schemas']['SkillDetail'];
+export type SchemaSkillList = components['schemas']['SkillList'];
+export type SchemaSkillView = components['schemas']['SkillView'];
+export type SchemaSkipped = components['schemas']['Skipped'];
+export type SchemaSoundEarconView = components['schemas']['SoundEarconView'];
+export type SchemaSoundLayerView = components['schemas']['SoundLayerView'];
+export type SchemaSoundList = components['schemas']['SoundList'];
+export type SchemaSoundStreamView = components['schemas']['SoundStreamView'];
+export type SchemaSoundscapeView = components['schemas']['SoundscapeView'];
 export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStatus = components['schemas']['Status'];
+export type SchemaStatusEntry = components['schemas']['StatusEntry'];
+export type SchemaStatusItem = components['schemas']['StatusItem'];
 export type SchemaStep = components['schemas']['Step'];
 export type SchemaSystemInfo = components['schemas']['SystemInfo'];
 export type SchemaTeamGraphDocument = components['schemas']['TeamGraphDocument'];
 export type SchemaTeamShow = components['schemas']['TeamShow'];
 export type SchemaTemplateView = components['schemas']['TemplateView'];
 export type SchemaTested = components['schemas']['Tested'];
+export type SchemaTextBlock = components['schemas']['TextBlock'];
+export type SchemaTheme = components['schemas']['Theme'];
+export type SchemaThemeBackdrop = components['schemas']['ThemeBackdrop'];
 export type SchemaThemeColours = components['schemas']['ThemeColours'];
 export type SchemaThemeDoc = components['schemas']['ThemeDoc'];
+export type SchemaThemeFont = components['schemas']['ThemeFont'];
 export type SchemaThemeFontView = components['schemas']['ThemeFontView'];
+export type SchemaThemeHeinzel = components['schemas']['ThemeHeinzel'];
 export type SchemaThemeList = components['schemas']['ThemeList'];
+export type SchemaThemeLogo = components['schemas']['ThemeLogo'];
 export type SchemaThemeLogoView = components['schemas']['ThemeLogoView'];
+export type SchemaThemeOverrides = components['schemas']['ThemeOverrides'];
+export type SchemaThemeSignalsView = components['schemas']['ThemeSignalsView'];
+export type SchemaThemeVariant = components['schemas']['ThemeVariant'];
 export type SchemaThemeView = components['schemas']['ThemeView'];
+export type SchemaThemeWhen = components['schemas']['ThemeWhen'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaUpdateResult = components['schemas']['UpdateResult'];
+export type SchemaUsageReport = components['schemas']['UsageReport'];
+export type SchemaUsageRow = components['schemas']['UsageRow'];
+export type SchemaUsageTotal = components['schemas']['UsageTotal'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWaiting = components['schemas']['Waiting'];
+export type SchemaWakeScheduleView = components['schemas']['WakeScheduleView'];
 export type SchemaWeek = components['schemas']['Week'];
+export type SchemaWidgetAction = components['schemas']['WidgetAction'];
+export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
+export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
+export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
+export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type $defs = Record<string, never>;
 export interface operations {
     ai_access_list: {
@@ -6470,6 +10055,60 @@ export interface operations {
             };
         };
     };
+    ai_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelList"];
+                };
+            };
+        };
+    };
+    ai_usage: {
+        parameters: {
+            query?: {
+                /** @description `today` (since local midnight) or `week` (the last seven days). */
+                period?: "today" | "week";
+                /** @description Break down by `access`, `model`, `heinzel` or `cause`. */
+                by?: "access" | "model" | "heinzel" | "cause";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     graph: {
         parameters: {
             query?: {
@@ -6495,6 +10134,353 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamGraphDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_chat_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_check: {
+        parameters: {
+            query?: {
+                /** @description A contract file, or a directory searched for *.prose.md; every contract found if none. */
+                path?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The result, when its exit code is non-zero. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckReport"];
+                };
+            };
+        };
+    };
+    heinzel_discover: {
+        parameters: {
+            query?: {
+                /** @description Only this module's playbook; every playbook's if omitted. */
+                playbook?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Discovery"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_graph: {
+        parameters: {
+            query?: {
+                /** @description Print only the Mermaid flowchart, to paste into a document or a pull request. */
+                mermaid?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractGraph"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_list: {
+        parameters: {
+            query?: {
+                /** @description Only Heinzelmännchen in this state: scheduled, manual, blocked, broken. */
+                state?: ("scheduled" | "manual" | "blocked" | "broken") | null;
+                /** @description Only contracts whose name or `<namespace>:<name>` contains this, e.g. `team:` or `weekly`. */
+                contract?: string | null;
+                /** @description Only those that maintain or read this artifact, e.g. `contract:team/weekly-report#report`. */
+                artifact?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeinzelList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_new_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_new_chat_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_playbooks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaybookList"];
+                };
+            };
+        };
+    };
+    heinzel_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_profile_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_session: {
+        parameters: {
+            query: {
+                session_id: string;
+                /** @description The opaque next_cursor from this session's previous page. */
+                cursor?: string | null;
+                /** @description The most messages returned in this page. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionList"];
+                };
+            };
+        };
+    };
+    heinzel_show: {
+        parameters: {
+            query: {
+                /** @description The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CompiledContract"];
                 };
             };
             /** @description Validation Error */
@@ -6680,6 +10666,46 @@ export interface operations {
             };
         };
     };
+    system_claude_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudeScan"];
+                };
+            };
+        };
+    };
+    system_claude_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudeSummary"];
+                };
+            };
+        };
+    };
     system_config_get: {
         parameters: {
             query: {
@@ -6765,6 +10791,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConfigRevealed"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_config_reveal_setting: {
+        parameters: {
+            query: {
+                /** @description Setting as section.key, e.g. hz.log_level or example.greeting. */
+                key: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingRevealed"];
                 };
             };
             /** @description Validation Error */
@@ -7008,6 +11066,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Toggled"];
+                };
+            };
+        };
+    };
+    system_daemon_restart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Restarted"];
                 };
             };
         };
@@ -7431,7 +11509,7 @@ export interface operations {
             query?: {
                 /** @description One plugin, by its short name (`clock`) or distribution (`heinzel-clock`); every one if absent. */
                 plugin?: string | null;
-                /** @description The `docs/scenes.toml` declaring what to record for the plugin (ADR 0058); when the default doesn't exist, a CLI scene is derived from the operations. */
+                /** @description The `docs/scenes.toml` declaring what to record for the plugin (ADR 0082); when the default doesn't exist, a CLI scene is derived from the operations. */
                 scenes?: string;
                 /** @description Include Heinzelmännchen's own modules as the page `heinzel`. */
                 builtin?: boolean;
@@ -7815,6 +11893,10 @@ export interface operations {
                 message: string;
                 /** @description Most this answer may cost in US dollars, within the per-message and session caps. */
                 budget_usd?: number | null;
+                /** @description The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default. */
+                model?: string | null;
+                /** @description The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default. */
+                effort?: ("" | "low" | "medium" | "high" | "xhigh" | "max") | null;
             };
             header?: never;
             path?: never;
@@ -7874,6 +11956,110 @@ export interface operations {
             };
         };
     };
+    system_skill_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillList"];
+                };
+            };
+        };
+    };
+    system_skill_show: {
+        parameters: {
+            query: {
+                /** @description The skill, one `hz system skill list` shows, e.g. `explain-heinzel`. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_sound_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundList"];
+                };
+            };
+        };
+    };
+    system_sound_use: {
+        parameters: {
+            query: {
+                /** @description The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_theme_list: {
         parameters: {
             query?: never;
@@ -7890,6 +12076,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThemeList"];
+                };
+            };
+        };
+    };
+    system_theme_signals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemeSignalsView"];
                 };
             };
         };
@@ -7913,6 +12119,210 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThemeList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_actions: {
+        parameters: {
+            query?: {
+                /** @description Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_hide: {
+        parameters: {
+            query: {
+                /** @description The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item: string;
+                /** @description Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several. */
+                slot?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContributionInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContributionInfo"][];
+                };
+            };
+        };
+    };
+    system_ui_navigation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NavEntry"][];
+                };
+            };
+        };
+    };
+    system_ui_show: {
+        parameters: {
+            query: {
+                /** @description The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item: string;
+                /** @description Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several. */
+                slot?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContributionInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_status: {
+        parameters: {
+            query?: {
+                /** @description Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatusEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_ui_widgets: {
+        parameters: {
+            query?: {
+                /** @description Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`. */
+                item?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WidgetEntry"][];
                 };
             };
             /** @description Validation Error */
@@ -7976,183 +12386,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TeamShow"];
-                };
-            };
-        };
-    };
-    workflow_check: {
-        parameters: {
-            query?: {
-                /** @description A contract file, or a directory searched for *.prose.md; every contract found if none. */
-                path?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CheckReport"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description The result, when its exit code is non-zero. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CheckReport"];
-                };
-            };
-        };
-    };
-    workflow_discover: {
-        parameters: {
-            query?: {
-                /** @description Only this module's playbook; every playbook's if omitted. */
-                playbook?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Discovery"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    workflow_graph: {
-        parameters: {
-            query?: {
-                /** @description Print only the Mermaid flowchart, to paste into a document or a pull request. */
-                mermaid?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ContractGraph"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    workflow_list: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ContractList"];
-                };
-            };
-        };
-    };
-    workflow_playbooks: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PlaybookList"];
-                };
-            };
-        };
-    };
-    workflow_show: {
-        parameters: {
-            query: {
-                /** @description The contract's name, or `<namespace>:<name>` (`team:` or `me:`) when both have it. */
-                name: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CompiledContract"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

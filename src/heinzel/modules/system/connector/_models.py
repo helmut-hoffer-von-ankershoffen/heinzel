@@ -5,13 +5,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from heinzel import Check, Login
-from heinzel.kernel import Mode
+from heinzel.kernel import How, Mode
 
 State = Literal["connected", "not-signed-in", "not-bound", "attention", "unknown"]
 """A connector's state from its offline checks (ADR 0055): signed in and serving something; its tool has no sign-in;
 it serves no capability; another check needs attention; or nothing says, so only a live test can tell."""
-How = Literal["configured", "automatic", "default", "off", "unbound"]
-"""How a capability got its adapter: configured, the only one installed, the core's default, set to `none`, or none."""
 
 
 class ConnectorCapability(BaseModel):

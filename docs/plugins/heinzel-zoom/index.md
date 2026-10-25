@@ -7,7 +7,7 @@ Read meetings from Zoom's meeting-summary emails: the meetings capability.
 | | |
 | --- | --- |
 | Kind | **connector** |
-| Version | `0.4.0` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.2` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-zoom> |
 | Licence | MIT |
 | Install | `hz system plugin add zoom --confirm` |
@@ -32,11 +32,11 @@ hz zoom --help
 
 ## Operations
 
-An operation is a `hz` command, an MCP tool (`hz system serve mcp`), a REST endpoint (`hz system serve api`) and an endpoint of the web app's API, unless it restricts its heads. Every command takes `--json`.
+Each column follows the kernel's actual exposure rules. MCP over stdio runs as its caller; HTTP MCP and public REST exclude private operations. Private API and web endpoints require their scoped bearer or paired session. Authentication does not grant human approval. Every CLI command takes `--json`.
 
-| Operation | CLI | MCP tool | REST | Web | Changes state | Audience |
-| --- | --- | --- | --- | --- | --- | --- |
-| Show this plugin's version, the Heinzelmännchen it runs on and where its meetings come from. | `hz zoom info` | `zoom_info` | `GET /zoom/info` | `GET /api/zoom/info` |  | expert |
+| Operation | CLI | MCP stdio | MCP HTTP | REST | Private API | Web | Changes state | Audience |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Show this plugin's version, the Heinzelmännchen it runs on and where its meetings come from. | `hz zoom info` | `zoom_info` | `zoom_info` | `GET /zoom/info` | `GET /zoom/info` | `GET /api/zoom/info` |  | expert |
 
 ### `hz zoom info`
 
@@ -67,7 +67,7 @@ In your configuration file (`hz system config set <key> <value>`), or as environ
 
 | Key | Type | Default | Environment variable | Description |
 | --- | --- | --- | --- | --- |
-| `query` | string | `"from:zoom.us"` | `HZ_ZOOM__QUERY` | Mail query that finds Zoom's meeting-summary emails, in the mail capability's syntax (`from:`, `subject:`, `label:`), e.g. `from:zoom.us label:Meetings`; subjects that are no summary are skipped. Never read from a project hz.toml. (user scope only) |
+| `query` | string | `"from:zoom.us"` | `HZ_ZOOM__QUERY` | The mail search that finds Zoom's meeting-summary emails, in your mail's search syntax; mails that aren't summaries are skipped. Never read from a project's settings. (user scope only) |
 
 ## Capabilities served
 

@@ -1,9 +1,9 @@
-# Community plugins: repositories of their own, listed in the plugin gallery (docs/plugins/README.md, ADR 0058).
+# Community plugins: repositories of their own, listed in the plugin gallery (docs/plugins/README.md, ADR 0082).
 # Add yours with a pull request: `name` (the distribution, heinzel-<name>), `summary` (one sentence), `repository`
 # (https) and, once its repository has one, `docs` (its generated page); without it the gallery links the README. First-party plugins (plugins/) and the
 # reference company (heinzel-acme) aren't listed here: the gallery knows them already.
 
 [[plugin]]
-name = "heinzel-example"
-summary = "Shows how a Heinzelmännchen plugin is built: one module, an operation, settings, a health check."
+name = "heinzel-weather"
+summary = "Weather conditions, forecasts and themes from the community plugin collection."
 repository = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib"

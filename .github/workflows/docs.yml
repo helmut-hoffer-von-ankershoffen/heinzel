@@ -1,6 +1,6 @@
 name: Docs
 
-# The documentation of every plugin and the site (ADR 0058). Shared with plugins through the template.
+# The documentation of every plugin and the site (ADR 0082). Shared with plugins through the template.
 #
 # Recordings: when the scenes or the demo tape change on main, and on demand, every scene of docs/scenes.toml (and
 # the derived ones) is re-recorded with VHS and Playwright in a sandbox by `make docs-record` (in Heinzelmännchen's

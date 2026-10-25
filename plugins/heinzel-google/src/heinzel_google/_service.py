@@ -4,7 +4,7 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Protocol, cast
 
 from heinzel import Check, HeinzelError, Kernel, Login, Status, __version__, clean_text
-from heinzel_google._gws import SCOPES, SETUP, GoogleSession, GwsSignInError, redact
+from heinzel_google._gws import SCOPES, SETUP, WRITE_SCOPES, GoogleSession, GwsSignInError, redact
 from heinzel_google._models import GoogleAbout
 
 DISTRIBUTION = "heinzel-google"
@@ -17,8 +17,11 @@ APIS = [
     "Google Docs API v1 (documents.get)",
     "Google Sheets API v4 (spreadsheets.get)",
     "Google Drive API v3 (files.get, files.list; metadata only)",
-    "Google Calendar API v3 (events.list)",
-    "Gmail API v1 (users.messages.list, users.messages.get, users.labels.list; only when mail is bound)",
+    "Google Calendar API v3 (events.list, freebusy.query; events.get, insert, patch, delete to write)",
+    (
+        "Gmail API v1 (users.messages.list/get, users.threads.get, users.labels.list, users.drafts.get; "
+        "users.drafts.create/send, users.threads.modify, users.getProfile to write; only when mail is bound)"
+    ),
 ]
 
 
@@ -56,6 +59,7 @@ class GoogleService:
             backend="Google Workspace CLI (gws)",
             gws=gws,
             scopes=list(SCOPES),
+            write_scopes=dict(WRITE_SCOPES),
             apis=APIS,
         )
 
