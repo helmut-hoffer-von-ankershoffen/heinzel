@@ -169,6 +169,9 @@ const en = {
   "status.degraded": "degraded",
   "status.down": "down",
   "today.title": "Today",
+  "today.notifications": "Notifications",
+  "today.notifications.unread": "{count} unread",
+  "today.notifications.all": "All notifications",
   "today.quiet": "Nothing needs you right now. Ask anything below.",
   "today.empty":
     "Ask about your setup, your team's contracts or what to do next. The chat reads with hz and asks you before it changes anything.",
@@ -179,6 +182,7 @@ const en = {
   "contrib.cancel": "Cancel",
   "contrib.done": "Done: {command}",
   "contrib.progress": "{done} of {total}",
+  "contrib.graphic.heinzel": "Your Heinzelmännchen",
   "contrib.says": "Module {module} shows: {text}",
   "contrib.slot.footer": "Show in footer",
   "contrib.slot.sidebar": "Show in sidebar",
@@ -468,7 +472,6 @@ const en = {
   "status.join": "Join",
   "status.noCalendar": "No calendar connected",
   "status.zones": "Time for the team and stakeholders",
-  "status.primary": "Your time: {city}, the first of your zones",
   "status.yourTime": "your time",
   "status.weekend": "Weekend · back Mon {from}",
   "status.starts": "Starts at {from}",
@@ -676,7 +679,7 @@ export function t(key: MessageKey, values: Record<string, string | number> = {})
 }
 
 const usd = new Intl.NumberFormat("en", { style: "currency", currency: "USD", maximumFractionDigits: 4 });
-const dateTime = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" });
+const dateTime = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", hourCycle: "h23" });
 const date = new Intl.DateTimeFormat("en", { dateStyle: "medium" });
 
 export const format = {

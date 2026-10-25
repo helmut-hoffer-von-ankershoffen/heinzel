@@ -304,3 +304,34 @@ def test_a_broken_user_table_is_refused_not_overwritten(service):
     with pytest.raises(HeinzelError, match="isn't valid; fix or remove it first"):
         service.show("acme:down", "footer", shown=False)
     assert "maybe" in path.read_text(encoding="utf-8")
+
+
+def test_a_graphic_widget_is_data_with_a_size_and_a_dressed_avatar():
+    from pydantic import ValidationError
+
+    from heinzel import Avatar, GraphicWidget, MetricWidget
+
+    graphic = GraphicWidget(label="Commute", value="12 min", avatar=Avatar(accessories=["scarf"]), size="wide")
+    assert graphic.model_dump(mode="json")["avatar"] == {"accessories": ["scarf"]}
+    assert MetricWidget(label="x", value="1").size is None
+    with pytest.raises(ValidationError):
+        GraphicWidget(label="Commute", value="12 min", size="huge")
+    with pytest.raises(ValidationError):
+        Avatar(accessories=["cape"])
+
+
+def test_a_graphic_widget_renders_as_text():
+    from heinzel import GraphicWidget
+    from heinzel.modules.system.ui import render_widgets
+    from heinzel.modules.system.ui._models import WidgetEntry
+
+    entry = WidgetEntry(
+        id="acme:w",
+        module="acme",
+        plugin=None,
+        order=1,
+        refresh=60,
+        slots={"today": True},
+        widget=GraphicWidget(label="Commute", value="12 min", caption="Light traffic"),
+    )
+    assert render_widgets([entry]) is not None

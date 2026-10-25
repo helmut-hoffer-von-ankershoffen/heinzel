@@ -152,6 +152,11 @@ data.
 
 ## More Information
 
+- Amendment, 2026-10-25: every widget may carry a `size` hint (`small`, `medium`, `wide`) that the Today grid maps to
+  columns, with a default per kind; and a fifth shape, `GraphicWidget`: a big value, a caption and an icon or an
+  `Avatar` (a Heinzelmännchen dressed by a closed list of accessories: umbrella, sunglasses, scarf). Still data only.
+  Any plugin may use it, for instance a commute time beside an icon.
+
 - Requested by the maintainer, 2026-10-24: status-bar items, then header buttons, then Today widgets, each "by
   implementing some new let".
 - Extension, not decided: a `page` slot (a navigation entry with a screen composed of the same widget shapes),

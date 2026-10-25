@@ -11,6 +11,7 @@ import { TodayWidgets } from "@/components/Contributions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { TodayNotifications } from "@/notifications/TodayNotifications";
 
 const TONES: Record<TodayCard["tone"], string> = {
   bad: "border-bad",
@@ -40,7 +41,7 @@ function Card({
       ref={ref}
       aria-current={focused || undefined}
       className={cn(
-        "flex w-72 shrink-0 snap-start flex-col gap-2 rounded-lg border-l-4 bg-card p-3 text-sm shadow-sm",
+        "flex min-w-0 flex-col gap-2 rounded-lg border-l-4 bg-card p-3 text-sm shadow-sm",
         TONES[card.tone],
         focused && "ring-2 ring-ring",
       )}
@@ -89,12 +90,13 @@ export function Home() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <section aria-labelledby="today" className="px-4 pt-6 pb-4 sm:px-6">
+    <div className="mx-auto max-w-6xl">
+      <section aria-labelledby="today" className="@container px-4 pt-6 pb-4 sm:px-6">
         <h1 id="today" className="text-2xl font-semibold">
           {t("today.title")}
         </h1>
-        <ul className="-mx-1 mt-3 flex snap-x gap-3 overflow-x-auto px-1 pb-2 empty:hidden">
+        <ul className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(min(15rem,100%),1fr))] gap-3 empty:hidden">
+          <TodayNotifications />
           {today.cards.map((card) => (
             <Card
               key={card.id}

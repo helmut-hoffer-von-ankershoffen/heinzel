@@ -38,6 +38,7 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import {
   api,
@@ -50,10 +51,12 @@ import {
   unwrap,
 } from "@/api/client";
 import { token } from "@/api/token";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { runInTerminal, runsAsIs, typeInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
+import { zoneClock, zoneTime } from "@/lib/zoneTime";
 
 export type Icon = NonNullable<SchemaStatusItem["icon"]>;
 export type Effect = NonNullable<SchemaStatusItem["effect"]>;
@@ -157,17 +160,12 @@ export function useNow(every = 1000): Date {
   return now;
 }
 
-const hhmm = (date: Date) => date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const hhmm = (date: Date) => zoneTime(date);
 
 /** A live value in the person's locale: the time in a zone, a moment's time, or how soon it is. */
 export function liveText(live: Live, now: Date): string {
   if (live.kind === "clock") {
-    return new Intl.DateTimeFormat([], {
-      timeZone: live.zone,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    }).format(now);
+    return zoneClock(now, live.zone);
   }
   const at = new Date(live.at);
   if (live.kind === "time") return hhmm(at);
@@ -470,6 +468,8 @@ export function widgetText(widget: Widget): string {
       return `${widget.label}: ${widget.value}${widget.delta ? ` (${widget.delta})` : ""}`;
     case "progress":
       return `${widget.label}: ${widget.done} of ${widget.total}`;
+    case "graphic":
+      return `${widget.label}: ${widget.value}${widget.caption ? ` (${widget.caption})` : ""}`;
   }
 }
 
@@ -543,8 +543,45 @@ function WidgetBody({ widget, run }: { widget: Widget; run: (effect: Effect) => 
           <p className="text-xs tabular-nums">{t("contrib.progress", { done: widget.done, total: widget.total })}</p>
         </>
       );
+    case "graphic":
+      // Data only: a big value beside an icon or a Heinzelmännchen dressed by the closed list of accessories.
+      return (
+        <div className="flex items-center gap-4">
+          {widget.avatar ? (
+            <HeinzelAvatar
+              view="full"
+              label={t("contrib.graphic.heinzel")}
+              accessories={widget.avatar.accessories ?? []}
+              className="h-28 w-auto max-w-32"
+            />
+          ) : (
+            widget.icon && <IconOf icon={widget.icon} className="size-10 text-muted-foreground" />
+          )}
+          <div className="min-w-0">
+            <h3 className="text-xs text-muted-foreground">{widget.label}</h3>
+            <p className={cn("text-3xl font-semibold tabular-nums", TONE_TEXT[widget.tone])}>{widget.value}</p>
+            {widget.caption && <p className="text-sm text-muted-foreground">{widget.caption}</p>}
+          </div>
+        </div>
+      );
   }
 }
+
+/** How much of the Today grid a widget takes: what it asks for, else what its kind needs. The spans widen with the
+ *  grid's own width (container queries), so beside the chat a wide widget never claims a column that isn't there. */
+const SIZES = {
+  small: "",
+  medium: "@[31rem]:col-span-2",
+  wide: "@[31rem]:col-span-2 @4xl:col-span-3",
+} as const;
+const DEFAULT_SIZE: Record<Widget["kind"], keyof typeof SIZES> = {
+  metric: "small",
+  progress: "small",
+  card: "small",
+  list: "small",
+  graphic: "medium",
+};
+export const sizeOf = (widget: Widget): keyof typeof SIZES => widget.size ?? DEFAULT_SIZE[widget.kind];
 
 const DISMISSED = "hz.today.widgets.dismissed";
 
@@ -582,10 +619,12 @@ function WidgetCard({
   return (
     <li
       className={cn(
-        "flex w-72 shrink-0 snap-start flex-col gap-2 rounded-lg border-l-4 bg-card p-3 text-sm shadow-sm",
+        "flex min-w-0 flex-col gap-2 rounded-lg border-l-4 bg-card p-3 text-sm shadow-sm",
         TONE_BORDER[tone],
+        SIZES[sizeOf(widget)],
       )}
       data-widget={current.id}
+      data-size={sizeOf(widget)}
     >
       <WidgetBody widget={widget} run={run} />
       <div className="mt-auto flex items-center gap-2 pt-1">
@@ -622,7 +661,7 @@ function WidgetCard({
   );
 }
 
-/** The Today widgets modules add, as cards in the strip; "Ask about it" frames the text as the module's. */
+/** The Today widgets modules add, as cards in the Today grid; "Ask about it" frames the text as the module's. */
 export function TodayWidgets({ onAsk }: { onAsk?: (context: string, text: string) => void }) {
   const { entries, updatedAt } = useEntries("widgets", "today");
   const { run, dialog } = useEffectRunner();
@@ -636,10 +675,12 @@ export function TodayWidgets({ onAsk }: { onAsk?: (context: string, text: string
       // No storage: dismissed for this visit only.
     }
   };
-  if (!entries.length) return null;
+  // One card per contribution id, whatever the list repeats.
+  const unique = [...new Map(entries.map((entry) => [entry.id, entry])).values()];
+  if (!unique.length) return null;
   return (
     <>
-      {entries.map((entry) => (
+      {unique.map((entry) => (
         <WidgetCard
           key={entry.id}
           entry={entry}
@@ -650,7 +691,8 @@ export function TodayWidgets({ onAsk }: { onAsk?: (context: string, text: string
           onDismiss={dismiss}
         />
       ))}
-      {dialog}
+      {/* The confirmation and its live region are not list items: they go beside the grid, not in it. */}
+      {createPortal(dialog, document.body)}
     </>
   );
 }

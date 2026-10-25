@@ -67,6 +67,26 @@ const widgets = [
     refresh: 300,
     widget: { kind: "metric", label: "Zones at work now", value: "2/3", tone: "ok" },
   },
+  {
+    ...entry,
+    id: "acme:commute",
+    slots: { today: true },
+    refresh: 300,
+    widget: {
+      kind: "graphic",
+      label: "Commute home",
+      value: "12 min",
+      caption: "Light traffic",
+      avatar: { accessories: ["sunglasses", "scarf"] },
+    },
+  },
+  {
+    ...entry,
+    id: "acme:wide",
+    slots: { today: true },
+    refresh: 300,
+    widget: { kind: "card", title: "Roadmap", body: "Three things", size: "wide" },
+  },
 ];
 
 const answers = {
@@ -123,6 +143,32 @@ describe("Contributions", () => {
     await user.click(within(card).getByRole("button", { name: "Dismiss Zones at work now" }));
     expect(screen.queryByText("2/3")).not.toBeInTheDocument();
   });
+
+  it("shows one card per contribution id, however often the list repeats it", async () => {
+    mockApi({ ...answers, "/api/system/ui/widgets": [...widgets, ...widgets] });
+    renderAt("/");
+    await screen.findByText("2/3");
+    expect(screen.getAllByText("2/3")).toHaveLength(1);
+    expect(document.querySelectorAll('[data-widget="acme:at-work"]')).toHaveLength(1);
+  });
+
+  it("lays widgets out by the size they ask for, or their kind's default", async () => {
+    mockApi(answers);
+    renderAt("/");
+    const sizeOf = async (text: string) => ((await screen.findByText(text)).closest("li") as HTMLElement).dataset.size;
+    expect(await sizeOf("2/3")).toBe("small");
+    expect(await sizeOf("Roadmap")).toBe("wide");
+    expect(await sizeOf("12 min")).toBe("medium");
+  });
+
+  it("draws a graphic widget: a big value beside a Heinzelmännchen dressed by data", async () => {
+    mockApi(answers);
+    renderAt("/");
+    const card = (await screen.findByText("12 min")).closest("li") as HTMLElement;
+    expect(within(card).getByText("Light traffic")).toBeInTheDocument();
+    expect(within(card).getByRole("img", { name: /Your Heinzelmännchen.*sunglasses.*scarf/ })).toBeInTheDocument();
+    await expectAccessible(card.parentElement as HTMLElement);
+  });
 });
 
 describe("Contribution toggles", () => {
@@ -159,7 +205,9 @@ describe("Contribution data", () => {
     const now = new Date("2026-10-26T10:00:00Z");
     expect(liveText({ kind: "until", at: "2026-10-26T10:12:00Z" }, now)).toBe("in 12 min");
     expect(liveText({ kind: "until", at: "2026-10-26T09:59:59Z" }, now)).toBe("now");
-    expect(liveText({ kind: "clock", zone: "UTC" }, now)).toMatch(/10.00.00/);
+    expect(liveText({ kind: "clock", zone: "UTC" }, now)).toBe("10:00:00");
+    expect(liveText({ kind: "clock", zone: "America/New_York" }, new Date("2026-10-26T20:45:00Z"))).toBe("16:45:00");
+    expect(liveText({ kind: "time", at: "2026-10-26T20:45:00Z" }, now)).toMatch(/^\d{2}:\d{2}$/);
     expect(
       widgetText({
         kind: "list",

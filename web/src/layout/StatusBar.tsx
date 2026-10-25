@@ -10,7 +10,7 @@ import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { zoneHour, zoneTime } from "@/lib/zoneTime";
+import { zoneClock, zoneHour, zoneTime } from "@/lib/zoneTime";
 import { CLOCK_SETTINGS } from "./settingsSections";
 
 type Meeting = { title: string; start: string; end: string; conference_url?: string | null };
@@ -134,11 +134,10 @@ function Clock({ now }: { now: Date }) {
   const wrapper = useRef<HTMLSpanElement>(null);
   const panelId = useId();
   const open = hovered || focused || pinned;
-  // The first zone is yours (`clock.zones` is ordered): the clock shows its time; the others are in the panel. Zones
-  // this browser doesn't know are left out rather than breaking the bar.
+  // The first zone is yours (`clock.zones` is ordered): the clock shows its time and the panel lists it first, with
+  // the others after it. Zones this browser doesn't know are left out rather than breaking the bar.
   const known = (zones.data ?? []).filter((zone) => knownZone(zone.zone));
   const primary = known[0]?.zone;
-  const list = known.slice(1);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   const enter = () => {
     window.clearTimeout(timer.current);
@@ -188,9 +187,7 @@ function Clock({ now }: { now: Date }) {
         aria-describedby={`${panelId}-hint`}
         className="rounded px-1 font-mono text-foreground/80 tabular-nums hover:bg-accent/60"
       >
-        <time dateTime={now.toISOString()}>
-          {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: primary })}
-        </time>
+        <time dateTime={now.toISOString()}>{zoneClock(now, primary)}</time>
         <span id={`${panelId}-hint`} className="sr-only">
           {t("status.zones")}
         </span>
@@ -202,14 +199,10 @@ function Clock({ now }: { now: Date }) {
             aria-label={t("status.zones")}
             className="w-80 rounded-xl border border-border bg-popover p-1.5 text-sm shadow-xl"
           >
-            {primary && (
-              <p className="px-2.5 pt-1.5 pb-1 text-xs text-muted-foreground">
-                {t("status.primary", { city: city(primary) })}
-              </p>
-            )}
-            {list.length > 0 ? (
+            {known.length > 0 ? (
+              // Yours first, then the others in the order of `clock.zones`; every time on the 24-hour clock.
               <ul>
-                {list.map((zone) => {
+                {known.map((zone, index) => {
                   const at = partsIn(zone.zone, now);
                   const sameDay = at.weekday === now.getDay();
                   return (
@@ -224,7 +217,13 @@ function Clock({ now }: { now: Date }) {
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline gap-2">
                           <span className="truncate text-foreground">{city(zone.zone)}</span>
-                          <span className="text-xs text-muted-foreground">{offsetText(at.offset)}</span>
+                          {index === 0 ? (
+                            <span className="rounded-md border border-primary/40 px-1.5 text-[11px] text-primary">
+                              {t("settings.primary")}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">{offsetText(at.offset)}</span>
+                          )}
                         </span>
                         <span className={cn("block text-xs", zone.working ? "text-ok" : "text-muted-foreground")}>
                           {availability(zone, at)}
@@ -264,7 +263,7 @@ function useNow(): Date {
   return now;
 }
 
-const time = (date: Date) => date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const time = (date: Date) => zoneTime(date);
 
 /** "in 12 min", "in 2 h 5 min", or the time when it's tomorrow or later. */
 function until(start: Date, now: Date): string {
