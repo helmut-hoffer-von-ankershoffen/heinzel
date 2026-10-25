@@ -49,7 +49,7 @@ const icons: Record<string, LucideIcon> = {
   system: Cpu,
   org: Building2,
   team: Users,
-  workflow: Workflow,
+  heinzel: Workflow,
   capabilities: Plug,
   runner: Bot,
 };

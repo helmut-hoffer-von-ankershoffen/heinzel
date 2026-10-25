@@ -56,8 +56,8 @@ def calls() -> list[str]:
 
 @pytest.fixture
 def without_workflow(settings):
-    """Kernel settings without the workflow module, whose daily `workflow:prune` would join ticks near midnight."""
-    return settings.model_copy(update={"disabled_modules": frozenset({"workflow"})})
+    """Kernel settings without the workflow module, whose daily `heinzel:prune` would join ticks near midnight."""
+    return settings.model_copy(update={"disabled_modules": frozenset({"heinzel"})})
 
 
 @pytest.fixture
