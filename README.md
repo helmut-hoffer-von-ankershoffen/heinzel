@@ -33,7 +33,7 @@
 | src/heinzel/kernel/\_skills.py                                |      380 |       11 |      120 |        2 |     97% |164-166, 375-376, 477-481, 610, 615, 631 |
 | src/heinzel/kernel/\_soundscapes.py                           |      269 |        3 |       70 |        0 |     99% |   102-104 |
 | src/heinzel/kernel/\_telemetry.py                             |      129 |        0 |       34 |        1 |     99% | 160-\>162 |
-| src/heinzel/kernel/\_themes.py                                |      514 |        3 |      146 |        3 |     99% |318, 378, 898 |
+| src/heinzel/kernel/\_themes.py                                |      519 |        3 |      146 |        3 |     99% |318, 378, 916 |
 | src/heinzel/modules/ai/\_\_init\_\_.py                        |       49 |       25 |       14 |        0 |     38% |38, 43-62, 82-94 |
 | src/heinzel/modules/ai/\_models.py                            |       32 |        5 |        2 |        1 |     82% |46-48, 51-52 |
 | src/heinzel/modules/ai/\_usage.py                             |      123 |        7 |       16 |        0 |     95% |107-108, 136-138, 144-145 |
@@ -94,7 +94,7 @@
 | src/heinzel/modules/system/skill/\_service.py                 |      149 |        2 |       48 |        0 |     99% |   139-140 |
 | src/heinzel/modules/system/sound/\_\_init\_\_.py              |       41 |        1 |       12 |        2 |     94% |66, 67-\>69 |
 | src/heinzel/modules/system/theme/\_\_init\_\_.py              |       50 |        1 |       14 |        4 |     92% |56-\>58, 60, 61-\>63, 75-\>77 |
-| src/heinzel/modules/system/theme/\_service.py                 |      210 |        3 |       56 |        2 |     98% |91, 334-335 |
+| src/heinzel/modules/system/theme/\_service.py                 |      210 |        3 |       56 |        2 |     98% |91, 335-336 |
 | src/heinzel/modules/system/ui/\_\_init\_\_.py                 |      100 |       38 |       34 |        2 |     52% |57-63, 68, 80, 84-92, 98-102, 112-118, 155-163 |
 | src/heinzel/modules/system/ui/\_service.py                    |      243 |        7 |       74 |        3 |     97% |100-101, 112-\>111, 286-287, 324-325, 394 |
 | src/heinzel/modules/team/\_\_init\_\_.py                      |       41 |        1 |        4 |        0 |     98% |       112 |
@@ -106,7 +106,7 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| **TOTAL**                                                     | **24536** |  **573** | **6184** |  **243** | **97%** |           |
+| **TOTAL**                                                     | **24542** |  **573** | **6184** |  **243** | **97%** |           |
 
 138 files skipped due to complete coverage.
 
