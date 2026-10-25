@@ -16,7 +16,7 @@
 | src/heinzel/heads/cli/\_serve.py                              |      101 |        4 |       30 |        5 |     93% |83-\>85, 116-\>exit, 192, 214-215, 239 |
 | src/heinzel/heads/cli/\_setup.py                              |      319 |        6 |       96 |        6 |     97% |275, 342, 427, 434, 481-\>490, 504, 507 |
 | src/heinzel/heads/mcp/\_\_init\_\_.py                         |       89 |        2 |       22 |        2 |     96% |  156, 191 |
-| src/heinzel/heads/web/\_\_init\_\_.py                         |      249 |       15 |       54 |        3 |     94% |395-397, 443, 453-\>457, 464-466, 474-\>exit, 494-495, 498-503 |
+| src/heinzel/heads/web/\_\_init\_\_.py                         |      252 |       15 |       56 |        3 |     94% |403-405, 451, 461-\>465, 472-474, 482-\>exit, 502-503, 506-511 |
 | src/heinzel/heads/web/\_devices.py                            |      100 |        2 |       12 |        0 |     98% |   125-126 |
 | src/heinzel/heads/web/\_shutdown.py                           |       83 |        3 |       14 |        1 |     96% |112, 141-142 |
 | src/heinzel/heads/web/\_stream.py                             |       51 |        3 |       16 |        3 |     91% |48, 85-\>84, 95-96 |
@@ -35,7 +35,7 @@
 | src/heinzel/kernel/\_skills.py                                |      380 |       11 |      120 |        2 |     97% |164-166, 375-376, 477-481, 610, 615, 631 |
 | src/heinzel/kernel/\_soundscapes.py                           |      269 |        3 |       70 |        0 |     99% |   102-104 |
 | src/heinzel/kernel/\_telemetry.py                             |      129 |        0 |       34 |        1 |     99% | 160-\>162 |
-| src/heinzel/kernel/\_themes.py                                |      519 |        3 |      146 |        3 |     99% |318, 378, 916 |
+| src/heinzel/kernel/\_themes.py                                |      562 |        3 |      162 |        3 |     99% |318, 378, 983 |
 | src/heinzel/modules/ai/\_\_init\_\_.py                        |       49 |       25 |       14 |        0 |     38% |38, 43-62, 82-94 |
 | src/heinzel/modules/ai/\_models.py                            |       32 |        5 |        2 |        1 |     82% |46-48, 51-52 |
 | src/heinzel/modules/ai/\_usage.py                             |      123 |        7 |       16 |        0 |     95% |107-108, 136-138, 144-145 |
@@ -100,7 +100,7 @@
 | src/heinzel/modules/system/skill/\_service.py                 |      149 |        2 |       48 |        0 |     99% |   139-140 |
 | src/heinzel/modules/system/sound/\_\_init\_\_.py              |       41 |        1 |       12 |        2 |     94% |66, 67-\>69 |
 | src/heinzel/modules/system/theme/\_\_init\_\_.py              |       50 |        1 |       14 |        4 |     92% |56-\>58, 60, 61-\>63, 75-\>77 |
-| src/heinzel/modules/system/theme/\_service.py                 |      210 |        3 |       56 |        2 |     98% |91, 335-336 |
+| src/heinzel/modules/system/theme/\_service.py                 |      212 |        3 |       58 |        2 |     98% |91, 338-339 |
 | src/heinzel/modules/system/ui/\_\_init\_\_.py                 |      112 |       33 |       40 |        6 |     64% |58-64, 69, 81, 86, 88, 90, 99-103, 113-119, 157, 180-188 |
 | src/heinzel/modules/system/ui/\_service.py                    |      289 |       11 |       92 |        4 |     96% |104-105, 116-\>115, 259-260, 349-350, 376-377, 399-400, 469 |
 | src/heinzel/modules/team/\_\_init\_\_.py                      |       41 |        1 |        4 |        0 |     98% |       112 |
@@ -112,7 +112,7 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| **TOTAL**                                                     | **26116** |  **614** | **6470** |  **265** | **97%** |           |
+| **TOTAL**                                                     | **26165** |  **614** | **6490** |  **265** | **97%** |           |
 
 146 files skipped due to complete coverage.
 
