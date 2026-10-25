@@ -308,4 +308,10 @@ app runs on [React](https://react.dev), [React Flow](https://reactflow.dev), [xt
 You need git, make and [uv](https://docs.astral.sh/uv/); `make setup` installs everything else.
 [CONTRIBUTING.md](CONTRIBUTING.md) takes you from a clone to a merged pull request; [AGENTS.md](AGENTS.md) is the guide for coding agents;
 [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md) the rules; [docs/adr/](docs/adr/) the decisions.
-Security issues: [SECURITY.md](SECURITY.md).
+Bugs and ideas: [open an issue](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues/new/choose);
+security issues privately, as [SECURITY.md](SECURITY.md) describes.
+
+## License
+
+Heinzelmännchen is free and open-source software under the [MIT license](LICENSE). The packages it ships keep their
+own licenses, listed in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
