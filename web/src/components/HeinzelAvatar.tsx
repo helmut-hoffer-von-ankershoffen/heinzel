@@ -1,10 +1,18 @@
-// One Heinzelmännchen as the app shows it, styled by its five choices (age, beard, hat and shirt colour, build) and
-// showing its state: the whole figure by default (its page, the profile editor, the chat's header), or its bust for
+// One Heinzelmännchen as the app shows it, styled by its five choices (age, beard, hat and shirt colour, build), any
+// accessories (umbrella, sunglasses, scarf: a data-only list) and showing its state: the whole figure by default (its page, the profile editor, the chat's header), or its bust for
 // small slots up to 28 pixels (chat messages, lists, graph nodes). Both are the same drawing (heinzel.ts), drawn
 // inline, so it needs no request. Motion is subtle and only without reduced motion: the badge breathes, a working
 // one bobs.
 import { cn } from "@/lib/utils";
-import { type HeinzelLook, heinzelShapes, type Shape, type View, viewBox } from "./heinzel";
+import {
+  ACCESSORY_LABEL,
+  type HeinzelLook,
+  heinzelShapes,
+  parseAccessories,
+  type Shape,
+  type View,
+  viewBox,
+} from "./heinzel";
 
 const STATE_LABEL = {
   idle: "",
@@ -52,12 +60,18 @@ function Part({ shape }: { shape: Shape }) {
 export function HeinzelAvatar({ view = "full", label, className, ...look }: Props) {
   const shapes = heinzelShapes(look);
   const state = look.state ?? "idle";
-  const name = label ? [label, STATE_LABEL[state]].filter(Boolean).join(", ") : undefined;
+  const accessories = parseAccessories(look.accessories);
+  // Accessories are decoration: without a label the picture stays hidden; with one they are part of what is said.
+  const name = label
+    ? [label, STATE_LABEL[state], ...accessories.map((accessory) => ACCESSORY_LABEL[accessory])]
+        .filter(Boolean)
+        .join(", ")
+    : undefined;
   const body = shapes.filter((shape) => shape.part !== "badge");
   const badge = shapes.filter((shape) => shape.part === "badge");
   return (
     <svg
-      viewBox={viewBox(look.age, view)}
+      viewBox={viewBox(look.age, view, accessories)}
       role={name ? "img" : undefined}
       aria-label={name}
       aria-hidden={name ? undefined : true}
