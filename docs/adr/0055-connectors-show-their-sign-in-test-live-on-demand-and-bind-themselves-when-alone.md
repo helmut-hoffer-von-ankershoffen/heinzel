@@ -57,14 +57,15 @@ one option is not a choice.
   which has no authentication ([ADR 0047](0047-plugins-are-managed-from-the-web-app-after-a-confirmation.md)).
 - **Automatic binding** (amends ADR 0028; maintainer's decision, 2026-10-24): while `[capabilities]` doesn't set a
   capability, the only installed adapter that provides it serves it, shown as automatic. Several installed: the core's
-  default serves if the capability has one, else nothing until the person picks. `none` is a binding that serves
+  default serves if the capability has one, else nothing until the person picks. `mail` is never automatic
+  (`Capability.automatic`): reading a mailbox stays the person's explicit choice. `none` is a binding that serves
   nothing, so a person can turn an automatic choice off; no adapter may take that name. A project `hz.toml` still
   can't bind, and installing a plugin stays the person's own act, so where data goes is still their choice; `hz system
   info` shows it as before.
 - **Settings with known values carry them in their JSON Schema**: an `enum` (a `Literal`), or an `x-options` source
   the web head resolves (`adapters` of a capability, with `none`), so the web app's settings editor offers a choice
   and never a text field for them.
-- **The web app** shows a status pill per connector, a Test button, the methods it implements, and Connect, which
+- **The web app** (planned, in a pull request of its own) shows a status pill per connector, a Test button, the methods it implements, and Connect, which
   opens the in-app terminal ([ADR 0048](0048-a-terminal-in-the-web-head.md)) with the sign-in command; the bindings are
   capability-first rows with a picker of the adapters that can serve each.
 
@@ -78,11 +79,12 @@ one option is not a choice.
 
 ### Confirmation
 
-`tests/unit/kernel/bindings_test.py` (automatic, default, `none`, configured), `tests/unit/kernel/module_test.py`
-(live health lets, the reserved name), `tests/unit/modules/connector_service_test.py` (state mapping with fake
-checks), `tests/integration/connector_test.py` and the plugins' `tests/integration/connector_test.py` (fake CLIs on
-`PATH`), and the web app's `ConnectorsSection.test.tsx` and `settingSchema.test.ts`, which fails if a setting with
-known values renders as a text field.
+`tests/unit/kernel/bindings_test.py` (automatic, default, `none`, configured, mail never automatic),
+`tests/unit/kernel/module_test.py` (live health lets, the reserved name), `tests/unit/modules/connector_service_test.py`
+(state mapping with fake checks) and `connector_render_test.py`, `tests/unit/modules/org_sync_test.py` (`none` is a
+choice sync doesn't override), `tests/integration/connector_test.py` and the plugins'
+`tests/integration/connector_test.py` (fake CLIs on `PATH`; doctor never runs a live test). Still to come with the web
+app: its cards and pickers, and a test that a setting with known values never renders as a text field.
 
 ## More Information
 

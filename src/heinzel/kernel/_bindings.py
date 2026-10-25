@@ -431,7 +431,8 @@ class Capabilities:
         """The adapter that serves `capability` unless a requirement pins another, and how it was chosen (ADR 0055).
 
         A configured binding wins, `none` included. Otherwise the only installed adapter of the capability serves
-        it automatically: installing it was the choice, and there is nothing to choose between. With several, the
+        it automatically: installing it was the choice, and there is nothing to choose between; except for a
+        capability that is never automatic (`mail`), which waits for the person's binding. With several, the
         core's default serves, if the capability has one; else nothing until the person picks one.
         """
         if self.settings.configured(capability):
@@ -439,7 +440,8 @@ class Capabilities:
             return (bound, "configured") if bound is not None else (None, "off")
         installed = self.installed(capability)
         default = self.settings.bound(capability)
-        if len(installed) == 1 and installed[0] != default:
+        spec = CAPABILITIES.get(capability)
+        if spec is not None and spec.automatic and len(installed) == 1 and installed[0] != default:
             return installed[0], "automatic"
         if default is not None:
             return default, "default"

@@ -4,6 +4,8 @@ import pytest
 
 from heinzel import (
     CatchUp,
+    Check,
+    HealthLet,
     InfoLet,
     JobLet,
     Module,
@@ -445,3 +447,26 @@ def test_operation_aliases_must_be_lowercase_words(alias):
         @module.operation(aliases=[alias])
         def wake() -> None:
             """Wake."""
+
+
+def test_a_module_has_an_offline_and_a_live_health_provider_and_no_second_of_either():
+    module = Module("probe", "Checks things for tests.")
+
+    @module.health
+    def offline() -> list[Check]:
+        return []
+
+    @module.health(live=True)
+    def live() -> list[Check]:
+        return []
+
+    lets = [let for let in module.lets if isinstance(let, HealthLet)]
+    assert [(let.name, let.live) for let in lets] == [("probe", False), ("probe live", True)]
+    with pytest.raises(ValueError, match="already has a HealthLet named 'probe live'"):
+        module.health(live=True)(live)
+
+
+def test_no_adapter_may_be_named_none():
+    module = Module("none", "Would shadow the binding that binds nothing.")
+    with pytest.raises(ValueError, match="reserved"):
+        module.provides("documents", modes={"read"})(object)

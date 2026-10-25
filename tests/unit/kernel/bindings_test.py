@@ -1015,7 +1015,22 @@ def test_a_default_stays_the_default_and_counts_as_defaulted(make_kernel):
     assert view.defaulted("agent-runner")
 
 
-def test_no_adapter_may_be_named_none():
-    module = Module("none", "Would shadow the binding that binds nothing.")
-    with pytest.raises(ValueError, match="reserved"):
-        module.provides("documents", modes={"read"})(Notes)
+def test_the_only_adapter_named_like_the_default_is_the_default_not_automatic(make_kernel):
+    module = Module("guesses", "Provides the default directory for tests.")
+    module.provides("directory", modes={"read"}, name="one-on-ones")(Notes)
+    view = make_kernel(guesses=module).resolve(CapabilityView)
+    assert view.binding("directory") == ("one-on-ones", "default")
+    assert view.defaulted("directory")
+
+
+def test_mail_is_never_bound_automatically(make_kernel):
+    module = Module("inbox", "Provides mail for tests.")
+    module.provides("mail", modes={"read"})(Notes)
+    view = make_kernel(inbox=module).resolve(CapabilityView)
+    assert view.binding("mail") == (None, "unbound")
+
+
+@pytest.mark.parametrize("value", ["none", ""])
+def test_none_or_empty_turns_off_even_a_capability_with_a_default(make_kernel, value):
+    view = make_kernel(config=bind(agent_runner=value)).resolve(CapabilityView)
+    assert view.binding("agent-runner") == (None, "off")

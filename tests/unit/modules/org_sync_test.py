@@ -303,3 +303,10 @@ def test_two_spellings_of_one_capability_are_one_recommendation_the_most_specifi
     kernel = make_kernel(builtins=True, vendors=vendors(), acme=company, **{"acme-ops": team})
     items = kernel.resolve(SyncService).report().items
     assert [(i.id, i.recommended) for i in items] == [("binding:code-host", "forge")]
+
+
+def test_a_capability_you_turned_off_is_your_choice_and_all_leaves_it_off(make):
+    service = make(capabilities={"documents": "none"})
+    assert states(service.report())["binding:documents"] == "differs"
+    service.sync("all")
+    assert user_file().get("capabilities", {}).get("documents") is None
