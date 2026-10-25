@@ -80,6 +80,9 @@ class ThemeView(BaseModel):
     )
     logo: ThemeLogoView | None = Field(default=None, description="The theme's logo; none if it ships none.")
     heinzel: ThemeHeinzel | None = Field(default=None, description="Core avatar colours and decorations.")
+    heinzel_assets: dict[str, str] = Field(
+        default_factory=dict[str, str], description="Available checked avatar layers as versioned same-origin URLs."
+    )
     variant: list[ThemeVariant] = Field(
         default_factory=list[ThemeVariant],
         description="Colours that apply when the signals match (ADR 0060); the one naming most signals wins.",
