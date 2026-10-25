@@ -41,6 +41,7 @@ from heinzel.kernel._lets import (
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, PlaybookSetup, templates_in
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._spec import hookimpl
+from heinzel.kernel._theme_signals import SignalLet, ThemeSignals
 from heinzel.kernel._themes import Theme, ThemeLet, sourced_themes
 
 RESERVED_NAMES = frozenset({"hz", "capabilities", "setup", "join"})
@@ -584,6 +585,39 @@ class Module:
             self.add(let)
             lets.append(let)
         return tuple(lets)
+
+    def signals[F: Callable[..., ThemeSignals]](
+        self, *, every: str | timedelta, name: str | None = None
+    ) -> Callable[[F], F]:
+        """Publish signals themes follow (ADR 0060): a read-only operation returning `ThemeSignals`, read every `every`.
+
+        `system.theme` calls it at most once per interval and hands its values to the web app, whose theme picks the
+        variant they match; it is an ordinary operation too, so `hz <module> <name>` shows what it publishes. Keep it
+        cheap and quick: it runs while the web app asks for the signals, and a failure only leaves them unknown.
+
+        Example:
+            ```python
+            @module.signals(every="15m")
+            def now(service: WeatherService) -> ThemeSignals:
+                \"\"\"The weather now, for themes.\"\"\"
+                return ThemeSignals(weather=service.now().kind, sunrise=..., sunset=...)
+            ```
+
+        Args:
+            every: How long its values hold, 1m to 1d, e.g. `15m`.
+            name: The operation's name; defaults to the function name with underscores as dashes.
+
+        Raises:
+            ValueError: If the interval is malformed or out of range, or the function has no docstring.
+        """
+        interval = parse_duration(every)
+
+        def decorate(target: F) -> F:
+            self.operation(name=name)(target)
+            self.add(SignalLet(name=name or target.__name__.strip("_").replace("_", "-"), func=target, every=interval))
+            return target
+
+        return decorate
 
     @hookimpl
     def heinzel_lets(self) -> Sequence[Let]:

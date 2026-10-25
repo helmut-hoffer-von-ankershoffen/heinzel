@@ -1280,6 +1280,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/theme/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
+         * @description Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
+         */
+        get: operations["system_theme_signals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/theme/use": {
         parameters: {
             query?: never;
@@ -4964,6 +4984,38 @@ export interface components {
             pops_up: boolean;
         };
         /**
+         * ThemeBackdrop
+         * @description A gradient behind the main area (`[light.backdrop]`), of hex colours and the theme's own colour tokens.
+         *
+         *     The web app builds the CSS from these typed parts: a kind, an angle in degrees and two to four stops, each a hex
+         *     colour or a token name it turns into `var(--color-<token>)`; no other text reaches CSS, and no `url()` exists.
+         */
+        ThemeBackdrop: {
+            /**
+             * Angle
+             * @description The direction of a linear gradient in degrees, e.g. `180`.
+             * @default 180
+             */
+            angle: number;
+            /**
+             * Gradient
+             * @description `linear` (along `angle`) or `radial` (from the centre).
+             * @enum {string}
+             */
+            gradient: "linear" | "radial";
+            /**
+             * Opacity
+             * @description How strongly it shows over `background`, 0 to 0.9, e.g. `0.6`.
+             * @default 0.6
+             */
+            opacity: number;
+            /**
+             * Stops
+             * @description Two to four colours: hex, e.g. `#fde68a`, or a token of the theme, e.g. `primary`.
+             */
+            stops: string[];
+        };
+        /**
          * ThemeColours
          * @description The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes).
          */
@@ -4978,6 +5030,8 @@ export interface components {
              * @description Text and icons of the active navigation item and of links; `foreground` when not given.
              */
             accent_foreground: string;
+            /** @description A gradient behind the main area only; sidebar and cards stay solid. */
+            backdrop?: components["schemas"]["ThemeBackdrop"] | null;
             /**
              * Background
              * @description A hex colour, `#rgb` or `#rrggbb`.
@@ -5153,6 +5207,163 @@ export interface components {
             mark: string | null;
         };
         /**
+         * ThemeOverrides
+         * @description What a variant changes in one mode: any colour token, the main tint and the backdrop; the rest stays.
+         */
+        ThemeOverrides: {
+            /**
+             * Accent
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            accent?: string | null;
+            /**
+             * Accent Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            accent_foreground?: string | null;
+            /** @description A backdrop that replaces the base's. */
+            backdrop?: components["schemas"]["ThemeBackdrop"] | null;
+            /**
+             * Background
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            background?: string | null;
+            /**
+             * Bad
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            bad?: string | null;
+            /**
+             * Border
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            border?: string | null;
+            /**
+             * Card
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            card?: string | null;
+            /**
+             * Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            foreground?: string | null;
+            /**
+             * Icon
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            icon?: string | null;
+            /**
+             * Input
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            input?: string | null;
+            /**
+             * Main Tint
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            main_tint?: string | null;
+            /**
+             * Muted
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            muted?: string | null;
+            /**
+             * Muted Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            muted_foreground?: string | null;
+            /**
+             * Ok
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            ok?: string | null;
+            /**
+             * Popover
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            popover?: string | null;
+            /**
+             * Primary
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            primary?: string | null;
+            /**
+             * Primary Foreground
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            primary_foreground?: string | null;
+            /**
+             * Ring
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            ring?: string | null;
+            /**
+             * Sidebar
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            sidebar?: string | null;
+            /**
+             * Warn
+             * @description A hex colour replacing the base's; unset keeps it.
+             */
+            warn?: string | null;
+        };
+        /**
+         * ThemeSignalsView
+         * @description The signals now, which pick a theme's variant (ADR 0060).
+         */
+        ThemeSignalsView: {
+            /**
+             * Daypart
+             * @description The time of day in your time zone, e.g. `evening`.
+             * @enum {string}
+             */
+            daypart: "dawn" | "morning" | "day" | "dusk" | "evening" | "night";
+            /**
+             * Refresh
+             * @description How often to ask again, in seconds.
+             */
+            refresh: number;
+            /**
+             * Sources
+             * @description The modules whose signals are known now.
+             */
+            sources: string[];
+            /**
+             * Sunrise
+             * @description Today's sunrise, when a module knows it.
+             */
+            sunrise: string | null;
+            /**
+             * Sunset
+             * @description Today's sunset, when a module knows it.
+             */
+            sunset: string | null;
+            /**
+             * Timezone
+             * @description The time zone the daypart is in, `[org] timezone` or this machine's.
+             */
+            timezone: string;
+            /**
+             * Weather
+             * @description The weather now, e.g. `rain`; none when no module publishes it.
+             */
+            weather: ("clear" | "clouds" | "rain" | "drizzle" | "thunder" | "snow" | "fog" | "wind" | "heat" | "cold") | null;
+        };
+        /**
+         * ThemeVariant
+         * @description A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0060).
+         */
+        ThemeVariant: {
+            /** @description What changes in dark mode. */
+            dark?: components["schemas"]["ThemeOverrides"] | null;
+            /** @description What changes in light mode. */
+            light?: components["schemas"]["ThemeOverrides"] | null;
+            /** @description The signals it follows, e.g. `{ daypart = "night" }`. */
+            when: components["schemas"]["ThemeWhen"];
+        };
+        /**
          * ThemeView
          * @description One available theme with every token value, ready to become the web app's CSS custom properties.
          */
@@ -5258,6 +5469,32 @@ export interface components {
              * @description What people pick it by, e.g. `Acme`.
              */
             title: string;
+            /**
+             * Variant
+             * @description Colours that apply when the signals match (ADR 0060); the one naming most signals wins.
+             */
+            variant?: components["schemas"]["ThemeVariant"][];
+        };
+        /**
+         * ThemeWhen
+         * @description When a variant applies, e.g. `when = { daypart = "night", weather = ["rain", "drizzle"] }`.
+         *
+         *     Every signal it names has one of its values. Signals are a closed vocabulary (ADR 0060), so a misspelt one is
+         *     refused at import.
+         */
+        ThemeWhen: {
+            /**
+             * Daypart
+             * @description Any of these dayparts, e.g. `night`.
+             * @default []
+             */
+            daypart: ("dawn" | "morning" | "day" | "dusk" | "evening" | "night")[];
+            /**
+             * Weather
+             * @description Any of these, e.g. `rain`.
+             * @default []
+             */
+            weather: ("clear" | "clouds" | "rain" | "drizzle" | "thunder" | "snow" | "fog" | "wind" | "heat" | "cold")[];
         };
         /**
          * Toggled
@@ -5572,11 +5809,16 @@ export type SchemaTeamGraphDocument = components['schemas']['TeamGraphDocument']
 export type SchemaTeamShow = components['schemas']['TeamShow'];
 export type SchemaTemplateView = components['schemas']['TemplateView'];
 export type SchemaTested = components['schemas']['Tested'];
+export type SchemaThemeBackdrop = components['schemas']['ThemeBackdrop'];
 export type SchemaThemeColours = components['schemas']['ThemeColours'];
 export type SchemaThemeFontView = components['schemas']['ThemeFontView'];
 export type SchemaThemeList = components['schemas']['ThemeList'];
 export type SchemaThemeLogoView = components['schemas']['ThemeLogoView'];
+export type SchemaThemeOverrides = components['schemas']['ThemeOverrides'];
+export type SchemaThemeSignalsView = components['schemas']['ThemeSignalsView'];
+export type SchemaThemeVariant = components['schemas']['ThemeVariant'];
 export type SchemaThemeView = components['schemas']['ThemeView'];
+export type SchemaThemeWhen = components['schemas']['ThemeWhen'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
@@ -7248,6 +7490,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThemeList"];
+                };
+            };
+        };
+    };
+    system_theme_signals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThemeSignalsView"];
                 };
             };
         };

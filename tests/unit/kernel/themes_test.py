@@ -2,6 +2,7 @@
 
 import os
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,7 @@ def test_the_default_theme_is_valid_and_complete():
         "accent_foreground",
         "icon",
         "main_tint",
+        "backdrop",
     }
 
 
@@ -894,8 +896,8 @@ def test_theme_fonts_declares_logos_too():
 
 def test_main_tint_is_optional_per_mode_and_a_hex_colour():
     assert (DEFAULT_THEME.light.main_tint, DEFAULT_THEME.dark.main_tint) == (None, None)
-    tinted = Theme.model_validate(theme(light=COLOURS | {"main_tint": "#F7F4EE"}, dark=COLOURS | {"main_tint": "#123"}))
-    assert (tinted.light.main_tint, tinted.dark.main_tint) == ("#f7f4ee", "#123")
+    tinted = Theme.model_validate(theme(light=COLOURS | {"main_tint": "#F7F4EE"}, dark=COLOURS | {"main_tint": "#EEE"}))
+    assert (tinted.light.main_tint, tinted.dark.main_tint) == ("#f7f4ee", "#eee")
     assert Theme.model_validate(theme(light=COLOURS | {"main_tint": None})).light.main_tint is None
 
 
@@ -903,3 +905,134 @@ def test_main_tint_is_optional_per_mode_and_a_hex_colour():
 def test_main_tint_takes_the_colour_grammar(tint):
     with pytest.raises(ValidationError, match="main_tint"):
         ThemeColours.model_validate(COLOURS | {"main_tint": tint})
+
+
+def variant(**overrides: object) -> dict[str, object]:
+    return {"when": {"daypart": "night"}} | overrides
+
+
+def test_a_variant_overrides_colours_per_mode_and_one_word_is_a_list():
+    rainy = Theme.model_validate(
+        theme(variant=[variant(when={"weather": "rain"}, light={"main_tint": "#EEF0F7"}, dark={"foreground": "#fff"})])
+    )
+    assert rainy.variant[0].when.weather == ("rain",)
+    assert rainy.colours("light", {"weather": "rain"}).main_tint == "#eef0f7"
+    assert rainy.colours("dark", {"weather": "rain"}).foreground == "#fff"
+    assert rainy.colours("dark", {"weather": "clear"}) == rainy.dark
+
+
+def test_the_variant_naming_most_signals_wins_and_the_first_on_a_tie():
+    variants = (
+        themes.ThemeVariant.model_validate(variant(light={"main_tint": "#eeeeee"})),
+        themes.ThemeVariant.model_validate(variant(when={"weather": ["rain", "drizzle"]})),
+        themes.ThemeVariant.model_validate(variant(when={"daypart": "night", "weather": "rain"})),
+        themes.ThemeVariant.model_validate(variant(when={"daypart": ["night"]})),
+    )
+    assert themes.variant_of(variants, {"daypart": "day", "weather": None}) is None
+    assert themes.variant_of(variants, {"daypart": "night", "weather": None}) == 0
+    assert themes.variant_of(variants, {"daypart": "day", "weather": "drizzle"}) == 1
+    assert themes.variant_of(variants, {"daypart": "night", "weather": "rain"}) == 2
+    assert themes.variant_of(variants, {}) is None
+
+
+@pytest.mark.parametrize(
+    ("when", "match"),
+    [
+        ({}, "names at least one signal"),
+        ({"daypart": "midnight"}, "daypart"),
+        ({"weather": "sunny"}, "weather"),
+        ({"mood": "happy"}, "mood"),
+    ],
+)
+def test_a_variant_names_signals_of_the_closed_vocabulary(when, match):
+    with pytest.raises(ValidationError, match=match):
+        Theme.model_validate(theme(variant=[{"when": when}]))
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"main_tint": "url(x)"}, {"background": "#fff;}"}, {"font_sans": "x"}, {"backdrop": {"gradient": "conic"}}],
+)
+def test_a_variant_takes_the_same_grammar(overrides):
+    with pytest.raises(ValidationError):
+        Theme.model_validate(theme(variant=[variant(light=overrides)]))
+
+
+def test_a_theme_has_at_most_32_variants():
+    with pytest.raises(ValidationError, match="32"):
+        Theme.model_validate(theme(variant=[variant()] * 33))
+
+
+def test_a_backdrop_is_a_gradient_of_two_to_four_hex_or_token_stops():
+    backdrop = themes.ThemeBackdrop.model_validate({"gradient": "linear", "stops": ["primary", "#FDE68A", "main_tint"]})
+    assert (backdrop.angle, backdrop.opacity, backdrop.stops) == (180, 0.6, ("primary", "#fde68a", "main_tint"))
+    assert themes.ThemeBackdrop.model_validate({"gradient": "radial", "stops": ["#fff", "#000"]}).gradient == "radial"
+
+
+@pytest.mark.parametrize(
+    "backdrop",
+    [
+        {"gradient": "linear", "stops": ["#fff"]},
+        {"gradient": "linear", "stops": ["#fff"] * 5},
+        {"gradient": "linear", "stops": ["url(x)", "#fff"]},
+        {"gradient": "linear", "stops": ["var(--x)", "#fff"]},
+        {"gradient": "linear", "stops": ["backdrop", "#fff"]},
+        {"gradient": "linear", "stops": ["#fff", "#000"], "opacity": 0.95},
+        {"gradient": "linear", "stops": ["#fff", "#000"], "angle": 361},
+        {"gradient": "linear", "stops": ["#fff", "#000"], "angle": "90deg"},
+        {"gradient": "conic", "stops": ["#fff", "#000"]},
+        {"gradient": "linear", "stops": ["#fff", "#000"], "image": "x.png"},
+    ],
+)
+def test_a_backdrop_refuses_anything_outside_its_grammar(backdrop):
+    with pytest.raises(ValidationError):
+        themes.ThemeBackdrop.model_validate(backdrop)
+
+
+def test_contrast_is_the_wcag_ratio():
+    assert themes.contrast("#000", "#fff") == pytest.approx(21)
+    assert themes.contrast("#ffffff", "#ffffff") == pytest.approx(1)
+    assert themes.contrast("#6b6b6b", "#ffffff") == pytest.approx(5.33, abs=0.01)
+
+
+@pytest.mark.parametrize(
+    ("light", "where"),
+    [
+        ({"foreground": "#bbbbbb"}, "light: foreground on background"),
+        ({"muted_foreground": "#cccccc"}, "light: muted_foreground on background"),
+        ({"card": "#555555"}, "light: foreground on card"),
+        ({"main_tint": "#333333"}, "light: foreground on main_tint"),
+        (
+            {"backdrop": {"gradient": "linear", "stops": ["#000000", "background"], "opacity": 0.9}},
+            "light: foreground on backdrop stop #000000",
+        ),
+    ],
+)
+def test_a_theme_whose_text_is_hard_to_read_is_refused(light, where):
+    with pytest.raises(ValidationError, match=re.escape(where)):
+        Theme.model_validate(theme(light=COLOURS | light))
+
+
+def test_every_variant_is_checked_for_contrast_in_both_modes():
+    with pytest.raises(ValidationError, match=re.escape("variant.1.dark: foreground on background")):
+        Theme.model_validate(theme(variant=[variant(), variant(dark={"background": "#dddddd"})]))
+    gentle = {"backdrop": {"gradient": "linear", "stops": ["#e3e9ec", "background"], "opacity": 0.5}}
+    assert Theme.model_validate(theme(variant=[variant(light=gentle)])).variant[0].light is not None
+
+
+def test_the_fixture_theme_has_variants_with_backdrops_and_stays_readable():
+    (acme,) = themes_in(Path(__file__).parents[2] / "fixtures" / "layers" / "heinzel_acme" / "themes")
+    assert len(acme.variant) == 3
+    night_rain = acme.colours("dark", {"daypart": "night", "weather": "rain"})
+    assert night_rain.backdrop is not None
+    assert night_rain.backdrop.gradient == "radial"
+    assert acme.colours("light", {"daypart": "evening"}).main_tint == "#eef0f7"
+
+
+def test_the_weather_theme_of_the_guide_is_valid_and_readable():
+    guide = (Path(__file__).parents[3] / "docs" / "THEMES.md").read_text(encoding="utf-8")
+    (example,) = re.findall(r"```toml\n(.*?)```", guide, flags=re.DOTALL)
+    weather = Theme.model_validate(tomllib.loads(example))
+    assert len(weather.variant) == 6
+    assert weather.colours("dark", {"daypart": "night", "weather": "rain"}).background == "#0d1016"
+    assert weather.colours("light", {"daypart": "day", "weather": "clear"}).main_tint == "#e0f2fe"
