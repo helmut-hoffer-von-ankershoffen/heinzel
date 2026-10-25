@@ -34,7 +34,11 @@ const github = plugin({
   capabilities: ["github:code-host", "github:tracker"],
   kinds: ["connector"],
 });
-const clock = plugin({ name: "clock", summary: "World Clock: what time it is for everyone on the team.", kinds: ["capability"] });
+const clock = plugin({
+  name: "clock",
+  summary: "World Clock: what time it is for everyone on the team.",
+  kinds: ["capability"],
+});
 
 const zonesSchema = {
   type: "array",

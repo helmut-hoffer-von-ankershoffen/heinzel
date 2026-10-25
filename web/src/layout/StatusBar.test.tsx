@@ -110,9 +110,7 @@ describe("The footer on a narrow window", () => {
     const { container } = renderAt("/doctor");
     const bar = await footer();
     expect(await within(bar).findByText(/^v0\.4\.0$/)).toBeInTheDocument();
-    expect(
-      await within(bar).findByRole("button", { name: /^\d{2}:\d{2}:\d{2}$|World Clock/ }),
-    ).toBeInTheDocument();
+    expect(await within(bar).findByRole("button", { name: /^\d{2}:\d{2}:\d{2}$|World Clock/ })).toBeInTheDocument();
     expect(within(bar).queryByText("Daemon running · next tick 20:45")).not.toBeInTheDocument();
     await user.click(within(bar).getByRole("button", { name: "More status items" }));
     expect(await within(bar).findByText("Daemon running · next tick 20:45")).toBeInTheDocument();
