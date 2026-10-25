@@ -111,6 +111,10 @@ try {
   for (let step = 1; step <= 7; step++) {
     await wizard.getByText(`Step ${step} of 7`).waitFor();
     await page.waitForFunction(() => !document.body.textContent?.includes("Loading…"));
+    // Rendering settings is not enough: startup deliberately keeps the app inert until the splash leaves. A fast
+    // backend can render this input before that minimum display time; keyboard interaction must wait for readiness.
+    await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
+    await page.waitForFunction(() => !document.getElementById("root")?.hasAttribute("inert"), null, { timeout: 5000 });
     await audit(`onboarding-${step}`);
     if (step < 7) await wizard.getByRole("button", { name: "Next" }).click();
     await page.mouse.move(0, 0); // audit the resting state, not the button under the pointer
@@ -140,22 +144,46 @@ try {
     // Not "networkidle": the notice stream keeps a request open for as long as the app is (ADR 0046). The screen is
     // ready once nothing says it is loading.
     await page.waitForFunction(() => !document.body.textContent?.includes("Loading…"));
+    await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
+    await page.waitForFunction(() => !document.getElementById("root")?.hasAttribute("inert"), null, { timeout: 5000 });
     if (name === "settings") {
       const search = page.getByRole("searchbox", { name: "Filter settings" });
+      await page.waitForFunction((input) => input === document.activeElement, await search.elementHandle(), {
+        timeout: 5000,
+      });
+      const oneFocusIndicator = async () => {
+        try {
+          // React applies the ring after its keyboard event. Wait for that committed visual state, as we do for
+          // other async UI, rather than reading the previous render immediately after pressSequentially/Shift+Tab.
+          await page.waitForFunction(
+            (input) =>
+              input === document.activeElement &&
+              getComputedStyle(input).outlineStyle === "none" &&
+              getComputedStyle(input).boxShadow === "none" &&
+              getComputedStyle(input.closest("label")).boxShadow !== "none",
+            await search.elementHandle(),
+            { timeout: 5000 },
+          );
+        } catch {
+          const focus = await search.evaluate((input) => ({
+            active: input === document.activeElement,
+            appInert: document.getElementById("root")?.hasAttribute("inert"),
+            activeTag: document.activeElement?.tagName,
+            activeLabel: document.activeElement?.getAttribute("aria-label"),
+            inputClass: input.className,
+            parentClass: input.closest("label").className,
+            inputOutline: getComputedStyle(input).outlineStyle,
+            inputShadow: getComputedStyle(input).boxShadow,
+            parentShadow: getComputedStyle(input.closest("label")).boxShadow,
+          }));
+          result.errors.push(`Settings search must have one parent focus indicator: ${JSON.stringify(focus)}`);
+        }
+      };
       await search.pressSequentially("volume");
-      const focused = await search.evaluate((input) => ({
-        inputOutline: getComputedStyle(input).outlineStyle,
-        inputShadow: getComputedStyle(input).boxShadow,
-        parentShadow: getComputedStyle(input.closest("label")).boxShadow,
-      }));
-      if (focused.inputOutline !== "none" || focused.inputShadow !== "none" || focused.parentShadow === "none") {
-        result.errors.push(`Settings search must have one parent focus indicator: ${JSON.stringify(focused)}`);
-      }
+      await oneFocusIndicator();
       await page.keyboard.press("Tab");
       await page.keyboard.press("Shift+Tab");
-      if (!(await search.evaluate((input) => getComputedStyle(input.closest("label")).boxShadow !== "none"))) {
-        result.errors.push("Settings search lost its keyboard focus indicator");
-      }
+      await oneFocusIndicator();
       await search.fill("");
     }
     await audit(name);
