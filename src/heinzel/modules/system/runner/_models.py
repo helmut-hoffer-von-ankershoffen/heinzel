@@ -21,6 +21,15 @@ class RunnerSettings(ModuleSettings):
         description="Model for every run, e.g. `sonnet`; the agent's own default when not set.",
     )
     claude_executable: str = Field(default="claude", description="The Claude Code CLI, a name on PATH or a path.")
+    codex_executable: str = Field(default="codex", description="The Codex CLI, a name on PATH or a path.")
+    codex_model: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/@-]*$",  # a name, never an option
+        description="Model for every Codex run, e.g. `gpt-5-codex`; Codex's own default when not set.",
+    )
+    codex_effort: Literal["minimal", "low", "medium", "high", "xhigh"] | None = Field(
+        default=None, description="Reasoning effort for every Codex run; Codex's own default when not set."
+    )
     read_only_tools: list[str] = Field(
         default=["Read", "Grep", "Glob"],
         description="Claude Code tools a run may use; a profile asking for anything else is refused. Add only tools "
@@ -71,6 +80,7 @@ class RunnerSettings(ModuleSettings):
         {
             "ask_max_usd",
             "claude_executable",
+            "codex_executable",
             "read_only_tools",
             "command",
             "command_output",
