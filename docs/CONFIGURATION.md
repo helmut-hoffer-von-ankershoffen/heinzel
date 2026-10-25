@@ -205,7 +205,7 @@ Plugins add their own tables.
 | `session_max_usd` | `HZ_SYSTEM_RUNNER_CHAT__SESSION_MAX_USD` | `2.0` | The most one chat may cost in US dollars, all its messages together. One message never costs more than the most per answer. Never read from a project's hz.toml. |
 | `keep_days` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS` | `30` | How long a chat is kept after its last message, then removed. |
 | `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | How many chats are kept at most; the oldest beyond that are removed. |
-| `tools` | `HZ_SYSTEM_RUNNER_CHAT__TOOLS` | `'everyday'` | Which operations the chat's agent can use: `everyday` (the ones `hz --help` lists; every tool is sent with every message, so fewer make each message cheaper) or `all`, every operation expert mode shows. Choices: everyday, all. Never read from a project's hz.toml. |
+| `tools` | `HZ_SYSTEM_RUNNER_CHAT__TOOLS` | `'everyday'` | Which operations the chat's agent can use: the everyday ones, or all of them. Every tool is sent with every message, so fewer make each message cheaper. Choices: everyday, all. Never read from a project's hz.toml. |
 
 ## `[system.sound]`
 

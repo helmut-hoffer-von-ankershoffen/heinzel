@@ -49,8 +49,10 @@ class ChatSettings(ModuleSettings):
 
     tools: Literal["everyday", "all"] = Field(
         default="everyday",
-        description="Which operations the chat's agent can use: `everyday` (the ones `hz --help` lists; every tool is "
-        "sent with every message, so fewer make each message cheaper) or `all`, every operation expert mode shows.",
+        title="What the chat can use",
+        description="Which operations the chat's agent can use: the everyday ones, or all of them. Every tool is sent "
+        "with every message, so fewer make each message cheaper.",
+        json_schema_extra={"x-expert": True},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"session_max_usd", "tools"})
