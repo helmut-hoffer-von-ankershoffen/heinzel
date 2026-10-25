@@ -78,6 +78,10 @@ function base(url: URL): { status?: number; body: unknown } | undefined {
       return { body: [installed] };
     case "/api/system/plugin/search":
       return { body: { plugins: [], warnings: [] } };
+    case "/api/restart":
+      return { status: 202, body: { restarting: true, message: "Restarting" } };
+    case "/api/system/info":
+      return { body: { version: "0.3.0" } };
     default:
       return undefined;
   }
@@ -106,7 +110,8 @@ describe("PluginsSection", () => {
       return base(url);
     });
     const user = userEvent.setup();
-    const { container } = show();
+    const reload = vi.fn();
+    const { container } = show({ reload, restartInterval: 1 });
     await user.click(screen.getByRole("button", { name: "Add" }));
     await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
     await user.click(screen.getByRole("button", { name: "Install" }));
@@ -128,7 +133,9 @@ describe("PluginsSection", () => {
     await expectAccessible(container);
 
     await user.click(within(dialog).getByRole("button", { name: "Install" }));
-    expect(await screen.findByText("Restart hz ui to load it.")).toBeInTheDocument();
+    expect(await screen.findByText("Installed heinzel-crm, reloading…")).toBeInTheDocument();
+    await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+    expect(calls.some((request) => new URL(request.url).pathname === "/api/restart")).toBe(true);
     const confirmed = new URL(adds()[1]?.url ?? "");
     expect(confirmed.searchParams.get("spec")).toBe(PINNED);
     expect(confirmed.searchParams.get("confirm")).toBe("true");
@@ -136,11 +143,11 @@ describe("PluginsSection", () => {
   });
 
   it("installs a first-party plugin from Discover by name and a community one by its spec", async () => {
-    const entry = (name: string, community: boolean, install_spec: string) => ({
+    const entry = (name: string, community: boolean, install_spec: string, source?: string) => ({
       name: `heinzel-${name}`,
       short_name: name,
       description: `The ${name} plugin.`,
-      source: community ? "github" : "first-party",
+      source: source ?? (community ? "github" : "first-party"),
       community,
       install_spec,
       url: `https://example.org/${name}`,
@@ -153,7 +160,7 @@ describe("PluginsSection", () => {
       if (url.pathname === "/api/system/plugin/search") {
         return {
           body: {
-            plugins: [entry("zoom", false, "zoom"), entry("crm", true, git)],
+            plugins: [entry("zoom", false, "zoom"), entry("crm", true, git), entry("weather", true, "w", "contrib")],
             warnings: [],
           },
         };
@@ -175,8 +182,12 @@ describe("PluginsSection", () => {
       return base(url);
     });
     const user = userEvent.setup();
-    show();
+    show({ reload: vi.fn(), restartInterval: 1 });
     await user.click(screen.getByRole("tab", { name: "Discover" }));
+    const labels = (await screen.findAllByRole("listitem")).map((row) => row.textContent);
+    expect(labels.some((text) => text?.includes("Contrib"))).toBe(true);
+    expect(labels.some((text) => text?.includes("Community"))).toBe(true);
+    expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
     const adds = () => calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/add");
     const spec = (index: number) => new URL(adds()[index]?.url ?? "").searchParams.get("spec");
 
@@ -257,10 +268,23 @@ describe("PluginsSection", () => {
     const disabled = calls.find((request) => new URL(request.url).pathname === "/api/system/plugin/disable");
     expect(new URL(disabled?.url ?? "").searchParams.get("distribution")).toBe("heinzel-clock");
 
-    await user.click(await screen.findByRole("button", { name: "Restart hz ui" }));
+    expect(await screen.findByText("Disabled heinzel-clock, reloading…")).toBeInTheDocument();
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
     expect(restarted).toBe(true);
     expect(infoAsked).toBe(2);
+  });
+
+  it("offers a restart button when hz does not come back by itself", async () => {
+    serve((url) => {
+      if (url.pathname === "/api/system/plugin/disable") return { body: change("disable", true) };
+      if (url.pathname === "/api/restart") return { status: 500, body: { error: "no" } };
+      return base(url);
+    });
+    const user = userEvent.setup();
+    show({ reload: vi.fn(), restartInterval: 1 });
+    await user.click(await screen.findByRole("button", { name: "Disable heinzel-clock" }));
+    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Disable" }));
+    expect(await screen.findByRole("button", { name: "Restart hz ui" })).toBeInTheDocument();
   });
 
   it("offers Enable for a disabled plugin and links its source", async () => {
