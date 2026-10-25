@@ -178,6 +178,9 @@ notifier: ## Build Heinzel Notifier, the macOS notifier app the wheel ships (mac
 icons: ## Make every image of Heinzelmännchen from heinzel.svg: the web app's icons, the favicon, the theme's logo (macOS 14+)
 	@uv run --quiet --script scripts/notifier.py icons
 
+terminal-art: ## Redraw Heinzelmännchen for the terminal from web/src/components/heinzel.ts (needs node, rsvg-convert, magick)
+	@uv run --quiet --script scripts/terminal_art.py && uv run --quiet ruff format --quiet src/heinzel/heads/cli/_art_data.py
+
 build: web-build ## Build wheels and sdists into dist/ (the core and every first-party plugin; the web app first)
 	uv build --all-packages
 

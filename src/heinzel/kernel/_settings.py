@@ -72,6 +72,12 @@ class Settings(ModuleSettings):
         "expert; a project's settings can't.",
         json_schema_extra={"x-hidden": True},  # its own switch in General says what it does now
     )
+    playful: bool = Field(
+        default=True,
+        description="A small Heinzelmännchen in the terminal: in the start screen, `hz setup`, the spinner of long "
+        "work and the done and error lines. Only on a colour terminal, never in JSON, a pipe, CI, with NO_COLOR or "
+        "TERM=dumb. Set to false to turn all of it off (the web app's Settings has the same switch).",
+    )
     plugins_enabled: bool = Field(
         default=True,
         title="Load plugins",
