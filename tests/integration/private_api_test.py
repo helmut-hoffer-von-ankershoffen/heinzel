@@ -304,3 +304,30 @@ def test_concurrent_first_stdio_mcp_calls_share_the_trusted_owner(make_kernel):
             assert results[0]["owner"] == kernel.resolve(CurrentUser).owner().id
 
     anyio.run(scenario)
+
+
+@pytest.mark.parametrize("configured", ["relative-state", "~/relative-state"])
+def test_user_state_paths_are_anchored_to_home_not_the_current_project(tmp_path, monkeypatch, make_kernel, configured):
+    home, project, config = (tmp_path / name for name in ("home", "project", "config"))
+    for folder in (home, project, config):
+        folder.mkdir()
+    (config / "config.toml").write_text(f'[hz]\nstate_dir = "{configured}"\n')
+    attacker_state = project / configured
+    identity = attacker_state / "identity"
+    identity.mkdir(parents=True, mode=0o700)
+    seeded = identity / "owner-v1"
+    seeded.write_text("u-" + "e" * 32 + "\n")
+    seeded.chmod(0o600)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(config))
+    monkeypatch.delenv("HZ_STATE_DIR")
+    monkeypatch.chdir(project)
+    kernel = make_kernel()
+    current = kernel.resolve(CurrentUser)
+    assert current.directory == home / "relative-state" / "identity"
+    assert current.owner().id != "u-" + "e" * 32
+    monkeypatch.setattr(api, "boot", lambda: kernel)
+    monkeypatch.setattr("uvicorn.run", lambda *args, **kwargs: None)
+    api.serve(private=True)
+    assert not (attacker_state / "api").exists()
+    assert len(list((home / "relative-state" / "api").glob("*.json"))) == 1

@@ -40,7 +40,9 @@ transport choice must not change data ownership or permit an agent to authorize 
    and call context; no model argument, header claiming an owner, username or project setting supplies it. A
    context variable is set/reset per call, never a shared kernel binding changed per request. Authentication proves
    identity, not human approval or permission to issue proof. Identity and default credential paths use user-scope
-   settings, never an effective project override. This protects against repository-selected identity storage; it
+   settings, never an effective project override. Relative user paths are anchored to the trusted home directory
+   and tilde paths are expanded, so repository CWD cannot select the owner or default credential destination.
+   This protects against repository-selected identity storage; it
    does not sandbox a same-user attacker who can replace trusted parent directories.
 2. **Private API.** Explicit private operations require that context before invocation and are excluded from the
    unauthenticated REST and HTTP-MCP surfaces. The private API accepts server-audience-bound, expiring bearer

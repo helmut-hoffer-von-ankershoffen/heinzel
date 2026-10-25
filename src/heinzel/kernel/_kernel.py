@@ -89,7 +89,10 @@ class ModuleRecord:
 
 def _current_user() -> CurrentUser:
     """Build identity from trusted user settings only when a head actually needs it."""
-    return CurrentUser(Config.load(Path.home()).settings(Settings, KERNEL_SECTION).state_dir / "identity")
+    home = Path.home()
+    state = Config.load(home).settings(Settings, KERNEL_SECTION).state_dir.expanduser()
+    # Relative user settings must not implicitly select the repository a head happened to start in.
+    return CurrentUser((state if state.is_absolute() else home / state) / "identity")
 
 
 class Kernel:
