@@ -111,6 +111,7 @@ def test_indentation_stops_at_the_deepest_level():
     assert len(indents) == MAX_INDENT + 10
 
 
+@pytest.mark.perf
 def test_a_hundred_thousand_nested_list_items_stay_linear():
     storage = "<ul><li>item" * 100_000
     text = storage_to_text(storage)
@@ -119,6 +120,7 @@ def test_a_hundred_thousand_nested_list_items_stay_linear():
     assert max(len(line) for line in text.splitlines()) == 2 * MAX_INDENT + len("- item")
 
 
+@pytest.mark.perf
 def test_twenty_thousand_nested_tasks_stay_linear():
     storage = "<ac:task-list><ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>t" * 20_000
     text = storage_to_text(storage)

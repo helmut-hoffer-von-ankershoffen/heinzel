@@ -72,6 +72,7 @@ def test_the_cache_is_stamped_before_asking_so_a_check_cut_short_still_waits():
     assert _update.start_check(hz) is None
 
 
+@pytest.mark.perf
 def test_a_slow_source_never_holds_the_command_longer_than_the_budget(monkeypatch):
     monkeypatch.setattr(_update, "BUDGET", 0.1)
     hz = kernel(Source(delay=2))
