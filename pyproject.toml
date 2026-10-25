@@ -236,6 +236,7 @@ markers = [
     "integration: Sociable integration tests - test interactions across layers (CLI -> service -> utils) or between modules with real collaborators, real file I/O and real subprocesses. Must pass offline; external services are mocked. Timeout 15 s.",
     "e2e: End-to-end tests - complete workflows against real external services (PyPI, GitHub, a real `uv tool` install). Need network. Timeout 120 s; mark as long_running if a test needs >= 5 min.",
     "long_running: Tests with a timeout >= 5 min.",
+    "perf: Performance tests that assert on elapsed time (linear time, a budget). Additional to the level marker; excluded from make check-fast, test, test-parallel and test-all-pythons, run by make test-perf in CI only, because load makes them flake.",
 ]
 
 [tool.coverage.run]
