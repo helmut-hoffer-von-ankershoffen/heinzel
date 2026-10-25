@@ -169,6 +169,9 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `model` | `HZ_SYSTEM_RUNNER__MODEL` | `None` | The model every run uses; the agent's own default when not set. Example: "sonnet". |
 | `claude_executable` | `HZ_SYSTEM_RUNNER__CLAUDE_EXECUTABLE` | `'claude'` | The Claude Code CLI to run: a name found on your PATH, or the full path to it. Never read from a project's hz.toml. |
+| `codex_executable` | `HZ_SYSTEM_RUNNER__CODEX_EXECUTABLE` | `'codex'` | The Codex CLI to run: a name found on your PATH, or the full path to it. Never read from a project's hz.toml. |
+| `codex_model` | `HZ_SYSTEM_RUNNER__CODEX_MODEL` | `None` | The model every Codex run uses; Codex's own default when not set. Example: "gpt-5-codex". |
+| `codex_effort` | `HZ_SYSTEM_RUNNER__CODEX_EFFORT` | `None` | How hard every Codex run thinks; Codex's own default when not set. Choices: minimal, low, medium, high, xhigh. |
 | `read_only_tools` | `HZ_SYSTEM_RUNNER__READ_ONLY_TOOLS` | `['Read', 'Grep', 'Glob']` | Claude Code tools a run may use; a profile asking for any other is refused. Add only tools that can't change anything. Never read from a project's hz.toml. |
 | `command` | `HZ_SYSTEM_RUNNER__COMMAND` | platform-specific | Your own runner's command line, one argument per item, never run through a shell. Placeholders: {prompt_file}, {contract_file}, {output_file}, {working_dir}, {tools}, {model}, {timeout_seconds}, {max_usd} and {mcp_config}, a JSON file of MCP servers for a chat's tools. Double braces are literal braces. Example: ["mytool", "ai", "run", "--prompt", "{prompt_file}"]. Never read from a project's hz.toml. |
 | `command_output` | `HZ_SYSTEM_RUNNER__COMMAND_OUTPUT` | `'stdout'` | Where your own runner's result is read from: what the command prints, or the output file. Choices: stdout, file. Never read from a project's hz.toml. |

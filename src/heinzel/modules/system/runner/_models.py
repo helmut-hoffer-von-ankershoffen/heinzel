@@ -30,6 +30,29 @@ class RunnerSettings(ModuleSettings):
         description="The Claude Code CLI to run: a name found on your PATH, or the full path to it.",
         json_schema_extra={"x-expert": True},
     )
+    codex_executable: str = Field(
+        default="codex",
+        title="Codex CLI",
+        description="The Codex CLI to run: a name found on your PATH, or the full path to it.",
+        json_schema_extra={"x-expert": True},
+    )
+    codex_model: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/@-]*$",  # a name, never an option
+        title="Codex model",
+        description="The model every Codex run uses; Codex's own default when not set.",
+        examples=["gpt-5-codex"],
+        json_schema_extra={"x-expert": True},
+    )
+    codex_effort: Literal["minimal", "low", "medium", "high", "xhigh"] | None = Field(
+        default=None,
+        title="Codex reasoning effort",
+        description="How hard every Codex run thinks; Codex's own default when not set.",
+        json_schema_extra={
+            "x-expert": True,
+            "x-labels": {"minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra high"},
+        },
+    )
     read_only_tools: list[str] = Field(
         default=["Read", "Grep", "Glob"],
         title="Read-only tools",
@@ -109,6 +132,7 @@ class RunnerSettings(ModuleSettings):
         {
             "ask_max_usd",
             "claude_executable",
+            "codex_executable",
             "read_only_tools",
             "command",
             "command_output",
