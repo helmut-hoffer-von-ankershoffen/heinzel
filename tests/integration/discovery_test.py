@@ -17,6 +17,7 @@ def test_discovers_builtin_modules_and_submodules():
         "ai",
         "ai.access",
         "graph",
+        "heinzel",
         "org",
         "system",
         "system.agent",
@@ -37,7 +38,6 @@ def test_discovers_builtin_modules_and_submodules():
         "system.theme",
         "team",
         "report",  # the package telemetry, named for what a Heinzelmännchen does with it
-        "workflow",
     ]
     assert all(r.origin.builtin for r in records)
     assert errors == {}

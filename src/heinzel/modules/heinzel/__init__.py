@@ -1,13 +1,17 @@
-"""The workflow module: Markdown contracts with YAML frontmatter that compile to daemon jobs (ADR 0021).
+"""The heinzel module: your Heinzelmännchen, one per contract, which draft by hand or on a schedule (ADR 0051).
 
-A contract in your workflows directory, or in your team's state repository, names the capabilities it reads, the
-inputs to fetch through them, the agent's limits and where the draft is meant to go. The daemon runs it on its
+What hz is, not a plugin: a Heinzelmännchen is a Markdown contract with YAML frontmatter (ADR 0021) that compiles to a
+daemon job. A contract in your own directory, or in your team's state repository, names the capabilities it reads,
+the inputs to fetch through them, the agent's limits and where the draft is meant to go. The daemon runs it on its
 schedule: inputs are fetched before the agent starts, the agent gets no hz tools, and the draft is saved locally.
-Nothing is published automatically; drafts wait for `hz inbox`.
+Nothing is published automatically; drafts wait for you (`hz heinzel drafts`).
+
+Renamed from `workflow` (ADR 0051): `hz workflow <op>`, the `workflow_<op>` tools, `[workflow]`, `HZ_WORKFLOW__*` and
+the `workflow:<job>` ids still work for one minor release, and name the new ones.
 
 `hz system serve daemon` doesn't re-read declared jobs while it runs, but contracts are read afresh on every tick: the
 kernel calls `CompiledJobs`' factory each time the daemon lists its jobs, so an edited contract counts at the next tick.
-`run` is a publish-style operation (`read_only=False`: it spends money and writes a local draft) that declares no
+`wake` is a publish-style operation (`read_only=False`: it spends money and writes a local draft) that declares no
 `write` capability.
 """
 
@@ -16,25 +20,27 @@ from typing import Annotated
 
 from pydantic import Field, JsonValue
 
-from heinzel import Check, ConfigEditor, HeinzelError, Module, Prompter
+from heinzel import Check, Config, ConfigEditor, HeinzelError, Module, Prompter
 from heinzel.kernel import CompiledJobs, PlaybookLet, PlaybookSetup, TeamPromises
-from heinzel.modules.workflow._measure import Measurements, Sent
-from heinzel.modules.workflow._models import (
+from heinzel.modules.heinzel._measure import Measurements, Sent
+from heinzel.modules.heinzel._models import (
     CheckReport,
     CompiledContract,
     ContractGraph,
-    ContractList,
     ContractSummary,
     DraftList,
     Frontmatter,
+    HeinzelList,
+    HeinzelSettings,
+    HeinzelState,
+    HeinzelSummary,
     NewContract,
     PruneReport,
     RunResult,
-    WorkflowSettings,
 )
-from heinzel.modules.workflow._playbooks import Discovery, PlaybookList
-from heinzel.modules.workflow._promises import ContractPromises
-from heinzel.modules.workflow._render import (
+from heinzel.modules.heinzel._playbooks import Discovery, PlaybookList
+from heinzel.modules.heinzel._promises import ContractPromises
+from heinzel.modules.heinzel._render import (
     render_check,
     render_discovery,
     render_drafts,
@@ -47,18 +53,18 @@ from heinzel.modules.workflow._render import (
     render_sent,
     render_show,
 )
-from heinzel.modules.workflow._service import WorkflowService
+from heinzel.modules.heinzel._service import HeinzelService
 
 module = Module(
-    "workflow",
-    "Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule "
-    "(`hz workflow new` starts one).",
+    "heinzel",
+    "Your Heinzelmännchen: durable agents that keep your team's documents true.",
+    renamed_from="workflow",
 )
-module.settings(WorkflowSettings)
-module.service(WorkflowService, WorkflowService.for_user)
+module.settings(HeinzelSettings)
+module.service(HeinzelService, HeinzelService.for_user)
 
 
-def _compiled(service: WorkflowService) -> CompiledJobs:
+def _compiled(service: HeinzelService) -> CompiledJobs:
     return service.compiled()
 
 
@@ -79,18 +85,36 @@ def _prune_exit_code(report: PruneReport) -> int:
     return 1 if report.problems else 0
 
 
-@module.operation(render=render_list, audience="everyday")
-def list_(service: WorkflowService) -> ContractList:
-    """List the contracts in your and your team's workflows directories, with their schedule and problems."""
-    return service.listing()
+# Your contracts, your systems' readiness and your drafts' times: the CLI, MCP and the web app behind its token get it,
+# never the unauthenticated REST head; the HTTP API of this module exists only for the UI (ADR 0051).
+@module.operation(render=render_list, heads={"cli", "mcp", "web"}, audience="everyday", aliases=["workflow list"])
+def list_(
+    service: HeinzelService,
+    state: Annotated[
+        HeinzelState | None,
+        Field(description="Only Heinzelmännchen in this state: scheduled, manual, blocked, broken."),
+    ] = None,
+    contract: Annotated[
+        str | None,
+        Field(description="Only contracts whose name or `<namespace>:<name>` contains this, e.g. `team:` or `weekly`."),
+    ] = None,
+    artifact: Annotated[
+        str | None,
+        Field(description="Only those that maintain or read this artifact, e.g. `contract:team/weekly-report#report`."),
+    ] = None,
+) -> HeinzelList:
+    """List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run."""
+    return service.listing(state=state, contract=contract, artifact=artifact)
 
 
 # A contract written through a web page could reach a local REST server; the CLI and MCP get it, like `run`. Neither
 # the starter nor a template has an active schedule (templates with one are refused), so nothing written here runs on
 # the daemon by itself.
-@module.operation(read_only=False, render=render_new, heads={"cli", "mcp"}, audience="everyday")
+@module.operation(
+    read_only=False, render=render_new, heads={"cli", "mcp"}, audience="everyday", aliases=["workflow new"]
+)
 def new(
-    service: WorkflowService,
+    service: HeinzelService,
     name: Annotated[
         str, Field(description="The contract's name: lowercase words joined by dashes, e.g. weekly-digest.")
     ],
@@ -100,7 +124,7 @@ def new(
     template: Annotated[
         str | None,
         Field(
-            description="Start from a playbook's template contract, `<module>:<name>` (`hz workflow playbooks` lists "
+            description="Start from a playbook's template contract, `<module>:<name>` (`hz heinzel playbooks` lists "
             "them), instead of the blank starter."
         ),
     ] = None,
@@ -108,7 +132,7 @@ def new(
         list[str] | None,
         Field(
             description="Fill a template's asset placeholder as type=reference, e.g. weekly-report=doc-123 "
-            "(`hz workflow discover` finds candidates); repeat for each."
+            "(`hz heinzel discover` finds candidates); repeat for each."
         ),
     ] = None,
 ) -> NewContract:
@@ -135,17 +159,17 @@ def _assets(pairs: list[str]) -> dict[str, str]:
     return found
 
 
-@module.operation(render=render_playbooks)
-def playbooks(service: WorkflowService) -> PlaybookList:
+@module.operation(render=render_playbooks, heads={"cli", "mcp", "web"}, aliases=["workflow playbooks"])
+def playbooks(service: HeinzelService) -> PlaybookList:
     """List the playbooks plugins contribute: asset types, template contracts and recommended settings."""
     return service.playbooks()
 
 
 # Hints read your systems; like `drafts`, the CLI, MCP and the web head (behind its session token) get it, not a web
 # page that can reach a local REST server.
-@module.operation(render=render_discovery, heads={"cli", "mcp", "web"})
+@module.operation(render=render_discovery, heads={"cli", "mcp", "web"}, aliases=["workflow discover"])
 def discover(
-    service: WorkflowService,
+    service: HeinzelService,
     playbook: Annotated[
         str | None, Field(description="Only this module's playbook; every playbook's if omitted.")
     ] = None,
@@ -157,7 +181,7 @@ def discover(
 class _PlaybookSetup(PlaybookSetup):
     """Walks through a playbook for its module's setup step (ADR 0037)."""
 
-    def __init__(self, service: WorkflowService) -> None:
+    def __init__(self, service: HeinzelService) -> None:
         self._service = service
 
     def run(self, playbook: PlaybookLet, prompter: Prompter, editor: ConfigEditor) -> None:
@@ -168,16 +192,18 @@ class _PlaybookSetup(PlaybookSetup):
 module.service(PlaybookSetup, _PlaybookSetup)
 
 
-@module.operation(render=render_show, audience="everyday")
-def show(service: WorkflowService, name: Name) -> CompiledContract:
+@module.operation(render=render_show, heads={"cli", "mcp", "web"}, audience="everyday", aliases=["workflow show"])
+def show(service: HeinzelService, name: Name) -> CompiledContract:
     """Show a contract as the daemon runs it: schedule, requirements, adapters, readiness, next steps."""
     return service.show(name)
 
 
 # Drafts hold data fetched from your systems; a web page can reach a local REST server, so the CLI and MCP list them.
-@module.operation(render=render_drafts, heads={"cli", "mcp"}, audience="everyday")
+# ADR 0051 moves this to a top-level `hz drafts` module; that waits for a home for `HeinzelService`'s type outside this
+# module, since top-level modules don't import each other.
+@module.operation(render=render_drafts, heads={"cli", "mcp"}, audience="everyday", aliases=["workflow drafts"])
 def drafts(
-    service: WorkflowService,
+    service: HeinzelService,
     name: Annotated[str | None, Field(description="Only this contract's drafts; every contract's if omitted.")] = None,
     latest: Annotated[bool, Field(description="Print the newest draft instead of the list.")] = False,
 ) -> DraftList:
@@ -186,9 +212,9 @@ def drafts(
 
 
 # It reads a file you name and writes a small record next to the draft; like `drafts`, only the CLI and MCP get it.
-@module.operation(read_only=False, render=render_sent, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_sent, heads={"cli", "mcp"}, aliases=["workflow sent"])
 def sent(  # noqa: PLR0913, PLR0917 - one option per place the approved text can be, and the draft
-    service: WorkflowService,
+    service: HeinzelService,
     name: Name,
     file: Annotated[
         Path | None, Field(description="What you finally sent, saved as a text or Markdown file; or give --ref.")
@@ -204,13 +230,13 @@ def sent(  # noqa: PLR0913, PLR0917 - one option per place the approved text can
         float | None, Field(ge=0, description="Your own estimate of the minutes you spent editing; optional.")
     ] = None,
 ) -> Sent:
-    """Record how much of a draft you changed before sending it; `hz workflow show` reports it."""
+    """Record how much of a draft you changed before sending it; `hz heinzel show` reports it."""
     return service.sent(name, file, ref=ref, draft=draft, edit_minutes=edit_minutes)
 
 
-@module.operation(render=render_graph)
+@module.operation(render=render_graph, heads={"cli", "mcp", "web"}, aliases=["workflow graph"])
 def graph(
-    service: WorkflowService,
+    service: HeinzelService,
     mermaid: Annotated[
         bool, Field(description="Print only the Mermaid flowchart, to paste into a document or a pull request.")
     ] = False,
@@ -219,9 +245,11 @@ def graph(
     return service.graph().model_copy(update={"mermaid_only": mermaid})
 
 
-@module.operation(render=render_check, exit_code=_check_exit_code)
+@module.operation(
+    render=render_check, exit_code=_check_exit_code, heads={"cli", "mcp", "web"}, aliases=["workflow check"]
+)
 def check(
-    service: WorkflowService,
+    service: HeinzelService,
     path: Annotated[
         Path | None,
         Field(description="A contract file, or a directory searched for *.prose.md; every contract found if none."),
@@ -232,31 +260,39 @@ def check(
 
 
 # A render spends money; REST is reachable from a browser, so only the CLI and MCP get it.
-@module.operation(read_only=False, render=render_run, heads={"cli", "mcp"}, audience="everyday")
-def run(
-    service: WorkflowService,
+@module.operation(
+    read_only=False, render=render_run, heads={"cli", "mcp"}, audience="everyday", aliases=["workflow run"]
+)
+def wake(
+    service: HeinzelService,
     name: Name,
     dry_run: Annotated[bool, Field(description="Only fetch the inputs and show the packet; run no agent.")] = False,
 ) -> RunResult:
-    """Render a contract now: fetch its inputs, run the agent and save the draft; nothing is published."""
+    """Wake a Heinzelmännchen now: fetch its inputs, run the agent, save the draft; nothing is published."""
     return service.run(name, dry_run=dry_run)
 
 
 # Pruning deletes local files, and a dry run lists drafts by name; a web page can reach a local REST server, so the
 # CLI and MCP get it, like `drafts`.
-@module.operation(read_only=False, render=render_prune, exit_code=_prune_exit_code, heads={"cli", "mcp"})
+@module.operation(
+    read_only=False,
+    render=render_prune,
+    exit_code=_prune_exit_code,
+    heads={"cli", "mcp"},
+    aliases=["workflow prune"],
+)
 def prune(
-    service: WorkflowService,
+    service: HeinzelService,
     dry_run: Annotated[bool, Field(description="Only list what would be deleted; delete nothing.")] = False,
 ) -> PruneReport:
-    """Delete drafts and records older than `[workflow] retention_days` (default 90); receipts are kept."""
+    """Delete drafts and records older than `[heinzel] retention_days` (default 90); receipts are kept."""
     return service.prune(dry_run=dry_run)
 
 
 # Housekeeping is an ordinary job, so the daemon's tick runs it with a receipt and `hz system daemon jobs` shows it.
 @module.job(schedule="@daily", name="prune", timeout="5m")
-def prune_expired(service: WorkflowService) -> JsonValue:
-    """Delete drafts and records older than `[workflow] retention_days`; the receipt counts them.
+def prune_expired(service: HeinzelService) -> JsonValue:
+    """Delete drafts and records older than `[heinzel] retention_days`; the receipt counts them.
 
     Raises:
         HeinzelError: If something couldn't be pruned, after pruning the rest, so the daemon reports the job as failed.
@@ -270,28 +306,29 @@ def prune_expired(service: WorkflowService) -> JsonValue:
 
 
 @module.health
-def health(service: WorkflowService) -> list[Check]:
-    """Contracts with errors, and scheduled contracts whose capabilities no adapter serves."""
-    return service.health()
+def health(service: HeinzelService, config: Config) -> list[Check]:
+    """Contracts with errors, scheduled contracts whose capabilities no adapter serves, and settings still to move."""
+    return [*service.health(), *service.renamed_settings(config)]
 
 
 __all__ = [
     "CheckReport",
     "CompiledContract",
     "ContractGraph",
-    "ContractList",
     "ContractPromises",
     "ContractSummary",
     "Discovery",
     "DraftList",
     "Frontmatter",
+    "HeinzelList",
+    "HeinzelService",
+    "HeinzelSettings",
+    "HeinzelSummary",
     "Measurements",
     "NewContract",
     "PlaybookList",
     "PruneReport",
     "RunResult",
     "Sent",
-    "WorkflowService",
-    "WorkflowSettings",
     "module",
 ]

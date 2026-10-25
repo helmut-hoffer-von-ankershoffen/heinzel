@@ -216,7 +216,7 @@ def test_a_message_runs_the_runner_with_hz_tools_for_this_session_only(service, 
     assert server_command(chat.id, Path.cwd())[-4:-2] == ["--chat-tools", "everyday"]
     assert tools.read_files is False  # no file tools: the chat reads through hz only
     assert run["prompt"] == "User: What does [email] own?"
-    assert "workflow_show" in str(run["contract"])
+    assert "heinzel_show" in str(run["contract"])
     assert run["timeout"] == CHAT_TIMEOUT
     assert run["budget"] == Budget(max_usd=0.25)
     assert [m.role for m in answered.messages] == ["user", "assistant"]
@@ -360,7 +360,7 @@ def test_the_session_is_locked_while_the_agent_runs(service, store):
         ("system.config", "set", {"key": "capabilities.agent_runner", "value": "command"}),
         ("system.config", "unset", {"key": "system.runner.chat.session_max_usd"}),
         ("system.config", "init", {"path": "/etc/passwd", "force": True}),
-        ("system.config", "set", {"key": "workflow.schedule_team", "value": '["team:payroll"]'}),
+        ("system.config", "set", {"key": "heinzel.schedule_team", "value": '["team:payroll"]'}),
         ("system.config", "set", {"key": "team.repository", "value": "https://example.org/other.git"}),
         ("system.daemon", "resume", {}),
         ("system.config", "set", {"key": "org.email", "value": "someone@example.org"}),
@@ -476,7 +476,7 @@ def test_a_chat_about_a_notification_gets_what_the_notice_says(service, kernel):
         "The weekly digest failed",
         "The tracker refused the token.",
         route="/contracts",
-        command="hz workflow list",
+        command="hz heinzel list",
         key="weekly",
     )
     assert notice is not None

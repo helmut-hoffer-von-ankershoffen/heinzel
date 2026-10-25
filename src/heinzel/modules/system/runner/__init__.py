@@ -72,7 +72,7 @@ def ask(
     """
     cap = min(budget_usd or settings.ask_max_usd, settings.ask_max_usd)
     if not prompt.strip():
-        msg = "Ask something: the prompt is empty, e.g. hz system runner ask 'What does hz workflow graph show?'"
+        msg = "Ask something: the prompt is empty, e.g. hz system runner ask 'What does hz heinzel graph show?'"
         raise HeinzelError(msg)
     # An empty working directory: the answer reads nothing on this machine.
     with tempfile.TemporaryDirectory(prefix="hz-ask-") as directory:
