@@ -32,9 +32,7 @@ CALLERS = [
     *sorted((REPO / "scripts").glob("*.sh")),
     *sorted((REPO / ".github" / "workflows").glob("*.yml")),
 ]
-CALL = re.compile(
-    r"(?P<runner>\buv run(?P<flags>(?: --?[\w-]+)*)(?P<python> python3?)? )?scripts/(?P<name>[\w-]+\.py)\b"
-)
+CALL = re.compile(r"(?P<runner>\buv run(?P<flags>(?: -[\w-]+)*)(?P<python> python3?)? )?scripts/(?P<name>[\w-]+\.py)\b")
 
 
 def inline_metadata(script: Path) -> dict[str, object] | None:
