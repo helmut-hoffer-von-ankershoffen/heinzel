@@ -52,7 +52,7 @@ uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel
 ```
 
 Pin a release with `@vX.Y.Z`; `hz system update` then moves to the latest release in place, keeping plugins
-(`--source <spec>` moves to another version). Pinned to a branch or a commit, it says which `--source` moves it. Shell completion: `hz --install-completion`.
+(`--source <spec>` moves to another version). It follows releases (`--channel main` or setting `update_channel` for the newest commit of `main`); pinned to another branch or a commit, it says which `--source` moves it. Shell completion: `hz --install-completion`.
 
 **From Claude Code**, add the plugin and let `/hz-init` do everything — install, plugins, configuration, agent
 skills:
@@ -96,7 +96,7 @@ hz system agent install               # install the skills for coding agents
 
 Every operation takes `--json` (or `--format json`; `HZ_OUTPUT_FORMAT=json` makes it the default) for scripts and
 agents; the long-running `serve` commands are the exception. Exit codes: `0` success, `1` an error with a readable message, `2` a usage error, `78` invalid
-configuration. All commands: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
+configuration; `hz ui` exits `0` when Ctrl-C stops it, an interrupted `hz setup` `130`. All commands: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
 `hz --help` lists the everyday commands; `hz system expert on` lists every command in help, shell completion and the
 web app, and `hz system expert off` goes back. Commands for experts run either way, and MCP and REST always offer
@@ -308,4 +308,10 @@ app runs on [React](https://react.dev), [React Flow](https://reactflow.dev), [xt
 You need git, make and [uv](https://docs.astral.sh/uv/); `make setup` installs everything else.
 [CONTRIBUTING.md](CONTRIBUTING.md) takes you from a clone to a merged pull request; [AGENTS.md](AGENTS.md) is the guide for coding agents;
 [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md) the rules; [docs/adr/](docs/adr/) the decisions.
-Security issues: [SECURITY.md](SECURITY.md).
+Bugs and ideas: [open an issue](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues/new/choose);
+security issues privately, as [SECURITY.md](SECURITY.md) describes.
+
+## License
+
+Heinzelmännchen is free and open-source software under the [MIT license](LICENSE). The packages it ships keep their
+own licenses, listed in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).

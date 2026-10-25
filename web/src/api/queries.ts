@@ -19,6 +19,12 @@ export const keys = {
 export const useDoctor = () => useQuery({ queryKey: keys.doctor, queryFn: () => unwrap(api.GET("/system/doctor")) });
 export const useConfig = () =>
   useQuery({ queryKey: keys.config, queryFn: () => unwrap(api.GET("/system/config/show")) });
+/** Whether the Heinzelmännchen play along: `hz system config set playful false` (Settings → General) turns them off. */
+export function usePlayful(): boolean {
+  const config = useConfig();
+  const value = config.data?.settings.find((s) => s.section === "hz" && s.key === "playful")?.value;
+  return config.data !== undefined && value !== false;
+}
 export const useProfile = () => useQuery({ queryKey: keys.profile, queryFn: () => unwrap(api.GET("/org/show")) });
 export const useTeam = () => useQuery({ queryKey: keys.team, queryFn: () => unwrap(api.GET("/team/show")) });
 /** `hz heinzel list`: your Heinzelmännchen, one per contract; the sidebar and search read the same list. */
@@ -100,6 +106,14 @@ export const useInfo = () =>
 /** `hz system theme list`: every theme the plugins offer, the selected one first in effect (ADR 0044). */
 export const useThemes = () =>
   useQuery({ queryKey: ["system", "theme", "list"], queryFn: () => unwrap(api.GET("/system/theme/list")) });
+
+/** `hz system theme signals`: the daypart and the weather the theme's variants follow, asked again every minute. */
+export const useThemeSignals = () =>
+  useQuery({
+    queryKey: ["system", "theme", "signals"],
+    queryFn: () => unwrap(api.GET("/system/theme/signals")),
+    refetchInterval: (query) => (query.state.data?.refresh ?? 60) * 1000,
+  });
 
 /** `hz system theme use <name>`; the app applies it as soon as the list is read again. */
 export const useSetTheme = () => {

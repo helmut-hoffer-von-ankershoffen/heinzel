@@ -74,7 +74,9 @@ const en = {
   "onboarding.notifications.native": "On this computer",
   "onboarding.notifications.nativeHint": "Send a test notice to see how hz pops up on this computer.",
   "onboarding.notifications.test": "Send a test notice",
-  "onboarding.notifications.tested": "Sent; it should pop up in a moment",
+  "onboarding.notifications.installed": "Daemon installed and running",
+  "onboarding.notifications.notLoaded":
+    "Installed, but not running yet: install again, or see hz system daemon status.",
   "onboarding.notifications.daemon": "In the background",
   "onboarding.notifications.daemonHint": "The daemon runs your schedules and notices while hz isn't open.",
   "onboarding.notifications.install": "Install the daemon",
@@ -159,6 +161,10 @@ const en = {
   "settings.themeInUse": "In use",
   "settings.previewCard": "Weekly digest",
   "settings.previewDetail": "Due Friday · 3 updates",
+  "settings.previewConditions": "Preview conditions",
+  "settings.previewDaypart": "Daypart",
+  "settings.previewWeather": "Weather",
+  "settings.previewNow": "Now",
   "settings.previewButton": "Confirm",
   "settings.expertOn":
     "On: the navigation, search and `hz --help` list every screen and command. Your choice, in your user configuration.",
@@ -475,6 +481,7 @@ const en = {
   "device.forgetHint": "Forget this browser's token; the next link from `hz ui` pairs it again.",
   "notFound.title": "Nothing here",
   "notFound.back": "Go home",
+  "notFound.guide": "This way, not that way.",
   "workflow.intro":
     "What hz knows of your workflow: the systems you connected, the assets playbooks keep and discovery finds, your contracts and the ones playbooks suggest, and what they maintain. Select a node for its details and its command.",
   "workflow.graph": "Workflow graph",

@@ -2186,6 +2186,7 @@ $ hz system theme [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `list`: (expert) List the themes of the web app,...
+* `signals`: (expert) Show the signals themes follow...
 * `use`: (expert) Use a theme in the web app:...
 
 #### `hz system theme list`
@@ -2196,6 +2197,22 @@ $ hz system theme [OPTIONS] COMMAND [ARGS]...
 
 ```console
 $ hz system theme list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system theme signals`
+
+(expert) Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.
+
+**Usage**:
+
+```console
+$ hz system theme signals [OPTIONS]
 ```
 
 **Options**:
@@ -2237,6 +2254,7 @@ $ hz system update [OPTIONS]
 **Options**:
 
 * `--source <str>`: Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.
+* `--channel <release|main>`: Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

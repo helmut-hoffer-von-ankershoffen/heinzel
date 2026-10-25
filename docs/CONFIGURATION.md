@@ -18,6 +18,7 @@ Plugins add their own tables.
 | `expert` | `HZ_EXPERT` | `False` | Expert mode: list every command in help, shell completion and the web app, not just the everyday ones. Hidden commands run all the same, and MCP and REST always list everything. Change it with `hz system expert on` or `off`; not settable in a project's hz.toml (ADR 0041). |
 | `plugins_enabled` | `HZ_PLUGINS_ENABLED` | `True` | Discover modules from installed plugins. Disable to debug a broken plugin. |
 | `update_check` | `HZ_UPDATE_CHECK` | `True` | Check for a newer release at most once an hour, in the background with a 2-second timeout, and say so on stderr after human output (ADR 0031): one unauthenticated request that carries nothing about you. A failed check waits an hour too. Never in JSON, MCP or REST output, and off in CI. Set to false to turn the check and the notice off; not settable in a project's hz.toml. |
+| `update_channel` | `HZ_UPDATE_CHANNEL` | `'release'` | What `hz system update` follows: `release` moves to the newest release, `main` to the newest commit of the default branch. An installation on `main` moves to releases once one is as new as it. |
 | `disabled_modules` | `HZ_DISABLED_MODULES` | `frozenset()` | Qualified names of modules to switch off, with their submodules. Comma-separated in the environment, a list in TOML. |
 | `ui_port` | `HZ_UI_PORT` | `8737` | Port `hz ui` serves the web app on, on 127.0.0.1 only. It stays the same so an installed app (a Dock icon) keeps its address; `hz ui --port 0` picks a free one for this session. Not settable in a project's hz.toml (ADR 0046). |
 | `api_allowed_hosts` | `HZ_API_ALLOWED_HOSTS` | `frozenset()` | Host names `hz system serve api` answers besides localhost, 127.0.0.1 and [::1], for when it listens on another interface (`--host`); requests naming any other host are refused, so a web page can't reach the server through DNS rebinding. Comma-separated in the environment; not settable in a project's hz.toml. |
@@ -178,6 +179,9 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `model` | `HZ_SYSTEM_RUNNER__MODEL` | `None` | Model for every run, e.g. `sonnet`; the agent's own default when not set. |
 | `claude_executable` | `HZ_SYSTEM_RUNNER__CLAUDE_EXECUTABLE` | `'claude'` | The Claude Code CLI, a name on PATH or a path. |
+| `codex_executable` | `HZ_SYSTEM_RUNNER__CODEX_EXECUTABLE` | `'codex'` | The Codex CLI, a name on PATH or a path. |
+| `codex_model` | `HZ_SYSTEM_RUNNER__CODEX_MODEL` | `None` | Model for every Codex run, e.g. `gpt-5-codex`; Codex's own default when not set. |
+| `codex_effort` | `HZ_SYSTEM_RUNNER__CODEX_EFFORT` | `None` | Reasoning effort for every Codex run; Codex's own default when not set. |
 | `read_only_tools` | `HZ_SYSTEM_RUNNER__READ_ONLY_TOOLS` | `['Read', 'Grep', 'Glob']` | Claude Code tools a run may use; a profile asking for anything else is refused. Add only tools that cannot change anything. |
 | `command` | `HZ_SYSTEM_RUNNER__COMMAND` | platform-specific | The `command` runner's command line, one argument per item, never through a shell. Placeholders: {prompt_file}, {contract_file}, {output_file}, {working_dir}, {tools}, {model}, {timeout_seconds}, {max_usd}, {mcp_config} (a JSON file of MCP servers in the `mcpServers` shape, for a chat's hz tools); `{{` and `}}` are literal braces; e.g. ["mytool", "ai", "run", "--prompt", "{prompt_file}"]. |
 | `command_output` | `HZ_SYSTEM_RUNNER__COMMAND_OUTPUT` | `'stdout'` | Where the `command` runner reads the result: stdout, or {output_file}. |
