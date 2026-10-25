@@ -6,6 +6,9 @@
 - README.md: the module list between `<!-- modules:start -->` and `<!-- modules:end -->`.
 - The badges between `<!-- badges:start -->` and `<!-- badges:end -->`: one set on every top-level page GitHub renders
   (BADGE_PAGES), and the same set for a plugin's own repository in the template's README.md and SECURITY.md.
+- docs/plugins/<distribution>/index.md and its theme swatches: the page of every first-party plugin, written by
+  `hz system plugin docs build` from the kernel (ADR 0058), and docs/plugins/README.md, the gallery: those pages, then
+  the plugins the core knows of but doesn't ship (the reference company, docs/plugins/registry.toml).
 - docs/schemas/contract-frontmatter-1.json: the JSON Schema of workflow contract frontmatter (ADR 0021).
 - docs/schemas/team-graph-1.json and telemetry-entry-1.json: `hz graph --json` (JSON Graph Format v2, profile
   `hz-team`) and one line of a Heinzelmännchen's telemetry log (ADR 0054).
@@ -33,7 +36,10 @@ from heinzel.heads.cli import build
 from heinzel.heads.cli._chat import command_words
 from heinzel.kernel import Origin, discover, env_prefix, walk
 from heinzel.modules.graph import TeamGraphDocument
-from heinzel.modules.system.plugin._service import FIRST_PARTY
+from heinzel.modules.system.plugin._service import FIRST_PARTY, REFERENCE
+from heinzel.modules.system.plugin.docs._build import rendered
+from heinzel.modules.system.plugin.docs._render import gallery
+from heinzel.modules.system.plugin.docs._service import DocsService
 from heinzel.modules.workflow._models import SCHEMA_VERSION, Frontmatter
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +53,9 @@ BADGE_PAGES = ("README.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.m
 OWNER, REPOSITORY = "helmut-hoffer-von-ankershoffen", "heinzel"
 BEST_PRACTICES = 15863  # the OpenSSF Best Practices project id of this repository
 TEMPLATE = ROOT / "template"
+PLUGINS = DOCS / "plugins"
+REGISTRY = PLUGINS / "registry.toml"
+SCENES = DOCS / "scenes.toml"
 
 MODULES_HEADER = """\
 # Modules
@@ -74,7 +83,10 @@ def kernel() -> Kernel:
     records = discover(plugins=False)[0]
     for name in sorted(FIRST_PARTY):
         package = importlib.import_module(f"heinzel_{name}")
-        records += walk(package, Origin(distribution=f"heinzel-{name}", version=__version__, builtin=False))
+        # The URL the installed plugin's metadata names (its pyproject's Source), so `hz system plugin docs build`
+        # and this script write the same page.
+        url = f"https://github.com/{OWNER}/{REPOSITORY}/tree/main/plugins/heinzel-{name}"
+        records += walk(package, Origin(distribution=f"heinzel-{name}", version=__version__, builtin=False, url=url))
     return Kernel(config.settings(Settings, "hz"), records, config=config)
 
 
@@ -169,6 +181,49 @@ def module_catalog() -> str:
             kind = "required" if step.required else "optional"
             lines += [f"Setup: `hz setup {record.qualname}` ({kind}), also part of `hz setup`.", ""]
     return "\n".join(lines).rstrip() + "\n"
+
+
+def plugin_pages() -> dict[Path, str]:
+    """The page of every first-party plugin and the gallery, as `hz system plugin docs build` writes them."""
+    k = kernel()
+    documentation = k.resolve(DocsService).documentation(assets=PLUGINS)
+    files = {PLUGINS / relative: text for relative, text in rendered(documentation, index=False).items()}
+    files[PLUGINS / "README.md"] = plugin_gallery(documentation.pages)
+    return files
+
+
+def plugin_gallery(pages: list[object]) -> str:
+    """The gallery: the first-party pages, then every plugin the core knows of but doesn't ship."""
+    registry = tomllib.loads(REGISTRY.read_text(encoding="utf-8")) if REGISTRY.is_file() else {}
+    lines = [
+        gallery(pages, title="Plugin gallery").rstrip(),  # type: ignore[arg-type] - PluginPage, from the service
+        "",
+        (
+            "Every page is generated from the installed plugin by `hz system plugin docs build` (ADR 0058); CI fails "
+            "when one is out of date. A plugin's own repository documents it the same way: `make docs-plugins` there "
+            "writes the same page, `make docs-record` its recordings."
+        ),
+        "",
+        "## More plugins",
+        "",
+        (
+            "Plugins in repositories of their own, installed with `hz system plugin add <spec> --confirm`; a community "
+            "plugin lists itself in [registry.toml](registry.toml) with a pull request, and `hz system plugin search` "
+            "finds any repository with the topic `heinzel-plugin`."
+        ),
+        "",
+        "| Plugin | What it does | Repository | Documentation |",
+        "| --- | --- | --- | --- |",
+    ]
+    for name, (summary, url) in sorted(REFERENCE.items()):
+        lines.append(
+            f"| `heinzel-{name}` | {summary} | <{url}> | [page]({url}/blob/main/docs/plugins/heinzel-{name}/index.md) |"
+        )
+    for entry in sorted(registry.get("plugin", []), key=lambda item: str(item.get("name", ""))):
+        docs = entry.get("docs")
+        link = f"[page]({docs})" if docs else f"[README]({entry['repository']}#readme)"
+        lines.append(f"| `{entry['name']}` | {entry.get('summary', '')} | <{entry['repository']}> | {link} |")
+    return "\n".join(lines) + "\n"
 
 
 def with_block(text: str, start_marker: str, end_marker: str, body: str) -> str:
@@ -282,6 +337,7 @@ def model_schema(model: type[BaseModel], urn: str, title: str) -> str:
 def main() -> int:
     """Write the references, or with --check only compare them."""
     outputs = {
+        **plugin_pages(),
         DOCS / "MODULES.md": module_catalog(),
         DOCS / "CLI_REFERENCE.md": cli_reference(),
         DOCS / "CONFIGURATION.md": configuration_reference(),

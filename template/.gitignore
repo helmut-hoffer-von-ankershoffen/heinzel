@@ -20,3 +20,5 @@ reports/
 .claude/worktrees/
 .claude/audit/inbox/
 .tools/
+# The documentation site `make docs-site` builds (ADR 0058).
+site/

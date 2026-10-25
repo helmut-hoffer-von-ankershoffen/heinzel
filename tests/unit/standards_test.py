@@ -92,14 +92,12 @@ def repository_files() -> list[str]:
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
     ".github/workflows/fuzz.yml": "fuzzes Heinzelmännchen's contract parser (fuzz/); plugins have no fuzz targets",
-    ".github/workflows/demo.yml": "records the README demo with hz's own commands; plugins have no demo tape",
     ".claude/audit/evals.yaml": "cases from Heinzelmännchen's history; a plugin's self-audit skips self-improvement",
     ".claude/audit/ledger.jsonl": "Heinzelmännchen's own audit record; skill self-audit starts a plugin's empty",
     ".claude/skills/codify/SKILL.md": "adds checks to Heinzelmännchen's standards_test.py; plugins inherit them",
     ".claude/skills/raise-the-bar/SKILL.md": "audits Heinzelmännchen's own areas before a release",
     ".claude/skills/scaffold-plugin/SKILL.md": "creates plugins; a plugin updates itself with update-template",
     "scripts/attributions.py": "writes ATTRIBUTIONS.md of the core and its web app; plugins bundle nothing",
-    "scripts/demo.sh": "renders the README demo with hz's own commands; plugins have no demo tape",
     "scripts/demo_tape.py": "assembles the README demo from the core intro and its modules' snippets",
     "scripts/generate_docs.py": "generates Heinzelmännchen's CLI, module and configuration reference",
     "scripts/notifier.py": "builds Heinzel Notifier, the core's macOS notifier app (ADR 0043); plugins have none",
@@ -450,12 +448,22 @@ def test_finds_the_old_name():
     assert OLD_NAME.findall(text) == ["j" + "oy", "J" + "OY"]
 
 
+BINARY = (".gif", ".webp", ".mp4", ".png", ".woff2", ".jpg", ".ico")
+"""Recordings and images: their bytes aren't words, and a GIF holds any three letters somewhere."""
+
+
 def test_the_working_title_is_gone():
     found = [
         path
         for path in repository_files()
         if not path.startswith(OLD_NAME_ALLOWED)
-        and (OLD_NAME.search(path) or OLD_NAME.search((REPO / path).read_text(encoding="utf-8", errors="ignore")))
+        and (
+            OLD_NAME.search(path)
+            or (
+                not path.endswith(BINARY)
+                and OLD_NAME.search((REPO / path).read_text(encoding="utf-8", errors="ignore"))
+            )
+        )
     ]
     assert found == [], "say Heinzelmännchen, hz or heinzel"
 

@@ -830,6 +830,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/plugin/docs/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show what each installed plugin brings; `--json` is the full model its page is built from.
+         * @description Show what each installed plugin brings; `--json` is the full model its page is built from.
+         *
+         *     Operations in every head, settings, credentials, adapters, themes, playbooks, jobs, layers and scenes, read from
+         *     the kernel: nothing is parsed from source.
+         */
+        get: operations["system_plugin_docs_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/plugin/enable": {
         parameters: {
             query?: never;
@@ -1552,6 +1575,42 @@ export interface components {
             title: string;
         };
         /**
+         * AdapterDoc
+         * @description An adapter a plugin brings: a capability it serves (ADR 0028).
+         */
+        AdapterDoc: {
+            /**
+             * Adapter
+             * @description The name bindings use, e.g. `github`.
+             */
+            adapter: string;
+            /**
+             * Binding
+             * @description How to bind it, e.g. `hz system config set capabilities.tracker github`.
+             */
+            binding: string;
+            /**
+             * Capability
+             * @description The capability it implements, e.g. `tracker`.
+             */
+            capability: string;
+            /**
+             * Hosts
+             * @description Hosts it sends data to; empty when its settings decide them.
+             */
+            hosts: string[];
+            /**
+             * Hosts From Settings
+             * @description Whether its settings decide the hosts.
+             */
+            hosts_from_settings: boolean;
+            /**
+             * Modes
+             * @description The modes it serves, e.g. `read`.
+             */
+            modes: string[];
+        };
+        /**
          * AdapterInfo
          * @description An installed adapter.
          */
@@ -1681,6 +1740,32 @@ export interface components {
              * @description Limits the runner could not enforce, e.g. a budget the agent ignores.
              */
             warnings?: string[];
+        };
+        /**
+         * AssetTypeDoc
+         * @description An asset type of a playbook (ADR 0037).
+         */
+        AssetTypeDoc: {
+            /**
+             * Description
+             * @description What it is.
+             */
+            description: string;
+            /**
+             * Hints
+             * @description Where candidates may be, one line per discovery hint.
+             */
+            hints: string[];
+            /**
+             * Kept By
+             * @description The template whose output keeps it true; none if nothing does.
+             */
+            kept_by: string | null;
+            /**
+             * Name
+             * @description The asset type, e.g. `weekly-report`.
+             */
+            name: string;
         };
         /**
          * AssetView
@@ -2301,6 +2386,27 @@ export interface components {
             searched?: components["schemas"]["Directory"][];
         };
         /**
+         * ColourDoc
+         * @description One colour token of a theme, in both modes.
+         */
+        ColourDoc: {
+            /**
+             * Dark
+             * @description The colour in dark mode.
+             */
+            dark: string | null;
+            /**
+             * Light
+             * @description The colour in light mode, `#rrggbb`; none when the theme leaves it out.
+             */
+            light: string | null;
+            /**
+             * Token
+             * @description The token, e.g. `primary` (`--color-primary`).
+             */
+            token: string;
+        };
+        /**
          * CompiledContract
          * @description `hz workflow show`: a contract as the daemon runs it.
          */
@@ -2806,6 +2912,32 @@ export interface components {
             warnings: number;
         };
         /**
+         * CredentialDoc
+         * @description A credential a module needs: its name and purpose, never a value (ADR 0030).
+         */
+        CredentialDoc: {
+            /**
+             * Command
+             * @description How to store it, e.g. `hz system credential set github token`.
+             */
+            command: string;
+            /**
+             * Name
+             * @description The credential's name, e.g. `token`.
+             */
+            name: string;
+            /**
+             * Purpose
+             * @description What it is for and where to get one.
+             */
+            purpose: string;
+            /**
+             * Service
+             * @description The keychain service it is kept under.
+             */
+            service: string;
+        };
+        /**
          * CredentialInfo
          * @description A declared credential and whether it has a value; never the value itself.
          */
@@ -3026,6 +3158,22 @@ export interface components {
          * @enum {string}
          */
         Disposition: "rendered" | "skipped" | "failed";
+        /**
+         * Documentation
+         * @description The documentation of every plugin installed, and the core's modules when asked for.
+         */
+        Documentation: {
+            /**
+             * Pages
+             * @description One per distribution, first-party first, then by name.
+             */
+            pages: components["schemas"]["PluginPage"][];
+            /**
+             * Warnings
+             * @description What couldn't be documented, e.g. a plugin that failed to load.
+             */
+            warnings: string[];
+        };
         /**
          * Edge
          * @description A JGF edge from a Heinzelmännchen to an artifact: it reads it or writes it.
@@ -3416,6 +3564,47 @@ export interface components {
             target: string;
         };
         /**
+         * JobDoc
+         * @description A job the daemon runs for the module (ADR 0020).
+         */
+        JobDoc: {
+            /**
+             * Catch Up
+             * @description What it does about missed slots: `latest`, `all` or `skip`.
+             */
+            catch_up: string;
+            /**
+             * Module
+             * @description The module declaring it.
+             */
+            module: string;
+            /**
+             * Name
+             * @description The job's name.
+             */
+            name: string;
+            /**
+             * Requires
+             * @description Capabilities it reads.
+             */
+            requires: string[];
+            /**
+             * Schedule
+             * @description Its cron schedule, e.g. `0 9 * * MON`.
+             */
+            schedule: string;
+            /**
+             * Summary
+             * @description What it does.
+             */
+            summary: string;
+            /**
+             * Timeout
+             * @description How long a run may take, e.g. `15m`.
+             */
+            timeout: string;
+        };
+        /**
          * JobInfo
          * @description A job as `hz system daemon jobs` lists it.
          */
@@ -3509,6 +3698,32 @@ export interface components {
              * @description Whether the option answered.
              */
             ok: boolean;
+        };
+        /**
+         * LayerDoc
+         * @description A layer a module declares (ADR 0040).
+         */
+        LayerDoc: {
+            /**
+             * Module
+             * @description The layer's module name, e.g. `acme-payments`.
+             */
+            module: string;
+            /**
+             * Parent
+             * @description The layer above it; none for the company.
+             */
+            parent: string | null;
+            /**
+             * Roles
+             * @description Roles it adds to the vocabulary.
+             */
+            roles: string[];
+            /**
+             * Site
+             * @description The site layer it names, if any.
+             */
+            site: string | null;
         };
         /**
          * LayerList
@@ -3612,6 +3827,33 @@ export interface components {
              * @description The site layer it is at; none if it names none.
              */
             site: string | null;
+        };
+        /**
+         * LetDoc
+         * @description A let the renderer has no section for: listed by kind and name, so a new kind shows up at once.
+         */
+        LetDoc: {
+            /**
+             * Kind
+             * @description The let's class, e.g. `InfoLet`.
+             */
+            kind: string;
+            /**
+             * Module
+             * @description The module declaring it.
+             */
+            module: string;
+            /**
+             * Name
+             * @description The let's name.
+             */
+            name: string;
+            /**
+             * Summary
+             * @description Its summary, when the let has one.
+             * @default
+             */
+            summary: string;
         };
         /**
          * LogLine
@@ -3749,6 +3991,54 @@ export interface components {
              * @description When they joined.
              */
             since: string;
+        };
+        /**
+         * ModuleDoc
+         * @description One module of a plugin with everything it advertises.
+         */
+        ModuleDoc: {
+            /**
+             * Credentials
+             * @description The credentials it needs.
+             */
+            credentials: components["schemas"]["CredentialDoc"][];
+            /**
+             * Health Checks
+             * @description Whether `hz system doctor` runs checks of its.
+             */
+            health_checks: boolean;
+            /**
+             * Info
+             * @description Whether it contributes a section to `hz system info`.
+             */
+            info: boolean;
+            /**
+             * Operations
+             * @description Its operations, in declaration order.
+             */
+            operations: components["schemas"]["OperationDoc"][];
+            /**
+             * Qualname
+             * @description The qualified name, e.g. `system.plugin`.
+             */
+            qualname: string;
+            /**
+             * Requires
+             * @description Capabilities the whole module reads (ADR 0028).
+             */
+            requires: string[];
+            /**
+             * Settings
+             * @description Its settings; the table is `[<qualname>]`.
+             */
+            settings: components["schemas"]["SettingDoc"][];
+            /** @description Its setup step, if any. */
+            setup: components["schemas"]["SetupDoc"] | null;
+            /**
+             * Summary
+             * @description What it does.
+             */
+            summary: string;
         };
         /**
          * ModuleInfo
@@ -3997,6 +4287,126 @@ export interface components {
             operation: string;
         };
         /**
+         * OperationDoc
+         * @description One operation as every head sees it.
+         */
+        OperationDoc: {
+            /**
+             * Audience
+             * @description `everyday` or `expert` (ADR 0041).
+             */
+            audience: string;
+            /**
+             * Command
+             * @description The CLI command, e.g. `hz system plugin list`.
+             */
+            command: string;
+            /**
+             * Description
+             * @description The rest of its docstring, in Markdown.
+             * @default
+             */
+            description: string;
+            /**
+             * Endpoint
+             * @description The REST endpoint, e.g. `GET /system/plugin/list`; none if REST lacks it.
+             */
+            endpoint: string | null;
+            /**
+             * Heads
+             * @description The heads it is restricted to; none means every head.
+             */
+            heads: string[] | null;
+            /**
+             * Input Schema
+             * @description The JSON Schema of what a caller supplies: the MCP input schema.
+             */
+            input_schema: {
+                [key: string]: unknown;
+            };
+            /**
+             * Module
+             * @description The qualified name of the module that declares it, e.g. `system.plugin`.
+             */
+            module: string;
+            /**
+             * Name
+             * @description The operation's own name, e.g. `list`.
+             */
+            name: string;
+            /**
+             * Parameters
+             * @description Its public parameters, in order.
+             */
+            parameters: components["schemas"]["ParameterDoc"][];
+            /**
+             * Read Only
+             * @description Whether it only reads; otherwise it changes state.
+             */
+            read_only: boolean;
+            /**
+             * Requires
+             * @description Capabilities it asks for besides its module's, e.g. `tracker:read`.
+             */
+            requires: string[];
+            /**
+             * Summary
+             * @description Its first docstring line: the CLI help, the MCP description, the OpenAPI summary.
+             */
+            summary: string;
+            /**
+             * Tool
+             * @description The MCP tool's name, e.g. `system_plugin_list`; none if MCP doesn't have it.
+             */
+            tool: string | null;
+            /**
+             * Usage
+             * @description The CLI command with its arguments and options, e.g. `hz clock [--zone TEXT]`.
+             */
+            usage: string;
+            /**
+             * Web Endpoint
+             * @description The web app's API endpoint, e.g. `GET /api/clock`; none if absent.
+             */
+            web_endpoint: string | null;
+        };
+        /**
+         * ParameterDoc
+         * @description One public parameter of an operation.
+         */
+        ParameterDoc: {
+            /**
+             * Default
+             * @description Its default, when it has one.
+             */
+            default?: unknown;
+            /**
+             * Description
+             * @description What it is, from `Field(description=...)`.
+             */
+            description: string;
+            /**
+             * Name
+             * @description The parameter's name, e.g. `zone`.
+             */
+            name: string;
+            /**
+             * Option
+             * @description How the CLI takes it: `ZONE` for an argument, `--zone TEXT` for an option.
+             */
+            option: string;
+            /**
+             * Required
+             * @description Whether a caller must give it; on the CLI, required ones are arguments.
+             */
+            required: boolean;
+            /**
+             * Type
+             * @description Its type as the schema says it, e.g. `string`, `integer`, `array`.
+             */
+            type: string;
+        };
+        /**
          * Participant
          * @description Someone in a chat, a meeting or an event: how the vendor addresses them, nothing more (ADR 0024).
          */
@@ -4011,6 +4421,39 @@ export interface components {
              * @description Display name as the vendor shows it; none if it doesn't.
              */
             name?: string | null;
+        };
+        /**
+         * PlaybookDoc
+         * @description A playbook a module brings (ADR 0037).
+         */
+        PlaybookDoc: {
+            /**
+             * Assets
+             * @description Its asset types.
+             */
+            assets: components["schemas"]["AssetTypeDoc"][];
+            /**
+             * Defaults
+             * @description The settings it recommends, by `<section>.<key>`.
+             */
+            defaults: {
+                [key: string]: unknown;
+            };
+            /**
+             * Module
+             * @description The module bringing it.
+             */
+            module: string;
+            /**
+             * Summary
+             * @description What the playbook is for.
+             */
+            summary: string;
+            /**
+             * Templates
+             * @description The names of its contract templates.
+             */
+            templates: string[];
         };
         /**
          * PlaybookList
@@ -4335,6 +4778,112 @@ export interface components {
             site: string | null;
         };
         /**
+         * PluginPage
+         * @description Everything a plugin's page says, from the kernel; `heinzel` itself when built-in modules are included.
+         */
+        PluginPage: {
+            /**
+             * Adapters
+             * @description The adapters it brings.
+             */
+            adapters: components["schemas"]["AdapterDoc"][];
+            /**
+             * Builtin
+             * @description Whether these are the core's own modules, not a plugin's.
+             */
+            builtin: boolean;
+            /**
+             * Distribution
+             * @description Distribution name, e.g. `heinzel-clock`.
+             */
+            distribution: string;
+            /**
+             * Enabled
+             * @description Whether its modules are loaded.
+             */
+            enabled: boolean;
+            /**
+             * First Party
+             * @description Whether it is released with Heinzelmännchen (ADR 0017).
+             */
+            first_party: boolean;
+            /**
+             * Install
+             * @description How to install it, e.g. `hz system plugin add clock --confirm`.
+             */
+            install: string;
+            /**
+             * Jobs
+             * @description The jobs its modules declare.
+             */
+            jobs: components["schemas"]["JobDoc"][];
+            /**
+             * Kinds
+             * @description What it is: connector, theme, capability, playbook, layer.
+             */
+            kinds: ("connector" | "theme" | "capability" | "playbook" | "layer")[];
+            /**
+             * Layers
+             * @description The layers its modules declare.
+             */
+            layers: components["schemas"]["LayerDoc"][];
+            /**
+             * License
+             * @description Its licence, from its metadata; none if it names none.
+             */
+            license: string | null;
+            /**
+             * Modules
+             * @description Its modules, parents first.
+             */
+            modules: components["schemas"]["ModuleDoc"][];
+            /**
+             * Name
+             * @description The short name: its command group, e.g. `clock`.
+             */
+            name: string;
+            /**
+             * Other Lets
+             * @description Lets of kinds the renderer has no section for.
+             */
+            other_lets: components["schemas"]["LetDoc"][];
+            /**
+             * Playbooks
+             * @description The playbooks it brings.
+             */
+            playbooks: components["schemas"]["PlaybookDoc"][];
+            /**
+             * Recordings
+             * @description The recordings found beside the page, by scene.
+             */
+            recordings: components["schemas"]["Recording"][];
+            /**
+             * Repository
+             * @description Its source repository, from its metadata; none if it names none.
+             */
+            repository: string | null;
+            /**
+             * Scenes
+             * @description What to record: declared in `docs/scenes.toml`, else derived.
+             */
+            scenes: components["schemas"]["Scene"][];
+            /**
+             * Summary
+             * @description What it does: its metadata's summary, or its first module's.
+             */
+            summary: string;
+            /**
+             * Themes
+             * @description The themes it offers.
+             */
+            themes: components["schemas"]["ThemeDoc"][];
+            /**
+             * Version
+             * @description The installed version.
+             */
+            version: string;
+        };
+        /**
          * PluginSearch
          * @description Plugins one can install, and what kept the search from being complete.
          */
@@ -4471,6 +5020,48 @@ export interface components {
             layer: string;
             /** @description The value offered: the most specific layer's. */
             value: components["schemas"]["JsonValue"];
+        };
+        /**
+         * Recording
+         * @description The files a rendered scene left behind, as the page embeds them.
+         */
+        Recording: {
+            /**
+             * Animation
+             * @description The animated image, relative to the page; none if not recorded yet.
+             */
+            animation: string | null;
+            /**
+             * Animation Dark
+             * @description The same in dark mode, for UI scenes; none if absent.
+             */
+            animation_dark?: string | null;
+            /**
+             * Scene
+             * @description The scene's name.
+             */
+            scene: string;
+            /**
+             * Still
+             * @description A still for reduced motion, relative to the page; none if not recorded.
+             */
+            still: string | null;
+            /**
+             * Still Dark
+             * @description The still in dark mode; none if absent.
+             */
+            still_dark?: string | null;
+            /**
+             * Transcript
+             * @description What the recording shows, as text: commands and their output.
+             * @default
+             */
+            transcript: string;
+            /**
+             * Video
+             * @description The MP4, relative to the page; none if not recorded.
+             */
+            video: string | null;
         };
         /**
          * ReleaseCheck
@@ -4622,6 +5213,135 @@ export interface components {
             };
         };
         /**
+         * Scene
+         * @description What one recording shows: a CLI scene is command lines, a UI scene is steps in the web app.
+         */
+        Scene: {
+            /**
+             * Commands
+             * @description CLI scene: the `hz` command lines typed, in order.
+             */
+            commands?: string[];
+            /**
+             * Derived
+             * @description Whether it was derived from the operations, not declared.
+             * @default false
+             */
+            derived: boolean;
+            /**
+             * Hold
+             * @description CLI scene: seconds each command's output stays on screen.
+             * @default 2.5
+             */
+            hold: number;
+            /**
+             * Kind
+             * @description `cli`: typed in a terminal; `ui`: driven in the web app.
+             * @enum {string}
+             */
+            kind: "cli" | "ui";
+            /**
+             * Name
+             * @description Lowercase words joined by dashes; the recording is `assets/<name>.gif`.
+             */
+            name: string;
+            /**
+             * Steps
+             * @description UI scene: the steps, in order.
+             */
+            steps?: components["schemas"]["SceneStep"][];
+            /**
+             * Title
+             * @description One line, the recording's heading and alt text.
+             */
+            title: string;
+        };
+        /**
+         * SceneStep
+         * @description One step of a UI scene: what the recorder does, and what it says about it.
+         */
+        SceneStep: {
+            /**
+             * Action
+             * @description `goto` a route, `click` or `hover` an element by role and name, `fill` a field, press a `key`, `wait` for text, or take a `screenshot` with a caption.
+             * @enum {string}
+             */
+            action: "goto" | "click" | "hover" | "fill" | "key" | "wait" | "screenshot";
+            /**
+             * Caption
+             * @description What a `screenshot` shows, one line; the frame's caption.
+             * @default
+             */
+            caption: string;
+            /**
+             * Hold
+             * @description Seconds a `screenshot` frame stays on screen in the animation.
+             * @default 1.5
+             */
+            hold: number;
+            /**
+             * Optional
+             * @description Skip the step when its element or text isn't there.
+             * @default false
+             */
+            optional: boolean;
+            /**
+             * Role
+             * @description The element's ARIA role for `click`, `hover` and `fill`, e.g. `button`.
+             * @default
+             */
+            role: string;
+            /**
+             * Target
+             * @description The route, the element's name, the field's label, the key or text.
+             * @default
+             */
+            target: string;
+            /**
+             * Value
+             * @description What `fill` types.
+             * @default
+             */
+            value: string;
+        };
+        /**
+         * SettingDoc
+         * @description One setting of a module's settings model.
+         */
+        SettingDoc: {
+            /**
+             * Default
+             * @description Its default as written in Python, or `platform-specific`.
+             */
+            default: string;
+            /**
+             * Description
+             * @description What it does.
+             */
+            description: string;
+            /**
+             * Environment
+             * @description The environment variable that sets it, e.g. `HZ_CLOCK__ZONES`.
+             */
+            environment: string;
+            /**
+             * Ignored In Project
+             * @description Whether a project `hz.toml` can't set it (ADR 0028).
+             * @default false
+             */
+            ignored_in_project: boolean;
+            /**
+             * Key
+             * @description The key in the module's TOML table, e.g. `zones`.
+             */
+            key: string;
+            /**
+             * Type
+             * @description Its type as the JSON Schema says it, e.g. `array of string`; `secret` for secrets.
+             */
+            type: string;
+        };
+        /**
          * SettingInfo
          * @description One effective setting.
          */
@@ -4669,6 +5389,37 @@ export interface components {
              * @description Value in effect.
              */
             value: unknown;
+        };
+        /**
+         * SetupDoc
+         * @description A module's setup step (ADR 0032).
+         */
+        SetupDoc: {
+            /**
+             * Command
+             * @description How to run it alone, e.g. `hz setup clock`.
+             */
+            command: string;
+            /**
+             * Module
+             * @description The module whose step it is.
+             */
+            module: string;
+            /**
+             * Phase
+             * @description Where in `hz setup` it runs.
+             */
+            phase: string;
+            /**
+             * Required
+             * @description Whether `hz setup` runs it without offering to skip it.
+             */
+            required: boolean;
+            /**
+             * Summary
+             * @description What it asks.
+             */
+            summary: string;
         };
         /**
          * Skill
@@ -5031,6 +5782,67 @@ export interface components {
              * @description A hex colour, `#rgb` or `#rrggbb`.
              */
             warn: string;
+        };
+        /**
+         * ThemeDoc
+         * @description A theme a plugin offers (ADR 0044).
+         */
+        ThemeDoc: {
+            /**
+             * Border Width
+             * @description The width of borders.
+             */
+            border_width: string;
+            /**
+             * Colours
+             * @description Every colour token, light and dark.
+             */
+            colours: components["schemas"]["ColourDoc"][];
+            /**
+             * Command
+             * @description How to pick it, e.g. `hz system theme use acme`.
+             */
+            command: string;
+            /**
+             * Font Mono
+             * @description The font stack of code.
+             */
+            font_mono: string;
+            /**
+             * Font Sans
+             * @description The font stack of text.
+             */
+            font_sans: string;
+            /**
+             * Fonts
+             * @description Font families it ships files for.
+             */
+            fonts: string[];
+            /**
+             * Logo
+             * @description Whether it ships a logo.
+             */
+            logo: boolean;
+            /**
+             * Module
+             * @description The module offering it.
+             */
+            module: string;
+            /**
+             * Name
+             * @description What `hz system theme use` takes, e.g. `acme`.
+             */
+            name: string;
+            /**
+             * Radius
+             * @description The corner radius of cards and dialogs.
+             */
+            radius: string;
+            /**
+             * Title
+             * @description What people pick it by.
+             */
+            title: string;
         };
         /**
          * ThemeFontView
@@ -5440,9 +6252,11 @@ export type SchemaAccessOption = components['schemas']['AccessOption'];
 export type SchemaAccessTestReport = components['schemas']['AccessTestReport'];
 export type SchemaAccessUse = components['schemas']['AccessUse'];
 export type SchemaAdapterCandidate = components['schemas']['AdapterCandidate'];
+export type SchemaAdapterDoc = components['schemas']['AdapterDoc'];
 export type SchemaAdapterInfo = components['schemas']['AdapterInfo'];
 export type SchemaAgenda = components['schemas']['Agenda'];
 export type SchemaAgentResult = components['schemas']['AgentResult'];
+export type SchemaAssetTypeDoc = components['schemas']['AssetTypeDoc'];
 export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
 export type SchemaCandidate = components['schemas']['Candidate'];
@@ -5460,6 +6274,7 @@ export type SchemaChatSession = components['schemas']['ChatSession'];
 export type SchemaChatSummary = components['schemas']['ChatSummary'];
 export type SchemaCheck = components['schemas']['Check'];
 export type SchemaCheckReport = components['schemas']['CheckReport'];
+export type SchemaColourDoc = components['schemas']['ColourDoc'];
 export type SchemaCompiledContract = components['schemas']['CompiledContract'];
 export type SchemaConfigFileInfo = components['schemas']['ConfigFileInfo'];
 export type SchemaConfigReport = components['schemas']['ConfigReport'];
@@ -5472,6 +6287,7 @@ export type SchemaConnectorTest = components['schemas']['ConnectorTest'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
 export type SchemaContractList = components['schemas']['ContractList'];
 export type SchemaContractSummary = components['schemas']['ContractSummary'];
+export type SchemaCredentialDoc = components['schemas']['CredentialDoc'];
 export type SchemaCredentialInfo = components['schemas']['CredentialInfo'];
 export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
 export type SchemaDefaultView = components['schemas']['DefaultView'];
@@ -5481,6 +6297,7 @@ export type SchemaDiagnostic = components['schemas']['Diagnostic'];
 export type SchemaDirectory = components['schemas']['Directory'];
 export type SchemaDiscovery = components['schemas']['Discovery'];
 export type SchemaDisposition = components['schemas']['Disposition'];
+export type SchemaDocumentation = components['schemas']['Documentation'];
 export type SchemaEdge = components['schemas']['Edge'];
 export type SchemaEdgeMetadata = components['schemas']['EdgeMetadata'];
 export type SchemaEvent = components['schemas']['Event'];
@@ -5495,16 +6312,20 @@ export type SchemaHealthReport = components['schemas']['HealthReport'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
 export type SchemaHintView = components['schemas']['HintView'];
 export type SchemaInstalledSkill = components['schemas']['InstalledSkill'];
+export type SchemaJobDoc = components['schemas']['JobDoc'];
 export type SchemaJobInfo = components['schemas']['JobInfo'];
 export type SchemaJsonValue = components['schemas']['JsonValue'];
 export type SchemaLastTest = components['schemas']['LastTest'];
+export type SchemaLayerDoc = components['schemas']['LayerDoc'];
 export type SchemaLayerList = components['schemas']['LayerList'];
 export type SchemaLayerProblemView = components['schemas']['LayerProblemView'];
 export type SchemaLayerView = components['schemas']['LayerView'];
+export type SchemaLetDoc = components['schemas']['LetDoc'];
 export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaLogin = components['schemas']['Login'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
+export type SchemaModuleDoc = components['schemas']['ModuleDoc'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
 export type SchemaNode = components['schemas']['Node'];
 export type SchemaNodeMetadata = components['schemas']['NodeMetadata'];
@@ -5513,7 +6334,10 @@ export type SchemaNoticeKind = components['schemas']['NoticeKind'];
 export type SchemaNoticeList = components['schemas']['NoticeList'];
 export type SchemaOpened = components['schemas']['Opened'];
 export type SchemaOperationAudience = components['schemas']['OperationAudience'];
+export type SchemaOperationDoc = components['schemas']['OperationDoc'];
+export type SchemaParameterDoc = components['schemas']['ParameterDoc'];
 export type SchemaParticipant = components['schemas']['Participant'];
+export type SchemaPlaybookDoc = components['schemas']['PlaybookDoc'];
 export type SchemaPlaybookList = components['schemas']['PlaybookList'];
 export type SchemaPlaybookView = components['schemas']['PlaybookView'];
 export type SchemaPluginCandidate = components['schemas']['PluginCandidate'];
@@ -5521,16 +6345,22 @@ export type SchemaPluginChange = components['schemas']['PluginChange'];
 export type SchemaPluginEvent = components['schemas']['PluginEvent'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
+export type SchemaPluginPage = components['schemas']['PluginPage'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
 export type SchemaProfile = components['schemas']['Profile'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
 export type SchemaRecommendationView = components['schemas']['RecommendationView'];
+export type SchemaRecording = components['schemas']['Recording'];
 export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
+export type SchemaScene = components['schemas']['Scene'];
+export type SchemaSceneStep = components['schemas']['SceneStep'];
+export type SchemaSettingDoc = components['schemas']['SettingDoc'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
+export type SchemaSetupDoc = components['schemas']['SetupDoc'];
 export type SchemaSkill = components['schemas']['Skill'];
 export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStatus = components['schemas']['Status'];
@@ -5541,6 +6371,7 @@ export type SchemaTeamShow = components['schemas']['TeamShow'];
 export type SchemaTemplateView = components['schemas']['TemplateView'];
 export type SchemaTested = components['schemas']['Tested'];
 export type SchemaThemeColours = components['schemas']['ThemeColours'];
+export type SchemaThemeDoc = components['schemas']['ThemeDoc'];
 export type SchemaThemeFontView = components['schemas']['ThemeFontView'];
 export type SchemaThemeList = components['schemas']['ThemeList'];
 export type SchemaThemeLogoView = components['schemas']['ThemeLogoView'];
@@ -6582,6 +7413,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginChange"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_plugin_docs_show: {
+        parameters: {
+            query?: {
+                /** @description One plugin, by its short name (`clock`) or distribution (`heinzel-clock`); every one if absent. */
+                plugin?: string | null;
+                /** @description The `docs/scenes.toml` declaring what to record for the plugin (ADR 0058); when the default doesn't exist, a CLI scene is derived from the operations. */
+                scenes?: string;
+                /** @description Include Heinzelmännchen's own modules as the page `heinzel`. */
+                builtin?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Documentation"];
                 };
             };
             /** @description Validation Error */

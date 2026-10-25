@@ -24,7 +24,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
     },
-    "demo.yml": {"uv tool install --editable .": "installs hz from this checkout for the recording"},
+    "docs.yml": {
+        "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
+        "uv run --quiet --group docs playwright install-deps": "Chromium's system libraries, from the runner",
+    },
     "publish.yml": {
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
         "uv run --script scripts/check_confidentiality.py": "scans the tagged tree with the term list from the secret",

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses secrets icons build changelog ci-logs pr sync release clean update-template
+.PHONY: help install setup doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-e2e audit licenses secrets docs-plugins docs-record docs-site icons build changelog ci-logs pr sync release clean update-template
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -15,6 +15,7 @@ BASE ?= $(REMOTE)/main
 # Cheapest checks first, so a typo fails in a second; the rest runs in parallel.
 GATE := "lock=uv lock --check" "&format=uv run ruff format --check ." "&ruff=uv run ruff check --no-fix ."
 LINT := \
+		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins --check" \
 		"&zizmor=uv run zizmor --offline --quiet .github/workflows" \
 		"&actionlint=uv run actionlint" \
 		"&typos=uv run typos" \
@@ -46,10 +47,11 @@ tools-verify: ## Download every pinned tool for every platform and check its che
 check: ## Everything CI checks that runs offline, in parallel: lint, types, tests
 	$(STEPS) $(GATE) $(LINT) $(TYPES) $(TESTS)
 
-check-fast: ## Seconds-fast feedback for the edit loop: format, lint, unit tests
+check-fast: ## Seconds-fast feedback for the edit loop: format, lint, generated pages, unit tests
 	$(STEPS) \
 		"format=uv run ruff format --check ." \
 		"&ruff=uv run ruff check --no-fix ." \
+		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins --check" \
 		"unit=uv run pytest -m unit -n auto -x -q --session-timeout=60"
 
 preflight: ## What CI checks, before you push: check with coverage, build, commits (PREFLIGHT=full adds e2e, audit)
@@ -62,6 +64,7 @@ preflight: ## What CI checks, before you push: check with coverage, build, commi
 fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated files; then list changed files
 	$(STEPS) \
 		"lock=uv lock --quiet" \
+		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins" \
 		"format=uv run ruff format --quiet ." \
 		"ruff=uv run ruff check --fix --quiet --exit-zero ."
 	@git status --short
@@ -114,6 +117,15 @@ secrets: ## Scan the whole git history for credentials with gitleaks (the pre-co
 licenses: ## Check that runtime dependencies' licenses are on .license-allowlist, so releases stay MIT-compatible
 	bash scripts/check_licenses.sh
 
+docs-plugins: ## Write the page of every installed plugin into docs/plugins with `hz system plugin docs build` (ADR 0058)
+	uv run --quiet hz system plugin docs build --directory docs/plugins
+
+docs-record: ## Record every plugin page's scenes (CLI with VHS, UI with Playwright) into docs/plugins/*/assets; PLUGIN=name, SCENE=name narrow it
+	uv run --quiet --script scripts/docs_record.py $(if $(PLUGIN),--plugin $(PLUGIN)) $(if $(SCENE),--scene $(SCENE))
+
+docs-site: ## Build the documentation site (MkDocs Material) into site/ from docs/; SERVE=1 serves it with reload instead
+	uv run --quiet --group docs mkdocs $(if $(SERVE),serve,build --strict)
+
 icons: ## Make every image of Heinzelmännchen from heinzel.svg: the web app's icons, the favicon, the theme's logo (macOS 14+)
 	@uv run --quiet --script scripts/notifier.py icons
 
@@ -136,7 +148,7 @@ release: ## Open a release pull request from main: BUMP=auto|patch|minor|major (
 	bash scripts/release.sh $(or $(BUMP),auto) --open-pr
 
 clean: ## Remove build and test artifacts
-	rm -rf dist build .coverage* coverage.xml htmlcov reports .pytest_cache .mypy_cache .ruff_cache
+	rm -rf dist build .coverage* coverage.xml htmlcov reports .pytest_cache .mypy_cache .ruff_cache site
 
 update-template: ## Update this plugin to the latest Heinzelmännchen template (needs a clean working tree)
 	uvx copier update --defaults

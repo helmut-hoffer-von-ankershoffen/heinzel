@@ -1,0 +1,1 @@
+../../scripts/docs_record.py

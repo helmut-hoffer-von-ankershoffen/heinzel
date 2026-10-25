@@ -3,7 +3,7 @@
 # scripts/tools.py installs them into .tools/bin (gitignored), which make puts first on PATH:
 #   group "build": `make install` (and `make setup`) installs them; the git hooks and CI use the same copies.
 #   group "web":   `make install` installs them where there is a web/ app (the core; plugins have none).
-#   group "demo":  `make demo` installs them when it needs them.
+#   group "demo":  `make demo` and `make docs-record` install them when they need them.
 # A platform without a pinned file uses the program on PATH, and `hint` says how to install it there.
 # Platforms: darwin-arm64, darwin-x86_64, linux-x86_64, linux-arm64. `url` may use {version} and {file}; a file
 # entry may override it. `member` is the binary's path inside an archive (.tar.gz, .zip, .whl), glob patterns allowed;
@@ -59,7 +59,7 @@ linux-arm64 = { file = "pnpm-linux-arm64.tar.gz", sha256 = "d7ce93a2c7d847d3a34b
 [vhs]
 version = "0.12.1"
 group = "demo"
-why = "records the README demo GIF from a tape (`make demo`); runs ttyd and ffmpeg, and fetches its own Chromium"
+why = "records the README intro and every plugin page's CLI scenes (`make demo`, `make docs-record`); runs ttyd and ffmpeg, and fetches its own Chromium"
 home = "https://github.com/charmbracelet/vhs"
 url = "https://github.com/charmbracelet/vhs/releases/download/v{version}/{file}"
 member = "*/vhs"
@@ -102,7 +102,7 @@ linux-arm64 = { file = "imageio_ffmpeg-{version}-py3-none-manylinux2014_aarch64.
 [jq]
 version = "1.8.2"
 group = "demo"
-why = "the demo pipes `hz ... --json` into it"
+why = "the demo and CLI scenes pipe `hz ... --json` into it"
 home = "https://jqlang.org"
 url = "https://github.com/jqlang/jq/releases/download/jq-{version}/{file}"
 hint = { darwin = "brew install jq", linux = "apt-get install jq" }

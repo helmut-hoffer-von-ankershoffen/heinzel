@@ -26,6 +26,7 @@ unset VIRTUAL_ENV UV_FROZEN # the rendered plugin has no lockfile yet, and is no
 uv lock --quiet
 git add --all
 git -c user.name=template-test -c user.email=template-test@localhost commit --quiet -m "chore: scaffold from template"
+make docs-plugins # the plugin's page (ADR 0058), which `make check` then checks; `make fix` writes it for people
 make check
 if [ -n "${TEMPLATE_AUDIT:-}" ]; then make audit; fi
 echo "Template rendered and checked in $destination"

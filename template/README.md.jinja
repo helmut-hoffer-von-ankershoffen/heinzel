@@ -38,6 +38,14 @@ hz [[ plugin_name ]] info --json          # every command speaks JSON, for scrip
 hz system info                  # includes a section contributed by this plugin
 ```
 
+## Documentation
+
+[docs/plugins/[[ project_name ]]/index.md](docs/plugins/[[ project_name ]]/index.md) is this plugin's page: what it
+brings in every head, its settings, credentials, themes and recordings, generated from the installed plugin by
+`hz system plugin docs build` (`make fix` writes it, `make check` fails while it is missing or stale).
+`make docs-record` records the scenes of [docs/scenes.toml](docs/scenes.toml) beside it, and `make docs-site` builds
+the site the Docs workflow publishes on release.
+
 ## Develop
 
 ```bash

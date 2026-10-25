@@ -55,6 +55,12 @@ dev = [
     "typos>=1.51",
     "zizmor>=1.31",
 ]
+# The documentation site and the recordings of every plugin's page (ADR 0058): `make docs-site`, `make docs-record`.
+# Neither ships with hz. Playwright here is the Python package, so a plugin needs no Node to record its screens.
+docs = [
+    "mkdocs-material>=9.8.0",
+    "playwright>=1.64.1",
+]
 
 [build-system]
 requires = ["hatchling>=1.29.0"]
@@ -269,4 +275,4 @@ Prompty = "Prompty" # a prompt file format, cited in docs/research/workflow-cont
 intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
 
 [tool.typos.files]
-extend-exclude = ["ATTRIBUTIONS.md"] # third-party license texts, quoted as their authors wrote them
+extend-exclude = ["ATTRIBUTIONS.md", "site"] # third-party license texts, quoted as their authors wrote them; the built site

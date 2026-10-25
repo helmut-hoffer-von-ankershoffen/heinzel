@@ -1,0 +1,119 @@
+name: Docs
+
+# The documentation of every plugin and the site (ADR 0058). Shared with plugins through the template.
+#
+# Recordings: when the scenes or the demo tape change on main, and on demand, every scene of docs/scenes.toml (and
+# the derived ones) is re-recorded with VHS and Playwright in a sandbox by `make docs-record` (in Heinzelmännchen's
+# repository the README's intro too), and a pull request brings the changed media. Rendering isn't byte-identical
+# between machines, so media isn't diffed on every pull request; the Markdown pages are (`make check`). A release
+# doesn't re-record (every release would grow the history by megabytes); it publishes what main holds.
+#
+# Site: `make docs-site` builds the MkDocs site, and it is deployed to GitHub Pages only when the repository is
+# public, or when the repository variable DOCS_PAGES is `true`. Otherwise the site stays a workflow artifact: a
+# private plugin's pages never leave its repository. The Release tag workflow calls this one for every release (a
+# tag pushed with the GitHub token triggers nothing); the first deploy turns Pages on, which may need the repository
+# owner to do it once by hand when the token isn't allowed to.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/scenes.toml
+      - docs/assets/demo.tape
+  workflow_call:
+    inputs:
+      record:
+        description: Re-record every scene and open a pull request with the changed media
+        type: boolean
+        default: false
+    secrets:
+      CONFIDENTIAL_TERMS:
+        required: false
+  workflow_dispatch:
+    inputs:
+      record:
+        description: Re-record every scene and open a pull request with the changed media
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  record:
+    name: Record the scenes
+    if: github.event_name == 'push' || inputs.record == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # push the docs/recordings branch
+      pull-requests: write # open the pull request
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false # this job pushes a branch, and a poisoned cache must not be able to reach it (zizmor)
+      - name: Fonts for the terminal recordings
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-jetbrains-mono fonts-noto-color-emoji
+      - name: Chromium's system libraries, for Playwright
+        run: uv run --quiet --group docs playwright install-deps chromium
+      - name: Record every scene
+        env:
+          CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
+        run: make docs-record
+      - name: Rebuild the pages, so they embed what was recorded
+        run: make docs-plugins
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          base: main
+          branch: docs/recordings
+          title: "docs: re-record the plugin pages"
+          commit-message: "docs: re-record the plugin pages"
+          body: Re-recorded by the Docs workflow (`make docs-record`) from `docs/scenes.toml` and the derived scenes. Look at the last frames before merging.
+          add-paths: |
+            docs/plugins/**
+            docs/assets/demo.*
+          delete-branch: true
+
+  site:
+    name: Build the site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false # the site is published, and a poisoned cache must not be able to reach it (zizmor)
+      - run: make docs-site
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: site
+
+  pages:
+    name: Deploy to GitHub Pages
+    needs: site
+    # Public repositories publish; a private one only when its owner says so, so no page of a company's plugin leaks.
+    if: github.event.repository.visibility == 'public' || vars.DOCS_PAGES == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+        with:
+          enablement: true # turns Pages on for the repository the first time, from the Actions source
+      - id: deploy
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

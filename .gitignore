@@ -24,3 +24,5 @@ node_modules/
 src/heinzel/heads/web/static/
 src/heinzel/modules/system/notify/macos/HeinzelNotifier.app/
 web/test-results/
+# The documentation site `make docs-site` builds (ADR 0058).
+site/

@@ -132,7 +132,7 @@ hz ui                                      the web app on localhost, opened in y
 hz system info | modules | doctor | changelog | release | update
 hz system expert [on | off]                every command in help, or just the everyday ones (ADR 0041)
 hz system config  show | get | set | unset | init
-hz system plugin  list | add | remove | new
+hz system plugin  list | add | remove | new | docs show | docs build
 hz system layer   list | show
 hz system agent   skills | install | uninstall
 hz system daemon  install | uninstall | status | logs | tick | pause | resume | jobs
