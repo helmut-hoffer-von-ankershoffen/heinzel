@@ -20,6 +20,7 @@ from typing import Any
 from fastapi.responses import StreamingResponse
 from pydantic_core import to_jsonable_python
 
+from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.kernel import Emit, HeinzelError, Kernel, OperationLet, Progress
 from heinzel.kernel._progress import Advance
 
@@ -60,7 +61,9 @@ def frame(kind: str, data: object) -> str:
     return f"event: {kind}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
 
-def streamed(kernel: Kernel, operation: OperationLet, arguments: dict[str, Any]) -> StreamingResponse:
+def streamed(
+    kernel: Kernel, operation: OperationLet, arguments: dict[str, Any], *, module: str = ""
+) -> StreamingResponse:
     """Run `operation` in a worker thread and stream its events, then its result or error."""
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
@@ -72,6 +75,7 @@ def streamed(kernel: Kernel, operation: OperationLet, arguments: dict[str, Any])
     def work() -> None:
         _SINK.set(emit)
         try:
+            mark_authenticated_presence(kernel, module)
             result = kernel.invoke(operation, **arguments)
             emit("result", {"data": to_jsonable_python(result, fallback=str)})
         except HeinzelError as exc:

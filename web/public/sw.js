@@ -1,6 +1,6 @@
 // The web app's service worker (ADR 0046): it shows notifications, opens the app at a notice when one is clicked, and
 // keeps the app's shell for when `hz ui` isn't running. It never caches API data and never talks to another origin.
-const SHELL = "hz-shell-v2";
+const SHELL = "hz-shell-v3";
 const PRECACHED = ["/manifest.webmanifest", "/favicon.svg", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
@@ -16,7 +16,11 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((names) => Promise.all(names.filter((name) => name !== SHELL).map((name) => caches.delete(name))))
+      .then((names) =>
+        Promise.all(
+          names.filter((name) => name.startsWith("hz-shell-") && name !== SHELL).map((name) => caches.delete(name)),
+        ),
+      )
       .then(() => self.clients.claim()),
   );
 });

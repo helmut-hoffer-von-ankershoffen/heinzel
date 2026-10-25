@@ -16,3 +16,10 @@ class CompiledJobs:
     """
 
     jobs: tuple[JobLet, ...] = ()
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class JobInactive:
+    """A job with no configured work: report a skipped tick without persisting a receipt (ADR 0081)."""
+
+    reason: str
