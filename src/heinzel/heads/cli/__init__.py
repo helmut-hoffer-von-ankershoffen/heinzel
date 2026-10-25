@@ -152,7 +152,8 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
         servers = Count(len(serve.registered_commands), len(serve.registered_commands))
         count += servers
         mount.hint(system, mount.counts["system"] + servers)
-    if not plain:
+    if not plain:  # the generated reference documents the commands to use, not the old ones
+        mount.aliases(app)
         hidden = 0 if mount.expert else count.expert
         app.info.epilog = start_screen_footer(kernel, hidden)
     return app
@@ -297,6 +298,51 @@ class _Mount:
             hidden=self.hides(expert=count.all_expert),
         )
         return count
+
+    def aliases(self, app: typer.Typer) -> None:
+        """Mount old command paths of renamed operations as hidden commands that name the new one (ADR 0051).
+
+        A path a module now holds keeps its module's meaning: an alias never shadows a command that exists.
+        """
+        groups: dict[str, typer.Typer] = {}
+        for record, operation in self.kernel.lets(OperationLet):
+            if not operation.aliases or not self.kernel.available(operation.func):
+                continue
+            path = record.path if owns_path(self.kernel, record, operation) else (*record.path, operation.name)
+            new = " ".join(("hz", *path))
+            for alias in operation.aliases:
+                *words, name = alias.split()
+                if words and words[0] in {r.module.name for r in self.kernel.children(None)}:
+                    continue
+                parent = app
+                for depth, word in enumerate(words):
+                    key = " ".join(words[: depth + 1])
+                    if key not in groups:
+                        groups[key] = typer.Typer(name=word, cls=SortedGroup, no_args_is_help=True)
+                        parent.add_typer(groups[key], name=word, cls=SortedGroup, hidden=True)
+                    parent = groups[key]
+                parent.command(name=name, help=f"Deprecated: {new} runs it now.", epilog=self.footer)(
+                    self._deprecated(operation, (record.qualname, operation.name), f"hz {alias}", new)
+                )
+
+    def _deprecated(
+        self, operation: OperationLet, key: tuple[str | None, str], old: str, new: str
+    ) -> Callable[..., None]:
+        """The command of an old path: one line on stderr naming the new command, then the operation."""
+        run = self._command(operation, key)
+
+        def deprecated(**kwargs: Any) -> None:  # noqa: ANN401 - forwarded to the operation
+            err_console.print(
+                f"{old} is deprecated and goes in the next minor release; use {new}.",
+                style="yellow",
+                highlight=False,
+                soft_wrap=True,
+            )
+            run(**kwargs)
+
+        deprecated.__signature__ = inspect.signature(run)  # type: ignore[attr-defined]  # Typer reads it
+        deprecated.__doc__ = run.__doc__
+        return deprecated
 
     def _own(self, operation: OperationLet, key: tuple[str | None, str]) -> Callable[..., None]:
         """The callback of a group that runs its module's own operation when called without a subcommand."""

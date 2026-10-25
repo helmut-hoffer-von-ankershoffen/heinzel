@@ -36,7 +36,7 @@ The hz team repository of {name}: its roster, contracts, inventory and policies.
 | `hz.yaml` | what the team is; owners approve changes |
 | `team/roster.yaml` | who is on the team: handle, GitHub login, roles, dates; owners approve changes |
 | `people/<handle>.yaml` | each person's preferences; only they edit theirs |
-| `workflows/` | team contracts, `<name>.prose.md`; `hz workflow check --path workflows` gates them |
+| `workflows/` | team contracts, `<name>.prose.md`; `hz heinzel check --path workflows` gates them |
 | `inventory/` | declared artefacts and systems |
 | `policies/` | owned policies |
 
@@ -46,7 +46,7 @@ owners merge.
 """
 FOLDER_READMES = {
     "workflows/README.md": "# Team contracts\n\n`<name>.prose.md` files. They run by hand, or on a member's daemon "
-    "when that member names them in `[workflow] schedule_team`.\n",
+    "when that member names them in `[heinzel] schedule_team`.\n",
     "inventory/README.md": "# Inventory\n\nDeclared artefacts and systems of the team, as YAML.\n",
     "policies/README.md": "# Policies\n\nPolicies the owners keep, such as auto-approvals.\n",
 }
@@ -59,7 +59,7 @@ def _release() -> str:
 
 
 ACTIONS = f"""\
-# Checks every pull request to the team repository: the contracts in workflows/ must pass `hz workflow check`.
+# Checks every pull request to the team repository: the contracts in workflows/ must pass `hz heinzel check`.
 # Nothing here runs a contract, reads a secret or publishes.
 name: hz team
 
@@ -84,7 +84,7 @@ jobs:
         with:
           enable-cache: false
       - name: Check the team's contracts
-        run: uvx --from "git+{SOURCE}@{_release()}" hz workflow check --path workflows
+        run: uvx --from "git+{SOURCE}@{_release()}" hz heinzel check --path workflows
 """
 
 

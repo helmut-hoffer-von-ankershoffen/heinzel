@@ -2,9 +2,9 @@
 import type {
   SchemaConfigReport,
   SchemaContractGraph,
-  SchemaContractList,
   SchemaExpertMode,
   SchemaHealthReport,
+  SchemaHeinzelList,
   SchemaProfile,
   SchemaTeamShow,
   SchemaThemeColours,
@@ -73,9 +73,10 @@ export const profile: SchemaProfile = {
   fix: "hz setup",
 };
 
-export const contracts: SchemaContractList = {
+export const heinzelmaennchen: SchemaHeinzelList = {
   directories: [],
-  contracts: [
+  filtered: false,
+  heinzelmaennchen: [
     {
       name: "weekly-digest",
       namespace: "me",
@@ -86,10 +87,33 @@ export const contracts: SchemaContractList = {
       valid: true,
       errors: 0,
       warnings: 0,
+      state: "scheduled",
+      unmet: [],
+      last_run: "2026-10-19T07:00:00Z",
+      next_run: "2026-10-26T09:00:00+01:00",
+      drafts: 2,
+    },
+    {
+      name: "team-report",
+      namespace: "team",
+      title: "Team report",
+      file: "/home/mira/team/workflows/team-report.prose.md",
+      schedule: null,
+      scheduled: false,
+      valid: true,
+      errors: 0,
+      warnings: 0,
+      state: "blocked",
+      unmet: ["tracker:read"],
+      last_run: null,
+      next_run: null,
+      drafts: 0,
     },
   ],
   next: [],
 };
+/** The sidebar and search read the same list. */
+export const contracts = heinzelmaennchen;
 
 export const graph: SchemaContractGraph = {
   nodes: [
@@ -122,11 +146,11 @@ export const noTeam: SchemaTeamShow = {
 const audiences: SchemaExpertMode["operations"] = [
   { module: "system.doctor", operation: "doctor", audience: "everyday" },
   { module: "team", operation: "show", audience: "everyday" },
-  { module: "workflow", operation: "list", audience: "everyday" },
+  { module: "heinzel", operation: "list", audience: "everyday" },
   { module: "graph", operation: "graph", audience: "everyday" },
-  { module: "workflow", operation: "graph", audience: "expert" },
-  { module: "workflow", operation: "playbooks", audience: "expert" },
-  { module: "workflow", operation: "discover", audience: "expert" },
+  { module: "heinzel", operation: "graph", audience: "expert" },
+  { module: "heinzel", operation: "playbooks", audience: "expert" },
+  { module: "heinzel", operation: "discover", audience: "expert" },
   { module: "system.capability", operation: "list", audience: "expert" },
 ];
 
@@ -137,10 +161,10 @@ export const expert: SchemaExpertMode = { expert: true, operations: audiences, n
 
 export const shell = {
   "/api/system/expert": everyday,
-  "/api/workflow/list": contracts,
+  "/api/heinzel/list": contracts,
   "/api/org/show": profile,
   "/api/system/config/show": config,
-  "/api/workflow/playbooks": { playbooks: [], next: [] },
+  "/api/heinzel/playbooks": { playbooks: [], next: [] },
 };
 
 const colours = (overrides: Partial<SchemaThemeColours> = {}): SchemaThemeColours => ({

@@ -2,7 +2,7 @@
 
 This is the success test of a drafting contract: does it save time, and how much does the person who sends the draft
 still change? Both are about the draft, never about people: drafting time comes from the render, and the change is a
-word-level diff ratio between the draft and the text the person says they sent (`hz workflow sent`). Everything stays
+word-level diff ratio between the draft and the text the person says they sent (`hz heinzel sent`). Everything stays
 in the draft's directory, next to its record: `<stem>.sent.json` beside `<stem>.md` and `<stem>.record.json`. The sent
 text itself is never copied; only its size, hash and the ratio are kept.
 """
@@ -19,18 +19,18 @@ from typing import Any, cast
 from pydantic import BaseModel, Field
 
 SENT_SUFFIX = ".sent.json"
-"""What `hz workflow sent` recorded about a draft, next to it."""
+"""What `hz heinzel sent` recorded about a draft, next to it."""
 MAX_SENT_BYTES = 256 * 1024
 """A sent text larger than this is refused: a report is a few kilobytes, and the diff is quadratic in the worst case."""
 MEASURED = 52
-"""How many of the newest drafts `hz workflow show` measures: a year of weekly ones."""
+"""How many of the newest drafts `hz heinzel show` measures: a year of weekly ones."""
 RECENT = 8
-"""How many of the newest drafts `hz workflow show` lists one by one."""
+"""How many of the newest drafts `hz heinzel show` lists one by one."""
 _WORD = re.compile(r"\S+")
 
 
 class Sent(BaseModel):
-    """`hz workflow sent`: how much a draft changed before it was sent."""
+    """`hz heinzel sent`: how much a draft changed before it was sent."""
 
     contract: str = Field(description="The qualified contract, `<namespace>:<name>`.")
     draft: Path = Field(description="The draft compared.")
@@ -93,7 +93,7 @@ def compare(draft: str, sent: str) -> tuple[float, int, int, str]:
 
 
 def sent_path(draft: Path) -> Path:
-    """Where `hz workflow sent` records a draft's sent version."""
+    """Where `hz heinzel sent` records a draft's sent version."""
     return draft.with_name(draft.stem + SENT_SUFFIX)
 
 
