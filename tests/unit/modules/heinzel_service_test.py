@@ -69,6 +69,28 @@ def test_next_run_uses_the_slots_offset_across_a_daylight_saving_change(make, no
     assert slot.isoformat() == expected
 
 
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is Unix only")
+@pytest.mark.usefixtures("berlin")
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        (datetime(2026, 10, 25, 0, 15, tzinfo=UTC), "2026-10-25T02:30:00+02:00"),
+        (datetime(2026, 10, 25, 0, 30, tzinfo=UTC), "2026-10-26T02:30:00+01:00"),
+        (datetime(2026, 10, 25, 1, 15, tzinfo=UTC), "2026-10-26T02:30:00+01:00"),
+        (datetime(2026, 10, 25, 1, 30, tzinfo=UTC), "2026-10-26T02:30:00+01:00"),
+        (datetime(2026, 3, 29, 0, 15, tzinfo=UTC), "2026-03-29T03:30:00+02:00"),
+        (datetime(2026, 3, 29, 0, 30, tzinfo=UTC), "2026-03-29T03:30:00+02:00"),
+        (datetime(2026, 3, 29, 1, 30, tzinfo=UTC), "2026-03-30T02:30:00+02:00"),
+    ],
+)
+def test_next_run_matches_daemon_transition_rules_and_is_strictly_future(make, now, expected):
+    # Like the daemon: repeat a wall time once at fold0; shift a missing time forward by the spring gap.
+    slot = make(now=now)._next_run("30 2 * * *")
+    assert slot is not None
+    assert slot > now
+    assert slot.isoformat() == expected
+
+
 class Host:
     """A code host and tracker in memory; one PR title tries to break out of its input element."""
 
