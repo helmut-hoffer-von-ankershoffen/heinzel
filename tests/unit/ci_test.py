@@ -36,6 +36,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "unzip -l ": "asserts that the released wheel ships Heinzel Notifier",
     },
     "prepare-release.yml": {
+        'if [[ ! "$INTRO"': "rejects blank dispatch input before checkout or release work",
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",
         "gh workflow run ci.yml": "starts CI on the release pull request, which the bot's token doesn't",
         "gh pr merge": "enables squash auto-merge on the release pull request once CI OK is green",
