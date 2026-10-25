@@ -8,9 +8,9 @@ disable-model-invocation: true
 
 1. Make sure `main` is green in CI.
 2. Preview: `make changelog`; next version: `uv run git-cliff --bumped-version`.
-3. Actions → **Release** → Run workflow (bump `auto`, or force `patch`/`minor`/`major`), or `make release`.
+3. Actions → **Prepare release** → Run workflow (bump `auto`, or force `patch`/`minor`/`major`), or `make release`.
    The optional **intro** input (`make release INTRO="..."`) becomes the introduction under the release's heading
    in CHANGELOG.md; earlier introductions are kept. It opens a pull request `chore(release): vX.Y.Z`; CI runs on it.
-4. Merge it. **Release tag** tags it and **Publish** builds, attests and creates the GitHub release (`gh run watch`).
+4. It merges itself when CI is green (`make release-local` prepares it on this machine: merge that one by hand). **Release tag** tags it and **Publish** builds, attests and creates the GitHub release (`gh run watch`).
 5. Verify: `hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]]@vX.Y.Z --confirm` and
    `hz [[ plugin_name ]] info`.
