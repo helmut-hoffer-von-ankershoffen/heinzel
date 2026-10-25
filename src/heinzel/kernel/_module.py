@@ -42,6 +42,7 @@ from heinzel.kernel._playbooks import AssetType, ContractTemplate, PlaybookLet, 
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._soundscapes import Soundscape, SoundscapeLet, sourced_soundscapes
 from heinzel.kernel._spec import hookimpl
+from heinzel.kernel._theme_signals import SignalLet, ThemeSignals
 from heinzel.kernel._themes import Theme, ThemeLet, sourced_themes
 
 RESERVED_NAMES = frozenset({"hz", "capabilities", "setup", "join"})
@@ -68,7 +69,15 @@ class Module:
         ```
     """
 
-    def __init__(self, name: str, summary: str, *, essential: bool = False, requires: Iterable[str] = ()) -> None:
+    def __init__(
+        self,
+        name: str,
+        summary: str,
+        *,
+        essential: bool = False,
+        requires: Iterable[str] = (),
+        renamed_from: str | None = None,
+    ) -> None:
         """Declare a module.
 
         Args:
@@ -77,9 +86,13 @@ class Module:
             essential: Can't be disabled; for the few built-ins needed to repair a broken setup (`system`).
             requires: Capabilities the whole module reads (ADR 0028), e.g. `["tracker:read", "documents:read"]`;
                 `write` is declared on the publish operation that writes, never here.
+            renamed_from: The module's old name, for the one minor release both work (ADR 0051): its settings table
+                and `HZ_<OLD>__*` variables fill in what the new ones don't set, and the daemon runs a job asked for
+                by its old id. Old command paths are each operation's `aliases`.
 
         Raises:
-            ValueError: If the name is not a valid module name or is reserved, or a requirement is malformed or writes.
+            ValueError: If the name or the old name is not a valid module name or is reserved, or a requirement is
+                malformed or writes.
         """
         if not NAME_PATTERN.fullmatch(name):
             msg = f"Module name {name!r} must match {NAME_PATTERN.pattern}"
@@ -87,6 +100,9 @@ class Module:
         if name in RESERVED_NAMES:
             what = f"the command `hz {name}`" if name in COMMANDS else f"`[{name}]`, a kernel configuration table"
             msg = f"Module name {name!r} is reserved: it is {what}"
+            raise ValueError(msg)
+        if renamed_from is not None and (not NAME_PATTERN.fullmatch(renamed_from) or renamed_from in RESERVED_NAMES):
+            msg = f"Module {name!r} can't be renamed from {renamed_from!r}: not a module name a module could have had"
             raise ValueError(msg)
         requirements = parse_requirements(requires)
         if writes := [str(r) for r in requirements if "write" in r.modes]:
@@ -98,6 +114,7 @@ class Module:
         self.name = name
         self.summary = summary
         self.essential = essential
+        self.renamed_from = renamed_from
         self._lets: list[Let] = []
         for requirement in requirements:
             self.add(RequirementLet(name=requirement.capability, requirement=requirement))
@@ -134,6 +151,7 @@ class Module:
         requires: Iterable[str] = (),
         optional: bool = False,
         audience: Audience = "expert",
+        aliases: Iterable[str] = (),
     ) -> Callable[[F], F]: ...
 
     def operation[F: Callable[..., Any]](  # noqa: PLR0913 - keyword-only options of a decorator
@@ -149,6 +167,7 @@ class Module:
         requires: Iterable[str] = (),
         optional: bool = False,
         audience: Audience = "expert",
+        aliases: Iterable[str] = (),
     ) -> F | Callable[[F], F]:
         """Advertise a function as an operation. Its docstring is required: it becomes the help text.
 
@@ -166,12 +185,19 @@ class Module:
                 when called. Read-only operations only.
             audience: `everyday` to list it in help, completion and the web app's navigation for everyone; `expert`
                 (the default) lists it in expert mode only. It runs either way (ADR 0041).
+            aliases: Old command paths that still run it for one minor release, e.g. `["workflow run"]`: the CLI
+                hides them and names the new command on stderr, MCP keeps the old tool name marked deprecated
+                (ADR 0051).
 
         Raises:
             ValueError: If the docstring is missing, the audience unknown, a requirement is malformed or writes from
-                a read-only operation, or a publish operation is optional.
+                a read-only operation, a publish operation is optional, or an alias isn't a command path.
         """
         requirements = self._requirements(requires)
+        old_paths = tuple(aliases)
+        if bad := [a for a in old_paths if not a.split() or not all(NAME_PATTERN.fullmatch(w) for w in a.split())]:
+            msg = f"Operation aliases must be command paths of lowercase words, e.g. 'workflow run'; got {bad!r}"
+            raise ValueError(msg)
 
         def decorate(target: F) -> F:
             summary = inspect.getdoc(target)
@@ -190,6 +216,7 @@ class Module:
                     requires=requirements,
                     optional=optional,
                     audience=audience,
+                    aliases=tuple(" ".join(a.split()) for a in old_paths),
                 )
             )
             return target
@@ -461,8 +488,8 @@ class Module:
     ) -> PlaybookLet:
         """Advertise the module's playbook (ADR 0037): asset types, template contracts and recommended settings.
 
-        Data only, one per module: `hz workflow playbooks` lists it, `hz workflow discover` evaluates its hints
-        through read-only capability handles, and `hz workflow new --template <module>:<name>` writes its templates.
+        Data only, one per module: `hz heinzel playbooks` lists it, `hz heinzel discover` evaluates its hints
+        through read-only capability handles, and `hz heinzel new --template <module>:<name>` writes its templates.
         Unless `setup` is False, it also declares the module's setup step (ADR 0032): `hz setup <module>` and
         `hz setup` propose the recommended settings, the assets the hints find and the templates, and apply only what
         the person accepts. A module with its own setup step passes `setup=False` and asks for `PlaybookSetup` in it.
@@ -584,6 +611,39 @@ class Module:
             self.add(let)
             lets.append(let)
         return tuple(lets)
+
+    def signals[F: Callable[..., ThemeSignals]](
+        self, *, every: str | timedelta, name: str | None = None
+    ) -> Callable[[F], F]:
+        """Publish signals themes follow (ADR 0060): a read-only operation returning `ThemeSignals`, read every `every`.
+
+        `system.theme` calls it at most once per interval and hands its values to the web app, whose theme picks the
+        variant they match; it is an ordinary operation too, so `hz <module> <name>` shows what it publishes. Keep it
+        cheap and quick: it runs while the web app asks for the signals, and a failure only leaves them unknown.
+
+        Example:
+            ```python
+            @module.signals(every="15m")
+            def now(service: WeatherService) -> ThemeSignals:
+                \"\"\"The weather now, for themes.\"\"\"
+                return ThemeSignals(weather=service.now().kind, sunrise=..., sunset=...)
+            ```
+
+        Args:
+            every: How long its values hold, 1m to 1d, e.g. `15m`.
+            name: The operation's name; defaults to the function name with underscores as dashes.
+
+        Raises:
+            ValueError: If the interval is malformed or out of range, or the function has no docstring.
+        """
+        interval = parse_duration(every)
+
+        def decorate(target: F) -> F:
+            self.operation(name=name)(target)
+            self.add(SignalLet(name=name or target.__name__.strip("_").replace("_", "-"), func=target, every=interval))
+            return target
+
+        return decorate
 
     @hookimpl
     def heinzel_lets(self) -> Sequence[Let]:

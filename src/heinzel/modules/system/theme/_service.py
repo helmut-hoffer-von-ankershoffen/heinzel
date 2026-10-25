@@ -1,6 +1,14 @@
 """Service of the theme module: the themes plugins offer, ties decided by layer order, and `[system.theme] name`."""
 
+import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta, tzinfo
+from pathlib import Path
+from threading import Lock
+from zoneinfo import ZoneInfo, available_timezones
 
 from pydantic import ValidationError
 
@@ -16,12 +24,35 @@ from heinzel import (
     ThemeFonts,
     ThemeLet,
 )
-from heinzel.kernel import DEFAULT_LOGO, DEFAULT_THEME, ThemeLogoFiles
-from heinzel.modules.system.theme._models import ThemeFontView, ThemeList, ThemeLogoView, ThemeSettings, ThemeView
+from heinzel.kernel import (
+    DEFAULT_LOGO,
+    DEFAULT_THEME,
+    OperationLet,
+    SignalLet,
+    ThemeLogoFiles,
+    ThemeSignals,
+    Weather,
+    daypart,
+)
+from heinzel.modules.system.theme._models import (
+    ThemeFontView,
+    ThemeList,
+    ThemeLogoView,
+    ThemeSettings,
+    ThemeSignalsView,
+    ThemeView,
+)
+
+logger = logging.getLogger(__name__)
 
 SECTION = "system.theme"
 KEY = f"{SECTION}.name"
 VARIABLE = "HZ_SYSTEM_THEME__NAME"
+DEADLINE = timedelta(seconds=2)
+"""How long a module's signals operation may take before its signals stay unknown for the interval."""
+LOCALTIME = Path("/etc/localtime")
+REFRESH = timedelta(minutes=1)
+"""How often the web app asks for the signals: the daypart moves on the minute."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +126,10 @@ class ThemeService(ThemeFonts, ThemeChoice):
         """Create the service; the kernel and the configuration editor are injected."""
         self._kernel = kernel
         self._editor = editor
+        self._read: dict[str, tuple[datetime, ThemeSignals | None]] = {}
+        self._lock = Lock()
+        # Few workers: a hanging plugin holds one of them, never the web head's request threads.
+        self._workers = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hz-signals")
 
     def available(self) -> Available:
         """Each theme by name; of several modules offering one name, the most specific layer of the stack wins.
@@ -193,6 +228,7 @@ class ThemeService(ThemeFonts, ThemeChoice):
                     spacing=offered.theme.spacing,
                     fonts=_fonts(offered),
                     logo=_logo(offered.logos),
+                    variant=list(offered.theme.variant),
                     shadows=offered.shadows,
                 )
                 for name, offered in available.themes.items()
@@ -246,6 +282,71 @@ class ThemeService(ThemeFonts, ThemeChoice):
         self._editor.write(KEY, name, "user")
         return self.listing()
 
+    def signals(self) -> ThemeSignalsView:
+        """The signals now (ADR 0060): the daypart in the person's time zone, and what the modules publish.
+
+        Each module's signals operation runs at most once per its interval, on a worker of its own with a deadline of
+        `DEADLINE`: one that fails, hangs or returns something else leaves its signals unknown until the next
+        interval, and never holds up the answer. Of several modules publishing one signal, the first by module order
+        wins; sunrise and sunset come as a pair from the first module that publishes both.
+        """
+        zone, zone_name = _zone()
+        now = utc_now()
+        weather: Weather | None = None
+        sun: tuple[datetime, datetime] | None = None
+        sources: list[str] = []
+        for record, let in self._kernel.lets(SignalLet):
+            published = self._published(record.qualname, let, now)
+            if published is None:
+                continue
+            contributed = False
+            if weather is None and published.weather is not None:
+                weather, contributed = published.weather, True
+            if sun is None and published.sunrise is not None and published.sunset is not None:
+                sun, contributed = (published.sunrise, published.sunset), True
+            if contributed:
+                sources.append(record.qualname)
+        sunrise, sunset = (sun[0].astimezone(zone), sun[1].astimezone(zone)) if sun else (None, None)
+        return ThemeSignalsView(
+            daypart=daypart(now.astimezone(zone), sunrise, sunset),
+            weather=weather,
+            sunrise=sunrise,
+            sunset=sunset,
+            timezone=zone_name,
+            sources=sources,
+            refresh=int(REFRESH.total_seconds()),
+        )
+
+    def _published(self, qualname: str, let: SignalLet, now: datetime) -> ThemeSignals | None:
+        """What `let` of module `qualname` publishes, read again once its interval has passed.
+
+        One caller reads at a time per service; the attempt is recorded before the call, so callers meanwhile and
+        after a failure get the last values (or unknown) instead of calling again.
+        """
+        key = f"{qualname}:{let.name}"
+        with self._lock:
+            cached = self._read.get(key)
+            if cached and now - cached[0] < let.every:
+                return cached[1]
+            self._read[key] = (now, cached[1] if cached else None)
+        operation = next((op for _, op in self._kernel.lets(OperationLet) if op.func is let.func), None)
+        if operation is None:
+            logger.warning("Signals %s have no operation; they stay unknown", key)
+            return None
+        published: ThemeSignals | None = None
+        try:
+            result = self._workers.submit(self._kernel.invoke, operation).result(timeout=DEADLINE.total_seconds())
+            published = ThemeSignals.model_validate(result.model_dump() if isinstance(result, ThemeSignals) else result)
+        except FutureTimeout:
+            logger.warning("Signals %s took longer than %s; they stay unknown until %s", key, DEADLINE, let.every)
+        except ValidationError as exc:
+            logger.warning("Signals %s aren't ThemeSignals (%s); they stay unknown until %s", key, exc, let.every)
+        except Exception:
+            logger.warning("Signals %s failed; they stay unknown until %s", key, let.every, exc_info=True)
+        with self._lock:
+            self._read[key] = (now, published)
+        return published
+
     @staticmethod
     def _from_files(config: Config) -> str:
         """The name the configuration files set, a project file aside (it can't set it); the default otherwise."""
@@ -254,3 +355,38 @@ class ThemeService(ThemeFonts, ThemeChoice):
             if file.scope != "project":
                 name = str(Config(files=(), data=content).section(SECTION).get("name", name))
         return name
+
+
+def utc_now() -> datetime:
+    """Now, aware, in UTC; a seam tests replace."""
+    return datetime.now(UTC)
+
+
+def _zone() -> tuple[tzinfo, str]:
+    """The person's time zone (`[org] timezone`, which a project file can't set), else this machine's, and its name.
+
+    A name that isn't an IANA time zone is ignored, as `hz setup` would refuse it.
+    """
+    name: object = os.environ.get("HZ_ORG__TIMEZONE")
+    if name is None:
+        try:
+            layers = Config.load().layers
+        except HeinzelError:
+            layers = ()
+        for file, content in layers:
+            if file.scope != "project":
+                name = Config(files=(), data=content).section("org").get("timezone", name)
+    for candidate in (name, local_timezone()):
+        if isinstance(candidate, str) and candidate in available_timezones():
+            return ZoneInfo(candidate), candidate
+    return ZoneInfo("UTC"), "UTC"
+
+
+def local_timezone() -> str | None:
+    """The IANA name of this machine's time zone, from where /etc/localtime points; a seam tests replace."""
+    try:
+        target = str(LOCALTIME.resolve(strict=True))
+    except OSError:
+        return None
+    _, found, zone = target.partition("zoneinfo/")
+    return zone or None if found else None

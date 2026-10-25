@@ -18,6 +18,7 @@ from heinzel.modules.system.theme._models import (
     ThemeList,
     ThemeLogoView,
     ThemeSettings,
+    ThemeSignalsView,
     ThemeView,
 )
 from heinzel.modules.system.theme._service import ThemeService
@@ -68,6 +69,21 @@ def list_(service: ThemeService) -> ThemeList:
     return service.listing()
 
 
+def render_signals(result: ThemeSignalsView) -> RenderableType:
+    """The signals now and where they come from."""
+    lines = [f"Daypart: {result.daypart} ({result.timezone})", f"Weather: {result.weather or 'unknown'}"]
+    if result.sunrise and result.sunset:
+        lines.append(f"Sun: {result.sunrise:%H:%M} to {result.sunset:%H:%M}")  # in the person's zone already
+    lines.append(f"From: {', '.join(result.sources) or 'the clock only'}")
+    return Text("\n".join(lines))
+
+
+@module.operation(render=render_signals)
+def signals(service: ThemeService) -> ThemeSignalsView:
+    """Show the signals themes follow now: the time of day, and the weather when a plugin publishes it."""
+    return service.signals()
+
+
 @module.operation(read_only=False, render=render)
 def use(
     service: ThemeService,
@@ -77,4 +93,13 @@ def use(
     return service.use(name)
 
 
-__all__ = ["ThemeFontView", "ThemeList", "ThemeLogoView", "ThemeService", "ThemeSettings", "ThemeView", "module"]
+__all__ = [
+    "ThemeFontView",
+    "ThemeList",
+    "ThemeLogoView",
+    "ThemeService",
+    "ThemeSettings",
+    "ThemeSignalsView",
+    "ThemeView",
+    "module",
+]

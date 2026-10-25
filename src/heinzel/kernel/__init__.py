@@ -108,7 +108,7 @@ from heinzel.kernel._protocols import (
 )
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
 from heinzel.kernel._settings import Settings
-from heinzel.kernel._signals import SIGNALS, Daypart, Signal, daypart_of
+from heinzel.kernel._signals import SIGNALS, Signal
 from heinzel.kernel._soundscapes import (
     SOUND_CSP,
     SOUND_ROUTE,
@@ -132,6 +132,7 @@ from heinzel.kernel._telemetry import (
     check_target,
 )
 from heinzel.kernel._text import clean_text, redact_emails
+from heinzel.kernel._theme_signals import DAYPARTS, WEATHERS, Daypart, SignalLet, ThemeSignals, Weather, daypart
 from heinzel.kernel._themes import (
     DEFAULT_LOGO,
     DEFAULT_THEME,
@@ -139,12 +140,14 @@ from heinzel.kernel._themes import (
     LOGO_CSP,
     LOGO_ROUTE,
     Theme,
+    ThemeBackdrop,
     ThemeColours,
     ThemeFont,
     ThemeFonts,
     ThemeLet,
     ThemeLogo,
     ThemeLogoFiles,
+    ThemeVariant,
     font_stack_problem,
 )
 
@@ -152,6 +155,7 @@ __all__ = [
     "BUILTIN_PACKAGE",
     "CAPABILITIES",
     "CORE_DISTRIBUTION",
+    "DAYPARTS",
     "DEFAULT_LOGO",
     "DEFAULT_THEME",
     "ENTRY_POINT_GROUP",
@@ -173,6 +177,7 @@ __all__ = [
     "SOUND_ROUTE",
     "STREAM_PROVIDERS",
     "VERBS",
+    "WEATHERS",
     "WINDOW_PATTERN",
     "AccessStatus",
     "AccessTest",
@@ -276,6 +281,7 @@ __all__ = [
     "SetupLet",
     "SetupPhase",
     "Signal",
+    "SignalLet",
     "SoundAssets",
     "SoundEarcon",
     "SoundLayer",
@@ -292,6 +298,7 @@ __all__ = [
     "TelemetryLog",
     "TelemetryRead",
     "Theme",
+    "ThemeBackdrop",
     "ThemeChoice",
     "ThemeColours",
     "ThemeFont",
@@ -299,17 +306,20 @@ __all__ = [
     "ThemeLet",
     "ThemeLogo",
     "ThemeLogoFiles",
+    "ThemeSignals",
+    "ThemeVariant",
     "TokenUsage",
     "ToolProfile",
     "Tracker",
     "Transcript",
     "TranscriptSegment",
     "Verb",
+    "Weather",
     "Window",
     "boot",
     "check_target",
     "clean_text",
-    "daypart_of",
+    "daypart",
     "discover",
     "draft_reporting_lines",
     "env_prefix",

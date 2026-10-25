@@ -5,8 +5,8 @@ import type {
   SchemaCandidate,
   SchemaCapabilityInfo,
   SchemaContractGraph,
-  SchemaContractSummary,
   SchemaDiscovery,
+  SchemaHeinzelSummary,
   SchemaPlaybookView,
   SchemaTemplateView,
 } from "@/api/client";
@@ -29,7 +29,7 @@ export type WorkflowNode =
       template: SchemaTemplateView;
       command: string;
     })
-  | (Base & { kind: "contract"; qualified: string; summary: SchemaContractSummary | null; errors: number })
+  | (Base & { kind: "contract"; qualified: string; summary: SchemaHeinzelSummary | null; errors: number })
   | (Base & { kind: "output"; ref: string; maintained: boolean; suggested: boolean; contract: string | null });
 
 export type WorkflowEdge = {
@@ -49,7 +49,7 @@ export type WorkflowInputs = {
   capabilities?: SchemaCapabilityInfo[];
   playbooks?: SchemaPlaybookView[];
   graph?: SchemaContractGraph;
-  contracts?: SchemaContractSummary[];
+  contracts?: SchemaHeinzelSummary[];
   discovery?: SchemaDiscovery;
 };
 
@@ -154,7 +154,7 @@ export function buildWorkflow({
     const to = graphIds.get(item.target);
     if (from && to) edge(from, to, item.kind, false, item.input ?? undefined);
   }
-  // Contracts `hz workflow list` has and the graph lacks (one with errors, say) still belong on it.
+  // Contracts `hz heinzel list` has and the graph lacks (one with errors, say) still belong on it.
   for (const [qualified, summary] of summaries) {
     const id = `contract:${qualified}`;
     if (!nodes.has(id)) {

@@ -111,9 +111,9 @@ def test_sound_is_off_by_default_and_the_list_shows_off_claude_fm_and_each_plugi
     (layer,) = demo["layers"]
     assert layer["url"].startswith("/sound-assets/demo/layer-0.opus?v=")
     assert (layer["licence"], layer["signal"], layer["gain"]) == ("CC0-1.0", "daypart", 0.6)
-    assert layer["curve"] == {"morning": 0.8, "afternoon": 1.0, "evening": 0.5, "night": 0.2}
+    assert layer["curve"] == {"morning": 0.8, "day": 1.0, "evening": 0.5, "night": 0.2}
     assert [(e["kind"], e["licence"]) for e in demo["earcons"]] == [("draft", "CC0-1.0")]
-    assert listed["signals"]["daypart"] in {"night", "morning", "afternoon", "evening"}
+    assert listed["signals"]["daypart"] in {"dawn", "morning", "day", "dusk", "evening", "night"}
     assert "weather.rain" not in listed["signals"]  # absent until a plugin publishes it
     assert (listed["volume"], listed["follow_theme"], listed["mute_in_meetings"]) == (50, False, True)
     assert listed["next"] == ["hz system sound use claude-fm"]

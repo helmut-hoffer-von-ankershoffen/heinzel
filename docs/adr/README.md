@@ -55,13 +55,14 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0047](0047-plugins-are-managed-from-the-web-app-after-a-confirmation.md) | Plugins are managed from the web app, and adding one shows what it installs before it is confirmed | proposed | 2026-10-24 |
 | [0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md) | Heinzelmännchen are durable agents: one session each, owned by hz | proposed | 2026-10-24 |
 | [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) | Pydantic AI runs a turn; a coding agent is a handoff | proposed | 2026-10-24 |
-| [0051](0051-the-workflow-module-becomes-the-heinzel-module.md) | The workflow module becomes the heinzel module | proposed | 2026-10-24 |
+| [0051](0051-the-workflow-module-becomes-the-heinzel-module.md) | The workflow module becomes the heinzel module | accepted | 2026-10-24 |
 | [0052](0052-the-graph-emerges-from-recorded-reads-and-writes.md) | The graph emerges from recorded reads and writes | proposed | 2026-10-24 |
 | [0053](0053-the-team-graph-is-drawn-with-react-flow-and-elk.md) | The team graph is drawn with React Flow and laid out by elk; Mermaid is only an export | proposed | 2026-10-24 |
 | [0054](0054-observability-is-whether-each-team-promise-is-kept.md) | Observability is whether each team promise is kept: telemetry in, a graph out | proposed | 2026-10-24 |
 | [0055](0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md) | Connectors show their sign-in, test live on demand, and bind themselves when they are alone | accepted | 2026-10-24 |
 | [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) | AI access is a module: one choice like the theme, options are adapters of `ai-access` | proposed | 2026-10-24 |
 | [0058](0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md) | Soundscapes are data a plugin ships, chosen like a theme: `module.soundscape(...)`, `hz system sound use` | proposed | 2026-10-24 |
+| [0060](0060-themes-follow-the-time-of-day-and-the-weather.md) | Themes follow the time of day and the weather: variants on a closed vocabulary of signals | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -118,11 +119,13 @@ amends [0028](0028-integrations-are-capability-adapters.md) (a sole installed ad
 automatically);
 [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) amends
 [0029](0029-agent-runners-are-capability-adapters.md) (an AI access option names the agent runner that serves it) and
-[0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (`[heinzel] model` gives way to `[ai]` routing).
+[0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (`[heinzel] model` gives way to `[ai]` routing);
 [0058](0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md) amends
 [0027](0027-nothing-is-sent-home.md), [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) and
 [0046](0046-an-installable-web-app-with-paired-devices.md) (one allowlisted frame origin while a stream soundscape is in
-effect, from Play onwards). ADRs 0021–0024 are
+effect, from Play onwards);
+[0060](0060-themes-follow-the-time-of-day-and-the-weather.md) amends [0044](0044-themes-are-data-a-plugin-ships.md)
+(variants that follow signals; a base theme is checked for contrast too). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,
 selector grammar); each lists them under More Information.
 

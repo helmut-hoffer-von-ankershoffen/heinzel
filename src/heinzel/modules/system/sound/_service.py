@@ -16,7 +16,7 @@ from heinzel import (
     SoundscapeLet,
     ThemeChoice,
 )
-from heinzel.kernel import STREAM_PROVIDERS, daypart_of
+from heinzel.kernel import STREAM_PROVIDERS, daypart
 from heinzel.modules.system.sound._models import (
     SoundAssetView,
     SoundEarconView,
@@ -240,7 +240,7 @@ class SoundService(SoundAssets):
             selected=choice.selected,
             effective=choice.effective,
             soundscapes=[off, *(_view(name, offered, choice) for name, offered in available.soundscapes.items())],
-            signals={"daypart": daypart_of(datetime.now().astimezone())},
+            signals={"daypart": daypart(datetime.now().astimezone())},
             volume=choice.settings.volume,
             follow_theme=choice.settings.follow_theme,
             mute_in_meetings=choice.settings.mute_in_meetings,

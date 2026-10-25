@@ -71,7 +71,9 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
   const listedSections = visibleSections(sections, expert.data).filter(
     // The contracts section stays for its entries; with no graph listed and no contract, there's nothing to show.
     (section) =>
-      section.label !== CONTRACTS_SECTION || section.items.length > 0 || Boolean(contracts.data?.contracts.length),
+      section.label !== CONTRACTS_SECTION ||
+      section.items.length > 0 ||
+      Boolean(contracts.data?.heinzelmaennchen.length),
   );
   return (
     <div className="flex h-full flex-col px-2">
@@ -139,7 +141,7 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
                       </li>
                     ))}
                     {section.label === CONTRACTS_SECTION &&
-                      contracts.data?.contracts.map((contract) => {
+                      contracts.data?.heinzelmaennchen.map((contract) => {
                         const qualified = `${contract.namespace}:${contract.name}`;
                         return (
                           <li key={qualified}>

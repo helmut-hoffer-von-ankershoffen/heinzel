@@ -2,14 +2,13 @@
 
 import os
 import re
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from heinzel import Module, SoundAssets, SoundLayer, Soundscape, SoundscapeLet, SoundStream, ThemeChoice
-from heinzel.kernel import SIGNALS, SOUND_CSP, SOUND_ROUTE, STREAM_PROVIDERS, daypart_of
+from heinzel.kernel import SIGNALS, SOUND_CSP, SOUND_ROUTE, STREAM_PROVIDERS
 from heinzel.kernel._soundscapes import (
     MAX_ASSET_BYTES,
     MAX_SOUNDSCAPE_BYTES,
@@ -145,11 +144,12 @@ def test_a_layer_follows_a_signal_of_the_shared_vocabulary_through_a_matching_cu
             SoundLayer.model_validate(data)
 
 
-def test_the_signals_and_the_part_of_the_day_have_one_definition():
+def test_the_signals_are_named_and_a_daypart_curve_takes_the_dayparts_of_themes():
     assert SIGNALS == ("daypart", "weather.rain", "weather.wind")
-    hours = (0, 5, 6, 11, 12, 17, 18, 21, 22, 23)
-    parts = [daypart_of(datetime(2026, 10, 24, hour, tzinfo=UTC)) for hour in hours]
-    assert parts == [*["night"] * 2, *["morning"] * 2, *["afternoon"] * 2, *["evening"] * 2, *["night"] * 2]
+    data = {"file": "a.ogg", "licence": "CC0-1.0", "signal": "daypart", "curve": {"dusk": 1.0, "dawn": 0.5}}
+    assert SoundLayer.model_validate(data).signal == "daypart"
+    with pytest.raises(ValidationError):
+        SoundLayer.model_validate({**data, "curve": {"afternoon": 1.0}})
 
 
 def test_earcons_are_keyed_by_notice_kind_and_licensed_like_layers():

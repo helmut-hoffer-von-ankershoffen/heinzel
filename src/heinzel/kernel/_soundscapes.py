@@ -20,7 +20,8 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationErr
 
 from heinzel.kernel._lets import Let
 from heinzel.kernel._notifications import NoticeKind
-from heinzel.kernel._signals import DAYPARTS, NUMERIC_SIGNALS
+from heinzel.kernel._signals import NUMERIC_SIGNALS
+from heinzel.kernel._theme_signals import DAYPARTS
 from heinzel.kernel._themes import _read_regular  # pyright: ignore[reportPrivateUsage] - one reader for theme and sound files
 
 SOUNDSCAPE_SUFFIX = ".toml"
@@ -152,7 +153,7 @@ class SoundLayer(SoundAsset):
     curve: tuple[tuple[float, float], ...] | dict[str, float] | None = Field(
         default=None,
         description="For `weather.*`: 2 to 8 points `[x, y]` in 0..1, x rising, read piecewise linear; for `daypart`: "
-        "`{night, morning, afternoon, evening}` to 0..1, a missing part is 0; none for `none`.",
+        "`{dawn, morning, day, dusk, evening, night}` to 0..1, a missing part is 0; none for `none`.",
     )
 
     @model_validator(mode="after")
@@ -184,10 +185,10 @@ def _points(curve: tuple[tuple[float, float], ...] | dict[str, float]) -> None:
 
 def _parts(curve: tuple[tuple[float, float], ...] | dict[str, float]) -> None:
     if not isinstance(curve, dict) or not curve:
-        msg = "a curve of daypart is a table of night, morning, afternoon and evening, e.g. {morning = 1}"
+        msg = "a curve of daypart is a table of dawn, morning, day, dusk, evening and night, e.g. {morning = 1}"
         raise ValueError(msg)
     if unknown := sorted(set(curve) - set(DAYPARTS)):
-        msg = f"{', '.join(unknown)} isn't a part of the day: night, morning, afternoon or evening"
+        msg = f"{', '.join(unknown)} isn't a part of the day: dawn, morning, day, dusk, evening or night"
         raise ValueError(msg)
     if any(not (0 <= value <= 1) for value in curve.values()):
         msg = "a curve's gains are 0 to 1"

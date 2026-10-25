@@ -76,7 +76,7 @@ themes, and the only third party is one allowlisted host that the person starts 
   - `gain`: 0 to 1.
   - `signal`: `none`, `daypart`, `weather.rain` or `weather.wind`.
   - `curve`: for a numeric signal, 2 to 8 points `[x, y]` in 0..1 with x rising, read piecewise linear; for `daypart`,
-    a table of `night`, `morning`, `afternoon` and `evening` mapped to 0..1. A missing part is 0.
+    a table of `dawn`, `morning`, `day`, `dusk`, `evening` and `night` mapped to 0..1. A missing part is 0.
 
   A layer whose signal is absent plays at its `gain`.
 - **Asset checks.** These run at import and again on every read, as for fonts (ADR 0044):
@@ -90,12 +90,11 @@ themes, and the only third party is one allowlisted host that the person starts 
     to the privacy-enhanced embed `https://www.youtube-nocookie.com/embed/<video>` and to that frame origin.
   - `video` is an id of 11 letters, digits, `-` or `_`.
   - No URL or host is data.
-- **Signals** (`heinzel.kernel._signals`): one vocabulary, `SIGNALS` (`daypart`, `weather.rain`, `weather.wind`), and
-  one definition of the part of the day, `daypart_of`: `night` before 06:00, `morning` until 12:00, `afternoon` until
-  18:00, `evening` until 22:00, then `night`.
+- **Signals** (`heinzel.kernel._signals`): the names a layer can follow, `SIGNALS` (`daypart`, `weather.rain`,
+  `weather.wind`). The part of the day is the one of themes (ADR 0060, `daypart` in `_theme_signals.py`): `dawn`,
+  `morning`, `day`, `dusk`, `evening` and `night`, from the sun times where a module knows them.
   - `hz system sound list` returns the current values, `weather.*` absent until a plugin publishes them.
-  - This is the merge point with the theme-signals work: whichever lands second reuses this module, and plugin-published
-    `weather` fills the absent values.
+  - `weather.*` stay absent until a plugin publishes them; ADR 0060's categorical `weather` doesn't fill them yet.
 - **Operations** (`system.sound`, [ADR 0018](0018-one-administrative-namespace.md)):
   - `hz system sound list` is read-only and on every head. It returns
     `{selected, effective, soundscapes, signals, volume, follow_theme, mute_in_meetings, duck_while_typing, note, next}`.
@@ -183,7 +182,7 @@ themes, and the only third party is one allowlisted host that the person starts 
 - **Public API**, additive ([ADR 0026](0026-plugin-api-versioned-with-semver.md)):
   - in `heinzel`: `Soundscape`, `SoundLayer`, `SoundEarcon`, `SoundStream`, `SoundscapeLet`, `SoundAssets`,
     `ThemeChoice` and `Module.soundscape`;
-  - in `heinzel.kernel`: `SOUND_ROUTE`, `SOUND_CSP`, `STREAM_PROVIDERS`, `SIGNALS` and `daypart_of`.
+  - in `heinzel.kernel`: `SOUND_ROUTE`, `SOUND_CSP`, `STREAM_PROVIDERS`, `SIGNALS`.
 
 ### Consequences
 
@@ -203,7 +202,7 @@ themes, and the only third party is one allowlisted host that the person starts 
   - asset paths that leave the directory (by `..`, absolutely or by a symlink), size limits per file and per
     soundscape, signatures (OGG, ID3, MP3 frames, a fake), an extension that doesn't match, and a file swapped after
     import;
-  - `off` refused, `daypart_of`.
+  - `off` refused.
 - `tests/integration/sound_test.py` checks the module and the web head:
   - the list through the CLI and the web head, `use` and its refusal, the fallback to `off`, project files ignored,
     and follow-my-theme with its tie rule;
