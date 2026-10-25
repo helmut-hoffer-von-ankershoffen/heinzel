@@ -78,28 +78,61 @@ export async function verifyLayers(page, shots, screenshot) {
   const results = [];
   async function front(name, pane) {
     await pane.waitFor();
-    const box = await pane.boundingBox();
-    if (!box) throw new Error(`${name}: no pane bounds`);
-    // Put the iframe's picture (not only the card header) under the pane's middle.
-    await card.evaluate((element, box) => {
-      Object.assign(element.style, {
-        left: `${Math.max(0, box.x + box.width / 2 - 144)}px`,
-        top: `${Math.max(0, box.y + box.height / 2 - 110)}px`,
-        bottom: "auto",
-        width: "288px",
-      });
-    }, box);
-    const visible = await pane.evaluate(
-      (element, box) => element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)),
-      box,
-    );
-    if (!visible) {
-      const hit = await page.evaluate(
-        (box) => document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.outerHTML,
-        box,
+    await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 5000 });
+    try {
+      await page.waitForFunction(
+        (element) => {
+          const box = element.getBoundingClientRect();
+          return (
+            box.width > 0 &&
+            box.height > 0 &&
+            box.x >= 0 &&
+            box.y >= 0 &&
+            box.right <= innerWidth &&
+            box.bottom <= innerHeight
+          );
+        },
+        await pane.elementHandle(),
+        { timeout: 5000 },
       );
+    } catch {
+      const geometry = await pane.evaluate((element) => ({
+        pane: element.getBoundingClientRect().toJSON(),
+        viewport: { width: innerWidth, height: innerHeight },
+        scroll: { x: scrollX, y: scrollY },
+      }));
+      throw new Error(`${name}: pane must fit the viewport before overlap is tested: ${JSON.stringify(geometry)}`);
+    }
+    // Measure, reposition and hit-test in one browser evaluation. Changing a docked card's width would resize its
+    // reserved sidebar slot and invalidate a previously captured pane rectangle on the next observer callback.
+    const result = await pane.evaluate((element) => {
+      const media = document.querySelector("[data-dock]");
+      const frame = media.querySelector("iframe");
+      const box = element.getBoundingClientRect(),
+        card = media.getBoundingClientRect(),
+        picture = frame.getBoundingClientRect();
+      const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      Object.assign(media.style, {
+        left: `${point.x - picture.width / 2 - (picture.x - card.x)}px`,
+        top: `${point.y - picture.height / 2 - (picture.y - card.y)}px`,
+        bottom: "auto",
+      });
+      const after = frame.getBoundingClientRect(),
+        hit = document.elementFromPoint(point.x, point.y);
+      const overlaps = point.x >= after.x && point.x <= after.right && point.y >= after.y && point.y <= after.bottom;
+      return {
+        visible: element.contains(hit),
+        overlaps,
+        point,
+        pane: box.toJSON(),
+        picture: after.toJSON(),
+        viewport: { width: innerWidth, height: innerHeight },
+        hit: hit?.tagName,
+      };
+    });
+    if (!result.visible || !result.overlaps) {
       if (screenshot) await page.screenshot({ path: `${shots}/layers-failure.png` });
-      throw new Error(`${name}: the pane is obscured by ${hit}`);
+      throw new Error(`${name}: overlapping picture must remain below the visible pane: ${JSON.stringify(result)}`);
     }
     results.push(name);
     if (screenshot) await page.screenshot({ path: `${shots}/layers-${name}.png` });

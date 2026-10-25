@@ -267,7 +267,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
   const me = profile.data;
   const name = me?.name?.trim() || me?.handle || t("nav.profile");
   const shown = name.split(" ")[0];
-  const initial = name.slice(0, 1).toUpperCase();
+  const initial = (me?.name?.trim() || me?.handle?.trim() || "?").slice(0, 1).toUpperCase();
   const role = me?.role ? (ROLE_SHORT[me.role] ?? me.role.replaceAll("-", " ")) : undefined;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -299,7 +299,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
         <div
           role="menu"
           className={cn(
-            "absolute z-(--layer-popover) rounded-xl border border-border bg-popover p-1.5 shadow-xl",
+            "absolute z-(--layer-popover) max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl",
             compact ? "bottom-0 left-full ml-2 w-64" : "right-2 bottom-full left-2 mb-1.5",
           )}
         >
