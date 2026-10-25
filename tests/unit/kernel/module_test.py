@@ -416,6 +416,39 @@ def test_an_unknown_audience_is_refused():
             """Wrong."""
 
 
+def test_a_module_may_name_what_it_was_called_before():
+    assert Module("notes", "x", renamed_from="jottings").renamed_from == "jottings"
+    assert Module("notes", "x").renamed_from is None
+
+
+@pytest.mark.parametrize("old", ["Jottings", "hz", "setup", ""])
+def test_a_renamed_module_needs_an_old_name_a_module_could_have_had(old):
+    with pytest.raises(ValueError, match="can't be renamed from"):
+        Module("notes", "x", renamed_from=old)
+
+
+def test_operation_aliases_are_command_paths_normalised_to_single_spaces():
+    module = Module("notes", "x")
+
+    @module.operation(aliases=["jottings  run", "inbox"])
+    def wake() -> None:
+        """Wake."""
+
+    (let,) = module.lets
+    assert isinstance(let, OperationLet)
+    assert let.aliases == ("jottings run", "inbox")
+
+
+@pytest.mark.parametrize("alias", ["", "  ", "Jottings run", "jottings run_now"])
+def test_operation_aliases_must_be_lowercase_words(alias):
+    module = Module("notes", "x")
+    with pytest.raises(ValueError, match="command paths of lowercase words"):
+
+        @module.operation(aliases=[alias])
+        def wake() -> None:
+            """Wake."""
+
+
 def test_a_module_has_an_offline_and_a_live_health_provider_and_no_second_of_either():
     module = Module("probe", "Checks things for tests.")
 

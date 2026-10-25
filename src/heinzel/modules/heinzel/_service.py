@@ -1,4 +1,4 @@
-"""The workflow service: finds contracts, compiles them into daemon jobs and renders them (ADR 0021).
+"""The heinzel service: finds contracts, compiles them into daemon jobs and wakes them (ADR 0021, 0051).
 
 A render checks the agent runner, pre-fetches the contract's inputs through capability handles, builds the packet,
 runs one bounded agent session and saves the draft locally. The agent gets no hz tools: everything it reads is in the
@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import cast
 from urllib.parse import quote
 
+from croniter import CroniterBadDateError, croniter
 from pydantic import BaseModel, JsonValue
 from pydantic_core import to_jsonable_python
 
@@ -54,15 +55,18 @@ from heinzel.kernel import (
     Requester,
     Requirement,
     ToolProfile,
+    UsageEntry,
+    record_usage,
     toml_value,
 )
-from heinzel.modules.workflow import _measure, _playbooks
-from heinzel.modules.workflow._contracts import Contract, collect, read_contract
-from heinzel.modules.workflow._graph import CODES as GRAPH_CODES
-from heinzel.modules.workflow._graph import build as build_graph
-from heinzel.modules.workflow._graph import problems as graph_problems
-from heinzel.modules.workflow._measure import Sent
-from heinzel.modules.workflow._models import (
+from heinzel.modules.heinzel import _measure, _playbooks
+from heinzel.modules.heinzel._contracts import Contract, collect, read_contract
+from heinzel.modules.heinzel._graph import CODES as GRAPH_CODES
+from heinzel.modules.heinzel._graph import asset as asset_id
+from heinzel.modules.heinzel._graph import build as build_graph
+from heinzel.modules.heinzel._graph import problems as graph_problems
+from heinzel.modules.heinzel._measure import Sent
+from heinzel.modules.heinzel._models import (
     DRAFT_NAME,
     DRAFT_STAMP,
     DRAFTS,
@@ -71,14 +75,16 @@ from heinzel.modules.workflow._models import (
     CheckReport,
     CompiledContract,
     ContractGraph,
-    ContractList,
-    ContractSummary,
     Diagnostic,
     Directory,
     Draft,
     DraftList,
     FetchedInput,
     Frontmatter,
+    HeinzelList,
+    HeinzelSettings,
+    HeinzelState,
+    HeinzelSummary,
     Input,
     Namespace,
     NewContract,
@@ -90,13 +96,14 @@ from heinzel.modules.workflow._models import (
     RunResult,
     Severity,
     Step,
-    WorkflowSettings,
 )
-from heinzel.modules.workflow._retention import Sweep, expired
-from heinzel.modules.workflow._starter import from_template, is_name, slug, starter
+from heinzel.modules.heinzel._retention import Sweep, expired
+from heinzel.modules.heinzel._starter import from_template, is_name, slug, starter
 
 logger = logging.getLogger(__name__)
-MODULE = "workflow"
+MODULE = "heinzel"
+RENAMED_FROM = "workflow"
+"""The module's name before ADR 0051; its settings table is read as `[heinzel]` for one minor release."""
 FETCH_MARGIN = timedelta(minutes=2)
 """A job may take this much longer than its agent session: fetching inputs and saving the draft."""
 NOT_PUBLISHED = "the draft waits for `hz inbox` (not built yet); nothing is published automatically"
@@ -106,7 +113,7 @@ PIN_CHANGED = "pin-changed"
 MAX_INPUT_BYTES = 256 * 1024
 """An input whose JSON is larger fails the run rather than being cut silently: the agent would draft from half."""
 MAX_PROMPT_BYTES = 1024 * 1024
-PRUNE = "hz workflow prune"
+PRUNE = "hz heinzel prune"
 PRUNE_GRACE = timedelta(days=2)
 """The daemon prunes daily, at a slot a sleeping laptop may miss; files expired for longer mean nothing prunes them."""
 RUNNER_TOOLS = {"claude-code": "read_only_tools", "command": "command_read_only_tools"}
@@ -119,13 +126,13 @@ def fingerprint(value: object) -> str:
     return "sha256:" + hashlib.sha256(text.encode()).hexdigest()
 
 
-class WorkflowService:
-    """Finds, checks, compiles and renders workflow contracts."""
+class HeinzelService:
+    """Finds, checks, compiles and wakes your Heinzelmännchen: one per contract (ADR 0051)."""
 
     def __init__(
         self,
         kernel: Kernel,
-        workflow: WorkflowSettings,
+        workflow: HeinzelSettings,
         settings: Settings,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
@@ -144,7 +151,7 @@ class WorkflowService:
         self.drafts_dir = settings.data_dir.joinpath(*DRAFTS)
 
     @classmethod
-    def for_user(cls, kernel: Kernel, workflow: WorkflowSettings) -> "WorkflowService":
+    def for_user(cls, kernel: Kernel, workflow: HeinzelSettings) -> "HeinzelService":
         """The service with user-scope kernel settings: a project's `hz.toml` can't move the drafts."""
         config = Config.load(Path.home())  # as the daemon does: user scope, never the project's
         return cls(kernel, workflow, config.settings(Settings, KERNEL_SECTION))
@@ -252,7 +259,7 @@ class WorkflowService:
             msg = f"{path} is outside your workflows directory, the team repository and the current directory"
             raise HeinzelError(msg)
         if not path.exists():
-            msg = f"{path} doesn't exist; `hz workflow check` without --path checks every contract found"
+            msg = f"{path} doesn't exist; `hz heinzel check` without --path checks every contract found"
             raise HeinzelError(msg)
         files = [path] if path.is_file() else sorted(p for p in path.rglob(f"*{SUFFIX}") if not p.is_symlink())
         return [self._safely_checked(read_contract(file, "path")) for file in files if file.is_file()]
@@ -275,7 +282,7 @@ class WorkflowService:
                 PLACEHOLDER_LEFT,
                 ("hz", "inputs", name, "args", key),
                 f"{value!r} is a playbook's placeholder: name your {value[8:-2]} here",
-                "`hz workflow discover` finds candidates; or write the contract again with --asset <type>=<ref>",
+                "`hz heinzel discover` finds candidates; or write the contract again with --asset <type>=<ref>",
             )
             for name, spec in contract.frontmatter.hz.inputs.items()
             for key, value in spec.args.items()
@@ -356,8 +363,8 @@ class WorkflowService:
             where = ", ".join(str(d) for d in self.directories.values())
             team = " --team" if namespace == "team" else ""
             msg = (
-                f"No contract {name!r}; `hz workflow list` shows them (searched {where}). "
-                f"Write one: hz workflow new {slug(bare)}{team}"
+                f"No contract {name!r}; `hz heinzel list` shows them (searched {where}). "
+                f"Write one: hz heinzel new {slug(bare)}{team}"
             )
             raise HeinzelError(msg)
         return matches[0]
@@ -383,7 +390,7 @@ class WorkflowService:
         if chosen is None and assets:
             msg = (
                 "--asset fills a template's placeholders; add --template <module>:<name> "
-                "(`hz workflow playbooks` lists them)"
+                "(`hz heinzel playbooks` lists them)"
             )
             raise HeinzelError(msg)
         if chosen is not None and (unknown := sorted(set(assets) - set(chosen[1].placeholders()))):
@@ -393,7 +400,7 @@ class WorkflowService:
         if not is_name(name):
             msg = (
                 f"{name!r} isn't a contract name (lowercase words joined by single dashes, at most 64 characters). "
-                f"Try: hz workflow new {slug(name)}{' --team' if team else ''}"
+                f"Try: hz heinzel new {slug(name)}{' --team' if team else ''}"
             )
             raise HeinzelError(msg)
         namespace: Namespace = "team" if team else "me"
@@ -407,12 +414,12 @@ class WorkflowService:
         # Contracts are read from real directories only (`collect`), so one written through a link would never be found.
         if directory.is_symlink():
             real = shlex.quote(str(directory.parent.resolve() if team else directory.resolve()))
-            fix = f"hz team adopt {real}" if team else f"hz system config set workflow.user_dir {real}"
+            fix = f"hz team adopt {real}" if team else f"hz system config set heinzel.user_dir {real}"
             msg = f"{directory} is a symbolic link; contracts are read from real directories only. Instead: {fix}"
             raise HeinzelError(msg)
         path = directory / f"{name}{SUFFIX}"
         if path.exists():
-            msg = f"{path} exists; edit it, or write another: hz workflow new {name}-2{' --team' if team else ''}"
+            msg = f"{path} exists; edit it, or write another: hz heinzel new {name}-2{' --team' if team else ''}"
             raise HeinzelError(msg)
         text = starter(name, namespace) if chosen is None else from_template(chosen[1], name, assets)
         checked = self._checked(read_contract(path, namespace, text=text))
@@ -434,7 +441,7 @@ class WorkflowService:
             steps.insert(
                 0,
                 Step(
-                    command="hz workflow discover",
+                    command="hz heinzel discover",
                     why=f"candidates for {', '.join(unfilled)}; put their references where " + "{{asset:...}} is",
                 ),
             )
@@ -449,15 +456,15 @@ class WorkflowService:
 
     def _next_for_new(self, qualified: str, path: Path, team: bool) -> list[Step]:
         steps = [
-            Step(command=f"hz workflow check --path {shlex.quote(str(path))}", why="every problem by file and line"),
+            Step(command=f"hz heinzel check --path {shlex.quote(str(path))}", why="every problem by file and line"),
             Step(
-                command=f"hz workflow show {qualified}", why="what it requires, what is bound, and whether it is ready"
+                command=f"hz heinzel show {qualified}", why="what it requires, what is bound, and whether it is ready"
             ),
             Step(
-                command=f"hz workflow run {qualified} --dry-run", why="the packet the agent would get; nothing is spent"
+                command=f"hz heinzel wake {qualified} --dry-run", why="the packet the agent would get; nothing is spent"
             ),
             Step(
-                command=f"hz workflow run {qualified}",
+                command=f"hz heinzel wake {qualified}",
                 why="draft it now; the draft is saved locally, nothing is published",
             ),
         ]
@@ -468,10 +475,10 @@ class WorkflowService:
             steps += [
                 Step(
                     command=f"git -C {shlex.quote(str(repository))} add {relative}",
-                    why="then commit on a branch and open a pull request (CI gate: hz workflow check --path workflows)",
+                    why="then commit on a branch and open a pull request (CI gate: hz heinzel check --path workflows)",
                 ),
                 Step(
-                    command=f"hz system config set workflow.schedule_team '[\"{name}\"]'",
+                    command=f"hz system config set heinzel.schedule_team '[\"{name}\"]'",
                     why="once merged and scheduled: lets your daemon run it (team contracts never run uninvited)",
                 ),
             ]
@@ -495,18 +502,18 @@ class WorkflowService:
         if contract.frontmatter.hz.schedule is None:
             return NOT_SCHEDULED, (
                 f'it has no schedule: add `schedule: "0 7 * * MON"` under `hz:` in {contract.path}, '
-                f"or run it by hand: hz workflow run {contract.qualified}"
+                f"or run it by hand: hz heinzel wake {contract.qualified}"
             )
         if contract.namespace == "team":
             named, digest = self._workflow.approval(contract.name)
             if not named:
                 return NOT_SCHEDULED, (
-                    "team contracts run on your daemon only when [workflow] schedule_team names them: "
+                    "team contracts run on your daemon only when [heinzel] schedule_team names them: "
                     f"{_approve(contract.name)} (or {_approve(contract.name, contract.sha256)} to pin this content)"
                 )
             if digest is not None and digest != contract.sha256:
                 return PIN_CHANGED, (
-                    f"it changed since you approved {digest}; read it with `hz workflow show team:{contract.name}`, "
+                    f"it changed since you approved {digest}; read it with `hz heinzel show team:{contract.name}`, "
                     f"then approve this content: {_approve(contract.name, contract.sha256)}"
                 )
         return None
@@ -554,7 +561,7 @@ class WorkflowService:
 
     def _job(self, contract: Contract) -> Callable[[], JsonValue]:
         def render() -> JsonValue:
-            # The receipt outlives the draft (`[workflow] retention_days`), so it gets the draft's hash, not its text.
+            # The receipt outlives the draft (`[heinzel] retention_days`), so it gets the draft's hash, not its text.
             try:
                 rendered = self.render(contract, scheduled=True)
             except Exception as exc:
@@ -563,7 +570,7 @@ class WorkflowService:
             self._notify(contract, rendered=rendered)
             return cast("JsonValue", rendered.model_dump(mode="json", exclude={"agent": {"draft"}}))
 
-        render.__qualname__ = f"workflow:{self.job_name(contract)}"
+        render.__qualname__ = f"{MODULE}:{self.job_name(contract)}"
         render.__doc__ = f"Render the workflow contract {contract.qualified}."
         return render
 
@@ -581,7 +588,7 @@ class WorkflowService:
                     f"Draft ready: {title}",
                     "Read it, edit what is wrong, then send it.",
                     route=route,
-                    command=shlex.join(["hz", "workflow", "drafts", "--name", contract.qualified, "--latest"]),
+                    command=shlex.join(["hz", "heinzel", "drafts", "--name", contract.qualified, "--latest"]),
                     key=f"draft:{contract.qualified}:{rendered.sha256}",
                 )
             elif failed is not None:
@@ -592,7 +599,7 @@ class WorkflowService:
                     f"Run failed: {title}",
                     error,
                     route=route,
-                    command=shlex.join(["hz", "workflow", "show", contract.qualified]),
+                    command=shlex.join(["hz", "heinzel", "show", contract.qualified]),
                     key=f"failed:{contract.qualified}:{fingerprint(error)}",
                 )
         except Exception:
@@ -613,36 +620,102 @@ class WorkflowService:
 
     # Inspecting ------------------------------------------------------------------------------------------------------
 
-    def listing(self) -> ContractList:
-        """The directories searched, every contract found, and what to do next."""
-        contracts = self.summaries()
-        if contracts:
-            steps = [
-                Step(command=f"hz workflow show {c.namespace}:{c.name}", why="is it ready?") for c in contracts[:1]
-            ]
+    def listing(
+        self,
+        *,
+        state: HeinzelState | None = None,
+        contract: str | None = None,
+        artifact: str | None = None,
+    ) -> HeinzelList:
+        """The directories searched, one Heinzelmännchen per contract found, and what to do next.
+
+        Args:
+            state: Only those in this state.
+            contract: Only contracts whose `<namespace>:<name>` contains this.
+            artifact: Only those that maintain or read this artifact (`contract:<namespace>/<name>#<output>`).
+        """
+        contracts = self.contracts()
+        found = [self._summary(c) for c in contracts]
+        kept = [
+            h
+            for h, c in zip(found, contracts, strict=True)
+            if (state is None or h.state == state)
+            and (contract is None or contract in f"{h.namespace}:{h.name}")
+            and (artifact is None or artifact in _artifacts(c))
+        ]
+        if kept:
+            first = kept[0]
+            qualified = f"{first.namespace}:{first.name}"
+            steps = [Step(command=f"hz heinzel show {qualified}", why="what it reads, needs and does next")]
+        elif found:
+            steps = [Step(command="hz heinzel list", why="every Heinzelmännchen, without the filters")]
         else:
             steps = [
-                Step(command="hz workflow new my-first-workflow", why="write a starter contract, with comments"),
-                Step(command="hz workflow check", why="every problem by file and line"),
+                Step(command="hz heinzel new my-first-heinzel", why="write a starter contract, with comments"),
+                Step(command="hz heinzel playbooks", why="templates plugins offer: hz heinzel new NAME --template"),
             ]
-        return ContractList(directories=self.searched(), contracts=contracts, next=steps)
+        return HeinzelList(
+            directories=self.searched(), heinzelmaennchen=kept, filtered=len(kept) < len(found), next=steps
+        )
 
-    def summaries(self) -> list[ContractSummary]:
-        """Every contract found, with whether it is valid and scheduled."""
-        return [
-            ContractSummary(
-                name=c.name,
-                namespace=c.namespace,
-                title=c.frontmatter.hz.title if c.frontmatter else None,
-                file=c.path,
-                schedule=c.frontmatter.hz.schedule if c.frontmatter else None,
-                scheduled=self.scheduled(c) is None,
-                valid=c.valid,
-                errors=sum(d.severity == "error" for d in c.diagnostics),
-                warnings=sum(d.severity == "warning" for d in c.diagnostics),
-            )
-            for c in self.contracts()
+    def renamed_settings(self, config: Config) -> list[Check]:
+        """A doctor finding per setting still under `[workflow]` or `HZ_WORKFLOW__*`: they move to `[heinzel]`."""
+        moves = config.renamed_keys(HeinzelSettings, RENAMED_FROM)
+        if not moves:
+            return []
+        fixes = [
+            f"hz system config set heinzel.{key.partition('.')[2]} <value>, then hz system config unset {key}"
+            if not key.startswith("HZ_")
+            else f"rename {key} to HZ_HEINZEL__{key.removeprefix('HZ_WORKFLOW__')}"
+            for key in moves
         ]
+        return [
+            Check(
+                name="heinzel renamed settings",
+                status=Status.DEGRADED,
+                detail=f"{', '.join(moves)} still use the old name; they are read for one more minor release",
+                fix="; ".join(fixes),
+            )
+        ]
+
+    def _summary(self, contract: Contract) -> HeinzelSummary:
+        """One Heinzelmännchen: its contract's summary, its state and its runs."""
+        hz = contract.frontmatter.hz if contract.frontmatter else None
+        scheduled = self.scheduled(contract) is None
+        unmet = [s.requirement for s in self._requirements(contract) if s.problem] if contract.valid else []
+        drafts = self._draft_files(self._drafts_of(contract))
+        state: HeinzelState
+        if not contract.valid:
+            state = "broken"
+        elif unmet:
+            state = "blocked"
+        else:
+            state = "scheduled" if scheduled else "manual"
+        return HeinzelSummary(
+            name=contract.name,
+            namespace=contract.namespace,
+            title=hz.title if hz else None,
+            file=contract.path,
+            schedule=hz.schedule if hz else None,
+            scheduled=scheduled,
+            valid=contract.valid,
+            errors=sum(d.severity == "error" for d in contract.diagnostics),
+            warnings=sum(d.severity == "warning" for d in contract.diagnostics),
+            state=state,
+            unmet=unmet,
+            last_run=max((d.created for d in drafts), default=None),
+            next_run=self._next_run(hz.schedule) if scheduled and hz and hz.schedule else None,
+            drafts=len(drafts),
+        )
+
+    def _next_run(self, schedule: str) -> datetime | None:
+        """The next slot of a cron expression in local time, as the daemon reads it; none if it never fires."""
+        now = self._clock().astimezone()
+        try:
+            slot = croniter(schedule, now.replace(tzinfo=None)).get_next(datetime)
+        except (CroniterBadDateError, ValueError):
+            return None
+        return slot.replace(tzinfo=now.tzinfo)
 
     def show(self, name: str) -> CompiledContract:
         """A contract as the daemon runs it: schedule, requirements with their adapters, inputs, publishes, limits.
@@ -706,11 +779,11 @@ class WorkflowService:
         budget = self.budget(contract, scheduled=False)
         steps = [
             Step(
-                command=f"hz workflow run {contract.qualified} --dry-run",
+                command=f"hz heinzel wake {contract.qualified} --dry-run",
                 why="the packet the agent gets; nothing is spent",
             ),
             Step(
-                command=f"hz workflow run {contract.qualified}",
+                command=f"hz heinzel wake {contract.qualified}",
                 why=f"draft it now, at most {budget:g} USD; the draft is saved under {self._drafts_of(contract)}",
             ),
         ]
@@ -777,11 +850,11 @@ class WorkflowService:
                 raise HeinzelError(msg) from exc
         if found:
             steps = [
-                Step(command=f"hz workflow drafts --name {found[0].contract} --latest", why="read the newest draft")
+                Step(command=f"hz heinzel drafts --name {found[0].contract} --latest", why="read the newest draft")
             ]
         else:
             example = name or "<name>"
-            steps = [Step(command=f"hz workflow run {example}", why="draft it now; the draft lands here")]
+            steps = [Step(command=f"hz heinzel wake {example}", why="draft it now; the draft lands here")]
         return DraftList(directory=self.drafts_dir, drafts=found, latest=text, next=steps)
 
     def _drafts_of(self, contract: Contract) -> Path:
@@ -965,7 +1038,7 @@ class WorkflowService:
             drafts = [d for d in drafts if d.draft.resolve() == draft.resolve()]
         if not drafts:
             which = f"{draft} isn't a draft of {name!r}" if draft is not None else f"{name!r} has no drafts yet"
-            msg = f"{which}; `hz workflow drafts --name {name}` lists them"
+            msg = f"{which}; `hz heinzel drafts --name {name}` lists them"
             raise HeinzelError(msg)
         chosen = drafts[0]
         text, source = self._approved_text(chosen.contract, file) if file is not None else self._document(ref or "")
@@ -1043,21 +1116,21 @@ class WorkflowService:
         if stray := [e for e in self._workflow.schedule_team if e.partition("@")[0] not in team]:
             checks.append(
                 Check(
-                    name="workflow schedule_team",
+                    name="heinzel schedule_team",
                     status=Status.DEGRADED,
                     detail=f"names no team contract: {', '.join(stray)}",
-                    fix="Fix the names in [workflow] schedule_team; `hz workflow list` shows the team's contracts",
+                    fix="Fix the names in [heinzel] schedule_team; `hz heinzel list` shows the team's contracts",
                 )
             )
         deprecated: list[Check] = []
         if (legacy := self._workflow.team_repository) is not None:
             deprecated.append(
                 Check(
-                    name="workflow team_repository",
+                    name="heinzel team_repository",
                     status=Status.DEGRADED,
-                    detail="[workflow] team_repository is deprecated; move it to [team]",
-                    fix="hz system config unset workflow.team_repository (or remove it from the site file or "
-                    "HZ_WORKFLOW__TEAM_REPOSITORY that sets it)"
+                    detail="[heinzel] team_repository is deprecated; move it to [team]",
+                    fix="hz system config unset heinzel.team_repository (or remove it from the site file or "
+                    "HZ_HEINZEL__TEAM_REPOSITORY that sets it)"
                     if self.team_repository != legacy  # [team] names a checkout already: the old key only lingers
                     else f"hz team adopt {shlex.quote(str(legacy))}",
                 )
@@ -1066,20 +1139,20 @@ class WorkflowService:
             where = ", ".join(str(d) for d in self.directories.values())
             checks.append(
                 Check(
-                    name="workflow",
+                    name="heinzel",
                     status=Status.UP,
                     detail=f"no contracts in {where}",
-                    fix="hz workflow new my-first-workflow",
+                    fix="hz heinzel new my-first-heinzel",
                 )
             )
         return [*checks, *deprecated, self._retention_check()]
 
     def _retention_check(self) -> Check:
-        """How much `hz workflow prune` would delete now; degraded once expired files outlast the daemon's daily prune.
+        """How much `hz heinzel prune` would delete now; degraded once expired files outlast the daemon's daily prune.
 
         It only lists, never deletes: doctor is a read.
         """
-        name = "workflow retention"
+        name = "heinzel retention"
         days = self._workflow.retention_days
         if days == 0:
             return Check(name=name, status=Status.UP, detail="drafts and records are kept forever (retention_days = 0)")
@@ -1110,7 +1183,7 @@ class WorkflowService:
     # Retention -------------------------------------------------------------------------------------------------------
 
     def prune(self, *, dry_run: bool = False) -> PruneReport:
-        """Delete the drafts and records older than `[workflow] retention_days`; `dry_run` only lists them.
+        """Delete the drafts and records older than `[heinzel] retention_days`; `dry_run` only lists them.
 
         Only files hz wrote under the drafts directory are considered, never through a symbolic link; receipts are
         kept. Running it again deletes nothing more. A contract directory or file that can't be read or deleted is
@@ -1125,14 +1198,14 @@ class WorkflowService:
         if cutoff is None:
             steps = [
                 Step(
-                    command="hz system config set workflow.retention_days 90",
+                    command="hz system config set heinzel.retention_days 90",
                     why="drafts are kept forever; this deletes them 90 days after their render",
                 )
             ]
         elif dry_run and sweep.found:
             steps = [Step(command=PRUNE, why=f"delete these {len(sweep.found)} files")]
         else:
-            steps = [Step(command="hz workflow drafts", why="the drafts that are kept")]
+            steps = [Step(command="hz heinzel drafts", why="the drafts that are kept")]
         return PruneReport(
             dry_run=dry_run,
             retention_days=days,
@@ -1147,7 +1220,7 @@ class WorkflowService:
         )
 
     def _check_of(self, contract: Contract) -> Check:
-        name = f"workflow {contract.qualified}"
+        name = f"heinzel {contract.qualified}"
         if errors := [d for d in contract.diagnostics if d.severity == "error"]:
             return Check(
                 name=name,
@@ -1158,7 +1231,7 @@ class WorkflowService:
         kind, why = self._why_not_scheduled(contract) or (None, None)
         if kind == PIN_CHANGED:
             return Check(
-                name=name, status=Status.DEGRADED, detail=why or "", fix=f"hz workflow show team:{contract.name}"
+                name=name, status=Status.DEGRADED, detail=why or "", fix=f"hz heinzel show team:{contract.name}"
             )
         unmet = [s for s in self._requirements(contract) if s.problem]
         if unmet and why is None:
@@ -1183,7 +1256,7 @@ class WorkflowService:
         if dry_run:
             packet = self.packet(contract, scheduled=False)[0]
             note = (
-                f"no agent ran and nothing was spent. `hz workflow run {contract.qualified}` drafts it now, at most "
+                f"no agent ran and nothing was spent. `hz heinzel wake {contract.qualified}` drafts it now, at most "
                 f"{self.budget(contract, scheduled=False):g} USD, and saves the draft under {self._drafts_of(contract)}"
             )
             return RunResult(dry_run=True, packet=packet, note=note)
@@ -1191,7 +1264,7 @@ class WorkflowService:
         note = (
             f"unreceipted; the record is at {rendered.record}. Daemon runs write receipts: "
             f"`hz system daemon tick --job {MODULE}:{self.job_name(contract)}` runs it now with one. "
-            f"`hz workflow drafts --name {contract.qualified}` lists the drafts"
+            f"`hz heinzel drafts --name {contract.qualified}` lists the drafts"
         )
         return RunResult(dry_run=False, rendered=rendered, note=note)
 
@@ -1223,7 +1296,7 @@ class WorkflowService:
         if not drafts:
             msg = (
                 f"{contract.qualified}: input {name!r} reads {spec.read}, which has no draft yet; "
-                f"draft it first: hz workflow run {namespace}:{upstream}"
+                f"draft it first: hz heinzel wake {namespace}:{upstream}"
             )
             raise HeinzelError(msg)
         newest = max(drafts)[2]  # `<stamp>-2.md` is newer than `<stamp>.md`
@@ -1321,6 +1394,7 @@ class WorkflowService:
                 timeout=timedelta(seconds=packet.timeout_seconds),
                 budget=Budget(max_usd=packet.max_usd),
             )
+        record_usage(self._kernel, UsageEntry.of(result, "scheduled" if scheduled else "render", contract.qualified))
         if result.status != "completed":
             cost = f"; it cost {result.usage.cost_usd} USD" if result.usage.cost_usd is not None else ""
             msg = f"{contract.qualified}: the agent run ended {result.status}: {result.detail or 'no detail'}{cost}"
@@ -1429,6 +1503,14 @@ def _minimised(data: object) -> object:
     return data
 
 
+def _artifacts(contract: Contract) -> set[str]:
+    """What a contract maintains and reads, as artifact ids: its outputs and its inputs' reads."""
+    if contract.frontmatter is None:
+        return set()
+    hz = contract.frontmatter.hz
+    return {asset_id(contract, output) for output in hz.outputs} | {spec.read for spec in hz.inputs.values()}
+
+
 def _valid(contract: Contract) -> Frontmatter:
     if not contract.valid or contract.frontmatter is None:
         errors = [str(d) for d in contract.diagnostics if d.severity == "error"]
@@ -1446,14 +1528,14 @@ def _recheck(contract: Contract) -> str:
     one is rechecked with every contract, not by its path.
     """
     if any(d.code in GRAPH_CODES for d in contract.diagnostics if d.severity == "error"):
-        return "hz workflow check"
-    return f"hz workflow check --path {shlex.quote(str(contract.path))}"
+        return "hz heinzel check"
+    return f"hz heinzel check --path {shlex.quote(str(contract.path))}"
 
 
 def _approve(name: str, sha256: str | None = None) -> str:
     """The command that lets your daemon run the team contract `name`, pinned to `sha256` when given."""
     entry = f"{name}@{sha256}" if sha256 else name
-    return f"hz system config set workflow.schedule_team '[\"{entry}\"]'"
+    return f"hz system config set heinzel.schedule_team '[\"{entry}\"]'"
 
 
 def _diagnostic(  # noqa: PLR0913 - every part of a diagnostic

@@ -4,7 +4,7 @@ The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets
 """
 
 from heinzel.kernel._agents import AgentResult, AgentRunner, Budget, McpServer, RunStatus, TokenUsage, ToolProfile
-from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess
+from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess, UsageCause, UsageEntry, UsageLog, record_usage
 from heinzel.kernel._bindings import HOWS, Adapters, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
@@ -118,6 +118,7 @@ from heinzel.kernel._telemetry import (
     check_target,
 )
 from heinzel.kernel._text import clean_text, redact_emails
+from heinzel.kernel._theme_signals import DAYPARTS, WEATHERS, Daypart, SignalLet, ThemeSignals, Weather, daypart
 from heinzel.kernel._themes import (
     DEFAULT_LOGO,
     DEFAULT_THEME,
@@ -125,12 +126,14 @@ from heinzel.kernel._themes import (
     LOGO_CSP,
     LOGO_ROUTE,
     Theme,
+    ThemeBackdrop,
     ThemeColours,
     ThemeFont,
     ThemeFonts,
     ThemeLet,
     ThemeLogo,
     ThemeLogoFiles,
+    ThemeVariant,
     font_stack_problem,
 )
 
@@ -138,6 +141,7 @@ __all__ = [
     "BUILTIN_PACKAGE",
     "CAPABILITIES",
     "CORE_DISTRIBUTION",
+    "DAYPARTS",
     "DEFAULT_LOGO",
     "DEFAULT_THEME",
     "ENTRY_POINT_GROUP",
@@ -155,6 +159,7 @@ __all__ = [
     "PROJECT_FILENAME",
     "SETUP_PHASES",
     "VERBS",
+    "WEATHERS",
     "WINDOW_PATTERN",
     "AccessStatus",
     "AccessTest",
@@ -182,6 +187,7 @@ __all__ = [
     "CredentialBackend",
     "CredentialLet",
     "Credentials",
+    "Daypart",
     "DeclaredCredential",
     "Delivery",
     "Directory",
@@ -256,6 +262,7 @@ __all__ = [
     "SettingsLet",
     "SetupLet",
     "SetupPhase",
+    "SignalLet",
     "Span",
     "Status",
     "TeamGraph",
@@ -265,22 +272,30 @@ __all__ = [
     "TelemetryLog",
     "TelemetryRead",
     "Theme",
+    "ThemeBackdrop",
     "ThemeColours",
     "ThemeFont",
     "ThemeFonts",
     "ThemeLet",
     "ThemeLogo",
     "ThemeLogoFiles",
+    "ThemeSignals",
+    "ThemeVariant",
     "TokenUsage",
     "ToolProfile",
     "Tracker",
     "Transcript",
     "TranscriptSegment",
+    "UsageCause",
+    "UsageEntry",
+    "UsageLog",
     "Verb",
+    "Weather",
     "Window",
     "boot",
     "check_target",
     "clean_text",
+    "daypart",
     "discover",
     "draft_reporting_lines",
     "env_prefix",
@@ -289,6 +304,7 @@ __all__ = [
     "format_duration",
     "parse_duration",
     "parse_window",
+    "record_usage",
     "redact_emails",
     "requirement_from_receipt",
     "schedule_problem",

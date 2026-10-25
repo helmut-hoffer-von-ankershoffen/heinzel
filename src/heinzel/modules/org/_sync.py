@@ -3,7 +3,7 @@
 A team repository may recommend plugins, capability bindings, credential names and contracts; the `OrgContext` lists
 them with their origin. Recommend-only: `sync` shows each one beside what you have, and applies only what you accept,
 by writing your own user configuration through `ConfigEditor`. A binding becomes `[capabilities] <capability>`, a
-contract an entry of `[workflow] schedule_team` pinned to the file's SHA-256. Plugins and credentials are never
+contract an entry of `[heinzel] schedule_team` pinned to the file's SHA-256. Plugins and credentials are never
 applied by `sync`: installing code and storing a secret stay explicit commands, which it names.
 
 Your team's layers (ADR 0040) recommend too: the capability bindings their playbooks recommend, as the stack decides
@@ -27,7 +27,7 @@ from heinzel import Check, ConfigEditor, Credentials, HeinzelError, Kernel, Stat
 from heinzel.kernel import CapabilityView, LayerStack, OrgContext, Recommendation
 
 logger = logging.getLogger(__name__)
-WORKFLOW = "workflow"
+WORKFLOW = "heinzel"
 SyncState = Literal["applied", "pending", "differs", "by-hand", "missing"]
 OPEN: frozenset[str] = frozenset({"pending", "differs"})
 
@@ -167,11 +167,11 @@ class SyncService:
             action = f"the team repository has no workflows/{recommendation.name}.prose.md; tell its owners"
             return _item(recommendation, current=current, state="missing", action=action)
         pinned = f"{recommendation.name}@{recommendation.value}"
-        read = f"read it first: hz workflow show team:{recommendation.name}"
+        read = f"read it first: hz heinzel show team:{recommendation.name}"
         state: SyncState
         if current is None:
             state = "pending"
-            action = f"{read}; accepting adds {pinned} to workflow.schedule_team, so your daemon runs that content"
+            action = f"{read}; accepting adds {pinned} to heinzel.schedule_team, so your daemon runs that content"
         elif current in {pinned, recommendation.name}:  # an entry without a pin runs whatever the file says
             state, action = "applied", "you have it"
         else:

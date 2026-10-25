@@ -105,6 +105,13 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
 8. **Cost.** Budgets stay per run (`Budget.max_usd`, the chat's and turns' caps). A runner reports its cost
    (`AgentResult`); a model API run is priced with `[ai.prices]` (per model id, shipped defaults overridable; a model
    without a price counts at the cap, as ADR 0050 says). A test reports its cost like any run.
+   **Usage is recorded per run**: every agent run (chat, `ask`, scheduled and manual renders, handoffs) and every
+   live test appends a `UsageEntry` (time, cause, access option, runner, model, Heinzelmännchen, tokens, cost;
+   never prompt or answer text) through `UsageLog`, a kernel base class the `ai` module provides with a ledger in
+   `<state_dir>/ai/usage.jsonl` (private, pruned to 60 days). `hz ai usage [--period today|week] [--by
+   access|model|heinzel|cause]` reports it, with today's level against `[ai] daily_budget_usd` (green below 75%,
+   amber to 100%, red beyond) and a compact label (`182k tok`) for the footer's status item. The budget shows,
+   it doesn't stop: each run keeps its own cap. Recording never fails a run, and nothing records with `ai` off.
 9. **Heads.** `list` is on the CLI, MCP and web heads, never the unauthenticated REST head, since it names hosts and
    sign-in state ([ADR 0039](0039-a-web-head-a-react-app-served-by-the-api-head.md)). `use` and `test` change
    configuration or spend money and are the person's own acts: CLI and web only, so an agent on MCP can't move work
@@ -136,15 +143,32 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
   option's status and a test turn through `TestModel` and `FunctionModel`, the key kept out of a failure.
 - `tests/integration/ai_access_test.py`: `hz ai access list|use|test` through the CLI head with fake `claude` and
   gateway CLIs on PATH; the operations are absent from the REST head.
-- `tests/unit/public_api_test.py`: `AiAccess`, `AccessStatus`, `AccessTest` and `Adapters` are public.
+- `tests/unit/public_api_test.py`: `AiAccess`, `AccessStatus`, `AccessTest`, `Adapters`, `UsageEntry` and
+  `UsageLog` are public.
+- `tests/unit/modules/ai_usage_test.py`: entries carry no text, the ledger is private and never raises, today and
+  the week split, every breakdown, the meter's tones; `tests/integration/ai_access_test.py`: a test and an `ask`
+  are recorded and reported, and `usage` is absent from the REST head.
 
 ## More Information
 
 - Builds on [ADR 0028](0028-integrations-are-capability-adapters.md) (adapters, bindings, hosts) and
   [ADR 0044](0044-themes-are-data-a-plugin-ships.md) (the choice and its listing).
+- **The `codex` option and runner**, a ChatGPT plan's coding agent. Unlike ADR 0029's "other agents as plugins", the
+  core ships Codex beside Claude Code, as both an `agent-runner` adapter and an AI access option that names it: the
+  maintainer wants a ChatGPT plan as first-class as a Claude one. A run is `codex exec --json --sandbox read-only
+  --ephemeral --skip-git-repo-check -C <dir> [-m <model>] [-c model_reasoning_effort=<effort>] [-c
+  mcp_servers.<name>.command|args|env=...] -` with the contract and the prompt on standard input (Codex has no system
+  prompt flag); the answer is the last `item.completed` of type `agent_message`, the usage `turn.completed`'s
+  (`input_tokens`, `cached_input_tokens`, `output_tokens`), failures `turn.failed` and `error`; `codex login status`
+  says whether it is signed in. Codex reports no cost and takes no budget or tool allowlist, and its read-only sandbox
+  prevents writes, not reads: every run says so in its warnings. Its environment is PATH, HOME, LANG, LC_*, TMPDIR and
+  `CODEX_HOME`, never `HZ_CREDENTIAL_*`; `[system.runner] codex_executable`, `codex_model` and `codex_effort`
+  configure it. **These flags and events are verified against OpenAI's Codex documentation only (2026-10-25), not
+  against a live run**; the tests use a fake `codex` on PATH.
 - First slice: the protocol, `Adapters[P]`, the `claude-code`, `gateway` and `pydantic-ai` options with the
   `pydantic-ai-slim` dependency, `list`, `use`, `test`, doctor. Deferred: the turn engine itself (ADR 0050),
-  `[ai.roles]`, `[ai.models]`, `[ai.prices]`, gateway endpoints and tokens, and the web Settings section.
+  `[ai.roles]`, `[ai.models]`, `[ai.prices]`, gateway endpoints and tokens, and the web Settings section. Second
+  slice: usage recording and `hz ai usage`; the footer meter follows once status items carry meters.
 - Open: whether `ai.access` options should also offer the endpoint (`endpoint()`) as a third protocol method or a
   separate capability once Pydantic AI consumes it; the recommendation is a method returning `None` for options
   without one.

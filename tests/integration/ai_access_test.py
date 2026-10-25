@@ -69,7 +69,9 @@ def test_the_listing_shows_every_option_with_the_one_in_use(make_kernel, fakes):
     code, listing = hz(make_kernel(builtins=True, config=gateway_config()), "ai", "access", "list")
     assert code == 0
     assert listing["selected"] == "claude-code"
-    rows = {o["name"]: (o["in_use"], o["status"], o["hosts"]) for o in listing["options"]}
+    # codex reads this machine's own `codex`, if any: its status is the machine's, so only its presence is checked
+    rows = {o["name"]: (o["in_use"], o["status"], o["hosts"]) for o in listing["options"] if o["name"] != "codex"}
+    assert "codex" in {o["name"] for o in listing["options"]}
     assert rows == {
         "claude-code": (True, "signed in", ["api.anthropic.com"]),
         "gateway": (False, "signed in", ["ai.acme.example"]),
@@ -92,7 +94,7 @@ def test_use_binds_the_access_and_the_runner_it_names(make_kernel, fakes):
 def test_use_refuses_an_option_nobody_installed(make_kernel, fakes):
     result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ai", "access", "use", "nope"])
     assert result.exit_code != 0
-    assert "installed: claude-code, gateway, pydantic-ai" in result.output
+    assert "installed: claude-code, codex, gateway, pydantic-ai" in result.output
 
 
 def test_a_test_is_explicit_kept_and_shown_in_the_listing(make_kernel, fakes):
@@ -125,3 +127,18 @@ def test_the_rest_head_has_no_ai_access(make_kernel):
     client = TestClient(api.build(make_kernel(builtins=True)), base_url="http://localhost")
     assert client.get("/ai/access/list").status_code == 404
     assert client.post("/ai/access/use", json={"name": "gateway"}).status_code in {404, 405}
+    assert client.get("/ai/usage").status_code == 404
+
+
+def test_every_run_is_recorded_and_hz_ai_usage_reports_it(make_kernel, fakes):
+    kernel = make_kernel(builtins=True, config=gateway_config())
+    hz(kernel, "ai", "access", "test")  # Claude Code: one short answer, $0.001
+    code, answer = hz(kernel, "system", "runner", "ask", "What is hz?")
+    assert (code, answer["status"]) == (0, "completed")
+    code, usage = hz(kernel, "ai", "usage", "--by", "cause")
+    assert code == 0
+    assert usage["today"]["runs"] == 2
+    assert usage["today"]["cost_usd"] == pytest.approx(0.002)
+    assert {row["key"] for row in usage["breakdowns"]["cause"]} == {"test", "ask"}
+    assert [row["key"] for row in usage["breakdowns"]["access"]] == ["claude-code"]
+    assert usage["tone"] == "ok"

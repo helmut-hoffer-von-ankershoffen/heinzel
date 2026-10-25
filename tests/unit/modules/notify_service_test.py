@@ -69,7 +69,7 @@ def draft(service: NotifyService, key: str = "draft:me:weekly", **values: object
         "Draft ready: Weekly",
         "Read it.",
         route="/contracts/me%3Aweekly",
-        command="hz workflow drafts --name me:weekly --latest",
+        command="hz heinzel drafts --name me:weekly --latest",
         key=key,
         **values,
     )
@@ -143,7 +143,7 @@ def test_the_daemon_pops_up_due_notices_natively_and_marks_them(make, runner):
     assert service.post_native() == 1
     title, body = runner.commands[0][-2:]
     assert title == "Draft ready: Weekly"
-    assert body == "Read it. Run: hz workflow drafts --name me:weekly --latest"  # notify-send can't open a link
+    assert body == "Read it. Run: hz heinzel drafts --name me:weekly --latest"  # notify-send can't open a link
     assert service.recent()[0].delivered_by is Delivery.DAEMON
     assert service.post_native() == 0
 
@@ -238,7 +238,8 @@ def test_the_base_class_only_declares():
             call()
 
 
-def test_once_an_hour_the_tick_reports_what_doctor_finds(make_kernel, monkeypatch):
+@pytest.mark.timeout(30)  # runs every built-in module's real doctor checks: ~3 s idle, more under load
+def test_once_an_hour_the_tick_reports_what_doctor_finds(make_kernel, monkeypatch, clock):
     monkeypatch.setenv("HZ_SYSTEM_NOTIFY__DOCTOR", "true")  # tests turn it off (heinzel.testing)
     sick = Module("sick", "A module whose check fails.")
 
@@ -250,10 +251,13 @@ def test_once_an_hour_the_tick_reports_what_doctor_finds(make_kernel, monkeypatc
     kernel = make_kernel(builtins=True, sick=sick)
     service = kernel.resolve(NotifyService)
     monkeypatch.setattr(service, "_notifier", Native(None, detail="none in tests"))
+    monkeypatch.setattr(
+        service, "_clock", clock
+    )  # a pinned clock: the hour passes when the test says so, not under load
     service.post_native()
     assert len(service.recent()) == 1
     assert service.look() == 0  # not again within the hour
-    service.store.looked(service.recent()[0].at - timedelta(hours=2))
+    clock.now += timedelta(hours=2)
     assert service.look() == 1  # the same notice again, not a new one
     assert len(service.recent()) == 1
     notice = service.recent()[0]

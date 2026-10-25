@@ -180,7 +180,7 @@ class ConfigService(ConfigEditor):
         Raises:
             HeinzelError: If the key is unknown or not set in that file.
         """
-        section, name, _ = self._locate(key)
+        section, name, _ = self._locate(key, old=True)
         path = self._scope_file(scope)
         document = _load(path)
         table = _table(document, section)
@@ -191,11 +191,26 @@ class ConfigService(ConfigEditor):
         _save(path, document)
         return path
 
-    def _locate(self, key: str) -> tuple[str, str, type[ModuleSettings]]:
+    def _locate(self, key: str, *, old: bool = False) -> tuple[str, str, type[ModuleSettings]]:
+        """The section, field and model of `key`; with `old`, also a key under a renamed module's old table.
+
+        Raises:
+            HeinzelError: If no module has the key, naming the new key when only its old table had it.
+        """
         section, _, name = key.rpartition(".")
+        renamed = self._kernel.renamed(section)
         for candidate, settings in self._kernel.settings_of():
-            if candidate == section and name in type(settings).model_fields:
+            if name not in type(settings).model_fields:
+                continue
+            if candidate == section:
                 return section, name, type(settings)
+            if candidate == renamed:
+                if old:  # removing the old key is how it moves (ADR 0051)
+                    return section, name, type(settings)
+                msg = (
+                    f"[{section}] is now [{renamed}]: use {renamed}.{name}, e.g. hz system config get {renamed}.{name}"
+                )
+                raise HeinzelError(msg)
         known = ", ".join(f"{s.section}.{s.key}" for s in self.report().settings)
         msg = f"Unknown setting {key!r}. Known settings: {known}"
         raise HeinzelError(msg)
