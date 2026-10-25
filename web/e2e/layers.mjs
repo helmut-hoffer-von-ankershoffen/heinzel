@@ -75,6 +75,10 @@ export async function verifyLayers(page, shots, screenshot) {
   const frame = await (await iframe.elementHandle()).contentFrame();
   await frame.waitForFunction(() => document.querySelector("video")?.currentTime > 0.1);
   const before = await frame.locator("video").evaluate((video) => video.currentTime);
+  // The application uses its main/nav scrollers. A browser must never scroll the whole shell and strand its
+  // account menu above the viewport (the Linux runner reproduced scrollY=710 after starting docked playback).
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await page.waitForFunction(() => scrollY === 0, null, { timeout: 5000 });
   const results = [];
   async function front(name, pane) {
     await pane.waitFor();
