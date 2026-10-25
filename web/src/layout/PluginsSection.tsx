@@ -43,42 +43,53 @@ export function sourceLabel(plugin: SchemaPluginInfo, community?: boolean): stri
   return community ? t("plugins.community") : t("plugins.private");
 }
 
-/** Where a module's settings come from, as Settings heads them: the plugin with the same badges, version and
- *  repository its row under Plugins shows, or hz itself for a built-in module. */
-export function Provenance({
+/** The head of a module's page, the same everywhere: its name with the kinds of what it adds on the left, and on
+ *  the right, on the same line, where it comes from (First-party, Contrib, Private) and its version. */
+export function ModuleHeader({
+  title,
   plugin,
   version,
   onOpen,
 }: {
+  title: string;
   plugin: SchemaPluginInfo | undefined;
   version: string | undefined;
   onOpen: () => void;
 }) {
-  if (!plugin) {
-    return (
-      <p className="mb-3 text-ui-sm text-muted-foreground">
-        <a href={CORE} target="_blank" rel="noreferrer noopener" className="hover:text-foreground hover:underline">
-          {t("settings.builtIn", { version: version ? `v${version}` : "" }).trim()}
-        </a>
-      </p>
-    );
-  }
   return (
     <div className="mb-3">
-      <p className="flex flex-wrap items-center gap-2 text-ui-sm text-muted-foreground">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="rounded font-medium text-foreground hover:underline"
-          title={t("settings.openPlugin")}
-        >
-          {displayName(plugin.name, plugin.summary)}
-        </button>
-        <KindBadges plugin={plugin} />
-        <span className="rounded-md border border-border px-1.5 text-[11px]">{sourceLabel(plugin)}</span>
-        <span className="text-xs tabular-nums">v{plugin.version}</span>
-      </p>
-      <RepositoryLine url={plugin.source_url ?? plugin.homepage} />
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <h3 className="text-ui font-medium">{title}</h3>
+        {plugin && <KindBadges plugin={plugin} />}
+        <p className="ml-auto flex items-center gap-2 text-ui-sm text-muted-foreground">
+          {plugin ? (
+            <>
+              <button
+                type="button"
+                onClick={onOpen}
+                className="rounded-md border border-border px-1.5 text-[11px] hover:bg-accent/60"
+                title={t("settings.openPlugin")}
+              >
+                {sourceLabel(plugin)}
+              </button>
+              <span className="text-xs tabular-nums">v{plugin.version}</span>
+            </>
+          ) : (
+            <>
+              <a
+                href={CORE}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="rounded-md border border-border px-1.5 text-[11px] hover:bg-accent/60"
+              >
+                {t("plugins.firstParty")}
+              </a>
+              {version && <span className="text-xs tabular-nums">v{version}</span>}
+            </>
+          )}
+        </p>
+      </div>
+      {plugin && <RepositoryLine url={plugin.source_url ?? plugin.homepage} />}
     </div>
   );
 }

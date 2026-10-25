@@ -43,6 +43,7 @@ import {
   api,
   problem,
   type SchemaActionEntry,
+  type SchemaContributionInfo,
   type SchemaOperationCall,
   type SchemaStatusEntry,
   type SchemaStatusItem,
@@ -54,7 +55,7 @@ import { FooterItem, stateOf } from "@/components/FooterItem";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
 import { Button } from "@/components/ui/button";
-import { t } from "@/i18n";
+import { type MessageKey, t } from "@/i18n";
 import { runInTerminal, runsAsIs, typeInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { zoneClock, zoneTime } from "@/lib/zoneTime";
@@ -772,7 +773,63 @@ const SLOT_LABEL = {
   today: "contrib.slot.today",
 } as const;
 
-/** "Show in footer", "Show in sidebar", … for every contribution of `module`, written by `hz system ui show|hide`. */
+/** Where each placement is, in words people use, and a line saying what it looks like there. */
+const PLACE: Record<Slot, { title: MessageKey; help: MessageKey }> = {
+  footer: { title: "contrib.place.footer", help: "contrib.place.footer.help" },
+  sidebar: { title: "contrib.place.sidebar", help: "contrib.place.sidebar.help" },
+  header: { title: "contrib.place.header", help: "contrib.place.header.help" },
+  today: { title: "contrib.place.today", help: "contrib.place.today.help" },
+};
+const KIND_OF = { status: "status", action: "actions", widget: "widgets" } as const;
+
+/** A small live look at a contribution as it appears in one placement; decoration, the row's text says it all. */
+function PlacementPreview({ info, slot, on }: { info: SchemaContributionInfo; slot: Slot; on: boolean }) {
+  const key = KIND_OF[info.kind as keyof typeof KIND_OF];
+  const now = useNow(1000);
+  const entry = useQuery({
+    queryKey: ["ui", key, info.id],
+    queryFn: () => fetchers[key](info.id),
+    enabled: Boolean(key),
+    retry: false,
+  });
+  const found = entry.data?.[0] as (SchemaStatusEntry & SchemaActionEntry & SchemaWidgetEntry) | undefined;
+  let body: ReactNode = <span className="truncate">{info.title}</span>;
+  if (info.kind === "status" && found?.item) {
+    const live = found.item.live ? ` ${liveText(found.item.live, now)}` : "";
+    body = (
+      <>
+        <IconOf icon={found.item.icon} />
+        <span className="truncate font-mono tabular-nums">{`${found.item.text}${live}`}</span>
+      </>
+    );
+  } else if (info.kind === "action" && found) {
+    body = (
+      <>
+        <IconOf icon={found.icon} className="size-4" />
+        <span className="truncate">{found.label}</span>
+      </>
+    );
+  } else if (info.kind === "widget" && found?.widget) {
+    body = <span className="truncate">{widgetText(found.widget)}</span>;
+  }
+  return (
+    <span
+      aria-hidden
+      data-preview={slot}
+      className={cn(
+        "flex h-9 w-44 shrink-0 items-center gap-1.5 overflow-hidden rounded-md border border-border bg-card px-2 text-ui-sm text-muted-foreground",
+        slot === "footer" && "border-t-2",
+        slot === "today" && "border-l-4",
+        !on && "opacity-40",
+      )}
+    >
+      {body}
+    </span>
+  );
+}
+
+/** "In the footer", "In the sidebar", … for every contribution of `module`: what it is, a live preview of how it
+ *  looks there, and a switch (`hz system ui show|hide`). The same row for every "show in …" setting. */
 export function ContributionToggles({ module }: { module: string }) {
   const queries = useQueryClient();
   const list = useQuery({
@@ -799,10 +856,18 @@ export function ContributionToggles({ module }: { module: string }) {
       <ul>
         {mine.flatMap((info) =>
           Object.entries(info.slots).map(([slot, on]) => {
+            const place = PLACE[slot as Slot];
             const label = `${t(SLOT_LABEL[slot as Slot])}: ${info.title}`;
             return (
-              <li key={`${info.id}:${slot}`} className="flex items-center gap-3 py-1.5 text-ui">
-                <span className="min-w-0 flex-1 truncate">{label}</span>
+              <li
+                key={`${info.id}:${slot}`}
+                className="flex items-center gap-4 border-b border-border/70 py-3 text-ui last:border-b-0"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block">{t(place.title)}</span>
+                  <span className="block text-sm text-muted-foreground">{t(place.help, { title: info.title })}</span>
+                </span>
+                <PlacementPreview info={info} slot={slot as Slot} on={on} />
                 <button
                   type="button"
                   role="switch"

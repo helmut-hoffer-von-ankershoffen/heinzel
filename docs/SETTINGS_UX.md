@@ -17,9 +17,13 @@ These are the rules a reviewer applies to every setting. The mechanical ones are
    ("$0.25", "60 seconds", "30 days").
 3. **Order means something, so let people order it.** In a list where the first entry is special (your own time zone
    first), the list can be reordered, the first is marked, and adding "my own" is one click.
-4. **Group by what people think about, not by where the code lives.** Appearance belongs in General; settings of a
-   plugin that connects a tool belong with that connector; a section is called by its title ("Notifications"), never
-   by its TOML table (`[system.notify]`).
+4. **Group by what people think about, not by where the code lives.** Every setting lives in exactly one place:
+   Preferences (appearance, World Clock, notifications), Customize (AI, connectors, plugins, skills), Organisation
+   (you, team) and This computer (daemon, files, From Claude, updates). A module gets its own entry only where it adds a
+   page of its own; settings of a plugin that connects a tool belong with that connector; a section is called by its
+   title ("Notifications"), never by its TOML table (`[system.notify]`). Every entry has an icon of its own, and every
+   module's page opens with the same header: its name and kinds on the left, where it comes from and its version on the
+   right. A "show in …" setting is a row with the placement in words, a live preview of how it looks there and a switch.
 5. **Show only what matters now.** Deprecated settings are never shown (doctor names the fix when one is still set);
    expert settings (`x-expert`) only in expert mode; a setting another control already edits (`x-hidden`) only there.
 6. **Plain words.** A title is a short label in sentence case ("Log folder", not "Log Dir"); the description is one

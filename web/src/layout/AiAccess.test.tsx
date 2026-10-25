@@ -70,7 +70,7 @@ describe("AI access", () => {
   it("is one choice next to the theme: every option with its status and the one in use", async () => {
     const { calls } = accessApi();
     const user = userEvent.setup();
-    const { container } = renderAt("/doctor?settings=hz");
+    const { container } = renderAt("/doctor?settings=ai");
     const group = await screen.findByRole("radiogroup", { name: "AI access" });
     const claude = await within(group).findByRole("radio", { name: /Claude Code/ });
     expect(claude).toHaveAttribute("aria-checked", "true");
@@ -89,7 +89,7 @@ describe("AI access", () => {
   it("tests an option only when asked, and shows what it answered", async () => {
     const { calls } = accessApi();
     const user = userEvent.setup();
-    renderAt("/doctor?settings=hz");
+    renderAt("/doctor?settings=ai");
     await screen.findByRole("radiogroup", { name: "AI access" });
     expect(calls.some((call) => call.url.includes("/ai/access/test"))).toBe(false);
     await user.click(await screen.findByRole("button", { name: "Test Acme AI; this may cost a little" }));
