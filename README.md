@@ -4,29 +4,29 @@
 
 | Name                                                          |    Stmts |     Miss |   Branch |   BrPart |   Cover |   Missing |
 |-------------------------------------------------------------- | -------: | -------: | -------: | -------: | ------: | --------: |
-| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        0 |       30 |        1 |     99% |   79-\>81 |
+| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        1 |       30 |        2 |     98% |79-\>81, 226 |
 | plugins/heinzel-atlassian/src/heinzel\_atlassian/\_storage.py |      291 |        1 |      150 |        5 |     99% |245, 252-\>exit, 258-\>exit, 262-\>exit, 312-\>exit |
 | plugins/heinzel-github/src/heinzel\_github/\_client.py        |      114 |        2 |       32 |        1 |     98% |   104-105 |
 | plugins/heinzel-google/src/heinzel\_google/\_mail.py          |      422 |        0 |      144 |        1 |     99% | 485-\>487 |
 | src/heinzel/heads/\_stream.py                                 |       56 |        6 |        4 |        0 |     87% | 42-46, 55 |
-| src/heinzel/heads/cli/\_\_init\_\_.py                         |      248 |        8 |       64 |        9 |     95% |134-\>142, 139-\>141, 142-\>152, 163-166, 169, 173-\>exit, 229-\>221, 408, 410-411, 421-\>423 |
-| src/heinzel/heads/cli/\_chat.py                               |      144 |       13 |       40 |        5 |     90% |28-29, 70-71, 82, 106, 127-130, 154-\>exit, 166-\>exit, 185-187 |
-| src/heinzel/heads/cli/\_command.py                            |       83 |        3 |       22 |        3 |     94% |84, 92, 156 |
+| src/heinzel/heads/cli/\_\_init\_\_.py                         |      248 |        8 |       64 |        7 |     95% |139-\>141, 163-166, 169, 173-\>exit, 229-\>221, 408, 410-411, 421-\>423 |
+| src/heinzel/heads/cli/\_chat.py                               |      145 |       13 |       40 |        5 |     90% |28-29, 70-71, 83, 107, 128-131, 155-\>exit, 167-\>exit, 186-188 |
+| src/heinzel/heads/cli/\_command.py                            |       84 |        3 |       22 |        3 |     94% |85, 93, 157 |
 | src/heinzel/heads/cli/\_join.py                               |      141 |        0 |       32 |        1 |     99% | 211-\>216 |
-| src/heinzel/heads/cli/\_serve.py                              |       94 |        5 |       26 |        4 |     92% |83-\>85, 93-95, 111-\>exit, 187, 209-210 |
+| src/heinzel/heads/cli/\_serve.py                              |      101 |        4 |       30 |        5 |     93% |83-\>85, 116-\>exit, 192, 214-215, 239 |
 | src/heinzel/heads/cli/\_setup.py                              |      319 |        6 |       96 |        6 |     97% |275, 342, 427, 434, 481-\>490, 504, 507 |
-| src/heinzel/heads/mcp/\_\_init\_\_.py                         |       85 |        2 |       20 |        2 |     96% |  151, 186 |
-| src/heinzel/heads/mcp/\_skills.py                             |       29 |        1 |        6 |        1 |     94% |        23 |
+| src/heinzel/heads/mcp/\_\_init\_\_.py                         |       89 |        3 |       22 |        3 |     95% |72, 156, 191 |
 | src/heinzel/heads/web/\_\_init\_\_.py                         |      249 |       15 |       54 |        3 |     94% |395-397, 443, 453-\>457, 464-466, 474-\>exit, 494-495, 498-503 |
 | src/heinzel/heads/web/\_devices.py                            |      100 |        2 |       12 |        0 |     98% |   125-126 |
 | src/heinzel/heads/web/\_shutdown.py                           |       83 |        3 |       14 |        1 |     96% |112, 141-142 |
 | src/heinzel/heads/web/\_stream.py                             |       51 |        3 |       16 |        3 |     91% |48, 85-\>84, 95-96 |
-| src/heinzel/heads/web/\_terminal.py                           |      204 |       14 |       36 |        8 |     91% |35-\>40, 80, 91-\>95, 137-138, 156-157, 159, 207, 235-\>228, 241-\>exit, 247-250, 312-313, 315 |
+| src/heinzel/heads/web/\_terminal.py                           |      204 |       12 |       36 |        9 |     91% |35-\>40, 80, 91-\>95, 137-138, 156-157, 159, 207, 235-\>228, 241-\>exit, 249-250, 254-\>exit, 312-313, 315 |
 | src/heinzel/kernel/\_ai.py                                    |       69 |        1 |        6 |        1 |     97% |        95 |
 | src/heinzel/kernel/\_bindings.py                              |      326 |        6 |       74 |        1 |     98% |171-173, 559-561 |
 | src/heinzel/kernel/\_contributions.py                         |      288 |        7 |       54 |        3 |     96% |120, 157-159, 388, 522-523 |
 | src/heinzel/kernel/\_discovery.py                             |       66 |        2 |       16 |        0 |     98% |     60-61 |
 | src/heinzel/kernel/\_duration.py                              |       52 |        1 |       18 |        1 |     97% |        76 |
+| src/heinzel/kernel/\_identity.py                              |      122 |        4 |       10 |        1 |     96% |44-45, 199-200 |
 | src/heinzel/kernel/\_installation.py                          |      154 |        2 |       40 |        0 |     99% |     85-86 |
 | src/heinzel/kernel/\_org.py                                   |       31 |        1 |        0 |        0 |     97% |        55 |
 | src/heinzel/kernel/\_prompter.py                              |      182 |        1 |       56 |        0 |     99% |        66 |
@@ -109,9 +109,9 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| **TOTAL**                                                     | **25300** |  **582** | **6308** |  **249** | **97%** |           |
+| **TOTAL**                                                     | **25560** |  **584** | **6358** |  **251** | **97%** |           |
 
-142 files skipped due to complete coverage.
+144 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
