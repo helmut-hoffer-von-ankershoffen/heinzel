@@ -50,6 +50,7 @@ import {
   unwrap,
 } from "@/api/client";
 import { token } from "@/api/token";
+import { FooterItem, stateOf } from "@/components/FooterItem";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
 import { Button } from "@/components/ui/button";
@@ -253,20 +254,76 @@ function IconOf({ icon, className }: { icon?: Icon | null; className?: string })
   return <Component aria-hidden className={cn("size-3.5 shrink-0", className)} />;
 }
 
-/** One status item: icon, text and live value; its detail and buttons on hover or focus; a click runs its effect. */
-function StatusItemView({
+/** The effect's button in a pane: it opens or runs what the item's click used to. */
+function effectLabel(effect: Effect): string {
+  return effect.kind === "open" || effect.kind === "navigate" ? t("status.open") : t("status.runIt");
+}
+
+/** A footer status item: only its icon, in the colour and shape of its declared tone; text, detail and buttons in a pane. */
+function FooterStatus({
+  entry,
+  updatedAt,
+  run,
+}: {
+  entry: SchemaStatusEntry;
+  updatedAt: number;
+  run: (effect: Effect) => void;
+}) {
+  const current = useEntry("status", entry, updatedAt);
+  const now = useNow(current.item?.live?.kind === "clock" ? 1000 : 30_000);
+  const item = current.item;
+  if (!item) {
+    return current.problem ? <FooterItem label={current.problem} state="bad" icon={CircleAlert} /> : null;
+  }
+  const label = [item.text, item.live ? liveText(item.live, now) : ""].filter(Boolean).join(" ");
+  const effect = item.effect;
+  return (
+    <FooterItem label={label} state={stateOf(item.tone)} icon={item.icon ? ICONS[item.icon] : Info}>
+      <ul>
+        {(item.detail ?? []).map((line) => (
+          <li key={line.text} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
+            <span aria-hidden className={cn("size-2 shrink-0 rounded-full", DOT[line.tone])} />
+            <span className="min-w-0">{line.text}</span>
+          </li>
+        ))}
+      </ul>
+      {((item.actions ?? []).length > 0 || effect) && (
+        <div className="mt-1 flex flex-wrap gap-1.5 border-t border-border px-1.5 pt-2 pb-1">
+          {effect && (
+            <Button size="sm" variant="outline" onClick={() => run(effect)}>
+              {effectLabel(effect)}
+            </Button>
+          )}
+          {(item.actions ?? []).map((action) => (
+            <Button key={action.label} size="sm" variant="outline" onClick={() => run(action.effect)}>
+              <IconOf icon={action.icon} />
+              {action.label}
+            </Button>
+          ))}
+        </div>
+      )}
+    </FooterItem>
+  );
+}
+
+const DOT: Record<Tone, string> = {
+  neutral: "bg-muted-foreground/40",
+  ok: "bg-ok",
+  warn: "bg-warn",
+  bad: "bg-bad",
+};
+
+/** One sidebar status item: icon, text and live value; its detail and buttons on hover or focus; a click runs its effect. */
+function SidebarStatusItem({
   entry,
   updatedAt,
   run,
   compact,
-  iconOnly = false,
 }: {
   entry: SchemaStatusEntry;
   updatedAt: number;
   run: (effect: Effect) => void;
   compact: boolean;
-  /** Only its icon, the text kept for assistive tech and as the tooltip: what a narrow footer shows. */
-  iconOnly?: boolean;
 }) {
   const current = useEntry("status", entry, updatedAt);
   const now = useNow(current.item?.live?.kind === "clock" ? 1000 : 30_000);
@@ -305,7 +362,7 @@ function StatusItemView({
     >
       <button
         type="button"
-        title={iconOnly || !more ? label : undefined}
+        title={!more ? label : undefined}
         onClick={() => (item.effect ? run(item.effect) : setOpen((was) => !was))}
         onFocus={show}
         aria-expanded={more ? open : undefined}
@@ -318,15 +375,7 @@ function StatusItemView({
         )}
       >
         <IconOf icon={item.icon} />
-        <span
-          className={cn(
-            "truncate",
-            iconOnly && item.icon && "sr-only",
-            item.live?.kind === "clock" && "font-mono tabular-nums",
-          )}
-        >
-          {label}
-        </span>
+        <span className={cn("truncate", item.live?.kind === "clock" && "font-mono tabular-nums")}>{label}</span>
       </button>
       {more && open && (
         <div
@@ -394,14 +443,11 @@ export function StatusItems({
   slot,
   className,
   except = [],
-  iconOnly = false,
   stacked = false,
 }: {
   slot: "footer" | "sidebar";
   className?: string;
   except?: string[];
-  /** Icons without their text, for a narrow footer. */
-  iconOnly?: boolean;
   /** One under the other, as in the sidebar, for the footer's overflow. */
   stacked?: boolean;
 }) {
@@ -416,16 +462,13 @@ export function StatusItems({
       className={cn(compact ? "flex flex-col gap-0.5 px-2 text-ui-sm" : "flex min-w-0 items-center gap-3", className)}
       data-slot={slot}
     >
-      {entries.map((entry) => (
-        <StatusItemView
-          key={entry.id}
-          entry={entry}
-          updatedAt={updatedAt}
-          run={run}
-          compact={compact}
-          iconOnly={iconOnly}
-        />
-      ))}
+      {entries.map((entry) =>
+        compact ? (
+          <SidebarStatusItem key={entry.id} entry={entry} updatedAt={updatedAt} run={run} compact />
+        ) : (
+          <FooterStatus key={entry.id} entry={entry} updatedAt={updatedAt} run={run} />
+        ),
+      )}
       {dialog}
     </div>
   );

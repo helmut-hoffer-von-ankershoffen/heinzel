@@ -2,17 +2,19 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, Ellipsis, Globe, Video } from "lucide-react";
+import { Calendar, CalendarClock, Ellipsis, Globe, Video } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
-import { useInfo } from "@/api/queries";
+import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
+import { FooterItem } from "@/components/FooterItem";
+import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
 import { useWidth } from "@/lib/useWidth";
 import { cn } from "@/lib/utils";
 import { zoneClock, zoneHour, zoneTime } from "@/lib/zoneTime";
-import { CLOCK_SETTINGS } from "./settingsSections";
+import { CLOCK_SETTINGS, CONNECTORS } from "./settingsSections";
 
 type Meeting = { title: string; start: string; end: string; conference_url?: string | null };
 type Agenda = { current: Meeting | null; next: Meeting | null; problem: string | null; fix: string | null };
@@ -325,6 +327,85 @@ function MeetingLine({ now, wrap = false }: { now: Date; wrap?: boolean }) {
   );
 }
 
+const RELEASES = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag";
+
+/** What changed in the running release, from the changelog installed with it (so offline), as the version's pane. */
+function ReleaseNotes({ version }: { version: string }) {
+  const changelog = useChangelog(false);
+  return (
+    <div className="px-1.5 pb-1">
+      <p className="mb-1 text-xs text-muted-foreground">{t("status.whatChanged")}</p>
+      {typeof changelog.data === "string" && (
+        <div className="max-h-64 overflow-y-auto pr-1 text-xs">
+          <Prose>{changelog.data}</Prose>
+        </div>
+      )}
+      <div className="mt-2 flex flex-wrap gap-3 border-t border-border pt-2 text-xs">
+        <Link to="?panel=changelog" className="underline hover:text-foreground">
+          {t("status.fullChangelog")}
+        </Link>
+        <a
+          href={`${RELEASES}/v${version}`}
+          target="_blank"
+          rel="noreferrer"
+          className="underline hover:text-foreground"
+        >
+          {t("status.release")}
+        </a>
+      </div>
+    </div>
+  );
+}
+
+/** The meeting now or next as an icon: green with its line and Join in the pane, or red when no calendar is connected. */
+function MeetingItem({ now }: { now: Date }) {
+  const agenda = useAgenda();
+  const meeting = useShown("org:meeting", "footer");
+  const current = agenda.data?.current;
+  const next = agenda.data?.next;
+  if (!meeting) return null;
+  if (current)
+    return (
+      <FooterItem
+        label={t("status.current", { title: current.title, end: time(new Date(current.end)) })}
+        state="ok"
+        icon={Video}
+      >
+        {current.conference_url && (
+          <a
+            href={current.conference_url}
+            target="_blank"
+            rel="noreferrer"
+            className="block rounded-lg px-2.5 py-1.5 text-primary underline"
+          >
+            {t("status.join")}
+          </a>
+        )}
+      </FooterItem>
+    );
+  if (next)
+    return (
+      <FooterItem
+        label={t("status.next", { title: next.title, when: until(new Date(next.start), now) })}
+        state="ok"
+        icon={CalendarClock}
+      />
+    );
+  if (agenda.data?.problem)
+    return (
+      <FooterItem label={t("status.noCalendar")} state="bad" icon={Calendar}>
+        <p className="px-2.5 py-1.5 text-muted-foreground">{agenda.data.fix ?? agenda.data.problem}</p>
+        <Link
+          to={`?settings=${CONNECTORS}`}
+          className="block rounded-lg border-t border-border px-2.5 pt-2 pb-1 text-xs underline hover:text-foreground"
+        >
+          {t("status.connectCalendar")}
+        </Link>
+      </FooterItem>
+    );
+  return null;
+}
+
 /** The "…" button of a narrow footer: what doesn't fit opens above it, stacked. */
 function Overflow({ now }: { now: Date }) {
   const [open, setOpen] = useState(false);
@@ -388,21 +469,17 @@ export function StatusBar() {
     >
       {/* The branding is the sidebar's; here only the version, which opens what changed. It never gives way. */}
       {info.data && (
-        <Link
-          to="?panel=changelog"
-          title={t("account.changelog")}
-          className="shrink-0 rounded px-1 text-ui-sm hover:bg-accent/60 hover:text-foreground"
-        >
-          v{info.data.version}
-        </Link>
+        <FooterItem label={`v${info.data.version}`} state="off" text={`v${info.data.version}`} align="left">
+          <ReleaseNotes version={info.data.version} />
+        </FooterItem>
       )}
       <span aria-hidden className="ml-auto" />
       {mode === "overflow" ? (
         <Overflow now={now} />
       ) : (
         <>
-          <StatusItems slot="footer" except={NATIVE_FOOTER} iconOnly={mode === "icons"} />
-          <MeetingLine now={now} />
+          <StatusItems slot="footer" except={NATIVE_FOOTER} />
+          <MeetingItem now={now} />
         </>
       )}
       {clock && <Clock now={now} />}
