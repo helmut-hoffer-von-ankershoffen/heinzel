@@ -4,7 +4,7 @@
 
 | Name                                                          |    Stmts |     Miss |   Branch |   BrPart |   Cover |   Missing |
 |-------------------------------------------------------------- | -------: | -------: | -------: | -------: | ------: | --------: |
-| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        0 |       30 |        1 |     99% |   79-\>81 |
+| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        1 |       30 |        2 |     98% |79-\>81, 226 |
 | plugins/heinzel-atlassian/src/heinzel\_atlassian/\_storage.py |      291 |        1 |      150 |        5 |     99% |245, 252-\>exit, 258-\>exit, 262-\>exit, 312-\>exit |
 | plugins/heinzel-github/src/heinzel\_github/\_client.py        |      114 |        2 |       32 |        1 |     98% |   104-105 |
 | plugins/heinzel-google/src/heinzel\_google/\_mail.py          |      422 |        0 |      144 |        1 |     99% | 485-\>487 |
@@ -55,7 +55,7 @@
 | src/heinzel/modules/heinzel/\_models.py                       |      406 |        2 |       74 |        2 |     99% |88, 108, 548-\>546 |
 | src/heinzel/modules/heinzel/\_render.py                       |      216 |       16 |      104 |       11 |     90% |42, 103, 121, 164-\>166, 169, 170-\>172, 202-208, 234, 268, 289-299, 357 |
 | src/heinzel/modules/heinzel/\_retention.py                    |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
-| src/heinzel/modules/heinzel/\_service.py                      |      756 |       18 |      246 |        7 |     98% |345, 433-434, 539-540, 580, 594-\>exit, 605-606, 1033-1034, 1050-1052, 1279-1280, 1312-1313, 1509 |
+| src/heinzel/modules/heinzel/\_service.py                      |      759 |       18 |      248 |        7 |     98% |345, 433-434, 539-540, 580, 594-\>exit, 605-606, 1037-1038, 1054-1056, 1283-1284, 1316-1317, 1513 |
 | src/heinzel/modules/heinzel/\_session\_bodies.py              |       21 |        4 |        2 |        1 |     78% |29-30, 37-38 |
 | src/heinzel/modules/heinzel/\_session\_crud.py                |      182 |       25 |       48 |        9 |     85% |105-106, 111-113, 115-116, 122-124, 129-130, 189-190, 217, 221-222, 247-248, 271-272, 276-277, 311-312 |
 | src/heinzel/modules/heinzel/\_session\_repository.py          |       76 |        2 |        8 |        1 |     96% |     27-28 |
@@ -95,7 +95,7 @@
 | src/heinzel/modules/system/runner/\_command.py                |      149 |        2 |       42 |        0 |     99% |   215-216 |
 | src/heinzel/modules/system/runner/\_process.py                |       88 |        4 |        8 |        0 |     96% |   135-138 |
 | src/heinzel/modules/system/runner/chat/\_service.py           |      198 |        9 |       54 |        3 |     95% |160, 163-164, 218-221, 247, 350 |
-| src/heinzel/modules/system/runner/chat/\_store.py             |      186 |        1 |       44 |        4 |     98% |263, 270-\>266, 272-\>266, 307-\>309 |
+| src/heinzel/modules/system/runner/chat/\_store.py             |      186 |        1 |       44 |        4 |     98% |264, 271-\>267, 273-\>267, 308-\>310 |
 | src/heinzel/modules/system/skill/\_\_init\_\_.py              |       70 |        3 |       18 |        6 |     90% |55, 58-\>60, 68, 71-\>73, 83, 84-\>86 |
 | src/heinzel/modules/system/skill/\_export.py                  |      158 |        3 |       52 |        2 |     98% |168-170, 219-\>208, 232-\>234 |
 | src/heinzel/modules/system/skill/\_service.py                 |      149 |        2 |       48 |        0 |     99% |   139-140 |
@@ -115,7 +115,7 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| **TOTAL**                                                     | **26969** |  **658** | **6664** |  **280** | **97%** |           |
+| **TOTAL**                                                     | **26973** |  **659** | **6666** |  **281** | **97%** |           |
 
 152 files skipped due to complete coverage.
 
