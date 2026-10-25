@@ -90,6 +90,28 @@ describe("the mini-player docked in the sidebar", () => {
     expect(JSON.parse(localStorage.getItem("hz.sound.player") ?? "{}").docked).toBe(true);
   });
 
+  it("follows the dock's measured bounds and releases its reserved height when floating", async () => {
+    api();
+    let bounds = { left: 12, top: 400, width: 240 };
+    const originalBounds = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (!this.hasAttribute("data-sound-dock")) return originalBounds.call(this);
+      return new DOMRect(bounds.left, bounds.top, bounds.width, 200);
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute("data-dock") ? 200 : 0;
+    });
+    const { user, card } = await play();
+    expect(card).toHaveStyle({ left: "12px", top: "400px", width: "240px" });
+    expect(dockSlot()).toHaveStyle({ height: "200px" });
+    bounds = { left: 20, top: 360, width: 260 };
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(card).toHaveStyle({ left: "20px", top: "360px", width: "260px" }));
+    await user.click(within(card).getByRole("button", { name: "Pop the player out of the sidebar" }));
+    expect(card).toHaveAttribute("data-dock", "floating");
+    expect(dockSlot().style.height).toBe("");
+  });
+
   it("keeps playing: the very same frame stays mounted when it docks and undocks", async () => {
     api();
     const { user, card } = await play();
