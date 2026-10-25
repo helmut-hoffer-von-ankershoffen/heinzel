@@ -34,7 +34,7 @@ const github = plugin({
   capabilities: ["github:code-host", "github:tracker"],
   kinds: ["connector"],
 });
-const clock = plugin({ name: "clock", summary: "What time it is for everyone on the team.", kinds: ["capability"] });
+const clock = plugin({ name: "clock", summary: "World Clock: what time it is for everyone on the team.", kinds: ["capability"] });
 
 const zonesSchema = {
   type: "array",
@@ -139,14 +139,14 @@ describe("Settings: Preferences, Customize, This computer", () => {
     mockApi(answers);
     const { container } = renderAt("/doctor?settings=hz");
     const nav = await screen.findByRole("navigation", { name: "Settings" });
-    for (const name of ["General", "Clock", "Org", "System", "Connectors", "Plugins", "Configuration files"]) {
+    for (const name of ["General", "Org", "System", "World Clock", "Connectors", "Plugins", "Configuration files"]) {
       expect(await within(nav).findByRole("button", { name })).toBeInTheDocument();
     }
     await waitFor(() => expect(within(nav).queryByRole("button", { name: /github/i })).not.toBeInTheDocument());
     const names = within(nav)
       .getAllByRole("button")
       .map((button) => button.textContent);
-    expect(names.slice(0, 4)).toEqual(["General", "Clock", "Org", "System"]);
+    expect(names.slice(0, 4)).toEqual(["General", "Org", "System", "World Clock"]);
     // Connectors have their settings on their cards; the [capabilities] table is there too.
     expect(within(nav).queryByRole("button", { name: "Capabilities" })).not.toBeInTheDocument();
     await expectAccessible(container);
@@ -166,7 +166,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const user = userEvent.setup();
     const { container } = renderAt("/doctor?settings=clock");
     const nav = await screen.findByRole("navigation", { name: "Settings" });
-    expect(await within(nav).findByRole("button", { name: "Clock" })).toHaveAttribute("aria-current", "page");
+    expect(await within(nav).findByRole("button", { name: "World Clock" })).toHaveAttribute("aria-current", "page");
     const plugin = await screen.findByTitle("Show it under Plugins");
     const header = plugin.closest("div") as HTMLElement;
     expect(within(header).getByTitle("Capability: hz clock")).toBeInTheDocument();
@@ -357,6 +357,7 @@ describe("Installed plugins by kind", () => {
 describe("Where settings live", () => {
   it("keeps the capitals of acronyms in module and setting names", () => {
     expect(displayName("ai")).toBe("AI");
+    expect(displayName("clock", "World Clock: what time it is.")).toBe("World Clock");
     expect(displayName("mcp")).toBe("MCP");
     expect(displayName("cli")).toBe("CLI");
     expect(displayName("github")).toBe("GitHub");
@@ -374,7 +375,7 @@ describe("Where settings live", () => {
 
   it("puts every module with settings under Preferences, General first, and connectors apart", () => {
     const nav = settingsNav(["hz", "org", "github", "clock", "capabilities"], [github, clock]);
-    expect(nav.preferences.map((entry) => entry.id)).toEqual(["hz", "clock", "org"]);
+    expect(nav.preferences.map((entry) => entry.id)).toEqual(["hz", "org", "clock"]);
     expect(nav.preferences.find((entry) => entry.id === "clock")?.plugin).toBe(clock);
     expect(nav.connectors.map((entry) => entry.title)).toEqual(["GitHub"]);
   });

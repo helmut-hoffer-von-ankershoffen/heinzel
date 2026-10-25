@@ -30,7 +30,7 @@ from heinzel import (
     StatusItem,
 )
 
-module = Module("clock", "What time it is for everyone on the team.")
+module = Module("clock", "World Clock: what time it is for everyone on the team.")
 
 DEFAULT_HOURS = (9, 18)
 DEFAULT_ZONES = ("Europe/Berlin", "America/New_York", "America/Los_Angeles")
@@ -166,7 +166,7 @@ def primary_zone(times: list[ZoneTime]) -> StatusItem | None:
     first, *others = times
     return StatusItem(
         text=city(first.zone),
-        icon="clock",
+        icon="globe",
         live=LiveClock(zone=first.zone),
         detail=[
             DetailLine(
@@ -187,7 +187,7 @@ def working(times: list[ZoneTime]) -> int:
 
 module.action(
     "team-clock",
-    label="Team clock",
+    label="World Clock",
     icon="globe",
     effect=RunCommand(command="hz clock"),
     source="clock",

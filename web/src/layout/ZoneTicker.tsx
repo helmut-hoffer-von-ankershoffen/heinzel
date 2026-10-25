@@ -1,6 +1,7 @@
 // The sidebar's clock line: every zone of `clock.zones`, yours first, two at a time ("Berlin 09:11 · New York 03:11"),
 // changing every few seconds with a fade. It rests while the pointer or focus is on it, and with reduced motion it
-// shows them all at once, wrapped. One zone is shown plainly. The footer's clock panel is Clock in StatusBar.
+// shows them all at once, wrapped. One zone is shown plainly. The footer's World Clock panel is Clock in StatusBar.
+import { Globe } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { useNow, useShown } from "@/components/Contributions";
@@ -56,14 +57,15 @@ export function ZoneTicker() {
       onMouseLeave={() => setResting(false)}
       onFocus={() => setResting(true)}
       onBlur={() => setResting(false)}
-      className="mx-2 block min-w-0 rounded px-1 py-1 text-ui-sm text-muted-foreground tabular-nums hover:bg-accent/60 hover:text-foreground"
+      className="mx-2 flex min-w-0 items-center gap-1.5 rounded px-1 py-1 text-ui-sm text-muted-foreground tabular-nums hover:bg-accent/60 hover:text-foreground"
     >
+      <Globe aria-hidden className="size-3.5 shrink-0" />
       <span className="sr-only">{`${t("ticker.label")}: ${all.join(", ")}`}</span>
       <span
         aria-hidden
         key={rotating ? page : "all"}
         className={cn(
-          "block font-mono",
+          "block min-w-0 font-mono",
           rotating ? "truncate motion-safe:animate-[hz-fade-in_0.5s_ease-out]" : "break-words",
         )}
       >

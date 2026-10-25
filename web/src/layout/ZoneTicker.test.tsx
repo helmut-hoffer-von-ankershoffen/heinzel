@@ -34,7 +34,7 @@ function reducedMotion(reduce: boolean) {
 }
 
 const ticker = async () => (await screen.findByTestId("zone-ticker")) as HTMLElement;
-const shownText = (element: HTMLElement) => element.querySelector("[aria-hidden]")?.textContent;
+const shownText = (element: HTMLElement) => element.querySelector("span[aria-hidden]")?.textContent;
 
 describe("The sidebar's zone ticker", () => {
   beforeEach(() => reducedMotion(false));
@@ -79,7 +79,7 @@ describe("The sidebar's zone ticker", () => {
     const { container } = renderAt("/doctor");
     const element = await ticker();
     expect(shownText(element)).toMatch(/Berlin .* · New York .* · Tokyo \d{2}:\d{2}$/);
-    expect(element.querySelector("[aria-hidden]")).not.toHaveClass("truncate");
+    expect(element.querySelector("span[aria-hidden]")).not.toHaveClass("truncate");
     await expectAccessible(container);
   });
 
@@ -88,7 +88,7 @@ describe("The sidebar's zone ticker", () => {
     renderAt("/doctor");
     const element = await ticker();
     expect(shownText(element)).toMatch(/^Berlin \d{2}:\d{2}$/);
-    expect(element.querySelector("[aria-hidden]")?.className).not.toMatch(/animate/);
+    expect(element.querySelector("span[aria-hidden]")?.className).not.toMatch(/animate/);
   });
 
   it("is not there unless the clock item is turned on for the sidebar", async () => {
@@ -96,5 +96,15 @@ describe("The sidebar's zone ticker", () => {
     renderAt("/doctor");
     await screen.findByRole("navigation");
     expect(screen.queryByTestId("zone-ticker")).not.toBeInTheDocument();
+  });
+});
+
+describe("World Clock naming", () => {
+  it("names the sidebar ticker and shows the globe", async () => {
+    mockApi(answers(["Europe/Berlin"]));
+    renderAt("/doctor");
+    const element = await ticker();
+    expect(element).toHaveTextContent("World Clock: Berlin");
+    expect(element.querySelector("svg.lucide-globe")).not.toBeNull();
   });
 });
