@@ -74,9 +74,9 @@ class Settings(ModuleSettings):
     )
     playful: bool = Field(
         default=True,
-        description="A small Heinzelmännchen in the terminal: in the start screen, `hz setup`, the spinner of long "
-        "work and the done and error lines. Only on a colour terminal, never in JSON, a pipe, CI, with NO_COLOR or "
-        "TERM=dumb. Set to false to turn all of it off (the web app's Settings has the same switch).",
+        title="Playful terminal",
+        description="A small Heinzelmännchen in the terminal: in the start screen, the setup, the spinner of long work "
+        "and the done and error lines. Only on a colour terminal, never in JSON, a pipe or CI.",
     )
     plugins_enabled: bool = Field(
         default=True,
