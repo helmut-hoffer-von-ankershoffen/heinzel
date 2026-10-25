@@ -317,6 +317,16 @@ def test_claude_review_skips_events_sent_by_bots():
         assert clause in condition
 
 
+def test_claude_review_prefers_the_api_key():
+    """Each review step authenticates with ANTHROPIC_API_KEY and uses the subscription token only without one."""
+    spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
+    actions = [step for step in spec["jobs"]["review"]["steps"] if "claude-code-action" in step.get("uses", "")]
+    assert actions
+    for step in actions:
+        assert step["with"]["anthropic_api_key"] == "${{ secrets.ANTHROPIC_API_KEY }}"
+        assert step["with"]["claude_code_oauth_token"].startswith("${{ secrets.ANTHROPIC_API_KEY == '' && ")
+
+
 def _generated_plugin_ci() -> dict:
     import importlib.util
 
