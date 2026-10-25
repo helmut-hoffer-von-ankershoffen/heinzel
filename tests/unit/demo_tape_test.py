@@ -82,6 +82,13 @@ def test_assembling_refuses_a_snippet_that_breaks_the_rules(root):
         demo_tape.assemble(root)
 
 
+def test_the_intro_cannot_print_synthetic_installation_success(root):
+    intro = root / "docs/assets/demo-intro.tape"
+    intro.write_text(INTRO + 'Type `printf "Installed fake packages"`\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="before recording"):
+        demo_tape.assemble(root)
+
+
 def test_the_committed_tape_is_assembled_from_the_current_snippets():
     """`make fix` writes it; this and `make check` fail when a snippet or the intro changed without it."""
     assert (REPO / "docs" / "assets" / "demo.tape").read_text(encoding="utf-8") == demo_tape.assemble()

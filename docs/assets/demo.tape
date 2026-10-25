@@ -18,20 +18,12 @@ Set PlaybackSpeed 1.0
 Set WaitPattern /\$\s*$/
 
 Hide
-# A quiet prompt; the install is already done, so print what uv prints instead of reinstalling.
+# A quiet prompt; installation has already completed in the isolated recording environment.
 Type `export PS1='$ '`
-Enter
-Type `uv() { if [ "$1 $2" = "tool install" ]; then sleep 1; printf 'Resolved 64 packages in 812ms\nInstalled 64 packages in 95ms\n + heinzel==%s\nInstalled 1 executable: hz\n' "$(hz --version | head -1 | cut -d' ' -f2)"; else command uv "$@"; fi; }`
 Enter
 Type "clear"
 Enter
 Show
-
-Type "uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel"
-Sleep 300ms
-Enter
-Wait
-Sleep 1.5s
 
 Type "hz --version"
 Enter

@@ -140,8 +140,8 @@ from the code, no plugin writes tooling, and a private plugin gets the same page
   `main` holds and deploys it to GitHub Pages when the repository is public, or when the repository variable
   `DOCS_PAGES` is `true`. Otherwise it uploads the site as a workflow artifact and stops: a private repository's
   pages stay with the repository.
-- **The README's intro.** `docs/scenes.toml` of the core declares the intro (`[intro] scenes`): the install and
-  the first commands in the CLI (the demo tape), then Today, the workflow, a Heinzelmännchen's page, the team graph
+- **The README's intro.** `docs/scenes.toml` of the core declares the intro (`[intro] scenes`): after isolated
+  installation completes, real first commands in the CLI (the demo tape), then Today, the workflow, a Heinzelmännchen's page, the team graph
   and a theme switch in the UI, then the CLI equivalents. The recorder concatenates the tape's video and the scenes'
   frames into one `docs/assets/demo.gif` (and `.mp4`, `.webp`; `make demo`), so one pipeline makes both the
   README's intro and every plugin's recordings. The modules' `demo.tape` snippets stay

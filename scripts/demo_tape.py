@@ -79,6 +79,14 @@ def assemble(root: Path = ROOT) -> str:
     if found := [problem for snippet in parts for problem in problems(snippet, root)]:
         raise ValueError("\n".join(found))
     intro = _without_leading_comments((root / INTRO.relative_to(ROOT)).read_text(encoding="utf-8"))
+    for line in intro:
+        match = COMMAND.match(line.strip())
+        if match and match["command"] == "Type":
+            typed = TYPED.match(match["args"] or "")
+            text = typed["text"] if typed else ""
+            if not (text.startswith("hz ") or text in {"clear", "export PS1='$ '"}):
+                msg = "The intro types real hz commands only; install dependencies before recording"
+                raise ValueError(msg)
     requires = [line for line in intro if line.startswith("Require ")]
     body: list[str] = []
     for snippet in parts:
