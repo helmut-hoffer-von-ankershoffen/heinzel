@@ -1,6 +1,6 @@
 [project]
 name = "heinzel"
-version = "0.7.9"
+version = "0.7.10"
 description = "Heinzelmännchen: an open-source, AI-driven operating system for product development teams."
 readme = "README.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
@@ -64,11 +64,11 @@ Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
 test = [
     # The first-party plugins (workspace members), so their tests run in this suite; the release process bumps the
     # bounds. Test-only: `hz system plugin add <name>` installs them for users, nothing installs them by default.
-    "heinzel-atlassian>=0.7.9",
-    "heinzel-clock>=0.7.9",
-    "heinzel-github>=0.7.9",
-    "heinzel-google>=0.7.9",
-    "heinzel-zoom>=0.7.9",
+    "heinzel-atlassian>=0.7.10",
+    "heinzel-clock>=0.7.10",
+    "heinzel-github>=0.7.10",
+    "heinzel-google>=0.7.10",
+    "heinzel-zoom>=0.7.10",
     "coverage>=7.12",
     "httpx>=0.28",
     "hypothesis>=6.140",
@@ -270,7 +270,7 @@ example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
 [tool.bumpversion]
-current_version = "0.7.9"
+current_version = "0.7.10"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false
