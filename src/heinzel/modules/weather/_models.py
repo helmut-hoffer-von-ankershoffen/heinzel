@@ -72,3 +72,10 @@ class Outlook(BaseModel):
     wind: float = Field(description="Wind speed: km/h (metric) or mph (imperial).")
     precipitation: float = Field(description="Rain and snow in the last hour: mm (metric) or inches (imperial).")
     days: list[OutlookDay] = Field(description="The next days from today.")
+
+
+class Conditions(BaseModel):
+    """The weather now at your primary place, or why there is none: what the status bar and sidebar show."""
+
+    outlook: Outlook | None = Field(description="The weather now and the next days; none while no location is set.")
+    needs_location: bool = Field(description="Whether a weather adapter is connected but no location is set yet.")

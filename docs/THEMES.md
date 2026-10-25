@@ -5,6 +5,10 @@ colours of the web app's tokens for light and dark, fonts, sizes and an optional
 `module.theme(Path(__file__).parent / "themes")`. `hz system theme list` shows the installed ones, `hz system theme
 use <name>` picks one. Every value passes a grammar at import, so a theme can't load or run anything.
 
+Soundscapes work the same way ([ADR 0058](adr/0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md)): a plugin
+offers its own with `module.soundscape(Path(__file__).parent / "soundscapes")`, and they appear in `hz system sound
+list` and the web app's picker beside Claude FM.
+
 ## Themes that follow the time of day and the weather
 
 A theme can declare variants ([ADR 0060](adr/0060-themes-follow-the-time-of-day-and-the-weather.md)): colours that

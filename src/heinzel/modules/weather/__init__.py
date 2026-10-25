@@ -10,9 +10,9 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Check, Module, Status, WeatherSource
+from heinzel import Check, DetailLine, Module, Navigate, Status, StatusItem, WeatherSource
 from heinzel.kernel import CapabilityView
-from heinzel.modules.weather._models import Outlook, OutlookDay, Units, WeatherSettings
+from heinzel.modules.weather._models import Conditions, Outlook, OutlookDay, Units, WeatherSettings
 from heinzel.modules.weather._render import render_outlook
 from heinzel.modules.weather._service import DEFAULT_DAYS, MAX_DAYS, WeatherService
 
@@ -49,6 +49,37 @@ def weather(
     return service.outlook(handle, location, days)
 
 
+# The source of the status item: like `weather` but it asks for a location instead of failing while none is set.
+@module.operation(heads={"cli", "mcp", "web"}, requires=["weather:read"], optional=True, audience="expert")
+def conditions(service: WeatherService, handle: WeatherSource) -> Conditions:
+    """Show the weather now at your primary location, or that a location is still to be set.
+
+    Raises:
+        HeinzelError: If no weather adapter is connected or the adapter fails.
+    """
+    return service.conditions(handle)
+
+
+@module.status(source="conditions", order=800, slots={"footer": True, "sidebar": True})
+def weather_now(result: Conditions) -> StatusItem | None:
+    """The temperature and sky now, linking to the weather page; "Set a location" until a place is named."""
+    if result.needs_location:
+        return StatusItem(text="Set a location", icon="cloud", effect=Navigate(path="/?settings=weather"))
+    outlook = result.outlook
+    if outlook is None:
+        return None
+    degree = outlook.units.degree
+    return StatusItem(
+        text=f"{outlook.temperature:.0f}{degree} {outlook.summary}",
+        icon="cloud",
+        detail=[
+            DetailLine(text=outlook.location),
+            DetailLine(text=f"Feels like {outlook.feels_like:.0f}{degree}"),
+        ],
+        effect=Navigate(path="/weather"),
+    )
+
+
 @module.health
 def locations(service: WeatherService, settings: WeatherSettings, view: CapabilityView) -> list[Check]:
     """A location is set once weather is in use; nothing is asked of any weather service."""
@@ -60,4 +91,4 @@ def locations(service: WeatherService, settings: WeatherSettings, view: Capabili
     return [Check(name="locations", status=Status.DEGRADED, detail="none set", fix=FIX_LOCATION)]
 
 
-__all__ = ["Outlook", "OutlookDay", "Units", "WeatherService", "WeatherSettings", "module"]
+__all__ = ["Conditions", "Outlook", "OutlookDay", "Units", "WeatherService", "WeatherSettings", "module"]

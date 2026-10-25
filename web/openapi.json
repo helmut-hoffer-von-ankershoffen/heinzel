@@ -2253,6 +2253,33 @@
         "title": "CompiledContract",
         "type": "object"
       },
+      "Conditions": {
+        "description": "The weather now at your primary place, or why there is none: what the status bar and sidebar show.",
+        "properties": {
+          "needs_location": {
+            "description": "Whether a weather adapter is connected but no location is set yet.",
+            "title": "Needs Location",
+            "type": "boolean"
+          },
+          "outlook": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Outlook"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The weather now and the next days; none while no location is set."
+          }
+        },
+        "required": [
+          "outlook",
+          "needs_location"
+        ],
+        "title": "Conditions",
+        "type": "object"
+      },
       "ConfigFileInfo": {
         "description": "A configuration file in precedence order.",
         "properties": {
@@ -13625,6 +13652,28 @@
           }
         },
         "summary": "Show the weather now and the next days at your primary location, or at a place you name.",
+        "tags": [
+          "weather"
+        ]
+      }
+    },
+    "/weather/conditions": {
+      "get": {
+        "description": "Show the weather now at your primary location, or that a location is still to be set.\n\nRaises:\n    HeinzelError: If no weather adapter is connected or the adapter fails.",
+        "operationId": "weather_conditions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Conditions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show the weather now at your primary location, or that a location is still to be set.",
         "tags": [
           "weather"
         ]

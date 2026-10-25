@@ -104,6 +104,10 @@ export const useChangelog = (newer: boolean) =>
 export const useInfo = () =>
   useQuery({ queryKey: ["system", "info"], queryFn: () => unwrap(api.GET("/system/info")), staleTime: 10 * 60 * 1000 });
 
+/** `hz weather`: the weather now and the next days at your primary place; the weather page reads it. */
+export const useWeather = () =>
+  useQuery({ queryKey: ["weather"], queryFn: () => unwrap(api.GET("/weather")), refetchInterval: 10 * 60 * 1000 });
+
 /** `hz system theme list`: every theme the plugins offer, the selected one first in effect (ADR 0044). */
 export const useThemes = () =>
   useQuery({ queryKey: ["system", "theme", "list"], queryFn: () => unwrap(api.GET("/system/theme/list")) });

@@ -496,6 +496,7 @@ The weather where you are, from whichever adapter serves the weather capability.
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | Show the weather now and the next days at your primary location, or at a place you name. | `hz weather` | `weather` | — | `GET /api/weather` |  |  |
+| Show the weather now at your primary location, or that a location is still to be set. | `hz weather conditions` | `weather_conditions` | — | `GET /api/weather/conditions` |  | expert |
 
 Settings: [`[weather]`](CONFIGURATION.md#weather).
 

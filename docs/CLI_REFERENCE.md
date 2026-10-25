@@ -33,7 +33,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `system`: Inspect, configure, diagnose and update...
 * `team`: Your team&#x27;s repository: create one (`hz...
 * `ui`: Open the web app in your browser, served...
-* `weather`: Show the weather now and the next days at...
+* `weather`: The weather where you are, from whichever...
 * `zoom`: (expert) Read meetings from Zoom&#x27;s...
 
 ## `hz ai`
@@ -2862,18 +2862,38 @@ $ hz ui [OPTIONS]
 
 ## `hz weather`
 
-Show the weather now and the next days at your primary location, or at a place you name.
+The weather where you are, from whichever adapter serves the weather capability.
 
 **Usage**:
 
 ```console
-$ hz weather [OPTIONS]
+$ hz weather [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Options**:
 
 * `--location <str>`: A place such as &quot;Lisbon, PT&quot; or coordinates such as &quot;38.72,-9.14&quot;; your primary one if left out.
 * `--days <int>`: How many days of forecast, from today; the adapter may give fewer.  [default: 3]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `conditions`: (expert) Show the weather now at your...
+
+### `hz weather conditions`
+
+(expert) Show the weather now at your primary location, or that a location is still to be set.
+
+**Usage**:
+
+```console
+$ hz weather conditions [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

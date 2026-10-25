@@ -5,7 +5,7 @@ import os
 
 from heinzel import DailyForecast, HeinzelError, WeatherReport, WeatherSource
 from heinzel.kernel import CapabilityView, Requirement
-from heinzel.modules.weather._models import Outlook, OutlookDay, Units, WeatherSettings
+from heinzel.modules.weather._models import Conditions, Outlook, OutlookDay, Units, WeatherSettings
 
 WEATHER = Requirement.parse("weather:read")
 IMPERIAL_REGIONS = frozenset({"US", "LR", "MM"})
@@ -71,6 +71,21 @@ class WeatherService:
             raise HeinzelError(msg)
         query = (location or "").strip() or self.primary()
         return convert(weather.report(query), self.units, min(max(days, 1), MAX_DAYS), adapter)
+
+    def conditions(self, weather: WeatherSource) -> Conditions:
+        """The weather now at the primary location; asking for a location instead while none is set.
+
+        Nothing at all (no outlook, no ask) while no weather adapter serves it: the status item then stays away.
+
+        Raises:
+            HeinzelError: If the adapter fails.
+        """
+        adapter, problem = self._view.serves(WEATHER)
+        if adapter is None or problem is not None:
+            return Conditions(outlook=None, needs_location=False)
+        if not self._settings.locations:
+            return Conditions(outlook=None, needs_location=True)
+        return Conditions(outlook=self.outlook(weather, None, 1), needs_location=False)
 
 
 def convert(report: WeatherReport, units: Units, days: int, adapter: str) -> Outlook:

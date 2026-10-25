@@ -61,7 +61,7 @@ def kernel(make_kernel, **config: dict):
 
 def hz(app, *args: str):
     result = CliRunner().invoke(app, [*args, "--json"])
-    return result.exit_code, json.loads(result.output) if result.output.startswith("{") else result.output
+    return result.exit_code, json.loads(result.output) if result.output.startswith(("{", "[")) else result.output
 
 
 def test_any_adapter_serves_the_command_the_core_owns(make_kernel):
@@ -120,3 +120,27 @@ def test_the_web_head_has_it_behind_the_token_and_the_rest_head_does_not(make_ke
     answer = client.get("/api/weather", headers={"Authorization": f"Bearer {TOKEN}"})
     assert answer.status_code == 200, answer.text
     assert answer.json()["summary"] == "sunny"
+
+
+def test_the_weather_shows_in_the_footer_and_sidebar_and_links_to_its_page(make_kernel):
+    app = build(
+        kernel(make_kernel, weather={"locations": ["Oslo"], "units": "metric"}, capabilities={"weather": "almanac"})
+    )
+    code, entries = hz(app, "system", "ui", "status")
+    assert code == 0, entries
+    [entry] = [e for e in entries if e["id"] == "weather:weather-now"]
+    assert entry["problem"] is None, entry
+    assert entry["slots"] == {"footer": True, "sidebar": True}
+    assert entry["item"]["text"] == "21°C sunny"
+    assert entry["item"]["effect"] == {"kind": "navigate", "path": "/weather"}
+
+
+def test_the_status_item_asks_for_a_location_while_none_is_set_and_is_absent_without_an_adapter(make_kernel):
+    app = build(kernel(make_kernel, capabilities={"weather": "almanac"}))
+    _, entries = hz(app, "system", "ui", "status")
+    [entry] = [e for e in entries if e["id"] == "weather:weather-now"]
+    assert entry["item"]["text"] == "Set a location"
+    assert entry["item"]["effect"]["path"] == "/?settings=weather"
+    bare = build(make_kernel(builtins=True))
+    _, entries = hz(bare, "system", "ui", "status")
+    assert next(e for e in entries if e["id"] == "weather:weather-now")["item"] is None

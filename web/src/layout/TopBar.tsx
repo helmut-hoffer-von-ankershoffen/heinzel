@@ -23,6 +23,7 @@ const screens: { path: string; title: MessageKey; command: string }[] = [
   { path: "/inventory/assets", title: "nav.assets", command: "hz heinzel discover" },
   { path: "/doctor", title: "nav.doctor", command: "hz system doctor" },
   { path: "/profile", title: "nav.profile", command: "hz org show" },
+  { path: "/weather", title: "weather.title", command: "hz weather" },
 ];
 
 function useScreen(): { title: string; command: string } {

@@ -293,6 +293,12 @@ const en = {
   "org.intro": "Your manager and direct reports as the directory capability has them. Guesses are marked as guesses.",
   "org.notYet":
     "No operation reads the directory capability yet: declaring one would make the one-on-ones adapter's calendar requirement unmet on every installation without a calendar, so the chart comes with the roster step of setup. See which adapter serves `directory` now:",
+  "weather.title": "Weather",
+  "weather.intro": "The weather now and the next days at your primary place, from the adapter bound to `weather`.",
+  "weather.none": "No weather yet: connect an adapter and name a place.",
+  "weather.feelsLike": "Feels like {value}",
+  "weather.details": "Humidity {humidity}% · wind {wind} {speed} · rain {rain} {length}",
+  "weather.chance": "{percent}% chance of rain",
   "team.title": "Team roster",
   "team.none": "You aren't in a team yet. Join your team's repository, or create one:",
   "team.handle": "Handle",

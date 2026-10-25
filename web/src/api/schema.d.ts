@@ -1714,6 +1714,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/weather/conditions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the weather now at your primary location, or that a location is still to be set.
+         * @description Show the weather now at your primary location, or that a location is still to be set.
+         *
+         *     Raises:
+         *         HeinzelError: If no weather adapter is connected or the adapter fails.
+         */
+        get: operations["weather_conditions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3014,6 +3037,19 @@ export interface components {
              * @description Why your daemon doesn't run it, when it doesn't.
              */
             why_not_scheduled: string | null;
+        };
+        /**
+         * Conditions
+         * @description The weather now at your primary place, or why there is none: what the status bar and sidebar show.
+         */
+        Conditions: {
+            /**
+             * Needs Location
+             * @description Whether a weather adapter is connected but no location is set yet.
+             */
+            needs_location: boolean;
+            /** @description The weather now and the next days; none while no location is set. */
+            outlook: components["schemas"]["Outlook"] | null;
         };
         /**
          * ConfigFileInfo
@@ -7647,6 +7683,7 @@ export type SchemaCheckReport = components['schemas']['CheckReport'];
 export type SchemaClaudeScan = components['schemas']['ClaudeScan'];
 export type SchemaClaudeSummary = components['schemas']['ClaudeSummary'];
 export type SchemaCompiledContract = components['schemas']['CompiledContract'];
+export type SchemaConditions = components['schemas']['Conditions'];
 export type SchemaConfigFileInfo = components['schemas']['ConfigFileInfo'];
 export type SchemaConfigReport = components['schemas']['ConfigReport'];
 export type SchemaConfigRevealed = components['schemas']['ConfigRevealed'];
@@ -10004,6 +10041,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    weather_conditions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Conditions"];
                 };
             };
         };
