@@ -1,12 +1,14 @@
 // What the team graph's lines and cards mean: one swatch per promise state, drawn as its edges are (colour and
 // dashes), and one per kind of node. Never colour alone: the word says it, and the line style does for two states.
-import { Bot, FileText, LayoutList } from "lucide-react";
+
+import { FileText, LayoutList } from "lucide-react";
+import { HeinzelFace } from "@/components/HeinzelFace";
 import { t } from "@/i18n";
 import { STATES } from "./jgf";
 import { edgeLook } from "./layout";
 
 const kinds = [
-  { label: "teamGraph.kind.heinzel", icon: Bot },
+  { label: "teamGraph.kind.heinzel", icon: HeinzelFace },
   { label: "teamGraph.kind.artifact", icon: FileText },
   { label: "teamGraph.kind.group", icon: LayoutList },
 ] as const;

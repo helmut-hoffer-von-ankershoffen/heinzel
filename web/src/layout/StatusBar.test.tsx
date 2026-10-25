@@ -1,8 +1,9 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
+import { footerMode } from "./StatusBar";
 
 const answers = {
   ...shell,
@@ -59,5 +60,61 @@ describe("The status bar's clock", () => {
     expect(clock).toHaveAttribute("aria-expanded", "true");
     await user.keyboard("{Escape}");
     expect(clock).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+describe("The footer on a narrow window", () => {
+  const entry = { module: "system", plugin: null, order: 1, refresh: 60, problem: null };
+  const footerAnswers = {
+    ...answers,
+    "/api/system/ui/status": [
+      {
+        ...entry,
+        id: "system:daemon",
+        slots: { footer: true },
+        item: { text: "Daemon running · next tick 20:45", tone: "ok", icon: "bot" },
+      },
+    ],
+    "/api/org/agenda": { current: null, next: null, problem: "no calendar", fix: null },
+    "/api/org/meeting": null,
+  };
+  const widthBefore = window.innerWidth;
+  afterEach(() => {
+    window.innerWidth = widthBefore;
+  });
+
+  it("picks what to show by width", () => {
+    expect([footerMode(375), footerMode(768), footerMode(1280)]).toEqual(["overflow", "icons", "full"]);
+  });
+
+  it("shows every item whole at 1280, the icon with the text as its tooltip at 768, and keeps the rest under … at 375", async () => {
+    mockApi(footerAnswers);
+    window.innerWidth = 1280;
+    const wide = renderAt("/doctor");
+    const footer = async () => (await screen.findByRole("contentinfo")) as HTMLElement;
+    expect(await within(await footer()).findByText("Daemon running · next tick 20:45")).not.toHaveClass("sr-only");
+    expect(within(await footer()).queryByRole("button", { name: "More status items" })).not.toBeInTheDocument();
+    wide.unmount();
+
+    window.innerWidth = 768;
+    const medium = renderAt("/doctor");
+    const item = await within(await footer()).findByText("Daemon running · next tick 20:45");
+    expect(item).toHaveClass("sr-only");
+    expect(item.closest("button")).toHaveAttribute("title", "Daemon running · next tick 20:45");
+    medium.unmount();
+
+    window.innerWidth = 375;
+    const user = userEvent.setup();
+    const { container } = renderAt("/doctor");
+    const bar = await footer();
+    expect(await within(bar).findByText(/^v0\.4\.0$/)).toBeInTheDocument();
+    expect(
+      await within(bar).findByRole("button", { name: /^\d{2}:\d{2}:\d{2}$|Time for the team/ }),
+    ).toBeInTheDocument();
+    expect(within(bar).queryByText("Daemon running · next tick 20:45")).not.toBeInTheDocument();
+    await user.click(within(bar).getByRole("button", { name: "More status items" }));
+    expect(await within(bar).findByText("Daemon running · next tick 20:45")).toBeInTheDocument();
+    expect(within(bar).getByText("No calendar connected")).toBeInTheDocument();
+    await expectAccessible(container);
   });
 });

@@ -2,13 +2,14 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, Video } from "lucide-react";
+import { CalendarClock, Ellipsis, Video } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useInfo } from "@/api/queries";
 import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
 import { t } from "@/i18n";
+import { useWidth } from "@/lib/useWidth";
 import { cn } from "@/lib/utils";
 import { zoneClock, zoneHour, zoneTime } from "@/lib/zoneTime";
 import { CLOCK_SETTINGS } from "./settingsSections";
@@ -274,61 +275,135 @@ function until(start: Date, now: Date): string {
   return t("status.inHours", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
 }
 
-export function StatusBar() {
-  const info = useInfo();
+/** How the footer shows its items for its width: everything, icons without text, or the lesser ones under "…". */
+export type FooterMode = "full" | "icons" | "overflow";
+const FULL_FROM = 900;
+const ICONS_FROM = 480;
+export const footerMode = (width: number): FooterMode =>
+  width >= FULL_FROM ? "full" : width >= ICONS_FROM ? "icons" : "overflow";
+
+/** The meeting now or next, or why there is none; one line that truncates, whole in its tooltip. */
+function MeetingLine({ now, wrap = false }: { now: Date; wrap?: boolean }) {
   const agenda = useAgenda();
-  const clock = useShown("clock:primary-zone", "footer");
   const meeting = useShown("org:meeting", "footer");
-  const now = useNow();
   const current = agenda.data?.current;
   const next = agenda.data?.next;
+  const line = (text: string) => (
+    <span className="truncate" title={text}>
+      {text}
+    </span>
+  );
   return (
-    <footer className="flex h-[60px] min-w-0 shrink-0 items-center gap-3 border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
-      <span className="flex min-w-0 items-center gap-2">
-        {/* The branding is the sidebar's; here only the version, which opens what changed. */}
-        {info.data && (
-          <Link
-            to="?panel=changelog"
-            title={t("account.changelog")}
-            className="shrink-0 rounded px-1 text-ui-sm hover:bg-accent/60 hover:text-foreground"
-          >
-            v{info.data.version}
-          </Link>
-        )}
-      </span>
+    <span className={cn("flex min-w-0 items-center gap-1.5", wrap ? "w-full" : "shrink")}>
+      {!meeting ? null : current ? (
+        <>
+          <Video aria-hidden className="size-3.5 shrink-0 text-primary" />
+          {line(t("status.current", { title: current.title, end: time(new Date(current.end)) }))}
+          {current.conference_url && (
+            <a
+              href={current.conference_url}
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0 text-primary underline"
+            >
+              {t("status.join")}
+            </a>
+          )}
+        </>
+      ) : next ? (
+        <>
+          <CalendarClock aria-hidden className="size-3.5 shrink-0" />
+          {line(t("status.next", { title: next.title, when: until(new Date(next.start), now) }))}
+        </>
+      ) : agenda.data?.problem ? (
+        <span className="truncate" title={agenda.data.fix ?? t("status.noCalendar")}>
+          {t("status.noCalendar")}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** The "…" button of a narrow footer: what doesn't fit opens above it, stacked. */
+function Overflow({ now }: { now: Date }) {
+  const [open, setOpen] = useState(false);
+  const wrapper = useRef<HTMLSpanElement>(null);
+  const id = useId();
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: MouseEvent) => {
+      if (!wrapper.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", outside);
+    return () => window.removeEventListener("mousedown", outside);
+  }, [open]);
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: Escape closes what the button opens
+    <span
+      ref={wrapper}
+      className="relative shrink-0"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        aria-label={t("status.more")}
+        title={t("status.more")}
+        onClick={() => setOpen((was) => !was)}
+        className="flex size-6 items-center justify-center rounded hover:bg-accent/60 hover:text-foreground"
+      >
+        <Ellipsis aria-hidden className="size-4" />
+      </button>
+      {open && (
+        <section
+          id={id}
+          aria-label={t("status.more")}
+          className="absolute right-0 bottom-full z-40 mb-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
+        >
+          <StatusItems slot="footer" except={NATIVE_FOOTER} stacked />
+          <MeetingLine now={now} wrap />
+        </section>
+      )}
+    </span>
+  );
+}
+
+export function StatusBar() {
+  const info = useInfo();
+  const clock = useShown("clock:primary-zone", "footer");
+  const now = useNow();
+  const footer = useRef<HTMLElement>(null);
+  const mode = footerMode(useWidth(footer));
+  return (
+    <footer
+      ref={footer}
+      className="flex h-[60px] min-w-0 shrink-0 items-center gap-3 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground"
+    >
+      {/* The branding is the sidebar's; here only the version, which opens what changed. It never gives way. */}
+      {info.data && (
+        <Link
+          to="?panel=changelog"
+          title={t("account.changelog")}
+          className="shrink-0 rounded px-1 text-ui-sm hover:bg-accent/60 hover:text-foreground"
+        >
+          v{info.data.version}
+        </Link>
+      )}
       <span aria-hidden className="ml-auto" />
-      <StatusItems slot="footer" except={NATIVE_FOOTER} />
-      <span className="flex min-w-0 items-center gap-1.5">
-        {!meeting ? null : current ? (
-          <>
-            <Video aria-hidden className="size-3.5 shrink-0 text-primary" />
-            <span className="truncate">
-              {t("status.current", { title: current.title, end: time(new Date(current.end)) })}
-            </span>
-            {current.conference_url && (
-              <a
-                href={current.conference_url}
-                target="_blank"
-                rel="noreferrer"
-                className="shrink-0 text-primary underline"
-              >
-                {t("status.join")}
-              </a>
-            )}
-          </>
-        ) : next ? (
-          <>
-            <CalendarClock aria-hidden className="size-3.5 shrink-0" />
-            <span className="truncate">
-              {t("status.next", { title: next.title, when: until(new Date(next.start), now) })}
-            </span>
-          </>
-        ) : agenda.data?.problem ? (
-          <span className="truncate" title={agenda.data.fix ?? undefined}>
-            {t("status.noCalendar")}
-          </span>
-        ) : null}
-      </span>
+      {mode === "overflow" ? (
+        <Overflow now={now} />
+      ) : (
+        <>
+          <StatusItems slot="footer" except={NATIVE_FOOTER} iconOnly={mode === "icons"} />
+          <MeetingLine now={now} />
+        </>
+      )}
       {clock && <Clock now={now} />}
     </footer>
   );

@@ -1,11 +1,13 @@
 // The team graph's nodes: an artifact or a Heinzelmännchen as a card, a group (a tracker and its rows) as a frame.
 // Each card is a link: an artifact opens where it lives, in a new tab; a Heinzelmännchen opens its page, and its
 // chat button opens the chat about it. The state is a word and a line style as well as a colour.
+
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { Bot, FileText, LayoutList, type LucideIcon, MessageSquare } from "lucide-react";
+import { FileText, LayoutList, type LucideIcon, MessageSquare } from "lucide-react";
 import { memo, type ReactNode } from "react";
 import { Link } from "react-router";
 import type { FlowTone } from "@/components/graph/FlowNode";
+import { HeinzelFace } from "@/components/HeinzelFace";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { heinzelId, type PromiseState, type TeamNode } from "./jgf";
@@ -37,7 +39,7 @@ const lineStyle = (state: PromiseState | null) =>
   state === "fell_back" ? "border-dashed" : state === "offline" ? "border-dotted opacity-75" : "border-solid";
 
 export const kindIcon = (node: TeamNode, group = false): LucideIcon =>
-  group ? LayoutList : node.kind === "heinzel" ? Bot : FileText;
+  group ? LayoutList : node.kind === "heinzel" ? HeinzelFace : FileText;
 
 const handle = "!size-1.5 !border-0 !bg-border";
 

@@ -1,10 +1,11 @@
 // Navigation on the left, the screen in the middle, and one panel with the chat and the terminal (ADR 0039, 0045):
 // beside the screen when the window leaves it at least 30rem, below it otherwise; never both at once.
-import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useSearchParams } from "react-router";
 import { ChatProvider } from "@/chat/ChatContext";
 import { t } from "@/i18n";
 import { OPEN_TERMINAL } from "@/lib/terminal";
+import { useWidth } from "@/lib/useWidth";
 import { cn } from "@/lib/utils";
 import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { Onboarding } from "@/onboarding/OnboardingWizard";
@@ -57,24 +58,6 @@ const MAIN_REM = 30;
 /** Whether the panel fits beside the screen in `area`: the area leaves the screen at least 30rem next to it. */
 export function fitsBeside(areaPx: number, remPx: number): boolean {
   return areaPx >= (PANEL_REM + MAIN_REM) * remPx;
-}
-
-/** The width of `ref`'s element as it changes; the window's until it is measured (and where nothing measures). */
-function useWidth(ref: RefObject<HTMLElement | null>): number {
-  const [width, setWidth] = useState(() => window.innerWidth);
-  useEffect(() => {
-    const element = ref.current;
-    const measure = () => setWidth(element?.getBoundingClientRect().width || window.innerWidth);
-    measure();
-    window.addEventListener("resize", measure);
-    const observer = typeof ResizeObserver === "undefined" || !element ? null : new ResizeObserver(measure);
-    if (element) observer?.observe(element);
-    return () => {
-      window.removeEventListener("resize", measure);
-      observer?.disconnect();
-    };
-  }, [ref]);
-  return width;
 }
 
 export function Shell() {
