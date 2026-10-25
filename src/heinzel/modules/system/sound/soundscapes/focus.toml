@@ -1,0 +1,9 @@
+# Focus, a stream on YouTube (ADR 0058): the core's second soundscape, never on by default.
+# Played in YouTube's privacy-enhanced player (youtube-nocookie.com); nothing of YouTube loads until you press Play.
+name = "focus"
+title = "Focus"
+kind = "stream"
+
+[stream]
+provider = "youtube"
+video = "5Le8Mrx3uA0"
