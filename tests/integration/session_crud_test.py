@@ -75,6 +75,16 @@ def test_private_http_flat_body_creation_profile_and_retry_survive_reopened_head
     assert reopened.post("/heinzel/chat", headers=auth, json={**message, "principal_id": "other"}).status_code == 422
 
 
+def test_authenticated_creation_omits_optional_name_and_appearance_and_uses_server_defaults(kernel):
+    client, auth = protected(kernel)
+    response = client.post("/heinzel/new-chat", headers=auth, json={"request_id": "default-name"})
+    assert response.status_code == 200, response.text
+    assert response.json()["name"] == "New Heinzel"
+    assert response.json()["appearance"]["hat"] is None
+    schema = client.get("/openapi.json", headers=auth).json()
+    assert schema["components"]["schemas"]["heinzel_new_chat_Input"]["required"] == ["request_id"]
+
+
 def test_cli_stdio_mcp_and_private_http_share_the_same_saved_personal_look(kernel):
     client, auth = protected(kernel)
     result = client.post(
