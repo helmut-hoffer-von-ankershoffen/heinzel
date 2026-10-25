@@ -62,9 +62,9 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
             `device`) and, for a device, its id in `request.state.device`.
     """
     app = FastAPI(
-        title="🧝 Heinzelmännchen",
+        title="Heinzelmännchen",
         version=__version__,
-        description="Open-source helpers that keep product teams running. Every endpoint is also a `hz` command.",
+        description="Helpers accelerating product teams. Every endpoint is also a `hz` command.",
         docs_url="/docs" if docs else None,
         redoc_url="/redoc" if docs else None,
     )

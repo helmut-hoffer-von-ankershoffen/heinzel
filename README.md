@@ -20,7 +20,7 @@
   </picture>
 </p>
 
-**Heinzelmännchen are open-source helpers that keep product development teams running.** They draft the busywork of
+**Heinzelmännchen are helpers accelerating product teams.** They draft the busywork of
 running a team — status, tracker updates, agendas, reports — in the background, and people approve it. Like the
 [Heinzelmännchen of Cologne](https://en.wikipedia.org/wiki/Heinzelm%C3%A4nnchen), who finished the town's work at
 night. Why it exists and where it is going: [INTENT.md](INTENT.md). It is built on open source, and we are

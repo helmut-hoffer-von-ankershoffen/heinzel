@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaThemeVariant } from "@/api/client";
 import { acmeTheme, shell, themeList } from "@/test/fixtures";
-import { mockApi, renderAt } from "@/test/render";
+import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { backdropCss, coloursOf, variantOf } from "./variants";
 
 const root = () => document.documentElement.style;
@@ -115,15 +115,19 @@ describe("Variants", () => {
   });
 
   it("lets an expert preview each variant under other conditions, without changing the app", async () => {
-    mockApi({
+    const { calls } = mockApi({
       ...shell,
       "/api/system/expert": { ...shell["/api/system/expert"], expert: true },
       "/api/system/theme/list": themeList("default", [acmeTheme, weatherTheme]),
       "/api/system/theme/signals": signals("day"),
     });
     const user = userEvent.setup();
-    renderAt("/doctor?settings=hz");
-    const daypart = await screen.findByRole("combobox", { name: "Daypart" });
+    const { container } = renderAt("/doctor?settings=hz");
+    const daypart = await screen.findByRole("combobox", { name: "Time of day" });
+    expect(within(daypart).getByRole("option", { name: "Daytime" })).toHaveValue("day");
+    expect(screen.getByText(/These controls change the previews only/)).toBeInTheDocument();
+    expect(screen.getByText(/Current weather is unavailable/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use current conditions" })).toBeDisabled();
     const preview = () => screen.getAllByTestId("theme-preview-acme")[1] as HTMLElement;
     expect(preview().style.getPropertyValue("--color-main-tint")).toBe("#f7f4ee");
     await user.selectOptions(daypart, "night");
@@ -131,8 +135,33 @@ describe("Variants", () => {
     expect(preview().style.getPropertyValue("--color-main-tint")).toBe("#dde3ea");
     expect(preview().style.getPropertyValue("--theme-backdrop")).toMatch(/^linear-gradient/);
     expect(root().getPropertyValue("--color-main-tint")).toBe("");
-    await user.click(screen.getByRole("button", { name: "Now" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Weather" }), "");
+    expect(screen.getByRole("option", { name: "No weather condition", selected: true })).toBeInTheDocument();
+    expect(preview().style.getPropertyValue("--color-main-tint")).toBe("#eef0f7");
+    await user.click(screen.getByRole("button", { name: "Use current conditions" }));
     expect(preview().style.getPropertyValue("--color-main-tint")).toBe("#f7f4ee");
     expect(within(screen.getByRole("radiogroup", { name: "Theme" })).getAllByRole("radio")).toHaveLength(2);
+    expect(calls.some((call) => call.method !== "GET")).toBe(false);
+    await expectAccessible(container);
+  });
+
+  it("shows current weather separately from a deliberate no-weather preview", async () => {
+    mockApi({
+      ...shell,
+      "/api/system/expert": { ...shell["/api/system/expert"], expert: true },
+      "/api/system/theme/list": themeList("default", [weatherTheme]),
+      "/api/system/theme/signals": signals("day", "rain"),
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=hz");
+    const weather = await screen.findByRole("combobox", { name: "Weather" });
+    await waitFor(() => expect(weather).toHaveValue("rain"));
+    expect(screen.getByText("Current weather: Rain.")).toBeInTheDocument();
+    await user.selectOptions(weather, "");
+    expect(weather).toHaveValue("");
+    expect(screen.getByText("Current weather: Rain.")).toBeInTheDocument();
+    expect(screen.queryByText(/Current weather is unavailable/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Use current conditions" }));
+    expect(weather).toHaveValue("rain");
   });
 });

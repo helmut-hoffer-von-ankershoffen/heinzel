@@ -24,7 +24,13 @@ const fm: SchemaSoundscapeView = {
     watch_url: "https://www.youtube.com/watch?v=tRsQsTMvPNg",
   },
 };
-const focus: SchemaSoundscapeView = { ...base, name: "focus", title: "Focus", kind: "layers", layers: [] };
+const focus: SchemaSoundscapeView = {
+  ...base,
+  name: "focus",
+  title: "Die Heinzelmännchen",
+  kind: "layers",
+  layers: [],
+};
 
 function list(selected: string): SchemaSoundList {
   return {
@@ -228,7 +234,7 @@ describe("the sound popover", () => {
       within(dialog)
         .getAllByRole("radio")
         .map((r) => r.textContent),
-    ).toEqual(["Off", "Claude FMPlays from YouTube", "Focus"]);
+    ).toEqual(["Off", "Claude FMPlays from YouTube", "Die Heinzelmännchen"]);
     expect(within(dialog).getByRole("link", { name: "More in Settings" })).toHaveAttribute("href", "/?settings=hz");
     await user.click(within(dialog).getByRole("switch", { name: "Softer while I type" }));
     await waitFor(() =>

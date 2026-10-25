@@ -7,11 +7,11 @@ import { Home, Search } from "lucide-react";
 // daypart and weather for the previews only, to see every variant.
 import { type CSSProperties, useId, useState } from "react";
 import type { SchemaThemeView } from "@/api/client";
-import { useExpert, useSetTheme, useThemes } from "@/api/queries";
+import { useExpert, useSetTheme, useThemeSignals, useThemes } from "@/api/queries";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Branding } from "./Branding";
-import { tokens, useDark, useSignals } from "./ThemeTokens";
+import { tokens, useDark } from "./ThemeTokens";
 import { DAYPARTS, type Signals, WEATHERS } from "./variants";
 
 /** The corners index.css derives from the two theme radii, declared again on the preview so they use its radii. */
@@ -43,7 +43,8 @@ export function ThemePreviews() {
   const selected = themes.data?.selected ?? "default";
   const note = change.error?.message ?? themes.data?.note;
   const labelId = useId();
-  const now = useSignals();
+  const current = useThemeSignals();
+  const now: Signals = { daypart: current.data?.daypart, weather: current.data?.weather };
   const expert = useExpert().data?.expert === true;
   const [conditions, setConditions] = useState<Signals | null>(null);
   const signals = conditions ?? now;
@@ -53,7 +54,16 @@ export function ThemePreviews() {
         {t("settings.theme")}
       </p>
       {note && <p className="mt-0.5 text-sm text-muted-foreground">{note}</p>}
-      {expert && <Conditions signals={signals} onChange={setConditions} />}
+      {expert && (
+        <Conditions
+          signals={signals}
+          currentWeather={now.weather}
+          loading={current.isPending}
+          failed={current.isError}
+          customized={conditions !== null}
+          onChange={setConditions}
+        />
+      )}
       <div
         role="radiogroup"
         aria-labelledby={labelId}
@@ -76,40 +86,83 @@ export function ThemePreviews() {
 }
 
 /** Expert mode: the daypart and weather the previews show, instead of the signals now. */
-function Conditions({ signals, onChange }: { signals: Signals; onChange: (signals: Signals | null) => void }) {
+function Conditions({
+  signals,
+  currentWeather,
+  loading,
+  failed,
+  customized,
+  onChange,
+}: {
+  signals: Signals;
+  currentWeather: Signals["weather"];
+  loading: boolean;
+  failed: boolean;
+  customized: boolean;
+  onChange: (signals: Signals | null) => void;
+}) {
+  const hint = useId();
+  const weatherStatus = loading
+    ? t("settings.previewLoading")
+    : failed
+      ? t("settings.previewRefreshFailed")
+      : currentWeather == null
+        ? t("settings.previewWeatherUnavailable")
+        : t("settings.previewCurrentWeather", { weather: t(`settings.preview.weather.${currentWeather}`) });
   return (
-    <fieldset className="mt-2 flex flex-wrap items-center gap-2 text-ui-sm text-muted-foreground">
-      <legend className="sr-only">{t("settings.previewConditions")}</legend>
-      <span aria-hidden>{t("settings.previewConditions")}</span>
-      <select
-        aria-label={t("settings.previewDaypart")}
-        className="rounded-lg border border-border bg-input px-2 py-1 text-foreground"
-        value={signals.daypart ?? ""}
-        onChange={(event) => onChange({ ...signals, daypart: (event.target.value || undefined) as Signals["daypart"] })}
-      >
-        <option value="">—</option>
-        {DAYPARTS.map((part) => (
-          <option key={part} value={part}>
-            {part}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label={t("settings.previewWeather")}
-        className="rounded-lg border border-border bg-input px-2 py-1 text-foreground"
-        value={signals.weather ?? ""}
-        onChange={(event) => onChange({ ...signals, weather: (event.target.value || null) as Signals["weather"] })}
-      >
-        <option value="">—</option>
-        {WEATHERS.map((kind) => (
-          <option key={kind} value={kind}>
-            {kind}
-          </option>
-        ))}
-      </select>
-      <button type="button" className="rounded-lg px-2 py-1 hover:bg-accent" onClick={() => onChange(null)}>
-        {t("settings.previewNow")}
-      </button>
+    <fieldset
+      aria-describedby={hint}
+      className="mt-2 min-w-0 rounded-lg border border-border p-3 text-ui-sm text-muted-foreground"
+    >
+      <legend className="px-1 text-foreground">{t("settings.previewConditions")}</legend>
+      <p id={hint} className="mb-2">
+        {t("settings.previewOnly")}
+      </p>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1">
+          <span>{t("settings.previewDaypart")}</span>
+          <select
+            className="h-9 rounded-lg border border-border bg-input px-2 text-foreground"
+            value={signals.daypart ?? ""}
+            onChange={(event) =>
+              onChange({ ...signals, daypart: DAYPARTS.find((part) => part === event.target.value) })
+            }
+          >
+            <option value="">{t("settings.previewNoDaypart")}</option>
+            {DAYPARTS.map((part) => (
+              <option key={part} value={part}>
+                {t(`settings.preview.daypart.${part}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span>{t("settings.previewWeather")}</span>
+          <select
+            className="h-9 rounded-lg border border-border bg-input px-2 text-foreground"
+            value={signals.weather ?? ""}
+            onChange={(event) =>
+              onChange({ ...signals, weather: WEATHERS.find((kind) => kind === event.target.value) ?? null })
+            }
+          >
+            <option value="">{t("settings.previewNoWeather")}</option>
+            {WEATHERS.map((kind) => (
+              <option key={kind} value={kind}>
+                {t(`settings.preview.weather.${kind}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          disabled={!customized}
+          className="h-9 rounded-lg border border-border px-3 hover:bg-accent disabled:opacity-50"
+          onClick={() => onChange(null)}
+        >
+          {t("settings.previewNow")}
+        </button>
+      </div>
+      <p className="mt-2">{weatherStatus}</p>
     </fieldset>
   );
 }
