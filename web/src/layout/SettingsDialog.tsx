@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
+import { AiAccessSetting } from "./AiAccessSetting";
 import { ConnectorsSection } from "./ConnectorsSection";
 import { FROM_CLAUDE, FromClaudeSection } from "./FromClaudeSection";
 import { PluginsSection, Provenance } from "./PluginsSection";
@@ -216,6 +217,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 <h3 className="mb-1 text-ui font-medium">{t("settings.appearance")}</h3>
                 <ModeRow />
                 <ThemePreviews />
+                <AiAccessSetting />
                 <div className="mt-6">
                   <NotificationSettings />
                 </div>
