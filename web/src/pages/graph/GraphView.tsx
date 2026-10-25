@@ -165,7 +165,7 @@ export function GraphView() {
       <Loaded query={query}>
         {(graph) =>
           graph === null || graph.nodes.length === 0 ? (
-            <Empty text={t("teamGraph.empty")} commands={["hz graph"]} />
+            <Empty text={t("teamGraph.empty")} commands={["hz graph"]} gnome={{ age: "baby" }} />
           ) : (
             <TeamGraphBody graph={graph} />
           )

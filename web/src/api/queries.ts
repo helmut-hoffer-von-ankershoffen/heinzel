@@ -19,6 +19,12 @@ export const keys = {
 export const useDoctor = () => useQuery({ queryKey: keys.doctor, queryFn: () => unwrap(api.GET("/system/doctor")) });
 export const useConfig = () =>
   useQuery({ queryKey: keys.config, queryFn: () => unwrap(api.GET("/system/config/show")) });
+/** Whether the Heinzelmännchen play along: `hz system config set playful false` (Settings → General) turns them off. */
+export function usePlayful(): boolean {
+  const config = useConfig();
+  const value = config.data?.settings.find((s) => s.section === "hz" && s.key === "playful")?.value;
+  return config.data !== undefined && value !== false;
+}
 export const useProfile = () => useQuery({ queryKey: keys.profile, queryFn: () => unwrap(api.GET("/org/show")) });
 export const useTeam = () => useQuery({ queryKey: keys.team, queryFn: () => unwrap(api.GET("/team/show")) });
 /** `hz heinzel list`: your Heinzelmännchen, one per contract; the sidebar and search read the same list. */
