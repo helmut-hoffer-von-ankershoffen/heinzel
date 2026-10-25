@@ -169,11 +169,14 @@ def test_widget_shapes_have_limits():
         ProgressWidget(label="x", done=0, total=0)
 
 
-def test_operation_arguments_are_named_scalars():
+def test_operation_arguments_are_named_bounded_json_values():
     effect = RunOperation(operation="sync", arguments={"dry_run": True, "limit": 3, "who": "acme"})
     assert effect.call is None
+    assert RunOperation(operation="sync", arguments={"nested": {"a": [1, None]}}).arguments == {
+        "nested": {"a": [1, None]}
+    }
     with pytest.raises(ValidationError):
-        RunOperation(operation="sync", arguments={"nested": {"a": 1}})  # type: ignore[dict-item]
+        RunOperation(operation="sync", arguments={f"p{i}": i for i in range(33)})
     with pytest.raises(ValidationError):
         RunOperation(operation="sync", arguments={"Bad-Name": 1})
     with pytest.raises(ValidationError):
@@ -277,3 +280,21 @@ def test_badges_are_counts_or_short_texts():
     for wrong in (True, -1, "12345", 1.5):
         with pytest.raises(ValidationError):
             badge.validate_python(wrong)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_operation_arguments_are_finite_json_scalars(value):
+    with pytest.raises(ValidationError):
+        RunOperation(operation="change", arguments={"limit": value})
+
+
+@pytest.mark.parametrize("value", [float("nan"), {"nested": float("inf")}, [float("-inf")]])
+def test_operation_arguments_refuse_nonfinite_nested_json(value):
+    with pytest.raises(ValidationError, match="finite JSON"):
+        RunOperation(operation="change", arguments={"value": value})
+
+
+@pytest.mark.parametrize("value", ["x" * 16385, [[[[[[[[[[0]]]]]]]]]]])
+def test_operation_arguments_refuse_unbounded_size_or_depth(value):
+    with pytest.raises(ValidationError, match="at most"):
+        RunOperation(operation="change", arguments={"value": value})

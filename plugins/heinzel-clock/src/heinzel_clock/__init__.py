@@ -24,12 +24,20 @@ from heinzel import (
     Module,
     ModuleSettings,
     Navigate,
+    NavSettings,
     Prompter,
     Status,
     StatusItem,
 )
 
 module = Module("clock", "World Clock: what time it is for everyone on the team.")
+
+module.nav(
+    title="World Clock",
+    icon="clock",
+    settings=NavSettings(sections=("clock",), group="customize"),
+    sidebar=Navigate(path="/?panel=world-clock"),
+)
 
 DEFAULT_HOURS = (9, 18)
 DEFAULT_ZONES = ("Europe/Berlin", "America/New_York", "America/Los_Angeles")

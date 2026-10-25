@@ -23,6 +23,8 @@ from heinzel.kernel._contributions import (
     ContributionLet,
     Icon,
     Navigate,
+    NavLet,
+    NavSettings,
     OpenUrl,
     RunCommand,
     RunOperation,
@@ -818,7 +820,30 @@ class Module:
         self._contribute("action", let)
         return let
 
-    def _contribute(self, kind: str, let: ContributionLet) -> None:
+    def nav(  # noqa: PLR0913 - static data of one navigation entry, by keyword
+        self,
+        name: str = "main",
+        *,
+        title: str,
+        icon: Icon,
+        order: int = ORDER_DEFAULT,
+        settings: NavSettings | None = None,
+        sidebar: Navigate | OpenUrl | RunOperation | RunCommand | None = None,
+    ) -> NavLet:
+        """Declare checked Settings/sidebar metadata; no new page or plugin renderer is registered (ADR 0072).
+
+        Settings prefixes must belong to this module or its descendants and have active settings. The consumer
+        verifies them after discovery, resolves any sidebar operation through the same contribution effect gate,
+        and omits unavailable providers. Existing Settings declarations retain a generic compatibility entry.
+
+        Raises:
+            ValueError: If a value or target is invalid, the name is duplicated, or four entries already exist.
+        """
+        let = NavLet(name=name, title=title, icon=icon, order=order, settings=settings, sidebar=sidebar)
+        self._contribute("nav", let)
+        return let
+
+    def _contribute(self, kind: str, let: ContributionLet | NavLet) -> None:
         limit = MAX_PER_MODULE[kind]
         if sum(isinstance(existing, type(let)) for existing in self._lets) >= limit:
             msg = f"Module {self.name!r} offers {limit} {kind} contributions already, the most one module may"

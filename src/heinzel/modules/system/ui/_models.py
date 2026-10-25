@@ -4,7 +4,7 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
-from heinzel import Icon, ModuleSettings, Slot, StatusItem, Widget
+from heinzel import Icon, ModuleSettings, NavSettings, Slot, StatusItem, Widget
 from heinzel.kernel import Badge, Effect
 
 Kind = Literal["status", "action", "widget"]
@@ -74,3 +74,22 @@ class ContributionInfo(BaseModel):
     title: str = Field(description="What people know it by: the action's label, or its name in words.")
     slots: dict[Slot, bool] = Field(description="Each slot it may show in, and whether it does now.")
     defaults: dict[Slot, bool] = Field(description="Each slot and whether it shows there unless the person decides.")
+
+
+class NavEntry(BaseModel):
+    """Checked navigation metadata from one active provider, without running an operation."""
+
+    id: str = Field(
+        description="Stable `<qualified-module>:<name>` identity; legacy Settings use reserved `:@settings`."
+    )
+    module: str = Field(description="The qualified module that declared this entry.")
+    declared: bool = Field(description="True for an explicit NavLet; false for generic legacy Settings metadata.")
+    plugin: str | None = Field(description="Its distribution, or none for a built-in provider.")
+    title: str = Field(description="The provider's checked display title.")
+    icon: Icon = Field(description="The provider's checked semantic icon.")
+    order: int = Field(description="Display order; ties are sorted by stable id.")
+    settings: NavSettings | None = Field(default=None, description="Owned Settings prefixes and their group.")
+    sidebar: Effect | None = Field(
+        default=None, description="The canonical sidebar effect; no new route is registered."
+    )
+    problem: str | None = Field(default=None, description="Why this declaration has no executable target.")
