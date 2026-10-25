@@ -487,6 +487,7 @@ const en = {
   "device.forgetHint": "Forget this browser's token; the next link from `hz ui` pairs it again.",
   "notFound.title": "Nothing here",
   "notFound.back": "Go home",
+  "notFound.guide": "This way, not that way.",
   "workflow.intro":
     "What hz knows of your workflow: the systems you connected, the assets playbooks keep and discovery finds, your contracts and the ones playbooks suggest, and what they maintain. Select a node for its details and its command.",
   "workflow.graph": "Workflow graph",
