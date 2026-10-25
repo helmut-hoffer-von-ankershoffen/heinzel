@@ -1,7 +1,8 @@
 name: Claude review
 
-# Opt-in: runs the reviewer agents on pull requests through the review skill, on a Claude subscription. Enable with
-# the secret CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) and the repository variable CLAUDE_REVIEW=true.
+# Opt-in: runs the reviewer agents on pull requests through the review skill. Enable with the repository variable
+# CLAUDE_REVIEW=true and the secret ANTHROPIC_API_KEY (billed per token by the Anthropic API). Without that key it
+# falls back to the secret CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`), which runs on a Claude subscription.
 # Pull requests from forks get no secrets, so they are skipped, and so are events sent by bots (the action refuses
 # them): the update-prs merge of main into a branch, a release pull request opened by the bot.
 
@@ -48,7 +49,8 @@ jobs:
       - if: steps.tier.outputs.tier == 'light'
         uses: anthropics/claude-code-action@ae68417a745a5df4b2124873632bd73a2255e6f6 # v1.0.259
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
           github_token: ${{ github.token }}
           claude_args: --model haiku
           prompt: |
@@ -58,7 +60,8 @@ jobs:
       - if: steps.tier.outputs.tier == 'full'
         uses: anthropics/claude-code-action@ae68417a745a5df4b2124873632bd73a2255e6f6 # v1.0.259
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY == '' && secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
           github_token: ${{ github.token }} # comment as github-actions; no separate GitHub App needed
           claude_args: --model sonnet
           prompt: |

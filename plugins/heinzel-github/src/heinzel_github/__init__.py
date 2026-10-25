@@ -6,6 +6,8 @@ adapter `github` for the capabilities `code-host` and `tracker` in read mode (AD
 through the GitHub CLI `gh`, which owns authentication: run `gh auth login` once.
 """
 
+from pathlib import Path
+
 from heinzel import Check
 from heinzel.kernel import CapabilityView
 from heinzel_github._adapter import GitHub
@@ -17,6 +19,7 @@ from heinzel_github._service import GithubService
 module.settings(GithubSettings)
 module.service(GithubService)
 module.service(Gh)
+module.skill(Path(__file__).parent / "skills")  # advice for AI, read-only (ADR 0061)
 
 
 def hosts(settings: GithubSettings) -> list[str]:
@@ -45,6 +48,12 @@ def system_info(service: GithubService) -> GithubAbout:
 def health(service: GithubService, view: CapabilityView) -> list[Check]:
     """Whether `gh` is installed and logged in, and the bindings; never a request to GitHub."""
     return service.checks(view)
+
+
+@module.health(live=True)
+def live(service: GithubService) -> list[Check]:
+    """Ask GitHub who `gh` is logged in as: one read, run only by `hz system connector test github`."""
+    return service.live()
 
 
 __all__ = [

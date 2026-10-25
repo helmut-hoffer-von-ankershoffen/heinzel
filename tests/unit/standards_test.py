@@ -15,6 +15,7 @@ from typing import get_origin
 import heinzel_atlassian
 import heinzel_clock
 import heinzel_github
+import heinzel_google
 import heinzel_zoom
 import pytest
 from packaging.requirements import Requirement
@@ -97,12 +98,17 @@ CORE_ONLY = {  # path: why plugins don't get it
     ".claude/skills/codify/SKILL.md": "adds checks to Heinzelmännchen's standards_test.py; plugins inherit them",
     ".claude/skills/raise-the-bar/SKILL.md": "audits Heinzelmännchen's own areas before a release",
     ".claude/skills/scaffold-plugin/SKILL.md": "creates plugins; a plugin updates itself with update-template",
+    "scripts/attributions.py": "writes ATTRIBUTIONS.md of the core and its web app; plugins bundle nothing",
     "scripts/demo.sh": "renders the README demo with hz's own commands; plugins have no demo tape",
     "scripts/demo_tape.py": "assembles the README demo from the core intro and its modules' snippets",
     "scripts/generate_docs.py": "generates Heinzelmännchen's CLI, module and configuration reference",
+    "scripts/notifier.py": "builds Heinzel Notifier, the core's macOS notifier app (ADR 0043); plugins have none",
+    "scripts/terminal_art.py": "draws Heinzelmännchen for the terminal from the web app's drawing; plugins bring none",
     "scripts/sync_template.py": "generates the template from Heinzelmännchen's files",
     "scripts/template-test.sh": "renders and checks the template",
     "scripts/template_pyproject_head.toml.tmpl": "input of sync_template.py",
+    "scripts/web.py": "the web head's typed client and dev server (web/, ADR 0039); plugins bring no UI",
+    "scripts/web_build.py": "runs and builds the web head's app (web/, ADR 0039); plugins bring no UI",
 }
 
 
@@ -177,6 +183,7 @@ NOT_SETTINGS = {  # names or prefixes that aren't settings of Heinzelmännchen's
     "HZ_URL": "a constant in tests/e2e/docs_test.py, not a variable",
     "HZ_CREDENTIAL_": "credentials in the environment fallback, named per declared credential (ADR 0030)",
     "HZ_EXAMPLE__": "settings of the `example` module tests define",
+    "HZ_WORKFLOW__": "the heinzel module's old prefix, read for one minor release (ADR 0051)",
     "HZ_A_B__": "the variable prefix of a module named `a-b`, in a test of env_prefix",
     "HZ_SYSTEM_CHANGELOG__": "the variable prefix of a nested module, in a test of env_prefix",
 }
@@ -207,6 +214,7 @@ def test_tests_and_template_use_only_variables_something_reads(make_kernel):
         atlassian=heinzel_atlassian.module,
         clock=heinzel_clock.module,
         github=heinzel_github.module,
+        google=heinzel_google.module,
         zoom=heinzel_zoom.module,
     )
     known = {
@@ -362,6 +370,7 @@ def test_injected_parameters_come_first(make_kernel):
                 atlassian=heinzel_atlassian.module,
                 clock=heinzel_clock.module,
                 github=heinzel_github.module,
+                google=heinzel_google.module,
                 zoom=heinzel_zoom.module,
             )
         )

@@ -323,10 +323,68 @@ def test_the_view_says_which_adapter_would_serve_a_requirement_without_building_
 
 
 def test_an_unbound_capability_fails_with_the_binding_to_write(make_kernel):
-    kernel = make_kernel(notes=notes_module(), digest=digest_module())
+    kernel = make_kernel(notes=notes_module(), digest=digest_module(), config=bind(documents="none"))
     fix = r"Bind an installed adapter \(notes\): hz system config set capabilities.documents notes$"
     with pytest.raises(HeinzelError, match=rf"no adapter bound. {fix}"):
         run(kernel, "digest", "show")
+
+
+def test_an_unserved_optional_operation_is_injected_and_refused_only_when_it_calls(make_kernel):
+    module = Module("footer", "Degrades when nothing serves documents.")
+
+    @module.operation(requires=["documents:read"], optional=True)
+    def peek(documents: Documents, view: CapabilityView) -> str:
+        """Read a document if one is served."""
+        _, problem = view.serves(Requirement.parse("documents:read"))
+        return f"unserved: {problem}" if problem else documents.read("weekly").title
+
+    kernel = make_kernel(notes=notes_module(), footer=module, digest=digest_module(), config=bind(documents="none"))
+    assert run(kernel, "footer", "peek") == "unserved: no adapter bound"
+    assert repr(kernel._capabilities.handle(CAPABILITIES["documents"], operation(kernel, "footer", "peek").func)) == (
+        "<documents:unserved for footer peek>"
+    )
+    with pytest.raises(HeinzelError, match=r"digest count needs documents:read: no adapter bound"):
+        kernel._capabilities.handle(CAPABILITIES["documents"], operation(kernel, "digest", "count").func)
+    [use] = [use for use in kernel.resolve(CapabilityView).matrix() if use.requester == "footer peek"]
+    assert (use.optional, use.problem) == (True, "no adapter bound")
+
+
+def optional_digest() -> Module:
+    module = Module("optional", "Reads documents optionally, and its module's too.", requires=["tracker:read"])
+
+    @module.operation(requires=["documents:read"], optional=True)
+    def peek(documents: Documents) -> str:
+        """Read a document through its own optional requirement."""
+        return documents.read("weekly").title
+
+    @module.operation(optional=True)
+    def inherited(tracker: Tracker) -> int:
+        """Read issues through the module's requirement, which optional doesn't cover."""
+        return len(tracker.issues_updated("APP", WINDOW))
+
+    return module
+
+
+def test_an_optional_operation_is_refused_at_injection_for_what_it_only_inherits(make_kernel):
+    kernel = make_kernel(optional=optional_digest())
+    with pytest.raises(HeinzelError, match=r"optional inherited needs tracker:read: no adapter bound"):
+        kernel._capabilities.handle(CAPABILITIES["tracker"], operation(kernel, "optional", "inherited").func)
+
+
+def test_a_served_optional_operation_gets_the_real_handle(make_kernel):
+    kernel = make_kernel(notes=notes_module(), optional=optional_digest(), config=bind(documents="notes"))
+    handle = kernel._capabilities.handle(CAPABILITIES["documents"], operation(kernel, "optional", "peek").func)
+    assert repr(handle) == "<documents:read for optional peek>"
+    assert run(kernel, "optional", "peek") == "notes:weekly"
+
+
+def test_a_publish_operation_cant_be_optional():
+    with pytest.raises(ValueError, match="can't make its requirements optional"):
+
+        @Module("bad", "Publishes optionally.").operation(read_only=False, requires=["documents:write"], optional=True)
+        def publish(documents: Documents) -> str:
+            """Write."""
+            return documents.replace_section("weekly", "summary", "x").ref
 
 
 def test_a_binding_to_an_unknown_adapter_fails(make_kernel):
@@ -587,7 +645,8 @@ def test_a_publish_operation_that_declared_chat_write_posts(talking):
 
 
 @pytest.mark.parametrize(
-    ("capability", "method"), [("meetings", "transcripts"), ("calendar", "events"), ("chat", "messages")]
+    ("capability", "method"),
+    [("meetings", "transcripts"), ("calendar", "events, free_busy"), ("chat", "messages")],
 )
 def test_an_adapter_class_must_define_every_read_method_of_the_new_capabilities(make_kernel, capability, method):
     class Partial:
@@ -928,3 +987,51 @@ def test_a_binding_is_defaulted_only_while_no_file_or_variable_sets_it(make_kern
     assert not explicit.defaulted("agent-runner")
     monkeypatch.setenv("HZ_CAPABILITIES__DIRECTORY", "one-on-ones")
     assert not make_kernel().resolve(CapabilityView).defaulted("directory")
+
+
+def test_the_only_installed_adapter_serves_its_capability_automatically(make_kernel):
+    kernel = make_kernel(notes=notes_module(), digest=digest_module())
+    view = kernel.resolve(CapabilityView)
+    assert view.binding("documents") == ("notes", "automatic")
+    assert view.binding("tracker") == (None, "unbound")
+    assert view.serves(Requirement("documents", frozenset({"read"}))) == ("notes", None)
+
+
+def test_two_installed_adapters_leave_the_choice_to_the_person(make_kernel):
+    kernel = make_kernel(notes=notes_module(), wiki=notes_module(name="wiki"), digest=digest_module())
+    assert kernel.resolve(CapabilityView).binding("documents") == (None, "unbound")
+
+
+def test_none_turns_an_automatic_choice_off_and_a_configured_one_wins(make_kernel):
+    off = make_kernel(notes=notes_module(), config=bind(documents="none")).resolve(CapabilityView)
+    assert off.binding("documents") == (None, "off")
+    assert ("documents", "none") not in off.unknown_bindings()
+    chosen = make_kernel(notes=notes_module(), wiki=notes_module(name="wiki"), config=bind(documents="wiki"))
+    assert chosen.resolve(CapabilityView).binding("documents") == ("wiki", "configured")
+
+
+def test_a_default_stays_the_default_and_counts_as_defaulted(make_kernel):
+    view = make_kernel(notes=notes_module()).resolve(CapabilityView)
+    assert view.binding("agent-runner") == ("claude-code", "default")
+    assert view.defaulted("agent-runner")
+
+
+def test_the_only_adapter_named_like_the_default_is_the_default_not_automatic(make_kernel):
+    module = Module("guesses", "Provides the default directory for tests.")
+    module.provides("directory", modes={"read"}, name="one-on-ones")(Notes)
+    view = make_kernel(guesses=module).resolve(CapabilityView)
+    assert view.binding("directory") == ("one-on-ones", "default")
+    assert view.defaulted("directory")
+
+
+def test_mail_is_never_bound_automatically(make_kernel):
+    module = Module("inbox", "Provides mail for tests.")
+    module.provides("mail", modes={"read"})(Notes)
+    view = make_kernel(inbox=module).resolve(CapabilityView)
+    assert view.binding("mail") == (None, "unbound")
+
+
+@pytest.mark.parametrize("value", ["none", ""])
+def test_none_or_empty_turns_off_even_a_capability_with_a_default(make_kernel, value):
+    view = make_kernel(config=bind(agent_runner=value)).resolve(CapabilityView)
+    assert view.binding("agent-runner") == (None, "off")

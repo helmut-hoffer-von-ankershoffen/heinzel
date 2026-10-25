@@ -38,7 +38,7 @@ class OrgContext:
     """The team a person belongs to; a module provides a subclass (the `team` module in the core).
 
     A base class rather than a protocol, so that the kernel can inject it by type like any other service. Only what
-    readers need today is here; org, company and site layers add methods when they exist. The team repository only
+    readers need today is here. The team repository only
     holds data: nothing in it binds a capability, stores a credential, installs a plugin or schedules a contract.
     """
 
@@ -53,3 +53,50 @@ class OrgContext:
     def recommendations(self) -> tuple[Recommendation, ...]:
         """What the person's team repository recommends; nothing by default."""
         return ()
+
+    def layer(self) -> str | None:
+        """The layer the person's team declares (ADR 0040), by its module name or its plugin's name.
+
+        E.g. `acme-payments-checkout` or `heinzel-acme-payments-checkout`; the kernel stacks the installed
+        layers from it (`Kernel.layer_stack`). None, the default, when nothing
+        declares one; the kernel then takes the only team layer installed.
+
+        Raises:
+            HeinzelError: If the team's declaration can't be read; the kernel reports it and stacks what is installed.
+        """
+        return None
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class TeamPromise:
+    """What one team contract promises the team: the artifact it keeps, what it reads, and when (ADR 0054).
+
+    The part of a team contract every member sees and holds it to; its body, its drafts and how its user runs it stay
+    with that user.
+    """
+
+    contract: str
+    """Its qualified name, `team:<name>`."""
+    title: str
+    version: str
+    """The author's `version` when it has one, else the file's `sha256:<hex>`."""
+    schedule: str | None
+    """Five cron fields in the runner's local time, or a shortcut such as `@daily`; None when it runs only by hand."""
+    writes: str
+    """The artifact it keeps true, as inputs name it: `contract:team/<name>#<output>`."""
+    reads: tuple[str, ...] = ()
+    """The team artifacts it reads, as `contract:team/<name>#<output>`; capability reads are not team artifacts."""
+    publishes: tuple[str, ...] = ()
+    """The publish operations its draft is meant for, `<module>.<operation>`."""
+
+
+class TeamPromises:
+    """The promises your team's contracts make: a module provides a subclass (`workflow` in the core)."""
+
+    def promises(self) -> tuple[TeamPromise, ...]:
+        """Every valid team contract's promise, by contract name; nothing without a team.
+
+        Raises:
+            NotImplementedError: Always; subclasses read the team's contracts.
+        """
+        raise NotImplementedError

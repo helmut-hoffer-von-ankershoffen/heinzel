@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from heinzel import Budget, HeinzelError, ToolProfile
+from heinzel import Budget, HeinzelError, McpServer, ToolProfile
 from heinzel.modules.system.runner._command import CommandRunner, environment, placeholders, read_output, render
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import Outcome
@@ -271,3 +271,32 @@ def test_a_missing_command_executable_or_working_directory_says_how_to_fix_it(tm
         run(CommandRunner(RunnerSettings(command=["mytool"], **TRUSTED), execute=FakeCli(), which=lambda _: None))
     with pytest.raises(HeinzelError, match="does not exist"):
         run(runner(FakeCli()), tools=ToolProfile(working_dir=tmp_path / "gone"))
+
+
+def test_a_profile_with_mcp_servers_writes_their_config_for_the_command(tmp_path):
+    fake = FakeCli()
+    command = ["mytool", "run", "--prompt", "{prompt_file}", "--mcp={mcp_config}"]
+    server = McpServer(command=["/usr/bin/python3", "-m", "heinzel", "system", "serve", "mcp", "--chat", "ab"])
+    result = run(runner(fake, command=command), tools=ToolProfile(tools=["read"], mcp_servers={"hz": server}))
+    assert json.loads(fake.files["mcp.json"])["mcpServers"]["hz"]["args"] == server.command[1:]
+    assert result.warnings == []
+
+
+def test_a_command_without_the_mcp_placeholder_says_its_agent_had_no_hz_tools():
+    server = McpServer(command=["/usr/bin/python3"])
+    result = run(runner(FakeCli()), tools=ToolProfile(tools=["read"], mcp_servers={"hz": server}))
+    assert result.warnings == ["the command takes no {mcp_config}, so the agent had no tools of hz"]
+
+
+def test_a_profile_without_file_tools_says_the_command_decides_them():
+    result = run(runner(FakeCli()), tools=ToolProfile(read_files=False))
+    assert result.warnings == ["the command decides its agent's file tools itself; this run asked for none"]
+
+
+def test_a_run_s_model_fills_the_placeholder_and_an_effort_is_a_warning():
+    fake = FakeCli()
+    target = runner(fake, command=["mytool", "--model", "{model}"], model="deep")
+    result = run(target, model="quick", effort="high")
+    assert fake.command[1:] == ["--model", "quick"]
+    assert result.model == "quick"
+    assert any("effort high" in warning for warning in result.warnings)

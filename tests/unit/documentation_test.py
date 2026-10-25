@@ -10,6 +10,7 @@ from urllib.parse import quote
 import heinzel_atlassian
 import heinzel_clock
 import heinzel_github
+import heinzel_google
 import heinzel_zoom
 import pytest
 from pydantic import BaseModel, Field
@@ -22,10 +23,14 @@ from heinzel.modules.system.agent._service import parse_frontmatter
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
+# Vite removes/recreates this ignored output during parallel preflight; it is not authored documentation.
+WEB_BUILD = REPO / "src/heinzel/heads/web/static"
 MARKDOWN = sorted(
     p
     for p in REPO.rglob("*.md")
-    if not {".venv", "node_modules", ".pytest_cache", "worktrees"} & set(p.relative_to(REPO).parts) and p.is_file()
+    if not {".venv", "node_modules", ".pytest_cache", "worktrees"} & set(p.relative_to(REPO).parts)
+    and not p.is_relative_to(WEB_BUILD)
+    and p.is_file()
 )
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 # Links to GitHub pages of the repository, not to files in it. GitHub resolves them against the document's URL
@@ -104,7 +109,10 @@ def test_python_badge_lists_the_versions_pyproject_declares():
 
 @pytest.mark.parametrize("page", TEMPLATE_BADGE_PAGES)
 def test_plugins_show_the_same_badges_for_their_own_repository(page):
-    ours = badge_block(REPO / "README.md").replace("helmut-hoffer-von-ankershoffen/heinzel", "OWNER/REPO")
+    # The OpenSSF Best Practices badge is this repository's registration; a plugin registers on its own.
+    ours = "".join(
+        line for line in badge_block(REPO / "README.md").splitlines(keepends=True) if "bestpractices.dev" not in line
+    ).replace("helmut-hoffer-von-ankershoffen/heinzel", "OWNER/REPO")
     theirs = badge_block(REPO / "template" / page).replace("[[ github_owner ]]/[[ project_name ]]", "OWNER/REPO")
     assert theirs == ours
 
@@ -181,6 +189,7 @@ def test_every_parameter_setting_and_module_is_described(make_kernel):
         atlassian=heinzel_atlassian.module,
         clock=heinzel_clock.module,
         github=heinzel_github.module,
+        google=heinzel_google.module,
         zoom=heinzel_zoom.module,
     )  # first-party plugins too
     missing = [r.qualname for r in kernel.modules if not r.module.summary]
@@ -227,7 +236,7 @@ def test_finds_undescribed_result_fields():
 
 
 SUMMARY_LIMIT = 100
-PLURAL_MODULE_NAMES: set[str] = set()  # module names that are rightly plural; none yet
+PLURAL_MODULE_NAMES: set[str] = {"access"}  # names ending in s that are singular or rightly plural
 
 
 def summary_problems(summary: str) -> list[str]:
@@ -254,6 +263,7 @@ def test_operation_summaries_are_one_short_sentence_and_module_names_singular(ma
         atlassian=heinzel_atlassian.module,
         clock=heinzel_clock.module,
         github=heinzel_github.module,
+        google=heinzel_google.module,
         zoom=heinzel_zoom.module,
     )  # first-party plugins too
     problems = [

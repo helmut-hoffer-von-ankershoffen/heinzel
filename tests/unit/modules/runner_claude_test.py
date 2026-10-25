@@ -6,8 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from heinzel import Budget, HeinzelError, ToolProfile
-from heinzel.modules.system.runner._claude import ClaudeCodeRunner, parse_events
+from heinzel import Budget, HeinzelError, McpServer, Progress, Status, ToolProfile
+from heinzel.modules.system.runner._claude import (
+    LEAN_PROMPT,
+    SIGN_IN,
+    ClaudeCodeRunner,
+    auth_status,
+    login_check,
+    parse_events,
+)
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import Outcome
 
@@ -87,6 +94,7 @@ def test_runs_claude_isolated_from_the_users_setup_with_a_read_only_profile(monk
         "--output-format",
         "stream-json",
         "--verbose",
+        "--include-partial-messages",
         "--safe-mode",
         "--restricted",
         "--disable-slash-commands",
@@ -119,6 +127,59 @@ def test_runs_claude_isolated_from_the_users_setup_with_a_read_only_profile(monk
     assert env["KEEP_ME"] == "1"
     assert env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] == "1"
     assert env["DISABLE_AUTOUPDATER"] == "1"
+
+
+def test_mcp_servers_go_into_a_private_config_file_and_replace_safe_mode(tmp_path):
+    fake = FakeExecute()
+    seen: dict[str, object] = {}
+
+    def capture(command: list[str], **kwargs: object) -> Outcome:
+        path = Path(command[command.index("--mcp-config") + 1])
+        seen["config"] = json.loads(path.read_text(encoding="utf-8"))
+        seen["mode"] = oct(path.parent.stat().st_mode & 0o777)
+        return fake(command, **kwargs)
+
+    server = McpServer(command=["/usr/bin/python3", "-m", "heinzel", "system", "serve", "mcp", "--chat", "ab12"])
+    tools = ToolProfile(working_dir=tmp_path, mcp_servers={"hz": server})
+    target = ClaudeCodeRunner(RunnerSettings(), execute=capture, which=lambda name: f"/bin/{name}")
+    run(target, tmp_path, tools=tools)
+    [(command, _)] = fake.calls
+    assert "--safe-mode" not in command, "Claude Code loads no --mcp-config server under --safe-mode"
+    assert command[command.index("--setting-sources") + 1] == ""
+    assert {"--restricted", "--strict-mcp-config", "--disable-slash-commands"} <= set(command)
+    assert command[command.index("--allowed-tools") + 1] == "Read,Grep,Glob,mcp__hz"
+    assert command[command.index("--tools") + 1] == "Read,Grep,Glob"
+    assert seen["mode"] == "0o700"
+    assert seen["config"] == {
+        "mcpServers": {"hz": {"type": "stdio", "command": "/usr/bin/python3", "args": server.command[1:], "env": {}}}
+    }
+
+
+def test_streams_text_deltas_and_tool_calls_to_the_progress_emitter():
+    events: list[tuple[str, dict[str, object]]] = []
+
+    class Listening(Progress):
+        def emitter(self):  # type: ignore[override]
+            return lambda kind, data: events.append((kind, dict(data)))
+
+    lines = [
+        json.dumps({"type": "stream_event", "event": {"delta": {"type": "text_delta", "text": "The "}}}),
+        json.dumps({"type": "stream_event", "event": {"delta": {"type": "input_json_delta", "partial_json": "{"}}}),
+        json.dumps({"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "mcp__hz__x"}]}}),
+        "not json",
+        json.dumps(["a list"]),
+        json.dumps({"type": "stream_event", "event": {"delta": {"type": "text_delta", "text": "week"}}}),
+    ]
+
+    def execute(command: list[str], **kwargs: object) -> Outcome:
+        on_line = kwargs["on_line"]
+        for line in lines:
+            on_line(line + "\n")  # type: ignore[operator]
+        return Outcome(returncode=0, stdout=stream(EVENTS), stderr="")
+
+    target = ClaudeCodeRunner(RunnerSettings(), Listening(), execute=execute, which=lambda name: f"/bin/{name}")
+    run(target)
+    assert events == [("text", {"text": "The "}), ("tool", {"name": "mcp__hz__x"}), ("text", {"text": "week"})]
 
 
 def test_resolves_the_cli_to_an_absolute_path_before_changing_directory(tmp_path):
@@ -174,14 +235,14 @@ def test_a_run_over_budget_is_reported():
 def test_a_failing_cli_with_a_result_reports_the_exit_code():
     result = run(runner(FakeExecute(Outcome(returncode=2, stdout=stream(EVENTS), stderr="boom"))))
     assert result.status == "failed"
-    assert result.detail == "exit code 2 (ended): boom"
+    assert result.detail == "Claude Code ended (exit code 2): boom"
     assert result.draft == ""
 
 
 def test_a_failing_cli_without_a_result_reports_exit_code_and_stderr():
     result = run(runner(FakeExecute(Outcome(returncode=1, stdout="", stderr="x" * 600 + "not logged in"))))
     assert result.status == "failed"
-    assert result.detail.startswith("exit code 1 (Claude Code printed no result): ")
+    assert result.detail.startswith("Claude Code printed no result (exit code 1): ")
     assert result.detail.endswith("not logged in")
     assert len(result.detail) < 600
 
@@ -263,3 +324,186 @@ def test_a_missing_cli_says_how_to_fix_it():
 def test_a_missing_working_directory_is_an_error(tmp_path):
     with pytest.raises(HeinzelError, match="does not exist or is not a directory"):
         run(runner(FakeExecute()), tools=ToolProfile(working_dir=tmp_path / "gone"))
+
+
+def recorded(error: str | None, result: str, *, subtype: str = "success", reason: str = "api_error") -> str:
+    """What Claude Code prints when the API refuses a run, as recorded from Claude Code 2.1 (2026-10-24)."""
+    assistant: dict[str, object] = {
+        "type": "assistant",
+        "message": {"model": "<synthetic>", "content": [{"type": "text", "text": result}]},
+        "is_api_error_message": True,
+    }
+    if error is not None:
+        assistant["error"] = error
+    final = {
+        "type": "result",
+        "subtype": subtype,
+        "is_error": True,
+        "terminal_reason": reason,
+        "result": result,
+        "num_turns": 1,
+        "total_cost_usd": 0,
+        "usage": {"input_tokens": 0, "output_tokens": 0},
+    }
+    return stream([{"type": "system", "subtype": "init", "model": "claude-sonnet-test"}, assistant, final])
+
+
+@pytest.mark.parametrize(
+    ("error", "said", "detail", "fix"),
+    [
+        (
+            "authentication_failed",
+            "Not logged in · Please run /login",
+            f"Claude Code isn't signed in: {SIGN_IN} (Not logged in · Please run /login)",
+            "claude auth login",
+        ),
+        (
+            "authentication_failed",
+            "Failed to authenticate: OAuth session expired and could not be refreshed",
+            (
+                f"Claude Code's sign-in expired: {SIGN_IN} "
+                "(Failed to authenticate: OAuth session expired and could not be refreshed)"
+            ),
+            "claude auth login",
+        ),
+        (
+            "rate_limit",
+            "API Error: 429 rate_limit_error",
+            "Claude Code hit a rate limit; try again in a minute (API Error: 429 rate_limit_error)",
+            "",
+        ),
+        (
+            None,
+            "API Error: 529 overloaded_error",
+            "The model is overloaded right now; try again shortly (API Error: 529 overloaded_error)",
+            "",
+        ),
+        (None, "Something else broke", "Claude Code: Something else broke", ""),
+    ],
+)
+def test_an_api_error_is_a_failure_that_says_why_and_how_to_fix_it(error, said, detail, fix):
+    outcome = Outcome(returncode=1, stdout=recorded(error, said), stderr="")
+    result = run(runner(FakeExecute(outcome)))
+    assert result.status == "failed"
+    assert result.draft == ""
+    assert result.detail == f"{detail} (exit code 1)"
+    assert result.fix == fix
+
+
+def test_an_error_with_exit_code_zero_is_still_a_failure():
+    """`is_error: true` wins over `subtype: success`, whatever the exit code."""
+    result = run(runner(FakeExecute(Outcome(returncode=0, stdout=recorded(None, "Not logged in"), stderr=""))))
+    assert result.status == "failed"
+    assert result.fix == "claude auth login"
+
+
+def test_an_error_text_is_cleaned_and_cut():
+    said = "\x1b[31m" + "e" * 1000
+    result = run(runner(FakeExecute(Outcome(returncode=0, stdout=recorded(None, said), stderr=""))))
+    assert "\x1b" not in result.detail
+    assert len(result.detail) < 400
+
+
+def test_a_budget_stop_stays_a_budget_stop():
+    stopped = recorded(None, "", subtype="error_max_budget_usd", reason="budget")
+    assert run(runner(FakeExecute(Outcome(returncode=1, stdout=stopped, stderr="")))).status == "budget"
+
+
+def test_a_run_without_file_tools_gets_no_built_in_tools_only_its_mcp_servers():
+    fake = FakeExecute()
+    server = McpServer(command=["/usr/bin/python3"])
+    run(runner(fake), tools=ToolProfile(read_files=False, mcp_servers={"hz": server}))
+    [(command, _)] = fake.calls
+    assert command[command.index("--tools") + 1] == ""
+    assert command[command.index("--allowed-tools") + 1] == "mcp__hz"
+
+
+def test_the_login_check_runs_in_an_empty_directory_and_survives_a_broken_cli():
+    seen: dict[str, object] = {}
+
+    def execute(command: list[str], **kwargs: object) -> Outcome:
+        cwd = kwargs["cwd"]
+        assert isinstance(cwd, Path)
+        seen["cwd"], seen["files"] = cwd, list(cwd.iterdir())
+        return Outcome(returncode=1, stdout='{"loggedIn": false}', stderr="")
+
+    check = login_check("/bin/claude", execute=execute)
+    assert (check.status, check.fix) == (Status.DEGRADED, "claude auth login")
+    assert seen["files"] == []
+    assert not Path(str(seen["cwd"])).exists()
+
+    def broken(command: list[str], **kwargs: object) -> Outcome:
+        raise PermissionError(13, "Permission denied")
+
+    assert login_check("/bin/claude", execute=broken).status == Status.DEGRADED
+
+
+def test_a_run_without_file_tools_is_lean_its_contract_replaces_claude_code_s_system_prompt():
+    fake = FakeExecute()
+    seen: dict[str, str] = {}
+
+    def execute(command: list[str], **kwargs: object) -> Outcome:
+        seen["prompt"] = Path(command[command.index("--system-prompt-file") + 1]).read_text(encoding="utf-8")
+        return fake(command, **kwargs)
+
+    run(
+        ClaudeCodeRunner(RunnerSettings(), execute=execute, which=lambda n: f"/bin/{n}"),
+        tools=ToolProfile(read_files=False),
+    )
+    [(command, _)] = fake.calls
+    assert "--append-system-prompt-file" not in command
+    assert seen["prompt"] == "Only summarize."
+    run(
+        ClaudeCodeRunner(RunnerSettings(), execute=execute, which=lambda n: f"/bin/{n}"),
+        contract="",
+        tools=ToolProfile(read_files=False),
+    )
+    assert seen["prompt"] == LEAN_PROMPT  # a lean run always brings a short prompt of its own
+    run(runner(fake))  # with file tools, Claude Code's own prompt stays and the contract is appended
+    assert "--append-system-prompt-file" in fake.calls[-1][0]
+
+
+def test_a_run_s_model_and_effort_override_the_configured_ones():
+    fake = FakeExecute()
+    run(runner(fake, model="opus"), model="sonnet", effort="high")
+    command = fake.calls[-1][0]
+    assert command[command.index("--model") + 1] == "sonnet"
+    assert command[command.index("--effort") + 1] == "high"
+    run(runner(fake, model="opus"))
+    command = fake.calls[-1][0]
+    assert command[command.index("--model") + 1] == "opus"
+    assert "--effort" not in command
+
+
+@pytest.mark.parametrize(("source", "billing"), [("none", None), ("ANTHROPIC_API_KEY", "api"), (None, None)])
+def test_the_billing_comes_from_the_api_key_source_claude_code_reports(source, billing):
+    init: dict[str, object] = {"type": "system", "model": "claude-opus-5-5"}
+    if source is not None:
+        init["apiKeySource"] = source
+    assert parse_events(stream([init, *EVENTS[1:]]).splitlines(), 1.0).billing == billing
+
+
+@pytest.mark.parametrize(("method", "billing"), [("claude.ai", "plan"), ("apiKey", "api")])
+def test_the_auth_status_says_how_the_login_is_billed(method, billing):
+    def execute(command: list[str], **kwargs: object) -> Outcome:
+        return Outcome(returncode=0, stdout=f'{{"loggedIn": true, "authMethod": "{method}"}}', stderr="")
+
+    check, found = auth_status("/bin/claude", execute=execute)
+    assert (check.status, found) == (Status.UP, billing)
+
+
+@pytest.mark.parametrize(("method", "billing"), [("claude.ai", "plan"), ("cloud", "api")])
+def test_a_run_without_an_api_key_asks_the_login_once_whether_a_plan_pays(method, billing):
+    init = {"type": "system", "model": "claude-opus-5-5", "apiKeySource": "none"}
+    asked: list[list[str]] = []
+
+    def execute(command: list[str], **kwargs: object) -> Outcome:
+        if command[1:3] == ["auth", "status"]:
+            asked.append(command)
+            return Outcome(returncode=0, stdout=f'{{"loggedIn": true, "authMethod": "{method}"}}', stderr="")
+        return Outcome(returncode=0, stdout=stream([init, *EVENTS[1:]]), stderr="")
+
+    target = ClaudeCodeRunner(RunnerSettings(), execute=execute, which=lambda name: f"/bin/{name}")
+    assert run(target).billing == billing
+    assert run(target).billing == billing
+    assert len(asked) == 1  # once per runner, not per message

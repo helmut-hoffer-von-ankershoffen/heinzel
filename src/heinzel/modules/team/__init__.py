@@ -41,7 +41,7 @@ Login = Annotated[
 ]
 
 
-@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"}, audience="everyday")
 def new(  # noqa: PLR0913, PLR0917 - the options of one command
     service: TeamService,
     name: Annotated[str, Field(description="The team's name: lowercase words joined by dashes, e.g. payments.")],
@@ -62,7 +62,7 @@ def new(  # noqa: PLR0913, PLR0917 - the options of one command
     return service.new(name, github=github, roster=roster, handle=handle, login=login, role=role, yes=yes)
 
 
-@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"}, audience="everyday")
 def join(  # noqa: PLR0913, PLR0917 - the options of one command
     service: TeamService,
     url: Annotated[str, Field(description="The team repository's URL, the invite: https, ssh or a local path.")],
@@ -83,7 +83,7 @@ def join(  # noqa: PLR0913, PLR0917 - the options of one command
     return service.join(url, propose=propose, handle=handle, login=login, role=role, yes=yes)
 
 
-@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"})
+@module.operation(read_only=False, render=render_plan, heads={"cli", "mcp"}, audience="everyday")
 def add(  # noqa: PLR0913, PLR0917 - the options of one command
     service: TeamService,
     handle: Annotated[str, Field(description="Their handle: lowercase letters, digits, dashes.")],
@@ -97,7 +97,7 @@ def add(  # noqa: PLR0913, PLR0917 - the options of one command
     return service.add(handle, login=login, role=role, owner=owner, by=by, yes=yes)
 
 
-@module.operation(render=render_show)
+@module.operation(render=render_show, audience="everyday")
 def show(service: TeamService) -> TeamShow:
     """Show your team: its repository, checkout and members, and what is wrong with them."""
     return service.show()
@@ -108,7 +108,7 @@ def adopt(
     service: TeamService,
     path: Annotated[Path, Field(description="A checkout of your team repository you already have.")],
 ) -> Adopted:
-    """Make an existing checkout your team repository; replaces the deprecated `workflow.team_repository`."""
+    """Make an existing checkout your team repository; replaces the deprecated `heinzel.team_repository`."""
     return service.adopt(path)
 
 

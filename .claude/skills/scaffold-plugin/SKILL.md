@@ -11,7 +11,7 @@ description: Create a new Heinzelmännchen plugin repository from the copier tem
    and answer the questions: plugin name, description, author, GitHub owner.
 2. `cd ../heinzel-<name> && git init -b main && make setup && make check`.
 3. Implement modules in `src/heinzel_<name>/` (skills `add-module`, `add-operation` work there too).
-4. Try it with Heinzelmännchen: `hz system plugin add .` then `hz <name> --help`.
+4. Try it with Heinzelmännchen: `hz system plugin develop .` then `hz <name> --help`.
 5. Create the GitHub repository, push, and cut `v0.1.0` with the Release workflow.
 
 ## Update an existing plugin

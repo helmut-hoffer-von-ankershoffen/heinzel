@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-10-23
 amends: 0024
+amended-by: 0049, 0055, 0059
 related: 0012, 0017, 0021, 0022, 0023
 ---
 
@@ -75,6 +76,15 @@ integration becomes a configuration change.
     who reads and writes what, through which adapter and which hosts, which also answers "where can my data go"
     for a privacy notice ([ADR 0024](0024-people-and-org.md)).
   - Calling a capability or mode that wasn't declared fails, at runtime and in a test.
+- **Fingerprints per facet** (amended 2026-10-24 by [ADR 0049](0049-heinzelmaennchen-are-durable-agents-one-session-each-owned-by-hz.md)
+  statement 20, borrowed from [OpenProse Reactor](https://github.com/openprose/reactor)'s facets): a capability's read
+  results are fingerprinted as a map `{facet: hash}`: the adapter returns each facet's canonical, normalised content,
+  with what is noise (a poll timestamp, a request id, list order) left out in code, and hz computes the SHA-256 by
+  ADR 0021 §8's single rule, never trusting an adapter's own hash. Facets are the parts a reader can name in a
+  contract input (`inputs.<name>.facet`, [ADR 0021](0021-workflow-contracts.md) §2 and §8): a document's tab or
+  heading, a tracker's row by id; an adapter that knows no facets returns the single facet `@all`. The facets an
+  adapter supports are part of its capability's protocol, additive like any method, and shown in the capability
+  matrix.
 - **First adapters, planned for 0.2**: GitHub (code host, tracker), Atlassian (tracker, documents), Google Workspace
   (documents, calendar, mail; spreadsheets later), Zoom (meetings, from Zoom's meeting-summary emails read through the
   bound `mail` adapter, not from Zoom's API: maintainer's decision, 2026-10-24) and Slack (chat). All five are
@@ -264,8 +274,14 @@ request (director's decisions, 2026-10-24):
       confirmed. A confirmed person already in the draft is named from it, not looked up again.
     - **A reader's handle builds its adapter on the first call**, not when injected. A requester that never calls
       it, such as a setup step that drafts only when asked, doesn't fail because what the adapter itself needs is
-      unbound. The binding is still checked when the handle is made. A publish operation's adapters are still built
-      when it is injected, so one whose factory fails stops it before anything is written. The wrappers' closures
+      unbound. The binding is still checked when the handle is made, except for an **optional operation**
+      (2026-10-24): `@module.operation(requires=[...], optional=True)` does without its own requirements when
+      nothing serves them. It asks `CapabilityView.serves` first and degrades, as `hz org agenda` does for the web
+      app's footer, so its handle for an unserved requirement is made anyway and every method raises why, with the
+      fix. While nothing is bound, an unmet one stays in the matrix but is no doctor finding (an `up` check saying
+      how to use it); a binding that can't be used (not installed, ambiguous, lacking the mode) still is one. Only
+      read-only operations can be optional. A publish operation's adapters are still built when it is injected, so
+      one whose factory fails stops it before anything is written. The wrappers' closures
       reach the kernel's `Capabilities` through that lazy build, which, like the rest of this design, is no
       isolation boundary.
     - **A module that only provides adapters** needs its requirements only while one of its adapters serves a
@@ -381,9 +397,10 @@ adapters are first-party plugins, not separate repositories:
 - Built: GitHub (`code-host`, `tracker`; through the `gh` CLI, [ADR 0035](0035-integrations-go-through-vendor-clis-as-an-ordinary-employee.md);
   the pulls list from [ADR 0033](0033-github-rest-api-over-urllib.md)) and Atlassian
   (`tracker`, `documents`; [ADR 0034](0034-atlassian-cloud-rest-apis-over-urllib.md)), both moved from their own repositories at
-  their v0.1.0. Planned: Google Workspace, Zoom and Slack.
+  their v0.1.0, and Google Workspace (`documents`, `calendar`, `mail`; through the `gws` CLI,
+  [ADR 0042](0042-google-workspace-through-the-gws-cli.md)). Planned: Zoom and Slack.
 - Separate repositories, scaffolded from `template/`, remain the model for community and company plugins (for
-  example `heinzel-example`).
+  example the community plugins in heinzel-contrib, each in `plugins/heinzel-<name>/`).
 - The maintainer named the directory holding them `plugins/` ("it contains plugins"), with `heinzel-clock` moved there
   too; install specs use `#subdirectory=plugins/heinzel-<name>`.
 
@@ -396,3 +413,13 @@ adapters are first-party plugins, not separate repositories:
 - [ADR 0021](0021-workflow-contracts.md) contract `inputs`, `outputs` and `publishes` would name capabilities rather
   than vendors.
 - Agent runners follow the same pattern: [ADR 0029](0029-agent-runners-are-capability-adapters.md).
+- **Providers are pluggable; first-party plugins are defaults** (maintainer's decision, 2026-10-24). A first-party
+  adapter is the default provider of its capabilities for its vendor, never the only one: any other plugin that
+  provides the same capabilities can be bound instead, per person or site, with the same `[capabilities]` keys, and
+  workflows don't notice. `heinzel-google` is the default provider of `documents` (Docs and Sheets) and `calendar`
+  for Google Workspace.
+- `heinzel-google` reads Google Workspace through the Google Workspace CLI, `gws`, which owns sign-in and tokens:
+  [ADR 0042](0042-google-workspace-through-the-gws-cli.md).
+- **Calendar and mail write; three reads join them**: [ADR 0059](0059-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md)
+  amends the mail and calendar decisions above with a `write` mode for both and the reads `free_busy`, `thread` and
+  `draft`.

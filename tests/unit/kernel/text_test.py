@@ -1,8 +1,10 @@
 """`clean_text`: what adapters strip from every string they return (ADR 0028)."""
 
+import time
+
 import pytest
 
-from heinzel import clean_text
+from heinzel import clean_text, redact_emails
 
 pytestmark = pytest.mark.unit
 
@@ -35,3 +37,35 @@ def test_keeps_newlines_tabs_and_every_other_character():
 
 def test_an_empty_string_stays_empty():
     assert clean_text("") == ""
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "mira.sato@example.org",
+        "mira+weekly@mail.example.co.uk",
+        "o'neil@example.ORG",
+        "jörg@münchen.de",
+        "mailto:mira%40example.org",
+    ],
+)
+def test_redacts_email_addresses(address):
+    assert "@" not in redact_emails(f"Ask {address} today").replace("[email]", "")
+    assert "%40" not in redact_emails(f"Ask {address} today")
+    assert "[email]" in redact_emails(f"Ask {address} today")
+
+
+def test_redacts_every_address_and_keeps_the_rest():
+    assert redact_emails("mira@example.org, ann@example.com: ship it") == "[email], [email]: ship it"
+
+
+@pytest.mark.parametrize("text", ["@mira on the team", "a@b", "user@localhost", "version 1.2@3"])
+def test_leaves_handles_and_hosts_without_a_domain(text):
+    assert redact_emails(text) == text
+
+
+@pytest.mark.perf
+def test_a_long_text_without_addresses_takes_linear_time():
+    started = time.perf_counter()
+    assert redact_emails("x" * 50_000 + "@" + "y" * 50_000) == "x" * 50_000 + "@" + "y" * 50_000
+    assert time.perf_counter() - started < 1.0

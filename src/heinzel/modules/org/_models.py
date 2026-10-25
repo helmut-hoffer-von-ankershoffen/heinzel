@@ -1,4 +1,4 @@
-"""Models of the org module: your profile in `[org]` and what `hz org show` reports (ADR 0024, 0033)."""
+"""Models of the org module: your profile in `[org]` and what `hz org show` reports (ADR 0024)."""
 
 import json
 import re
@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Annotated, Any, ClassVar, Literal, Self, get_args
 from zoneinfo import available_timezones
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, JsonValue, ValidationInfo, WithJsonSchema, field_validator
 from pydantic_settings import NoDecode
 
 from heinzel import ModuleSettings
@@ -20,7 +20,7 @@ ROLES = (
     "product-leadership",
     "program-manager",
 )
-"""The core role vocabulary (ADR 0033 §1); team, org and company manifests may add roles, never rename these."""
+"""The core role vocabulary (the perfect-onboarding ADR); a team's layers may add roles, never rename these."""
 ROLE_MEANINGS = {
     "engineer": "builds and runs the product",
     "principal": "senior engineer who shapes how it is built",
@@ -31,6 +31,17 @@ ROLE_MEANINGS = {
     "program-manager": "coordinates work across teams",
 }
 
+ROLE_LABELS: dict[str, JsonValue] = {
+    "engineer": "Engineer",
+    "principal": "Principal engineer",
+    "engineering-manager": "Engineering manager",
+    "engineering-leadership": "Engineering leadership",
+    "product-manager": "Product manager",
+    "product-leadership": "Product leadership",
+    "program-manager": "Program manager",
+}
+"""How Settings names each role."""
+
 CodingAgent = Literal["claude-code", "command", "none"]
 CODING_AGENTS: tuple[CodingAgent, ...] = get_args(CodingAgent)
 
@@ -38,8 +49,12 @@ HANDLE = re.compile(r"[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}")
 """Lowercase letters, digits and single dashes inside, at most 39 characters: what GitHub allows for a login."""
 GITHUB_LOGIN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}")
 EMAIL = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
-HOURS = re.compile(r"(\d{1,2})\s*-\s*(\d{1,2})")
+HOURS = re.compile(r"(\d{1,2})\s*[-,]\s*(\d{1,2})")  # 09-18, or 9,18 as a list in an answers file gives it
 DEFAULT_HOURS = (9, 18)
+Hour = Annotated[int, Field(ge=0, le=24)]
+"""An hour of the day; 24 ends a working day at midnight."""
+TimeZoneName = Annotated[str, Field(json_schema_extra={"format": "iana-timezone"})]
+"""An IANA time zone name; the format tells a form to offer the known zones."""
 
 
 def handle_problem(handle: str) -> str | None:
@@ -118,32 +133,51 @@ class OrgSettings(ModuleSettings):
     A project `hz.toml` can't set any of it: a repository someone else controls must not decide who you are.
     """
 
+    section_title: ClassVar[str | None] = "Your profile"  # the heading in Settings
+
     handle: str | None = Field(
         default=None,
-        description="Your handle in teams, pull requests and contracts: lowercase letters, digits and dashes, "
-        "e.g. mira. Your GitHub login is a good one.",
+        title="Handle",
+        description="Your short name in teams, pull requests and contracts: lowercase letters, digits and dashes. "
+        "Your GitHub login is a good choice.",
+        examples=["mira"],
     )
-    role: str | None = Field(
+    role: Annotated[str, WithJsonSchema({"type": "string", "enum": list(ROLES)})] | None = Field(
         default=None,
-        description=f"Your role, one of {', '.join(ROLES)}.",
+        title="Role",
+        description="What you do on your team.",
+        json_schema_extra={"x-labels": ROLE_LABELS},
     )
-    timezone: str | None = Field(default=None, description="Your IANA time zone, e.g. Europe/Berlin.")
-    working_hours: Annotated[tuple[int, int], NoDecode] = Field(
+    timezone: TimeZoneName | None = Field(default=None, title="Time zone", description="Your time zone.")
+    working_hours: Annotated[tuple[Hour, Hour], NoDecode] = Field(
         default=DEFAULT_HOURS,
-        description='Start and end hour of your working day, e.g. [9, 18] or "09-18" (HZ_ORG__WORKING_HOURS=09-18).',
+        title="Working hours",
+        description="When your working day starts and ends. In the environment, write them as 09-18.",
+        json_schema_extra={"x-unit": "hour-of-day"},
     )
-    github: str | None = Field(default=None, description="Your GitHub login, needed to approve and own in a team.")
+    github: str | None = Field(
+        default=None,
+        title="GitHub login",
+        description="Your GitHub login, needed to approve and own contracts in a team.",
+        examples=["mira"],
+    )
     coding_agent: CodingAgent | None = Field(
         default=None,
-        description="The coding agent you draft with: claude-code, command (one of your own) or none.",
+        title="Coding agent",
+        description="The coding agent you write drafts with.",
+        json_schema_extra={"x-labels": {"claude-code": "Claude Code", "command": "Your own command", "none": "None"}},
     )
     name: str | None = Field(
         default=None,
-        description="Your name, from your Google or GitHub login; stays on this machine, never in a repository.",
+        title="Name",
+        description="Your name, from your Google or GitHub sign-in. It stays on this computer, never in a repository.",
     )
     email: str | None = Field(
         default=None,
-        description="Your work email, from your Google login; stays on this machine, never in a repository.",
+        title="Work email",
+        description="Your work email, from your Google sign-in. It stays on this computer, never in a repository.",
+        json_schema_extra={"format": "email"},
+        examples=["mira@example.com"],
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(

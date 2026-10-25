@@ -3,24 +3,48 @@
 import urllib.error
 from importlib.resources import files
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 from markdown_it import MarkdownIt
 from packaging.version import InvalidVersion, Version
-from pydantic import Field
+from pydantic import AliasChoices, Field, SecretStr
+from pydantic_settings import SettingsConfigDict
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.rule import Rule
 from rich.text import Text
 
-from heinzel import HeinzelError, Module, __version__
+from heinzel import HeinzelError, Module, ModuleSettings, __version__
 from heinzel.kernel import Installation
 from heinzel.modules.system._models import ReleaseNotes
 from heinzel.modules.system._service import RELEASE_TIMEOUT, clean, github_releases
 
 FILENAME = "CHANGELOG.md"
 
+RATE_LIMITED = frozenset({403, 429})
+"""Statuses GitHub answers with when the rate limit is exhausted."""
+
+
+class ChangelogSettings(ModuleSettings):
+    """Settings of the changelog module: the `[system.changelog]` table or `HZ_SYSTEM_CHANGELOG__*` variables."""
+
+    # The aliases are environment variable names; the field name still works in the TOML table and in code.
+    model_config = SettingsConfigDict(populate_by_name=True)
+    section_title: ClassVar[str | None] = "Release notes"  # the heading in Settings
+
+    github_token: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"),
+        title="GitHub token",
+        description="A GitHub token for reading what newer releases bring, which works without "
+        "one at a lower rate limit. Also read from GH_TOKEN or GITHUB_TOKEN, sent to "
+        "GitHub only, and never by the hourly update check.",
+        json_schema_extra={"x-expert": True},
+    )
+
+
 module = Module("changelog", "Release notes of the installed version and of newer releases.")
+module.settings(ChangelogSettings)
 
 
 def as_markdown(text: str, *, hyperlinks: bool = True) -> Markdown:
@@ -60,24 +84,26 @@ def render(result: str | list[ReleaseNotes]) -> RenderableType:
 @module.operation(render=render)
 def changelog(
     installation: Installation,
+    settings: ChangelogSettings,
     newer: Annotated[
         bool,
         Field(
             description="Show what the releases newer than the installed version bring instead, newest first; "
-            "asks GitHub, anonymously. As JSON: a list of {version, date, notes, url}."
+            "asks GitHub, with GH_TOKEN or GITHUB_TOKEN if set. As JSON: a list of {version, date, notes, url}."
         ),
     ] = False,
 ) -> str | list[ReleaseNotes]:
     """Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring.
 
-    Only `--newer` uses the network: unauthenticated GETs to the GitHub releases API of the repository in the uv tool
-    receipt (or the default repository) with only a `heinzel/<version>` User-Agent (ADR 0031), a few pages at most.
+    Only `--newer` uses the network: GETs to the GitHub releases API of the repository in the uv tool receipt (or the
+    default repository) with a `heinzel/<version>` User-Agent (ADR 0031), a few pages at most, and the GitHub token
+    of the settings (GH_TOKEN, GITHUB_TOKEN) if one is set; unauthenticated otherwise.
 
     Raises:
         HeinzelError: If the changelog is not part of this installation, or, with `--newer`, GitHub can't be asked.
     """
     if newer:
-        return _newer(installation)
+        return _newer(installation, settings.github_token)
     packaged = files("heinzel").joinpath(FILENAME)
     if packaged.is_file():
         return packaged.read_text(encoding="utf-8")
@@ -89,7 +115,7 @@ def changelog(
     raise HeinzelError(msg)
 
 
-def _newer(installation: Installation) -> list[ReleaseNotes]:
+def _newer(installation: Installation, token: SecretStr | None) -> list[ReleaseNotes]:
     try:
         Version(__version__)
     except InvalidVersion as exc:
@@ -97,7 +123,7 @@ def _newer(installation: Installation) -> list[ReleaseNotes]:
         raise HeinzelError(msg) from exc
     releases = github_releases(installation)
     try:
-        return releases.newer_than(__version__, RELEASE_TIMEOUT)
+        return releases.newer_than(__version__, RELEASE_TIMEOUT, token)
     # Offline, rate-limited or an odd answer: one clear error, never a traceback.
     except (OSError, ValueError, TypeError) as exc:
         # An HTTPError reads best whole (it carries the status, e.g. 403 when rate-limited); others by reason.
@@ -105,8 +131,11 @@ def _newer(installation: Installation) -> list[ReleaseNotes]:
         if isinstance(exc, urllib.error.URLError) and not isinstance(exc, urllib.error.HTTPError):
             reason = exc.reason
         reason = clean(str(reason))
+        hint = ""
+        if token is None and isinstance(exc, urllib.error.HTTPError) and exc.code in RATE_LIMITED:
+            hint = " Set GH_TOKEN or GITHUB_TOKEN for a higher rate limit."
         msg = (
             f"Could not ask GitHub for the releases newer than hz {__version__} ({reason}). Try again when online, "
-            f"or read them on https://github.com/{releases.repository}/releases."
+            f"or read them on https://github.com/{releases.repository}/releases.{hint}"
         )
         raise HeinzelError(msg) from exc

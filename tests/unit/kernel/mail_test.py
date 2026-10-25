@@ -5,8 +5,9 @@ from datetime import UTC, datetime
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from pydantic import ValidationError
 
-from heinzel import MailContent, MailMessage, MailQuery, Participant
+from heinzel import MailContent, MailDraft, MailMessage, MailQuery, Participant
 from heinzel.kernel._protocols import MAIL_HEADERS
 
 pytestmark = pytest.mark.unit
@@ -140,3 +141,27 @@ def test_any_text_parses_or_raises_value_error_and_a_query_matches_its_own_terms
         return
     sender = query.sender if query.sender and "@" in query.sender else f"someone@{query.sender or 'x.example'}"
     assert query.matches(message(sender, query.subject or "", (query.label,) if query.label else ()))
+
+
+def test_a_new_draft_needs_recipients_and_a_subject_a_reply_neither():
+    with pytest.raises(ValidationError, match="at least one address"):
+        MailDraft(subject="Plan", text="Hi")
+    with pytest.raises(ValidationError, match="needs a subject"):
+        MailDraft(to=["zoe@example.com"], text="Hi")
+    reply = MailDraft(text="Thanks", reply_to="m1")
+    assert (reply.to, reply.subject, reply.reply_all) == ([], "", False)
+
+
+@pytest.mark.parametrize(
+    ("fields", "problem"),
+    [
+        ({"to": ["Zoe <zoe@example.com>"]}, "is not an email address"),
+        ({"cc": ["zoe@example.com, ada@example.com"]}, "is not an email address"),
+        ({"subject": "Plan\r\nBcc: zoe@example.com"}, "must be one line"),
+        ({"subject": "Plan\x0cBcc: zoe@example.com"}, "must be one line"),
+        ({"text": "x" * 200_001}, "more than 200,000 characters"),
+    ],
+)
+def test_a_draft_holds_plain_addresses_and_one_line_subjects_so_nothing_adds_a_header(fields, problem):
+    with pytest.raises(ValidationError, match=problem):
+        MailDraft(**{"to": ["zoe@example.com"], "subject": "Plan", "text": "Hi", **fields})

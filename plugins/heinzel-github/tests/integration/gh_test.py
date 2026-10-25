@@ -195,6 +195,31 @@ def test_the_login_comes_from_the_hosts_file_or_a_token_variable_gh_reads(fake_g
     assert fake_gh_cli.calls() == []  # no command, so none that prints a token
 
 
+def test_the_account_is_the_user_of_the_host_s_own_block_and_never_a_token_line(fake_gh_cli, monkeypatch):
+    leaked = "gho_" + "Z9y8X7w6" * 5  # made up, shaped like a token gh may store in plain text
+    (fake_gh_cli.config / "hosts.yml").write_text(
+        f"ghe.example.com:\n    user: grace\ngithub.com:\n    oauth_token: {leaked}\n    user: ada\n", encoding="utf-8"
+    )
+    assert gh().account() == "ada"
+    assert gh(host="ghe.example.com").account() == "grace"
+    assert gh(host="other.example.com").account() == ""
+    (fake_gh_cli.config / "hosts.yml").write_text(f"github.com:\n    user: {leaked} extra\n", encoding="utf-8")
+    assert gh().account() == ""
+    monkeypatch.setenv("GH_TOKEN", "made-up")
+    assert gh().account() == ""  # the token decides who gh is, and only GitHub can say whose it is
+    assert fake_gh_cli.calls() == []
+
+
+def test_without_a_hosts_file_or_past_its_cap_there_is_no_account(fake_gh_cli, no_gh_login, monkeypatch):
+    monkeypatch.setattr(_gh, "MAX_HOSTS_LINES", 3)
+    (fake_gh_cli.config / "hosts.yml").write_text(
+        "a.example.com:\n" * 5 + "github.com:\n    user: ada\n", encoding="utf-8"
+    )
+    assert gh().account() == ""
+    (fake_gh_cli.config / "hosts.yml").unlink()
+    assert gh().account() == ""
+
+
 def test_without_a_hosts_file_there_is_no_login(no_gh_login):
     assert not gh().logged_in()
 

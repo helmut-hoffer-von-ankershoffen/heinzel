@@ -134,7 +134,7 @@ def test_configured_when_a_setting_is_set_or_a_credential_stored(kernel):
     fresh = kernel_of(GREETING_SET, greet=(greet_module(), PLUGIN))
     assert is_configured(fresh, fresh.module("greet"))
     credentials = kernel.resolve(Credentials)
-    credentials.set(credentials.declared[0].let, "s3cret")
+    credentials.set(next(d.let for d in credentials.declared if d.let.name == "api-token"), "s3cret")
     assert is_configured(kernel, kernel.module("vault"))
 
 

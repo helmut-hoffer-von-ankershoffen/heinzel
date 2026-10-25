@@ -3,7 +3,7 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0018
-related: 0003, 0005, 0012, 0015, 0026, 0030
+related: 0003, 0005, 0012, 0015, 0024, 0026, 0030
 ---
 
 # 0032: Modules declare interactive setup steps; `hz setup` runs them all
@@ -58,8 +58,8 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 - **Writing.** A step writes settings through `heinzel.ConfigEditor` (provided by `system.config`, the same validation
   as `hz system config set`, user scope by default) and secrets through `Credentials.set`. A step that is
   interrupted keeps what it already wrote.
-- **Commands (CLI only).** `hz setup [MODULE]` is the one command that runs setup steps: `hz setup` runs every step,
-  built-in modules first, then the others alphabetically by qualified name; `hz setup clock` runs one module's step,
+- **Commands (CLI only).** `hz setup [MODULE]` is the command that runs setup steps (`hz join` runs the missing ones
+  too, see *One journey*): `hz setup` runs every step in order (see *Order*); `hz setup clock` runs one module's step,
   without the skip question. A name without a step that can run is a usage error that says why and lists the
   modules with one. An optional step asks "Set up clock now? [Y/n]" first; a required one doesn't. A step whose
   module is already configured says so and asks whether to change it. Ctrl-C stops the run and keeps finished steps;
@@ -74,21 +74,51 @@ head**, because modules stay head-agnostic, steps write through the existing ser
 - **Already configured.** A module counts as configured when one of its settings is set in a file or the environment,
   or one of its declared credentials is stored. A module with neither always runs its step.
 - **No terminal.** Setup asks its questions on standard output and reads the answers from standard input, so both
-  must be a terminal: `hz setup > out.txt` would otherwise wait for answers to questions nobody sees. Otherwise it
-  refuses and prints, on stderr, the equivalent `hz system config set` and `hz system credential set` commands for
-  each step's module.
-- **Names.** `setup` is reserved as a module name, at every level, because `hz setup` is a top-level command. A
-  module's operations may take any name, `setup` included: the step is never one of the module's commands.
-- **Top level.** `hz setup` is an exception to ADR 0018, decided by the maintainer: everything else about
-  Heinzelmännchen itself stays under `hz system`.
+  must be a terminal: `hz setup > out.txt` would otherwise wait for answers to questions nobody sees. Otherwise,
+  unless an answers file is given (*Answers*), it refuses and prints, on stderr, the equivalent
+  `hz system config set` and `hz system credential set` commands for each step's module.
+- **Order.** `@module.setup(phase=...)` places a step: `identity` (who you are), `membership` (whom you work with),
+  `connect` (tools, credentials, bindings; the default), `work` (what hz starts doing for you) and `run` (whether it
+  runs on its own). Steps run phase by phase, built-in modules first inside a phase, then the others alphabetically.
+  Phases only order the steps: no heading, prompt or document shows them to a person.
+- **One journey, joined at the front door.** `hz join <team repository>` (the perfect-onboarding ADR) is how a person
+  starts: it says what hz keeps about them, runs the `identity` steps, joins the team, then runs the steps still
+  missing. `hz setup` is what they re-run any time for whatever is still missing. Both say what hz keeps, and where,
+  before they ask anything.
+- **Resumable.** Every finished step is recorded, with when and its keyed answers, in `<state_dir>/setup.json`
+  (mode 0600, written after each step). `hz setup` runs only the steps no earlier run finished (never run, failed or
+  interrupted), says which are done, and, when nothing is missing, says so and runs doctor; `--restart` forgets the
+  record and goes through every step again.
+- **Answers.** A question may carry a `key`, its name within the module (`role` asked by `org` is `org.role`).
+  `--answers <file>` is TOML with a table per module (`[org] role = "engineer"`): keyed questions take their answer
+  from it, an invalid one fails instead of being asked again, and with no terminal a keyed question without an
+  answer takes its default or, without one, fails naming the key. Without a terminal, a module with answers runs its
+  step; one without keeps its configuration, an optional step is skipped and a required one runs. `--print-answers`
+  writes the recorded answers as such a file, so a team bootstraps its answers from one finished setup;
+  `--json` prints every step's outcome and doctor's status, questions going to stderr. Secrets are never keyed, so
+  they never come from or go to a file ([ADR 0030](0030-credentials-live-in-the-os-keychain.md)).
+- **Names.** `setup` and `join` are reserved as module names, at every level, because `hz setup` and `hz join` are
+  top-level commands (and `[join]` is the answers file's table for `hz join`'s own questions). A module's operations
+  may take any name, `setup` included: the step is never one of the module's commands.
+- **Top level.** `hz setup` and `hz join` are exceptions to ADR 0018, decided by the maintainer: everything else
+  about Heinzelmännchen itself stays under `hz system`.
+- **Nothing without a yes.** Without a person, `hz join` changes nothing unless the yes was given in advance:
+  `--yes` (or `[join] yes = true`) makes a team whose roster lists you yours, and `--propose` (`[join] propose =
+  true`) separately allows the pull request that asks its owners to add you. A missing yes fails naming the flag. The
+  read-only clone that reads the roster happens before any yes. With a person, an answers file that would change a
+  module already set up asks first; flags the person typed don't.
 
 ### Consequences
 
 - Good: a new user runs `hz setup` once; a plugin author adds a wizard in a few lines and tests it with scripted
   answers.
 - Good: the wizard can't write what `hz system config set` would refuse; MCP and REST never see setup.
-- Bad: the order is fixed (built-ins, then alphabetical). A step that needs another module's step first has to say so
-  in its text until an `after=` declaration exists.
+- Good: a coding agent or a team sets someone up without a terminal from an answers file, and a run that was stopped
+  continues where it stopped.
+- Bad: the order is coarse (phase, built-ins, then alphabetical). A step that needs another step of the same phase
+  first has to say so in its text until an `after=` declaration exists.
+- Bad: the record in `setup.json` can disagree with the configuration when someone edits the files by hand; the
+  configured heuristic still offers a change, and `--restart` resets the record.
 - Bad: `hz setup` exits 1 when any doctor check is down, also one of a module whose step was skipped: the run did
   what was asked, but the installation isn't healthy yet, and doctor's table says which check to fix.
 - Bad: "configured" is a heuristic; a module whose defaults are fine is offered its step until something is set.
@@ -112,6 +142,11 @@ head**, because modules stay head-agnostic, steps write through the existing ser
   notice after its text output and none with `--json`, the notice after `hz setup <module>`, and doctor's instead
   after `hz setup`.
 - `plugins/heinzel-clock/tests/clock_test.py`: `hz setup clock` and the migration of the old settings shape.
+- `tests/unit/kernel/prompter_test.py` and `tests/unit/heads/cli_journey_test.py`: keyed questions and preset
+  answers, defaults without a person, answers files and the record in `setup.json`;
+  `tests/integration/journey_test.py`: the order with who you are first, the privacy line first, resuming and
+  `--restart`, `--answers` without a terminal, `--print-answers`, `--json`, and `hz join` found in the roster,
+  proposed, and run by a coding agent with flags only.
 - `tests/unit/public_api_test.py` snapshots the new names.
 
 ## More Information
@@ -125,4 +160,8 @@ head**, because modules stay head-agnostic, steps write through the existing ser
   so the CLI path differed from the MCP and REST ones, and a plugin release adding a step broke scripts that called
   the module. `hz setup [MODULE]` is now the single entry for setup, and modules keep exactly their commands.
   Command paths stay stable across heads, and scripts don't break when a plugin adds a step.
+- Amended on 2026-10-24 for onboarding (the perfect-onboarding ADR, proposed in pull request #32): steps declare a
+  phase that orders them, the run is recorded and resumable, keyed questions can be answered from a file, and
+  `hz join` is the front door with `hz setup` as the re-runnable "what is still missing". Decided by the maintainer:
+  phases stay internal ordering, never shown; the person's story is the invite line.
 - Possible extensions: `after=` to order steps by dependency.

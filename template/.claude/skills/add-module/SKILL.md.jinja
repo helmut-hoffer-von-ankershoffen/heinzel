@@ -16,7 +16,7 @@ register by hand.
    models, and thin `@module.operation` functions that call the service (skill: `add-operation`).
 3. Tests (skill: `write-tests`): unit tests for the service; integration tests through Heinzelmännchen's CLI head with the
    `boot` fixture (`build(boot())`), asserting `--json` output.
-4. Check: `make check`, then `hz system plugin add .` and `hz [[ plugin_name ]] <name> --help`.
+4. Check: `make check`, then `hz system plugin develop .` and `hz [[ plugin_name ]] <name> --help`.
 5. Document the new commands in README.md.
 
 ## Setup step (optional)

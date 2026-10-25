@@ -12,10 +12,26 @@ from types import MappingProxyType
 from typing import Any, Literal, cast
 
 from heinzel.kernel._agents import AgentRunner
-from heinzel.kernel._protocols import Calendar, Chat, CodeHost, Directory, Documents, Mail, MailQuery, Meetings, Tracker
+from heinzel.kernel._ai import AiAccess
+from heinzel.kernel._protocols import (
+    Calendar,
+    Chat,
+    CodeHost,
+    Directory,
+    Documents,
+    Mail,
+    MailQuery,
+    Meetings,
+    TeamGraph,
+    Tracker,
+    free_busy_people,
+)
 
 Mode = Literal["read", "write"]
 MODES: tuple[Mode, ...] = ("read", "write")
+NO_ADAPTER = "none"
+"""The binding that says a capability is served by nothing, also when an adapter would be chosen automatically
+(ADR 0055); no adapter may take the name."""
 _ADAPTER = re.compile(r"^[a-z][a-z0-9-]*$")
 
 
@@ -31,6 +47,13 @@ class Capability:
     checks: Mapping[tuple[str, str], Callable[[str], object]] = field(default_factory=lambda: MappingProxyType({}))
     """Checks of `str` arguments by (method, argument), raising `ValueError`: what a contract's `args` are held to
     before any run, e.g. a mail query's syntax."""
+    title: str = ""
+    """Its name for people, e.g. `Code host`: what settings and the web app show, without backticks."""
+    purpose: str = ""
+    """What it is for, in a few plain words after the title, e.g. `pull requests and reviews`."""
+    automatic: bool = True
+    """Whether its only installed adapter serves it without a binding (ADR 0055). Not for `mail`: reading a mailbox
+    is the person's explicit choice, whatever happens to be installed."""
 
     @property
     def modes(self) -> frozenset[Mode]:
@@ -44,55 +67,110 @@ CAPABILITIES: Mapping[str, Capability] = MappingProxyType(
         for capability in (
             Capability(
                 name="agent-runner",
+                title="Agent runner",
+                purpose="what runs a Heinzelmännchen's turn",
                 protocol=AgentRunner,
                 summary="Bounded agent sessions with read-only tools, reporting draft, tool calls and cost.",
                 methods=MappingProxyType({"run": "read"}),
             ),
             Capability(
+                name="ai-access",
+                protocol=AiAccess,
+                summary="How hz reaches AI: whether an option is there and signed in, and a cheap live check of it.",
+                methods=MappingProxyType({"status": "read", "test": "read"}),
+            ),
+            Capability(
                 name="calendar",
+                title="Calendar",
+                purpose="where your meetings and free time come from",
                 protocol=Calendar,
-                summary="The user's calendar: events in a window, with attendees and conferencing.",
-                methods=MappingProxyType({"events": "read"}),
+                summary="The user's calendar: events in a window, with attendees and conferencing, free and busy "
+                "times; create, move, cancel and answer events through publish operations.",
+                methods=MappingProxyType(
+                    {
+                        "events": "read",
+                        "free_busy": "read",
+                        "create_event": "write",
+                        "update_event": "write",
+                        "cancel_event": "write",
+                        "respond": "write",
+                    }
+                ),
+                checks=MappingProxyType({("free_busy", "people"): free_busy_people}),
             ),
             Capability(
                 name="chat",
+                title="Chat",
+                purpose="the channels your team talks in",
                 protocol=Chat,
                 summary="Channels people talk in: read their messages; post through publish operations.",
                 methods=MappingProxyType({"messages": "read", "post": "write"}),
             ),
             Capability(
                 name="code-host",
+                title="Code host",
+                purpose="pull requests and reviews",
                 protocol=CodeHost,
                 summary="Repositories and their merged pull requests on a code host.",
                 methods=MappingProxyType({"merged_pull_requests": "read"}),
             ),
             Capability(
                 name="directory",
+                title="Directory",
+                purpose="who people are and who reports to whom",
                 protocol=Directory,
                 summary="Who people are and who reports to whom: a directory of record, or guesses from 1:1s.",
                 methods=MappingProxyType({"person": "read", "reports": "read"}),
             ),
             Capability(
                 name="documents",
+                title="Documents",
+                purpose="the pages and docs you read and update",
                 protocol=Documents,
                 summary="Documents: read their text; replace a marked section through publish operations.",
                 methods=MappingProxyType({"read": "read", "replace_section": "write"}),
             ),
             Capability(
                 name="mail",
+                automatic=False,
+                title="Mail",
+                purpose="the mailbox messages and meeting summaries come from",
                 protocol=Mail,
-                summary="A mailbox the user reads: messages in a window by sender, subject or label, and their text.",
-                methods=MappingProxyType({"messages": "read", "read": "read"}),
+                summary="A mailbox the user reads: messages in a window by sender, subject or label, their text and "
+                "conversations; drafts, sending a draft and filing through publish operations.",
+                methods=MappingProxyType(
+                    {
+                        "messages": "read",
+                        "read": "read",
+                        "thread": "read",
+                        "draft": "read",
+                        "create_draft": "write",
+                        "send_draft": "write",
+                        "relabel": "write",
+                    }
+                ),
                 checks=MappingProxyType({("messages", "query"): MailQuery.parse}),
             ),
             Capability(
                 name="meetings",
+                title="Meetings",
+                purpose="the meetings you took part in and their transcripts",
                 protocol=Meetings,
                 summary="Meetings the user took part in, and their transcripts.",
                 methods=MappingProxyType({"ended": "read", "transcripts": "read", "transcript": "read"}),
             ),
             Capability(
+                name="team-graph",
+                title="Team graph",
+                purpose="how your team's promises flow and where they wait",
+                protocol=TeamGraph,
+                summary="The team's graph of kept promises: artifacts, Heinzelmännchen and where the flow waits.",
+                methods=MappingProxyType({"snapshot": "read"}),
+            ),
+            Capability(
                 name="tracker",
+                title="Tracker",
+                purpose="issues and tickets",
                 protocol=Tracker,
                 summary="Issues in an issue tracker.",
                 methods=MappingProxyType({"issues_updated": "read"}),

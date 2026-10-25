@@ -128,6 +128,8 @@ def hz_isolation(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempP
         monkeypatch.setenv(name, str(tmp_path_factory.mktemp(name.lower())))
     isolate_credentials(monkeypatch)
     monkeypatch.setenv("HZ_UPDATE_CHECK", "false")  # no `hz` a test starts asks GitHub for the latest release
+    monkeypatch.setenv("HZ_SYSTEM_NOTIFY__NATIVE", "false")  # no tick a test runs pops up a real notification
+    monkeypatch.setenv("HZ_SYSTEM_NOTIFY__DOCTOR", "false")  # nor runs doctor at its end
     for name in (*UNCOLOURED, "COLUMNS", "TERMINAL_WIDTH"):
         monkeypatch.delenv(name, raising=False)  # registers the restore; a test may change them
     pin_terminal(os.environ)

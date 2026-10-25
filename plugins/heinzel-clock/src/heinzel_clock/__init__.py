@@ -1,7 +1,8 @@
 """What time it is for everyone on the team.
 
-The whole plugin: one module, its settings, one operation, a health check and a setup step. Heinzelmännchen provides
-the CLI command, MCP tool, REST endpoint, configuration, validation, health reporting and the setup wizard.
+The whole plugin: one module, its settings, one operation, a health check, a setup step, and three views of the
+operation for the web app: a status item, a header action and a Today widget (ADR 0056). Heinzelmännchen provides the
+CLI command, MCP tool, REST endpoint, configuration, validation, health reporting, the setup wizard and the web app.
 """
 
 import warnings
@@ -13,15 +14,40 @@ from zoneinfo import ZoneInfo, available_timezones
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from rich.table import Table
 
-from heinzel import Check, ConfigEditor, HeinzelError, Module, ModuleSettings, Prompter, Status
+from heinzel import (
+    Check,
+    ConfigEditor,
+    DetailLine,
+    HeinzelError,
+    LiveClock,
+    MetricWidget,
+    Module,
+    ModuleSettings,
+    Navigate,
+    NavSettings,
+    Prompter,
+    Status,
+    StatusItem,
+)
 
-module = Module("clock", "What time it is for everyone on the team.")
+module = Module("clock", "World Clock: what time it is for everyone on the team.")
+
+module.nav(
+    title="World Clock",
+    icon="clock",
+    settings=NavSettings(sections=("clock",), group="customize"),
+    sidebar=Navigate(path="/?panel=world-clock"),
+)
 
 DEFAULT_HOURS = (9, 18)
 DEFAULT_ZONES = ("Europe/Berlin", "America/New_York", "America/Los_Angeles")
+SATURDAY = 5
+"""`datetime.weekday()` of Saturday: working days are Monday to Friday."""
 MAX_MATCHES = 15
 """More matches than this, and setup asks for more of the name instead of listing them."""
 EXAMPLE = "hz system config set clock.zones '[{ name = \"Europe/Berlin\", hours = [9, 18] }]'"
+Hour = Annotated[int, Field(ge=0, le=24)]
+"""An hour of the day; 24 ends a working day at midnight."""
 
 
 class Zone(BaseModel):
@@ -29,8 +55,17 @@ class Zone(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    name: str = Field(description="IANA time zone name, e.g. Europe/Berlin.")
-    hours: tuple[int, int] = Field(default=DEFAULT_HOURS, description="Start and end hour of a working day there.")
+    name: str = Field(
+        title="Time zone",
+        description="The time zone, such as Europe/Berlin.",
+        json_schema_extra={"format": "iana-timezone"},
+    )
+    hours: tuple[Hour, Hour] = Field(
+        default=DEFAULT_HOURS,
+        title="Working hours",
+        description="When a working day starts and ends there.",
+        json_schema_extra={"x-unit": "hour-of-day"},
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -52,12 +87,14 @@ class ClockSettings(ModuleSettings):
 
     zones: list[Zone] = Field(
         default=[Zone(name=name) for name in DEFAULT_ZONES],
-        description='The team\'s time zones: IANA names, or tables with hours, e.g. { name = "Asia/Tokyo", '
-        "hours = [10, 19] }.",
+        title="Time zones",
+        description="The time zones your team works in, with the working hours in each. The first one is yours.",
+        examples=[[{"name": "Asia/Tokyo", "hours": [10, 19]}]],
     )
     working_hours: tuple[int, int] | None = Field(
         default=None,
         description="Deprecated: the hours of every zone given by name only. Give each zone its hours instead.",
+        json_schema_extra={"deprecated": True},  # the web app's Settings leave it out; doctor reports it when set
     )
 
     @model_validator(mode="before")
@@ -82,7 +119,8 @@ class ZoneTime(BaseModel):
     zone: str = Field(description="IANA time zone name, e.g. Europe/Berlin.")
     time: str = Field(description="Local weekday and time there, e.g. Mon 14:05.")
     hours: tuple[int, int] = Field(description="Start and end hour of a working day there.")
-    working: bool = Field(description="Whether it is within the working hours there.")
+    working: bool = Field(description="Whether it is within the working hours there, Monday to Friday.")
+    primary: bool = Field(default=False, description="Whether this is your own zone: the first one configured.")
 
 
 def _render(times: list[ZoneTime]) -> Table:
@@ -90,11 +128,12 @@ def _render(times: list[ZoneTime]) -> Table:
     for column in ("Zone", "Time", "Working hours", "Working"):
         table.add_column(column)
     for item in times:
-        table.add_row(item.zone, item.time, f"{item.hours[0]:02d}-{item.hours[1]:02d}", "yes" if item.working else "no")
+        zone = f"{item.zone} (yours)" if item.primary else item.zone
+        table.add_row(zone, item.time, f"{item.hours[0]:02d}-{item.hours[1]:02d}", "yes" if item.working else "no")
     return table
 
 
-@module.operation(render=_render)
+@module.operation(render=_render, audience="everyday")
 def clock(
     settings: ClockSettings,
     at: Annotated[datetime | None, Field(description="Moment to show instead of now (ISO 8601).")] = None,
@@ -113,11 +152,63 @@ def clock(
             zone=zone.name,
             time=local.strftime("%a %H:%M"),
             hours=zone.hours,
-            working=zone.hours[0] <= local.hour < zone.hours[1],
+            working=local.weekday() < SATURDAY and zone.hours[0] <= local.hour < zone.hours[1],
+            primary=index == 0,
         )
-        for zone in settings.zones
+        for index, zone in enumerate(settings.zones)
         for local in [moment.astimezone(ZoneInfo(zone.name))]
     ]
+
+
+def city(zone: str) -> str:
+    """`America/Los_Angeles` as people say it: `Los Angeles`."""
+    return zone.rsplit("/", 1)[-1].replace("_", " ")
+
+
+@module.status(source="clock", order=900, slots={"footer": True, "sidebar": False})
+def primary_zone(times: list[ZoneTime]) -> StatusItem | None:
+    """The time in your primary zone, the first of `clock.zones`, ticking; the others and who is at work on hover."""
+    if not times:
+        return None
+    first, *others = times
+    return StatusItem(
+        text=city(first.zone),
+        icon="globe",
+        live=LiveClock(zone=first.zone),
+        detail=[
+            DetailLine(
+                text=f"{city(zone.zone)} {zone.time}, "
+                + ("at work" if zone.working else f"works {zone.hours[0]:02d}-{zone.hours[1]:02d}"),
+                tone="ok" if zone.working else "neutral",
+            )
+            for zone in others
+        ],
+        effect=Navigate(path="/?settings=clock"),
+    )
+
+
+def working(times: list[ZoneTime]) -> int:
+    """How many of the team's zones are within working hours now."""
+    return sum(zone.working for zone in times)
+
+
+module.action(
+    "team-clock",
+    label="World Clock",
+    icon="globe",
+    effect=Navigate(path="/?panel=world-clock"),
+    source="clock",
+    badge=working,
+)
+
+
+@module.widget(source="clock")
+def at_work(times: list[ZoneTime]) -> MetricWidget | None:
+    """How many of the team's zones are at work now, out of all of them."""
+    if not times:
+        return None
+    count = working(times)
+    return MetricWidget(label="Zones at work now", value=f"{count}/{len(times)}", tone="ok" if count else "neutral")
 
 
 @module.health

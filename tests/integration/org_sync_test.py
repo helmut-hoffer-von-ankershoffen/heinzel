@@ -11,7 +11,8 @@ from heinzel.kernel import boot, user_config_dir
 
 pytestmark = pytest.mark.integration
 
-MANIFEST = "name: payments\nrecommend:\n  bindings: {agent-runner: command}\n  plugins: [heinzel-google]\n"
+# A plugin no workspace installs, so it stays one to install by hand.
+MANIFEST = "name: payments\nrecommend:\n  bindings: {agent-runner: command}\n  plugins: [heinzel-weather]\n"
 
 
 @pytest.fixture
@@ -39,7 +40,7 @@ def test_sync_shows_recommendations_and_writes_only_what_you_accept(team):
     code, report = hz("org", "sync")
     assert code == 0
     assert [(i["id"], i["state"]) for i in report["items"]] == [
-        ("plugin:heinzel-google", "by-hand"),
+        ("plugin:heinzel-weather", "by-hand"),
         ("binding:agent-runner", "pending"),  # bound only by the core's default, so no choice of yours
     ]
     assert "capabilities" not in user_file()
@@ -54,4 +55,4 @@ def test_doctor_reports_drift_from_the_team(team):
     _, doctor = hz("system", "doctor")
     [check] = [c for c in doctor["checks"]["org"] if c["name"] == "recommendations"]
     assert (check["status"], check["fix"]) == ("degraded", "hz org sync")
-    assert "plugin:heinzel-google" in check["detail"]
+    assert "plugin:heinzel-weather" in check["detail"]

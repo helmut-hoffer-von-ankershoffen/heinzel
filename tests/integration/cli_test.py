@@ -1,6 +1,7 @@
 """CLI head -> kernel -> modules -> services, with real collaborators and file I/O. Offline."""
 
 import json
+import re
 import subprocess
 import sys
 import urllib.error
@@ -17,7 +18,7 @@ import typer
 from pydantic import BaseModel, Field
 from typer.testing import CliRunner
 
-from heinzel import Config, HeinzelError, Module, Prompter, Settings, __version__
+from heinzel import Config, HeinzelError, Module, OperationLet, Prompter, Settings, __version__
 from heinzel.heads.cli import build
 from heinzel.kernel import ReleaseCache
 from heinzel.modules.system import _github
@@ -124,9 +125,121 @@ def test_system_release_offline_is_a_warning_not_a_failure(app, monkeypatch):
     assert json.loads(runner.invoke(app, ["system", "release", "--json"]).output)["latest"] is None
 
 
-def test_help_lists_modules(app):
+def test_help_lists_modules_in_expert_mode(make_kernel):
+    app = build(make_kernel(builtins=True, settings_=Settings(expert=True), **example_modules()))
     result = runner.invoke(app, ["--help"])
     assert all(name in result.output for name in ("system", "plugin", "example"))
+    assert "hz system expert on" not in result.output
+
+
+def top_level(app: typer.Typer, *args: str) -> set[str]:
+    """The command names a help screen lists, from the first word of each row of its boxes."""
+    rows = [line.strip("│ ").split(" ")[0] for line in runner.invoke(app, [*args, "--help"]).output.splitlines()]
+    return {row for row in rows if row and row.isascii() and row[0].isalpha()}
+
+
+def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app, make_kernel):
+    screen = runner.invoke(app, []).output
+    assert {"join", "setup", "ui", "system", "team", "org", "heinzel"} <= top_level(app)
+    assert "workflow" not in top_level(app)  # the old name runs, hidden (ADR 0051)
+    assert "example" not in top_level(app)  # a module of expert operations only
+    assert top_level(app, "system") >= {"doctor", "update", "expert"}
+    assert not top_level(app, "system") & {"info", "config", "plugin", "serve", "changelog"}
+    assert top_level(app, "heinzel") >= {"list", "show", "drafts", "wake"}
+    assert "graph" not in top_level(app, "heinzel")
+    kernel = make_kernel(builtins=True, **example_modules())
+    expert = sum(let.audience == "expert" for _, let in kernel.lets(OperationLet) if kernel.available(let.func))
+    hidden = expert + 3  # and `hz system serve mcp | api | daemon`
+    last = screen.strip().splitlines()[-1].strip()
+    assert f"{hidden} more commands for experts are hidden; hz system expert on lists them." in screen
+    assert last.startswith(f"v{__version__}")
+    assert last.endswith("🐻 built with AI in Berlin")
+
+
+def test_a_group_that_hides_commands_says_how_many(app):
+    last = runner.invoke(app, ["heinzel", "--help"]).output.strip().splitlines()[-1].strip()
+    assert re.fullmatch(r"\d+ more commands? for experts (are|is) hidden; hz system expert on lists them\.", last)
+    assert "are hidden" not in runner.invoke(app, ["system", "plugin", "--help"]).output  # hides nothing itself
+
+
+def test_hidden_commands_run_and_have_help(app):
+    assert runner.invoke(app, ["example", "greet", "Ada", "--json"]).exit_code == 0
+    assert json.loads(runner.invoke(app, ["system", "info", "--json"]).output)["version"] == __version__
+    result = runner.invoke(app, ["system", "plugin", "--help"])
+    assert result.exit_code == 0
+    assert "list" in top_level(app, "system", "plugin")  # inside a hidden group, help lists what it holds
+
+
+def complete(app: typer.Typer, line: str) -> list[str]:
+    """What zsh completion offers for the last word of `line`."""
+    env = {"_HZ_COMPLETE": "complete_zsh", "_TYPER_COMPLETE_ARGS": line, "_TYPER_COMPLETE_TESTING": "1"}
+    output = runner.invoke(app, [], env=env, prog_name="hz").output
+    return re.findall(r'"([a-z][a-z-]*)":', output)
+
+
+def test_completion_offers_expert_commands_only_in_expert_mode(make_kernel):
+    everyday = complete(build(make_kernel(builtins=True)), "hz system ")
+    assert "doctor" in everyday
+    assert "info" not in everyday
+    assert "serve" not in everyday
+    expert = complete(build(make_kernel(builtins=True, settings_=Settings(expert=True))), "hz system ")
+    assert {"doctor", "info", "serve"} <= set(expert)
+
+
+def test_expert_on_and_off_write_the_user_setting_and_change_help(make_kernel, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    app = build(make_kernel(builtins=True))
+    assert json.loads(runner.invoke(app, ["system", "expert", "--json"]).output)["expert"] is False
+    assert "Expert mode is off" in runner.invoke(app, ["system", "expert"]).output
+    result = runner.invoke(app, ["system", "expert", "on"])
+    assert result.exit_code == 0, result.output
+    assert "Expert mode is on" in result.output
+    config = tmp_path / "config.toml"
+    assert "expert = true" in config.read_text(encoding="utf-8")
+    assert json.loads(runner.invoke(app, ["system", "expert", "--json"]).output)["expert"] is True  # same process
+    kernel = make_kernel(builtins=True, settings_=Config.load().settings(Settings, "hz"))
+    assert "info" in top_level(build(kernel), "system")  # the next `hz` lists everything
+    assert runner.invoke(app, ["system", "expert", "off"]).exit_code == 0
+    assert "expert = false" in config.read_text(encoding="utf-8")
+
+
+def test_expert_mode_says_when_the_environment_wins(make_kernel, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setenv("HZ_EXPERT", "1")
+    result = json.loads(runner.invoke(build(make_kernel(builtins=True)), ["system", "expert", "off", "--json"]).output)
+    assert result["expert"] is True
+    assert "HZ_EXPERT" in result["note"]
+    assert result["next"] == ["unset HZ_EXPERT"]
+    text = runner.invoke(build(make_kernel(builtins=True)), ["system", "expert"]).output  # said without a change too
+    assert "HZ_EXPERT=1 in your environment decides the mode" in text
+    assert "hz system expert off" not in text
+
+
+def test_expert_mode_names_the_hz_config_file_that_wins(make_kernel, tmp_path, monkeypatch):
+    monkeypatch.setenv("HZ_CONFIG_HOME", str(tmp_path))
+    explicit = tmp_path / "team.toml"
+    explicit.write_text("[hz]\nexpert = true\n", encoding="utf-8")
+    monkeypatch.setenv("HZ_CONFIG", str(explicit))
+    result = json.loads(runner.invoke(build(make_kernel(builtins=True)), ["system", "expert", "off", "--json"]).output)
+    assert result["expert"] is True
+    assert str(explicit) in result["note"]
+    assert "HZ_EXPERT" not in result["note"]
+
+
+def test_a_project_file_cannot_turn_expert_mode_on(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "hz.toml").write_text("[hz]\nexpert = true\n", encoding="utf-8")
+    assert Config.load().settings(Settings, "hz").expert is False
+
+
+def test_the_generated_reference_lists_every_command_and_marks_the_expert_ones(make_kernel):
+    app = build(make_kernel(builtins=True), plain=True)
+    assert {"info", "serve", "doctor"} <= top_level(app, "system")
+    help_text = " ".join(runner.invoke(app, ["system", "--help"]).output.split())
+    assert "info (expert) Show versions" in help_text
+    assert "doctor Run every module" in help_text
+    assert "serve (expert)" in help_text
+    assert "are hidden" not in runner.invoke(app, ["--help"]).output  # nothing is
 
 
 def test_system_info_json(app):
@@ -134,7 +247,16 @@ def test_system_info_json(app):
     assert result.exit_code == 0, result.output
     info = json.loads(result.output)
     assert info["version"] == __version__
-    assert info["sections"] == {"example": {"greeting": "hi"}}  # an empty section (no capabilities in use) is left out
+    assert info["sections"] == {  # an empty section is left out
+        "example": {"greeting": "hi"},
+        "system.capability": {
+            "ai → ai-access:read": "claude-code → api.anthropic.com",
+            "ai.access → ai-access:read": "claude-code → api.anthropic.com",
+            "org agenda → calendar:read": "optional: not connected: no adapter bound",
+            "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
+            "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
+        },
+    }
     assert {m["qualname"] for m in info["modules"]} >= {"system", "system.changelog", "system.plugin", "example.ping"}
 
 
@@ -201,9 +323,11 @@ def test_a_collapsed_module_with_a_setup_step_keeps_its_exit_codes(make_kernel):
 
 def test_plugin_list_shows_plugin_modules(app):
     result = runner.invoke(app, ["system", "plugin", "list", "--json"])
-    assert json.loads(result.output) == [
-        {"distribution": "heinzel-test", "version": "9.9.9", "modules": ["example", "example.ping"]}
-    ]
+    [plugin] = json.loads(result.output)
+    assert (plugin["distribution"], plugin["version"], plugin["modules"]) == (
+        "heinzel-test", "9.9.9", ["example", "example.ping"]
+    )  # fmt: skip
+    assert (plugin["name"], plugin["enabled"], plugin["first_party"]) == ("test", True, False)
 
 
 def fake_github(monkeypatch, answer):
@@ -220,6 +344,8 @@ def fake_github(monkeypatch, answer):
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_PLUGIN__GITHUB_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(_service, "get_json", get_json)
+    # The heinzel-contrib listing is a second GitHub read (Discover source); fake it as an empty-but-readable listing.
+    monkeypatch.setattr(_service.PluginService, "_contrib_plugins", lambda *_args, **_kwargs: [])
 
 
 CRM = {
@@ -236,9 +362,11 @@ def test_plugin_search_lists_first_party_and_community_plugins(app, monkeypatch)
     assert result.exit_code == 0, result.output
     found = json.loads(result.output)
     assert [(p["name"], p["source"], p["community"], p["install_spec"]) for p in found["plugins"]] == [
+        ("heinzel-acme", "first-party", False, "acme"),
         ("heinzel-atlassian", "first-party", False, "atlassian"),
         ("heinzel-clock", "first-party", False, "clock"),
         ("heinzel-github", "first-party", False, "github"),
+        ("heinzel-google", "first-party", False, "google"),
         ("heinzel-zoom", "first-party", False, "zoom"),
         ("heinzel-crm", "github", True, "git+https://github.com/someone/heinzel-crm"),
     ]
@@ -261,9 +389,11 @@ def test_plugin_search_offline_shows_first_party_plugins_and_a_warning(app, monk
     assert result.exit_code == 0, result.output
     found = json.loads(result.output)
     assert [p["name"] for p in found["plugins"]] == [
+        "heinzel-acme",
         "heinzel-atlassian",
         "heinzel-clock",
         "heinzel-github",
+        "heinzel-google",
         "heinzel-zoom",
     ]
     assert found["warnings"] == [
@@ -443,15 +573,25 @@ def test_commands_are_sorted(app):
         "agent",
         "capability",
         "changelog",
+        "claude",
         "config",
+        "connector",
         "credential",
         "daemon",
         "doctor",
+        "expert",
         "info",
+        "layer",
         "modules",
+        "notify",
         "plugin",
         "release",
+        "runner",
         "serve",
+        "skill",
+        "sound",
+        "theme",
+        "ui",
         "update",
     ]
     assert system.list_commands(None) == expected
@@ -504,8 +644,9 @@ def test_invalid_arguments_are_rejected_before_running(make_kernel):
 
 # Agent-ready: every operation's command takes --json. The servers are commands but no operations: they run until
 # stopped and print no result to format.
-SERVERS = {"hz system serve api", "hz system serve daemon", "hz system serve mcp"}
-SETUP = {"hz setup"}  # setup steps are interactive, not operations (ADR 0032)
+# `hz chat` without a subcommand is the interactive chat, which prints no result either (ADR 0045).
+SERVERS = {"hz system serve api", "hz system serve daemon", "hz system serve mcp", "hz ui", "hz chat"}
+SETUP: set[str] = set()  # `hz setup` and `hz join` take --json too (ADR 0032, amended)
 
 
 def leaves_without_json(command, path: str = "hz") -> list[str]:

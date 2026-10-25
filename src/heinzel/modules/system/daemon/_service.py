@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, cast
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
 
-from heinzel import CatchUp, Check, Config, HeinzelError, JobLet, Kernel, Settings, Status
+from heinzel import CatchUp, Check, Config, HeinzelError, JobLet, Kernel, Notifications, Settings, Status, __version__
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._ledger import Ledger
@@ -33,6 +33,7 @@ from heinzel.modules.system.daemon._models import (
     JobInfo,
     JobRun,
     LogLine,
+    Restarted,
     TickReport,
     Toggled,
     Uninstalled,
@@ -53,6 +54,8 @@ from heinzel.modules.system.daemon._runtime import (
 )
 from heinzel.modules.system.daemon._units import (
     LABEL,
+    LOGIN_ITEM_HINT,
+    NOTIFIER_APP,
     SYSTEMD_NAME,
     check_interval,
     launchd_plist,
@@ -92,6 +95,11 @@ class Due:
     skip: str | None = None
 
 
+def notifier_in_applications() -> bool:
+    """Whether Heinzel Notifier.app is in ~/Applications."""
+    return (Path.home() / "Applications" / NOTIFIER_APP).exists()
+
+
 class DaemonService:
     """Installs, inspects and pauses the daemon, and runs ticks."""
 
@@ -107,6 +115,7 @@ class DaemonService:
         which: Callable[[str], str | None] = shutil.which,
         time_limit: TimeLimit = within,
         zone: tzinfo | None = None,
+        notifier_installed: Callable[[], bool] = notifier_in_applications,
     ) -> None:
         """Create the service; `for_user` builds it for the kernel, tests pass the rest.
 
@@ -121,7 +130,9 @@ class DaemonService:
             which: Finds executables.
             time_limit: Runs a job with a timeout.
             zone: The time zone cron expressions mean; the user's by default.
+            notifier_installed: Whether Heinzel Notifier.app is in ~/Applications, for the Login Items hint.
         """
+        self._notifier_installed = notifier_installed
         self._kernel = kernel
         self._runner = runner
         self._platform = platform
@@ -175,6 +186,7 @@ class DaemonService:
                 "executable": str(executable),
                 "platform": self._platform,
                 "installed_at": self._clock().isoformat(),
+                "version": __version__,
             },
         )
         if self._platform == "darwin":  # bootstrap fails on a loaded agent; unload the old one, if any, first
@@ -184,6 +196,7 @@ class DaemonService:
             if result.returncode != 0:
                 msg = f"`{' '.join(command)}` failed: {(result.stderr or result.stdout).strip()}"
                 raise HeinzelError(msg)
+        hint = LOGIN_ITEM_HINT if self._platform == "darwin" and not self._notifier_installed() else None
         return Installed(
             platform=self._platform,
             executable=executable,
@@ -191,7 +204,22 @@ class DaemonService:
             files=files,
             commands=commands,
             dry_run=False,
+            hint=hint,
         )
+
+    def restart(self) -> Restarted:
+        """Reload the installed daemon with the interval it has, so it runs with the hz that is installed now.
+
+        Raises:
+            HeinzelError: If loading fails.
+        """
+        recorded = self._read_state("install.json")
+        installed = self._platform in PLATFORMS and all(path.exists() for path in self._unit_paths())
+        if not installed or "interval_minutes" not in recorded:
+            return Restarted(restarted=False, version=__version__, interval_minutes=None)
+        minutes = int(recorded["interval_minutes"])
+        self.install(timedelta(minutes=minutes))
+        return Restarted(restarted=True, version=__version__, interval_minutes=minutes)
 
     def uninstall(self) -> Uninstalled:
         """Unload and remove the unit; receipts, logs and the pause flag stay. Nothing to do is not an error.
@@ -224,6 +252,7 @@ class DaemonService:
         installed = self._platform in PLATFORMS and all(path.exists() for path in self._unit_paths())
         recorded = self._read_state("install.json")
         jobs = self.jobs()
+        version = str(recorded["version"]) if installed and "version" in recorded else None
         return DaemonStatus(
             platform=self._platform,
             installed=installed,
@@ -234,6 +263,8 @@ class DaemonService:
             last_tick=self._last_tick(),
             jobs=len(jobs),
             failing=[job.job for job in jobs if job.problem or job.last_disposition is Disposition.FAILED],
+            version=version,
+            version_mismatch=version is not None and version != __version__,
         )
 
     def health(self) -> list[Check]:
@@ -266,7 +297,7 @@ class DaemonService:
                     name="compiled jobs",
                     status=Status.DEGRADED,
                     detail=f"compiling jobs failed, so only declared jobs run: {self.compile_error}",
-                    fix="See `hz system daemon logs`; `hz workflow check` lists problems in contracts",
+                    fix="See `hz system daemon logs`; `hz heinzel check` lists problems in contracts",
                 )
             )
         if status.failing:
@@ -344,6 +375,7 @@ class DaemonService:
         now = self._clock()
         jobs = self._jobs()
         if job is not None:
+            job = self._current_id(job, jobs)
             jobs = [j for j in jobs if j.id == job]
             if not jobs:
                 msg = f"No job {job!r}; `hz system daemon jobs` lists them."
@@ -361,10 +393,32 @@ class DaemonService:
             try:
                 runs = self._run(jobs, job, now, log)
                 self._write_state("heartbeat.json", {"last_tick": now.isoformat()})
+                self._post_notices(log)
                 log.write(logging.INFO, f"tick done: {len(runs)} run(s)")
             finally:
                 log.close()
         return TickReport(at=now, dry_run=False, paused=False, locked=False, runs=runs)
+
+    def _current_id(self, job: str, jobs: list[Job]) -> str:
+        """`job`, or its id under its module's new name when it names a renamed module's job by the old (ADR 0051)."""
+        module, sep, name = job.partition(":")
+        if not sep or any(j.id == job for j in jobs) or (renamed := self._kernel.renamed(module)) is None:
+            return job
+        current = f"{renamed}:{name}"
+        logger.warning("Job %s is now %s; the old id works for one more minor release.", job, current)
+        return current
+
+    def _post_notices(self, log: TickLog) -> None:
+        """Pop up due notices natively when no web app shows them (ADR 0043); a failure only costs the pop-up."""
+        if not self._kernel.provides(Notifications):
+            return
+        try:
+            posted = self._kernel.resolve(Notifications).post_native()
+        except Exception as exc:  # noqa: BLE001 - isolation boundary: notices never fail a tick
+            log.write(logging.WARNING, f"posting notices failed: {describe(exc)}")
+            return
+        if posted:
+            log.write(logging.INFO, f"posted {posted} notice(s)")
 
     def _plan(self, jobs: list[Job], manual: str | None, now: datetime) -> list[JobRun]:
         ledger = Ledger(self.receipts_dir)

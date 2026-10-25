@@ -7,6 +7,7 @@ Needs network (PyPI). Every test gets its own uv tool directory, configuration a
 import json
 import os
 import re
+import shlex
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,14 +32,23 @@ UV_PYTHON_DIR = subprocess.run(
 MODULES_DIR = REPO / "src" / "heinzel" / "modules"
 
 
+def declared_name(package: Path) -> str | None:
+    """The name a package's `module = Module("<name>", ...)` declares, or None if it declares none."""
+    text = (package / "__init__.py").read_text(encoding="utf-8")
+    match = re.search(r'^module = Module\(\s*"([a-z][a-z0-9-]*)"', text, re.MULTILINE)
+    return match[1] if match else None
+
+
 def builtin_modules() -> set[str]:
-    """The built-in modules in the checkout: packages whose `__init__.py` declares `module = Module(...)`."""
-    return {
-        ".".join(init.parent.relative_to(MODULES_DIR).parts)
-        for init in MODULES_DIR.rglob("__init__.py")
-        if init.parent != MODULES_DIR
-        and re.search(r"^module = Module\(", init.read_text(encoding="utf-8"), re.MULTILINE)
-    }
+    """The built-in modules in the checkout, by the names they declare (the package `telemetry` is `report`)."""
+    found: set[str] = set()
+    for init in MODULES_DIR.rglob("__init__.py"):
+        if init.parent == MODULES_DIR or declared_name(init.parent) is None:
+            continue
+        chain = [init.parent, *init.parent.parents]
+        names = [declared_name(p) for p in reversed(chain[: chain.index(MODULES_DIR)])]
+        found.add(".".join(name for name in names if name))
+    return found
 
 
 BUILTIN_MODULES = builtin_modules()
@@ -143,18 +153,24 @@ def test_direct_lifecycle(sandbox, wheel):
     assert {skill["name"] for skill in installed} == {"hz", "hz-init", "hz-uninstall"}
     assert (sandbox.skills / "hz-init" / "scripts" / "install.sh").is_file()
 
-    sandbox.hz("system", "plugin", "add", DUMMY_PLUGIN)
+    sandbox.hz("system", "plugin", "develop", DUMMY_PLUGIN)
     assert sandbox.hz("dummy", "hello").strip() == "hello from dummy"
     # ADR 0006: plugins are recorded in the uv tool receipt, so upgrading Heinzelmännchen keeps them.
     sandbox.run("uv", "tool", "upgrade", "heinzel")
     assert sandbox.hz("dummy", "greet", "--name", "Ada").strip() == "Hello, Ada!"
-    assert json.loads(sandbox.hz("system", "plugin", "list", "--json")) == [
-        {"distribution": "heinzel-dummy", "version": "1.2.3", "modules": ["dummy", "dummy.greet"]}
-    ]
-    assert json.loads(sandbox.hz("system", "info", "--json"))["sections"] == {"dummy": {"greeting": "hello from dummy"}}
+    [dummy] = json.loads(sandbox.hz("system", "plugin", "list", "--json"))
+    assert (dummy["distribution"], dummy["version"], dummy["modules"]) == (
+        "heinzel-dummy",
+        "1.2.3",
+        ["dummy", "dummy.greet"],
+    )
+    assert (dummy["source_kind"], dummy["enabled"]) == ("path", True)
+    assert [e["action"] for e in json.loads(sandbox.hz("system", "plugin", "history", "--json"))] == ["develop"]
+    sections = json.loads(sandbox.hz("system", "info", "--json"))["sections"]
+    assert sections["dummy"] == {"greeting": "hello from dummy"}  # the core's own uses are tested in integration
 
     # `hz system update --source` switches the source and keeps plugins too.
-    assert sandbox.hz("system", "update", "--source", str(wheel)).startswith("hz ")
+    assert sandbox.hz("system", "update", "--source", str(wheel)).startswith(("Reinstalled hz ", "Updated hz "))
     assert sandbox.hz("dummy", "hello").strip() == "hello from dummy"
 
     sandbox.hz("system", "plugin", "remove", "heinzel-dummy")
@@ -210,3 +226,84 @@ def test_install_from_git_like_users_do(sandbox):
         "hz-init",
         "hz-uninstall",
     }
+
+
+def installed_from_git(sandbox) -> None:
+    """Core installed from this checkout's HEAD, so first-party plugins come from the same repository and revision."""
+    if not (REPO / ".git").is_dir() or not HEAD:
+        pytest.skip("needs a git checkout with at least one commit")
+    sandbox.run("uv", "tool", "install", f"git+file://{REPO}@{HEAD}")
+
+
+def test_a_first_party_plugin_is_added_by_name_and_the_previews_hint_works_pasted(sandbox):
+    installed_from_git(sandbox)
+    preview = sandbox.hz("system", "plugin", "add", "clock")
+    assert "Not installed yet" in preview
+    assert "not reviewed" not in preview  # first-party: no community warning
+    [hint] = [line for line in preview.splitlines() if line.startswith("To install: ")]
+    command = shlex.split(hint.removeprefix("To install: "))
+    assert command[0] == "hz"
+    assert "Installed heinzel-clock" in sandbox.run(sandbox.hz_bin, *command[1:])
+    assert [p["distribution"] for p in json.loads(sandbox.hz("system", "plugin", "list", "--json"))] == [
+        "heinzel-clock"
+    ]
+    assert sandbox.hz("clock", "--help")  # the plugin loads
+
+
+def test_a_plugin_from_a_git_repository_is_added_with_confirm(sandbox, tmp_path):
+    """A git spec over https, served from a local bare repository through git's insteadOf (no network)."""
+    installed_from_git(sandbox)
+    work = tmp_path / "work"
+    subprocess.run(["cp", "-R", str(DUMMY_PLUGIN), str(work)], check=True, timeout=60)
+    git = ["git", "-C", str(work), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run(["git", "init", "-q", "-b", "main", str(work)], check=True, timeout=60)
+    subprocess.run([*git, "add", "."], check=True, timeout=60)
+    subprocess.run([*git, "commit", "-q", "-m", "plugin"], check=True, timeout=60)
+    bare = tmp_path / "heinzel-dummy.git"
+    subprocess.run(["git", "clone", "-q", "--bare", str(work), str(bare)], check=True, timeout=60)
+    rewrite = {
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": f"url.{bare}.insteadOf",
+        "GIT_CONFIG_VALUE_0": "https://git.example.test/acme/heinzel-dummy",
+    }
+    spec = "git+https://git.example.test/acme/heinzel-dummy@main"
+    preview = sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, **rewrite)
+    assert "Not installed yet" in preview
+    assert "✓ Installed" in sandbox.run(sandbox.hz_bin, "system", "plugin", "add", spec, "--confirm", **rewrite)
+    assert sandbox.hz("dummy", "hello").strip() == "hello from dummy"
+
+
+def test_the_web_head_installs_a_first_party_catalog_entry_by_its_install_spec(sandbox):
+    import httpx
+
+    installed_from_git(sandbox)
+    entry = next(
+        p
+        for p in json.loads(sandbox.hz("system", "plugin", "search", "--text", "clock", "--json"))["plugins"]
+        if p["short_name"] == "clock"
+    )
+    ui = subprocess.Popen(
+        [str(sandbox.hz_bin), "ui", "--port", "0"],
+        env={**sandbox.env, "BROWSER": "true"},
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert ui.stderr is not None
+        line = next(line for line in ui.stderr if "runs at" in line)
+        url = line.strip().rsplit(" ", 1)[-1]
+        base, token = url.split("#token=")
+        auth = {"Authorization": f"Bearer {token}"}
+        add = f"{base.rstrip('/')}/api/system/plugin/add"
+        shown = httpx.post(add, params={"spec": entry["install_spec"]}, headers=auth, timeout=120).json()
+        assert shown["done"] is False
+        assert shown["candidate"]["first_party"] is True
+        done = httpx.post(add, params={"spec": shown["candidate"]["spec"], "confirm": True}, headers=auth, timeout=240)
+        assert done.status_code == 200, done.text
+        assert done.json()["done"] is True
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        if ui.stderr is not None:
+            ui.stderr.close()
+    assert sandbox.hz("clock", "--help")

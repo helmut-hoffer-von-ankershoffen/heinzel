@@ -2,7 +2,7 @@
 status: proposed
 date: 2026-10-23
 related: 0005, 0012, 0018, 0020
-amended-by: 0028, 0041
+amended-by: 0028, 0080
 ---
 
 # 0024: People and teams come from a directory of record, are referenced by role, and are minimised

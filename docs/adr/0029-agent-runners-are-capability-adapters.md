@@ -2,6 +2,7 @@
 status: proposed
 date: 2026-10-23
 related: 0020, 0021, 0028
+amended-by: 0045, 0049, 0050, 0057
 ---
 
 # 0029: Agent runners are capability adapters; core ships Claude Code and a generic command adapter
@@ -99,6 +100,10 @@ while building it and in review of the pull request (director's decisions, 2026-
   complete, and the limits the runner could not enforce. A timeout or budget stop is a result, never an exception; so
   are a failing CLI and missing or empty output (status `failed`, with the exit code and the end of stderr). A
   misconfigured runner raises a `HeinzelError`.
+- *Amended by [ADR 0045](0045-a-chat-that-acts-through-hz-with-confirmation-in-code.md): a chat's agent gets hz's
+  operations as tools through the MCP head (`ToolProfile.mcp_servers`), reads only, with every other call held for
+  the person's confirmation; such a Claude Code run uses `--setting-sources ""` instead of `--safe-mode`, and doctor
+  also asks `claude auth status`.*
 - **Tools in 0.2: inputs are pre-fetched, the agent gets no hz tools.** This settles ADR 0021's tools question for
   0.2 (option a): a render packet holds the inputs, fetched through capability handles by the job before the session
   starts, and the agent session only reads the working directory with the runner's read-only tools. `hz.tools`

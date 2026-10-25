@@ -1,0 +1,301 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Colours as tokens (shadcn/ui's names), light first; `.dark` on <html> switches them. */
+@theme {
+  --color-background: #ffffff;
+  --color-foreground: #1a1a1a;
+  --color-muted: #f2f2f2;
+  --color-muted-foreground: #6b6b6b;
+  --color-card: #ffffff;
+  --color-border: #e4e4e4;
+  --color-primary: #b4532f;
+  --color-primary-foreground: #ffffff;
+  --color-accent: #ebebeb;
+  --color-ok: #1f7444;
+  --color-warn: #8a5c00;
+  --color-bad: #b4372d;
+  --color-ring: #b4532f;
+  --color-sidebar: #f3f3f3;
+  --color-popover: #ffffff;
+  --color-input: #ffffff;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  /* The type scale, density and corners a theme may set (ADR 0044): `text-ui`, `text-ui-sm`, `size-(--icon)`,
+     `h-(--row)`, `rounded-lg` for controls and `rounded-xl` for cards and dialogs. */
+  --text-ui: 15px;
+  --text-ui-sm: 13px;
+  --icon: 18px;
+  --row: 36px;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  /* Every other corner follows the theme's two radii (`radius_control`, `radius`) by ratio, so `rounded`,
+     `rounded-sm`, `-md` and `-2xl` change with a theme too: 0.5rem gives Tailwind's 0.125, 0.25 and 0.375rem, 0.75rem
+     its 1rem and 1.5rem. `rounded-full` stays a pill. */
+  --radius-xs: calc(var(--radius-lg) * 0.25);
+  --radius: calc(var(--radius-lg) * 0.5);
+  --radius-sm: calc(var(--radius-lg) * 0.5);
+  --radius-md: calc(var(--radius-lg) * 0.75);
+  --radius-2xl: calc(var(--radius-xl) * 4 / 3);
+  --radius-3xl: calc(var(--radius-xl) * 2);
+  --heading-tracking: 0;
+  --color-accent-foreground: #1a1a1a;
+  --color-icon: #5c5c5c;
+  /* A switch that is on; white knob on it in both modes. */
+  --color-switch: #2f7bf6;
+  /* A theme's soft tint at the top of the main area (`main_tint`, ADR 0044); none by default. */
+  --color-main-tint: transparent;
+}
+
+/* A theme's backdrop behind the main area (ADR 0060), built by the web app from checked parts; none by default. */
+:root {
+  --theme-backdrop: none;
+}
+
+/* The tokens a variant changes most, registered as colours so a change of variant can fade between them. */
+@property --color-background {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --color-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #1a1a1a;
+}
+@property --color-muted-foreground {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #6b6b6b;
+}
+@property --color-main-tint {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+@property --color-primary {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #b4532f;
+}
+@property --color-sidebar {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #f3f3f3;
+}
+@property --color-card {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffffff;
+}
+@property --color-border {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e4e4e4;
+}
+
+/* Set by ThemeTokens for two seconds when the variant changes: slow enough to notice, never a flash. */
+html.theme-shift {
+  transition:
+    --color-background 1.5s ease,
+    --color-foreground 1.5s ease,
+    --color-muted-foreground 1.5s ease,
+    --color-main-tint 1.5s ease,
+    --color-primary 1.5s ease,
+    --color-sidebar 1.5s ease,
+    --color-card 1.5s ease,
+    --color-border 1.5s ease;
+}
+
+.dark {
+  --color-background: #181818;
+  --color-foreground: #ececec;
+  --color-muted: #272727;
+  --color-muted-foreground: #9b9b9b;
+  --color-card: #181818;
+  --color-border: #2c2c2c;
+  --color-primary: #d97757;
+  --color-primary-foreground: #ffffff;
+  --color-accent: #444444;
+  --color-ok: #7cc39a;
+  --color-warn: #e0b45f;
+  --color-bad: #e5806f;
+  --color-ring: #d97757;
+  --color-sidebar: #272727;
+  --color-popover: #2c2c2c;
+  --color-input: #303030;
+  --color-accent-foreground: #ececec;
+  --color-icon: #b3b3b3;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible:not([data-focus-ring="parent"]) {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion has to win over every component's transition */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: as above */
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.react-flow {
+  --xy-background-color: var(--color-background);
+  --xy-node-background-color: var(--color-card);
+  --xy-node-border: 1px solid var(--color-border);
+  --xy-node-color: var(--color-foreground);
+  --xy-edge-stroke: var(--color-muted-foreground);
+  --xy-controls-button-background-color: var(--color-card);
+  --xy-controls-button-color: var(--color-foreground);
+  --xy-attribution-background-color: transparent;
+}
+
+/* HeinzelAvatar's motion (only without reduced motion): a working Heinzelmännchen bobs, a state's badge breathes. */
+@keyframes hz-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes hz-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes hz-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* HeinzelAvatar's idle life (data-idle, set by useIdleLife; the scheduler also stays quiet under reduced motion): a
+   blink, a hat tilt, a little wave, a glance, a tiny hop. Transforms on the existing parts, subtle by design. */
+@media (prefers-reduced-motion: no-preference) {
+  svg[data-idle] .hz-eyes,
+  svg[data-idle] .hz-hat,
+  svg[data-idle] .hz-wave {
+    transform-box: fill-box;
+  }
+  svg[data-idle="blink"] .hz-eyes {
+    transform-origin: 50% 50%;
+    animation: hz-blink 0.28s ease-in-out;
+  }
+  svg[data-idle="glance-left"] .hz-eyes {
+    animation: hz-glance-left 1.2s ease-in-out;
+  }
+  svg[data-idle="glance-right"] .hz-eyes {
+    animation: hz-glance-right 1.2s ease-in-out;
+  }
+  svg[data-idle="tilt"] .hz-hat {
+    transform-origin: 50% 100%;
+    animation: hz-tilt 1s ease-in-out;
+  }
+  svg[data-idle="wave"] .hz-wave {
+    transform-origin: 50% 0%;
+    animation: hz-wave 1.2s ease-in-out;
+  }
+  svg[data-idle="hop"] {
+    animation: hz-hop 0.5s ease-out;
+  }
+}
+
+@keyframes hz-blink {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes hz-glance-left {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25%,
+  75% {
+    transform: translateX(-9px);
+  }
+}
+
+@keyframes hz-glance-right {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25%,
+  75% {
+    transform: translateX(9px);
+  }
+}
+
+@keyframes hz-tilt {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  35%,
+  65% {
+    transform: rotate(-5deg);
+  }
+}
+
+@keyframes hz-wave {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20%,
+  60% {
+    transform: rotate(-16deg);
+  }
+  40%,
+  80% {
+    transform: rotate(-4deg);
+  }
+}
+
+@keyframes hz-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-3px);
+  }
+}

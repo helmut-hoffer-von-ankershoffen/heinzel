@@ -12,9 +12,9 @@ from rich.console import Console
 
 from heinzel import Config, Credentials, HeinzelError, Module, Status
 from heinzel.kernel import CAPABILITIES, user_config_dir
+from heinzel.modules.heinzel._contracts import read_contract
 from heinzel.modules.org import SyncService
 from heinzel.modules.org._sync import SyncItem, SyncReport, render_sync
-from heinzel.modules.workflow._contracts import read_contract
 
 pytestmark = pytest.mark.unit
 
@@ -129,7 +129,7 @@ def test_next_accepts_the_pending_ones_and_says_how_to_decide_the_rest(make):
     assert any(
         line.startswith("binding:chat: install the plugin that provides the slack adapter") for line in report.next
     )
-    assert any("changed since you pinned it; read it first: hz workflow show team:monthly" in x for x in report.next)
+    assert any("changed since you pinned it; read it first: hz heinzel show team:monthly" in x for x in report.next)
     assert (
         "credential:google/oauth-client: install the plugin that declares google/oauth-client first; "
         "hz system doctor then says how"
@@ -159,13 +159,13 @@ def test_a_binding_of_a_dashed_capability_uses_the_configuration_key(make):
 
 def test_accepted_contracts_are_all_pinned_to_the_content_workflow_compares(make, team):
     make(workflow={"schedule_team": ["other"]}).sync("contract:weekly-digest,contract:monthly")
-    assert user_file()["workflow"]["schedule_team"] == ["other", pin(team, "weekly-digest"), pin(team, "monthly")]
+    assert user_file()["heinzel"]["schedule_team"] == ["other", pin(team, "weekly-digest"), pin(team, "monthly")]
 
 
 def test_all_takes_only_what_you_have_no_choice_for_yet(make, team):
     report = make(capabilities={"tracker": "jira"}, workflow={"schedule_team": [STALE]}).sync("all")
     assert user_file()["capabilities"] == {"documents": "google", "code_host": "github"}
-    assert user_file()["workflow"]["schedule_team"] == [STALE, pin(team, "weekly-digest")]
+    assert user_file()["heinzel"]["schedule_team"] == [STALE, pin(team, "weekly-digest")]
     assert states(report)["binding:tracker"] == "differs"
     assert states(report)["contract:monthly"] == "differs"
 
@@ -174,7 +174,7 @@ def test_what_you_chose_otherwise_switches_only_by_its_id(make, team):
     service = make(capabilities={"tracker": "jira"}, workflow={"schedule_team": [STALE]})
     service.sync("binding:tracker,contract:monthly")
     assert user_file()["capabilities"] == {"tracker": "github"}
-    assert user_file()["workflow"]["schedule_team"] == [pin(team, "monthly")]
+    assert user_file()["heinzel"]["schedule_team"] == [pin(team, "monthly")]
 
 
 def test_accepting_what_sync_cannot_apply_says_why(make):
@@ -194,7 +194,7 @@ def test_a_binding_whose_adapter_is_not_installed_is_never_written(make):
 
 
 def test_an_unknown_id_names_the_recommendations_there_are(make):
-    with pytest.raises(HeinzelError, match="recommends no binding:mail; its recommendations: binding:chat"):
+    with pytest.raises(HeinzelError, match="Nothing recommends binding:mail to you; the recommendations: binding:chat"):
         make().sync("binding:mail")
 
 
@@ -264,3 +264,49 @@ def test_the_report_without_recommendations_prints_what_to_do():
     console = Console(width=200, record=True, color_system=None)
     console.print(render_sync(SyncReport(team=False, items=[], next=["Join your team first."])))
     assert console.export_text().strip() == "Join your team first."
+
+
+def layer_module(name: str, parent: str | None = None, **defaults: object) -> Module:
+    module = Module(name, f"The {name} layer.")
+    module.layer(parent=parent)
+    module.playbook(f"How {name} works.", defaults=defaults, setup=False)
+    return module
+
+
+def test_your_layers_bindings_join_the_teams_which_win_for_the_same_capability(make_kernel, team):
+    company = layer_module("acme", **{"capabilities.tracker": "jira", "capabilities.mail": "acme", "acme.zone": "x"})
+    tables = {"team": {"checkout": str(team), "repository": "https://github.com/acme/payments.git"}}
+    kernel = make_kernel(builtins=True, vendors=vendors(), acme=company, config=Config(files=(), data=tables))
+    items = {item.id: item for item in kernel.resolve(SyncService).report().items}
+    assert items["binding:tracker"].recommended == "github"  # the team repository's
+    assert items["binding:mail"].origin == "layer acme (heinzel-test), its playbook"
+    assert not any(item.name == "acme.zone" for item in items.values())  # a module setting is hz setup's
+
+
+def test_layers_recommend_even_before_you_join_a_team(make_kernel):
+    kernel = make_kernel(
+        builtins=True, vendors=vendors(), acme=layer_module("acme", **{"capabilities.tracker": "jira"})
+    )
+    report = kernel.resolve(SyncService).report()
+    assert report.team
+    assert [(i.id, i.state) for i in report.items] == [("binding:tracker", "pending")]
+
+
+def test_a_binding_that_isnt_a_name_is_left_out(make_kernel):
+    kernel = make_kernel(builtins=True, acme=layer_module("acme", **{"capabilities.tracker": ["jira"]}))
+    assert kernel.resolve(SyncService).report().items == []
+
+
+def test_two_spellings_of_one_capability_are_one_recommendation_the_most_specific_layers(make_kernel):
+    company = layer_module("acme", **{"capabilities.code_host": "github"})
+    team = layer_module("acme-ops", "acme", **{"capabilities.code-host": "forge"})
+    kernel = make_kernel(builtins=True, vendors=vendors(), acme=company, **{"acme-ops": team})
+    items = kernel.resolve(SyncService).report().items
+    assert [(i.id, i.recommended) for i in items] == [("binding:code-host", "forge")]
+
+
+def test_a_capability_you_turned_off_is_your_choice_and_all_leaves_it_off(make):
+    service = make(capabilities={"documents": "none"})
+    assert states(service.report())["binding:documents"] == "differs"
+    service.sync("all")
+    assert user_file().get("capabilities", {}).get("documents") is None

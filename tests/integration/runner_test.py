@@ -75,10 +75,22 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
     code, info = hz(kernel, "system", "info")
     assert code == 0
     assert isinstance(info, dict)
-    assert info["sections"]["system.capability"] == {"digest → agent-runner:read": "claude-code → api.anthropic.com"}
+    assert info["sections"]["system.capability"] == {
+        "ai → ai-access:read": "claude-code → api.anthropic.com",
+        "ai.access → ai-access:read": "claude-code → api.anthropic.com",
+        "digest → agent-runner:read": "claude-code → api.anthropic.com",
+        "org agenda → calendar:read": "optional: not connected: no adapter bound",
+        "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
+        "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
+    }
     kernel = make_kernel(builtins=True, digest=digest(), config=command_config(tmp_path))
     assert hz(kernel, "system", "info")[1]["sections"]["system.capability"] == {  # type: ignore[index]
-        "digest → agent-runner:read": "command → unknown (configured)"
+        "ai → ai-access:read": "claude-code → api.anthropic.com",
+        "ai.access → ai-access:read": "claude-code → api.anthropic.com",
+        "digest → agent-runner:read": "command → unknown (configured)",
+        "org agenda → calendar:read": "optional: not connected: no adapter bound",
+        "system.runner ask → agent-runner:read": "command → unknown (configured)",
+        "system.runner.chat send → agent-runner:read": "command → unknown (configured)",
     }
 
 
@@ -116,10 +128,11 @@ def test_doctor_reports_a_missing_command(make_kernel, tmp_path):
     assert check["detail"] == "no-such-agent-cli not found"
 
 
-def test_doctor_checks_the_claude_cli_only_when_someone_needs_a_runner(make_kernel, tmp_path):
-    [check] = runner_checks(make_kernel(builtins=True))
-    assert (check["status"], check["detail"]) == ("up", "no module requires agent-runner (bound: claude-code)")
+def test_doctor_checks_the_claude_cli_the_core_s_chat_needs(make_kernel, tmp_path):
+    """`hz system runner ask` (the web app's chat, ADR 0039) needs a runner, so the core always has one requirement."""
     config = Config(files=(), data={"system": {"runner": {"claude_executable": str(tmp_path / "no-claude")}}})
+    [check] = runner_checks(make_kernel(builtins=True, config=config))
+    assert check["status"] == "degraded"
     [check] = runner_checks(make_kernel(builtins=True, digest=digest(), config=config))
     assert check["status"] == "degraded"
     assert check["fix"].endswith("or bind the command runner: hz system config set capabilities.agent_runner command")
@@ -127,8 +140,30 @@ def test_doctor_checks_the_claude_cli_only_when_someone_needs_a_runner(make_kern
     fake.write_text("#!/bin/sh\n", encoding="utf-8")
     fake.chmod(0o755)
     config = Config(files=(), data={"system": {"runner": {"claude_executable": str(fake)}}})
-    [check] = runner_checks(make_kernel(builtins=True, digest=digest(), config=config))
+    [check, login] = runner_checks(make_kernel(builtins=True, digest=digest(), config=config))
     assert check["status"] == "up"
+    assert (login["name"], login["status"]) == ("claude-code login", "up")
+    assert login["detail"].startswith("unknown")  # a Claude Code without `auth status`
+
+
+@pytest.mark.parametrize(
+    "case", [("true", 0, "up", ""), ("false", 1, "degraded", "claude auth login")], ids=["logged-in", "logged-out"]
+)
+def test_doctor_asks_claude_code_whether_it_is_logged_in_without_calling_a_model(make_kernel, tmp_path, case):
+    logged_in, exit_code, status, fix = case
+    calls = tmp_path / "calls"
+    fake = tmp_path / "claude"
+    fake.write_text(
+        f'#!/bin/sh\necho "$@" >> {calls}\necho \'{{"loggedIn": {logged_in}, "authMethod": "none"}}\'\n'
+        f"exit {exit_code}\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    config = Config(files=(), data={"system": {"runner": {"claude_executable": str(fake)}}})
+    [_, login] = runner_checks(make_kernel(builtins=True, config=config))
+    assert (login["status"], login["fix"]) == (status, fix)
+    # Asked by the runner's check and by AI access's, and nothing else: nothing that would spend money.
+    assert set(calls.read_text(encoding="utf-8").splitlines()) == {"auth status --json"}
 
 
 def test_doctor_is_quiet_about_runners_from_plugins(make_kernel):

@@ -20,12 +20,16 @@ from heinzel import (
     Config,
     Document,
     Documents,
+    DraftedMail,
     Event,
+    FreeBusy,
+    HeinzelError,
     Kernel,
     Mail,
     MailContent,
     MailMessage,
     MailQuery,
+    MailThread,
     Meeting,
     Meetings,
     Message,
@@ -145,6 +149,7 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
     assert code == 0
     assert {c["name"]: c["bound"] for c in report["capabilities"]} == {
         "agent-runner": "claude-code",
+        "ai-access": "claude-code",
         "calendar": None,
         "chat": None,
         "code-host": None,
@@ -152,6 +157,7 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
         "documents": "notes",
         "mail": None,
         "meetings": None,
+        "team-graph": "hz-graph",
         "tracker": None,
     }
     assert [a for a in report["adapters"] if a["capability"] == "documents"] == [
@@ -164,7 +170,12 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
             "distribution": "heinzel-test",
         }
     ]
-    assert [(u["requester"], u["requirement"], u["adapter"], u["hosts"]) for u in report["uses"]] == [
+    # The built-in modules' own uses (org chart, system.runner ask) are tested where they are declared.
+    assert [
+        (u["requester"], u["requirement"], u["adapter"], u["hosts"])
+        for u in report["uses"]
+        if u["requester"].startswith("digest")
+    ] == [
         ("digest", "documents:read", "notes", ["notes.invalid"]),
         ("digest publish", "documents:write", "notes", ["notes.invalid"]),
     ]
@@ -177,7 +188,8 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
 def test_info_shows_who_reads_and_writes_what(kernel):
     code, info = hz(kernel, "system", "info")
     assert code == 0
-    assert info["sections"]["system.capability"] == {
+    uses = info["sections"]["system.capability"]
+    assert {key: value for key, value in uses.items() if key.startswith("digest")} == {
         "digest → documents:read": "notes → notes.invalid",
         "digest publish → documents:write": "notes → notes.invalid",
     }
@@ -214,12 +226,51 @@ def test_doctor_reports_met_requirements_as_up(kernel):
     }
 
 
-def test_doctor_is_quiet_when_nothing_is_declared(make_kernel):
+def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_one(make_kernel):
+    """The core needs the chat's agent runner (ADR 0039, 0045), which its default binding serves, and, optionally, a
+    calendar for the agenda, whose absence is no finding."""
     code, report = hz(make_kernel(builtins=True), "system", "doctor")
     assert code == 0
     assert report["checks"]["system.capability"] == [
-        {"name": "requirements", "status": "up", "detail": "no module declares capabilities", "fix": ""}
+        {"name": "ai-access:read for ai", "status": "up", "detail": "served by claude-code", "fix": ""},
+        {"name": "ai-access:read for ai.access", "status": "up", "detail": "served by claude-code", "fix": ""},
+        {
+            "name": "calendar:read for org agenda",
+            "status": "up",
+            "detail": "optional: not connected; to use it: hz system plugin search --text calendar",
+            "fix": "",
+        },
+        {
+            "name": "agent-runner:read for system.runner ask",
+            "status": "up",
+            "detail": "served by claude-code",
+            "fix": "",
+        },
+        {
+            "name": "agent-runner:read for system.runner.chat send",
+            "status": "up",
+            "detail": "served by claude-code",
+            "fix": "",
+        },
     ]
+
+
+def test_an_optional_need_with_a_broken_binding_is_a_doctor_finding(make_kernel):
+    """Optional means doing without a calendar nobody connected, not hiding a binding that can't be used."""
+    first, second = Module("first", "A calendar named g."), Module("second", "Another calendar named g.")
+    first.provides("calendar", modes={"read"}, name="g")(Agenda)
+    second.provides("calendar", modes={"read"}, name="g")(Agenda)
+    config = Config(files=(), data={"capabilities": {"calendar": "g"}})
+    kernel = make_kernel(builtins=True, first=first, second=second, config=config)
+    _, report = hz(kernel, "system", "doctor")
+    [check] = [c for c in report["checks"]["system.capability"] if c["name"] == "calendar:read for org agenda"]
+    assert check["status"] == "degraded"
+    assert "ambiguous" in check["detail"]
+    assert check["fix"].startswith("Bind an installed adapter")
+    _, agenda = hz(kernel, "org", "agenda")
+    assert agenda["calendar"] == "g"
+    assert agenda["problem"].startswith("Your calendar binding 'g' can't be used: the adapter name 'g' is ambiguous")
+    assert agenda["fix"] is None
 
 
 WINDOW = Window(since=datetime(2026, 10, 12, tzinfo=UTC), until=datetime(2026, 10, 19, tzinfo=UTC))
@@ -296,6 +347,9 @@ class Agenda:
                 conference_url="https://rooms.invalid/j/123456789",
             )
         ]
+
+    def free_busy(self, people: str, window: Window) -> list[FreeBusy]:
+        return []
 
 
 def adapters() -> dict[str, Module]:
@@ -389,10 +443,15 @@ def test_capability_list_shows_the_new_capabilities_with_their_adapters(prepared
         ("calendar", "agenda", ("read",)),
     }
     assert [(u["requester"], u["requirement"], u["adapter"]) for u in report["uses"]] == [
+        ("ai", "ai-access:read", "claude-code"),
+        ("ai.access", "ai-access:read", "claude-code"),
+        ("org agenda", "calendar:read", "agenda"),
         ("prep", "chat:read", "talk"),
         ("prep", "meetings:read", "rooms"),
         ("prep", "calendar:read", "agenda"),
         ("prep remind", "chat:write", "talk"),
+        ("system.runner ask", "agent-runner:read", "claude-code"),
+        ("system.runner.chat send", "agent-runner:read", "claude-code"),
     ]
     rendered = CliRunner().invoke(build(prepared), ["system", "capability", "list"])
     assert rendered.exit_code == 0
@@ -595,6 +654,14 @@ class Inbox:
     def read(self, message: str) -> MailContent:
         return self.messages_by_id[message]
 
+    def thread(self, thread: str) -> MailThread:
+        msg = "No conversations in this mailbox"
+        raise HeinzelError(msg)
+
+    def draft(self, draft: str) -> DraftedMail:
+        msg = "No drafts in this mailbox"
+        raise HeinzelError(msg)
+
 
 class Summaries:
     """A meetings adapter for tests that reads summary emails through the bound `mail` adapter."""
@@ -683,7 +750,7 @@ def test_configuration_chooses_between_providers_of_one_capability(make_kernel):
 
 
 def test_a_provider_built_on_mail_reports_mail_unbound(make_kernel):
-    kernel = make_kernel(builtins=True, config=bound(meetings="summaries"), **mail_modules())
+    kernel = make_kernel(builtins=True, config=bound(meetings="summaries", mail="none"), **mail_modules())
     code, output = hz(kernel, "minutes", "held")
     assert code != 0
     assert "mail:read" in str(output)

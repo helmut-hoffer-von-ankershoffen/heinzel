@@ -28,7 +28,7 @@ def main(argv: list[str]) -> int:
         time.sleep(answer.get("sleep", 0))
         sys.stdout.write(answer["stdout"])
         return int(answer.get("exit", 0))
-    path = next(arg for arg in argv if arg.startswith("repos/"))
+    path = next(arg for arg in argv if arg.startswith("repos/") or arg == "user")
     fields = dict(argv[i + 1].split("=", 1) for i, arg in enumerate(argv) if arg == "--raw-field")
     answer = routes.get("api", {}).get(f"{path}?page={fields.get('page', '1')}")
     if answer is None:

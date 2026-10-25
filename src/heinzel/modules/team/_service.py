@@ -602,15 +602,21 @@ class TeamService:
         return tuple(found)
 
     def manifest(self) -> Manifest | None:
-        """The configured team's manifest; None when no team is configured.
+        """The configured team's manifest alone; None without a team, or before `hz team join` cloned it.
 
         Raises:
-            HeinzelError: If it is missing, unreadable or invalid.
+            HeinzelError: If the checkout has no manifest, or it is unreadable, a link or invalid.
         """
-        return None if self.checkout is None else self._team_files(self.checkout)[0]
+        checkout = self.checkout
+        if checkout is None or not checkout.is_dir():
+            return None
+        if not _exists(checkout, MANIFEST):
+            msg = f"{checkout} has no {MANIFEST}, so it isn't a team repository; `hz team show` says what to do"
+            raise HeinzelError(msg)
+        return _parsed(Manifest, checkout, MANIFEST)
 
     def adopt(self, path: Path) -> Adopted:
-        """Record an existing checkout as your team repository, replacing the deprecated `workflow.team_repository`.
+        """Record an existing checkout as your team repository, replacing the deprecated `heinzel.team_repository`.
 
         Raises:
             HeinzelError: If another team is configured, `path` isn't a Git checkout, or its `origin` isn't a URL hz
@@ -633,11 +639,11 @@ class TeamService:
             written.append("set team.repository")
         adopted = Adopted(repository=origin, checkout=checkout, written=written)
         try:
-            self._editor.unset("workflow.team_repository")
-            adopted.written.append("removed workflow.team_repository")
+            self._editor.unset("heinzel.team_repository")
+            adopted.written.append("removed heinzel.team_repository")
         except HeinzelError:  # not in the user file; another file or a variable may still set it
             adopted.next.append(
-                "If a site file or HZ_WORKFLOW__TEAM_REPOSITORY still sets workflow.team_repository, remove it there"
+                "If a site file or HZ_HEINZEL__TEAM_REPOSITORY still sets heinzel.team_repository, remove it there"
             )
         if not _exists(checkout, MANIFEST):
             adopted.next.append(

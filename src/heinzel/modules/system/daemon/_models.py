@@ -4,6 +4,7 @@ import sys
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic import BaseModel, Field, JsonValue
 
@@ -20,9 +21,13 @@ def unit_dir(platform: str) -> Path:
 class DaemonSettings(ModuleSettings):
     """Settings of the daemon module: the `[system.daemon]` table or `HZ_SYSTEM_DAEMON__*` variables."""
 
+    section_title: ClassVar[str | None] = "Daemon"  # the heading in Settings
+
     unit_dir: Path = Field(
         default_factory=lambda: unit_dir(sys.platform),
-        description="Where `install` writes the launchd LaunchAgent (macOS) or the systemd user units (Linux).",
+        title="Service folder",
+        description="Where installing the daemon writes its LaunchAgent on macOS, or its systemd user units on Linux.",
+        json_schema_extra={"x-expert": True},
     )
 
 
@@ -101,6 +106,15 @@ class Installed(BaseModel):
     files: dict[Path, str] = Field(description="Unit files and their content.")
     commands: list[list[str]] = Field(description="Commands run to load the unit; none in a dry run.")
     dry_run: bool = Field(description="Whether nothing was written or loaded.")
+    hint: str | None = Field(default=None, description="What to do next, if anything.")
+
+
+class Restarted(BaseModel):
+    """What `restart` did."""
+
+    restarted: bool = Field(description="Whether the daemon was reloaded; false if it isn't installed.")
+    version: str = Field(description="The hz version the daemon runs with now.")
+    interval_minutes: int | None = Field(description="Minutes between ticks, as installed; none if not installed.")
 
 
 class Uninstalled(BaseModel):
@@ -122,6 +136,16 @@ class DaemonStatus(BaseModel):
     last_tick: datetime | None = Field(description="When the last tick ran.")
     jobs: int = Field(description="How many jobs are registered.")
     failing: list[str] = Field(description="Jobs whose last run failed or that can't run.")
+    version: str | None = Field(
+        default=None,
+        description="The hz version the daemon was started with (installed or last restarted); none if it isn't "
+        "installed or was installed by an older hz.",
+    )
+    version_mismatch: bool = Field(
+        default=False,
+        description="Whether `version` differs from the hz that answers: after `hz system update` the daemon should "
+        "be restarted (`hz system daemon restart`).",
+    )
 
 
 class Toggled(BaseModel):

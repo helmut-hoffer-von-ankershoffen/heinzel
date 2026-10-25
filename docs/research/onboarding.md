@@ -1,8 +1,12 @@
 # Research: perfect onboarding, one invite line
 
+> Historical design research and illustrative transcripts, not current installation instructions.
+> [ADR0080](../adr/0080-one-invite-line-and-a-reviewed-first-win.md) reconciles these journeys with trusted identity,
+> approvals, persistent installation and explicit background consent. The README describes what is available today.
+
 - Date: 2026-10-24 (revised the same day to the maintainer's decisions)
 - Scope: the journeys, the model, the decisions and the build plan behind
-  [ADR 0041](../adr/0041-perfect-onboarding-one-invite-line-joins-a-team.md) (proposed). Builds on ADR 0006 (uv tool
+  [ADR 0080](../adr/0080-one-invite-line-and-a-reviewed-first-win.md) (proposed). Builds on ADR 0006 (uv tool
   receipt), 0020 (state repository), 0021 (contracts, namespaces, pinning), 0024 (people and teams), 0025 (plugin
   names), 0028 (bindings), 0030 (credentials) and 0032 (setup steps), and on two records proposed with it: "layers and
   playbooks are plugins" and "integrations go through the vendor's CLI as an ordinary employee".

@@ -1,17 +1,26 @@
 """The system module: what is installed and how it is configured."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field
 
-from heinzel import HeinzelError, Module
+from heinzel import Kernel, Module
 from heinzel.kernel import Installation, ReleaseSource
-from heinzel.modules.system._models import ModuleInfo, ReleaseCheck, ReleaseNotes, SystemInfo
-from heinzel.modules.system._render import render_info, render_modules, render_release
+from heinzel.modules.system._models import (
+    ModuleInfo,
+    PluginUpdate,
+    ReleaseCheck,
+    ReleaseNotes,
+    SystemInfo,
+    UpdateResult,
+)
+from heinzel.modules.system._render import render_info, render_modules, render_release, render_update
 from heinzel.modules.system._service import GitHubReleases, SystemService, github_releases
+from heinzel.modules.system._update import UpdateService
 
 module = Module("system", "Inspect, configure, diagnose and update Heinzelmännchen itself.", essential=True)
 module.service(SystemService)
+module.service(UpdateService)
 module.service(ReleaseSource, github_releases)  # what the CLI's hourly update check asks (ADR 0031)
 
 
@@ -40,41 +49,53 @@ def release(service: SystemService, installation: Installation) -> ReleaseCheck:
     return service.release(requirements[0] if requirements else None)
 
 
-@module.operation(read_only=False)
+@module.operation(read_only=False, audience="everyday", render=render_update)
 def update(
-    installation: Installation,
+    service: UpdateService,
+    kernel: Kernel,
     source: Annotated[
         str | None,
         Field(description="Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel."),
     ] = None,
-) -> str:
-    """Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
+    channel: Annotated[
+        Literal["release", "main"] | None,
+        Field(
+            description="Follow `release` (the default, setting `update_channel`): the newest release, also from "
+            "`main` once a release is as new as it; or `main`: its newest commit."
+        ),
+    ] = None,
+) -> UpdateResult:
+    """Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.
 
-    Shows the version now installed.
+    Installed from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases
+    only if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`
+    makes. With `--channel main` (or the setting
+    `update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,
+    it changes nothing and says which `--source` moves it. It never moves or suggests a release older than the
+    installed version.
+
+    Plugins are updated in the same run, each from the install spec it was added with (a git spec pinned to `@main`
+    gets its newest commit). A plugin that doesn't allow the new hz never blocks it: it is kept at its version if that
+    still works, else taken out with the command that brings it back. The result reports each plugin.
+    Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
+    version, the error names it and the previous version stays installed.
 
     Raises:
         HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.
     """
-    requirements = installation.requirements()
-    if requirements is None:
-        msg = "Heinzelmännchen wasn't installed with `uv tool install`; update it the way you installed it."
-        raise HeinzelError(msg)
-    command = (
-        installation.upgrade_command()
-        if source is None
-        else installation.tool_install_command(source, requirements[1:])
-    )
-    installation.run(command, "Failed to update Heinzelmännchen.", "Updating Heinzelmännchen")
-    return installation.hz("--version").splitlines()[0]
+    return service.update(source, channel=channel or kernel.settings.update_channel)
 
 
 __all__ = [
     "GitHubReleases",
     "ModuleInfo",
+    "PluginUpdate",
     "ReleaseCheck",
     "ReleaseNotes",
     "SystemInfo",
     "SystemService",
+    "UpdateResult",
+    "UpdateService",
     "github_releases",
     "module",
 ]

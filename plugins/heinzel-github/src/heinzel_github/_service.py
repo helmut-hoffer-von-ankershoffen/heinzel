@@ -3,13 +3,16 @@
 from importlib.metadata import PackageNotFoundError, version
 from typing import Protocol
 
-from heinzel import Check, HeinzelError, Kernel, Status, __version__
+from heinzel import Check, HeinzelError, Kernel, Login, Status, __version__
+from heinzel_github._client import GhClient, GhLoginError, said
 from heinzel_github._gh import INSTALL, MINIMUM_VERSION, Gh, login_fix, version_text
 from heinzel_github._models import GithubAbout, GithubSettings
 
 DISTRIBUTION = "heinzel-github"
 ADAPTER = "github"
 CAPABILITIES = ("code-host", "tracker")
+LIVE_TIMEOUT = 15.0
+"""Seconds the live test's one call may take: it asks GitHub who gh is logged in as, nothing more."""
 
 
 class Bindings(Protocol):
@@ -55,17 +58,21 @@ class GithubService:
 
     def _gh_check(self) -> Check:
         host, name = self._settings.host, self._settings.gh
+        unknown = Login(signed_in=None, site=host, command=login_fix(host))
         if (path := self._gh.executable()) is None:
             return Check(
                 name="gh",
                 status=Status.DEGRADED,
                 detail=f"{name}, the GitHub CLI, is not on PATH; every read goes through it",
                 fix=f"install gh ({INSTALL}), then {login_fix(host)}",
+                login=unknown,
             )
         try:
             found = self._gh.version()
         except HeinzelError as exc:
-            return Check(name="gh", status=Status.DEGRADED, detail=str(exc), fix=f"reinstall gh ({INSTALL})")
+            return Check(
+                name="gh", status=Status.DEGRADED, detail=str(exc), fix=f"reinstall gh ({INSTALL})", login=unknown
+            )
         if found is not None and found < MINIMUM_VERSION:
             return Check(
                 name="gh",
@@ -73,20 +80,53 @@ class GithubService:
                 detail=f"{path} is gh {version_text(found)}; "
                 f"the adapter needs {version_text(MINIMUM_VERSION)} or later",
                 fix=f"upgrade gh ({INSTALL})",
+                login=unknown,
             )
-        said = f"gh {version_text(found)}" if found else "gh of a version it doesn't name"
+        shown = f"gh {version_text(found)}" if found else "gh of a version it doesn't name"
         if not self._gh.logged_in():
             return Check(
                 name="gh",
                 status=Status.DEGRADED,
-                detail=f"{path}, {said}, has no login for {host}",
+                detail=f"{path}, {shown}, has no login for {host}",
                 fix=login_fix(host),
+                login=Login(signed_in=False, site=host, command=login_fix(host)),
             )
         return Check(
             name="gh",
             status=Status.UP,
-            detail=f"{path}, {said}, has a login for {host}; checked on first use: doctor stays offline",
+            detail=f"{path}, {shown}, has a login for {host}; checked on first use: doctor stays offline",
+            login=Login(signed_in=True, account=self._gh.account(), site=host, command=login_fix(host)),
         )
+
+    def live(self) -> list[Check]:
+        """Ask GitHub who gh is logged in as (`gh api user`), within `LIVE_TIMEOUT`: one read, nothing written."""
+        host = self._settings.host
+        client = GhClient(self._gh, host, min(LIVE_TIMEOUT, self._settings.timeout))
+        try:
+            user = client.get("user")
+        except GhLoginError as exc:
+            return [
+                Check(
+                    name="gh api user",
+                    status=Status.DEGRADED,
+                    detail=str(exc),
+                    fix=login_fix(host),
+                    login=Login(signed_in=False, site=host, command=login_fix(host)),
+                )
+            ]
+        except HeinzelError as exc:
+            fix = f"gh auth status --hostname {host}"
+            return [Check(name="gh api user", status=Status.DOWN, detail=str(exc), fix=fix)]
+        login = user.get("login")
+        account = said(login) if isinstance(login, str) and login.strip() else ""
+        return [
+            Check(
+                name="gh api user",
+                status=Status.UP,
+                detail=f"GitHub ({host}) answered: gh is logged in as {account or 'an account it does not name'}",
+                login=Login(signed_in=True, account=account, site=host, command=login_fix(host)),
+            )
+        ]
 
     def _binding_checks(self, bindings: Bindings) -> list[Check]:
         checks: list[Check] = []

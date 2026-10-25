@@ -83,14 +83,15 @@ statements:
    a roster; a node named as a site), not kinds the kernel enforces. A missing parent or site is a `degraded` doctor
    check naming the plugin to install; the plugin also lists its parent and site as package dependencies, so
    installing a team installs its stack ([ADR 0006](0006-plugins-installed-through-the-uv-tool-receipt.md)).
-2. **Stacking order: general to specific.** For the layer a person is in (their team, `[org] team`, or the most
-   specific installed layer otherwise), the stack is the root, then each org down the parent chain, then the site, then
+2. **Stacking order: general to specific.** For the layer a person is in (the plugin their team repository's `hz.yaml` names, `[team] layer` when
+   they set it, or the only team layer installed otherwise; amended 2026-10-24), the stack is the root, then each org down the parent chain, then the site, then
    the team: company, org + site, team. A more specific layer refines a more general one; two layers that set the same
    key resolve by stack order. **Open: precedence when the org and the site conflict** (an org binding and a site
    binding for the same capability, an org default and a site default for the same setting). Proposal recorded for the
    maintainer: the team decides: a team layer that sets the key wins; where the team is silent, the conflict is a
    `degraded` doctor check that names both layers and the key, and the person's file decides until the team sets it.
-   No silent merge.
+   No silent merge. Implemented as the default behind one seam, the kernel's `ORG_SITE_PRECEDENCE`
+   (`team_decides`, not public API), so the maintainer's decision changes one assignment (amended 2026-10-24).
 3. **What a layer brings.** A layer is an ordinary plugin: its adapters are `ProviderLet`s, its roles extend ADR
    0024's vocabulary, its contracts are module contracts (namespace = module, [ADR 0021](0021-workflow-contracts.md)
    §10), and its configuration defaults are the recommended settings of its playbook
@@ -108,8 +109,9 @@ statements:
    the order of the layers that bring them.
 5. **Names follow the path.** A layer's module name is its path from the root, joined with `-`: `acme`,
    `acme-payments`, `acme-payments-checkout`; a site hangs off its parent the same way: `acme-lisbon`. The parent's name
-   plus `-` is a prefix of the child's; the kernel refuses a layer that breaks this when the module is imported, so
-   the name alone says where a plugin sits. Distributions are `heinzel-<name>`
+   plus `-` is a prefix of the child's, so the name alone says where a plugin sits; a layer that breaks this is a hint
+   in doctor and `hz system layer list`, never refused (amended 2026-10-24 by the maintainer: a check, not enforced
+   hard). Distributions are `heinzel-<name>`
    ([ADR 0025](0025-plugin-distributions-are-named-heinzel-name.md)): `heinzel-acme-payments-checkout`.
 6. **The word is plugin.** Every user-facing text (CLI help, doctor, documentation, the setup and join screens) says
    "plugin", never "package" or "distribution"; the latter two appear only where the Python ecosystem forces them
@@ -148,11 +150,15 @@ statements:
 
 ### Confirmation
 
-Not yet: proposed. When implemented: `LayerLet` declaration checks when a module is imported (one per module, path
-prefix, no self-parent) and when the kernel registers layers (installed parent and site, no cycle, site not an
-ancestor), the stack order for a team with an org chain and a site, the conflict finding and the combination of stacked playbooks and their recommended settings
-(`tests/unit/kernel/layers_test.py`, `tests/unit/modules/workflow_playbook_test.py`); doctor naming a missing parent
-and an org–site conflict (`tests/integration/capability_test.py`); the playbook let's own tests (its record); the word
+In part (the mechanism in the core, 2026-10-24): `LayerLet` declaration checks when a module is imported (one per
+module, no self-parent or self-site, a site that isn't the parent; the path prefix is a hint) and when the kernel
+registers layers (installed parent and site, no cycle, one parent per layer, a plugin's top-level module, a site
+outside the layer's own line), the stack order
+for a team with an org chain and a site, the conflict finding and the combination of stacked recommended settings
+(`tests/unit/kernel/layers_test.py`); `hz system layer list` and `show`, `hz system info`, doctor naming a missing
+parent and an org–site conflict, `hz org sync` listing the stack's bindings beside the team repository's, and `hz setup` offering each setting with
+the layer that wins it, most specific first
+(`tests/integration/layer_test.py`, with made-up Acme layers in `tests/fixtures/layers`). Still to come: roles from the stack validated in the roster (today `hz system layer show` lists them); the playbook let's own tests (its record); the word
 "plugin" in CLI help and generated documentation (`tests/unit/documentation_test.py`); the reference company's
 plugins installed and the onboarding journeys run against them (`tests/e2e/reference_company_test.py`), with the
 reference repository's own CI running the core's `make check` on every release; the confidentiality check on the public

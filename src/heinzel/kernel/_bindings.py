@@ -12,14 +12,14 @@ visible in review, as `Credentials` does (ADR 0030); they don't stop a malicious
 """
 
 import logging
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from functools import partial
 from typing import Any, ClassVar, Literal, cast
 
 from pydantic import Field, model_validator
 
-from heinzel.kernel._capabilities import CAPABILITIES, MODES, Capability, Mode, Requirement
+from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
 from heinzel.kernel._config import ModuleSettings
 from heinzel.kernel._errors import HeinzelError
 from heinzel.kernel._lets import ProviderLet, host_of, settings_parameters
@@ -29,37 +29,122 @@ logger = logging.getLogger(__name__)
 CAPABILITIES_SECTION = "capabilities"
 
 RequesterKind = Literal["module", "operation", "job"]
+How = Literal["configured", "automatic", "default", "off", "unbound"]
+"""How a capability got its adapter (ADR 0055): a configured binding; the only installed adapter, chosen
+automatically while nothing is configured; the core's default; `off`, configured to `none`; or none at all."""
+HOWS: tuple[How, ...] = ("configured", "automatic", "default", "off", "unbound")
+
+
+def _options(capability: str) -> dict[str, Any]:
+    """The JSON Schema extra of a binding: its values are the installed adapters of `capability`, or `none`.
+
+    The web head resolves the source into a list to choose from, so no binding is ever typed (ADR 0055).
+    """
+    return {"x-options": {"source": "adapters", "capability": capability, "none": NO_ADAPTER}}
 
 
 class CapabilitySettings(ModuleSettings):
     """Which adapter serves each capability: the `[capabilities]` table or `HZ_CAPABILITIES__<CAPABILITY>` variables.
 
     Keys are capability names with `_` or `-` (`code_host` or `code-host`); values are adapter names, as
-    `hz system capability list` shows them. A capability without a binding serves nobody. A project `hz.toml` can't
-    bind: only the site, user and `HZ_CONFIG` files and the environment can.
+    `hz system capability list` shows them, or `none` for no adapter at all. While a capability has no binding, the
+    only installed adapter that provides it serves it automatically, else the core's default if it has one, else
+    nobody (ADR 0055). A project `hz.toml` can't bind: only the site, user and `HZ_CONFIG` files and the environment
+    can.
     """
+
+    section_title: ClassVar[str | None] = "Which connector serves what"  # the heading in Settings
 
     agent_runner: str | None = Field(
         default="claude-code",
-        description="Adapter that serves `agent-runner`: `claude-code` (the default, because `command` needs a "
-        "command line first), `command`, or one from a plugin.",
+        title="Agent runner",
+        description=(
+            "What runs drafts and chats: Claude Code (the default), your own command, or a runner a plugin brings."
+        ),
+        json_schema_extra=_options("agent-runner"),
     )
-    calendar: str | None = Field(default=None, description="Adapter that serves `calendar`, e.g. `google`.")
-    chat: str | None = Field(default=None, description="Adapter that serves `chat`, e.g. `slack`.")
-    code_host: str | None = Field(default=None, description="Adapter that serves `code-host`, e.g. `github`.")
+    ai_access: str | None = Field(
+        default="claude-code",
+        title="AI access",
+        description="How Heinzelmännchen reaches AI: Claude Code (the default), your company's AI "
+        "gateway, Pydantic AI, or a way a plugin brings.",
+        json_schema_extra=_options("ai-access"),
+    )
+    calendar: str | None = Field(
+        default=None,
+        title="Calendar",
+        description="The connector that reads your calendar, such as Google.",
+        json_schema_extra=_options("calendar"),
+    )
+    chat: str | None = Field(
+        default=None,
+        title="Chat",
+        description="The connector for team chat, such as Slack.",
+        json_schema_extra=_options("chat"),
+    )
+    code_host: str | None = Field(
+        default=None,
+        title="Code host",
+        description="The connector for pull requests and code, such as GitHub.",
+        json_schema_extra=_options("code-host"),
+    )
     directory: str | None = Field(
         default="one-on-ones",
-        description="Adapter that serves `directory`: `one-on-ones` (the default, the core's guesses from recurring "
-        "1:1s in the bound calendar, each marked as a guess for the user to confirm), or one from a plugin that reads "
-        "a directory of record.",
+        title="Directory",
+        description=(
+            "Who reports to whom: guessed from recurring one-on-ones in your calendar (the default, each "
+            "guess for you to confirm), or read from a directory a plugin connects."
+        ),
+        json_schema_extra=_options("directory"),
     )
-    documents: str | None = Field(default=None, description="Adapter that serves `documents`.")
-    mail: str | None = Field(default=None, description="Adapter that serves `mail`, e.g. `google`.")
-    meetings: str | None = Field(default=None, description="Adapter that serves `meetings`, e.g. `zoom`.")
-    tracker: str | None = Field(default=None, description="Adapter that serves `tracker`, e.g. `github`.")
+    documents: str | None = Field(
+        default=None,
+        title="Documents",
+        description="The connector for documents and pages, such as Confluence.",
+        json_schema_extra=_options("documents"),
+    )
+    mail: str | None = Field(
+        default=None,
+        title="Mail",
+        description="The connector that reads your mail, such as Google.",
+        json_schema_extra=_options("mail"),
+    )
+    meetings: str | None = Field(
+        default=None,
+        title="Meetings",
+        description="The connector for meeting summaries, such as Zoom.",
+        json_schema_extra=_options("meetings"),
+    )
+    tracker: str | None = Field(
+        default=None,
+        title="Tracker",
+        description="The connector for issues, such as GitHub or Jira.",
+        json_schema_extra=_options("tracker"),
+    )
+    team_graph: str | None = Field(
+        default="hz-graph",
+        title="Team graph",
+        description=(
+            "What draws your team's graph: the built-in graph of your team's contracts and telemetry (the "
+            "default), or one a plugin brings."
+        ),
+        json_schema_extra=_options("team-graph"),
+    )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
-        {"agent_runner", "calendar", "chat", "code_host", "directory", "documents", "mail", "meetings", "tracker"}
+        {
+            "agent_runner",
+            "ai_access",
+            "calendar",
+            "chat",
+            "code_host",
+            "directory",
+            "documents",
+            "mail",
+            "meetings",
+            "team_graph",
+            "tracker",
+        }
     )
 
     @model_validator(mode="before")
@@ -70,14 +155,22 @@ class CapabilitySettings(ModuleSettings):
         return data  # pragma: no cover - pydantic-settings always passes a mapping
 
     def bound(self, capability: str) -> str | None:
-        """The adapter bound to `capability`, or None."""
-        return cast("str | None", getattr(self, capability.replace("-", "_"), None))
+        """The adapter configured or defaulted for `capability`, or None; `none` and an empty value are None.
+
+        Doesn't choose automatically: that needs the installed adapters, which `Capabilities.binding` knows.
+        """
+        value = cast("str | None", getattr(self, capability.replace("-", "_"), None))
+        return None if value in {None, "", NO_ADAPTER} else value
+
+    def configured(self, capability: str) -> bool:
+        """Whether a configuration file or variable sets `capability`, to an adapter or to `none`."""
+        return capability.replace("-", "_") in self.model_fields_set
 
     def defaulted(self, capability: str) -> bool:
-        """Whether `capability` is bound by the core's default, because no configuration or variable sets it."""
+        """Whether `capability` would be bound by the core's default, because no configuration or variable sets it."""
         field = capability.replace("-", "_")
         default = type(self).model_fields[field].default if field in type(self).model_fields else None
-        return default is not None and field not in self.model_fields_set
+        return default is not None and not self.configured(capability)
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +188,9 @@ class Requester:
     """What its module declared, which it may use too (read modes only)."""
     publishes: bool = False
     """Whether it is a publish operation (`read_only=False`), the only kind that gets `write`."""
+    optional: bool = False
+    """Whether it does without its own requirements when nothing serves them (an optional operation): an unmet one
+    is no doctor finding, and its injected handle refuses only when called."""
     serves: tuple[tuple[str, str], ...] = ()
     """For a module that only provides adapters, the (capability, adapter) pairs it provides: its requirements are
     needed only while one of them serves someone."""
@@ -141,6 +237,41 @@ class CapabilityUse:
     """Hosts that adapter reaches, declared or read from its settings; empty if unknown, or none serves."""
     problem: str | None
     """Why the requirement is unmet; None when it is met."""
+    optional: bool = False
+    """Whether the requester does without it when it is unmet, so that is no doctor finding."""
+
+
+class Adapters[P](Mapping[str, P]):
+    """Handles on every installed adapter of a capability, by adapter name; ask for `Adapters[AiAccess]` (ADR 0057).
+
+    For the module that owns choosing among a capability's adapters, which lists them all with their status, not just
+    the bound one. Injected only into a function whose operation or module declared the capability; read modes only.
+    """
+
+    __slots__ = ("_handles",)
+
+    def __init__(self, handles: Mapping[str, object]) -> None:
+        """Hold the handles, by adapter name."""
+        self._handles = dict(handles)
+
+    def __getitem__(self, name: str) -> P:
+        """The handle on the adapter called `name`.
+
+        Raises:
+            KeyError: If no installed adapter of the capability has that name.
+        """
+        return cast("P", self._handles[name])
+
+    def __iter__(self) -> Iterator[str]:
+        """The adapter names, sorted."""
+        return iter(self._handles)
+
+    def __len__(self) -> int:
+        """How many adapters there are."""
+        return len(self._handles)
+
+    def __repr__(self) -> str:
+        return f"<Adapters {', '.join(self._handles)}>"
 
 
 class _Handle:
@@ -238,7 +369,7 @@ class Capabilities:
 
     def adapter_for(self, requirement: Requirement) -> tuple[Adapter | None, str | None]:
         """The adapter that serves `requirement` (pinned or bound), and why it can't, if it can't."""
-        name = requirement.adapter or self.settings.bound(requirement.capability)
+        name = requirement.adapter or self.bound(requirement.capability)
         if name is None:
             return None, "no adapter bound"
         candidates = self.adapters.get((requirement.capability, name), [])
@@ -272,6 +403,7 @@ class Capabilities:
                     adapter=adapter.let.adapter if adapter else None,
                     hosts=self.hosts_of(adapter)[0] if adapter else (),
                     problem=problem,
+                    optional=requester.optional,
                 )
                 rows.append((requester, use))
         idle = _idle(rows)
@@ -322,8 +454,35 @@ class Capabilities:
             if (bound := self.settings.bound(name)) is not None and (name, bound) not in self.adapters
         ]
 
+    def binding(self, capability: str) -> tuple[str | None, How]:
+        """The adapter that serves `capability` unless a requirement pins another, and how it was chosen (ADR 0055).
+
+        A configured binding wins, `none` included. Otherwise the only installed adapter of the capability serves
+        it automatically: installing it was the choice, and there is nothing to choose between; except for a
+        capability that is never automatic (`mail`), which waits for the person's binding. With several, the
+        core's default serves, if the capability has one; else nothing until the person picks one.
+        """
+        if self.settings.configured(capability):
+            bound = self.settings.bound(capability)
+            return (bound, "configured") if bound is not None else (None, "off")
+        installed = self.installed(capability)
+        default = self.settings.bound(capability)
+        spec = CAPABILITIES.get(capability)
+        if spec is not None and spec.automatic and len(installed) == 1 and installed[0] != default:
+            return installed[0], "automatic"
+        if default is not None:
+            return default, "default"
+        return None, "unbound"
+
+    def bound(self, capability: str) -> str | None:
+        """The adapter that serves `capability` unless a requirement pins another: `binding` without the how."""
+        return self.binding(capability)[0]
+
     def handle(self, capability: Capability, func: Callable[..., Any]) -> object:
         """The handle `func` gets for `capability`, for the injector.
+
+        An optional operation (`optional=True`) whose own requirement isn't served gets a handle whose every method
+        raises why; anything else `handle_for` refuses is refused here.
 
         Raises:
             HeinzelError: If `func` acts for no requester, or `handle_for` refuses.
@@ -336,6 +495,17 @@ class Capabilities:
                 f"health providers of a registered module can declare capabilities."
             )
             raise HeinzelError(msg)
+        requirement, modes = requester.grant(capability.name)
+        own = any(r.capability == capability.name for r in requester.requires)
+        if requester.optional and own and requirement is not None and modes:
+            wanted = Requirement(capability.name, modes, requirement.adapter)
+            adapter, problem = self.adapter_for(wanted)
+            if adapter is None or problem is not None:
+                # An optional operation learns that nothing serves it on its first call, not when it is injected:
+                # it asks `CapabilityView.serves` first and degrades instead of failing (`hz org agenda`).
+                unmet = self._unmet(requester, wanted, problem)
+                label = f"{capability.name}:unserved for {requester.label}"
+                return _Handle({}, dict.fromkeys(capability.methods, unmet), label)
         return self.handle_for(requester, capability)
 
     def handle_for(self, requester: Requester, capability: Capability) -> object:
@@ -363,8 +533,7 @@ class Capabilities:
         wanted = Requirement(capability.name, modes, requirement.adapter)
         adapter, problem = self.adapter_for(wanted)
         if adapter is None or problem is not None:
-            msg = f"{requester.label} needs {wanted}: {problem}. {self.fix(capability.name)}"
-            raise HeinzelError(msg)
+            raise HeinzelError(self._unmet(requester, wanted, problem))
         # A reader's adapter is built on its first call, not here: a requester that never calls it, such as a setup
         # step that drafts only when asked, doesn't fail because what the adapter itself needs is unbound. A publish
         # operation's adapters are built here, so that one whose factory fails stops it before anything is written.
@@ -373,6 +542,49 @@ class Capabilities:
             instance: Callable[[], object] = lambda: built  # noqa: E731 - one object, built once
         else:
             instance = partial(self._instance, adapter, capability)
+        return self._handle(requester, capability, requirement, modes, instance)
+
+    def handles(self, capability: Capability, func: Callable[..., Any]) -> "Adapters[Any]":
+        """Read handles on every installed adapter of `capability` for `func`, by adapter name (ADR 0057).
+
+        For the module that owns choosing among them, such as `ai.access`: it lists them all, not just the bound one.
+        Read modes only, whatever the requester publishes; each adapter is built on its first call. An adapter name two
+        modules provide is left out, as binding to it would be refused.
+
+        Raises:
+            HeinzelError: If `func` acts for no requester, or its requester didn't declare `capability` for reading.
+        """
+        requester = self._owners.get(func)
+        if requester is None:
+            name = getattr(func, "__qualname__", repr(func))
+            msg = f"{name} asks for every adapter of {capability.name}, but only a registered module's functions can."
+            raise HeinzelError(msg)
+        requirement, _ = requester.grant(capability.name)
+        modes = (requirement.modes if requirement else frozenset[Mode]()) - {"write"}
+        if requirement is None or not modes:
+            msg = (
+                f"{requester.label} asks for every adapter of {capability.name} without declaring it; add "
+                f'`requires=["{capability.name}:read"]` to its operation or module.'
+            )
+            raise HeinzelError(msg)
+        handles: dict[str, object] = {}
+        for name in self.installed(capability.name):
+            adapter, problem = self.adapter_for(Requirement(capability.name, modes, name))
+            if adapter is None or problem is not None:
+                continue
+            instance = partial(self._instance, adapter, capability)
+            handles[name] = self._handle(requester, capability, requirement, modes, instance)
+        return Adapters(handles)
+
+    @staticmethod
+    def _handle(
+        requester: Requester,
+        capability: Capability,
+        requirement: Requirement,
+        modes: frozenset[Mode],
+        instance: Callable[[], object],
+    ) -> "_Handle":
+        """A handle with the methods of `modes`; every other method raises why `requester` can't call it."""
         allowed: dict[str, Callable[..., Any]] = {}
         denied: dict[str, str] = {}
         for name, mode in capability.methods.items():
@@ -386,6 +598,10 @@ class Capabilities:
             denied[name] = f"{requester.label} can't call {capability.name}.{name}, which needs {mode}: {why}."
         label = f"{capability.name}:{','.join(m for m in MODES if m in modes)} for {requester.label}"
         return _Handle(allowed, denied, label)
+
+    def _unmet(self, requester: Requester, wanted: Requirement, problem: str | None) -> str:
+        """Why no adapter serves `wanted` for `requester`, ending with what to do."""
+        return f"{requester.label} needs {wanted}: {problem}. {self.fix(wanted.capability)}"
 
     def _instance(self, adapter: Adapter, capability: Capability) -> object:
         key = (adapter.let.capability, adapter.let.adapter)
@@ -446,12 +662,16 @@ class CapabilityView:
         return self._capabilities.unknown_keys
 
     def bound(self, capability: str) -> str | None:
-        """The adapter bound to `capability`, or None."""
-        return self._capabilities.settings.bound(capability)
+        """The adapter that serves `capability`: configured, chosen automatically or the default; None if none."""
+        return self._capabilities.bound(capability)
+
+    def binding(self, capability: str) -> tuple[str | None, How]:
+        """The adapter that serves `capability`, and how it was chosen: configured, automatic, default, off, unbound."""
+        return self._capabilities.binding(capability)
 
     def defaulted(self, capability: str) -> bool:
-        """Whether `capability` is bound by the core's default, because no configuration or variable sets it."""
-        return self._capabilities.settings.defaulted(capability)
+        """Whether `capability` is served by the core's default, because nothing is configured or chosen."""
+        return self._capabilities.binding(capability)[1] == "default"
 
     def hosts(self, adapter: Adapter) -> tuple[tuple[str, ...], str | None]:
         """The host names `adapter` reaches, and why they are unknown when its settings decide them and that failed."""

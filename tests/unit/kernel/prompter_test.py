@@ -152,3 +152,98 @@ def test_a_script_without_answers_names_the_question():
 
 def test_choices_can_pick_none():
     assert ScriptedPrompter(["None"]).choices("Zones", ZONES, default=ZONES) == []
+
+
+def answering(presets: dict, *, scope: str = "org", answers: tuple[str, ...] | None = None) -> Prompter:
+    """A prompter with preset answers; with `answers`, a person answers the rest."""
+    prompter = Prompter() if answers is None else ScriptedPrompter(answers)
+    prompter.presets = presets
+    prompter.scope = scope
+    return prompter
+
+
+def test_keyed_questions_take_preset_answers_without_asking():
+    presets = {"org.handle": "mira", "org.role": "engineer", "org.go": False, "org.port": 8080, "org.zones": ["b", "a"]}
+    prompter = answering(presets)
+    assert prompter.text("Handle", key="handle") == "mira"
+    assert prompter.choice("Role", ["engineer", "principal"], key="role") == "engineer"
+    assert prompter.confirm("Go?", key="go") is False
+    assert prompter.number("Port", key="port") == 8080
+    assert prompter.choices("Zones", ["a", "b"], key="zones") == ["b", "a"]
+    assert prompter.answered == presets
+
+
+def test_an_empty_list_preset_picks_none():
+    assert answering({"org.zones": []}).choices("Zones", ["a"], key="zones") == []
+
+
+def test_a_missing_answer_without_a_person_names_the_key_and_the_file():
+    with pytest.raises(HeinzelError, match=r"No answer for org.role \(Role\): add `role = \.\.\.` under \[org\]"):
+        answering({}).choice("Role", ["engineer"], key="role")
+
+
+@pytest.mark.parametrize(
+    ("ask", "problem"),
+    [
+        (lambda p: p.choice("Role", ["engineer"], key="role"), "org.role is invalid: 'ceo' is not one of the options"),
+        (lambda p: p.number("Port", maximum=10, key="port"), "org.port is invalid: Please enter a whole number"),
+        (lambda p: p.text("Name", key="name"), "org.name is invalid: Please answer; there is no default."),
+        (lambda p: p.confirm("Go?", key="go"), "org.go is invalid: Please answer y or n."),
+    ],
+)
+def test_an_invalid_preset_fails_instead_of_asking_again(ask, problem):
+    prompter = answering({"org.role": "ceo", "org.port": 99, "org.name": "", "org.go": "maybe"}, answers=())
+    with pytest.raises(HeinzelError, match=f"The answer for {problem}"):
+        ask(prompter)
+
+
+def test_a_person_answers_what_is_not_preset_and_keyed_answers_are_kept():
+    prompter = answering({"org.handle": "mira"}, answers=("", "x", "Lisbon", ""))
+    assert prompter.text("Handle", key="handle") == "mira"
+    assert prompter.choice("Role", ["engineer", "principal"], default="principal", key="role") == "principal"
+    assert prompter.text("Zone", validate=lambda a: None if len(a) > 1 else "Longer.", key="zone") == "Lisbon"
+    assert prompter.text("Unkeyed", default="d") == "d"
+    assert prompter.answered == {"org.handle": "mira", "org.role": "principal", "org.zone": "Lisbon"}
+    assert "Longer." in prompter.transcript
+    assert "  1) engineer" in prompter.transcript  # a preset choice lists no options; an asked one does
+
+
+def test_without_a_person_a_keyed_question_with_a_default_takes_it():
+    prompter = answering({})
+    assert prompter.text("Hours", default="09-18", key="working_hours") == "09-18"
+    assert prompter.confirm("Go?", default=False, key="go") is False
+    assert prompter.choice("Role", ["engineer", "principal"], default="principal", key="role") == "principal"
+    assert prompter.answered == {"org.working_hours": "09-18", "org.go": False, "org.role": "principal"}
+
+
+@pytest.mark.parametrize("key", ["api_token", "password", "client_secret", "TOKEN"])
+def test_a_key_naming_a_secret_is_refused(key):
+    with pytest.raises(ValueError, match="secrets are never keyed"):
+        answering({}).text("Token", key=key)
+
+
+def test_a_key_merely_containing_a_secret_word_is_fine():
+    assert answering({"org.max_tokens": "3"}).text("Most", key="max_tokens") == "3"
+    assert answering({"org.tokenizer": "x"}).text("Tokenizer", key="tokenizer") == "x"
+
+
+def test_a_hint_names_the_flag_that_answers_a_key():
+    prompter = answering({})
+    prompter.hints = {"org.role": "pass `--role <role>`"}
+    with pytest.raises(HeinzelError, match=r"No answer for org.role \(Role\): pass `--role <role>`, or add `role"):
+        prompter.text("Role", key="role")
+
+
+def test_a_step_can_refuse_a_preset_answer():
+    prompter = answering({"org.zone": "Atlantis"})
+    prompter.text("Zone", key="zone")
+    with pytest.raises(HeinzelError, match=r"The answer for org\.zone is invalid: no such zone"):
+        prompter.refuse("no such zone", "zone")
+    person = ScriptedPrompter(["x"])
+    person.text("Zone", key="zone")
+    person.refuse("no such zone", "zone")
+    assert person.transcript[-1] == "no such zone"
+
+
+def test_keys_without_a_scope_are_full_keys():
+    assert answering({"role": "x"}, scope="").text("Role", key="role") == "x"

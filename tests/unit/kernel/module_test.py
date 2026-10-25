@@ -4,6 +4,8 @@ import pytest
 
 from heinzel import (
     CatchUp,
+    Check,
+    HealthLet,
     InfoLet,
     JobLet,
     Module,
@@ -196,8 +198,8 @@ def test_a_module_cannot_require_write_for_all_its_functions():
         Module("announcer", "x", requires=["chat:write"])
 
 
-def test_only_chat_and_documents_have_a_write_mode_to_declare():
-    for capability in ("calendar", "code-host", "meetings", "tracker"):
+def test_only_calendar_chat_documents_and_mail_have_a_write_mode_to_declare():
+    for capability in ("code-host", "directory", "meetings", "tracker"):
         with pytest.raises(ValueError, match=f"{capability} has no write mode"):
             Module("x", "x", requires=[f"{capability}:write"])
 
@@ -208,9 +210,10 @@ def test_names_of_kernel_configuration_tables_are_reserved(name):
         Module(name, "x")
 
 
-def test_setup_is_reserved_for_hz_setup():
-    with pytest.raises(ValueError, match="Module name 'setup' is reserved: it is the command `hz setup`"):
-        Module("setup", "x")
+@pytest.mark.parametrize("name", ["setup", "join"])
+def test_top_level_commands_are_reserved(name):
+    with pytest.raises(ValueError, match=f"Module name '{name}' is reserved: it is the command `hz {name}`"):
+        Module(name, "x")
 
 
 def test_setup_decorator_forms():
@@ -228,6 +231,19 @@ def test_setup_decorator_forms():
     assert bare.lets == (SetupLet(name="a", func=step, summary="Pick the zones.", required=False),)
     assert optional.lets[0] == SetupLet(name="b", func=step, summary="Pick the zones.")
     assert required.lets[0] == SetupLet(name="c", func=step, summary="Pick the zones.", required=True)
+    assert required.lets[0].phase == "connect"
+
+
+def test_a_setup_step_declares_its_phase():
+    module = Module("profile", "x")
+
+    def step() -> None:
+        """Who you are."""
+
+    module.setup(phase="identity")(step)
+    assert module.lets[0].phase == "identity"
+    with pytest.raises(ValueError, match="Setup phase 'later' is not one of identity, membership, connect, work, run"):
+        Module("other", "x").setup(phase="later")  # type: ignore[call-overload]
 
 
 def test_setup_needs_a_docstring_and_is_one_per_module():
@@ -374,3 +390,83 @@ def test_provides_refuses_invalid_hosts(hosts, problem):
 def test_jobs_refuse_schedules_that_arent_five_ascii_cron_fields(schedule):
     with pytest.raises(ValueError, match="must be five cron fields"):
         JobLet(name="x", func=lambda: None, summary="s", schedule=schedule)
+
+
+def test_operations_are_for_experts_unless_declared_everyday():
+    module = Module("example", "x")
+
+    @module.operation
+    def deep() -> None:
+        """For experts."""
+
+    @module.operation(audience="everyday")
+    def daily() -> None:
+        """For everyone."""
+
+    audiences = {let.name: let.audience for let in module.lets if isinstance(let, OperationLet)}
+    assert audiences == {"deep": "expert", "daily": "everyday"}
+
+
+def test_an_unknown_audience_is_refused():
+    module = Module("example", "x")
+    with pytest.raises(ValueError, match="audience 'everyone'"):
+
+        @module.operation(audience="everyone")  # type: ignore[arg-type]
+        def wrong() -> None:
+            """Wrong."""
+
+
+def test_a_module_may_name_what_it_was_called_before():
+    assert Module("notes", "x", renamed_from="jottings").renamed_from == "jottings"
+    assert Module("notes", "x").renamed_from is None
+
+
+@pytest.mark.parametrize("old", ["Jottings", "hz", "setup", ""])
+def test_a_renamed_module_needs_an_old_name_a_module_could_have_had(old):
+    with pytest.raises(ValueError, match="can't be renamed from"):
+        Module("notes", "x", renamed_from=old)
+
+
+def test_operation_aliases_are_command_paths_normalised_to_single_spaces():
+    module = Module("notes", "x")
+
+    @module.operation(aliases=["jottings  run", "inbox"])
+    def wake() -> None:
+        """Wake."""
+
+    (let,) = module.lets
+    assert isinstance(let, OperationLet)
+    assert let.aliases == ("jottings run", "inbox")
+
+
+@pytest.mark.parametrize("alias", ["", "  ", "Jottings run", "jottings run_now"])
+def test_operation_aliases_must_be_lowercase_words(alias):
+    module = Module("notes", "x")
+    with pytest.raises(ValueError, match="command paths of lowercase words"):
+
+        @module.operation(aliases=[alias])
+        def wake() -> None:
+            """Wake."""
+
+
+def test_a_module_has_an_offline_and_a_live_health_provider_and_no_second_of_either():
+    module = Module("probe", "Checks things for tests.")
+
+    @module.health
+    def offline() -> list[Check]:
+        return []
+
+    @module.health(live=True)
+    def live() -> list[Check]:
+        return []
+
+    lets = [let for let in module.lets if isinstance(let, HealthLet)]
+    assert [(let.name, let.live) for let in lets] == [("probe", False), ("probe live", True)]
+    with pytest.raises(ValueError, match="already has a HealthLet named 'probe live'"):
+        module.health(live=True)(live)
+
+
+def test_no_adapter_may_be_named_none():
+    module = Module("none", "Would shadow the binding that binds nothing.")
+    with pytest.raises(ValueError, match="reserved"):
+        module.provides("documents", modes={"read"})(object)

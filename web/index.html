@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#181818" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <title>Heinzelmännchen</title>
+    <!-- The splash's critical CSS (web/src/splash): the default theme's colours, which the script below replaces with
+         the last theme's, so the first paint already looks like the app. -->
+    <style>
+      :root {
+        --splash-background: #ffffff;
+        --splash-foreground: #1a1a1a;
+        --splash-muted-foreground: #6b6b6b;
+        --splash-primary: #b4532f;
+        --splash-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      :root.dark {
+        --splash-background: #181818;
+        --splash-foreground: #ececec;
+        --splash-muted-foreground: #9b9b9b;
+        --splash-primary: #d97757;
+      }
+      html {
+        background: var(--splash-background);
+      }
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 24px 16px;
+        background: var(--splash-background);
+        color: var(--splash-foreground);
+        font-family: var(--splash-font);
+        text-align: center;
+        opacity: 1;
+        transition: opacity 200ms ease-out;
+      }
+      #splash[hidden] {
+        display: none;
+      }
+      #splash[data-leaving] {
+        opacity: 0;
+      }
+      #splash-brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 32px;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      #splash-brand img {
+        height: var(--splash-logo-height, 28px);
+        max-width: 240px;
+        object-fit: contain;
+      }
+      #splash-line {
+        margin: 0;
+        font-size: 14px;
+        color: var(--splash-muted-foreground);
+      }
+      .splash-bar {
+        width: 120px;
+        height: 3px;
+        overflow: hidden;
+        border-radius: 3px;
+        background: color-mix(in srgb, var(--splash-muted-foreground) 25%, transparent);
+      }
+      .splash-bar::after {
+        content: "";
+        display: block;
+        width: 40%;
+        height: 100%;
+        border-radius: 3px;
+        background: var(--splash-primary);
+        animation: splash-slide 1.4s ease-in-out infinite;
+      }
+      @keyframes splash-slide {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(250%);
+        }
+      }
+      #splash[data-state="error"] #splash-progress,
+      #splash[data-state="error"] #splash-line {
+        display: none;
+      }
+      #splash-version {
+        margin: 0;
+        font-size: 12px;
+        color: var(--splash-muted-foreground);
+        font-variant-numeric: tabular-nums;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #splash {
+          transition: none;
+        }
+        .splash-bar::after {
+          width: 100%;
+          opacity: 0.6;
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="splash" data-state="busy">
+      <!-- The app's own icon file, the one the favicon shows: new artwork reaches the splash too. -->
+      <div id="splash-brand"><img src="/favicon.svg" alt="" width="28" height="28" /><span>Heinzelmännchen</span></div>
+      <p id="splash-line" role="status" aria-live="polite">Starting…</p>
+      <!-- The progress: one element, so an animation file can replace it (<img id="splash-progress" src="…" alt="" />). -->
+      <div id="splash-progress" class="splash-bar" aria-hidden="true"></div>
+      <div id="splash-problem"></div>
+      <p id="splash-version"></p>
+    </div>
+    <script>
+      // Before React: the last mode and theme (hz.theme, hz.splash; web/src/splash/snapshot.ts), so the splash looks
+      // like the app from the first paint. Allowed by its hash: a change needs SPLASH_SCRIPT in
+      // src/heinzel/heads/web/__init__.py changed with it, which tests/integration/web_security_test.py prints. Vite's
+      // dev server sends no CSP, so `make web-dev` doesn't notice a stale hash; `hz ui` would block the script.
+      (() => {
+        const root = document.documentElement;
+        const read = (key) => {
+          try {
+            return window.localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        };
+        const mode = read("hz.theme");
+        const dark = mode === "dark" || (mode !== "light" && !!window.matchMedia?.("(prefers-color-scheme: dark)").matches);
+        root.classList.toggle("dark", dark);
+        root.style.colorScheme = dark ? "dark" : "light";
+        let saved = null;
+        try {
+          saved = JSON.parse(read("hz.splash") ?? "null");
+        } catch {
+          saved = null;
+        }
+        let background = dark ? "#181818" : "#ffffff";
+        if (saved && typeof saved === "object") {
+          const colours = saved[dark ? "dark" : "light"] ?? {};
+          for (const key of ["background", "foreground", "muted_foreground", "primary"]) {
+            const value = colours[key];
+            if (typeof value === "string" && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/.test(value)) {
+              root.style.setProperty(`--splash-${key.replace("_", "-")}`, value);
+              if (key === "background") background = value;
+            }
+          }
+          if (typeof saved.font === "string" && /^[A-Za-z0-9 ,"._-]{1,300}$/.test(saved.font)) {
+            root.style.setProperty("--splash-font", saved.font);
+          }
+          const version = document.getElementById("splash-version");
+          if (version && typeof saved.version === "string" && /^[0-9A-Za-z.+-]{1,40}$/.test(saved.version)) {
+            version.textContent = `v${saved.version}`;
+          }
+          const logo = saved.logo;
+          const src = logo?.[dark ? "dark" : "light"];
+          const brand = document.getElementById("splash-brand");
+          const path = /^\/theme-assets\/[a-z0-9-]{1,64}\/(?:light|dark)\.svg(?:\?v=[0-9a-f]{1,64})?$/;
+          if (brand && typeof src === "string" && path.test(src) && typeof logo.alt === "string") {
+            const image = document.createElement("img");
+            image.src = src;
+            image.alt = logo.alt.slice(0, 64);
+            if (typeof logo.height === "string" && /^(?:0|[0-9]{1,3}(?:\.[0-9]{1,4})?(?:px|rem|em))$/.test(logo.height)) {
+              root.style.setProperty("--splash-logo-height", logo.height);
+            }
+            brand.replaceChildren(image);
+          }
+        }
+        for (const meta of document.querySelectorAll('meta[name="theme-color"]')) meta.setAttribute("content", background);
+      })();
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

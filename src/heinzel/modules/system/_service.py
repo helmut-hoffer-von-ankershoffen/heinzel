@@ -11,7 +11,7 @@ from typing import Any, cast, override
 from urllib.parse import urlsplit
 
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from heinzel import InfoLet, Kernel, __version__
 from heinzel.kernel import Installation, ReleaseCache, ReleaseSource
@@ -72,7 +72,8 @@ def _github_link(url: object) -> str | None:
 class GitHubReleases(ReleaseSource):
     """The releases of the GitHub repository Heinzelmännchen was installed from: its `ReleaseSource` (ADR 0031).
 
-    Never sends a token: unauthenticated GETs with only the `heinzel/<version>` User-Agent.
+    The release check (`latest`) never sends a token: unauthenticated GETs with only the `heinzel/<version>`
+    User-Agent. `newer_than`, asked for by someone, sends their GitHub token if given one, to api.github.com only.
     """
 
     def __init__(self, repository: str) -> None:
@@ -101,15 +102,43 @@ class GitHubReleases(ReleaseSource):
         """The version of the latest release, for the release cache."""
         return self.latest(timeout)[0]
 
+    @override
+    def highest_version(self, timeout: float, *, prereleases: bool = False) -> str:
+        """The highest version among the newest `PAGE_SIZE` releases, in SemVer order rather than by date.
+
+        GitHub's latest release is the one published last, so a fix for an older line published after a newer release
+        would be "latest"; `hz system update` must never move back to it. One unauthenticated GET, like the release
+        check (ADR 0031).
+
+        Raises:
+            OSError: If GitHub can't be reached or answers with an error, e.g. when rate-limited.
+            ValueError: If the answer is too large or not JSON, or names no published release.
+            TypeError: If the answer is no list.
+        """
+        answer: object = _github.get_json(self.releases_url(1), None, timeout)
+        if not isinstance(answer, list):
+            msg = "the answer is no list of releases"
+            raise TypeError(msg)
+        versions = [
+            version
+            for item in cast("list[object]", answer)
+            if (version := _published_version(item, prereleases=prereleases)) is not None
+        ]
+        if not versions:
+            msg = f"{self.repository} has no published release"
+            raise ValueError(msg)
+        return str(max(versions))
+
     def releases_url(self, page: int) -> str:
         """Where a page of releases, newest first, is asked for."""
         return f"{_github.GITHUB_API}/repos/{self.repository}/releases?per_page={PAGE_SIZE}&page={page}"
 
-    def newer_than(self, version: str, timeout: float) -> list[ReleaseNotes]:
+    def newer_than(self, version: str, timeout: float, token: SecretStr | None = None) -> list[ReleaseNotes]:
         """The notes of every published release newer than `version`, newest first; drafts and pre-releases skipped.
 
         At most `MAX_PAGES` requests, stopping at the first page that is short or reaches `version`. Notes are
-        third-party text: cleaned of control and bidirectional characters, and cut at `MAX_NOTES` characters.
+        third-party text: cleaned of control and bidirectional characters, and cut at `MAX_NOTES` characters. A
+        `token` raises GitHub's rate limit; without one the requests are unauthenticated.
 
         Raises:
             OSError: If GitHub can't be reached or answers with an error, e.g. when rate-limited.
@@ -118,7 +147,7 @@ class GitHubReleases(ReleaseSource):
         """
         installed, found = Version(version), dict[Version, ReleaseNotes]()
         for page in range(1, MAX_PAGES + 1):
-            answer: object = _github.get_json(self.releases_url(page), None, timeout)
+            answer: object = _github.get_json(self.releases_url(page), token, timeout)
             if not isinstance(answer, list):
                 msg = "the answer is no list of releases"
                 raise TypeError(msg)
@@ -132,6 +161,22 @@ class GitHubReleases(ReleaseSource):
             if reached or len(items) < PAGE_SIZE:
                 break
         return [found[key] for key in sorted(found, reverse=True)]
+
+
+def _published_version(item: object, *, prereleases: bool) -> Version | None:
+    """A published release's version from GitHub's answer; None for drafts, unwanted pre-releases and non-releases."""
+    if not isinstance(item, dict):
+        return None
+    release = cast("dict[str, object]", item)
+    if release.get("draft"):
+        return None
+    try:
+        version = Version(clean(str(release.get("tag_name", ""))).removeprefix("v"))
+    except InvalidVersion:
+        return None
+    if (release.get("prerelease") or version.is_prerelease) and not prereleases:
+        return None
+    return version
 
 
 def _release_page(url: object, repository: str) -> str | None:

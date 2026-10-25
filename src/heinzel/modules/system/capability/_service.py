@@ -1,7 +1,7 @@
 """Service of the capability module: the report and its health checks."""
 
 from heinzel import Check, Status
-from heinzel.kernel import CAPABILITIES, MODES, CapabilityView
+from heinzel.kernel import CAPABILITIES, CORE_DISTRIBUTION, MODES, CapabilityView
 from heinzel.modules.system.capability._models import AdapterInfo, CapabilityInfo, CapabilityReport, CapabilityUse
 
 UNKNOWN_HOSTS = "unknown (configured)"
@@ -27,6 +27,7 @@ class CapabilityService:
                 adapter=use.adapter,
                 hosts=list(use.hosts) or ([UNKNOWN_HOSTS] if use.adapter else []),
                 problem=use.problem,
+                optional=use.optional,
             )
             for use in self.capabilities.matrix()
         ]
@@ -57,11 +58,17 @@ class CapabilityService:
             uses=self.uses(),
         )
 
+    def unconnected(self, use: CapabilityUse) -> bool:
+        """Whether `use` is optional and unmet only because nothing is bound: no finding, unlike a broken binding."""
+        return use.optional and use.problem is not None and self.capabilities.bound(use.capability) is None
+
     def matrix(self) -> dict[str, str]:
         """Where data can go, one entry per requirement: `requester → need` to `adapter → hosts`, or the problem."""
         return {
             f"{use.requester} → {use.requirement}": (
-                f"unmet: {use.problem}" if use.problem else f"{use.adapter} → {', '.join(use.hosts)}"
+                f"{'optional: not connected' if self.unconnected(use) else 'unmet'}: {use.problem}"
+                if use.problem
+                else f"{use.adapter} → {', '.join(use.hosts)}"
             )
             for use in self.uses()
         }
@@ -93,6 +100,9 @@ class CapabilityService:
             name = f"{use.requirement} for {use.requester}"
             if use.problem is None:
                 checks.append(Check(name=name, status=Status.UP, detail=f"served by {use.adapter}"))
+            elif self.unconnected(use):
+                detail = f"optional: not connected; to use it: {self.capabilities.command(use.capability)}"
+                checks.append(Check(name=name, status=Status.UP, detail=detail))
             else:
                 checks.append(
                     Check(
@@ -107,7 +117,7 @@ class CapabilityService:
     def _default_checks(self) -> list[Check]:
         """A check per capability served by the core's default while another module's adapter could serve it.
 
-        Declared beats discovered (ADR 0028), so installing a plugin binds nothing: this says which binding to write,
+        Installing a second provider binds nothing (ADR 0028, ADR 0055): this says which binding to write,
         e.g. a directory of record instead of the guesses from 1:1s. Binding the default explicitly silences it.
         """
         checks: list[Check] = []
@@ -117,7 +127,10 @@ class CapabilityService:
                 continue
             provided = [a for a in self.capabilities.adapters if a.let.capability == spec.name]
             default = {a.module for a in provided if a.let.adapter == bound}
-            others = sorted({a.let.adapter for a in provided if a.module not in default})
+            # A plugin's adapter, not another core one: the core's own options (`gateway`) are chosen, not discovered.
+            others = sorted(
+                {a.let.adapter for a in provided if a.module not in default and a.distribution != CORE_DISTRIBUTION}
+            )
             if not others:
                 continue
             key = spec.name.replace("-", "_")

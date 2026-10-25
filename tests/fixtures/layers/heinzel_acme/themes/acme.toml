@@ -1,0 +1,75 @@
+# Acme's look, a made-up company's theme for tests (ADR 0044).
+name = "acme"
+title = "Acme"
+font_sans = '"Acme Sans", Avenir Next, system-ui, sans-serif'
+font_mono = 'ui-monospace, "SF Mono", monospace'
+radius = "0.75rem"
+border_width = "1px"
+font_size = "14px"
+heading_tracking = "-0.5px"
+
+# A made-up font file: only its woff2 signature is real, enough for the checks and for the web head to serve it.
+[[fonts]]
+family = "Acme Sans"
+file = "fonts/acme-sans.woff2"
+weight = "100 900"
+
+# A made-up logo: an anvil-shaped peak and the name, in the theme's teal.
+[logo]
+light = "logo/acme-light.svg"
+dark = "logo/acme-dark.svg"
+mark = "logo/acme-mark.svg"
+alt = "Acme"
+height = "28px"
+
+[light]
+background = "#fdfcf9"
+foreground = "#221811"
+muted = "#f3f0ea"
+muted_foreground = "#61564d"
+card = "#ffffff"
+border = "#e1ddd7"
+primary = "#0f766e"
+primary_foreground = "#fdfcf9"
+accent = "#f9e8d6"
+ok = "#137738"
+warn = "#9d6400"
+bad = "#be222a"
+ring = "#0f766e"
+sidebar = "#f3f0ea"
+input = "#e1ddd7"
+popover = "#ffffff"
+main_tint = "#f7f4ee"
+
+[dark]
+background = "#16100c"
+foreground = "#ebe7e1"
+muted = "#241e1a"
+muted_foreground = "#aba39b"
+card = "#1d1713"
+border = "#38322d"
+primary = "#2dd4bf"
+primary_foreground = "#16100c"
+accent = "#37281c"
+ok = "#62c37a"
+warn = "#e9b452"
+bad = "#f97770"
+ring = "#2dd4bf"
+sidebar = "#241e1a"
+input = "#38322d"
+popover = "#1d1713"
+
+# Variants (ADR 0060): the look follows the time of day and the weather; the one naming most signals wins.
+[[variant]]
+when = { daypart = ["evening", "night"] }
+light = { main_tint = "#eef0f7", backdrop = { gradient = "linear", angle = 180, stops = ["main_tint", "background"], opacity = 0.6 } }
+dark = { background = "#0e1022", main_tint = "#171a3a" }
+
+[[variant]]
+when = { weather = ["rain", "drizzle"] }
+light = { main_tint = "#e8ecef", backdrop = { gradient = "linear", stops = ["#cfd8dc", "background"], opacity = 0.5 } }
+dark = { main_tint = "#1c2328" }
+
+[[variant]]
+when = { daypart = "night", weather = "rain" }
+dark = { background = "#0b0f14", main_tint = "#1a2129", backdrop = { gradient = "radial", stops = ["#26313b", "background"], opacity = 0.5 } }

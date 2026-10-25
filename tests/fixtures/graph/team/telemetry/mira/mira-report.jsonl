@@ -1,0 +1,7 @@
+{"v":1,"heinzel_id":"mira-report","user":"mira","time":"2026-10-16T16:05:00Z","verb":"read","target":"contract:team/tracker-update#row","contract":"team:weekly-report","version":"2026-10-14","needed_by":"2026-10-16T16:00:00Z"}
+{"v":1,"heinzel_id":"mira-report","user":"mira","time":"2026-10-16T16:05:00Z","verb":"read","target":"https://docs.acme.example/d/roadmap","description":"The roadmap's milestones, for context","contract":"team:weekly-report","version":"rev-81"}
+{"v":1,"heinzel_id":"mira-report","user":"mira","time":"2026-10-16T16:06:00Z","verb":"fell_back","target":"contract:team/weekly-report#report","description":"Used last week's row for one member","contract":"team:weekly-report","input":"contract:team/tracker-update#row"}
+{"v":1,"heinzel_id":"mira-report","user":"mira","time":"2026-10-16T16:20:00Z","verb":"drafted","target":"https://docs.acme.example/d/weekly-report","contract":"team:weekly-report","contract_version":"1.2.0"}
+{"v":1,"heinzel_id":"mira-report","user":"mira","time":"2026-10-16T17:10:00Z","verb":"approved","target":"https://docs.acme.example/d/weekly-report","contract":"team:weekly-report","by":"mira"}
+{"v":1,"heinzel_id":"mira-report","user":"mira","time":"2026-10-16T17:30:00Z","verb":"published","target":"team-payments@acme.example","contract":"team:weekly-report","version":"2026-W42"}
+{"v":1,"heinzel_id":"mira-report","user":"mira","time":"2026-10-23T07:00:00Z","verb":"heartbeat","contract":"team:weekly-report"}

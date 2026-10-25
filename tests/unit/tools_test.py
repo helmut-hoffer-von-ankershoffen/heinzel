@@ -92,7 +92,7 @@ def test_the_manifest_loads_and_pins_every_build_tool_on_every_platform():
     manifest = tools.load()
     assert {"gitleaks", "gh"} <= {name for name, tool in manifest.items() if tool.group == "build"}
     for tool_ in manifest.values():
-        if tool_.group == "build":
+        if tool_.group in tools.REQUIRED:
             assert set(tool_.files) == set(tools.PLATFORMS), f"{tool_.name} must be pinned for every platform"
         assert tool_.version
         assert tool_.why
@@ -318,7 +318,12 @@ def test_pin_fills_in_a_new_entry_and_refuses_an_unknown_tool(tmp_path):
 
 def test_doctor_names_the_command_that_fixes_each_missing_piece(isolated):
     found = tools.checks(
-        "linux-x86_64", {"fake": tool(BINARY)}, isolated / ".tools", which=lambda _: None, output=lambda *_: (1, "")
+        "linux-x86_64",
+        {"fake": tool(BINARY)},
+        isolated / ".tools",
+        which=lambda _: None,
+        output=lambda *_: (1, ""),
+        web_app=isolated / "web" / "package.json",
     )
     missing = {check.text.split(":")[0]: check.fix for check in found if check.state is False}
     assert missing["git (version control)"] == "install git with your package manager"
@@ -338,6 +343,7 @@ def test_doctor_passes_when_everything_is_there(isolated):
         isolated / ".tools",
         which=lambda name: f"/usr/bin/{name}",
         output=lambda *command: (0, "uv 99.0.0") if command[0] == "uv" else (0, f"{command[0]} 1.0"),
+        web_app=isolated / "web" / "package.json",
     )
     # The hooks of this test run's checkout are whatever they are; everything else passes.
     failed = [check.text for check in found if check.state is False and not check.text.startswith("git hooks")]
@@ -352,6 +358,7 @@ def test_optional_tools_never_fail_the_doctor(isolated):
         isolated / ".tools",
         which=lambda name: f"/usr/bin/{name}",
         output=lambda *_: (0, "1.0"),
+        web_app=isolated / "web" / "package.json",
     )
     (demo,) = [check for check in found if check.text.startswith("fake")]
     assert demo.state is None
@@ -418,3 +425,48 @@ def test_doctor_counts_a_program_on_path_as_a_stand_in_not_a_failure(isolated, m
 def test_run_fails_with_the_reason_when_the_tool_is_unavailable(isolated, capsys):
     assert tools.run(tool(BINARY), "darwin-arm64", [], isolated / ".tools") == 1
     assert "brew install fake" in capsys.readouterr().err
+
+
+# The web head's app (ADR 0039): pnpm in group `web`, required only where there is a web/ app
+
+
+def test_pnpm_is_pinned_in_the_web_group_that_make_install_installs():
+    assert tools.load()["pnpm"].group == "web"
+    makefile = (REPO / "Makefile").read_text(encoding="utf-8")
+    assert "@$(TOOLS) install build web" in makefile
+    assert "@$(TOOLS) install\n" in (REPO / "template" / "Makefile").read_text(encoding="utf-8")
+
+
+def web_checks(isolated, *, app: bool, modules: bool):
+    web_app = isolated / "web" / "package.json"
+    if app:
+        web_app.parent.mkdir()
+        web_app.write_text("{}", encoding="utf-8")
+    if modules:
+        (web_app.parent / "node_modules").mkdir()
+        (web_app.parent / "node_modules" / ".modules.yaml").write_text("", encoding="utf-8")
+    pnpm = tool(BINARY, group="web")
+    found = tools.checks(
+        "linux-x86_64",
+        {"pnpm": pnpm},
+        isolated / ".tools",
+        which=lambda name: f"/usr/bin/{name}",
+        output=lambda *_: (0, "1.0"),
+        web_app=web_app,
+    )
+    return [check for check in found if check.section == "Tools: web"]
+
+
+def test_doctor_requires_the_web_tools_where_there_is_a_web_app(isolated):
+    checks = web_checks(isolated, app=True, modules=False)
+    assert [(check.state, check.fix) for check in checks] == [(False, "make install"), (False, "make install")]
+    assert "web/node_modules" in checks[1].text
+
+
+def test_doctor_passes_the_web_app_once_installed(isolated):
+    checks = web_checks(isolated, app=True, modules=True)
+    assert checks[1].state is True
+
+
+def test_doctor_says_nothing_about_web_tools_in_a_plugin(isolated):
+    assert web_checks(isolated, app=False, modules=False) == []

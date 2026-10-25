@@ -3,6 +3,7 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 related: 0021, 0026, 0028, 0032, 0035
+amended-by: 0054
 ---
 
 # 0037: Plugins bring playbooks: asset types with discovery hints, template contracts and recommended settings

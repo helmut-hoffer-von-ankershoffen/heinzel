@@ -39,7 +39,7 @@ class FakeSource(ReleaseSource):
 def plugin_module() -> Module:
     module = Module("clockwork", "Wind the clocks.")
 
-    @module.operation
+    @module.operation(audience="everyday")  # listed on the start screen
     def wind() -> str:
         """Wind them."""
         return "wound"
@@ -151,17 +151,20 @@ def test_version_lists_repositories_and_shows_the_notice_on_stderr(app):
 
 def test_the_start_screen_shows_plugins_with_versions_and_links_and_the_notice(app):
     screen = runner.invoke(app, []).output
-    plugins = screen[screen.index("Plugins") : screen.index("Core")]
+    start = screen.index("Plugins")
+    plugins = screen[start : screen.index("╰", start)]  # the panel, wherever it sits among the others
     assert "heinzel-clockwork 1.2.3" in plugins
     assert "https://github.com/someone/heinzel-clockwork" in plugins
     assert " ".join(NOTICE.split()) in " ".join(screen.split())
-    footer = screen[screen.index("Heinzelmännchen hz") :]
-    assert "https://" not in footer  # the footer names, versions and describes; no link
+    footer = screen[screen.rindex(f"v{__version__}") :]
+    assert "built with AI in Berlin" in footer
+    assert "https://" not in footer  # only the version and attribution, no link
 
 
 def test_subcommand_help_keeps_the_footer_without_notice_or_link(app):
     result = runner.invoke(app, ["clockwork", "--help"], env={"COLUMNS": "200"})
-    assert f"hz {__version__} · open-source helpers" in result.stdout
+    assert f"v{__version__}" in result.stdout
+    assert "built with AI in Berlin" in result.stdout
     assert NOTICE not in result.stdout
     assert "https://" not in result.stdout
 
@@ -201,9 +204,11 @@ def test_changelog_starts_with_a_header_naming_the_newer_release_and_its_notes(a
 def fake_releases(monkeypatch, answer: object) -> list[str]:
     """The GitHub releases API answering `answer` (raising it if it is an exception); the suite stays offline."""
     asked: list[str] = []
+    for name in ("GH_TOKEN", "GITHUB_TOKEN", "HZ_SYSTEM_CHANGELOG__GITHUB_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
 
     def get_json(url, token, timeout):
-        assert (token, timeout) == (None, system_service.RELEASE_TIMEOUT)  # never a token (ADR 0031)
+        assert (token, timeout) == (None, system_service.RELEASE_TIMEOUT)  # no token unless one is set (ADR 0031)
         asked.append(url)
         if isinstance(answer, Exception):
             raise answer

@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import Any, cast
 
 from heinzel import AgentResult, Budget, HeinzelError, TokenUsage, ToolProfile
-from heinzel.kernel import subprocess_environment
-from heinzel.modules.system.runner._claude import resolve, working_dir
+from heinzel.kernel import Effort, subprocess_environment
+from heinzel.modules.system.runner._claude import mcp_config, resolve, working_dir
 from heinzel.modules.system.runner._models import RunnerSettings
 from heinzel.modules.system.runner._process import MAX_OUTPUT, Execute, amount, run_bounded, whole_number
 
@@ -30,7 +30,17 @@ NAME = "command"
 SET_COMMAND = """hz system config set system.runner.command '["mytool", "run", "--prompt", "{prompt_file}"]'"""
 TRUST_COMMAND = "hz system config set system.runner.command_enforces_read_only true"
 PLACEHOLDERS = frozenset(
-    {"prompt_file", "contract_file", "output_file", "working_dir", "tools", "model", "timeout_seconds", "max_usd"}
+    {
+        "prompt_file",
+        "contract_file",
+        "output_file",
+        "working_dir",
+        "tools",
+        "model",
+        "timeout_seconds",
+        "max_usd",
+        "mcp_config",
+    }
 )
 BASE_ENVIRONMENT = frozenset({"PATH", "HOME", "LANG", "TMPDIR"})
 
@@ -142,8 +152,21 @@ class CommandRunner:
             placeholders(argument)
         return resolve(settings.command[0], self._which, "The command runner's executable")
 
-    def run(self, prompt: str, *, contract: str, tools: ToolProfile, timeout: timedelta, budget: Budget) -> AgentResult:
+    def run(  # noqa: PLR0913 - the protocol's run, by keyword
+        self,
+        prompt: str,
+        *,
+        contract: str,
+        tools: ToolProfile,
+        timeout: timedelta,
+        budget: Budget,
+        model: str | None = None,
+        effort: Effort | None = None,
+    ) -> AgentResult:
         """Write prompt and contract to files, run the command, read the result; stop at `timeout`.
+
+        `model` fills `{model}` instead of the configured one; the command has no placeholder for the effort, so a
+        chosen effort is a warning.
 
         Raises:
             HeinzelError: If the runner is not configured to run (no command, read-only not recorded, a tool not
@@ -152,21 +175,26 @@ class CommandRunner:
         settings = self._settings
         cwd = working_dir(tools)
         executable = self._check(tools)
-        warnings = self._warnings(budget)
+        warnings = self._warnings(budget, tools)
+        chosen = model or settings.model
+        if effort is not None:
+            warnings.append(f"the effort {effort} can't be passed to the command, so its own applies")
         with tempfile.TemporaryDirectory(prefix="hz-run-") as directory:  # 0700: only this user reads the prompt
             folder = Path(directory)
             (folder / "prompt.md").write_text(prompt, encoding="utf-8")
             (folder / "contract.md").write_text(contract, encoding="utf-8")
             output_file = folder / "output"
+            (folder / "mcp.json").write_text(json.dumps(mcp_config(tools)), encoding="utf-8")
             values = {
                 "prompt_file": str(folder / "prompt.md"),
                 "contract_file": str(folder / "contract.md"),
                 "output_file": str(output_file),
                 "working_dir": str(cwd or Path.cwd()),
                 "tools": ",".join(tools.tools),
-                "model": settings.model or "",
+                "model": chosen or "",
                 "timeout_seconds": str(int(timeout.total_seconds())),
                 "max_usd": "" if budget.max_usd is None else f"{budget.max_usd:g}",
+                "mcp_config": str(folder / "mcp.json"),
             }
             command = [executable, *render(settings.command[1:], values)]
             started = time.monotonic()
@@ -174,7 +202,7 @@ class CommandRunner:
                 command, input=None, cwd=cwd, env=environment(settings.command_env), timeout=timeout.total_seconds()
             )
             duration = time.monotonic() - started
-            base: dict[str, Any] = {"runner": NAME, "model": settings.model, "duration_seconds": duration}
+            base: dict[str, Any] = {"runner": NAME, "model": chosen, "duration_seconds": duration}
             if outcome.timed_out:
                 detail = f"stopped after {timeout}, the run's timeout"
                 return AgentResult(**base, status="timeout", detail=detail, warnings=warnings)
@@ -182,7 +210,10 @@ class CommandRunner:
                 detail = f"exit code {outcome.returncode}: {outcome.stderr_tail()}"
                 return AgentResult(**base, status="failed", detail=detail, warnings=warnings)
             if settings.command_output == "file":
-                output = read_output(output_file)
+                try:  # the agent ran: a bad output file is a failed run (it may have spent), not a misconfiguration
+                    output = read_output(output_file)
+                except HeinzelError as exc:
+                    return AgentResult(**base, status="failed", detail=str(exc), warnings=warnings)
                 if output is None:
                     detail = "the command wrote no output file"
                     return AgentResult(**base, status="failed", detail=detail, warnings=warnings)
@@ -193,11 +224,17 @@ class CommandRunner:
                 output = outcome.stdout
         return self._result(output, base, warnings)
 
-    def _warnings(self, budget: Budget) -> list[str]:
-        takes_budget = any("max_usd" in placeholders(argument) for argument in self._settings.command[1:])
-        if budget.max_usd is not None and not takes_budget:
-            return [f"the budget of {budget.max_usd:g} USD is not passed to the command, so not enforced"]
-        return []
+    def _warnings(self, budget: Budget, tools: ToolProfile) -> list[str]:
+        used = set[str]().union(*(placeholders(argument) for argument in self._settings.command[1:]))
+        warnings: list[str] = []
+        if budget.max_usd is not None and "max_usd" not in used:
+            warnings.append(f"the budget of {budget.max_usd:g} USD is not passed to the command, so not enforced")
+        if not tools.read_files:
+            warnings.append("the command decides its agent's file tools itself; this run asked for none")
+        if tools.mcp_servers and "mcp_config" not in used:
+            names = ", ".join(sorted(tools.mcp_servers))
+            warnings.append(f"the command takes no {{mcp_config}}, so the agent had no tools of {names}")
+        return warnings
 
     def _result(self, output: str, base: dict[str, Any], warnings: list[str]) -> AgentResult:
         settings = self._settings

@@ -21,17 +21,36 @@ PYPROJECT_HEAD = ROOT / "scripts" / "template_pyproject_head.toml.tmpl"
 def makefile() -> str:
     """The Makefile without Heinzelmännchen-only targets, plus `update-template`."""
     text = (ROOT / "Makefile").read_text(encoding="utf-8")
-    text = text.replace(" template-test template-sync docs fuzz demo", "")
+    text = text.replace(" template-test template-sync docs attributions fuzz demo", "")
     text = text.replace(" release clean\n", " release clean update-template\n", 1)
     text = text.replace(" (KEEP=dir keeps it)", "")
-    text = re.sub(r"\n(template-test|template-sync|docs|fuzz|demo):.*?\n(?:\t.*\n)+", "\n", text)
-    # Steps only Heinzelmännchen has: import contracts, the template, generated docs, demo tape (never a last step).
-    text = re.sub(r'\n\t\t"&?(contracts|template|docs|demo)=[^\n]*', "", text)
+    text = re.sub(r"\n(template-test|template-sync|docs|attributions|fuzz|demo):.*?\n(?:\t.*\n)+", "\n", text)
+    # Steps only Heinzelmännchen has: import contracts, the template, generated docs, demo tape, ATTRIBUTIONS.md
+    # (never a last step).
+    text = re.sub(r'\n\t\t"&?(contracts|template|docs|demo|attributions)=[^\n]*', "", text)
     text = text.replace("uv build --all-packages", "uv build")
     text = text.replace("lint, import contracts, types, tests", "lint, types, tests")
     text = text.replace("format, lint, contracts, generated files, unit tests", "format, lint, unit tests")
     text = text.replace("check with coverage, template, build", "check with coverage, build")
     text = text.replace("lint, architecture contracts and workflows", "lint and workflows")
+    # The web head's app (web/, ADR 0039): plugins bring operations, not UI.
+    text = text.replace(" web-build web-dev test-web", "")
+    text = re.sub(r"\n# The web head's app in web/.*?\nWEB_TESTS := [^\n]*", "", text, flags=re.DOTALL)
+    text = re.sub(r"\n(web-build|web-dev|test-web):.*?\n(?:\t.*\n)+", "\n", text)
+    text = re.sub(r"\n\t\t\$\(WEB_LINT\) \$\(WEB_TYPES\) \\", "", text)
+    text = re.sub(r" \$\(WEB_(LINT|TYPES|TESTS)\)", "", text)
+    text = re.sub(r'\n\t\t"&web-client=[^\n]*', "", text)
+    text = re.sub(r"\n\t@\$\(WEB(_PROJECT)?\) [^\n]*", "", text)
+    text = re.sub(r' "&web-vulnerabilities=[^"]*"', "", text)
+    text = text.replace("@$(TOOLS) install build web", "@$(TOOLS) install")
+    text = text.replace("build: web-build ## ", "build: ## ").replace("; the web app first)", ")")
+    text = text.replace(" src/heinzel/heads/web/static", "")
+    # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
+    text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
+    text = re.sub(r"\nnotifier:.*?\n(?:\t.*\n)+", "\n", text)
+    # The terminal art is drawn from the web app's drawing: plugins have none.
+    text = re.sub(r"(?m)^(\.PHONY:.*?) terminal-art\b", r"\1", text)
+    text = re.sub(r"\nterminal-art:.*?\n(?:\t.*\n)+", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text + (
         "\nupdate-template: ## Update this plugin to the latest Heinzelmännchen template (needs a clean working tree)\n"
@@ -51,13 +70,36 @@ def ci_workflow() -> str:
         "        run: unzip -l dist/*.whl | grep -q '[[ package_name ]]/__init__.py'",
     )
     text = text.replace("- name: Check the wheel ships the changelog", "- name: Check the wheel ships the package")
+    # The web head's app (ADR 0039) and ATTRIBUTIONS.md, the notices of what it bundles: plugins have neither.
+    text = re.sub(r"\n      - run: make test-web[^\n]*", "", text)
+    text = re.sub(r"\n      - name: Check the wheel ships the attributions\n[^\n]*", "", text)
+    text = re.sub(r"\n      - name: Check the wheel ships the web app\n[^\n]*", "", text)
     text = text.replace("      - run: uv build --all-packages\n", "      - run: uv build\n")
+    # Heinzel Notifier (ADR 0043): only the core builds and ships it.
+    text = re.sub(r"\n  notifier:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
+    text = re.sub(r"\n  changes:\n.*?(?=\n  dependency-review:)", "", text, flags=re.DOTALL)
+    text = text.replace("    needs: notifier\n", "")
+    text = re.sub(r"    if: \$\{\{ !cancelled\(\) && needs\.notifier\.result[^\n]*\n", "", text)
+    text = re.sub(
+        r"\n      - if: needs\.notifier[^\n]*\n        uses: actions/download-artifact@[^\n]*"
+        r"\n        with:\n          name: notifier",
+        "",
+        text,
+    )
+    text = re.sub(r"\n      - name: Unpack Heinzel Notifier into the package\n[^\n]*\n[^\n]*", "", text)
+    text = re.sub(r"\n      - name: Check the wheel ships Heinzel Notifier\n[^\n]*\n[^\n]*", "", text)
+    text = text.replace(", notifier, build]", ", build]")
     # The core's CI covers every platform of the shared scripts/tools.toml; a plugin, possibly private and paying for
     # its minutes, sets up on the two most contributors use.
-    text = text.replace(
-        "os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]", "os: [ubuntu-latest, macos-latest]"
+    text = re.sub(
+        r"(\n  setup:\n.*?\n        os: )\$\{\{ fromJSON[^\n]*",
+        r"\1[ubuntu-latest, macos-latest]",
+        text,
+        count=1,
+        flags=re.DOTALL,
     )
-    return text.replace(", template, build]", ", build]")
+    text = re.sub(r"\n# GitHub-hosted macOS runners.*?\n(?=jobs:)", "\n", text, flags=re.DOTALL)
+    return text.replace(", template, build]", ", build]").replace(", changes,", ",")
 
 
 def pyproject() -> str:
@@ -80,6 +122,7 @@ def pyproject() -> str:
     tools = source[source.index("[tool.ruff]") :]
     tools = re.sub(r'\nextend-exclude = \["template"\][^\n]*', "", tools)
     tools = re.sub(r'\n"fuzz/\*\.py" = \[\n[^\]]*\]', "", tools)
+    tools = re.sub(r'\n"hatch_build\.py" = \[\n[^\]]*\]', "", tools)  # the web head's build hook
     tools = re.sub(r'\n\[\[tool\.mypy\.overrides\]\]\nmodule = \["atheris"\][^\n]*\n[^\n]*\n', "", tools)
     tools = re.sub(r"\n\[tool\.importlinter\].*?(?=\n\[tool\.(?!importlinter)|\Z)", "\n", tools, flags=re.DOTALL)
     tools = re.sub(r'source = \["heinzel"(, "heinzel_\w+")*\]', 'source = ["[[ package_name ]]"]', tools)
@@ -116,7 +159,13 @@ def pyproject() -> str:
 
 def gitignore() -> str:
     """Git won't read a symlinked .gitignore, so the template gets a copy."""
-    return (ROOT / ".gitignore").read_text(encoding="utf-8")
+    text = (ROOT / ".gitignore").read_text(encoding="utf-8")
+    # Without the web head's app (ADR 0039): plugins have no web/.
+    core_only = (
+        r"node_modules/|src/heinzel/heads/web/static/|src/heinzel/modules/system/notify/macos/\S+|web/test-results/"
+    )
+    pattern = rf"(?m)^({core_only})\n"
+    return re.sub(pattern, "", text)
 
 
 GENERATED = {

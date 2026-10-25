@@ -135,3 +135,50 @@ def test_a_bare_carriage_return_is_invalid_toml_not_a_newline(tmp_path):
 def test_crlf_line_endings_load(tmp_path):
     (tmp_path / "hz.toml").write_bytes(b"a = 1\r\nb = 2\r\n")
     assert Config.load(tmp_path).data == {"a": 1, "b": 2}
+
+
+def test_reread_reads_the_same_files_again(tmp_path):
+    (tmp_path / "hz.toml").write_text('[example]\ngreeting = "Hi"\n', encoding="utf-8")
+    booted = Config.load(tmp_path)
+    (tmp_path / "hz.toml").write_text('[example]\ngreeting = "Moin"\n', encoding="utf-8")
+    assert booted.settings(ExampleSettings, "example").greeting == "Hi"
+    assert booted.reread().settings(ExampleSettings, "example").greeting == "Moin"
+
+
+def test_reread_keeps_a_configuration_built_in_code():
+    built = Config(files=(ConfigFile("user", Path("/nowhere/hz.toml")),), data={"example": {"times": 3}})
+    assert built.reread() is built
+    assert config({"example": {"times": 2}}).reread().settings(ExampleSettings, "example").times == 2
+
+
+class TrustedSettings(ModuleSettings):
+    greeting: str = "Hello"
+    command: str = "safe"
+    ignored_in_project = frozenset({"command"})
+
+
+def test_a_renamed_section_fills_in_what_the_new_one_does_not_set(monkeypatch):
+    # The module `notes` was called `example`: the old table and HZ_EXAMPLE__* fill in, the new table wins.
+    cfg = config({"example": {"greeting": "Hi", "times": 3}, "notes": {"times": 2}})
+    assert cfg.settings(ExampleSettings, "notes", renamed_from="example") == ExampleSettings(greeting="Hi", times=2)
+    monkeypatch.setenv("HZ_EXAMPLE__GREETING", "Moin")
+    assert cfg.settings(ExampleSettings, "notes", renamed_from="example").greeting == "Moin"
+    monkeypatch.setenv("HZ_EXAMPLE__TIMES", "7")
+    assert cfg.settings(ExampleSettings, "notes", renamed_from="example").times == 2
+
+
+def test_without_renamed_from_the_old_section_is_not_read():
+    assert config({"example": {"greeting": "Hi"}}).settings(ExampleSettings, "notes").greeting == "Hello"
+
+
+def test_a_project_file_cant_set_a_trusted_key_through_the_old_section(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "hz.toml").write_text('[example]\ncommand = "evil"\ngreeting = "Hi"\n')
+    settings = Config.load(tmp_path).settings(TrustedSettings, "notes", renamed_from="example")
+    assert (settings.command, settings.greeting) == ("safe", "Hi")
+
+
+def test_renamed_keys_name_what_still_sets_the_old_section(monkeypatch):
+    monkeypatch.setenv("HZ_EXAMPLE__TIMES", "4")
+    cfg = config({"example": {"greeting": "Hi", "unknown": 1}})
+    assert cfg.renamed_keys(ExampleSettings, "example") == ["example.greeting", "HZ_EXAMPLE__TIMES"]

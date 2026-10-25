@@ -107,7 +107,8 @@ def test_capability_and_runner_fixes_end_with_commands_that_parse(make_kernel, t
 
 
 def test_errors_for_an_unmet_capability_end_with_a_command_that_parses(make_kernel):
-    for config in (Config.empty(), Config(files=(), data={"capabilities": {"documents": "nowhere"}})):
+    for documents in ("none", "nowhere"):  # `none`: the sole adapter would serve it automatically (ADR 0055)
+        config = Config(files=(), data={"capabilities": {"documents": documents}})
         kernel = make_kernel(builtins=True, notes=notes(), digest=digest(), config=config)
         result = CliRunner().invoke(build(kernel), ["digest", "show"])
         assert result.exit_code != 0
@@ -115,6 +116,8 @@ def test_errors_for_an_unmet_capability_end_with_a_command_that_parses(make_kern
 
 
 def test_running_the_binding_fix_serves_the_capability(loaded):
+    off = ["system", "config", "set", "capabilities.documents", "none"]  # the sole adapter would serve it (ADR 0055)
+    assert CliRunner().invoke(build(loaded(notes=notes(), digest=digest())), off).exit_code == 0
     kernel = loaded(notes=notes(), digest=digest())
     [hint] = [h for h in hints(kernel) if "documents" in h]
     result = CliRunner().invoke(build(kernel), command_of(hint))

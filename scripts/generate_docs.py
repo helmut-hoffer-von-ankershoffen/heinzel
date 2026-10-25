@@ -1,12 +1,14 @@
 """Generate every document that can be derived from the code. `--check` fails if any of them is out of date.
 
-- docs/MODULES.md: every module with its operations in every head (CLI, MCP, REST), settings and health checks.
+- docs/MODULES.md: every module with its operations in every head (CLI, MCP, REST, web), settings and health checks.
 - docs/CLI_REFERENCE.md: Typer's own `utils docs` output for the CLI built from the built-in modules.
 - docs/CONFIGURATION.md: every setting of the kernel and the built-in modules, with environment variable and default.
 - README.md: the module list between `<!-- modules:start -->` and `<!-- modules:end -->`.
 - The badges between `<!-- badges:start -->` and `<!-- badges:end -->`: one set on every top-level page GitHub renders
   (BADGE_PAGES), and the same set for a plugin's own repository in the template's README.md and SECURITY.md.
 - docs/schemas/contract-frontmatter-1.json: the JSON Schema of workflow contract frontmatter (ADR 0021).
+- docs/schemas/team-graph-1.json and telemetry-entry-1.json: `hz graph --json` (JSON Graph Format v2, profile
+  `hz-team`) and one line of a Heinzelmännchen's telemetry log (ADR 0054).
 
 Usage: uv run python scripts/generate_docs.py [--check]
 """
@@ -25,12 +27,15 @@ from urllib.parse import quote
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined, to_jsonable_python
 
-from heinzel import Config, HealthLet, Kernel, Settings, SettingsLet, SetupLet, __version__
+from heinzel import Config, HealthLet, Kernel, Settings, SettingsLet, SetupLet, TelemetryEntry, __version__
 from heinzel.heads._exposure import exposed
 from heinzel.heads.cli import build
+from heinzel.heads.cli._chat import command_words
 from heinzel.kernel import Origin, discover, env_prefix, walk
+from heinzel.modules.graph import TeamGraphDocument
+from heinzel.modules.heinzel._models import SCHEMA_VERSION, Frontmatter
+from heinzel.modules.system.config._schema import reference_hints, setting_schemas
 from heinzel.modules.system.plugin._service import FIRST_PARTY
-from heinzel.modules.workflow._models import SCHEMA_VERSION, Frontmatter
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -41,14 +46,17 @@ BADGES_START, BADGES_END = "<!-- badges:start -->", "<!-- badges:end -->"
 #: (instructions every agent session loads), not CHANGELOG.md (the release process writes it).
 BADGE_PAGES = ("README.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "INTENT.md")
 OWNER, REPOSITORY = "helmut-hoffer-von-ankershoffen", "heinzel"
+BEST_PRACTICES = 15863  # the OpenSSF Best Practices project id of this repository
 TEMPLATE = ROOT / "template"
 
 MODULES_HEADER = """\
 # Modules
 
 Generated from the code by `make docs`; CI fails when it is out of date. Every operation is the same in every head:
-a `hz` command, an MCP tool (`hz system serve mcp`) and a REST endpoint (`hz system serve api`). Plugins add their own
-modules; `hz system modules` lists what is installed.
+a `hz` command, an MCP tool (`hz system serve mcp`), a REST endpoint (`hz system serve api`) and an endpoint of the web
+app's API (`hz ui`, under `/api`, behind its session token). Plugins add their own modules; `hz system modules` lists
+what is installed. Operations marked *expert* are listed by `hz --help`, shell completion and the web app only in expert
+mode (`hz system expert on`); every one runs either way, and MCP and REST list them all (ADR 0041).
 """
 
 CONFIGURATION_HEADER = """\
@@ -90,6 +98,8 @@ def configuration_reference() -> str:
     """Every setting as a table per section."""
     lines = [CONFIGURATION_HEADER]
     for section, settings in kernel().settings_of():
+        schemas = setting_schemas(type(settings))
+        user_only = type(settings).ignored_in_project
         lines += [
             f"## `[{section}]`",
             "",
@@ -98,7 +108,10 @@ def configuration_reference() -> str:
         ]
         for key, field in type(settings).model_fields.items():
             default = "platform-specific" if field.default is PydanticUndefined else f"`{_default(field.default)}`"
-            lines.append(f"| `{key}` | `{env_prefix(section)}{key.upper()}` | {default} | {field.description or ''} |")
+            text = (field.description or "") + reference_hints(schemas.get(key))
+            if key in user_only and "project" not in text:
+                text += " Never read from a project's hz.toml."
+            lines.append(f"| `{key}` | `{env_prefix(section)}{key.upper()}` | {default} | {text.replace('|', '\\|')} |")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -117,7 +130,7 @@ def _anchor(qualname: str) -> str:
 def module_catalog() -> str:
     """A section per module: summary, operations in every head, settings and health checks."""
     k = kernel()
-    surfaces = {"cli": exposed(k, "cli"), "mcp": exposed(k, "mcp"), "api": exposed(k, "api")}
+    surfaces = {head: exposed(k, head) for head in ("cli", "mcp", "api", "web")}
     lines = [MODULES_HEADER, "| Module | What it does |", "| --- | --- |"]
     lines += [f"| [`{r.qualname}`](#{_anchor(r.qualname)}) | {r.module.summary} |" for r in k.modules]
     lines.append("")
@@ -125,21 +138,31 @@ def module_catalog() -> str:
         lines += [f"## `{record.qualname}`", "", record.module.summary, ""]
         if not record.origin.builtin and record.parent is None:
             lines += [
-                f"First-party plugin `{record.origin.distribution}`: `hz system plugin add {record.qualname}`.",
+                (
+                    f"First-party plugin `{record.origin.distribution}`: "
+                    f"`hz system plugin add {record.qualname} --confirm`."
+                ),
                 "",
             ]
         operations = [item for item in surfaces["cli"] if item.record.qualname == record.qualname]
         if operations:
-            lines += ["| Operation | CLI | MCP tool | REST | Changes state |", "| --- | --- | --- | --- | --- |"]
+            lines += [
+                "| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |",
+                "| --- | --- | --- | --- | --- | --- | --- |",
+            ]
             for item in operations:
                 in_mcp = any(o.operation is item.operation for o in surfaces["mcp"])
                 in_api = any(o.operation is item.operation for o in surfaces["api"])
+                in_web = any(o.operation is item.operation for o in surfaces["web"])
                 verb = "GET" if item.operation.read_only else "POST"
+                path = "/".join(item.path)
                 lines.append(
-                    f"| {item.operation.summary} | `hz {' '.join(item.path)}` | "
+                    f"| {item.operation.summary} | `hz {' '.join(command_words(item.path))}` | "
                     f"{f'`{item.name}`' if in_mcp else '—'} | "
-                    f"{f'`{verb} /' + '/'.join(item.path) + '`' if in_api else '—'} | "
-                    f"{'' if item.operation.read_only else 'yes'} |"
+                    f"{f'`{verb} /{path}`' if in_api else '—'} | "
+                    f"{f'`{verb} /api/{path}`' if in_web else '—'} | "
+                    f"{'' if item.operation.read_only else 'yes'} | "
+                    f"{'expert' if item.operation.audience == 'expert' else ''} |"
                 )
             lines.append("")
         settings = [let for owner, let in k.lets(SettingsLet) if owner.qualname == record.qualname]
@@ -165,7 +188,7 @@ def readme_with_module_list(readme: str) -> str:
     k = kernel()
     items = [
         f"- [`{r.qualname}`](docs/MODULES.md#{_anchor(r.qualname)}) — {r.module.summary}"
-        + ("" if r.origin.builtin else f" *First-party plugin: `hz system plugin add {r.path[0]}`.*")
+        + ("" if r.origin.builtin else f" *First-party plugin: `hz system plugin add {r.path[0]} --confirm`.*")
         for r in k.modules
     ]
     return with_block(readme, README_START, README_END, "\n".join(items))
@@ -178,8 +201,12 @@ def python_versions() -> list[str]:
     return [c.removeprefix("Programming Language :: Python :: ") for c in classifiers if c.startswith(prefix)]
 
 
-def badges(owner: str, repository: str) -> str:
-    """The badges of a repository, one per line: what it is checked with, how healthy it is, what it runs on."""
+def badges(owner: str, repository: str, best_practices: int | None = None) -> str:
+    """The badges of a repository, one per line: what it is checked with, how healthy it is, what it runs on.
+
+    `best_practices` is the repository's OpenSSF Best Practices project id; a plugin made from the template has none
+    until its maintainer registers it.
+    """
     github = f"https://github.com/{owner}/{repository}"
     scorecard = f"github.com/{owner}/{repository}"
     shield = "https://img.shields.io"
@@ -197,6 +224,17 @@ def badges(owner: str, repository: str) -> str:
             f"https://api.scorecard.dev/projects/{scorecard}/badge",
             f"https://scorecard.dev/viewer/?uri={scorecard}",
         ),
+        *(
+            [
+                (
+                    "OpenSSF Best Practices",
+                    f"https://www.bestpractices.dev/projects/{best_practices}/badge",
+                    f"https://www.bestpractices.dev/en/projects/{best_practices}/passing",
+                )
+            ]
+            if best_practices
+            else []
+        ),
         ("Release", f"{shield}/github/v/release/{owner}/{repository}?sort=semver", f"{github}/releases"),
         ("Python", f"{shield}/badge/python-{versions}-blue", "pyproject.toml"),
         (
@@ -205,14 +243,9 @@ def badges(owner: str, repository: str) -> str:
             "docs/CODING_STANDARDS.md#python",
         ),
         (
-            "Ruff",
-            f"{shield}/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json",
-            "https://github.com/astral-sh/ruff",
-        ),
-        (
-            "uv",
-            f"{shield}/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json",
-            "https://github.com/astral-sh/uv",
+            "Tooling: Ruff + uv",
+            f"{shield}/badge/tooling-Ruff%20%2B%20uv-261230?logo=ruff&logoColor=d7ff64",
+            "https://astral.sh",
         ),
         ("License: MIT", f"{shield}/badge/license-MIT-green", "LICENSE"),
     ]
@@ -241,6 +274,17 @@ def contract_schema() -> str:
     return json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
 
 
+def model_schema(model: type[BaseModel], urn: str, title: str) -> str:
+    """The JSON Schema of a model that crosses a boundary, generated so it can't drift from the code."""
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": urn,
+        **model.model_json_schema(mode="serialization"),
+        "title": title,
+    }
+    return json.dumps(schema, indent=2, ensure_ascii=False) + "\n"
+
+
 def main() -> int:
     """Write the references, or with --check only compare them."""
     outputs = {
@@ -248,8 +292,14 @@ def main() -> int:
         DOCS / "CLI_REFERENCE.md": cli_reference(),
         DOCS / "CONFIGURATION.md": configuration_reference(),
         DOCS / "schemas" / f"contract-frontmatter-{SCHEMA_VERSION}.json": contract_schema(),
+        DOCS / "schemas" / "team-graph-1.json": model_schema(
+            TeamGraphDocument, "urn:heinzel:team-graph:1", "hz-team: a team graph in JSON Graph Format v2"
+        ),
+        DOCS / "schemas" / "telemetry-entry-1.json": model_schema(
+            TelemetryEntry, "urn:heinzel:telemetry-entry:1", "One entry of a Heinzelmännchen's telemetry log"
+        ),
     }
-    ours = badges(OWNER, REPOSITORY)
+    ours = badges(OWNER, REPOSITORY, BEST_PRACTICES)
     for page in BADGE_PAGES:
         text = with_block((ROOT / page).read_text(encoding="utf-8"), BADGES_START, BADGES_END, ours)
         outputs[ROOT / page] = readme_with_module_list(text) if page == README.name else text

@@ -19,7 +19,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
     "ci.yml": {
         "uv run --script scripts/check_confidentiality.py --require": "the secret must be configured in this repo",
         "unzip -l ": "asserts what the built wheel contains",
+        'changed="$(git diff --name-only': "decides from the changed paths whether a pull request builds the macOS app",
         "for result in $RESULTS": "the CI OK gate aggregates the results of the other jobs",
+        "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
+        "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
     },
     "demo.yml": {"uv tool install --editable .": "installs hz from this checkout for the recording"},
     "publish.yml": {
@@ -28,10 +31,14 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         'name="$(uv version': "exports the release's CycloneDX bill of materials",
         "uv run --script scripts/release_notes.py": "writes the release notes",
         'cp "$BUNDLE"': "attaches the provenance attestation and creates the GitHub release",
+        "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
+        "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
+        "unzip -l ": "asserts that the released wheel ships Heinzel Notifier",
     },
-    "release.yml": {
+    "prepare-release.yml": {
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",
         "gh workflow run ci.yml": "starts CI on the release pull request, which the bot's token doesn't",
+        "gh pr merge": "enables squash auto-merge on the release pull request once CI OK is green",
     },
     "release-tag.yml": {'tag="v$(uv version --short)"': "tags a merged release commit"},
     "claude-review.yml": {'files="$(git diff': "picks the review tier from the changed files"},
@@ -94,7 +101,7 @@ def test_every_not_make_exemption_is_used():
 # A script named by path needs its executable bit, which copier drops when it follows the template's symlinks into a
 # plugin's scripts/. Through an interpreter, a script runs without it.
 SCRIPT = re.compile(r"(?<![\w/.-])(?:\./)?scripts/[\w.-]+\.(?:sh|py)\b")
-INTERPRETER = re.compile(r"(?:\bbash|\bpython3?|\buv run(?: --?[\w-]+)*(?: --script| python3?))\s+$")
+INTERPRETER = re.compile(r"(?:\bbash|\bpython3?|\buv run(?: -[\w-]+)*(?: --script| python3?))\s+$")
 
 
 def scripts_run_by_path(run: str) -> list[str]:
@@ -266,9 +273,12 @@ def test_the_release_keeps_changelog_introductions():
     )
     assert save < regenerate < restore < commit < notes
     assert '--intro "${INTRO:-}"' in script
-    release = yaml.safe_load((REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8"))
+    release = yaml.safe_load((REPO / ".github" / "workflows" / "prepare-release.yml").read_text(encoding="utf-8"))
     assert "intro" in release[True]["workflow_dispatch"]["inputs"]  # YAML 1.1 reads the key `on` as True
     step = next(s for s in release["jobs"]["pull-request"]["steps"] if "release.sh" in s.get("run", ""))
+    assert any(
+        "gh pr merge" in s.get("run", "") and "--auto" in s["run"] for s in release["jobs"]["pull-request"]["steps"]
+    )
     assert step["env"]["INTRO"] == "${{ inputs.intro }}"
     assert (REPO / "template" / "scripts" / "changelog_intros.py").resolve() == REPO / "scripts" / "changelog_intros.py"
 
@@ -309,3 +319,46 @@ def test_claude_review_skips_events_sent_by_bots():
         "github.event.pull_request.head.repo.full_name == github.repository",
     ):
         assert clause in condition
+
+
+def test_claude_review_prefers_the_api_key():
+    """Each review step authenticates with ANTHROPIC_API_KEY and uses the subscription token only without one."""
+    spec = yaml.safe_load((REPO / ".github" / "workflows" / "claude-review.yml").read_text(encoding="utf-8"))
+    actions = [step for step in spec["jobs"]["review"]["steps"] if "claude-code-action" in step.get("uses", "")]
+    assert actions
+    for step in actions:
+        assert step["with"]["anthropic_api_key"] == "${{ secrets.ANTHROPIC_API_KEY }}"
+        assert step["with"]["claude_code_oauth_token"].startswith("${{ secrets.ANTHROPIC_API_KEY == '' && ")
+
+
+def _generated_plugin_ci() -> dict:
+    import importlib.util
+
+    path = REPO / "scripts" / "sync_template.py"
+    spec = importlib.util.spec_from_file_location("sync_template", path)
+    assert spec
+    assert spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    text = module.ci_workflow()
+    assert "notifier" not in text
+    assert "changes" not in text.replace("upstream changes", "")
+    return yaml.safe_load(text.replace("[[ package_name ]]", "x"))
+
+
+def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
+    jobs = _generated_plugin_ci()["jobs"]
+    for name, job in jobs.items():
+        needs = job.get("needs", [])
+        for need in [needs] if isinstance(needs, str) else needs:
+            assert need in jobs, f"{name} needs {need}"
+    assert jobs["setup"]["strategy"]["matrix"]["os"] == ["ubuntu-latest", "macos-latest"]
+    assert "if" not in jobs["build"]
+
+
+def test_pull_requests_run_one_macos_python_and_ci_ok_waits_for_changes():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    include = jobs["test"]["strategy"]["matrix"]["include"]
+    assert "pull_request" in include
+    assert '[{"os":"macos-latest","python":"3.15"}]' in include
+    assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])

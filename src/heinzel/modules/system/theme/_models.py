@@ -1,0 +1,115 @@
+"""Models and settings of the theme module."""
+
+from datetime import datetime
+from typing import ClassVar
+
+from pydantic import BaseModel, Field
+
+from heinzel import ModuleSettings, ThemeColours, ThemeHeinzel, ThemeVariant
+from heinzel.kernel import Daypart, Weather
+
+NAME_PATTERN = r"^[a-z](?:-?[a-z0-9])*$"
+
+
+class ThemeSettings(ModuleSettings):
+    """Which theme the web app uses: the `[system.theme]` table or `HZ_SYSTEM_THEME__NAME`.
+
+    User scope: a project `hz.toml` can't set it, because a repository someone else controls must not decide how a
+    person's tool looks.
+    """
+
+    section_title: ClassVar[str | None] = "Theme"  # the heading in Settings
+
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"name"})
+
+    name: str = Field(
+        default="default",
+        pattern=NAME_PATTERN,
+        max_length=64,
+        title="Theme",
+        description="The theme of the web app; default is the built-in one, and plugins can bring others.",
+        json_schema_extra={"x-hidden": True},
+    )
+
+
+class ThemeFontView(BaseModel):
+    """A font file a theme ships, where the web head serves it, for a `FontFace` in the web app."""
+
+    family: str = Field(description="The family name the theme's font stacks use, e.g. `Acme Sans`.")
+    url: str = Field(description="Where the web head serves it, e.g. `/theme-fonts/acme/0.woff2?v=1a2b3c4d5e6f`.")
+    weight: str = Field(description="The weight it covers, e.g. `400`, or a variable font's range, e.g. `100 900`.")
+    style: str = Field(description="`normal` or `italic`.")
+
+
+class ThemeLogoView(BaseModel):
+    """A theme's logo, where the web head serves each file, for an `<img>` in the web app."""
+
+    light: str = Field(description="The logo on a light background, e.g. `/theme-assets/acme/light.svg?v=1a2b3c4d`.")
+    dark: str = Field(description="The logo on a dark background; the light one's URL when the theme has none.")
+    mark: str | None = Field(description="A square logo for a collapsed sidebar; none when the theme has none.")
+    alt: str = Field(description="What the logo says, for screen readers, e.g. `Acme`.")
+    height: str = Field(description="How tall the logo is shown, a CSS length, e.g. `24px`.")
+
+
+class ThemeView(BaseModel):
+    """One available theme with every token value, ready to become the web app's CSS custom properties."""
+
+    name: str = Field(description="What `hz system theme use` takes, e.g. `acme`.")
+    title: str = Field(description="What people pick it by, e.g. `Acme`.")
+    module: str | None = Field(description="The qualified name of the module offering it; none for the built-in one.")
+    plugin: str | None = Field(description="The plugin it comes with, e.g. `heinzel-acme`; none for the built-in one.")
+    selected: bool = Field(description="Whether it is the theme in effect.")
+    light: ThemeColours = Field(description="Colours in light mode; each field is the token `--color-<field>`.")
+    dark: ThemeColours = Field(description="Colours in dark mode; each field is the token `--color-<field>`.")
+    font_sans: str = Field(description="The font-family stack of text (`--font-sans`), installed fonts only.")
+    font_mono: str = Field(description="The font-family stack of code (`--font-mono`), installed fonts only.")
+    radius: str = Field(description="The corner radius of cards and dialogs (`--radius`), e.g. `0.75rem`.")
+    radius_control: str = Field(
+        description="The corner radius of buttons, inputs and navigation items (`--radius-control`), e.g. `0.5rem`."
+    )
+    border_width: str = Field(description="The width of borders (`--border-width`), a CSS length, e.g. `1px`.")
+    font_size: str = Field(description="The size of the app's text (`--font-size`), e.g. `15px`.")
+    font_size_small: str = Field(description="The size of secondary text (`--font-size-small`), e.g. `13px`.")
+    icon_size: str = Field(description="The size of icons (`--icon-size`), e.g. `18px`.")
+    row_height: str = Field(description="The height of navigation and list rows (`--row-height`), e.g. `36px`.")
+    heading_weight: int = Field(description="The weight of headings (`--heading-weight`), 100 to 900, e.g. `600`.")
+    heading_tracking: str = Field(description="The letter spacing of headings (`--heading-tracking`), e.g. `0`.")
+    spacing: str = Field(description="The base step of gaps and padding (`--spacing`), e.g. `0.25rem`.")
+    fonts: list[ThemeFontView] = Field(
+        default_factory=list[ThemeFontView], description="Font files the theme ships, for the web app to load."
+    )
+    logo: ThemeLogoView | None = Field(default=None, description="The theme's logo; none if it ships none.")
+    heinzel: ThemeHeinzel | None = Field(default=None, description="Core avatar colours and decorations.")
+    variant: list[ThemeVariant] = Field(
+        default_factory=list[ThemeVariant],
+        description="Colours that apply when the signals match (ADR 0060); the one naming most signals wins.",
+    )
+    shadows: list[str] = Field(
+        default_factory=list[str],
+        description="Modules that offer a theme of the same name, hidden by this one (layer order decides).",
+    )
+
+
+class ThemeList(BaseModel):
+    """Every available theme and which one is in effect."""
+
+    selected: str = Field(description="The name of the theme in effect.")
+    themes: list[ThemeView] = Field(description="The built-in `default` first, then the plugins' themes.")
+    conflicts: list[str] = Field(
+        default_factory=list[str],
+        description="Names an org and the site both offer with nothing more specific deciding; left out until one is.",
+    )
+    note: str | None = Field(default=None, description="Why the theme in effect isn't the one configured.")
+    next: list[str] = Field(default_factory=list[str], description="What to run next.")
+
+
+class ThemeSignalsView(BaseModel):
+    """The signals now, which pick a theme's variant (ADR 0060)."""
+
+    daypart: Daypart = Field(description="The time of day in your time zone, e.g. `evening`.")
+    weather: Weather | None = Field(description="The weather now, e.g. `rain`; none when no module publishes it.")
+    sunrise: datetime | None = Field(description="Today's sunrise, when a module knows it.")
+    sunset: datetime | None = Field(description="Today's sunset, when a module knows it.")
+    timezone: str = Field(description="The time zone the daypart is in, `[org] timezone` or this machine's.")
+    sources: list[str] = Field(description="The modules whose signals are known now.")
+    refresh: int = Field(description="How often to ask again, in seconds.")

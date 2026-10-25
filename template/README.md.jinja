@@ -8,8 +8,7 @@
 [![Release](https://img.shields.io/github/v/release/[[ github_owner ]]/[[ project_name ]]?sort=semver)](https://github.com/[[ github_owner ]]/[[ project_name ]]/releases)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](pyproject.toml)
 [![Types: mypy + pyright strict](https://img.shields.io/badge/types-mypy%20%2B%20pyright%20strict-blue)](docs/CODING_STANDARDS.md#python)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
+[![Tooling: Ruff + uv](https://img.shields.io/badge/tooling-Ruff%20%2B%20uv-261230?logo=ruff&logoColor=d7ff64)](https://astral.sh)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 <!-- badges:end -->
 
@@ -24,7 +23,8 @@ product development teams.
 With Heinzelmännchen installed (`uv tool install git+https://github.com/[[ heinzel_owner ]]/heinzel`):
 
 ```bash
-hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]]
+hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]]             # shows what it installs
+hz system plugin add git+https://github.com/[[ github_owner ]]/[[ project_name ]] --confirm   # installs it
 ```
 
 Pin a version with `@vX.Y.Z`. Running `hz system plugin add` again upgrades; `hz system plugin remove [[ project_name ]]` removes it.
@@ -53,7 +53,8 @@ The modules live in `src/[[ package_name ]]/`. Read [AGENTS.md](AGENTS.md) and
 
 ## Release
 
-Actions → **Release** → Run workflow opens a release pull request; merging it tags and publishes. The version comes
+`make release` (or Actions → **Prepare release** → Run workflow) opens a release pull request on GitHub that merges itself
+once CI is green; merging tags and publishes. The version comes
 from conventional commits, the changelog from git-cliff; the GitHub release carries the wheel, the sdist and
 provenance attestations. `main` changes only through pull requests.
 

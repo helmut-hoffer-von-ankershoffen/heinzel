@@ -3,9 +3,10 @@
 import inspect
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import partial
-from typing import Any, cast, get_origin
+from pathlib import Path
+from typing import Any, cast, get_args, get_origin
 
 import pluggy
 from pydantic import ConfigDict, ValidationError, validate_call
@@ -13,16 +14,19 @@ from pydantic import ConfigDict, ValidationError, validate_call
 from heinzel.kernel._bindings import (
     CAPABILITIES_SECTION,
     Adapter,
+    Adapters,
     Capabilities,
     CapabilitySettings,
     CapabilityView,
     Requester,
 )
-from heinzel.kernel._capabilities import CAPABILITIES, capability_of
+from heinzel.kernel._capabilities import CAPABILITIES, Capability, capability_of
 from heinzel.kernel._config import KERNEL_SECTION, Config, ModuleSettings
 from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._identity import PRIVATE_READ, PRIVATE_WRITE, CurrentUser
 from heinzel.kernel._installation import Installation
 from heinzel.kernel._jobs import CompiledJobs
+from heinzel.kernel._layers import Declared, Label, LayerLet, LayerProblem, LayerProblemKind, Layers, LayerStack
 from heinzel.kernel._lets import (
     CredentialLet,
     HealthLet,
@@ -38,6 +42,8 @@ from heinzel.kernel._lets import (
     settings_parameters,
 )
 from heinzel.kernel._module import Module
+from heinzel.kernel._org import OrgContext
+from heinzel.kernel._playbooks import PlaybookLet
 from heinzel.kernel._progress import Progress
 from heinzel.kernel._prompter import Prompter
 from heinzel.kernel._settings import Settings
@@ -45,7 +51,7 @@ from heinzel.kernel._spec import PROJECT_NAME, Spec
 
 logger = logging.getLogger(__name__)
 
-ADAPTER_ONLY_LETS = (ProviderLet, RequirementLet, SettingsLet, CredentialLet)
+ADAPTER_ONLY_LETS = (ProviderLet, RequirementLet, SettingsLet, CredentialLet, LayerLet)
 """Lets that leave a module adapter-only: none of them runs code that could use the module's requirements, so its
 needs count only while one of its adapters serves someone. Any other let, including kinds added later, makes them
 count always."""
@@ -81,6 +87,14 @@ class ModuleRecord:
         return tuple(self.qualname.split("."))
 
 
+def _current_user() -> CurrentUser:
+    """Build identity from trusted user settings only when a head actually needs it."""
+    home = Path.home()
+    state = Config.load(home).settings(Settings, KERNEL_SECTION).state_dir.expanduser()
+    # Relative user settings must not implicitly select the repository a head happened to start in.
+    return CurrentUser((state if state.is_absolute() else home / state) / "identity")
+
+
 class Kernel:
     """Holds the registered modules, hands out their lets and injects services."""
 
@@ -113,12 +127,14 @@ class Kernel:
         self._manager.add_hookspecs(Spec)
         self._records: dict[str, ModuleRecord] = {}
         self._unavailable: set[type[Any]] = set()
+        self._blocked: dict[str, ModuleRecord] = {}
         for record in sorted(records, key=lambda r: (not r.origin.builtin, r.path)):
             if problem := self._collision(record):
                 self._reject(record, problem)
                 continue
             if self._is_disabled(record.qualname) and not record.module.essential:
                 self._manager.set_blocked(record.qualname)
+                self._blocked[record.qualname] = record
                 self._unavailable.update(_provided_types(record.module))
                 continue
             self._manager.register(record.module, name=record.qualname)
@@ -131,7 +147,11 @@ class Kernel:
             Progress: Progress(),
             Prompter: Prompter(),
         }
-        self._factories: dict[type[Any], Callable[..., Any]] = {Installation: Installation}
+        self._factories: dict[type[Any], Callable[..., Any]] = {
+            Installation: Installation,
+            CurrentUser: _current_user,
+        }
+        self._layers: Layers | None = None
         self._providers: dict[type[Any], str] = {}
         """The module providing each service type, by qualified name."""
         # Built-ins first, so a plugin providing a type a built-in provides is the one skipped and reported, whatever
@@ -139,7 +159,9 @@ class Kernel:
         for record, service in sorted(self.lets(ServiceLet), key=_builtins_first):
             self._provide(service.provides, service.factory, record)
         for record, declared in sorted(self.lets(SettingsLet), key=_builtins_first):
-            self._provide(declared.model, partial(self.config.settings, declared.model, record.qualname), record)
+            renamed = record.module.renamed_from if record.parent is None else None
+            factory = partial(self.config.settings, declared.model, record.qualname, renamed_from=renamed)
+            self._provide(declared.model, factory, record)
         self._records = dict(sorted(self._records.items(), key=lambda item: item[1].path))
         self.capability_settings = self.config.settings(CapabilitySettings, CAPABILITIES_SECTION)
         requesters, owners = self._requesters()
@@ -165,9 +187,20 @@ class Kernel:
         """Registered modules, parents before children."""
         return tuple(self._records.values())
 
+    @property
+    def blocked(self) -> tuple[ModuleRecord, ...]:
+        """Modules `[hz] disabled_modules` switched off, with their submodules: discovered but not registered."""
+        return tuple(sorted(self._blocked.values(), key=lambda record: record.path))
+
     def module(self, qualname: str) -> ModuleRecord:
         """Look up a registered module by qualified name."""
         return self._records[qualname]
+
+    def renamed(self, old: str) -> str | None:
+        """The top-level module that was called `old` before a rename (`Module(renamed_from=...)`), if one is."""
+        return next(
+            (r.qualname for r in self._records.values() if r.parent is None and r.module.renamed_from == old), None
+        )
 
     def children(self, qualname: str | None) -> tuple[ModuleRecord, ...]:
         """Direct submodules of a module; top-level modules for None."""
@@ -186,7 +219,7 @@ class Kernel:
     def provides(self, kind: object) -> bool:
         """Whether the kernel can inject a parameter annotated with `kind`: a service, settings or a capability."""
         return isinstance(kind, type) and (
-            kind in self._instances or kind in self._factories or capability_of(kind) is not None
+            kind in self._instances or kind in self._factories or capability_of(kind) is not None or kind is Adapters
         )
 
     def bind[T](self, kind: type[T], instance: T) -> None:
@@ -248,6 +281,73 @@ class Kernel:
             raise HeinzelError(msg)
         return self._capabilities.handle_for(requester, spec)
 
+    def layers(self) -> Layers:
+        """Every installed layer, checked once: what is wrong with the tree is in `problems` (ADR 0040)."""
+        if self._layers is None:
+            # The adapters the kernel registered, by plugin: a layer brings its whole plugin's.
+            adapters: dict[str, list[str]] = {}
+            for registered in (a for found in self._capabilities.adapters.values() for a in found):
+                adapters.setdefault(registered.module.split(".")[0], []).append(registered.let.name)
+            playbooks = {record.qualname: let for record, let in self.lets(PlaybookLet)}
+            self._layers = Layers(
+                Declared(
+                    let=let,
+                    module=record.qualname,
+                    distribution=record.origin.distribution,
+                    adapters=tuple(sorted(adapters.get(record.path[0], ()))),
+                    playbook=playbooks.get(record.qualname),
+                    plugin=not record.origin.builtin and record.parent is None,
+                )
+                for record, let in self.lets(LayerLet)
+            )
+        return self._layers
+
+    def layer_stack(self, layer: str | None = None) -> LayerStack:
+        """The stack of `layer`, or of the layer the person is in, general to specific (ADR 0040); built afresh.
+
+        Without `layer`, the person's layer is what their team declares (`OrgContext.layer`, provided by `team`);
+        when nothing declares one, the only team layer installed, or the only company when there is no team. Built on
+        every call, so a team joined or a `[team] layer` set earlier in the same process counts.
+        """
+        tree = self.layers()
+        if layer is not None:
+            return tree.stack(layer, source="asked for")
+        declared, problems = None, list[LayerProblem]()
+        if self.provides(OrgContext):
+            try:
+                declared = self.resolve(OrgContext).layer()
+            # An unreadable team repository or invalid team settings leave the stack to what is installed.
+            except (HeinzelError, ValidationError) as exc:
+                reason = exc.errors()[0]["msg"] if isinstance(exc, ValidationError) else str(exc)
+                problems.append(
+                    LayerProblem(
+                        layer="",
+                        problem=LayerProblemKind.UNREADABLE,
+                        detail=f"your team's layer couldn't be read: {reason}",
+                        fix="hz team show",
+                    )
+                )
+        if declared is not None:
+            stack = tree.stack(declared, source="your team")
+        else:
+            candidates = tree.teams() or [found for found in tree.layers if found.label is Label.COMPANY]
+            if len(candidates) == 1:
+                stack = tree.stack(candidates[0].name, source=f"the only {candidates[0].label} layer installed")
+            else:
+                stack = tree.stack(None)
+            if len(candidates) > 1:
+                names = ", ".join(c.name for c in candidates)
+                problems.append(
+                    LayerProblem(
+                        layer="",
+                        problem=LayerProblemKind.AMBIGUOUS,
+                        detail=f"{len(candidates)} {candidates[0].label} layers are installed ({names}) and nothing "
+                        "says which is yours",
+                        fix=f"hz system config set team.layer {candidates[0].name}",
+                    )
+                )
+        return replace(stack, problems=(*stack.problems, *problems)) if problems else stack
+
     def compiled_jobs(self) -> list[tuple[str, JobLet]]:
         """The jobs compiled from data, each with the module that compiled it; compiled afresh on every call.
 
@@ -284,6 +384,11 @@ class Kernel:
         Raises:
             HeinzelError: If an argument is invalid, with a message naming it.
         """
+        if operation.private:
+            permission = PRIVATE_READ if operation.read_only else PRIVATE_WRITE
+            if permission not in self.resolve(CurrentUser).context().permissions:
+                msg = "This credential does not permit the requested private operation"
+                raise HeinzelError(msg)
         func = operation.func
         signature = inspect.signature(func, eval_str=True)
         # What the kernel injects is its own and not validated; everything the caller passes is, before anything is
@@ -313,7 +418,9 @@ class Kernel:
             annotation = get_origin(parameter.annotation) or parameter.annotation
             if name in kwargs:
                 continue
-            if capability := capability_of(annotation):
+            if annotation is Adapters:
+                kwargs[name] = self._capabilities.handles(_adapters_capability(parameter.annotation), func)
+            elif capability := capability_of(annotation):
                 # A handle per requester: what it may call depends on what `func` declared (ADR 0028).
                 kwargs[name] = self._capabilities.handle(capability, func)
             elif self.provides(annotation):
@@ -411,7 +518,13 @@ class Kernel:
                 match let:
                     case OperationLet():
                         requester = Requester(
-                            record.qualname, "operation", let.name, let.requires, own, publishes=not let.read_only
+                            record.qualname,
+                            "operation",
+                            let.name,
+                            let.requires,
+                            own,
+                            publishes=not let.read_only,
+                            optional=let.optional,
                         )
                         requesters.append(requester)
                         self._own(owners, let.func, requester, record)
@@ -456,6 +569,22 @@ class Kernel:
     def _is_disabled(self, qualname: str) -> bool:
         parts = qualname.split(".")
         return any(".".join(parts[: i + 1]) in self.settings.disabled_modules for i in range(len(parts)))
+
+
+def _adapters_capability(annotation: Any) -> Capability:  # noqa: ANN401 - an annotation
+    """The capability of `Adapters[P]`: the one whose protocol is `P`.
+
+    Raises:
+        HeinzelError: If `P` is missing or is no capability's protocol.
+    """
+    args = get_args(annotation)
+    capability = capability_of(args[0]) if args else None
+    if capability is None:
+        msg = (
+            f"Ask for `Adapters[<protocol>]` with a capability's protocol, e.g. `Adapters[AiAccess]`, not {annotation}"
+        )
+        raise HeinzelError(msg)
+    return capability
 
 
 def _builtins_first(pair: tuple[ModuleRecord, Let]) -> tuple[bool, tuple[str, ...]]:

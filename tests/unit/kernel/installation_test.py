@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 
@@ -56,7 +57,12 @@ def test_tool_environment(tmp_path):
     assert installation.tool_install_command("heinzel", ["a", "b"]) == [
         "uv", "tool", "install", "--force", "--python", PYTHON, "heinzel", "--with", "a", "--with", "b",
     ]  # fmt: skip
-    assert installation.upgrade_command() == ["uv", "tool", "upgrade", "heinzel"]
+    assert installation.tool_install_command("heinzel", ["a"], refresh=True) == [
+        "uv", "tool", "install", "--force", "--refresh", "--python", PYTHON, "heinzel", "--with", "a",
+    ]  # fmt: skip
+    assert [pin.requirement for pin in installation.plugin_pins()] == [
+        "heinzel-old @ git+https://github.com/org/heinzel-old"
+    ]
 
 
 def test_other_environments(tmp_path):
@@ -128,6 +134,21 @@ def test_uv_and_hz_run_without_credential_variables(tmp_path, monkeypatch):
     assert all("HZ_CREDENTIAL_EXAMPLE_API_TOKEN" not in env and "PATH" in env for env in environments)
 
 
+def test_run_adds_variables_to_the_environment_when_asked(tmp_path, monkeypatch):
+    environments = []
+
+    def recording(command, **kwargs):
+        environments.append(kwargs["env"])
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", recording)
+    Installation(Progress(), prefix=tmp_path, uv="uv").run(["uv"], "Broke.", "Doing", {"GIT_CONFIG_COUNT": "1"})
+    Installation(Progress(), prefix=tmp_path, uv="uv").run(["uv"], "Broke.", "Doing")
+    assert environments[0]["GIT_CONFIG_COUNT"] == "1"
+    assert "PATH" in environments[0]
+    assert environments[1].get("GIT_CONFIG_COUNT") == os.environ.get("GIT_CONFIG_COUNT")
+
+
 def test_the_hz_probe_never_checks_for_updates(tmp_path, monkeypatch):
     environments = []
 
@@ -139,3 +160,66 @@ def test_the_hz_probe_never_checks_for_updates(tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "run", recording)
     Installation(Progress(), prefix=tmp_path, uv="uv").hz("--version")
     assert environments[0]["HZ_UPDATE_CHECK"] == "false"
+
+
+REPO = "https://github.com/example-org/heinzel"
+
+
+@pytest.mark.parametrize(
+    ("entry", "kind", "ref"),
+    [
+        # What the README's `uv tool install git+…@vX.Y.Z` leaves in the receipt.
+        ({"name": "heinzel", "git": f"{REPO}?rev=v0.2.0"}, "release", "v0.2.0"),
+        ({"name": "heinzel", "git": f"{REPO}?tag=v0.2.0"}, "release", "v0.2.0"),
+        ({"name": "heinzel", "git": f"{REPO}?rev=v0.5.0rc1"}, "release", "v0.5.0rc1"),
+        ({"name": "heinzel", "git": f"{REPO}?rev=main"}, "ref", "main"),
+        ({"name": "heinzel", "git": f"{REPO}?branch=v1.2.3"}, "ref", "v1.2.3"),  # a branch named like a release
+        ({"name": "heinzel", "git": f"{REPO}?tag=stable"}, "ref", "stable"),
+        ({"name": "heinzel", "git": f"{REPO}?rev=v1.2"}, "ref", "v1.2"),
+        ({"name": "heinzel", "git": f"{REPO}?rev=1a2b3c4"}, "commit", "1a2b3c4"),
+        ({"name": "heinzel", "git": f"{REPO}?rev={'a' * 40}"}, "commit", "a" * 40),
+        ({"name": "heinzel", "git": f"{REPO}?tag=1a2b3c4"}, "ref", "1a2b3c4"),
+        ({"name": "heinzel", "git": REPO}, "default", None),
+        ({"name": "heinzel", "directory": "/src/heinzel"}, "local", "/src/heinzel"),
+        ({"name": "heinzel", "editable": "/src/heinzel"}, "local", "/src/heinzel"),
+        ({"name": "heinzel", "url": "https://example.com/heinzel.whl"}, "url", "https://example.com/heinzel.whl"),
+        ({"name": "heinzel", "specifier": ">=0.1"}, "index", ">=0.1"),
+        ({"name": "heinzel"}, "index", None),
+    ],
+)
+def test_pin_from_receipt_says_what_the_core_is_pinned_to(entry, kind, ref):
+    pin = _installation.pin_from_receipt(entry)
+    assert (pin.kind, pin.ref) == (kind, ref)
+    assert pin.requirement == requirement_from_receipt(entry)
+
+
+def test_a_pin_moves_to_another_ref_keeping_extras_and_subdirectory():
+    pin = _installation.pin_from_receipt(
+        {"name": "heinzel", "extras": ["web"], "git": f"{REPO}.git?rev=v0.2.0&subdirectory=core"}
+    )
+    assert (pin.version, pin.git) == ("0.2.0", f"{REPO}.git")
+    assert pin.source_at("v0.4.0") == f"git+{REPO}.git@v0.4.0#subdirectory=core"
+    assert pin.at("v0.4.0") == f"heinzel[web] @ git+{REPO}.git@v0.4.0#subdirectory=core"
+
+
+def test_only_a_release_tag_has_a_version_and_only_git_has_refs():
+    assert _installation.pin_from_receipt({"name": "heinzel", "git": f"{REPO}?rev=main"}).version is None
+    pin = _installation.pin_from_receipt({"name": "heinzel", "directory": "/src/heinzel"})
+    with pytest.raises(HeinzelError, match="isn't installed from git"):
+        pin.source_at("v1.0.0")
+
+
+def test_core_pin_reads_the_first_requirement_of_the_receipt(tmp_path):
+    assert Installation(Progress(), prefix=tmp_path, uv="uv").core_pin() is None
+    (tmp_path / "uv-receipt.toml").write_text(RECEIPT, encoding="utf-8")
+    pin = Installation(Progress(), prefix=tmp_path, uv="uv").core_pin()
+    assert pin is not None
+    assert (pin.kind, pin.ref, pin.git) == ("release", "v0.1.0", "https://github.com/org/heinzel")
+
+
+def test_attempt_returns_how_the_command_ended(tmp_path):
+    def failing(command):
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="uv says no")
+
+    result = Installation(Progress(), prefix=tmp_path, uv="uv", runner=failing).attempt(["uv"], "Doing")
+    assert (result.returncode, result.stderr) == (1, "uv says no")

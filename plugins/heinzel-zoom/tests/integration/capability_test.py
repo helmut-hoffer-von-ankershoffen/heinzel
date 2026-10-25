@@ -97,8 +97,22 @@ def test_without_a_mail_adapter_the_requester_fails_and_doctor_says_what_to_bind
     assert "AI Companion" in zoom["summaries"]["detail"]
 
 
+def test_alone_it_serves_meetings_automatically(zoom_kernel, mailbox, emails):
+    mailbox.holding(emails("sync"))
+    code, meetings = hz(
+        zoom_kernel(Config(files=(), data={"capabilities": {"mail": "inbox"}}), prep=prep()),
+        "prep",
+        "ended",
+        SINCE,
+        UNTIL,
+    )
+    assert code == 0, meetings
+    assert [m["id"] for m in meetings] == ["sync"]
+
+
 def test_unbound_the_requester_fails_and_doctor_names_the_binding(zoom_kernel, mailbox):
-    kernel = zoom_kernel(prep=prep())
+    off = Config(files=(), data={"capabilities": {"meetings": "none"}})
+    kernel = zoom_kernel(off, prep=prep())
     code, output = hz(kernel, "prep", "ended", SINCE, UNTIL)
     assert code != 0
     assert "hz system config set capabilities.meetings zoom" in str(output)
@@ -201,9 +215,9 @@ def test_a_contract_reads_meetings_and_its_packet_has_names_but_no_addresses(zoo
     runner = Module("fakes", "Test-only agent runner.")
     runner.provides("agent-runner", modes={"read"}, name="fake")(Runner)
     capabilities = {"mail": "inbox", "meetings": "zoom", "agent_runner": "fake"}
-    config = Config(files=(), data={"capabilities": capabilities, "workflow": {"user_dir": str(contracts)}})
+    config = Config(files=(), data={"capabilities": capabilities, "heinzel": {"user_dir": str(contracts)}})
     kernel = zoom_kernel(config, fakes=runner)
-    code, result = hz(kernel, "workflow", "run", "meeting-notes", "--dry-run")
+    code, result = hz(kernel, "heinzel", "wake", "meeting-notes", "--dry-run")
     assert code == 0, result
     packet = json.dumps(result["packet"])
     assert "Jonas Berg" in packet

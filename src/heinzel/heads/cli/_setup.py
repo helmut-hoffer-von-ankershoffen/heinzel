@@ -1,19 +1,24 @@
-"""`hz setup [MODULE]`: modules' interactive setup steps, wizard style (ADR 0032).
+"""`hz setup [MODULE]`: modules' interactive setup steps, wizard style (ADR 0032, amended).
 
-Only the CLI runs setup steps: MCP and REST clients are not people at a keyboard. Steps run in a fixed order, built-in
-modules first, then the others alphabetically. Optional steps can be skipped, required ones can't; a module that is
-already configured is offered a change instead. Ctrl-C stops and keeps what finished steps wrote.
+Only the CLI runs setup steps: MCP and REST clients are not people at a keyboard. `hz join <team repository>` is the
+front door; `hz setup` is what you re-run for whatever is still missing. Steps run in their phase's order (who you are
+first), built-in modules first inside a phase, then the others alphabetically; phases order the steps and are never
+shown. Optional steps can be skipped, required ones can't; a module that is already configured is offered a change.
+Every finished step is recorded in `<state_dir>/setup.json`, so a run continues where the last one stopped, and an
+answers file (`--answers`) answers keyed questions without a terminal. Ctrl-C stops and keeps what finished steps wrote.
 """
 
 import getpass
+import json
 import shlex
 import sys
 import warnings
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Annotated
+from pathlib import Path
+from typing import Annotated, NoReturn
 
 import typer
 from pydantic import ValidationError
@@ -21,9 +26,12 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from heinzel.heads.cli import _playful
+from heinzel.heads.cli._journey import SetupState, answers_toml, load_answers
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._update import print_notice
 from heinzel.kernel import (
+    SETUP_PHASES,
     Config,
     CredentialLet,
     Credentials,
@@ -41,10 +49,17 @@ from heinzel.kernel import (
 DOCTOR = ("system.doctor", "doctor")
 EX_INTERRUPTED = 130  # what shells report for a process stopped by Ctrl-C (128 + SIGINT)
 HELP = (
-    "Set up every module that has a setup step, wizard style; optional steps can be skipped. With MODULE, set up "
-    "only that module."
+    "Set up what is still missing, wizard style: every step not finished yet, in order; optional steps can be "
+    "skipped, and a run continues where the last one stopped. With MODULE, set up only that module."
 )
 MODULE_HELP = "Set up only this module, by qualified name (`hz setup clock`); every module when left out."
+PRIVACY = (
+    "hz keeps your profile and answers on this machine only, readable by you alone. Joining a team puts your handle, "
+    "GitHub login and role in its roster; your name and email stay off every repository, and hz records nothing "
+    "about how much you do."
+)
+FINISHED = frozenset({"done", "kept"})
+"""Outcomes after which a re-run doesn't offer the step again; skipped, failed and interrupted ones are offered."""
 
 
 def has_terminal() -> bool:
@@ -83,6 +98,10 @@ class ConsolePrompter(Prompter):
             msg = "The terminal can't hide what you type, so the secret wasn't read; use `hz system credential set`."
             raise HeinzelError(msg) from exc
 
+    def show(self, renderable: object) -> None:
+        """Print a renderable (a table, a preview) as it is."""
+        self.console.print(renderable)
+
     def say(self, text: str) -> None:
         """Print a line as written, never as markup."""
         self.console.print(Text(terminal_safe(text)), highlight=False)
@@ -110,9 +129,23 @@ class StepResult:
 
 
 def steps(kernel: Kernel) -> list[tuple[ModuleRecord, SetupLet]]:
-    """Every setup step that can run, in order: built-in modules first, then the others by qualified name."""
+    """Every setup step that can run, in order: by phase, then built-in modules first, then by qualified name.
+
+    Among plugins, the layers of your stack come first, most specific first, so your team's recommendations are
+    offered before your org's and your company's (ADR 0040); the order is the stack's when the run starts.
+    """
     found = [(record, let) for record, let in kernel.lets(SetupLet) if kernel.available(let.func)]
-    return sorted(found, key=lambda pair: (not pair[0].origin.builtin, pair[0].path))
+    layers = [layer.module for layer in kernel.layer_stack().layers]
+    rank = {module: index for index, module in enumerate(reversed(layers))}
+    return sorted(
+        found,
+        key=lambda pair: (
+            SETUP_PHASES.index(pair[1].phase),
+            not pair[0].origin.builtin,
+            rank.get(pair[0].path[0], len(rank)),
+            pair[0].path,
+        ),
+    )
 
 
 def is_configured(kernel: Kernel, record: ModuleRecord) -> bool:
@@ -150,10 +183,18 @@ def equivalent_commands(kernel: Kernel, record: ModuleRecord) -> list[str]:
 class Runner:
     """Runs setup steps with a prompter and collects what became of each."""
 
-    def __init__(self, kernel: Kernel, prompter: Prompter) -> None:
-        """Run steps of `kernel`, asking through `prompter`."""
+    def __init__(
+        self, kernel: Kernel, prompter: Prompter, state: SetupState | None = None, *, from_file: bool = True
+    ) -> None:
+        """Run steps of `kernel`, asking through `prompter`, recording each finished step in `state`.
+
+        `from_file` says the preset answers came from a file someone else may have written, so a person confirms
+        before they change a module already set up; flags the person typed need no such question.
+        """
         self.kernel = kernel
         self.prompter = prompter
+        self.state = state
+        self.from_file = from_file
         kernel.bind(Prompter, prompter)
 
     def run(self, plan: list[tuple[ModuleRecord, SetupLet]], *, offer_skip: bool) -> list[StepResult]:
@@ -173,9 +214,20 @@ class Runner:
         return results
 
     def _step(self, record: ModuleRecord, let: SetupLet, *, offer_skip: bool) -> StepResult:
+        result = self._outcome(record, let, offer_skip=offer_skip)
+        if self.state is not None and result.outcome is not Outcome.FAILED:
+            prefix = f"{record.qualname}."
+            answers = {key: value for key, value in self.prompter.answered.items() if key.startswith(prefix)}
+            if result.outcome is Outcome.KEPT and (earlier := self.state.steps.get(record.qualname)):
+                answers = earlier.answers  # nothing changed: the answers that configured it still do
+            self.state.record(record.qualname, result.outcome.value, answers)
+        return result
+
+    def _outcome(self, record: ModuleRecord, let: SetupLet, *, offer_skip: bool) -> StepResult:
         kind = "required" if let.required else "optional"
         self.prompter.say("")
         self.prompter.say(f"{record.qualname} ({kind}): {let.summary}")
+        self.prompter.scope = record.qualname  # its keyed questions are `<module>.<key>` in an answers file
         try:
             outcome = self._ask_and_run(record, let, offer_skip=offer_skip)
         except ValidationError as exc:
@@ -202,7 +254,28 @@ class Runner:
 
     def _ask_and_run(self, record: ModuleRecord, let: SetupLet, *, offer_skip: bool) -> Outcome:
         ask = self.prompter.confirm
-        if is_configured(self.kernel, record):
+        prefix = f"{record.qualname}."
+        configured = is_configured(self.kernel, record)
+        if any(key.startswith(prefix) for key in self.prompter.presets):
+            # Answered in advance: run it without asking, unless a person is there and it is configured already, so
+            # a team's answers file never overwrites someone's settings unasked.
+            if (
+                configured
+                and self.from_file
+                and self.prompter.interactive
+                and not ask(
+                    f"{record.qualname} is already set up; the answers file would change it. Change it?", default=False
+                )
+            ):
+                return Outcome.KEPT
+        elif not self.prompter.interactive:
+            # Only an answers file: a configured module keeps its configuration, an optional step without answers is
+            # skipped, and a required one runs and names the first answer it lacks.
+            if configured:
+                return Outcome.KEPT
+            if offer_skip and not let.required:
+                return Outcome.SKIPPED
+        elif configured:
             if not ask(f"{record.qualname} is already set up. Change it?", default=False):
                 return Outcome.KEPT
         elif offer_skip and not let.required and not ask(f"Set up {record.qualname} now?"):
@@ -236,6 +309,24 @@ def exit_code(results: list[StepResult]) -> int:
     return 1 if any(r.outcome is Outcome.FAILED for r in results) else 0
 
 
+@dataclass(frozen=True, kw_only=True, slots=True)
+class Options:
+    """How a setup run goes: from the start, with answers given in advance, and with JSON instead of tables."""
+
+    restart: bool = False
+    answers: Path | None = None
+    as_json: bool = False
+
+
+RESTART_HELP = "Forget which steps finished and go through every one again."
+ANSWERS_HELP = (
+    'Answer in advance from a TOML file with a table per module, e.g. `role = "engineer"` in the org table; runs '
+    "without a terminal, for coding agents and teams. Never put secrets in it."
+)
+PRINT_ANSWERS_HELP = "Print the answers of the steps that finished as an answers file, and run nothing."
+JSON_HELP = "Print the outcome of every step as JSON on stdout; questions, if any, go to stderr."
+
+
 @dataclass(frozen=True, slots=True)
 class SetupCommands:
     """Builds `hz setup [MODULE]`, the one command that runs setup steps (ADR 0032)."""
@@ -255,30 +346,64 @@ class SetupCommands:
                 str | None,
                 typer.Argument(help=MODULE_HELP, metavar="MODULE", show_default=False, autocompletion=complete),
             ] = None,
+            restart: Annotated[bool, typer.Option("--restart", help=RESTART_HELP)] = False,
+            answers: Annotated[
+                Path | None, typer.Option("--answers", help=ANSWERS_HELP, dir_okay=False, show_default=False)
+            ] = None,
+            print_answers: Annotated[bool, typer.Option("--print-answers", help=PRINT_ANSWERS_HELP)] = False,
+            as_json: Annotated[bool, typer.Option("--json", help=JSON_HELP)] = False,
         ) -> None:
-            self.run(module)
+            if print_answers:
+                self.print_answers()
+                return
+            self.run(module, Options(restart=restart, answers=answers, as_json=as_json))
 
         setup.__doc__ = HELP
         return setup
 
-    def run(self, name: str | None) -> None:
-        """Run every step, or only the step of the module `name`.
+    def state(self) -> SetupState:
+        """Which steps finished, from `<state_dir>/setup.json`."""
+        return SetupState.load(self.kernel.settings.state_dir)
+
+    def print_answers(self) -> None:
+        """Print the recorded answers as an answers file.
+
+        Raises:
+            typer.Exit: With 1 when no step recorded an answer yet.
+        """
+        recorded = self.state().answers()
+        if not recorded:
+            self.err_console.print(
+                message("Error:", "no answers recorded yet; run `hz setup` first, then `hz setup --print-answers`."),
+                highlight=False,
+                soft_wrap=True,
+            )
+            raise typer.Exit(code=1)
+        typer.echo(answers_toml(recorded), nl=False)
+
+    def run(self, name: str | None, options: Options | None = None) -> None:
+        """Run every step still missing, or only the step of the module `name`.
 
         Raises:
             typer.BadParameter: If no module named `name` has a step that can run.
             typer.Exit: With 1 when a step failed, doctor reports a check down or there is no terminal, 130 after
                 Ctrl-C.
         """
+        options = options or Options()
         plan = steps(self.kernel)
         if name is not None:
             every, plan = plan, [(record, let) for record, let in plan if record.qualname == name]
             if not plan:
                 raise typer.BadParameter(self._no_step(name, every), param_hint="MODULE")
-        with self._errors():
+        with self.errors():
+            presets = load_answers(options.answers) if options.answers is not None else None
+            state = self.state()
+            if options.restart:
+                state.clear(name)
             if name is None:
-                self._everything(plan)
+                self._everything(plan, state, presets, as_json=options.as_json)
             else:
-                self._module(plan)
+                self._module(plan, state, presets, as_json=options.as_json)
 
     def _no_step(self, name: str, every: list[tuple[ModuleRecord, SetupLet]]) -> str:
         """Why `hz setup <name>` has nothing to run, and which modules do have a step."""
@@ -289,37 +414,99 @@ class SetupCommands:
             return f"The setup step of {name!r} can't run: something it needs is missing (`hz system doctor`). {having}"
         return f"Module {name!r} has no setup step. {having}"
 
-    def _everything(self, plan: list[tuple[ModuleRecord, SetupLet]]) -> None:
+    def _everything(
+        self,
+        plan: list[tuple[ModuleRecord, SetupLet]],
+        state: SetupState,
+        presets: Mapping[str, object] | None,
+        *,
+        as_json: bool,
+    ) -> None:
         if not plan:
-            self.console.print("No module has a setup step.")
-            self._notice()
+            if as_json:
+                typer.echo(json.dumps({"steps": [], "doctor": None}, indent=2))
+            else:
+                self.console.print("No module has a setup step.")
+                self._notice()
             return
-        prompter = self._prompter(plan)
-        names = ", ".join(f"{r.qualname} ({'required' if s.required else 'optional'})" for r, s in plan)
-        prompter.say(f"Setting up {len(plan)} module{'s' if len(plan) > 1 else ''}: {names}.")
-        prompter.say("Ctrl-C stops; steps already finished keep what they wrote.")
-        results = Runner(self.kernel, prompter).run(plan, offer_skip=True)
-        self.console.print()
-        self.console.print(TerminalSafe(summary(results)))
+        prompter = self.prompter(plan, presets, as_json=as_json)
+        if not as_json and _playful.allowed(self.kernel.settings, self.console):
+            self.console.print(_playful.swarm())
+        prompter.say(PRIVACY)
+        pending = self.pending(plan, state)
+        finished = [record.qualname for record, let in plan if (record, let) not in pending]
+        if finished and not pending:
+            last = max(state.steps[name].at for name in finished)[:10]
+            prompter.say(
+                f"Everything is set up (last on {last}). `hz setup <module>` changes one step; `hz setup --restart` "
+                "goes through every step again."
+            )
+        elif finished:
+            prompter.say(f"Already done: {', '.join(finished)}.")
+        if pending:
+            names = ", ".join(f"{r.qualname} ({'required' if s.required else 'optional'})" for r, s in pending)
+            prompter.say(f"Still to do: {names}.")
+            prompter.say("Ctrl-C stops; steps already finished keep what they wrote, and `hz setup` continues there.")
+        results = Runner(self.kernel, prompter, state).run(pending, offer_skip=True)
+        self.finish(results, as_json=as_json)
+
+    @staticmethod
+    def pending(plan: list[tuple[ModuleRecord, SetupLet]], state: SetupState) -> list[tuple[ModuleRecord, SetupLet]]:
+        """The steps of `plan` no earlier run finished: never run, skipped, failed or interrupted."""
+        return [
+            (record, let)
+            for record, let in plan
+            if (step := state.steps.get(record.qualname)) is None or step.outcome not in FINISHED
+        ]
+
+    def finish(self, results: list[StepResult], *, as_json: bool, extra: Mapping[str, object] | None = None) -> None:
+        """The summary, doctor on the configuration just written, and the exit code; `extra` joins the JSON.
+
+        Raises:
+            typer.Exit: With the exit code when it isn't 0.
+        """
         code = exit_code(results)
-        doctor = None if code == EX_INTERRUPTED else self._doctor()
+        if results and not as_json:
+            self.console.print()
+            self.console.print(TerminalSafe(summary(results)))
+        doctor = None if code == EX_INTERRUPTED else self._doctor(show=not as_json)
+        if as_json:
+            typer.echo(
+                json.dumps(
+                    {**(extra or {}), "steps": [_json(r) for r in results], "doctor": doctor[1] if doctor else None},
+                    indent=2,
+                )
+            )
         if doctor is None:
-            self._notice()  # doctor's release check says it otherwise (ADR 0031)
-        elif doctor:
+            if not as_json:
+                self._notice()  # doctor's release check says it otherwise (ADR 0031)
+        elif doctor[0]:
             self.err_console.print(
                 message("Error:", "hz system doctor reports a problem with the configuration; see its fixes above."),
                 highlight=False,
                 soft_wrap=True,
             )
-            code = code or doctor
+            code = code or doctor[0]
         if code:
             raise typer.Exit(code=code)
 
-    def _module(self, plan: list[tuple[ModuleRecord, SetupLet]]) -> None:
-        prompter = self._prompter(plan)
-        [result] = Runner(self.kernel, prompter).run(plan, offer_skip=False)
-        self.console.print(Text(f"{result.module}: {result.outcome.value}"), highlight=False)
-        self._notice()
+    def _module(
+        self,
+        plan: list[tuple[ModuleRecord, SetupLet]],
+        state: SetupState,
+        presets: Mapping[str, object] | None,
+        *,
+        as_json: bool,
+    ) -> None:
+        prompter = self.prompter(plan, presets, as_json=as_json)
+        [result] = Runner(self.kernel, prompter, state).run(plan, offer_skip=False)
+        if as_json:
+            typer.echo(json.dumps({"steps": [_json(result)], "doctor": None}, indent=2))
+        else:
+            if result.outcome.value == "done" and _playful.allowed(self.kernel.settings, self.console):
+                self.console.print(_playful.glyph(), end=" ")
+            self.console.print(Text(f"{result.module}: {result.outcome.value}"), highlight=False)
+            self._notice()
         if code := exit_code([result]):
             raise typer.Exit(code=code)
 
@@ -328,7 +515,7 @@ class SetupCommands:
         print_notice(self.kernel, self.err_console)
 
     @contextmanager
-    def _errors(self) -> Generator[None]:
+    def errors(self) -> Generator[None]:
         """Invalid configuration and other expected failures as an error line and exit code 1, like every command.
 
         Raises:
@@ -343,22 +530,41 @@ class SetupCommands:
             self.err_console.print(message("Error:", str(exc)), highlight=False, soft_wrap=True)
             raise typer.Exit(code=1) from exc
 
-    def _prompter(self, plan: list[tuple[ModuleRecord, SetupLet]]) -> Prompter:
-        """The prompter a test bound, the terminal, or a refusal listing the equivalent commands.
+    def prompter(
+        self, plan: list[tuple[ModuleRecord, SetupLet]], presets: Mapping[str, object] | None, *, as_json: bool
+    ) -> Prompter:
+        """The prompter a test bound, the terminal, the answers alone, or a refusal listing the equivalent commands.
+
+        With `--json`, questions go to stderr so stdout holds only the JSON.
 
         Raises:
-            typer.Exit: With 1 when nobody can answer.
+            typer.Exit: With 1 when nobody can answer and no answers were given.
         """
         bound = self.kernel.resolve(Prompter)
         if bound.interactive:
-            return bound
-        if has_terminal():
-            return ConsolePrompter(self.console)
+            chosen = bound
+        elif has_terminal():
+            chosen = ConsolePrompter(self.err_console if as_json else self.console)
+        elif presets is not None:
+            chosen = Prompter()  # nobody to ask: every keyed question needs its answer in the file
+        else:
+            self._refuse(plan)
+        if presets is not None:
+            chosen.presets = presets
+        return chosen
+
+    def _refuse(self, plan: list[tuple[ModuleRecord, SetupLet]]) -> NoReturn:
+        """Say that setup needs a terminal or an answers file, and the commands that configure the same.
+
+        Raises:
+            typer.Exit: Always, with 1.
+        """
         lines = [f"  {command}" for record, _ in plan for command in equivalent_commands(self.kernel, record)]
         self.err_console.print(
             message(
                 "Error:",
-                "setup asks questions and needs a terminal on standard input and output. Without one, configure with:",
+                "setup asks questions and needs a terminal on standard input and output, or the answers in a file "
+                "(`hz setup --answers answers.toml`). Without either, configure with:",
             ),
             highlight=False,
             soft_wrap=True,
@@ -367,11 +573,11 @@ class SetupCommands:
         self.err_console.print(Text(listing), highlight=False, soft_wrap=True)
         raise typer.Exit(code=1)
 
-    def _doctor(self) -> int | None:
+    def _doctor(self, *, show: bool = True) -> tuple[int, str] | None:
         """`hz system doctor` on the configuration as it is now on disk, not as it was when `hz` started.
 
         Returns:
-            Doctor's exit code (non-zero when a check is down), or None when doctor is disabled.
+            Doctor's exit code (non-zero when a check is down) and overall status, or None when doctor is disabled.
         """
         fresh = Kernel(records=self.kernel.modules, errors=self.kernel.errors, config=Config.load())
         doctor = next(
@@ -381,6 +587,17 @@ class SetupCommands:
         if doctor is None:
             return None
         report = fresh.invoke(doctor)
-        self.console.print()
-        self.console.print(TerminalSafe(doctor.render(report)) if doctor.render else report)
-        return doctor.exit_code(report) if doctor.exit_code else 0
+        if show:
+            self.console.print()
+            self.console.print(TerminalSafe(doctor.render(report)) if doctor.render else report)
+        status = str(getattr(report, "status", ""))
+        return (doctor.exit_code(report) if doctor.exit_code else 0), status
+
+
+def _json(result: StepResult) -> dict[str, object]:
+    return {
+        "module": result.module,
+        "required": result.required,
+        "outcome": result.outcome.value,
+        "detail": result.detail,
+    }

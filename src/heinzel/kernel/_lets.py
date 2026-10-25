@@ -11,15 +11,19 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, get_args
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from rich.console import RenderableType
 
 from heinzel.kernel._capabilities import Mode, Requirement
 from heinzel.kernel._config import ModuleSettings
+from heinzel.kernel._text import clean_text
 
+Audience = Literal["everyday", "expert"]
+"""Who an operation is for: `everyday` is the small surface newcomers see, `expert` everything else (ADR 0041)."""
+AUDIENCES: frozenset[str] = frozenset(get_args(Audience))
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 """Names of modules, jobs and credentials: lowercase words joined by dashes."""
 CRON_ALIASES = frozenset({"@yearly", "@annually", "@monthly", "@weekly", "@daily", "@midnight", "@hourly"})
@@ -116,6 +120,8 @@ class OperationLet(Let):
     func: Callable[..., Any]
     summary: str
     read_only: bool = True
+    private: bool = False
+    """Requires a trusted call identity; excluded from unauthenticated network heads (ADR 0068)."""
     render: Callable[[Any], RenderableType] | None = None
     """Presentation hint for human-facing heads. Machine-facing heads always use the JSON form of the result."""
     exit_code: Callable[[Any], int] | None = None
@@ -126,6 +132,17 @@ class OperationLet(Let):
     """Capabilities the operation asks for by type, besides its module's (ADR 0028); `write` only if not read-only.
 
     `write` doesn't imply `read`: a publish operation that also reads declares `documents:read,write`."""
+    optional: bool = False
+    """Whether it does without its own requirements when nothing serves them: it asks `CapabilityView.serves` and
+    degrades, so an unmet one is listed in the matrix but isn't a doctor finding, and its handle refuses only when
+    called. Read-only operations only (ADR 0028)."""
+    audience: Audience = "expert"
+    """Who it is for in heads people browse (CLI help and completion, the web app's navigation): `everyday`
+    operations are always listed, `expert` ones only in expert mode (`[hz] expert`). Hidden is never disabled: every
+    operation runs when called, and machine heads (MCP, REST) list all of them (ADR 0041)."""
+    aliases: tuple[str, ...] = ()
+    """Old command paths that still run it for one minor release (`"workflow run"`), hidden from help: the CLI names
+    the new command on stderr and MCP keeps the old tool name, marked deprecated (ADR 0051)."""
 
     def __post_init__(self) -> None:
         """Refuse a read-only operation that declares a write.
@@ -138,6 +155,15 @@ class OperationLet(Let):
                 f"Operation {self.name!r} can't require {', '.join(writes)}: writes happen only in publish operations "
                 f"(read_only=False)"
             )
+            raise ValueError(msg)
+        if self.optional and not self.read_only:
+            msg = (
+                f"Operation {self.name!r} can't make its requirements optional: a publish operation's are checked "
+                f"before it runs"
+            )
+            raise ValueError(msg)
+        if self.audience not in AUDIENCES:
+            msg = f"Operation {self.name!r} has audience {self.audience!r}; use one of {', '.join(sorted(AUDIENCES))}"
             raise ValueError(msg)
 
     def signature(self) -> inspect.Signature:
@@ -168,6 +194,38 @@ class Status(StrEnum):
     DOWN = "down"
 
 
+LOGIN_TEXT = 200
+"""Characters kept of a sign-in's account and site: a login, an address or a host name, never a paragraph."""
+
+
+class Login(BaseModel):
+    """What a check found about the sign-in of the tool an adapter goes through, such as a vendor CLI (ADR 0055).
+
+    The tool owns the sign-in (ADR 0035): this says only whether there is one, as whom and where, and the command
+    that makes one, which the person runs in a terminal and where the tool itself asks for any secret.
+    """
+
+    signed_in: bool | None = Field(
+        description="Whether the tool has a sign-in; none when that can't be known without asking the service."
+    )
+    account: str = Field(
+        default="",
+        description="Who it is signed in as, as the tool names them (a login or the person's own address); never a "
+        "secret. Empty when the tool doesn't say.",
+    )
+    site: str = Field(default="", description="Where it is signed in: a host or site name; empty when it doesn't say.")
+    command: str = Field(
+        default="",
+        description="The command line that signs it in, run by the person in a terminal; empty when there is none.",
+    )
+
+    @field_validator("account", "site", "command")
+    @classmethod
+    def _plain(cls, value: str) -> str:
+        """One clean line: a tool's words are data, and a terminal or a prompt shows them (ADR 0028)."""
+        return " ".join(clean_text(value).split())[:LOGIN_TEXT]
+
+
 class Check(BaseModel):
     """The outcome of one health check. Anything but UP must say what is wrong."""
 
@@ -175,6 +233,11 @@ class Check(BaseModel):
     status: Status = Field(description="Outcome: up, degraded or down.")
     detail: str = Field(default="", description="What was found; required unless UP.")
     fix: str = Field(default="", description="What to do about it, when not UP.")
+    login: Login | None = Field(
+        default=None,
+        description="For a check of a sign-in: whether there is one, as whom, and how to make one; left out if none.",
+        exclude_if=lambda login: login is None,  # most checks have none: their JSON stays as it was
+    )
 
     @model_validator(mode="after")
     def _explain_problems(self) -> Self:
@@ -189,6 +252,9 @@ class HealthLet(Let):
     """Health checks for `hz system doctor`. The provider returns checks and may ask for injected services."""
 
     provider: Callable[..., list[Check]]
+    live: bool = False
+    """Whether the provider reaches the network to test a connection, as `hz system connector test` does on demand;
+    doctor stays offline and leaves it out (ADR 0055)."""
 
 
 class CatchUp(StrEnum):
@@ -313,6 +379,11 @@ class RequirementLet(Let):
     requirement: Requirement
 
 
+SetupPhase = Literal["identity", "membership", "connect", "work", "run"]
+"""Who you are, whom you work with, which tools you use, what hz starts doing for you, and whether it runs alone."""
+SETUP_PHASES: tuple[SetupPhase, ...] = get_args(SetupPhase)
+
+
 @dataclass(frozen=True, kw_only=True, slots=True)
 class SetupLet(Let):
     """An interactive setup step (ADR 0032), named after its module: `hz setup <module>`, and part of `hz setup`.
@@ -325,3 +396,5 @@ class SetupLet(Let):
     summary: str
     required: bool = False
     """Whether `hz setup` runs it without offering to skip it."""
+    phase: SetupPhase = "connect"
+    """Where in `hz setup` it runs: phases run in `SETUP_PHASES` order (ADR 0032, amended)."""

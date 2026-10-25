@@ -2,9 +2,28 @@
 
 import inspect
 from dataclasses import dataclass
-from typing import Any, get_origin
+from typing import Any
 
-from heinzel.kernel import Kernel, ModuleRecord, OperationLet
+from heinzel.kernel import Kernel, ModuleRecord, OperationLet, collapses, operation_path, owns_path, public_parameters
+
+MCP_STDIO = "mcp-stdio"
+"""An operation's `heads` entry for MCP over stdio only: the client started the server as you, while streamable HTTP
+MCP (head `mcp-http`) has no authentication, so whatever can reach its port could call it (ADR 0047)."""
+MCP_HTTP = "mcp-http"
+API_PRIVATE = "api-private"
+
+
+def restricts(heads: frozenset[str] | None, head: str) -> bool:
+    """Whether `heads` leaves `head` out. `mcp` in `heads` covers both MCP transports, `mcp-stdio` only stdio."""
+    if heads is None or head in heads:
+        return False
+    if head == API_PRIVATE:
+        return "api" not in heads
+    if head == MCP_HTTP:
+        return "mcp" not in heads
+    if head == "mcp":
+        return MCP_STDIO not in heads
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,31 +49,35 @@ def exposed(kernel: Kernel, head: str) -> list[Exposed]:
     """Every operation `head` should expose, in module order.
 
     An operation is left out when it needs a service only a disabled module provides, or when its `heads` restrict it
-    to other heads. A module whose only operation shares its name and has no submodules collapses onto its own path.
+    to other heads. An operation that shares its module's name takes the module's own path (`owns_path`).
     """
     result: list[Exposed] = []
     for record, operation in kernel.lets(OperationLet):
-        if not kernel.available(operation.func) or (operation.heads is not None and head not in operation.heads):
+        if operation.private and head in {"api", MCP_HTTP}:
             continue
-        collapsed = collapses(kernel, record)
+        if not kernel.available(operation.func) or restricts(operation.heads, head):
+            continue
         signature = operation.signature()
         result.append(
             Exposed(
                 record=record,
                 operation=operation,
-                path=record.path if collapsed else (*record.path, operation.name),
-                parameters=tuple(
-                    p
-                    for p in signature.parameters.values()
-                    if not kernel.provides(get_origin(p.annotation) or p.annotation)
-                ),
+                path=operation_path(kernel, record, operation),
+                parameters=public_parameters(kernel, operation),
                 returns=signature.return_annotation,
             )
         )
     return result
 
 
-def collapses(kernel: Kernel, record: ModuleRecord) -> bool:
-    """Whether a module is just one operation of its own name, so heads show it as a command, not a group."""
-    operations = [let for owner, let in kernel.lets(OperationLet) if owner.qualname == record.qualname]
-    return len(operations) == 1 and operations[0].name == record.module.name and not kernel.children(record.qualname)
+__all__ = [
+    "API_PRIVATE",
+    "MCP_HTTP",
+    "MCP_STDIO",
+    "Exposed",
+    "collapses",
+    "exposed",
+    "owns_path",
+    "public_parameters",
+    "restricts",
+]

@@ -5,7 +5,10 @@ behaves the same; a head implements only `read` (one line of input) and `say` (o
 default has nobody to ask and refuses; the CLI binds a console prompter, tests a `ScriptedPrompter`.
 """
 
-from collections.abc import Callable, Iterable, Sequence
+import re
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from types import MappingProxyType
+from typing import cast
 
 from heinzel.kernel._errors import HeinzelError
 
@@ -16,13 +19,33 @@ YES = frozenset({"y", "yes"})
 NONE = "none"
 """The answer that picks none of several options."""
 NO = frozenset({"n", "no"})
+SECRET_KEY = re.compile(r"(^|_)(token|password|passphrase|secret|api_key)$", re.IGNORECASE)
+"""Keys that name a secret: refused, so a module can't route one through an answers file or setup.json."""
 
 
 class Prompter:
-    """Asks a person questions. This base implementation has nobody to ask: every question raises."""
+    """Asks a person questions. This base implementation has nobody to ask: every question raises.
+
+    A question may carry a `key`, its name within the asking module (`role` in `org` is `org.role`). Keyed questions
+    are answered from `presets` when it has the key, so a setup can run without a terminal (`hz setup --answers`), and
+    every keyed answer is kept in `answered`, so a finished setup can be written back as an answers file. Secrets are
+    never keyed: they never come from or go to a file (ADR 0030).
+    """
 
     interactive = False
     """Whether someone answers; heads without a person (MCP, REST, the daemon) keep the default."""
+
+    presets: Mapping[str, object] = MappingProxyType({})
+    """Answers given in advance, by full key (`org.role`): text, a number, true or false, or a list for `choices`."""
+    hints: Mapping[str, str] = MappingProxyType({})
+    """How a head lets a person answer a key without an answers file, by full key: `pass --role`."""
+    scope = ""
+    """The qualified name of the module asking, which keys are relative to; the setup runner sets it per step."""
+
+    @property
+    def answered(self) -> dict[str, object]:
+        """Every keyed answer so far, by full key, as the question returned it."""
+        return cast("dict[str, object]", self.__dict__.setdefault("_answered", {}))
 
     def read(self, prompt: str, *, secret: bool = False) -> str:
         """One answer to `prompt`, without echo when `secret`; heads override this.
@@ -38,26 +61,36 @@ class Prompter:
         """Tell the person something: a heading, the options of a choice, why an answer was refused."""
         del text
 
-    def text(self, question: str, *, default: str | None = None, validate: Validate | None = None) -> str:
+    def show(self, renderable: object) -> None:
+        """Show something richer than a line (a table, a preview) before asking; heads with a screen print it."""
+        del renderable
+
+    def full_key(self, key: str) -> str:
+        """`key` with the asking module's name in front: `role` asked by `org` is `org.role`."""
+        return f"{self.scope}.{key}" if self.scope else key
+
+    def text(
+        self, question: str, *, default: str | None = None, validate: Validate | None = None, key: str | None = None
+    ) -> str:
         """Free text; an empty answer takes `default`, and is asked again when there is none.
 
         Raises:
-            HeinzelError: If nobody can answer.
+            HeinzelError: If nobody can answer, or a preset answer is invalid.
         """
         while True:
-            answer = self.read(_prompt(question, default)).strip()
+            answer = self._answer(_prompt(question, default), key, has_default=default is not None).strip()
             if not answer:
                 if default is not None:
-                    return default
-                self.say("Please answer; there is no default.")
+                    return self._keep(key, default)
+                self._refuse("Please answer; there is no default.", key)
                 continue
             if validate is not None and (problem := validate(answer)):
-                self.say(problem)
+                self._refuse(problem, key)
                 continue
-            return answer
+            return self._keep(key, answer)
 
     def secret(self, question: str) -> str:
-        """A value that isn't echoed, such as a token; never empty.
+        """A value that isn't echoed, such as a token; never empty, never preset, never kept.
 
         Raises:
             HeinzelError: If nobody can answer.
@@ -66,28 +99,34 @@ class Prompter:
             self.say("The value is empty; please enter it.")
         return answer.rstrip("\r\n")  # a token is taken as typed; only the line ending goes
 
-    def confirm(self, question: str, *, default: bool = True) -> bool:
+    def confirm(self, question: str, *, default: bool = True, key: str | None = None) -> bool:
         """Yes or no; an empty answer takes `default`.
 
         Raises:
-            HeinzelError: If nobody can answer.
+            HeinzelError: If nobody can answer, or a preset answer is invalid.
         """
         suffix = "[Y/n]" if default else "[y/N]"
         while True:
-            answer = self.read(f"{question} {suffix} ").strip().lower()
+            answer = self._answer(f"{question} {suffix} ", key, has_default=True).strip().lower()
             if not answer:
-                return default
+                return self._keep(key, default)
             if answer in YES | NO:
-                return answer in YES
-            self.say("Please answer y or n.")
+                return self._keep(key, answer in YES)
+            self._refuse("Please answer y or n.", key)
 
     def number(
-        self, question: str, *, default: int | None = None, minimum: int | None = None, maximum: int | None = None
+        self,
+        question: str,
+        *,
+        default: int | None = None,
+        minimum: int | None = None,
+        maximum: int | None = None,
+        key: str | None = None,
     ) -> int:
         """A whole number between `minimum` and `maximum` (inclusive); an empty answer takes `default`.
 
         Raises:
-            HeinzelError: If nobody can answer.
+            HeinzelError: If nobody can answer, or a preset answer is invalid.
         """
         bounds = _bounds(minimum, maximum)
 
@@ -100,34 +139,42 @@ class Prompter:
                 return f"Please enter a whole number{bounds}."
             return None
 
-        return int(self.text(question, default=None if default is None else str(default), validate=check))
+        value = int(self.text(question, default=None if default is None else str(default), validate=check, key=key))
+        return self._keep(key, value)
 
-    def choice(self, question: str, options: Sequence[str], *, default: str | None = None) -> str:
+    def choice(
+        self, question: str, options: Sequence[str], *, default: str | None = None, key: str | None = None
+    ) -> str:
         """One of `options`, by its number or its text (any case); an empty answer takes `default`.
 
         Raises:
             ValueError: If there are no options, or `default` isn't one of them.
-            HeinzelError: If nobody can answer.
+            HeinzelError: If nobody can answer, or a preset answer is invalid.
         """
         _check_options(options, [] if default is None else [default])
-        self._list(options)
+        if not self.has_preset(key):
+            self._list(options)
         answer = self.text(
             question,
             default=None if default is None else str(options.index(default) + 1),
             validate=lambda a: None if _pick(a, options) is not None else _unknown(a, options),
+            key=key,
         )
-        return options[_index(answer, options)]
+        return self._keep(key, options[_index(answer, options)])
 
-    def choices(self, question: str, options: Sequence[str], *, default: Iterable[str] = ()) -> list[str]:
+    def choices(
+        self, question: str, options: Sequence[str], *, default: Iterable[str] = (), key: str | None = None
+    ) -> list[str]:
         """Some of `options`, by numbers or texts separated by commas, or `none`; an empty answer takes `default`.
 
         Raises:
             ValueError: If there are no options, or a default isn't one of them.
-            HeinzelError: If nobody can answer.
+            HeinzelError: If nobody can answer, or a preset answer is invalid.
         """
         defaults = list(default)
         _check_options(options, defaults)
-        self._list(options)
+        if not self.has_preset(key):
+            self._list(options)
 
         def check(answer: str) -> str | None:
             unknown = [part for part in _parts(answer) if _pick(part, options) is None]
@@ -137,15 +184,78 @@ class Prompter:
             f"{question} (numbers separated by commas, or {NONE})",
             default=",".join(str(options.index(d) + 1) for d in defaults) if defaults else None,
             validate=check,
+            key=key,
         )
         if answer.lower() == NONE:
-            return []
+            return self._keep(key, [])
         picked = [options[_index(part, options)] for part in _parts(answer)]
-        return list(dict.fromkeys(picked))
+        return self._keep(key, list(dict.fromkeys(picked)))
 
     def _list(self, options: Sequence[str]) -> None:
         for number, option in enumerate(options, start=1):
             self.say(f"  {number}) {option}")
+
+    def has_preset(self, key: str | None) -> bool:
+        """Whether the question `key` is answered in advance: a step asks it even where it would otherwise not."""
+        return key is not None and self.full_key(key) in self.presets
+
+    def _answer(self, prompt: str, key: str | None, *, has_default: bool) -> str:
+        """The preset answer for `key` as a person would type it, or one read from the person.
+
+        With nobody to ask, a keyed question that has a default takes it (an empty answer), as a person pressing
+        Enter would; only one without a default needs its answer in the file.
+
+        Raises:
+            HeinzelError: If there is no preset, no default and nobody to ask, naming the key for the answers file.
+            ValueError: If the key names a secret: a bug in the step.
+        """
+        self.__dict__["_from_preset"] = False
+        if key is None:
+            return self.read(prompt)
+        full = self.full_key(key)
+        if SECRET_KEY.search(key):
+            msg = f"{full}: secrets are never keyed, so they never come from or go to a file; ask with `secret()`"
+            raise ValueError(msg)
+        if full in self.presets:
+            self.__dict__["_from_preset"] = True
+            return _typed(self.presets[full])
+        if not self.interactive:
+            if has_default:
+                return ""
+            section, _, name = full.rpartition(".")
+            hint = f"{self.hints[full]}, or add" if full in self.hints else "add"
+            msg = (
+                f"No answer for {full} ({prompt.strip().rstrip(':')}): {hint} `{name} = ...` under [{section}] in an "
+                "answers file (`--answers`), or run it in a terminal."
+            )
+            raise HeinzelError(msg)
+        return self.read(prompt)
+
+    def refuse(self, problem: str, key: str) -> None:
+        """Refuse the last answer to the keyed question `key` for a reason only the step knows (no such time zone).
+
+        A person is told and asked again; a preset answer can't be asked again, so it fails.
+
+        Raises:
+            HeinzelError: If the refused answer was preset.
+        """
+        self._refuse(problem, key)
+
+    def _refuse(self, problem: str, key: str | None) -> None:
+        """Explain why an answer was refused; a refused preset can't be asked again, so it fails.
+
+        Raises:
+            HeinzelError: If the refused answer was preset.
+        """
+        if key is not None and (self.__dict__.get("_from_preset") or not self.interactive):
+            msg = f"The answer for {self.full_key(key)} is invalid: {problem}"
+            raise HeinzelError(msg)
+        self.say(problem)
+
+    def _keep[T](self, key: str | None, value: T) -> T:
+        if key is not None:
+            self.answered[self.full_key(key)] = value
+        return value
 
 
 class ScriptExhausted(Exception):  # noqa: N818 - says what happened, like StopIteration
@@ -189,6 +299,16 @@ class ScriptedPrompter(Prompter):
     def say(self, text: str) -> None:
         """Record what would have been shown."""
         self.transcript.append(text)
+
+
+def _typed(value: object) -> str:
+    """A preset answer as a person would type it: `y`/`n`, a number, text, or options separated by commas."""
+    if isinstance(value, bool):
+        return "y" if value else "n"
+    if isinstance(value, list | tuple):
+        items = [str(item) for item in cast("Sequence[object]", value)]
+        return ",".join(items) if items else NONE
+    return str(value)
 
 
 def _prompt(question: str, default: str | None) -> str:

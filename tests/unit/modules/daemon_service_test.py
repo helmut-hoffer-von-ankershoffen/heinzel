@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from heinzel import Check, CompiledJobs, HeinzelError, JobLet, Kernel, Module, Status
+from heinzel import Check, CompiledJobs, HeinzelError, JobLet, Kernel, Module, Notifications, Status, __version__
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
@@ -106,7 +106,9 @@ def bin_dir(tmp_path) -> Path:
 
 @pytest.fixture
 def make(make_kernel, settings, tmp_path, bin_dir):
-    def build(*modules: Module, platform="darwin", runner=None, clock=None, time_limit=within) -> DaemonService:
+    def build(
+        *modules: Module, platform="darwin", runner=None, clock=None, time_limit=within, notifier=True
+    ) -> DaemonService:
         return DaemonService(
             make_kernel(**{m.name: m for m in modules}),
             settings,
@@ -118,6 +120,7 @@ def make(make_kernel, settings, tmp_path, bin_dir):
             which=lambda name: f"/bin/{name}",
             time_limit=time_limit,
             zone=BERLIN,
+            notifier_installed=lambda: notifier,
         )
 
     return build
@@ -135,6 +138,14 @@ def test_install_on_macos_writes_and_bootstraps_the_launch_agent(make, bin_dir, 
     assert runner.verbs() == [f"bootout gui/501/{LABEL}", f"bootstrap gui/501 {plist}"]
     assert result.commands == [["/bin/launchctl", "bootstrap", "gui/501", str(plist)]]
     assert (result.interval_minutes, result.dry_run) == (10, False)
+
+
+def test_install_hints_at_the_notifier_for_login_items_while_it_is_missing(make):
+    assert make(notifier=False).install(timedelta(minutes=10)).hint == (
+        "Install the notifier to show Heinzelmännchen with its icon in Login Items: hz system notify install"
+    )
+    assert make(notifier=True).install(timedelta(minutes=10)).hint is None
+    assert make(platform="linux", notifier=False).install(timedelta(minutes=10)).hint is None
 
 
 def test_install_on_linux_writes_and_enables_the_timer(make, bin_dir, tmp_path):
@@ -771,3 +782,64 @@ def test_the_service_reads_user_settings_not_a_project_hz_toml(make_kernel, tmp_
     monkeypatch.delenv("HZ_DATA_DIR")  # only the project file would set it
     service = DaemonService.for_user(make_kernel())
     assert not service.receipts_dir.is_relative_to(elsewhere)
+
+
+# Notices (ADR 0041)
+
+
+class FakeNotifications(Notifications):
+    def __init__(self, error: Exception | None = None) -> None:
+        self.posts = 0
+        self.error = error
+
+    def post_native(self) -> int:
+        self.posts += 1
+        if self.error is not None:
+            raise self.error
+        return 2
+
+
+def notifying(fake: FakeNotifications) -> Module:
+    module = Module("notices", "Provides notifications for tests.")
+    module.service(Notifications, lambda: fake)
+    return module
+
+
+def test_every_tick_ends_by_popping_up_due_notices(make, jobs):
+    fake = FakeNotifications()
+    service = make(jobs, notifying(fake))
+    service.tick()
+    assert fake.posts == 1
+    assert "posted 2 notice(s)" in service.log_path.read_text(encoding="utf-8")
+    service.tick(dry_run=True)
+    assert fake.posts == 1  # a dry run pops up nothing
+
+
+def test_a_failing_notifier_never_fails_the_tick(make, jobs):
+    service = make(jobs, notifying(FakeNotifications(OSError("disk full"))))
+    report = service.tick()
+    assert all(run.disposition is not Disposition.FAILED for run in report.runs)
+    assert "posting notices failed: OSError: disk full" in service.log_path.read_text(encoding="utf-8")
+
+
+def test_status_reports_the_version_the_daemon_was_started_with(make):
+    service = make()
+    assert (service.status().version, service.status().version_mismatch) == (None, False)
+    service.install(timedelta(minutes=5))
+    assert (service.status().version, service.status().version_mismatch) == (__version__, False)
+
+
+def test_a_daemon_started_by_an_older_hz_is_flagged_and_restart_mends_it(make, tmp_path):
+    service = make()
+    service.install(timedelta(minutes=5))
+    state = service.state_dir / "install.json"
+    state.write_text(state.read_text().replace(__version__, "0.0.1"), encoding="utf-8")
+    status = service.status()
+    assert (status.version, status.version_mismatch) == ("0.0.1", True)
+    restarted = service.restart()
+    assert (restarted.restarted, restarted.version, restarted.interval_minutes) == (True, __version__, 5)
+    assert (service.status().version, service.status().version_mismatch) == (__version__, False)
+
+
+def test_restarting_a_daemon_that_is_not_installed_does_nothing(make):
+    assert make(runner=Refuses()).restart().restarted is False

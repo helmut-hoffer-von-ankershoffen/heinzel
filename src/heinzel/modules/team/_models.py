@@ -100,22 +100,41 @@ class TeamSettings(ModuleSettings):
     daemon reads contracts from (ADR 0021 §10).
     """
 
+    section_title: ClassVar[str | None] = "Team"  # the heading in Settings
+
     repository: str | None = Field(
         default=None,
-        description="Your team repository's URL, the invite others join with (`hz team join <url>`); none for a team "
-        "repository that exists only on this machine.",
+        title="Team repository",
+        description="Your team repository's address, the invite others join with; empty for a "
+        "team repository that exists only on this computer.",
+        examples=["https://github.com/example/team.git"],
     )
     checkout: Path | None = Field(
         default=None,
-        description="The local checkout of your team repository; its `workflows/` holds the `team:` contracts.",
+        title="Team checkout",
+        description="The folder your team repository is checked out in; its workflows folder "
+        "holds the team's contracts.",
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"repository", "checkout"})
+    layer: str | None = Field(
+        default=None,
+        title="Team layer",
+        description="The layer plugin your team uses, by module name, when your team repository "
+        "names none or you want another.",
+        json_schema_extra={"x-expert": True},
+    )
+
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"repository", "checkout", "layer"})
 
     @field_validator("repository")
     @classmethod
     def _url(cls, url: str | None) -> str | None:
         return None if url is None else check_url(url)
+
+    @field_validator("layer")
+    @classmethod
+    def _layer(cls, layer: str | None) -> str | None:
+        return None if layer is None else check_name(layer, "layer name")
 
 
 class _Strict(BaseModel):

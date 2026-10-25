@@ -130,8 +130,10 @@ jobs:
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }} # a red cell is enough to know on a pull request
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
         python: ["3.12", "3.13", "3.14", "3.15"]
+        include: # macOS: the newest Python on a pull request, all of them elsewhere
+          ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"macos-latest","python":"3.15"}]' || '[{"os":"macos-latest","python":"3.12"},{"os":"macos-latest","python":"3.13"},{"os":"macos-latest","python":"3.14"},{"os":"macos-latest","python":"3.15"}]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -180,6 +182,27 @@ jobs:
           MINIMUM_GREEN: 90
           MINIMUM_ORANGE: 80
 
+  perf:
+    name: Performance tests
+    # Timing assertions (linear time) run here only: on a loaded developer machine they flake, so neither the
+    # pre-push hook nor the test matrix runs them.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      UV_NO_SYNC: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
+          python-version: "3.14"
+      - run: uv sync --no-dev --group test # UV_FROZEN: exactly the lockfile
+      - run: make test-perf
+
   e2e:
     name: End-to-end (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -187,7 +210,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -199,6 +222,10 @@ jobs:
           cache-dependency-glob: uv.lock
           save-cache: ${{ github.ref == 'refs/heads/main' }} # pull requests reuse main's cache
       - run: make test-e2e
+        env:
+          # read-only (contents: read): e2e tests ask GitHub's API (`hz system changelog --newer`), which rate-limits
+          # shared runners' unauthenticated requests; hz sends the token to api.github.com only (ADR 0031)
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
   build:
@@ -221,7 +248,7 @@ jobs:
   ci-ok:
     name: CI OK
     if: always()
-    needs: [dependency-review, commits, lint, secrets, setup, audit, test, coverage, e2e, build]
+    needs: [dependency-review, commits, lint, secrets, setup, audit, test, coverage, perf, e2e, build]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

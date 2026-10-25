@@ -1,0 +1,231 @@
+{
+  "graph": {
+    "directed": true,
+    "type": "hz-team",
+    "label": "Team graph",
+    "metadata": {
+      "as_of": "2026-10-23T14:00:00Z",
+      "time_zone": "Europe/Lisbon",
+      "filters": {
+        "artifact": null,
+        "heinzel": null,
+        "state": null
+      },
+      "weeks": [
+        {
+          "week": "2026-W40",
+          "due": 0,
+          "on_time": 0,
+          "fell_back": 0,
+          "late": 0
+        },
+        {
+          "week": "2026-W41",
+          "due": 0,
+          "on_time": 0,
+          "fell_back": 0,
+          "late": 0
+        },
+        {
+          "week": "2026-W42",
+          "due": 2,
+          "on_time": 1,
+          "fell_back": 0,
+          "late": 1
+        },
+        {
+          "week": "2026-W43",
+          "due": 1,
+          "on_time": 0,
+          "fell_back": 1,
+          "late": 0
+        }
+      ],
+      "waiting": [
+        {
+          "artifact": "contract:team/weekly-report#report",
+          "summary": "Weekly report waiting on 2 updates",
+          "on": ["contract:team/tracker-update#row/costas", "contract:team/tracker-update#row/priya"]
+        }
+      ],
+      "summary": "Weekly report waiting on 2 updates",
+      "problems": []
+    },
+    "nodes": {
+      "contract:team/tracker-update#row": {
+        "label": "Tracker update",
+        "metadata": {
+          "kind": "artifact",
+          "owner": null,
+          "state": "offline",
+          "contract": "team:tracker-update",
+          "contract_version": "1.0.0",
+          "deadline": "2026-10-23T16:00:00Z",
+          "url": null,
+          "parent": null,
+          "last_seen": null
+        }
+      },
+      "contract:team/tracker-update#row/costas": {
+        "label": "Tracker update: costas",
+        "metadata": {
+          "kind": "artifact",
+          "owner": "costas",
+          "state": "offline",
+          "contract": "team:tracker-update",
+          "contract_version": "1.0.0",
+          "deadline": "2026-10-23T16:00:00Z",
+          "url": "https://tracker.acme.example/boards/7#costas",
+          "parent": "contract:team/tracker-update#row",
+          "last_seen": null
+        }
+      },
+      "contract:team/tracker-update#row/priya": {
+        "label": "Tracker update: priya",
+        "metadata": {
+          "kind": "artifact",
+          "owner": "priya",
+          "state": "waiting_for_approval",
+          "contract": "team:tracker-update",
+          "contract_version": "1.0.0",
+          "deadline": "2026-10-23T16:00:00Z",
+          "url": "https://tracker.acme.example/boards/7#priya",
+          "parent": "contract:team/tracker-update#row",
+          "last_seen": null
+        }
+      },
+      "contract:team/weekly-report#report": {
+        "label": "Weekly report",
+        "metadata": {
+          "kind": "artifact",
+          "owner": "mira",
+          "state": "fell_back",
+          "contract": "team:weekly-report",
+          "contract_version": "1.2.0",
+          "deadline": "2026-10-23T16:00:00Z",
+          "url": "https://docs.acme.example/d/weekly-report",
+          "parent": null,
+          "last_seen": null
+        }
+      },
+      "heinzel:costas-tracker": {
+        "label": "costas-tracker",
+        "metadata": {
+          "kind": "heinzel",
+          "owner": "costas",
+          "state": "offline",
+          "contract": "team:tracker-update",
+          "contract_version": "1.0.0",
+          "deadline": "2026-10-23T16:00:00Z",
+          "url": null,
+          "parent": null,
+          "last_seen": "2026-10-19T08:00:00Z"
+        }
+      },
+      "heinzel:mira-report": {
+        "label": "mira-report",
+        "metadata": {
+          "kind": "heinzel",
+          "owner": "mira",
+          "state": "fell_back",
+          "contract": "team:weekly-report",
+          "contract_version": "1.2.0",
+          "deadline": "2026-10-23T16:00:00Z",
+          "url": null,
+          "parent": null,
+          "last_seen": "2026-10-23T07:00:00Z"
+        }
+      },
+      "heinzel:priya-tracker": {
+        "label": "priya-tracker",
+        "metadata": {
+          "kind": "heinzel",
+          "owner": "priya",
+          "state": "waiting_for_approval",
+          "contract": "team:tracker-update",
+          "contract_version": "1.0.0",
+          "deadline": "2026-10-23T16:00:00Z",
+          "url": null,
+          "parent": null,
+          "last_seen": "2026-10-23T08:00:00Z"
+        }
+      },
+      "https://docs.acme.example/d/roadmap": {
+        "label": "docs.acme.example/d/roadmap",
+        "metadata": {
+          "kind": "artifact",
+          "owner": null,
+          "state": null,
+          "contract": null,
+          "contract_version": null,
+          "deadline": null,
+          "url": "https://docs.acme.example/d/roadmap",
+          "parent": null,
+          "last_seen": null
+        }
+      }
+    },
+    "edges": [
+      {
+        "source": "heinzel:costas-tracker",
+        "target": "contract:team/tracker-update#row/costas",
+        "relation": "writes",
+        "metadata": {
+          "state": "offline",
+          "declared": true,
+          "observed": true,
+          "last_version": null,
+          "needed_by": null
+        }
+      },
+      {
+        "source": "heinzel:mira-report",
+        "target": "contract:team/tracker-update#row",
+        "relation": "reads",
+        "metadata": {
+          "state": "offline",
+          "declared": true,
+          "observed": true,
+          "last_version": "2026-10-14",
+          "needed_by": "2026-10-16T16:00:00Z"
+        }
+      },
+      {
+        "source": "heinzel:mira-report",
+        "target": "contract:team/weekly-report#report",
+        "relation": "writes",
+        "metadata": {
+          "state": "fell_back",
+          "declared": true,
+          "observed": true,
+          "last_version": "2026-W42",
+          "needed_by": null
+        }
+      },
+      {
+        "source": "heinzel:mira-report",
+        "target": "https://docs.acme.example/d/roadmap",
+        "relation": "reads",
+        "metadata": {
+          "state": null,
+          "declared": false,
+          "observed": true,
+          "last_version": "rev-81",
+          "needed_by": null
+        }
+      },
+      {
+        "source": "heinzel:priya-tracker",
+        "target": "contract:team/tracker-update#row/priya",
+        "relation": "writes",
+        "metadata": {
+          "state": "waiting_for_approval",
+          "declared": true,
+          "observed": true,
+          "last_version": null,
+          "needed_by": null
+        }
+      }
+    ]
+  }
+}
