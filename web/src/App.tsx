@@ -1,5 +1,5 @@
 // The routes, and the providers every screen needs.
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createBrowserRouter, Navigate, type RouteObject, RouterProvider, useSearchParams } from "react-router";
 import { ApiError } from "@/api/client";
@@ -15,6 +15,8 @@ import { Home } from "@/pages/Home";
 import { Assets, AssetTypes } from "@/pages/Inventory";
 import { OrgChart, Team } from "@/pages/Organisation";
 import { NotFound, Profile } from "@/pages/Profile";
+import { Splash, SplashGone } from "@/splash/Splash";
+import { splash, unreachableError } from "@/splash/store";
 
 /** `/settings?q=…` from older links: Home with the settings dialog open, searching. */
 function SettingsLink() {
@@ -45,8 +47,15 @@ export const routes: RouteObject[] = [
   },
 ];
 
+/** A call that couldn't reach hz makes the splash ask whether it is gone (and come back over the app if so). */
+const suspect = (error: unknown) => {
+  if (unreachableError(error)) splash.send({ type: "suspect" });
+};
+
 export function queryClient(): QueryClient {
   return new QueryClient({
+    queryCache: new QueryCache({ onError: suspect }),
+    mutationCache: new MutationCache({ onError: suspect }),
     defaultOptions: {
       queries: {
         staleTime: 30_000,
@@ -74,9 +83,17 @@ export function NoToken() {
 }
 
 export function App({ hasToken }: { hasToken: boolean }) {
-  if (!hasToken) return <NoToken />;
+  if (!hasToken) {
+    return (
+      <>
+        <SplashGone />
+        <NoToken />
+      </>
+    );
+  }
   return (
     <Providers client={queryClient()}>
+      <Splash />
       <RouterProvider router={createBrowserRouter(routes)} />
     </Providers>
   );

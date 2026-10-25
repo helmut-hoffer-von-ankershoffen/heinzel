@@ -1,12 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+import { splash } from "@/splash/store";
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   sessionStorage.clear();
   localStorage.clear();
+  splash.reset(); // the page's splash store, which the query cache, the theme and a restart report to
 });
 
 // jsdom has neither; React Flow and the theme ask for them.
