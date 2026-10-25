@@ -568,3 +568,43 @@ export function heinzelSwarmSvg(): string {
   ]);
   return svg("0 0 512 512", body);
 }
+
+/** Four of them dancing in a ring while hz starts (loading-dance.svg): each bobs and sways a beat after the last. */
+export const DANCERS: { look: HeinzelLook; angle: number }[] = [
+  { look: { age: "grown", hat: "red", shirt: "green" }, angle: 270 },
+  { look: { age: "young", hat: "teal", shirt: "rose", build: "slim" }, angle: 0 },
+  { look: { age: "young", hat: "rust", shirt: "blue", state: "working" }, angle: 180 },
+  { look: { age: "old", hat: "purple", shirt: "slate", build: "slim" }, angle: 90 },
+];
+
+/** The dance as an SVG file: pure SVG and CSS, a 1.2 s loop that stands still when the viewer prefers less motion. */
+export function heinzelDanceSvg(): string {
+  const scale = 0.2;
+  const style = [
+    "  <style>",
+    "    .dancer { transform-box: fill-box; transform-origin: 50% 100%; }",
+    "    @media (prefers-reduced-motion: no-preference) {",
+    "      .dancer { animation: hz-dance 1.2s ease-in-out infinite; }",
+    "      .d1 { animation-delay: -0.9s; } .d2 { animation-delay: -0.6s; } .d3 { animation-delay: -0.3s; }",
+    "    }",
+    "    @keyframes hz-dance {",
+    "      0%, 100% { transform: translateY(0) rotate(-4deg); }",
+    "      50% { transform: translateY(-16px) rotate(4deg); }",
+    "    }",
+    "  </style>",
+  ];
+  const body = DANCERS.flatMap(({ look, angle }, index) => {
+    const x = 256 + 175 * Math.cos((angle * Math.PI) / 180) - 256 * scale;
+    const y = 285 + 62 * Math.sin((angle * Math.PI) / 180) - 860 * scale;
+    return [
+      `  <g transform="translate(${Math.round(x)} ${Math.round(y)}) scale(${scale})">`,
+      `    <g class="dancer d${index}">`,
+      ...heinzelShapes(look)
+        .filter((shape) => shape.part !== "badge")
+        .map((shape) => svgShape(shape, "      ")),
+      "    </g>",
+      "  </g>",
+    ];
+  });
+  return svg("0 0 512 360", [...style, ...body]);
+}
