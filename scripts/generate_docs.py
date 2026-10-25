@@ -33,8 +33,8 @@ from heinzel.heads.cli import build
 from heinzel.heads.cli._chat import command_words
 from heinzel.kernel import Origin, discover, env_prefix, walk
 from heinzel.modules.graph import TeamGraphDocument
+from heinzel.modules.heinzel._models import SCHEMA_VERSION, Frontmatter
 from heinzel.modules.system.plugin._service import FIRST_PARTY
-from heinzel.modules.workflow._models import SCHEMA_VERSION, Frontmatter
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"

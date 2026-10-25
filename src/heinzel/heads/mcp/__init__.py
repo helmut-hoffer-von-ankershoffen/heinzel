@@ -56,15 +56,31 @@ def build(kernel: Kernel, transport: Transport = "stdio", *, chat: str | None = 
         version=__version__,
         instructions=INSTRUCTIONS if chat is None else CHAT_INSTRUCTIONS,
     )
-    for item in exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP):
+    items = exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP)
+    names = {item.name for item in items}
+    for item in items:
+        annotations = ToolAnnotations(
+            read_only_hint=item.operation.read_only, destructive_hint=not item.operation.read_only
+        )
         server.add_tool(
             tool(kernel, item) if chat is None else chat_tool(kernel, item, chat),
             name=item.name,
             description=item.operation.summary,
-            annotations=ToolAnnotations(
-                read_only_hint=item.operation.read_only, destructive_hint=not item.operation.read_only
-            ),
+            annotations=annotations,
         )
+        # Old tool names of renamed operations, for the one minor release both work (ADR 0051); a chat gets the
+        # current names only, and a name a current tool has stays that tool's.
+        for old in () if chat is not None else item.operation.aliases:
+            if (alias := old.replace(" ", "_").replace("-", "_")) in names:
+                continue
+            names.add(alias)
+            server.add_tool(
+                _signed(tool(kernel, item), item, item.returns, name=alias),
+                name=alias,
+                description=f"Deprecated: use `{item.name}`, which this runs; goes in the next minor release. "
+                f"{item.operation.summary}",
+                annotations=annotations,
+            )
     return server
 
 
@@ -125,12 +141,12 @@ def command_line(item: Exposed, arguments: dict[str, Any]) -> str:
     return " ".join(words)
 
 
-def _signed[F: Callable[..., Any]](run: F, item: Exposed, returns: object) -> F:
+def _signed[F: Callable[..., Any]](run: F, item: Exposed, returns: object, *, name: str | None = None) -> F:
     run.__signature__ = inspect.Signature(  # type: ignore[attr-defined]
         [p.replace(kind=inspect.Parameter.KEYWORD_ONLY) for p in item.parameters], return_annotation=returns
     )
     run.__doc__ = inspect.getdoc(item.operation.func)
-    run.__name__ = item.name
+    run.__name__ = name or item.name
     return run
 
 

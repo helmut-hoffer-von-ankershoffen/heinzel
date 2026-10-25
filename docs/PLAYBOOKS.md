@@ -1,6 +1,6 @@
 # Playbooks: your first contract from a plugin
 
-A contract keeps one asset true ([WORKFLOWS.md](WORKFLOWS.md)). A **playbook** is what a plugin brings so you don't
+A contract keeps one asset true ([WORKFLOWS.md](HEINZELMAENNCHEN.md)). A **playbook** is what a plugin brings so you don't
 start from a blank one: the asset types a kind of team work keeps (say, a rolling weekly report document and the
 team's tracker), hints for finding yours in what you can already read, template contracts that keep them true, and
 recommended settings. The core knows no playbook of its own; it lists, discovers, offers and measures
@@ -14,13 +14,13 @@ report's structure and tone. The draft is a local file; you edit it and send it 
 
 ```bash
 hz system plugin search --text playbook     # find one; `hz system plugin add <name>` installs it
-hz workflow playbooks                       # its asset types, templates and recommended settings
+hz heinzel playbooks                       # its asset types, templates and recommended settings
 ```
 
 The core brings one, the graph keeper (`graph:team-graph-keeper`, [Teams](TEAMS.md#is-the-work-flowing)); no
 first-party plugin brings a playbook yet. For your own kind of work, [write one](#writing-a-playbook) in your own
 plugin (`hz system plugin new`). Commands below name a playbook's templates as `<module>:<template>`, where `<module>` is
-the module `hz workflow playbooks` shows.
+the module `hz heinzel playbooks` shows.
 
 The recommended settings are only proposals, each shown with the `hz system config set` command that applies it.
 A playbook may recommend only capability bindings (`code-host`, `tracker`, `documents`, …, never the agent runner)
@@ -42,21 +42,21 @@ to discover through them.
 Without setup, or for an asset no hint finds:
 
 ```bash
-hz workflow discover                                                     # candidates, by asset type
-hz workflow new weekly-report --template <module>:weekly-report \
+hz heinzel discover                                                     # candidates, by asset type
+hz heinzel new weekly-report --template <module>:weekly-report \
   --asset weekly-report=<document ref> --asset team-project=APP         # fill the placeholders you know
 ```
 
 A placeholder you leave out stays as `{{asset:<type>}}` in the file; replace it there. Until you do, the contract
-isn't ready, and `hz workflow check` lists each one left (`HZC025`). Templates never come with an active schedule.
+isn't ready, and `hz heinzel check` lists each one left (`HZC025`). Templates never come with an active schedule.
 
 ## 3. Try it, draft it, schedule it
 
 ```bash
-hz workflow show weekly-report             # requirements, adapters, and what to run next
-hz workflow run weekly-report --dry-run    # fetches the inputs and prints the packet; no agent runs, nothing is spent
-hz workflow run weekly-report              # drafts it now, within the contract's cost cap
-hz workflow drafts --name weekly-report --latest
+hz heinzel show weekly-report             # requirements, adapters, and what to run next
+hz heinzel wake weekly-report --dry-run    # fetches the inputs and prints the packet; no agent runs, nothing is spent
+hz heinzel wake weekly-report              # drafts it now, within the contract's cost cap
+hz heinzel drafts --name weekly-report --latest
 ```
 
 Next to every draft a `.record.json` holds its lineage: which inputs were read, with which arguments, the SHA-256 of
@@ -70,13 +70,13 @@ waiting at 17:00 sharp, schedule it a little earlier.
 Edit the draft and send it the way you always do. Then tell hz what you sent, from where it lives:
 
 ```bash
-hz workflow sent weekly-report --file ~/reports/week-44.md --edit-minutes 10   # a file you saved
-hz workflow sent weekly-report --ref <document ref>                           # the document, through `documents`
+hz heinzel sent weekly-report --file ~/reports/week-44.md --edit-minutes 10   # a file you saved
+hz heinzel sent weekly-report --ref <document ref>                           # the document, through `documents`
 ```
 
 hz compares it with the newest draft (`--draft <file>` picks another) and records, next to the draft, the share of
 words you changed, both word counts and the approved text's SHA-256; the text itself is not copied. `--edit-minutes`
-is your own estimate and optional. After a few Fridays, `hz workflow show weekly-report` has a **Success test** table:
+is your own estimate and optional. After a few Fridays, `hz heinzel show weekly-report` has a **Success test** table:
 each draft's drafting time, cost, share changed and editing estimate, with the median drafting time and the mean
 share changed below it. It stays on your machine and is about the drafts, never about people.
 
@@ -111,7 +111,7 @@ module.playbook(
   documents by title or folder needs listing reads that `documents` doesn't have yet.
 - Placeholders go in double-quoted strings in the frontmatter, e.g. `args: {ref: "{{asset:weekly-report}}"}`;
   anywhere else, and a template with an active `schedule:`, is refused when the plugin is imported. Write it to a
-  directory you check with `hz workflow new x --template <module>:<template>` and `hz workflow check`.
+  directory you check with `hz heinzel new x --template <module>:<template>` and `hz heinzel check`.
 - `defaults` may name `capabilities.<capability>` (never `agent_runner`) and your module's own `<module>.<key>`
   settings; anything else is refused.
 - `kept_by` names the template whose output keeps the asset true. Drafts are local today; writing the draft where the

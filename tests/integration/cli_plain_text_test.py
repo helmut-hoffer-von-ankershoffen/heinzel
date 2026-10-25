@@ -91,11 +91,11 @@ def test_workflow_titles_and_diagnostics_write_no_control_characters(make_kernel
     example = (Path(__file__).parents[1] / "fixtures" / "workflows" / "weekly-digest.prose.md").read_text()
     (tmp_path / "weekly-digest.prose.md").write_text(example.replace("Weekly app digest", ESCAPES))
     (tmp_path / "\x1b[31mred\x9b2J.prose.md").write_text("no frontmatter")
-    config = Config(files=(), data={"workflow": {"user_dir": str(tmp_path)}})
-    for args in (("workflow", "list"), ("workflow", "check"), ("workflow", "show", "weekly-digest")):
+    config = Config(files=(), data={"heinzel": {"user_dir": str(tmp_path)}})
+    for args in (("heinzel", "list"), ("heinzel", "check"), ("heinzel", "show", "weekly-digest")):
         output = raw(make_kernel, *args, config=config)
         assert not CONTROL.search(output.replace("\n", "")), args
-    assert "HZC005" in raw(make_kernel, "workflow", "check", config=config)
+    assert "HZC005" in raw(make_kernel, "heinzel", "check", config=config)
 
 
 def test_error_messages_write_no_control_characters(make_kernel, monkeypatch):
@@ -105,5 +105,5 @@ def test_error_messages_write_no_control_characters(make_kernel, monkeypatch):
 
 def test_contract_names_are_plain_text(make_kernel, tmp_path):
     (tmp_path / "[reverse]x.prose.md").write_text("no frontmatter")
-    config = Config(files=(), data={"workflow": {"user_dir": str(tmp_path)}})
-    assert "me:[reverse]x" in output(make_kernel, "workflow", "list", config=config)
+    config = Config(files=(), data={"heinzel": {"user_dir": str(tmp_path)}})
+    assert "me:[reverse]x" in output(make_kernel, "heinzel", "list", config=config)

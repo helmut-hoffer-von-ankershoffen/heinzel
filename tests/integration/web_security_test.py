@@ -145,7 +145,7 @@ def test_the_openapi_document_is_behind_the_token_and_the_cdn_docs_are_off(clien
 
 # What the web head must never expose, whatever its token (ADR 0039): money or unattended work, interactive steps.
 NEVER_ON_THE_WEB = {
-    "workflow_run",
+    "heinzel_wake",
     "system_daemon_tick",
     "system_daemon_install",
     "system_daemon_uninstall",
@@ -158,12 +158,12 @@ NEVER_ON_THE_WEB = {
 def test_the_web_head_exposes_what_the_token_protects_and_never_what_spends_or_asks(kernel):
     names = {item.name for item in exposed(kernel, web.HEAD)}
     assert not names & NEVER_ON_THE_WEB
-    assert {"org_show", "workflow_discover", "system_runner_ask", "notes_private"} <= names
+    assert {"org_show", "heinzel_discover", "system_runner_ask", "notes_private"} <= names
 
 
 def test_the_rest_head_keeps_its_set_and_its_lack_of_a_token(kernel):
     names = {item.name for item in exposed(kernel, api.HEAD)}
-    assert not names & {"org_show", "workflow_discover", "system_runner_ask", "notes_private"}
+    assert not names & {"org_show", "heinzel_discover", "system_runner_ask", "notes_private"}
     rest = TestClient(api.build(kernel, port=8000), base_url=BASE)
     assert rest.get("/notes/title").json() == "Weekly"
     assert rest.get("/notes/private").status_code == 404
