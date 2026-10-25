@@ -12,7 +12,8 @@ def test_kernel_default_progress_is_silent():
         advance(1)
 
 
-def test_console_progress_reports_on_its_console():
+def test_console_progress_reports_on_its_console(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("TERM", "xterm-256color")
     console = Console(record=True, force_terminal=True, width=80)
     with ConsoleProgress(console).task("Installing skills", total=2) as advance:
         advance(2)

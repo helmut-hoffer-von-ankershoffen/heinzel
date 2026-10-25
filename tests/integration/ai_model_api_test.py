@@ -63,7 +63,9 @@ class Server(BaseHTTPRequestHandler):
 
 
 @pytest.fixture
-def endpoint() -> Iterator[str]:
+def endpoint(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    # HTTPServer resolves its display name during bind; this local fake must never ask DNS.
+    monkeypatch.setattr("socket.getfqdn", lambda name: name)
     Server.seen = []
     server = ThreadingHTTPServer(("127.0.0.1", 0), Server)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
