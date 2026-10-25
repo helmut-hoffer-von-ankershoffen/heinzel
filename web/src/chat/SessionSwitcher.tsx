@@ -1,10 +1,12 @@
 // Which conversation the chat shows: its title with a chevron that opens a searchable list of the sessions hz keeps
 // (`hz chat list`), a general "Workshop" chat and "New chat". The list is grouped, so the durable Heinzelmännchen of
 // ADR 0049 (`hz heinzel list`) become one more group of items with their own fields, not a new component.
-import { Check, ChevronDown, Hammer, Plus, Search } from "lucide-react";
+
+import { Check, ChevronDown, Hammer, Plus } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useChatSessions } from "@/api/chat";
 import type { SchemaChatSummary } from "@/api/client";
+import { SearchField } from "@/components/ui/search-field";
 import { format, t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { Chat } from "./useChat";
@@ -108,20 +110,14 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
           aria-label={t("chat.sessions")}
           className="absolute top-full left-0 z-30 mt-1 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-border bg-popover p-1.5 shadow-xl"
         >
-          <label className="flex items-center gap-2 rounded-lg bg-input px-2.5 py-1.5 text-icon focus-within:ring-1 focus-within:ring-ring">
-            <Search aria-hidden className="size-4 shrink-0" />
-            <span className="sr-only">{t("chat.searchSessions")}</span>
-            <input
-              type="search"
-              // biome-ignore lint/a11y/noAutofocus: the list opened to be searched
-              autoFocus
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("chat.searchSessions")}
-              aria-controls={listId}
-              className="w-full bg-transparent text-ui text-foreground outline-none placeholder:text-muted-foreground"
-            />
-          </label>
+          <SearchField
+            quietFocus
+            label={t("chat.searchSessions")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("chat.searchSessions")}
+            aria-controls={listId}
+          />
           <button
             type="button"
             onClick={() => {

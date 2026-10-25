@@ -199,7 +199,7 @@ TIMES = [
 def test_the_status_item_ticks_in_the_primary_zone_and_lists_the_others():
     item = primary_zone(TIMES)
     assert item is not None
-    assert (item.text, item.icon, item.live) == ("Lisbon", "clock", LiveClock(zone="Europe/Lisbon"))
+    assert (item.text, item.icon, item.live) == ("Lisbon", "globe", LiveClock(zone="Europe/Lisbon"))
     assert [(line.text, line.tone) for line in item.detail] == [
         ("New York Fri 08:00, works 09-18", "neutral"),
         ("Tokyo Fri 21:00, at work", "ok"),

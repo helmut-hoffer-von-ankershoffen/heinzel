@@ -14,7 +14,7 @@ export const BINDINGS = "capabilities";
 /** `system.runner` → `system`: the left side lists modules; their sub-sections are headings on the right. */
 export const group = (section: string) => section.split(".")[0] ?? section;
 
-const BRANDS: Record<string, string> = { github: "GitHub", gitlab: "GitLab", hz: "hz" };
+const BRANDS: Record<string, string> = { github: "GitHub", gitlab: "GitLab", hz: "hz", clock: "World Clock" };
 /** Words written in capitals wherever they appear in a name: `ai access` → `AI access`, never `Ai access`. */
 const ACRONYMS: Record<string, string> = {
   ai: "AI",
@@ -39,13 +39,14 @@ export function inWords(name: string): string {
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
 }
 
-/** A plugin's name as its authors write it: the casing its summary uses (`GitHub`), else a known brand, else `Clock`. */
+/** A plugin's name as its authors write it: the casing its summary uses (`GitHub`), else `Clock`; a known brand (`World Clock`) first. */
 export function displayName(name: string, summary = ""): string {
   const words = name.replaceAll("-", " ").replaceAll("_", " ");
   const escaped = words.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const found = summary.match(new RegExp(`\\b${escaped}\\b`, "i"))?.[0];
+  if (name.toLowerCase() in BRANDS) return BRANDS[name.toLowerCase()] as string;
   if (found && found !== found.toLowerCase()) return found;
-  return BRANDS[name.toLowerCase()] ?? inWords(words);
+  return inWords(words);
 }
 
 /** A plugin's summary without the "…: a Heinzelmännchen plugin." its template ends it with; the header says so. */

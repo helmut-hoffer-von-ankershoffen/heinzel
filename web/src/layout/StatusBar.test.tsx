@@ -19,10 +19,10 @@ describe("The status bar's clock", () => {
     mockApi(answers);
     const user = userEvent.setup();
     const { container } = renderAt("/doctor");
-    const clock = await screen.findByRole("button", { description: "Time for the team and stakeholders" });
+    const clock = await screen.findByRole("button", { description: "World Clock: time for the team and stakeholders" });
     const wrapper = clock.parentElement as HTMLElement;
     fireEvent.mouseEnter(wrapper);
-    const zones = await screen.findByRole("region", { name: "Time for the team and stakeholders" });
+    const zones = await screen.findByRole("region", { name: "World Clock: time for the team and stakeholders" });
     expect(await within(zones).findByText("New York")).toBeInTheDocument();
     // The first zone is yours: the clock shows its time, and the panel lists it first, marked, then the others, all on
     // the 24-hour clock.
@@ -49,13 +49,15 @@ describe("The status bar's clock", () => {
     mockApi(answers);
     const user = userEvent.setup();
     renderAt("/doctor");
-    const clock = await screen.findByRole("button", { description: "Time for the team and stakeholders" });
+    const clock = await screen.findByRole("button", { description: "World Clock: time for the team and stakeholders" });
     const wrapper = clock.parentElement as HTMLElement;
     fireEvent.mouseEnter(wrapper);
     fireEvent.mouseLeave(wrapper);
-    expect(screen.getByRole("region", { name: "Time for the team and stakeholders" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "World Clock: time for the team and stakeholders" })).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 250));
-    expect(screen.queryByRole("region", { name: "Time for the team and stakeholders" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "World Clock: time for the team and stakeholders" }),
+    ).not.toBeInTheDocument();
     await user.click(clock);
     expect(clock).toHaveAttribute("aria-expanded", "true");
     await user.keyboard("{Escape}");
@@ -108,9 +110,7 @@ describe("The footer on a narrow window", () => {
     const { container } = renderAt("/doctor");
     const bar = await footer();
     expect(await within(bar).findByText(/^v0\.4\.0$/)).toBeInTheDocument();
-    expect(
-      await within(bar).findByRole("button", { name: /^\d{2}:\d{2}:\d{2}$|Time for the team/ }),
-    ).toBeInTheDocument();
+    expect(await within(bar).findByRole("button", { name: /^\d{2}:\d{2}:\d{2}$|World Clock/ })).toBeInTheDocument();
     expect(within(bar).queryByText("Daemon running · next tick 20:45")).not.toBeInTheDocument();
     await user.click(within(bar).getByRole("button", { name: "More status items" }));
     expect(await within(bar).findByText("Daemon running · next tick 20:45")).toBeInTheDocument();

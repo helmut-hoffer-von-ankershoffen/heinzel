@@ -11,7 +11,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`ai`](#ai) | How hz reaches AI, and what it spends: tokens and cost per run. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
 | [`atlassian`](#atlassian) | Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. |
-| [`clock`](#clock) | What time it is for everyone on the team. |
+| [`clock`](#clock) | World Clock: what time it is for everyone on the team. |
 | [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
 | [`google`](#google) | Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
 | [`graph`](#graph) | Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits. |
@@ -84,7 +84,7 @@ Health checks: reported by `hz system doctor`.
 
 ## `clock`
 
-What time it is for everyone on the team.
+World Clock: what time it is for everyone on the team.
 
 First-party plugin `heinzel-clock`: `hz system plugin add clock --confirm`.
 

@@ -13,7 +13,6 @@ import {
   Plus,
   Power,
   PowerOff,
-  Search,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -31,6 +30,7 @@ import {
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
+import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { displayName } from "./settingsSections";
@@ -293,17 +293,14 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
             {t("plugins.discover")}
           </button>
         </div>
-        <label className="ml-auto flex items-center gap-2 rounded-lg bg-input px-2.5 py-1 text-muted-foreground">
-          <Search aria-hidden className="size-4" />
-          <span className="sr-only">{t("plugins.search")}</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("search.open")}
-            className="w-36 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-          />
-        </label>
+        <SearchField
+          label={t("plugins.search")}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={t("search.open")}
+          className="ml-auto py-1"
+          inputClassName="w-36 text-sm"
+        />
         <Button variant="outline" size="sm" onClick={() => setAdding((value) => !value)}>
           <Plus aria-hidden />
           {t("plugins.add")}

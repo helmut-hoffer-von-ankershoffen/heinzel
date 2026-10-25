@@ -2,7 +2,7 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, Ellipsis, Video } from "lucide-react";
+import { CalendarClock, Ellipsis, Globe, Video } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { useInfo } from "@/api/queries";
@@ -188,6 +188,7 @@ function Clock({ now }: { now: Date }) {
         aria-describedby={`${panelId}-hint`}
         className="rounded px-1 font-mono text-foreground/80 tabular-nums hover:bg-accent/60"
       >
+        <Globe aria-hidden className="mr-1 inline size-3.5 align-text-bottom" />
         <time dateTime={now.toISOString()}>{zoneClock(now, primary)}</time>
         <span id={`${panelId}-hint`} className="sr-only">
           {t("status.zones")}

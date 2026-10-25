@@ -8,24 +8,25 @@ import {
   Download,
   FileCog,
   FolderOpen,
+  Globe,
   type LucideIcon,
   Monitor,
   Moon,
   Plug,
   Puzzle,
-  Search,
   Settings2,
   Sun,
   Users,
   Workflow,
   X,
 } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 import type { SchemaConfigReport, SchemaSettingInfo } from "@/api/client";
 import { useConfig, useExpert, useInfo, usePlugins, useRevealConfig, useSetExpert } from "@/api/queries";
 import { ContributionToggles } from "@/components/Contributions";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
+import { SearchField } from "@/components/ui/search-field";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
@@ -57,6 +58,7 @@ const icons: Record<string, LucideIcon> = {
   heinzel: Workflow,
   capabilities: Plug,
   runner: Bot,
+  clock: Globe,
 };
 
 type Props = {
@@ -71,7 +73,6 @@ export function SettingsDialog({ section, initialQuery, onSection, onClose }: Pr
   const [query, setQuery] = useState(initialQuery);
   const searchRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
-  useEffect(() => searchRef.current?.focus(), []);
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") onClose();
   };
@@ -175,18 +176,15 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
         aria-label={t("settings.title")}
         className="flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto p-3 max-sm:hidden"
       >
-        <label className="mb-3 flex items-center gap-2 rounded-lg bg-input px-2.5 py-1.5 text-icon focus-within:ring-1 focus-within:ring-ring">
-          <Search aria-hidden className="size-4 shrink-0" />
-          <span className="sr-only">{t("settings.filter")}</span>
-          <input
-            ref={searchRef}
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("search.open")}
-            className="w-full bg-transparent text-ui text-foreground outline-none placeholder:text-muted-foreground"
-          />
-        </label>
+        <SearchField
+          ref={searchRef}
+          label={t("settings.filter")}
+          quietFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={t("search.open")}
+          className="mb-3"
+        />
         <p className="mb-1 px-2.5 text-ui-sm text-muted-foreground">{t("settings.preferences")}</p>
         {nav.preferences.map((preference) => entry(preference.id, titled(preference), icons[preference.id] ?? Puzzle))}
         <p className="mt-4 mb-1 px-2.5 text-ui-sm text-muted-foreground">{t("settings.customize")}</p>
