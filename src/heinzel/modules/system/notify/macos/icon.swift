@@ -1,9 +1,7 @@
 // Draws Heinzelmännchen's icon as a PNG file: `icon <svg> <png> <size> [tile|maskable]`. The artwork is heinzel.svg
 // beside this file, rendered by AppKit (macOS 14 or later reads SVG); nothing is drawn here but its background.
-// Without a style the drawing stays transparent, like the favicon. `tile` puts it on the app's dark #181818 rounded
-// square, as the notifier's and the web app's icons show it. `maskable` fills the whole square and keeps the face and
-// the ears inside the middle 80 percent circle that installed apps' masks keep. Run only by `make notifier` and
-// `make icons`.
+// Every style fills the entire square with opaque white. The OS may mask it later; transparent corners can otherwise
+// turn dark in browser and installed-app previews. Tile and maskable only change the portrait's safe-area scale.
 import AppKit
 
 let arguments = CommandLine.arguments
@@ -27,19 +25,15 @@ NSGraphicsContext.current!.imageInterpolation = .high
 let side = CGFloat(pixels)
 let square = NSRect(x: 0, y: 0, width: side, height: side)
 let backdrop = NSColor.white
+backdrop.setFill()
+NSBezierPath(rect: square).fill()
 
 // How large the drawing is on its background; it stands on the bottom edge, the tunic cut off like a portrait's.
 var scale: CGFloat = 1
 switch style {
 case "tile":
-    let tile = NSBezierPath(roundedRect: square, xRadius: side * 112 / 512, yRadius: side * 112 / 512)
-    backdrop.setFill()
-    tile.fill()
-    tile.addClip()
     scale = 0.84
 case "maskable":
-    backdrop.setFill()
-    NSBezierPath(rect: square).fill()
     scale = 0.8
 default:
     break
