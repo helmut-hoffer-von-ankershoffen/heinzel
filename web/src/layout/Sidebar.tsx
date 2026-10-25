@@ -34,6 +34,7 @@ import { BellButton } from "./NotificationCenter";
 import { CONTRACTS_SECTION, contractPath, railItems, sections, visibleSections } from "./navigation";
 import { useDark, useSelectedTheme } from "./ThemeTokens";
 import { useTheme } from "./theme";
+import { NATIVE_SIDEBAR, ZoneTicker } from "./ZoneTicker";
 
 const link = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -161,7 +162,8 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
           ))}
         </ul>
       </nav>
-      <StatusItems slot="sidebar" className="pb-1" />
+      <ZoneTicker />
+      <StatusItems slot="sidebar" className="pb-1" except={NATIVE_SIDEBAR} />
       <Footer />
     </div>
   );

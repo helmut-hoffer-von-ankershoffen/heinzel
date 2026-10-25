@@ -33,10 +33,10 @@ function useAgenda() {
   });
 }
 
-type ZoneTime = { zone: string; time: string; hours: [number, number]; working: boolean };
+export type ZoneTime = { zone: string; time: string; hours: [number, number]; working: boolean };
 
 /** `GET /api/clock` from the clock plugin: the team's zones and whether they're at work; null without the plugin. */
-function useZones() {
+export function useZones() {
   // Only with the clock plugin: without it there is no /api/clock to ask, and asking would log a 404.
   const info = useInfo();
   const enabled = Boolean(info.data?.modules.some((module) => module.qualname === "clock"));
@@ -109,10 +109,10 @@ const offsetText = (minutes: number) => {
 };
 
 /** `America/Los_Angeles` → `Los Angeles`. */
-const city = (zone: string) => (zone.split("/").at(-1) ?? zone).replaceAll("_", " ");
+export const city = (zone: string) => (zone.split("/").at(-1) ?? zone).replaceAll("_", " ");
 
 /** Whether this browser knows the IANA zone `zone`; formatting an unknown one throws. */
-function knownZone(zone: string): boolean {
+export function knownZone(zone: string): boolean {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: zone });
     return true;

@@ -9,7 +9,6 @@ export const HeinzelFace = forwardRef<
   React.ComponentPropsWithoutRef<"svg"> & { size?: number | string }
 >(function HeinzelFace({ size = 24, className, ...props }, ref) {
   return (
-    // biome-ignore lint/a11y/noSvgWithoutTitle: an icon beside its label, hidden from assistive tech like lucide's
     <svg
       ref={ref}
       aria-hidden="true"

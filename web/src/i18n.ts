@@ -467,6 +467,7 @@ const en = {
   "status.current": "Now: {title}, until {end}",
   "status.next": "Next: {title}, {when}",
   "status.now": "now",
+  "ticker.label": "Time in your zones",
   "status.more": "More status items",
   "status.inMinutes": "in {minutes} min",
   "status.inHours": "in {hours} h {minutes} min",
