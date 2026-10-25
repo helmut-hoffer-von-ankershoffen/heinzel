@@ -231,7 +231,7 @@ def test_the_web_app_gets_the_clock_in_the_footer_not_the_sidebar_until_asked(hz
 
 def test_the_header_action_opens_hz_clock_in_the_terminal(hz):
     (action,) = hz("system", "ui", "actions", "--item", "clock:team-clock").json
-    assert action["effect"] == {"kind": "command", "command": "hz clock", "runs": True}
+    assert action["effect"] == {"kind": "navigate", "path": "/?panel=world-clock"}
     assert isinstance(action["badge"], int)
     (widget,) = hz("system", "ui", "widgets", "--item", "clock:at-work").json
     assert widget["widget"]["kind"] == "metric"
