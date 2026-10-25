@@ -1031,7 +1031,8 @@ def test_the_fixture_theme_has_variants_with_backdrops_and_stays_readable():
 
 def test_the_weather_theme_of_the_guide_is_valid_and_readable():
     guide = (Path(__file__).parents[3] / "docs" / "THEMES.md").read_text(encoding="utf-8")
-    (example,) = re.findall(r"```toml\n(.*?)```", guide, flags=re.DOTALL)
+    examples = re.findall(r"```toml\n(.*?)```", guide, flags=re.DOTALL)
+    (example,) = [text for text in examples if "name" in tomllib.loads(text)]
     weather = Theme.model_validate(tomllib.loads(example))
     assert len(weather.variant) == 6
     assert weather.colours("dark", {"daypart": "night", "weather": "rain"}).background == "#0d1016"
@@ -1058,3 +1059,12 @@ def test_theme_can_decorate_core_avatars_without_changing_existing_themes():
 def test_theme_avatar_table_refuses_unknown_parts_graphics_and_decorations(look):
     with pytest.raises(ValidationError):
         ThemeHeinzel.model_validate(look)
+
+
+def test_the_avatar_table_of_the_guide_uses_the_checked_theme_schema():
+    guide = (Path(__file__).parents[3] / "docs" / "THEMES.md").read_text(encoding="utf-8")
+    examples = [tomllib.loads(text) for text in re.findall(r"```toml\n(.*?)```", guide, flags=re.DOTALL)]
+    (table,) = [example["heinzel"] for example in examples if "heinzel" in example]
+    look = ThemeHeinzel.model_validate(table)
+    assert look.decorations == ("snow",)
+    assert set(look.palette) == {"hat", "shirt", "scarf"}

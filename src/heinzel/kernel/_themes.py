@@ -501,7 +501,9 @@ class ThemeHeinzel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
 
     palette: dict[Literal["hat", "shirt", "scarf"], Colour] = Field(
-        default_factory=dict, max_length=3, description="Colours for default hat, shirt and scarf parts."
+        default_factory=dict[Literal["hat", "shirt", "scarf"], Colour],
+        max_length=3,
+        description="Colours for default hat, shirt and scarf parts.",
     )
     decorations: tuple[Literal["snow"], ...] = Field(
         default=(),
