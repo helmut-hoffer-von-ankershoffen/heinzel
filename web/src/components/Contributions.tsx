@@ -7,7 +7,6 @@ import {
   Activity,
   AlarmClock,
   Bell,
-  Bot,
   Calendar,
   CalendarClock,
   ChartLine,
@@ -52,6 +51,7 @@ import {
 } from "@/api/client";
 import { token } from "@/api/token";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import { HeinzelFace } from "@/components/HeinzelFace";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { runInTerminal, runsAsIs, typeInTerminal } from "@/lib/terminal";
@@ -70,7 +70,7 @@ export const ICONS: Record<Icon, LucideIcon> = {
   activity: Activity,
   "alarm-clock": AlarmClock,
   bell: Bell,
-  bot: Bot,
+  bot: HeinzelFace,
   calendar: Calendar,
   "calendar-clock": CalendarClock,
   "chart-line": ChartLine,
@@ -259,11 +259,14 @@ function StatusItemView({
   updatedAt,
   run,
   compact,
+  iconOnly = false,
 }: {
   entry: SchemaStatusEntry;
   updatedAt: number;
   run: (effect: Effect) => void;
   compact: boolean;
+  /** Only its icon, the text kept for assistive tech and as the tooltip: what a narrow footer shows. */
+  iconOnly?: boolean;
 }) {
   const current = useEntry("status", entry, updatedAt);
   const now = useNow(current.item?.live?.kind === "clock" ? 1000 : 30_000);
@@ -302,6 +305,7 @@ function StatusItemView({
     >
       <button
         type="button"
+        title={iconOnly || !more ? label : undefined}
         onClick={() => (item.effect ? run(item.effect) : setOpen((was) => !was))}
         onFocus={show}
         aria-expanded={more ? open : undefined}
@@ -314,7 +318,15 @@ function StatusItemView({
         )}
       >
         <IconOf icon={item.icon} />
-        <span className={cn("truncate", item.live?.kind === "clock" && "font-mono tabular-nums")}>{label}</span>
+        <span
+          className={cn(
+            "truncate",
+            iconOnly && item.icon && "sr-only",
+            item.live?.kind === "clock" && "font-mono tabular-nums",
+          )}
+        >
+          {label}
+        </span>
       </button>
       {more && open && (
         <div
@@ -382,24 +394,37 @@ export function StatusItems({
   slot,
   className,
   except = [],
+  iconOnly = false,
+  stacked = false,
 }: {
   slot: "footer" | "sidebar";
   className?: string;
   except?: string[];
+  /** Icons without their text, for a narrow footer. */
+  iconOnly?: boolean;
+  /** One under the other, as in the sidebar, for the footer's overflow. */
+  stacked?: boolean;
 }) {
   const all = useEntries("status", slot);
   const updatedAt = all.updatedAt;
   const entries = all.entries.filter((entry) => !except.includes(entry.id));
   const { run, dialog } = useEffectRunner();
   if (!entries.length) return null;
-  const compact = slot === "sidebar";
+  const compact = slot === "sidebar" || stacked;
   return (
     <div
       className={cn(compact ? "flex flex-col gap-0.5 px-2 text-ui-sm" : "flex min-w-0 items-center gap-3", className)}
       data-slot={slot}
     >
       {entries.map((entry) => (
-        <StatusItemView key={entry.id} entry={entry} updatedAt={updatedAt} run={run} compact={compact} />
+        <StatusItemView
+          key={entry.id}
+          entry={entry}
+          updatedAt={updatedAt}
+          run={run}
+          compact={compact}
+          iconOnly={iconOnly}
+        />
       ))}
       {dialog}
     </div>

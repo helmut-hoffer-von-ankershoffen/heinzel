@@ -195,9 +195,9 @@ def test_one_drawing_an_original_one_shows_heinzelmaennchen_everywhere():
             assert embedded not in artwork.read_bytes()
     for copy, source in script.COPIES.items():
         assert copy.read_bytes() == source.read_bytes(), f"{copy.relative_to(ROOT)} is stale: run make icons"
-    # One Heinzelmännchen where the swarm wouldn't read, the swarm where it does.
+    # An app icon is one Heinzelmännchen at every size; the swarm is the logo, not an icon.
     assert script.artwork_for(32) == script.ARTWORK
-    assert script.artwork_for(script.SWARM_FROM) == script.SWARM
+    assert script.artwork_for(512) == script.ARTWORK
     for name, (background, fill) in script.WORDMARKS.items():
         made = (script.THEME_LOGO / name).read_text(encoding="utf-8")
         assert made == script.wordmark(background, fill), f"{name} is stale: run make icons"
