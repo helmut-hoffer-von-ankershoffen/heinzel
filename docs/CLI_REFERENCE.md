@@ -2278,6 +2278,8 @@ $ hz system serve api [OPTIONS]
 
 * `--host <str>`: Interface to listen on.  [default: 127.0.0.1]
 * `--port <int>`: Port to listen on.  [default: 8000]
+* `--private`: Require a server-scoped bearer for private operations.
+* `--credential-file <path>`: New owner-only file for the private API credential; never put the token in arguments.
 * `--help`: Show this message and exit.
 
 #### `hz system serve daemon`
