@@ -369,6 +369,7 @@ Pick how the web app looks: the built-in theme or one a plugin offers.
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | List the themes of the web app, with every colour, font and size, and which one is in effect. | `hz system theme list` | `system_theme_list` | `GET /system/theme/list` | `GET /api/system/theme/list` |  | expert |
+| Show the signals themes follow now: the time of day, and the weather when a plugin publishes it. | `hz system theme signals` | `system_theme_signals` | `GET /system/theme/signals` | `GET /api/system/theme/signals` |  | expert |
 | Use a theme in the web app: writes `[system.theme] name` to your configuration file. | `hz system theme use` | `system_theme_use` | `POST /system/theme/use` | `POST /api/system/theme/use` | yes | expert |
 
 Settings: [`[system.theme]`](CONFIGURATION.md#systemtheme).
