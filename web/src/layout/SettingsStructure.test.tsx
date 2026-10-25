@@ -5,7 +5,7 @@ import type { SchemaConfigReport, SchemaPluginInfo } from "@/api/client";
 import { config, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { toToml } from "./settingSchema";
-import { displayName, inWords, settingsNav } from "./settingsSections";
+import { displayName, inWords, PAGES, pageOf, settingsNav } from "./settingsSections";
 
 const plugin = (overrides: Partial<SchemaPluginInfo>): SchemaPluginInfo =>
   ({
@@ -143,14 +143,40 @@ describe("Settings: Preferences, Customize, This computer", () => {
     mockApi(answers);
     const { container } = renderAt("/doctor?settings=hz");
     const nav = await screen.findByRole("navigation", { name: "Settings" });
-    for (const name of ["General", "Org", "System", "World Clock", "Connectors", "Plugins", "Configuration files"]) {
+    for (const name of [
+      "Appearance",
+      "World Clock",
+      "Notifications",
+      "AI",
+      "Connectors",
+      "Plugins",
+      "Skills",
+      "You",
+      "Team",
+      "Daemon",
+      "Configuration files",
+      "From Claude",
+      "Updates",
+      "System",
+    ]) {
       expect(await within(nav).findByRole("button", { name })).toBeInTheDocument();
     }
     await waitFor(() => expect(within(nav).queryByRole("button", { name: /github/i })).not.toBeInTheDocument());
     const names = within(nav)
       .getAllByRole("button")
       .map((button) => button.textContent);
-    expect(names.slice(0, 4)).toEqual(["General", "Org", "System", "World Clock"]);
+    expect(names.slice(0, 3)).toEqual(["Appearance", "World Clock", "Notifications"]);
+    // Every entry has its own icon, never a shared generic one, and AI is only under Customize.
+    expect(names.filter((name) => name === "AI")).toHaveLength(1);
+    expect(within(nav).queryByRole("button", { name: "General" })).not.toBeInTheDocument();
+    expect(within(nav).queryByRole("button", { name: /weather/i })).not.toBeInTheDocument();
+    expect(
+      within(nav)
+        .getAllByRole("button")
+        .every((button) => button.querySelector("svg")),
+    ).toBe(true);
+    // Each entry has an icon of its own: only Plugins wears the puzzle piece.
+    expect(new Set(PAGES.map((page) => page.icon)).size).toBe(PAGES.length);
     // Connectors have their settings on their cards; the [capabilities] table is there too.
     expect(within(nav).queryByRole("button", { name: "Capabilities" })).not.toBeInTheDocument();
     await expectAccessible(container);
@@ -172,7 +198,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const nav = await screen.findByRole("navigation", { name: "Settings" });
     expect(await within(nav).findByRole("button", { name: "World Clock" })).toHaveAttribute("aria-current", "page");
     const plugin = await screen.findByTitle("Show it under Plugins");
-    const header = plugin.closest("div") as HTMLElement;
+    const header = (plugin.closest("div") as HTMLElement).parentElement as HTMLElement;
     expect(within(header).getByTitle("Capability: hz clock")).toBeInTheDocument();
     expect(header).toHaveTextContent("First-party");
     expect(header).toHaveTextContent("v0.3.0");
@@ -188,10 +214,12 @@ describe("Settings: Preferences, Customize, This computer", () => {
   it("heads a built-in module's settings with hz and its version", async () => {
     mockApi({ ...answers, "/api/system/info": { version: "0.4.0", modules: [] } });
     renderAt("/doctor?settings=org");
-    expect(await screen.findByRole("link", { name: "Built in · heinzel v0.4.0" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "First-party" })).toHaveAttribute(
       "href",
       "https://github.com/helmut-hoffer-von-ankershoffen/heinzel",
     );
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    expect(within(dialog).getByText("v0.4.0")).toBeInTheDocument();
   });
 
   it("lists connectors as cards with what they connect, and opens one's settings inside Connectors", async () => {
@@ -378,9 +406,23 @@ describe("Where settings live", () => {
   });
 
   it("puts every module with settings under Preferences, General first, and connectors apart", () => {
-    const nav = settingsNav(["hz", "org", "github", "clock", "capabilities"], [github, clock]);
-    expect(nav.preferences.map((entry) => entry.id)).toEqual(["hz", "org", "clock"]);
-    expect(nav.preferences.find((entry) => entry.id === "clock")?.plugin).toBe(clock);
+    const nav = settingsNav(["hz", "org", "github", "clock", "capabilities", "acme"], [github, clock]);
+    const ids = nav.pages.map((entry) => entry.id);
+    expect(ids.slice(0, 3)).toEqual(["appearance", "clock", "notifications"]);
+    expect(ids).toContain("acme");
+    expect(ids).not.toContain("github");
+    expect(nav.pages.find((entry) => entry.id === "clock")?.plugin).toBe(clock);
+    // Each setting section has exactly one page.
+    for (const [section, page] of [
+      ["system.runner.chat", "ai"],
+      ["ai.access", "ai"],
+      ["system.sound", "appearance"],
+      ["system.notify", "notifications"],
+      ["org", "you"],
+      ["system.daemon", "daemon"],
+      ["system.directory", "system"],
+    ] as const)
+      expect(pageOf(section, nav.pages)?.id).toBe(page);
     expect(nav.connectors.map((entry) => entry.title)).toEqual(["GitHub"]);
   });
 
@@ -390,5 +432,76 @@ describe("Where settings live", () => {
     expect(toToml({ "odd key": true })).toBe('{ "odd key" = true }');
     expect(toToml([1, null, Number.NaN, Number.NEGATIVE_INFINITY])).toBe("[1, nan, -inf]");
     expect(toToml("a\x7fb")).toBe('"a\\u007fb"');
+  });
+});
+
+describe("Settings: one place for everything", () => {
+  const list = [
+    {
+      id: "clock:primary-zone",
+      module: "clock",
+      kind: "status",
+      title: "Your time zone",
+      slots: { footer: true, sidebar: false },
+      defaults: { footer: true, sidebar: false },
+    },
+  ];
+  const entry = { module: "clock", plugin: "heinzel-clock", order: 900, refresh: 60, problem: null };
+  const ui = {
+    ...answers,
+    "/api/system/ui/list": list,
+    "/api/system/ui/show": list,
+    "/api/system/ui/hide": list,
+    "/api/system/ui/status": [
+      {
+        ...entry,
+        id: "clock:primary-zone",
+        slots: { footer: true, sidebar: false },
+        item: { text: "Berlin", tone: "neutral", icon: "globe", live: { kind: "clock", zone: "Europe/Berlin" } },
+      },
+    ],
+  };
+
+  it("keeps AI access under AI alone, and appearance under Appearance", async () => {
+    mockApi(ui);
+    const ai = renderAt("/doctor?settings=ai");
+    expect(await screen.findByText("AI access")).toBeInTheDocument();
+    ai.unmount();
+    renderAt("/doctor?settings=appearance");
+    expect(await screen.findByRole("radiogroup", { name: "Mode" })).toBeInTheDocument();
+    expect(screen.queryByText("AI access")).not.toBeInTheDocument();
+  });
+
+  it("shows each placement of World Clock in plain words with a live preview and a switch", async () => {
+    const { calls } = mockApi(ui);
+    const user = userEvent.setup();
+    const { container } = renderAt("/doctor?settings=clock");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    expect(await within(dialog).findByText("In the footer")).toBeInTheDocument();
+    expect(within(dialog).getByText("In the sidebar")).toBeInTheDocument();
+    const footer = container.querySelector('[data-preview="footer"]') as HTMLElement;
+    await waitFor(() => expect(footer).toHaveTextContent(/Berlin \d{2}:\d{2}:\d{2}/));
+    expect(container.querySelector('[data-preview="sidebar"]')).toHaveClass("opacity-40");
+    await expectAccessible(container);
+    await user.click(within(dialog).getByRole("switch", { name: "Show in sidebar: Your time zone" }));
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/system/ui/show"))).toBe(true));
+  });
+
+  it("finds a page by what is on it, and every setting by its name", async () => {
+    mockApi(ui);
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=");
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    await user.type(await within(dialog).findByRole("searchbox"), "volume");
+    const pages = await within(dialog).findByRole("region", { name: "Settings pages" });
+    await user.click(within(pages).getByRole("button", { name: "Appearance" }));
+    expect(await within(dialog).findByRole("radiogroup", { name: "Mode" })).toBeInTheDocument();
+  });
+
+  it("opens old links where their setting moved", async () => {
+    mockApi(ui);
+    renderAt("/doctor?settings=org");
+    const nav = await screen.findByRole("navigation", { name: "Settings" });
+    expect(await within(nav).findByRole("button", { name: "You" })).toHaveAttribute("aria-current", "page");
   });
 });

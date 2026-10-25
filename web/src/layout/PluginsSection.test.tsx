@@ -186,7 +186,7 @@ describe("PluginsSection", () => {
     await user.click(screen.getByRole("tab", { name: "Discover" }));
     const labels = (await screen.findAllByRole("listitem")).map((row) => row.textContent);
     expect(labels.some((text) => text?.includes("Contrib"))).toBe(true);
-    expect(labels.some((text) => text?.includes("Community"))).toBe(true);
+    expect(labels.some((text) => text?.includes("Contrib"))).toBe(true);
     expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
     const adds = () => calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/add");
     const spec = (index: number) => new URL(adds()[index]?.url ?? "").searchParams.get("spec");

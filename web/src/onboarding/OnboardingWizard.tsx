@@ -216,7 +216,7 @@ function Step({ id, onClose }: { id: StepId; onClose: () => void }) {
     case "look":
       return <ThemePreviews />;
     case "ai":
-      return <SettingsLink section="hz" label="onboarding.ai.open" onClose={onClose} />;
+      return <SettingsLink section="ai" label="onboarding.ai.open" onClose={onClose} />;
     case "connectors":
       return <SettingsLink section="connectors" label="onboarding.connectors.open" onClose={onClose} />;
     case "notifications":
