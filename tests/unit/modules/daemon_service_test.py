@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from heinzel import Check, CompiledJobs, HeinzelError, JobLet, Kernel, Module, Notifications, Status
+from heinzel import Check, CompiledJobs, HeinzelError, JobLet, Kernel, Module, Notifications, Status, __version__
 from heinzel.modules.system.daemon import DaemonService, DaemonSettings
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import Disposition, Wake, unit_dir
@@ -820,3 +820,26 @@ def test_a_failing_notifier_never_fails_the_tick(make, jobs):
     report = service.tick()
     assert all(run.disposition is not Disposition.FAILED for run in report.runs)
     assert "posting notices failed: OSError: disk full" in service.log_path.read_text(encoding="utf-8")
+
+
+def test_status_reports_the_version_the_daemon_was_started_with(make):
+    service = make()
+    assert (service.status().version, service.status().version_mismatch) == (None, False)
+    service.install(timedelta(minutes=5))
+    assert (service.status().version, service.status().version_mismatch) == (__version__, False)
+
+
+def test_a_daemon_started_by_an_older_hz_is_flagged_and_restart_mends_it(make, tmp_path):
+    service = make()
+    service.install(timedelta(minutes=5))
+    state = service.state_dir / "install.json"
+    state.write_text(state.read_text().replace(__version__, "0.0.1"), encoding="utf-8")
+    status = service.status()
+    assert (status.version, status.version_mismatch) == ("0.0.1", True)
+    restarted = service.restart()
+    assert (restarted.restarted, restarted.version, restarted.interval_minutes) == (True, __version__, 5)
+    assert (service.status().version, service.status().version_mismatch) == (__version__, False)
+
+
+def test_restarting_a_daemon_that_is_not_installed_does_nothing(make):
+    assert make(runner=Refuses()).restart().restarted is False

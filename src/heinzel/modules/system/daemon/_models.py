@@ -109,6 +109,14 @@ class Installed(BaseModel):
     hint: str | None = Field(default=None, description="What to do next, if anything.")
 
 
+class Restarted(BaseModel):
+    """What `restart` did."""
+
+    restarted: bool = Field(description="Whether the daemon was reloaded; false if it isn't installed.")
+    version: str = Field(description="The hz version the daemon runs with now.")
+    interval_minutes: int | None = Field(description="Minutes between ticks, as installed; none if not installed.")
+
+
 class Uninstalled(BaseModel):
     """What `uninstall` removed."""
 
@@ -128,6 +136,16 @@ class DaemonStatus(BaseModel):
     last_tick: datetime | None = Field(description="When the last tick ran.")
     jobs: int = Field(description="How many jobs are registered.")
     failing: list[str] = Field(description="Jobs whose last run failed or that can't run.")
+    version: str | None = Field(
+        default=None,
+        description="The hz version the daemon was started with (installed or last restarted); none if it isn't "
+        "installed or was installed by an older hz.",
+    )
+    version_mismatch: bool = Field(
+        default=False,
+        description="Whether `version` differs from the hz that answers: after `hz system update` the daemon should "
+        "be restarted (`hz system daemon restart`).",
+    )
 
 
 class Toggled(BaseModel):

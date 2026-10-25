@@ -1087,7 +1087,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `sound`: (expert) Pick the web app&#x27;s soundscape:...
 * `theme`: (expert) Pick how the web app looks: the...
 * `ui`: (expert) List what modules add to the web...
-* `update`: Update Heinzelmännchen, keeping plugins;...
+* `update`: Update Heinzelmännchen and its plugins;...
 
 ### `hz system agent`
 
@@ -1573,6 +1573,7 @@ $ hz system daemon [OPTIONS] COMMAND [ARGS]...
 * `jobs`: (expert) List every job with its schedule,...
 * `logs`: (expert) Show the latest lines of the...
 * `pause`: (expert) Pause the daemon: ticks run no...
+* `restart`: (expert) Restart the daemon so it runs...
 * `resume`: (expert) Resume a paused daemon.
 * `status`: (expert) Show whether the daemon is...
 * `tick`: (expert) Run the jobs that are due and...
@@ -1637,6 +1638,22 @@ $ hz system daemon logs [OPTIONS]
 
 ```console
 $ hz system daemon pause [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system daemon restart`
+
+(expert) Restart the daemon so it runs with the installed hz.
+
+**Usage**:
+
+```console
+$ hz system daemon restart [OPTIONS]
 ```
 
 **Options**:
@@ -2656,7 +2673,7 @@ $ hz system ui widgets [OPTIONS]
 
 ### `hz system update`
 
-Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
+Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.
 
 **Usage**:
 

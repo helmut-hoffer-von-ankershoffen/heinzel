@@ -14,6 +14,7 @@ from heinzel.modules.system.daemon._models import (
     JobInfo,
     LogLine,
     Receipt,
+    Restarted,
     TickReport,
     Toggled,
     Uninstalled,
@@ -53,6 +54,12 @@ def install(
 def uninstall(service: DaemonService) -> Uninstalled:
     """Unload and remove the daemon's unit; receipts and logs stay."""
     return service.uninstall()
+
+
+@module.operation(read_only=False)
+def restart(service: DaemonService) -> Restarted:
+    """Restart the daemon so it runs with the installed hz."""
+    return service.restart()
 
 
 @module.operation
