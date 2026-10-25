@@ -1047,6 +1047,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `release`: (expert) Ask where Heinzelmännchen was...
 * `runner`: Run bounded agent sessions with Claude...
 * `serve`: (expert) Serve every operation to coding...
+* `sound`: (expert) Pick the web app&#x27;s soundscape:...
 * `theme`: (expert) Pick how the web app looks: the...
 * `ui`: (expert) List what modules add to the web...
 * `update`: Update Heinzelmännchen, keeping plugins;...
@@ -2260,6 +2261,61 @@ $ hz system serve mcp [OPTIONS]
 * `--port <int>`: Port for streamable-http.  [default: 8765]
 * `--chat SESSION`: Serve the tools of this chat session: reads run, everything else waits for your confirmation in the chat. Started by `hz chat` for its agent, over stdio only.
 * `--project <path>`: Read the configuration as if started in this directory (its hz.toml), as the chat does.
+* `--help`: Show this message and exit.
+
+### `hz system sound`
+
+(expert) Pick the web app&#x27;s soundscape: off, Claude FM or one a plugin offers.
+
+**Usage**:
+
+```console
+$ hz system sound [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `list`: (expert) List the soundscapes of the web...
+* `use`: (expert) Pick the web app&#x27;s soundscape,...
+
+#### `hz system sound list`
+
+(expert) List the soundscapes of the web app, where each comes from, which one is picked and which plays.
+
+**Usage**:
+
+```console
+$ hz system sound list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system sound use`
+
+(expert) Pick the web app&#x27;s soundscape, `off` for none: sets `system.sound.name` in your user file.
+
+**Usage**:
+
+```console
+$ hz system sound use [OPTIONS] {name}
+```
+
+**Arguments**:
+
+* `name`: The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
 ### `hz system theme`

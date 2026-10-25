@@ -62,6 +62,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0055](0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md) | Connectors show their sign-in, test live on demand, and bind themselves when they are alone | accepted | 2026-10-24 |
 | [0056](0056-modules-contribute-status-items-actions-and-widgets-as-data.md) | Modules contribute status items, header actions and Today widgets as data, viewed from their own operations | proposed | 2026-10-24 |
 | [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) | AI access is a module: one choice like the theme, options are adapters of `ai-access` | proposed | 2026-10-24 |
+| [0058](0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md) | Soundscapes are data a plugin ships, chosen like a theme: `module.soundscape(...)`, `hz system sound use` | proposed | 2026-10-24 |
 | [0060](0060-themes-follow-the-time-of-day-and-the-weather.md) | Themes follow the time of day and the weather: variants on a closed vocabulary of signals | proposed | 2026-10-24 |
 | [0062](0062-heinzelmaennchen-find-the-mcp-servers-and-skills-you-gave-claude.md) | Heinzelmännchen find the MCP servers and skills you already gave Claude, read-only first | proposed | 2026-10-25 |
 
@@ -121,6 +122,10 @@ automatically);
 [0057](0057-ai-access-is-a-module-one-choice-like-the-theme.md) amends
 [0029](0029-agent-runners-are-capability-adapters.md) (an AI access option names the agent runner that serves it) and
 [0050](0050-pydantic-ai-runs-a-turn-a-coding-agent-is-a-handoff.md) (`[heinzel] model` gives way to `[ai]` routing);
+[0058](0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md) amends
+[0027](0027-nothing-is-sent-home.md), [0039](0039-a-web-head-a-react-app-served-by-the-api-head.md) and
+[0046](0046-an-installable-web-app-with-paired-devices.md) (one allowlisted frame origin while a stream soundscape is in
+effect, from Play onwards);
 [0060](0060-themes-follow-the-time-of-day-and-the-weather.md) amends [0044](0044-themes-are-data-a-plugin-ships.md)
 (variants that follow signals; a base theme is checked for contrast too). ADRs 0021–0024 are
 proposed together and disagree on a few points (data file format, the shared `inventory` module, canonicalization,

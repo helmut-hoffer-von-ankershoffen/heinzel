@@ -206,6 +206,16 @@ Plugins add their own tables.
 | `keep_days` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_DAYS` | `30` | How long a chat is kept after its last message, then removed. |
 | `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | How many chats are kept at most; the oldest beyond that are removed. |
 
+## `[system.sound]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `name` | `HZ_SYSTEM_SOUND__NAME` | `'off'` | The web app's soundscape, one `hz system sound list` shows, e.g. `claude-fm`; `off` for none. Never read from a project's hz.toml. |
+| `volume` | `HZ_SYSTEM_SOUND__VOLUME` | `50` | How loud, 0 to 100. Never read from a project's hz.toml. |
+| `follow_theme` | `HZ_SYSTEM_SOUND__FOLLOW_THEME` | `False` | Play the soundscape that goes with the theme in effect, when one does, instead of `name`. Never read from a project's hz.toml. |
+| `mute_in_meetings` | `HZ_SYSTEM_SOUND__MUTE_IN_MEETINGS` | `True` | Mute while your calendar says you are in a meeting; needs a connected calendar. Never read from a project's hz.toml. |
+| `duck_while_typing` | `HZ_SYSTEM_SOUND__DUCK_WHILE_TYPING` | `True` | Play softer while you type in the chat. Never read from a project's hz.toml. |
+
 ## `[system.theme]`
 
 | Key | Environment variable | Default | Description |

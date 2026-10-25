@@ -1343,6 +1343,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/sound/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the soundscapes of the web app, where each comes from, which one is picked and which plays.
+         * @description List the soundscapes of the web app, where each comes from, which one is picked and which plays.
+         */
+        get: operations["system_sound_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/sound/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.
+         * @description Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.
+         */
+        post: operations["system_sound_use"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/theme/list": {
         parameters: {
             query?: never;
@@ -5650,6 +5690,244 @@ export interface components {
             reason: string;
         };
         /**
+         * SoundEarconView
+         * @description A short sound for notices of one kind.
+         */
+        SoundEarconView: {
+            /**
+             * Attribution
+             * @description Who made it, to show beside it; set for CC-BY.
+             */
+            attribution: string | null;
+            /**
+             * Kind
+             * @description The notice kind it plays for, e.g. `draft` or `failed`.
+             */
+            kind: string;
+            /**
+             * Licence
+             * @description Its licence, an SPDX identifier, e.g. `CC0-1.0`.
+             */
+            licence: string;
+            /**
+             * Source
+             * @description Where it comes from, an https URL.
+             */
+            source: string | null;
+            /**
+             * Url
+             * @description Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.
+             */
+            url: string;
+        };
+        /**
+         * SoundLayerView
+         * @description One layer of a layered soundscape: a looped file whose gain follows a signal.
+         */
+        SoundLayerView: {
+            /**
+             * Attribution
+             * @description Who made it, to show beside it; set for CC-BY.
+             */
+            attribution: string | null;
+            /**
+             * Curve
+             * @description Points `[x, y]` for a weather signal, gains by part of the day for `daypart`; none for `none`.
+             */
+            curve: number[][] | {
+                [key: string]: number;
+            } | null;
+            /**
+             * Gain
+             * @description Its loudness, 0 to 1, before the curve.
+             */
+            gain: number;
+            /**
+             * Licence
+             * @description Its licence, an SPDX identifier, e.g. `CC0-1.0`.
+             */
+            licence: string;
+            /**
+             * Signal
+             * @description The signal its gain follows: `none`, `daypart`, `weather.rain`, `weather.wind`.
+             */
+            signal: string;
+            /**
+             * Source
+             * @description Where it comes from, an https URL.
+             */
+            source: string | null;
+            /**
+             * Url
+             * @description Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.
+             */
+            url: string;
+        };
+        /**
+         * SoundList
+         * @description Every available soundscape, which one is configured and which is in effect, and how it plays.
+         */
+        SoundList: {
+            /**
+             * Conflicts
+             * @description Names an org and the site both offer with nothing more specific deciding; left out until one is.
+             */
+            conflicts?: string[];
+            /**
+             * Duck While Typing
+             * @description Whether sound plays softer while you type in the chat.
+             */
+            duck_while_typing: boolean;
+            /**
+             * Effective
+             * @description The name of the soundscape in effect: `selected`, or the theme's own.
+             */
+            effective: string;
+            /**
+             * Follow Theme
+             * @description Whether the soundscape that goes with the theme in effect plays instead.
+             */
+            follow_theme: boolean;
+            /**
+             * Mute In Meetings
+             * @description Whether sound mutes during a meeting in your calendar.
+             */
+            mute_in_meetings: boolean;
+            /**
+             * Next
+             * @description What to run next.
+             */
+            next?: string[];
+            /**
+             * Note
+             * @description Why the soundscape in effect isn't the one configured.
+             */
+            note?: string | null;
+            /**
+             * Selected
+             * @description The name of the soundscape configured, after fallbacks; `off` for none.
+             */
+            selected: string;
+            /**
+             * Signals
+             * @description The signals layers follow, now: `daypart` always, `weather.*` once a plugin publishes them.
+             */
+            signals: {
+                [key: string]: string | number;
+            };
+            /**
+             * Soundscapes
+             * @description `off` first, then the core's and the plugins' soundscapes.
+             */
+            soundscapes: components["schemas"]["SoundscapeView"][];
+            /**
+             * Volume
+             * @description How loud, 0 to 100.
+             */
+            volume: number;
+        };
+        /**
+         * SoundStreamView
+         * @description A stream in the official player of an allowed host.
+         */
+        SoundStreamView: {
+            /**
+             * Embed Url
+             * @description The player to frame after Play, e.g. `https://www.youtube-nocookie.com/embed/...`.
+             */
+            embed_url: string;
+            /**
+             * Frame Origin
+             * @description The origin the page's CSP admits as a frame while it is in effect.
+             */
+            frame_origin: string;
+            /**
+             * Provider
+             * @description The host, e.g. `youtube`.
+             */
+            provider: string;
+            /**
+             * Video
+             * @description The video's id, e.g. `tRsQsTMvPNg`.
+             */
+            video: string;
+            /**
+             * Watch Url
+             * @description Where the video is on the host itself, to open it there instead.
+             */
+            watch_url: string;
+        };
+        /**
+         * SoundscapeView
+         * @description One available soundscape, ready for the web app to play.
+         */
+        SoundscapeView: {
+            /**
+             * Earcons
+             * @description Short sounds for notices, by kind.
+             */
+            earcons?: components["schemas"]["SoundEarconView"][];
+            /**
+             * Effective
+             * @description Whether it is the one in effect (follow my theme may pick another).
+             */
+            effective: boolean;
+            /**
+             * Fade Seconds
+             * @description How long a change fades, in seconds.
+             * @default 4
+             */
+            fade_seconds: number;
+            /**
+             * Kind
+             * @description `off`, `layers` (files mixed live) or `stream`.
+             * @enum {string}
+             */
+            kind: "off" | "layers" | "stream";
+            /**
+             * Layers
+             * @description The layers to mix.
+             */
+            layers?: components["schemas"]["SoundLayerView"][];
+            /**
+             * Module
+             * @description The qualified name of the module offering it; none for `off`.
+             */
+            module: string | null;
+            /**
+             * Name
+             * @description What `hz system sound use` takes, e.g. `claude-fm`; `off` is no sound.
+             */
+            name: string;
+            /**
+             * Pairs With
+             * @description Themes it goes with.
+             */
+            pairs_with?: string[];
+            /**
+             * Plugin
+             * @description The plugin it comes with, `heinzel` for the core's own; none for `off`.
+             */
+            plugin: string | null;
+            /**
+             * Selected
+             * @description Whether it is the one configured.
+             */
+            selected: boolean;
+            /**
+             * Shadows
+             * @description Modules that offer a soundscape of the same name, hidden by this one (layer order decides).
+             */
+            shadows?: string[];
+            /** @description The stream; none unless the kind is `stream`. */
+            stream?: components["schemas"]["SoundStreamView"] | null;
+            /**
+             * Title
+             * @description What people pick it by, e.g. `Claude FM`.
+             */
+            title: string;
+        };
+        /**
          * StackView
          * @description `hz system layer show`: the layers you are in, general to specific, and what they bring together.
          */
@@ -7008,6 +7286,11 @@ export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
 export type SchemaSkill = components['schemas']['Skill'];
 export type SchemaSkipped = components['schemas']['Skipped'];
+export type SchemaSoundEarconView = components['schemas']['SoundEarconView'];
+export type SchemaSoundLayerView = components['schemas']['SoundLayerView'];
+export type SchemaSoundList = components['schemas']['SoundList'];
+export type SchemaSoundStreamView = components['schemas']['SoundStreamView'];
+export type SchemaSoundscapeView = components['schemas']['SoundscapeView'];
 export type SchemaStackView = components['schemas']['StackView'];
 export type SchemaStatus = components['schemas']['Status'];
 export type SchemaStatusEntry = components['schemas']['StatusEntry'];
@@ -8781,6 +9064,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_sound_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundList"];
+                };
+            };
+        };
+    };
+    system_sound_use: {
+        parameters: {
+            query: {
+                /** @description The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SoundList"];
                 };
             };
             /** @description Validation Error */

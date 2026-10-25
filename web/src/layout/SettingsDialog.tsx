@@ -30,6 +30,7 @@ import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
 import { AiAccessSetting } from "./AiAccessSetting";
+import { SoundSettings } from "@/sound/SoundControls";
 import { ConnectorsSection } from "./ConnectorsSection";
 import { FROM_CLAUDE, FromClaudeSection } from "./FromClaudeSection";
 import { PluginsSection, Provenance } from "./PluginsSection";
@@ -220,6 +221,9 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 <ModeRow />
                 <ThemePreviews />
                 <AiAccessSetting />
+                <div className="mt-6">
+                  <SoundSettings />
+                </div>
                 <div className="mt-6">
                   <NotificationSettings />
                 </div>

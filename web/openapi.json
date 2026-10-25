@@ -6825,6 +6825,399 @@
         "title": "Skipped",
         "type": "object"
       },
+      "SoundEarconView": {
+        "description": "A short sound for notices of one kind.",
+        "properties": {
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who made it, to show beside it; set for CC-BY.",
+            "title": "Attribution"
+          },
+          "kind": {
+            "description": "The notice kind it plays for, e.g. `draft` or `failed`.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "licence": {
+            "description": "Its licence, an SPDX identifier, e.g. `CC0-1.0`.",
+            "title": "Licence",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it comes from, an https URL.",
+            "title": "Source"
+          },
+          "url": {
+            "description": "Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "licence",
+          "attribution",
+          "source",
+          "kind"
+        ],
+        "title": "SoundEarconView",
+        "type": "object"
+      },
+      "SoundLayerView": {
+        "description": "One layer of a layered soundscape: a looped file whose gain follows a signal.",
+        "properties": {
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who made it, to show beside it; set for CC-BY.",
+            "title": "Attribution"
+          },
+          "curve": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Points `[x, y]` for a weather signal, gains by part of the day for `daypart`; none for `none`.",
+            "title": "Curve"
+          },
+          "gain": {
+            "description": "Its loudness, 0 to 1, before the curve.",
+            "title": "Gain",
+            "type": "number"
+          },
+          "licence": {
+            "description": "Its licence, an SPDX identifier, e.g. `CC0-1.0`.",
+            "title": "Licence",
+            "type": "string"
+          },
+          "signal": {
+            "description": "The signal its gain follows: `none`, `daypart`, `weather.rain`, `weather.wind`.",
+            "title": "Signal",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it comes from, an https URL.",
+            "title": "Source"
+          },
+          "url": {
+            "description": "Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "licence",
+          "attribution",
+          "source",
+          "gain",
+          "signal",
+          "curve"
+        ],
+        "title": "SoundLayerView",
+        "type": "object"
+      },
+      "SoundList": {
+        "description": "Every available soundscape, which one is configured and which is in effect, and how it plays.",
+        "properties": {
+          "conflicts": {
+            "description": "Names an org and the site both offer with nothing more specific deciding; left out until one is.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "duck_while_typing": {
+            "description": "Whether sound plays softer while you type in the chat.",
+            "title": "Duck While Typing",
+            "type": "boolean"
+          },
+          "effective": {
+            "description": "The name of the soundscape in effect: `selected`, or the theme's own.",
+            "title": "Effective",
+            "type": "string"
+          },
+          "follow_theme": {
+            "description": "Whether the soundscape that goes with the theme in effect plays instead.",
+            "title": "Follow Theme",
+            "type": "boolean"
+          },
+          "mute_in_meetings": {
+            "description": "Whether sound mutes during a meeting in your calendar.",
+            "title": "Mute In Meetings",
+            "type": "boolean"
+          },
+          "next": {
+            "description": "What to run next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the soundscape in effect isn't the one configured.",
+            "title": "Note"
+          },
+          "selected": {
+            "description": "The name of the soundscape configured, after fallbacks; `off` for none.",
+            "title": "Selected",
+            "type": "string"
+          },
+          "signals": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "description": "The signals layers follow, now: `daypart` always, `weather.*` once a plugin publishes them.",
+            "title": "Signals",
+            "type": "object"
+          },
+          "soundscapes": {
+            "description": "`off` first, then the core's and the plugins' soundscapes.",
+            "items": {
+              "$ref": "#/components/schemas/SoundscapeView"
+            },
+            "title": "Soundscapes",
+            "type": "array"
+          },
+          "volume": {
+            "description": "How loud, 0 to 100.",
+            "title": "Volume",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "selected",
+          "effective",
+          "soundscapes",
+          "signals",
+          "volume",
+          "follow_theme",
+          "mute_in_meetings",
+          "duck_while_typing"
+        ],
+        "title": "SoundList",
+        "type": "object"
+      },
+      "SoundStreamView": {
+        "description": "A stream in the official player of an allowed host.",
+        "properties": {
+          "embed_url": {
+            "description": "The player to frame after Play, e.g. `https://www.youtube-nocookie.com/embed/...`.",
+            "title": "Embed Url",
+            "type": "string"
+          },
+          "frame_origin": {
+            "description": "The origin the page's CSP admits as a frame while it is in effect.",
+            "title": "Frame Origin",
+            "type": "string"
+          },
+          "provider": {
+            "description": "The host, e.g. `youtube`.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "video": {
+            "description": "The video's id, e.g. `tRsQsTMvPNg`.",
+            "title": "Video",
+            "type": "string"
+          },
+          "watch_url": {
+            "description": "Where the video is on the host itself, to open it there instead.",
+            "title": "Watch Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "video",
+          "embed_url",
+          "frame_origin",
+          "watch_url"
+        ],
+        "title": "SoundStreamView",
+        "type": "object"
+      },
+      "SoundscapeView": {
+        "description": "One available soundscape, ready for the web app to play.",
+        "properties": {
+          "earcons": {
+            "description": "Short sounds for notices, by kind.",
+            "items": {
+              "$ref": "#/components/schemas/SoundEarconView"
+            },
+            "title": "Earcons",
+            "type": "array"
+          },
+          "effective": {
+            "description": "Whether it is the one in effect (follow my theme may pick another).",
+            "title": "Effective",
+            "type": "boolean"
+          },
+          "fade_seconds": {
+            "default": 4,
+            "description": "How long a change fades, in seconds.",
+            "title": "Fade Seconds",
+            "type": "integer"
+          },
+          "kind": {
+            "description": "`off`, `layers` (files mixed live) or `stream`.",
+            "enum": [
+              "off",
+              "layers",
+              "stream"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "layers": {
+            "description": "The layers to mix.",
+            "items": {
+              "$ref": "#/components/schemas/SoundLayerView"
+            },
+            "title": "Layers",
+            "type": "array"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The qualified name of the module offering it; none for `off`.",
+            "title": "Module"
+          },
+          "name": {
+            "description": "What `hz system sound use` takes, e.g. `claude-fm`; `off` is no sound.",
+            "title": "Name",
+            "type": "string"
+          },
+          "pairs_with": {
+            "description": "Themes it goes with.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Pairs With",
+            "type": "array"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, `heinzel` for the core's own; none for `off`.",
+            "title": "Plugin"
+          },
+          "selected": {
+            "description": "Whether it is the one configured.",
+            "title": "Selected",
+            "type": "boolean"
+          },
+          "shadows": {
+            "description": "Modules that offer a soundscape of the same name, hidden by this one (layer order decides).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Shadows",
+            "type": "array"
+          },
+          "stream": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SoundStreamView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The stream; none unless the kind is `stream`."
+          },
+          "title": {
+            "description": "What people pick it by, e.g. `Claude FM`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "module",
+          "plugin",
+          "selected",
+          "effective"
+        ],
+        "title": "SoundscapeView",
+        "type": "object"
+      },
       "StackView": {
         "description": "`hz system layer show`: the layers you are in, general to specific, and what they bring together.",
         "properties": {
@@ -11801,6 +12194,73 @@
           }
         },
         "summary": "Show a chat session: its context, messages, actions and costs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/sound/list": {
+      "get": {
+        "description": "List the soundscapes of the web app, where each comes from, which one is picked and which plays.",
+        "operationId": "system_sound_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the soundscapes of the web app, where each comes from, which one is picked and which plays.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/sound/use": {
+      "post": {
+        "description": "Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.",
+        "operationId": "system_sound_use",
+        "parameters": [
+          {
+            "description": "The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.",
         "tags": [
           "system"
         ]

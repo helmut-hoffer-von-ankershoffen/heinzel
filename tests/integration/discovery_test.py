@@ -36,6 +36,7 @@ def test_discovers_builtin_modules_and_submodules():
         "system.plugin",
         "system.runner",
         "system.runner.chat",
+        "system.sound",
         "system.theme",
         "system.ui",
         "team",
@@ -86,6 +87,7 @@ def test_kernel_boots_from_discovery(settings):
         "system.notify",
         "system.plugin",
         "system.runner",
+        "system.sound",
         "system.theme",
         "system.ui",
     ]
