@@ -76,6 +76,7 @@ from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_repo
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._identity import CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
     CorePin,
@@ -278,6 +279,7 @@ __all__ = [
     "Billing",
     "Budget",
     "Calendar",
+    "CallIdentity",
     "Capability",
     "CapabilityView",
     "CardWidget",
@@ -296,6 +298,7 @@ __all__ = [
     "CredentialBackend",
     "CredentialLet",
     "Credentials",
+    "CurrentUser",
     "Daypart",
     "DeclaredCredential",
     "Delivery",
@@ -372,6 +375,7 @@ __all__ = [
     "PlaybookLet",
     "PlaybookSetup",
     "PostedMessage",
+    "Principal",
     "Progress",
     "ProgressWidget",
     "Prompter",

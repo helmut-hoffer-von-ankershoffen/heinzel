@@ -16,7 +16,7 @@ from heinzel.heads.cli import _playful
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, show, to_json
 from heinzel.heads.cli._setup import ConsolePrompter, has_terminal
-from heinzel.kernel import HeinzelError, Kernel, OperationLet, Prompter
+from heinzel.kernel import CurrentUser, HeinzelError, Kernel, OperationLet, Prompter
 
 FORMAT_PARAMETER = "output_format"
 JSON_PARAMETER = "json_output"
@@ -78,7 +78,8 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
         # On a terminal, and not for scripts (--json), operations that ask (a plugin's preview) may ask.
         kernel.bind(Prompter, ConsolePrompter(console) if has_terminal() and not as_json else Prompter())
         try:
-            result = kernel.invoke(operation, **kwargs)
+            with kernel.resolve(CurrentUser).local("cli"):
+                result = kernel.invoke(operation, **kwargs)
         except HeinzelError as exc:
             if not as_json and _playful.allowed(kernel.settings, err_console):
                 err_console.print(_playful.glyph(), end=" ")

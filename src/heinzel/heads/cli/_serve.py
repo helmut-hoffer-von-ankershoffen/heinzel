@@ -88,11 +88,16 @@ def serve_group(
     def api(
         host: Annotated[str, typer.Option(help="Interface to listen on.")] = "127.0.0.1",
         port: Annotated[int, typer.Option(help="Port to listen on.")] = 8000,
+        private: Annotated[
+            bool, typer.Option("--private", help="Require a server-scoped bearer for private operations.")
+        ] = False,
+        credential_file: Annotated[
+            Path | None,
+            typer.Option(help="New owner-only file for the private API credential; never put the token in arguments."),
+        ] = None,
     ) -> None:
         """Serve every operation as a REST endpoint; OpenAPI docs at /docs."""
-        from heinzel.heads import api as head  # noqa: PLC0415 - heavy import, only when serving
-
-        head.serve(host, port)
+        _serve_api(host, port, private, credential_file, err_console)
 
     @serve.command(epilog=footer)
     def daemon(
@@ -216,3 +221,15 @@ def _duration(value: str) -> str:
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     return value
+
+
+def _serve_api(host: str, port: int, private: bool, credential_file: Path | None, err_console: Console) -> None:
+    from heinzel.heads import api as head  # noqa: PLC0415 - heavy import, only when serving
+
+    if not private and credential_file is not None:
+        err_console.print(message("Can't serve:", "--credential-file requires --private."))
+        raise typer.Exit(2)
+    if private:
+        head.serve(host, port, private=True, credential_file=credential_file, announce=err_console.print)
+    else:
+        head.serve(host, port)

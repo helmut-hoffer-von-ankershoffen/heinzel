@@ -86,7 +86,18 @@ from the kernel's `TeamPromises` (provided by `workflow`) and `TelemetryLog` (pr
 **Head.** A view that boots the kernel and exposes operations ([ADR 0019](adr/0019-mcp-and-rest-heads.md)). All heads
 share one exposure rule (`heinzel.heads._exposure`): the same path, public parameters and `heads=` restrictions. The
 **MCP head** makes each operation a tool (`system_doctor`), the **REST head** an endpoint (`GET /system/doctor`,
-OpenAPI at `/docs`). The **web head** (`hz ui`, `heinzel.heads.web`) serves a
+OpenAPI at `/docs`). An operation declared `private=True` is omitted from public REST and network MCP and
+requires trusted identity before dependency injection or execution. `hz system serve api --private` exposes those
+operations behind a server-scoped expiring bearer, written once to an owner-only file. A server restart retires its old credentials; credentials expire after
+twelve hours, and their raw values never appear in generated tool results or status output. The client sends it in the
+Authorization header; it is never a URL parameter or an approval proof. Private API OpenAPI remains authenticated,
+with CDN-backed interactive docs disabled. CLI, stdio MCP and paired web use the same immutable `CurrentUser`
+context. New private mutations and private streams take a flat JSON object of public arguments, reject unknown fields,
+and keep message/attachment/proof input out of URL query strings. Existing operations retain their wire shape.
+Read and write scopes are enforced in the kernel; services still check each resource's owner. Installation
+identity and default API credentials use user-scope settings, so a project cannot redirect them. See
+[ADR 0068](adr/0068-human-approval-proofs-and-head-parity.md); human-proof issuance and consumption remain proposed.
+The **web head** (`hz ui`, `heinzel.heads.web`) serves a
 React app (`web/`, built into the package) at `/` and the API head's endpoints for head `web` under `/api`, on
 localhost only, behind a token made per process and sent as `Authorization: Bearer`; every response carries a strict
 CSP. Operations hidden from the unauthenticated REST head because they read your profile or your systems list `web`
