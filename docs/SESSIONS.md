@@ -37,6 +37,12 @@ Before resuming a saved turn, read its body with `writer.body(turn, expected_has
 recorded in the corresponding spine checkpoint. This rejects edits even when the replacement remains valid JSON.
 Reading without an expected hash is only for inspecting an active, not-yet-checkpointed body.
 
+For a view that must stay readable during an active turn, use
+`sessions.body(session_id, body_id, expected_hash=checkpoint_hash)`. It takes no writer lock and requires the saved
+hash. The application should use immutable body ids per committed snapshot, so writing the next snapshot cannot
+change the body a reader is viewing. Owner-only file and path validation is identical to the writer's reader; a
+missing body is expired content and a changed or incomplete body is refused.
+
 The derived `index.sqlite` contains event records and a watermark per session: sequence, tail hash and file
 identity. `heads()` checks file metadata and reads no unchanged spine. Changed files are verified and their rows
 rebuilt. A caller may supply a pure `project(previous, event)` reducer for its indexed metadata; change
