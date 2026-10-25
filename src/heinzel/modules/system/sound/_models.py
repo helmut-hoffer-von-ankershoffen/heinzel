@@ -24,7 +24,9 @@ class SoundSettings(ModuleSettings):
         default="off",
         pattern=NAME_PATTERN,
         max_length=64,
-        description="The web app's soundscape, one `hz system sound list` shows, e.g. `claude-fm`; `off` for none.",
+        title="Soundscape",
+        description="The soundscape of the web app; off is no sound, and plugins can bring others.",
+        json_schema_extra={"x-hidden": True},
     )
     volume: int = Field(default=50, ge=0, le=100, description="How loud, 0 to 100.")
     follow_theme: bool = Field(
