@@ -28,15 +28,20 @@ class SoundSettings(ModuleSettings):
         description="The soundscape of the web app; off is no sound, and plugins can bring others.",
         json_schema_extra={"x-hidden": True},
     )
-    volume: int = Field(default=50, ge=0, le=100, description="How loud, 0 to 100.")
+    volume: int = Field(default=50, ge=0, le=100, title="Volume", description="How loud, from 0 to 100.")
     follow_theme: bool = Field(
         default=False,
-        description="Play the soundscape that goes with the theme in effect, when one does, instead of `name`.",
+        title="Follow my theme",
+        description="Play the soundscape that goes with your theme, when it has one, instead of the one you chose.",
     )
     mute_in_meetings: bool = Field(
-        default=True, description="Mute while your calendar says you are in a meeting; needs a connected calendar."
+        default=True,
+        title="Mute in meetings",
+        description="Mute while your calendar says you are in a meeting; needs a connected calendar.",
     )
-    duck_while_typing: bool = Field(default=True, description="Play softer while you type in the chat.")
+    duck_while_typing: bool = Field(
+        default=True, title="Softer while typing", description="Play softer while you type in the chat."
+    )
 
 
 class SoundAssetView(BaseModel):
