@@ -37,9 +37,12 @@ them all off, and they stay away from JSON, pipes, CI and `NO_COLOR` anyway.
 This release is the foundation — kernel, heads, plugins and release automation; the first team workflows arrive in
 0.x ([roadmap](INTENT.md#where-we-are)).
 
-![hz from install to the first commands: version, system info, adding the clock plugin, clock, JSON into jq, doctor](docs/assets/demo.gif)
+<picture>
+  <source srcset="docs/assets/demo.png" media="(prefers-reduced-motion: reduce)" />
+  <img src="docs/assets/demo.gif" alt="hz in the terminal and web app: first commands, Today, a contract and the team graph in light and dark mode" width="100%" />
+</picture>
 
-<!-- recording: a short CLI + web UI walkthrough (hz, then the app) goes here once it is recorded -->
+[Video](docs/assets/demo.mp4) · [Still](docs/assets/demo.png)
 
 **What you can do today:**
 

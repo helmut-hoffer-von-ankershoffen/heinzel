@@ -22,6 +22,10 @@ on:
       - docs/assets/demo.tape
   workflow_call:
     inputs:
+      site_only:
+        description: Publish existing pages without re-recording, including when the caller was a push
+        type: boolean
+        default: false
       record:
         description: Re-record every scene and open a pull request with the changed media
         type: boolean
@@ -45,7 +49,8 @@ concurrency:
 jobs:
   record:
     name: Record the scenes
-    if: github.event_name == 'push' || inputs.record == true
+    # Reusable workflows inherit the caller's event: a release push is explicitly site-only.
+    if: inputs.site_only != true && (github.event_name == 'push' || inputs.record == true)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:

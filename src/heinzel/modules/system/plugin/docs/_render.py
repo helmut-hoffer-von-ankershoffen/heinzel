@@ -101,16 +101,17 @@ def _recordings(scenes: list[Scene], recordings: list[Recording]) -> list[str]:
         lines += [f"### {scene.title}", ""]
         if recording and recording.animation:
             alt = escape(f"{scene.title}: " + _alt(scene), quote=True)
+            lines.append("<picture>")
+            if recording.still_dark:
+                lines.append(
+                    f'  <source srcset="{recording.still_dark}" media="(prefers-reduced-motion: reduce) and '
+                    '(prefers-color-scheme: dark)" />'
+                )
             if recording.still:
-                lines += [
-                    "<picture>",
-                    f'  <source srcset="{recording.still}" media="(prefers-reduced-motion: reduce)" />',
-                    f'  <img src="{recording.animation}" alt="{alt}" width="100%" />',
-                    "</picture>",
-                    "",
-                ]
-            else:
-                lines += [f'<img src="{recording.animation}" alt="{alt}" width="100%" />', ""]
+                lines.append(f'  <source srcset="{recording.still}" media="(prefers-reduced-motion: reduce)" />')
+            if recording.animation_dark:
+                lines.append(f'  <source srcset="{recording.animation_dark}" media="(prefers-color-scheme: dark)" />')
+            lines += [f'  <img src="{recording.animation}" alt="{alt}" width="100%" />', "</picture>", ""]
             if recording.video:
                 lines += [
                     f"[Video]({recording.video})" + (f" · [Still]({recording.still})" if recording.still else ""),

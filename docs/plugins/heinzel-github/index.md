@@ -7,7 +7,7 @@ Read pull requests and issues from GitHub: the code-host and tracker capabilitie
 | | |
 | --- | --- |
 | Kind | **connector** |
-| Version | `0.7.2` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.5` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-github> |
 | Licence | MIT |
 | Install | `hz system plugin add github --confirm` |
@@ -19,13 +19,31 @@ Read pull requests and issues from GitHub: the code-host and tracker capabilitie
 
 ### github in the terminal
 
-*Not recorded yet: `make docs-record` renders this scene* (derived from the operations; a `docs/scenes.toml` replaces it).
+<picture>
+  <source srcset="assets/cli.png" media="(prefers-reduced-motion: reduce)" />
+  <img src="assets/cli.gif" alt="github in the terminal: a terminal running `hz github --help`" width="100%" />
+</picture>
+
+[Video](assets/cli.mp4) · [Still](assets/cli.png)
 
 <details>
 <summary>What it shows</summary>
 
-```bash
-hz github --help
+```console
+$ hz github --help
+
+ Usage: hz github [OPTIONS] COMMAND [ARGS]...
+
+ Read pull requests and issues from GitHub: the code-host and tracker capabilities.
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help  -h        Show this message and exit.                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ info  Show this plugin's version, the Heinzelmännchen it runs on and the GitHub host it reads.   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ v0.7.5                                                                  🐻 built with AI in Berlin
 ```
 
 </details>

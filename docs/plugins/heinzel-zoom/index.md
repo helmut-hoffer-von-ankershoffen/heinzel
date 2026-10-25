@@ -7,7 +7,7 @@ Read meetings from Zoom's meeting-summary emails: the meetings capability.
 | | |
 | --- | --- |
 | Kind | **connector** |
-| Version | `0.7.2` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.5` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-zoom> |
 | Licence | MIT |
 | Install | `hz system plugin add zoom --confirm` |
@@ -19,13 +19,32 @@ Read meetings from Zoom's meeting-summary emails: the meetings capability.
 
 ### zoom in the terminal
 
-*Not recorded yet: `make docs-record` renders this scene* (derived from the operations; a `docs/scenes.toml` replaces it).
+<picture>
+  <source srcset="assets/cli.png" media="(prefers-reduced-motion: reduce)" />
+  <img src="assets/cli.gif" alt="zoom in the terminal: a terminal running `hz zoom --help`" width="100%" />
+</picture>
+
+[Video](assets/cli.mp4) · [Still](assets/cli.png)
 
 <details>
 <summary>What it shows</summary>
 
-```bash
-hz zoom --help
+```console
+$ hz zoom --help
+
+ Usage: hz zoom [OPTIONS] COMMAND [ARGS]...
+
+ Read meetings from Zoom's meeting-summary emails: the meetings capability.
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help  -h        Show this message and exit.                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ info  Show this plugin's version, the Heinzelmännchen it runs on and where its meetings come     │
+│       from.                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ v0.7.5                                                                  🐻 built with AI in Berlin
 ```
 
 </details>

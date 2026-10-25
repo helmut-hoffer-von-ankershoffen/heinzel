@@ -39,6 +39,7 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "unzip -l ": "asserts that the released wheel ships Heinzel Notifier",
     },
     "prepare-release.yml": {
+        'if [[ ! "$INTRO"': "rejects blank dispatch input before checkout or release work",
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",
         "gh workflow run ci.yml": "starts CI on the release pull request, which the bot's token doesn't",
         "gh pr merge": "enables squash auto-merge on the release pull request once CI OK is green",
@@ -99,6 +100,16 @@ def test_every_not_make_exemption_is_used():
         if not any(run.startswith(start) for run in runs.get(name, []))
     ]
     assert stale == [], "remove stale NOT_MAKE entries"
+
+
+def test_release_docs_only_publish_existing_recordings_even_when_the_caller_was_a_push():
+    release = yaml.safe_load((REPO / ".github/workflows/release-tag.yml").read_text(encoding="utf-8"))
+    docs = yaml.safe_load((REPO / ".github/workflows/docs.yml").read_text(encoding="utf-8"))
+    assert release["jobs"]["docs"].get("with", {}).get("site_only") is True
+    assert docs[True]["workflow_call"]["inputs"]["site_only"]["default"] is False
+    assert docs["jobs"]["record"]["if"] == (
+        "inputs.site_only != true && (github.event_name == 'push' || inputs.record == true)"
+    )
 
 
 # A script named by path needs its executable bit, which copier drops when it follows the template's symlinks into a

@@ -363,6 +363,19 @@ def test_recordings_beside_the_page_are_embedded(kernel, tmp_path):
     assert "$ hz weather today\nSunny" in text  # the transcript, not the command list
 
 
+def test_dark_recordings_keep_reduced_motion_sources_ahead_of_animations(kernel, tmp_path):
+    assets = tmp_path / "heinzel-weather" / "assets"
+    assets.mkdir(parents=True)
+    for name in ("cli.gif", "cli.png", "cli-dark.gif", "cli-dark.png"):
+        (assets / name).write_bytes(b"recording")
+    docs = kernel.resolve(DocsService).documentation(plugin="weather", assets=tmp_path)
+    text = _render.page(docs.pages[0])
+    dark_still = '<source srcset="assets/cli-dark.png" media="(prefers-reduced-motion: reduce) and '
+    light_still = '<source srcset="assets/cli.png" media="(prefers-reduced-motion: reduce)"'
+    dark_animation = '<source srcset="assets/cli-dark.gif" media="(prefers-color-scheme: dark)"'
+    assert text.index(dark_still) < text.index(light_still) < text.index(dark_animation)
+
+
 @pytest.mark.parametrize("link", ["symlink", "hardlink"])
 def test_recording_inputs_cannot_copy_linked_private_files_into_a_generated_page(kernel, tmp_path, link):
     assets = tmp_path / "heinzel-weather" / "assets"

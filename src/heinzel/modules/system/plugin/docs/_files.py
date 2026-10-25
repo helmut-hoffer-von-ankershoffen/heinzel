@@ -3,7 +3,7 @@
 import fcntl
 import os
 import stat
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
@@ -15,7 +15,7 @@ MAX_RECORDING_BYTES = 500 * 1024
 
 
 @contextmanager
-def _parent(path: Path, *, create: bool) -> Iterator[int | None]:
+def _parent(path: Path, *, create: bool) -> Generator[int | None]:
     absolute = path.absolute()
     descriptor = os.open(absolute.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:

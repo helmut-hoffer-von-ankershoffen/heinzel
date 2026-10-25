@@ -7,7 +7,7 @@ Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail
 | | |
 | --- | --- |
 | Kind | **connector**, **capability** |
-| Version | `0.7.2` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.5` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-google> |
 | Licence | MIT |
 | Install | `hz system plugin add google --confirm` |
@@ -20,15 +20,43 @@ Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail
 
 ### google in the terminal
 
-*Not recorded yet: `make docs-record` renders this scene* (derived from the operations; a `docs/scenes.toml` replaces it).
+<picture>
+  <source srcset="assets/cli.png" media="(prefers-reduced-motion: reduce)" />
+  <img src="assets/cli.gif" alt="google in the terminal: a terminal running `hz google --help`, `hz google files`, `hz google files --json`" width="100%" />
+</picture>
+
+[Video](assets/cli.mp4) · [Still](assets/cli.png)
 
 <details>
 <summary>What it shows</summary>
 
-```bash
-hz google --help
-hz google files
-hz google files --json
+```console
+$ hz google --help
+
+ Usage: hz google [OPTIONS] COMMAND [ARGS]...
+
+ Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help  -h        Show this message and exit.                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ files  List the Google Docs and Sheets you can open that changed recently, newest first.         │
+│ info   Show this plugin's version, the Heinzelmännchen it runs on and the gws, scopes and APIs   │
+│        it uses.                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ v0.7.5                                                                  🐻 built with AI in Berlin
+```
+
+```console
+$ hz google files
+Error: gws is not signed in to Google, or its sign-in expired (Access denied. No credentials provided. Run `gws auth login` or set GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE to an OAuth credentials JSON file.). Sign in: gws auth login --scopes https://www.googleapis.com/auth/documents.readonly,https://www.googleapis.com/auth/spreadsheets.readonly,https://www.googleapis.com/auth/drive.metadata.readonly,https://www.googleapis.com/auth/calendar.readonly (add ,https://www.googleapis.com/auth/gmail.readonly if you read mail from Google)
+```
+
+```console
+$ hz google files --json
+Error: gws is not signed in to Google, or its sign-in expired (Access denied. No credentials provided. Run `gws auth login` or set GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE to an OAuth credentials JSON file.). Sign in: gws auth login --scopes https://www.googleapis.com/auth/documents.readonly,https://www.googleapis.com/auth/spreadsheets.readonly,https://www.googleapis.com/auth/drive.metadata.readonly,https://www.googleapis.com/auth/calendar.readonly (add ,https://www.googleapis.com/auth/gmail.readonly if you read mail from Google)
 ```
 
 </details>

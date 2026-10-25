@@ -13,7 +13,7 @@ $ hz clock --help
 │ --help    -h                   Show this message and exit.                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 
- 🧝 Heinzelmännchen hz 0.4.0 · open-source helpers that keep product teams running
+ v0.7.5                                                                  🐻 built with AI in Berlin
 ```
 
 ```console
@@ -21,9 +21,9 @@ $ hz clock
 ┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━┓
 ┃ Zone                  ┃ Time      ┃ Working hours ┃ Working ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━┩
-│ Europe/Berlin (yours) │ Sun 00:58 │ 09-18         │ no      │
-│ America/New_York      │ Sat 18:58 │ 09-18         │ no      │
-│ America/Los_Angeles   │ Sat 15:58 │ 09-18         │ no      │
+│ Europe/Berlin (yours) │ Sun 18:06 │ 09-18         │ no      │
+│ America/New_York      │ Sun 13:06 │ 09-18         │ no      │
+│ America/Los_Angeles   │ Sun 10:06 │ 09-18         │ no      │
 └───────────────────────┴───────────┴───────────────┴─────────┘
 ```
 
@@ -32,7 +32,7 @@ $ hz clock --json
 [
   {
     "zone": "Europe/Berlin",
-    "time": "Sun 00:58",
+    "time": "Sun 18:06",
     "hours": [
       9,
       18
@@ -42,7 +42,7 @@ $ hz clock --json
   },
   {
     "zone": "America/New_York",
-    "time": "Sat 18:58",
+    "time": "Sun 13:06",
     "hours": [
       9,
       18
@@ -52,7 +52,7 @@ $ hz clock --json
   },
   {
     "zone": "America/Los_Angeles",
-    "time": "Sat 15:58",
+    "time": "Sun 10:06",
     "hours": [
       9,
       18

@@ -65,6 +65,8 @@ jobs:
     needs: [tag, publish]
     if: needs.tag.outputs.tag != ''
     uses: ./.github/workflows/docs.yml
+    with:
+      site_only: true
     secrets:
       CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
     permissions:

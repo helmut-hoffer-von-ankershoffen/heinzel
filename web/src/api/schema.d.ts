@@ -2579,6 +2579,8 @@ export interface components {
              */
             accessories?: ("umbrella" | "sunglasses" | "scarf")[];
         };
+        /** @enum {string} */
+        AvatarSlot: "hat-young" | "hat-grown" | "hat-old" | "outfit-baby" | "outfit-young" | "outfit-grown" | "outfit-old";
         /**
          * BackendBinding
          * @description The effective choice pinned to a turn; changing it takes effect between turns.
@@ -8824,6 +8826,13 @@ export interface components {
          */
         ThemeHeinzel: {
             /**
+             * Assets
+             * @description Optional original SVG hat/outfit layers per age, relative to the theme file (ADR 0073).
+             */
+            assets?: {
+                [key: string]: string;
+            };
+            /**
              * Decorations
              * @description Optional decoration of every core avatar; snow adds a cap patch and scarf.
              * @default []
@@ -9137,6 +9146,13 @@ export interface components {
             heading_weight: number;
             /** @description Core avatar colours and decorations. */
             heinzel?: components["schemas"]["ThemeHeinzel"] | null;
+            /**
+             * Heinzel Assets
+             * @description Available checked avatar layers as versioned same-origin URLs.
+             */
+            heinzel_assets?: {
+                [key: string]: string;
+            };
             /**
              * Icon Size
              * @description The size of icons (`--icon-size`), e.g. `18px`.
@@ -9773,6 +9789,7 @@ export type SchemaAssetView = components['schemas']['AssetView'];
 export type SchemaAttachmentRef = components['schemas']['AttachmentRef'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
 export type SchemaAvatar = components['schemas']['Avatar'];
+export type SchemaAvatarSlot = components['schemas']['AvatarSlot'];
 export type SchemaBackendBinding = components['schemas']['BackendBinding'];
 export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];

@@ -7,7 +7,7 @@ Read Jira issues and Confluence pages through acli: the tracker and documents ca
 | | |
 | --- | --- |
 | Kind | **connector** |
-| Version | `0.7.2` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.5` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-atlassian> |
 | Licence | MIT |
 | Install | `hz system plugin add atlassian --confirm` |
@@ -19,13 +19,31 @@ Read Jira issues and Confluence pages through acli: the tracker and documents ca
 
 ### atlassian in the terminal
 
-*Not recorded yet: `make docs-record` renders this scene* (derived from the operations; a `docs/scenes.toml` replaces it).
+<picture>
+  <source srcset="assets/cli.png" media="(prefers-reduced-motion: reduce)" />
+  <img src="assets/cli.gif" alt="atlassian in the terminal: a terminal running `hz atlassian --help`" width="100%" />
+</picture>
+
+[Video](assets/cli.mp4) · [Still](assets/cli.png)
 
 <details>
 <summary>What it shows</summary>
 
-```bash
-hz atlassian --help
+```console
+$ hz atlassian --help
+
+ Usage: hz atlassian [OPTIONS] COMMAND [ARGS]...
+
+ Read Jira issues and Confluence pages through acli: the tracker and documents capabilities.
+
+╭─ Options ────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help  -h        Show this message and exit.                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ───────────────────────────────────────────────────────────────────────────────────────╮
+│ info  Show this plugin's version, the Atlassian site and the acli commands it runs.              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ v0.7.5                                                                  🐻 built with AI in Berlin
 ```
 
 </details>
