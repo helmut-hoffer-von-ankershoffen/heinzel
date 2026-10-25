@@ -167,11 +167,14 @@ class PydanticAiAccess:
                 ok=False, detail=clean_text(text)[:DETAIL_LIMIT], duration_seconds=time.monotonic() - started
             )
         answer = clean_text(str(result.output)).strip()
+        used = result.usage
         return AccessTest(
             ok=bool(answer),
             detail=answer[:DETAIL_LIMIT] or "the model returned nothing",
             model=model,
             duration_seconds=time.monotonic() - started,
+            input_tokens=used.input_tokens,
+            output_tokens=used.output_tokens,
         )
 
 
