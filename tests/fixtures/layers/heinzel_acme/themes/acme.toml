@@ -58,3 +58,18 @@ ring = "#2dd4bf"
 sidebar = "#241e1a"
 input = "#38322d"
 popover = "#1d1713"
+
+# Variants (ADR 0060): the look follows the time of day and the weather; the one naming most signals wins.
+[[variant]]
+when = { daypart = ["evening", "night"] }
+light = { main_tint = "#eef0f7", backdrop = { gradient = "linear", angle = 180, stops = ["main_tint", "background"], opacity = 0.6 } }
+dark = { background = "#0e1022", main_tint = "#171a3a" }
+
+[[variant]]
+when = { weather = ["rain", "drizzle"] }
+light = { main_tint = "#e8ecef", backdrop = { gradient = "linear", stops = ["#cfd8dc", "background"], opacity = 0.5 } }
+dark = { main_tint = "#1c2328" }
+
+[[variant]]
+when = { daypart = "night", weather = "rain" }
+dark = { background = "#0b0f14", main_tint = "#1a2129", backdrop = { gradient = "radial", stops = ["#26313b", "background"], opacity = 0.5 } }

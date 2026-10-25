@@ -5942,6 +5942,53 @@
         "title": "Tested",
         "type": "object"
       },
+      "ThemeBackdrop": {
+        "additionalProperties": false,
+        "description": "A gradient behind the main area (`[light.backdrop]`), of hex colours and the theme's own colour tokens.\n\nThe web app builds the CSS from these typed parts: a kind, an angle in degrees and two to four stops, each a hex\ncolour or a token name it turns into `var(--color-<token>)`; no other text reaches CSS, and no `url()` exists.",
+        "properties": {
+          "angle": {
+            "default": 180,
+            "description": "The direction of a linear gradient in degrees, e.g. `180`.",
+            "maximum": 360.0,
+            "minimum": 0.0,
+            "title": "Angle",
+            "type": "integer"
+          },
+          "gradient": {
+            "description": "`linear` (along `angle`) or `radial` (from the centre).",
+            "enum": [
+              "linear",
+              "radial"
+            ],
+            "title": "Gradient",
+            "type": "string"
+          },
+          "opacity": {
+            "default": 0.6,
+            "description": "How strongly it shows over `background`, 0 to 0.9, e.g. `0.6`.",
+            "maximum": 0.9,
+            "minimum": 0.0,
+            "title": "Opacity",
+            "type": "number"
+          },
+          "stops": {
+            "description": "Two to four colours: hex, e.g. `#fde68a`, or a token of the theme, e.g. `primary`.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 2,
+            "title": "Stops",
+            "type": "array"
+          }
+        },
+        "required": [
+          "gradient",
+          "stops"
+        ],
+        "title": "ThemeBackdrop",
+        "type": "object"
+      },
       "ThemeColours": {
         "additionalProperties": false,
         "description": "The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes).",
@@ -5957,6 +6004,17 @@
             "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
             "title": "Accent Foreground",
             "type": "string"
+          },
+          "backdrop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeBackdrop"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A gradient behind the main area only; sidebar and cards stay solid."
           },
           "background": {
             "description": "A hex colour, `#rgb` or `#rrggbb`.",
@@ -6223,6 +6281,425 @@
         "title": "ThemeLogoView",
         "type": "object"
       },
+      "ThemeOverrides": {
+        "additionalProperties": false,
+        "description": "What a variant changes in one mode: any colour token, the main tint and the backdrop; the rest stays.",
+        "properties": {
+          "accent": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Accent"
+          },
+          "accent_foreground": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Accent Foreground"
+          },
+          "backdrop": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeBackdrop"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A backdrop that replaces the base's."
+          },
+          "background": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Background"
+          },
+          "bad": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Bad"
+          },
+          "border": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Border"
+          },
+          "card": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Card"
+          },
+          "foreground": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Foreground"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Icon"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Input"
+          },
+          "main_tint": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Main Tint"
+          },
+          "muted": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Muted"
+          },
+          "muted_foreground": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Muted Foreground"
+          },
+          "ok": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Ok"
+          },
+          "popover": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Popover"
+          },
+          "primary": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Primary"
+          },
+          "primary_foreground": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Primary Foreground"
+          },
+          "ring": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Ring"
+          },
+          "sidebar": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Sidebar"
+          },
+          "warn": {
+            "anyOf": [
+              {
+                "description": "A hex colour, `#rgb` or `#rrggbb`.",
+                "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A hex colour replacing the base's; unset keeps it.",
+            "title": "Warn"
+          }
+        },
+        "title": "ThemeOverrides",
+        "type": "object"
+      },
+      "ThemeSignalsView": {
+        "description": "The signals now, which pick a theme's variant (ADR 0060).",
+        "properties": {
+          "daypart": {
+            "description": "The time of day in your time zone, e.g. `evening`.",
+            "enum": [
+              "dawn",
+              "morning",
+              "day",
+              "dusk",
+              "evening",
+              "night"
+            ],
+            "title": "Daypart",
+            "type": "string"
+          },
+          "refresh": {
+            "description": "How often to ask again, in seconds.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "sources": {
+            "description": "The modules whose signals are known now.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "sunrise": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Today's sunrise, when a module knows it.",
+            "title": "Sunrise"
+          },
+          "sunset": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Today's sunset, when a module knows it.",
+            "title": "Sunset"
+          },
+          "timezone": {
+            "description": "The time zone the daypart is in, `[org] timezone` or this machine's.",
+            "title": "Timezone",
+            "type": "string"
+          },
+          "weather": {
+            "anyOf": [
+              {
+                "enum": [
+                  "clear",
+                  "clouds",
+                  "rain",
+                  "drizzle",
+                  "thunder",
+                  "snow",
+                  "fog",
+                  "wind",
+                  "heat",
+                  "cold"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The weather now, e.g. `rain`; none when no module publishes it.",
+            "title": "Weather"
+          }
+        },
+        "required": [
+          "daypart",
+          "weather",
+          "sunrise",
+          "sunset",
+          "timezone",
+          "sources",
+          "refresh"
+        ],
+        "title": "ThemeSignalsView",
+        "type": "object"
+      },
+      "ThemeVariant": {
+        "additionalProperties": false,
+        "description": "A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0060).",
+        "properties": {
+          "dark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeOverrides"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What changes in dark mode."
+          },
+          "light": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeOverrides"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What changes in light mode."
+          },
+          "when": {
+            "$ref": "#/components/schemas/ThemeWhen",
+            "description": "The signals it follows, e.g. `{ daypart = \"night\" }`."
+          }
+        },
+        "required": [
+          "when"
+        ],
+        "title": "ThemeVariant",
+        "type": "object"
+      },
       "ThemeView": {
         "description": "One available theme with every token value, ready to become the web app's CSS custom properties.",
         "properties": {
@@ -6359,6 +6836,14 @@
             "description": "What people pick it by, e.g. `Acme`.",
             "title": "Title",
             "type": "string"
+          },
+          "variant": {
+            "description": "Colours that apply when the signals match (ADR 0060); the one naming most signals wins.",
+            "items": {
+              "$ref": "#/components/schemas/ThemeVariant"
+            },
+            "title": "Variant",
+            "type": "array"
           }
         },
         "required": [
@@ -6383,6 +6868,54 @@
           "spacing"
         ],
         "title": "ThemeView",
+        "type": "object"
+      },
+      "ThemeWhen": {
+        "additionalProperties": false,
+        "description": "When a variant applies, e.g. `when = { daypart = \"night\", weather = [\"rain\", \"drizzle\"] }`.\n\nEvery signal it names has one of its values. Signals are a closed vocabulary (ADR 0060), so a misspelt one is\nrefused at import.",
+        "properties": {
+          "daypart": {
+            "default": [],
+            "description": "Any of these dayparts, e.g. `night`.",
+            "items": {
+              "enum": [
+                "dawn",
+                "morning",
+                "day",
+                "dusk",
+                "evening",
+                "night"
+              ],
+              "type": "string"
+            },
+            "maxItems": 6,
+            "title": "Daypart",
+            "type": "array"
+          },
+          "weather": {
+            "default": [],
+            "description": "Any of these, e.g. `rain`.",
+            "items": {
+              "enum": [
+                "clear",
+                "clouds",
+                "rain",
+                "drizzle",
+                "thunder",
+                "snow",
+                "fog",
+                "wind",
+                "heat",
+                "cold"
+              ],
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Weather",
+            "type": "array"
+          }
+        },
+        "title": "ThemeWhen",
         "type": "object"
       },
       "Toggled": {
@@ -8911,6 +9444,28 @@
           }
         },
         "summary": "List the themes of the web app, with every colour, font and size, and which one is in effect.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/theme/signals": {
+      "get": {
+        "description": "Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.",
+        "operationId": "system_theme_signals",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThemeSignalsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show the signals themes follow now: the time of day, and the weather when a plugin publishes it.",
         "tags": [
           "system"
         ]
