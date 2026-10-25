@@ -5,6 +5,7 @@ pinned to the commit or release it read) and installs only with `confirm`; every
 `<data_dir>/plugins.jsonl` (ADR 0047).
 """
 
+import base64
 import contextlib
 import json
 import shlex
@@ -12,7 +13,7 @@ import subprocess
 import threading
 import tomllib
 import urllib.error
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Collection, Generator, Mapping, Sequence
 from datetime import UTC, datetime
 from importlib.metadata import Distribution, entry_points
 from pathlib import Path
@@ -97,6 +98,8 @@ REFERENCE: Mapping[str, tuple[str, str]] = MappingProxyType(
 """First-party plugins in repositories of their own, by name: their descriptions and repositories."""
 TOPIC = "heinzel-plugin"
 GITHUB_SEARCH = "https://api.github.com/search/repositories"
+GITHUB_REPOS = "https://api.github.com/repos"
+MANIFEST = "heinzel-plugins.toml"
 TIMEOUT = 10
 """Seconds to wait for GitHub before searching without it."""
 HISTORY = "plugins.jsonl"
@@ -530,20 +533,10 @@ class PluginService:
             repositories = []
         known = {plugin.name for plugin in found}
         community = [
-            AvailablePlugin(
-                name=repository["name"],
-                short_name=repository["name"].removeprefix("heinzel-"),
-                description=repository.get("description") or "",
-                source="github",
-                community=True,
-                install_spec=f"git+{repository['html_url']}",
-                url=repository["html_url"],
-                repository_url=repository_url(f"git+{repository['html_url']}"),
-                stars=repository.get("stargazers_count") or 0,
-                installed=canonicalize_name(repository["name"]) in installed,
-            )
+            plugin
             for repository in repositories
             if canonicalize_name(repository["name"]) not in known and not repository.get("archived")
+            for plugin in self._community_plugins(repository, installed)
         ]
         community.sort(key=lambda plugin: (-(plugin.stars or 0), plugin.name))
         return PluginSearch(plugins=[*found, *community], warnings=warnings)
@@ -564,6 +557,85 @@ class PluginService:
             raise TypeError(msg)
         # Free-form JSON: repositories are dicts; their fields are read defensively in search().
         return [cast("dict[str, Any]", item) for item in cast("list[object]", items) if isinstance(item, dict)]
+
+    def _community_plugins(self, repository: dict[str, Any], installed: Collection[str]) -> list[AvailablePlugin]:
+        """The plugins of one repository with the topic: one per entry of a monorepo, else the repository itself."""
+        url = repository["html_url"]
+        stars = repository.get("stargazers_count") or 0
+        entries = self._monorepo_plugins(repository)
+        if not entries:
+            return [
+                AvailablePlugin(
+                    name=repository["name"],
+                    short_name=repository["name"].removeprefix("heinzel-"),
+                    description=repository.get("description") or "",
+                    source="github",
+                    community=True,
+                    install_spec=f"git+{url}",
+                    url=url,
+                    repository_url=repository_url(f"git+{url}"),
+                    stars=stars,
+                    installed=canonicalize_name(repository["name"]) in installed,
+                )
+            ]
+        branch = repository.get("default_branch") or "HEAD"
+        return [
+            AvailablePlugin(
+                name=name,
+                short_name=name.removeprefix("heinzel-"),
+                description=summary,
+                source="github",
+                community=True,
+                install_spec=f"{name} @ git+{url}#subdirectory={path}",
+                url=f"{url}/tree/{branch}/{path}",
+                repository_url=repository_url(f"git+{url}"),
+                stars=stars,
+                installed=canonicalize_name(name) in installed,
+            )
+            for name, path, summary in entries
+        ]
+
+    def _monorepo_plugins(self, repository: dict[str, Any]) -> list[tuple[str, str, str]]:
+        """(distribution, path, summary) of each plugin a repository declares; empty for a single-plugin repository.
+
+        A repository declares its plugins in `heinzel-plugins.toml` (`[[plugin]]` with `name`, `path`, `summary`) or,
+        failing that, by `plugins/*/pyproject.toml` files whose distribution name starts with `heinzel-`. Anything
+        GitHub answers that does not fit means: a single-plugin repository.
+        """
+        full_name = repository.get("full_name")
+        if not full_name:
+            return []
+        api = f"{GITHUB_REPOS}/{full_name}/contents"
+        manifest = self._file(f"{api}/{MANIFEST}")
+        if manifest is not None:
+            return _declared(manifest)
+        try:
+            listing = get_json(f"{api}/plugins", self._settings.github_token, TIMEOUT)
+        except (OSError, ValueError):
+            return []
+        found: list[tuple[str, str, str]] = []
+        for item in sorted(_dicts(listing), key=lambda i: str(i.get("name"))):
+            if item.get("type") != "dir":
+                continue
+            path = f"plugins/{item.get('name')}"
+            text = self._file(f"{api}/{path}/pyproject.toml")
+            project = _table(_toml(text), "project") if text is not None else {}
+            dist = project.get("name")
+            if isinstance(dist, str) and dist.startswith("heinzel-"):
+                found.append((dist, path, str(project.get("description") or "")))
+        return found
+
+    def _file(self, url: str) -> str | None:
+        """The text of a file from GitHub's contents API; None if it is not there or not readable."""
+        try:
+            answer: object = get_json(url, self._settings.github_token, TIMEOUT)
+            if isinstance(answer, dict):
+                fields = cast("dict[str, object]", answer)
+                if fields.get("encoding") == "base64":
+                    return base64.b64decode(str(fields["content"])).decode()
+        except (OSError, ValueError, KeyError):
+            return None
+        return None
 
     # Helpers.
 
@@ -723,6 +795,41 @@ class PluginService:
             PluginInfo.model_validate(item)
             for item in json.loads(self._installation.hz("system", "plugin", "list", "--json"))
         ]
+
+
+def _dicts(value: object) -> list[dict[str, object]]:
+    """The objects in a free-form JSON or TOML list; anything else yields none."""
+    if not isinstance(value, list):
+        return []
+    return [cast("dict[str, object]", item) for item in cast("list[object]", value) if isinstance(item, dict)]
+
+
+def _toml(text: str | None) -> dict[str, object]:
+    """A TOML document as a table; empty if it is absent or invalid."""
+    if text is None:
+        return {}
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return {}
+
+
+def _table(document: dict[str, object], key: str) -> dict[str, object]:
+    """The table under `key`; empty if there is none."""
+    value = document.get(key)
+    return cast("dict[str, object]", value) if isinstance(value, dict) else {}
+
+
+def _declared(manifest: str) -> list[tuple[str, str, str]]:
+    """(distribution, path, summary) of each `[[plugin]]` of a manifest; nameless ones are skipped."""
+    plugins: list[tuple[str, str, str]] = []
+    for entry in _dicts(_toml(manifest).get("plugin")):
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            continue
+        name = name if name.startswith("heinzel-") else f"heinzel-{name}"
+        plugins.append((name, str(entry.get("path") or f"plugins/{name}"), str(entry.get("summary") or "")))
+    return plugins
 
 
 def _same(a: str, b: str) -> bool:
