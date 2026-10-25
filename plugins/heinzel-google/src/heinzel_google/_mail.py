@@ -6,8 +6,14 @@ sender (`from:`) and the label (by id, `labelIds`, exact), reads each one's meta
 here only: Gmail's `subject:` matches whole words, the protocol any part of the subject. `read` reads one message in
 full and takes its text part, or its HTML part turned into text, in the part's own charset; attachments are left out.
 Senders and recipients become `Participant`s, parsed from the raw headers so that an encoded display name can't pose
-as an address; the workflow packet builder drops their addresses before anything reaches an agent's prompt. Nothing
-sends, files or deletes mail.
+as an address; the workflow packet builder drops their addresses before anything reaches an agent's prompt.
+
+`thread` reads a conversation (`users threads get`, format `full`), its messages as `read` reads one. Writes need
+`gmail.modify` (ADR 0042): `create_draft` builds the message with Python's `email` package (one-line headers only, so
+nothing can add a header) and keeps it with `users drafts create`, a reply in its conversation with `In-Reply-To` and
+`References`; `send_draft` sends a draft unless it changed since it was shown (`users drafts send`); `relabel`
+files a conversation (`users threads modify`) under labels that exist, never into Spam or Trash; the portable
+`inbox` and `unread` are Gmail's `INBOX` and `UNREAD`. Nothing deletes mail.
 """
 
 import base64
@@ -17,18 +23,45 @@ import re
 import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from email import policy
 from email.header import decode_header, make_header
-from email.message import Message
+from email.message import EmailMessage, Message
 from email.utils import getaddresses
 from html import unescape
 from typing import Any, cast
 
-from heinzel import HeinzelError, MailContent, MailMessage, MailQuery, Participant, Window, clean_text
+from heinzel import (
+    DraftedMail,
+    HeinzelError,
+    MailContent,
+    MailDraft,
+    MailLabels,
+    MailMessage,
+    MailQuery,
+    MailThread,
+    Participant,
+    SentMail,
+    Window,
+    clean_text,
+    plain_addresses,
+)
 from heinzel_google._gws import GoogleSession
 
 LIST = ("gmail", "users", "messages", "list")
 GET = ("gmail", "users", "messages", "get")
 LABELS = ("gmail", "users", "labels", "list")
+THREAD = ("gmail", "users", "threads", "get")
+MODIFY = ("gmail", "users", "threads", "modify")
+DRAFT = ("gmail", "users", "drafts", "get")
+CREATE = ("gmail", "users", "drafts", "create")
+SEND = ("gmail", "users", "drafts", "send")
+PROFILE = ("gmail", "users", "getProfile")
+MAX_ATTENDEES = 100
+"""Most people a reply computed from the message goes to, `to` and `cc` together; the core's limit for drafts."""
+MAX_THREAD = 100
+"""Messages of one conversation read at once; a longer one is refused."""
+FILED = frozenset({"INBOX", "UNREAD", "STARRED", "IMPORTANT"})
+"""The system labels `relabel` may add or remove; user labels too. Not SPAM, TRASH, DRAFT, SENT or CHAT."""
 MAX_MESSAGES = 200
 """Messages read for one window, one `gws` run each; more asks for a narrower window or query."""
 MAX_TEXT = 2_000_000
@@ -263,13 +296,71 @@ def _label_id(label: str, names: dict[str, str]) -> str | None:
     return next((i for i, name in names.items() if name.casefold() == label.casefold()), None)
 
 
+_REPLY_HEADERS = ("From", "To", "Cc", "Subject", "Reply-To", "Message-ID", "References")
+_MESSAGE_ID = re.compile(r"^<[\x21-\x3b\x3d\x3f-\x7e]{1,250}>$")
+"""A `Message-ID` as RFC 5322 writes it: `<...>`, printable ASCII, no spaces or angle brackets inside."""
+
+
+def _check_id(value: str, what: str) -> None:
+    if not _ID.fullmatch(value):
+        msg = f"{clean_text(value)[:100]!r} is not a Gmail {what} id."
+        raise HeinzelError(msg)
+
+
+def _re(subject: str) -> str:
+    """The subject of a reply: `Re: <subject>`, without stacking a second `Re:`."""
+    return subject if subject[:3].casefold() == "re:" else f"Re: {subject}".strip()
+
+
+def _is_system(label_id: str) -> bool:
+    """Whether `label_id` is one of Gmail's own labels (`INBOX`, `SPAM`, `CATEGORY_SOCIAL`), not the user's."""
+    return (label_id.isupper() and "_" not in label_id) or label_id.startswith("CATEGORY_")
+
+
+def _label_ids(labels: list[str], names: dict[str, str]) -> list[str]:
+    """The ids of labels named `labels`, ignoring case.
+
+    Raises:
+        HeinzelError: For a label that doesn't exist, or a system label `relabel` may not set.
+    """
+    found: list[str] = []
+    for label in labels:
+        wanted = label.strip()
+        if not wanted:
+            continue
+        # Your own label first: one named like a system label (a label "Spam") is yours to set.
+        matches = sorted((i for i, name in names.items() if name.casefold() == wanted.casefold()), key=_is_system)
+        label_id = matches[0] if matches else None
+        if label_id is None:
+            msg = f"Gmail has no label {clean_text(wanted)[:100]!r}; create it in Gmail first."
+            raise HeinzelError(msg)
+        if _is_system(label_id) and label_id not in FILED:
+            msg = f"{label_id} can't be set or removed here; only {', '.join(sorted(FILED))} and your own labels."
+            raise HeinzelError(msg)
+        if label_id not in found:
+            found.append(label_id)
+    return found
+
+
+def _plain(addresses: list[str]) -> list[str]:
+    """The plain addresses among `addresses` (`plain_addresses`), each once; what isn't one is left out."""
+    found: list[str] = []
+    for address in addresses:
+        try:
+            found += plain_addresses([address])
+        except ValueError:
+            continue  # a header's oddity is nobody to write to
+    return list(dict.fromkeys(found))
+
+
 class Gmail:
-    """Reads the signed-in user's Gmail."""
+    """Reads the signed-in user's Gmail, keeps drafts, sends them and files conversations."""
 
     def __init__(self, session: GoogleSession) -> None:
         """Build the adapter; the kernel injects the session."""
         self._session = session
         self._names: dict[str, str] | None = None
+        self._address: str | None = None
 
     def messages(self, query: str, window: Window) -> list[MailMessage]:
         """Messages that match `query` (see `MailQuery`) and were received within `window`, oldest first.
@@ -337,13 +428,183 @@ class Gmail:
         headers = {k: v for k, v in _raw_headers(payload).items() if k not in _ADDRESSED}
         return MailContent(message=found, text=_text(payload), headers=_headers(headers))
 
-    def _get(self, message: str, format_: str) -> Json:
+    def thread(self, thread: str) -> MailThread:
+        """The conversation `thread` with every message's text, oldest first; messages in Spam or Trash left out.
+
+        Raises:
+            HeinzelError: If the id is malformed, the conversation is longer than `MAX_THREAD` messages or only in
+                Spam or Trash, a message is too large, or the sign-in fails.
+        """
+        _check_id(thread, "conversation")
+        data = self._session.get("Gmail", THREAD, {"userId": "me", "id": thread, "format": "full"}, f"thread {thread}")
+        items = _objects(data[0].get("messages"))
+        if len(items) > MAX_THREAD:
+            msg = f"The conversation has more than {MAX_THREAD} messages; open it in Gmail."
+            raise HeinzelError(msg)
+        names = self._labels()
+        contents = [c for c in (self._content(item, names) for item in items) if c is not None]
+        contents.sort(key=lambda c: (c.message.received_at, c.message.id))
+        if not contents:
+            msg = f"Gmail has no conversation {thread} outside Spam and Trash."
+            raise HeinzelError(msg)
+        return MailThread(id=thread, subject=contents[0].message.subject, messages=contents)
+
+    def draft(self, draft: str) -> DraftedMail:
+        """The draft `draft` as it stands in Gmail, possibly edited there since it was made.
+
+        Raises:
+            HeinzelError: If the id is malformed, there is no such draft, it is too large, or the sign-in fails.
+        """
+        _check_id(draft, "draft")
+        data = self._session.get("Gmail", DRAFT, {"userId": "me", "id": draft, "format": "full"}, f"draft {draft}")[0]
+        content = self._content(_object(data.get("message")), self._labels(), drafts=True)
+        if content is None:
+            msg = f"Gmail's answer for draft {draft} lacks its message."
+            raise HeinzelError(msg)
+        return DraftedMail(
+            id=draft, content=content, url=f"https://mail.google.com/mail/#drafts?compose={content.message.id}"
+        )
+
+    def create_draft(self, draft: MailDraft) -> DraftedMail:
+        """Keep `draft` as a Gmail draft, unsent; a reply joins the conversation of the message it answers.
+
+        Raises:
+            HeinzelError: If the message answered can't be read, the reply would go nowhere, the sign-in lacks
+                Gmail's modify scope (the message names the sign-in), or Google refuses.
+        """
+        email = EmailMessage(policy=policy.SMTP)
+        body: dict[str, object] = {}
+        to, cc, subject = list(draft.to), list(draft.cc), draft.subject
+        if draft.reply_to is not None:
+            original = self._get(draft.reply_to, "metadata", headers=_REPLY_HEADERS)
+            raw = _raw_headers(_object(original.get("payload")))
+            answered = self._message(original, self._labels())
+            if answered is None:
+                msg = f"Gmail's answer for message {draft.reply_to} lacks its id or time."
+                raise HeinzelError(msg)
+            if not to:
+                to, cc = self._recipients(raw, cc, everyone=draft.reply_all)
+            subject = subject or _re(answered.subject)
+            message_id = _line(_decoded((raw.get("message-id") or [""])[0]))
+            if _MESSAGE_ID.fullmatch(message_id):
+                email["In-Reply-To"] = message_id
+                references = _line(_decoded(" ".join(raw.get("references", []))))
+                kept = [r for r in references.split() if _MESSAGE_ID.fullmatch(r)][-20:]
+                email["References"] = " ".join([*kept, message_id])
+            if answered.thread is not None:
+                body["threadId"] = answered.thread
+        if not to:
+            msg = "The reply would go to nobody: the message has no sender to answer. Give `to`."
+            raise HeinzelError(msg)
+        email["To"] = ", ".join(to)
+        if cc:
+            email["Cc"] = ", ".join(cc)
+        email["Subject"] = subject
+        email.set_content(draft.text)
+        body["raw"] = base64.urlsafe_b64encode(email.as_bytes()).decode("ascii")
+        answer = self._session.write("Gmail", CREATE, {"userId": "me"}, {"message": body}, "the new draft")
+        created = answer.get("id")
+        if not isinstance(created, str) or not _ID.fullmatch(created):
+            msg = "Gmail's answer to the new draft lacks its id; look in Drafts."
+            raise HeinzelError(msg)
+        try:
+            return self.draft(created)
+        except HeinzelError as exc:  # it exists: a retry would make a second one
+            msg = f"The draft {created} was made, but reading it back failed ({exc}); look in Drafts, don't redo it."
+            raise HeinzelError(msg) from None
+
+    def send_draft(self, draft: str, seen: str) -> SentMail:
+        """Send the draft `draft` if its message is still `seen`, the one the person was shown.
+
+        Raises:
+            HeinzelError: If an id is malformed, there is no such draft, it changed since it was shown, the sign-in
+                lacks Gmail's modify scope, Google refuses, or gws doesn't answer in time (then look in Sent first).
+        """
+        _check_id(draft, "draft")
+        _check_id(seen, "message")
+        current = self.draft(draft)
+        if current.content.message.id != seen:
+            msg = f"The draft {draft} changed since you saw it; nothing was sent. Look at it again, then send it."
+            raise HeinzelError(msg)
+        answer = self._session.write("Gmail", SEND, {"userId": "me"}, {"id": draft}, f"draft {draft}")
+        sent, thread = answer.get("id"), answer.get("threadId")
+        if not isinstance(sent, str) or not _ID.fullmatch(sent):
+            msg = "Gmail sent the draft but its answer lacks the message's id; look in Sent."
+            raise HeinzelError(msg)
+        return SentMail(
+            id=sent,
+            thread=thread if isinstance(thread, str) and _ID.fullmatch(thread) else None,
+            url=f"https://mail.google.com/mail/#all/{sent}",
+        )
+
+    def relabel(self, thread: str, add: list[str], remove: list[str]) -> MailLabels:
+        """File the conversation `thread`: add `add` and remove `remove`, labels by name, ignoring case.
+
+        Raises:
+            HeinzelError: If the id is malformed, nothing changes, a label doesn't exist or may not be set (Spam,
+                Trash, Drafts, Sent), the sign-in lacks Gmail's modify scope, or Google refuses.
+        """
+        _check_id(thread, "conversation")
+        names = self._labels()
+        adding, removing = _label_ids(add, names), _label_ids(remove, names)
+        if not adding and not removing:
+            msg = "Name a label to add or remove, e.g. INBOX to archive or UNREAD to mark it read."
+            raise HeinzelError(msg)
+        body = {"addLabelIds": adding, "removeLabelIds": removing}
+        answer = self._session.write("Gmail", MODIFY, {"userId": "me", "id": thread}, body, f"thread {thread}")
+        labels: dict[str, None] = {}
+        for item in _objects(answer.get("messages")):
+            ids = item.get("labelIds")
+            for label in cast("list[object]", ids if isinstance(ids, list) else []):
+                labels[names.get(str(label), _line(label))] = None
+        return MailLabels(thread=thread, labels=list(labels))
+
+    def _content(self, data: Json, names: dict[str, str], *, drafts: bool = False) -> MailContent | None:
+        """A message of a thread or draft with its text; None for one without id or time, or in Spam or Trash."""
+        found = self._message(data, names)
+        if found is None:
+            return None
+        if {label.casefold() for label in found.labels} & {"spam", "trash"}:
+            return None
+        if not drafts and "DRAFT" in found.labels:
+            return None  # an unsent reply in the conversation is the user's, not the thread's
+        payload = _object(data.get("payload"))
+        headers = {k: v for k, v in _raw_headers(payload).items() if k not in _ADDRESSED}
+        return MailContent(message=found, text=_text(payload), headers=_headers(headers))
+
+    def _recipients(self, raw: dict[str, list[str]], cc: list[str], *, everyone: bool) -> tuple[list[str], list[str]]:
+        """Whom a reply goes to: the Reply-To, else the sender; with `everyone`, the other recipients in Cc too.
+
+        Raises:
+            HeinzelError: If that is more than `MAX_ATTENDEES` people.
+        """
+        to = _plain([p.email for p in _people(", ".join(raw.get("reply-to") or raw.get("from", []))) if p.email])
+        others = _plain([p.email for p in _people(", ".join([*raw.get("to", []), *raw.get("cc", [])])) if p.email])
+        me = self._me() if everyone or to else ""
+        if to == [me]:  # your own message: answer whom it went to, as Gmail does
+            to, others = [a for a in others if a != me] or to, []
+        if everyone:
+            cc = [*cc, *(a for a in others if a != me and a not in to)]
+        cc = list(dict.fromkeys(cc))
+        if len(to) + len(cc) > MAX_ATTENDEES:
+            msg = f"The reply would go to more than {MAX_ATTENDEES} people; give `to` and `cc` yourself."
+            raise HeinzelError(msg)
+        return to, cc
+
+    def _me(self) -> str:
+        """The signed-in user's address, from Gmail's profile; read once per adapter."""
+        if self._address is None:
+            data = self._session.get("Gmail", PROFILE, {"userId": "me"}, "your address")[0]
+            self._address = _line(data.get("emailAddress")).lower()
+        return self._address
+
+    def _get(self, message: str, format_: str, *, headers: tuple[str, ...] = ("From", "To", "Cc", "Subject")) -> Json:
         if not _ID.fullmatch(message):
             msg = f"{clean_text(message)[:100]!r} is not a Gmail message id."
             raise HeinzelError(msg)
         params: dict[str, object] = {"userId": "me", "id": message, "format": format_}
         if format_ == "metadata":
-            params["metadataHeaders"] = ["From", "To", "Cc", "Subject"]
+            params["metadataHeaders"] = list(headers)
         return self._session.get("Gmail", GET, params, f"message {message}")[0]
 
     def _labels(self) -> dict[str, str]:

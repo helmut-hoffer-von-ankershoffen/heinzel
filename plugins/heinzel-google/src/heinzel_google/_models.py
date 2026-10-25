@@ -18,6 +18,11 @@ class GoogleAbout(BaseModel):
     backend: str = Field(description="The program that talks to Google: the Google Workspace CLI, `gws`.")
     gws: str | None = Field(description="The `gws` executable in use; none if it is not found.")
     scopes: list[str] = Field(description="The read-only OAuth scopes the adapters need from `gws auth login`.")
+    write_scopes: dict[str, str] = Field(
+        default_factory=dict,
+        description="The scope each capability's writes need, asked for only when you let hz write it (and Gmail's "
+        "read-only scope when mail is read).",
+    )
     apis: list[str] = Field(description="The Google APIs the adapters call through `gws`.")
 
 

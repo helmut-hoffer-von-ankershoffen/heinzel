@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from heinzel import Event, HeinzelError, LiveTime, LiveUntil, OpenUrl, RunCommand, Window
+from heinzel import Event, FreeBusy, HeinzelError, LiveTime, LiveUntil, OpenUrl, RunCommand, Window
 from heinzel.kernel import Requirement
 from heinzel.modules.org import _agenda as agenda_module
 from heinzel.modules.org._agenda import Agenda, local_now, read_agenda, status_item
@@ -37,6 +37,9 @@ class FakeCalendar:
         if self.error is not None:
             raise self.error
         return self.found
+
+    def free_busy(self, people: str, window: Window) -> list[FreeBusy]:
+        return []
 
 
 class FakeBindings:

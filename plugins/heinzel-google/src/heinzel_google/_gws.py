@@ -49,8 +49,28 @@ SCOPES = (
 """The read-only scopes the adapters need; `LOGIN` asks `gws` for exactly these."""
 MAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
 """Gmail's read-only scope, asked for only when `mail` is read from Google: Google classes it as restricted."""
-LOGIN = f"gws auth login --scopes {','.join(SCOPES)}"
-LOGIN_WITH_MAIL = f"gws auth login --scopes {','.join((*SCOPES, MAIL_SCOPE))}"
+CALENDAR_WRITE_SCOPE = "https://www.googleapis.com/auth/calendar.events"
+"""Calendar's scope to create, change and answer events, asked for only when you let hz write your calendar."""
+MAIL_WRITE_SCOPE = "https://www.googleapis.com/auth/gmail.modify"
+"""Gmail's scope to keep drafts, send them and file mail (never to delete it for good), asked for only when you let hz
+write mail; it covers reading too, so it replaces `MAIL_SCOPE`."""
+WRITE_SCOPES = {"calendar": CALENDAR_WRITE_SCOPE, "mail": MAIL_WRITE_SCOPE}
+"""The scope each capability's `write` mode needs, by capability."""
+
+
+def login_command(*, mail: bool = False, write: frozenset[str] = frozenset()) -> str:
+    """The `gws auth login` that asks for the read-only scopes, Gmail's if `mail`, and the write scopes of `write`."""
+    scopes = [*SCOPES]
+    if "mail" in write:
+        scopes.append(MAIL_WRITE_SCOPE)
+    elif mail:
+        scopes.append(MAIL_SCOPE)
+    scopes += [WRITE_SCOPES[c] for c in sorted(write - {"mail"}) if c in WRITE_SCOPES]
+    return f"gws auth login --scopes {','.join(scopes)}"
+
+
+LOGIN = login_command()
+LOGIN_WITH_MAIL = login_command(mail=True)
 INSTALL = "npm install -g @googleworkspace/cli (or set google.gws_path to the gws executable)"
 MIN_VERSION = (0, 22, 0)
 """The oldest `gws` this plugin was written and tested against (ADR 0035): its JSON and exit codes are no contract."""
@@ -224,6 +244,49 @@ def _parse(data: bytes) -> object:
         return None
 
 
+def _output(process: Process, api: str, subject: str, limit: float, *, writing: bool) -> object:
+    """The JSON `process` printed, or None if it printed none.
+
+    Raises:
+        HeinzelError: If it timed out (for a write: look before retrying), printed too much or nested too deeply.
+    """
+    if process.exit_code is None:
+        then = "it may have happened: look in Google before trying again." if writing else "retry, or raise"
+        msg = f"gws did not answer {subject} within {limit:g} seconds; {then}" + ("" if writing else " google.timeout.")
+        raise HeinzelError(msg)
+    if process.truncated:
+        msg = f"{api}'s answer for {subject} is larger than {MAX_BYTES:,} bytes."
+        raise HeinzelError(msg)
+    data = _parse(process.stdout)
+    if data is TOO_DEEP:
+        msg = f"{api}'s answer for {subject} nests too deeply to read."
+        raise HeinzelError(msg)
+    return data
+
+
+def _unwritable(api: str, subject: str, said: str) -> str:
+    """The message for a write the sign-in's scopes don't allow, with the sign-in that adds the write scope."""
+    capability = "mail" if api == "Gmail" else "calendar"
+    write = login_command(mail=api == "Gmail", write=frozenset({capability}))
+    # gws replaces the scopes it has: say how to keep the other capability's.
+    keep = (
+        f"add ,{CALENDAR_WRITE_SCOPE} if hz writes your calendar too"
+        if capability == "mail"
+        else f"add ,{MAIL_SCOPE} if you read mail from Google, or ,{MAIL_WRITE_SCOPE} if hz writes it"
+    )
+    said = f"gws's sign-in may read but not write {capability} ({said})"
+    return f"{api} refused {subject}: {said}. Sign in: {write} ({keep})"
+
+
+def _failed(subject: str, process: Process, code: object, said: str, *, writing: bool) -> str:
+    """Any other failure; for a write Google didn't refuse (a 4xx), with the warning that it may have happened."""
+    failed = f"gws failed on {subject} (exit {process.exit_code}): {said}"
+    refused = isinstance(code, int) and 400 <= code < 500  # noqa: PLR2004 - Google said no: nothing changed
+    if writing and not refused:
+        return f"{failed}. It may have happened: look in Google before trying again."
+    return failed
+
+
 def config_dir(source: Mapping[str, str] | None = None) -> Path:
     """Where `gws` keeps its configuration and credentials: `GOOGLE_WORKSPACE_CLI_CONFIG_DIR`, else `~/.config/gws`."""
     variables = os.environ if source is None else source
@@ -279,13 +342,15 @@ class GoogleSession:
             raise HeinzelError(msg)
         return str(Path(found).absolute())  # symlinks stay: a launcher may need its own name
 
-    def get(
+    def get(  # noqa: PLR0913 - the request and how to report it
         self,
         api: str,
         command: Sequence[str],
         params: Mapping[str, object],
         subject: str,
         timeout: float | None = None,
+        *,
+        body: Mapping[str, object] | None = None,
     ) -> tuple[dict[str, Any], int]:
         """Run `gws <command> --params <params>` and return the JSON object it prints, and its size in bytes.
 
@@ -295,17 +360,53 @@ class GoogleSession:
             params: The method's parameters.
             subject: What was asked for, for messages, e.g. `document 1AbC`.
             timeout: Seconds `gws` may take, at most `google.timeout`; `google.timeout` when not given.
+            body: The request body of a read that posts one (`--json`), such as Calendar's free/busy query.
 
         Raises:
             HeinzelError: If `gws` is missing, not signed in, times out, prints too much, or Google refuses
                 (`GwsSignInError` when it is not signed in or its sign-in expired).
         """
+        return self._call(api, command, params, body, subject, timeout, writing=False)
+
+    def write(
+        self,
+        api: str,
+        command: Sequence[str],
+        params: Mapping[str, object],
+        body: Mapping[str, object] | None,
+        subject: str,
+    ) -> dict[str, Any]:
+        """Run a method that changes something, `gws <command> --params <params> --json <body>`; what it answers.
+
+        A rate-limited write is retried like a read, since Google refused it; one that timed out is not, since it
+        may have happened: the message says to look before trying again. An empty answer (a delete) is `{}`.
+
+        Raises:
+            HeinzelError: As `get` does; past the timeout with what to check before retrying; a missing scope names
+                the sign-in with the write scopes.
+        """
+        return self._call(api, command, params, body, subject, None, writing=True)[0]
+
+    def _call(  # noqa: PLR0913, PLR0917 - get's and write's arguments
+        self,
+        api: str,
+        command: Sequence[str],
+        params: Mapping[str, object],
+        body: Mapping[str, object] | None,
+        subject: str,
+        timeout: float | None,
+        *,
+        writing: bool,
+    ) -> tuple[dict[str, Any], int]:
         limit = self._settings.timeout if timeout is None else min(timeout, self._settings.timeout)
         executable = self.executable()
         if self._checked != executable:
             self.version()
             self._checked = executable
-        arguments = [*command, "--params", json.dumps(dict(params), separators=(",", ":")), "--format", "json"]
+        arguments = [*command, "--params", json.dumps(dict(params), separators=(",", ":"))]
+        if body:
+            arguments += ["--json", json.dumps(dict(body), separators=(",", ":"))]
+        arguments += ["--format", "json"]
         waits = 0
         while True:
             try:
@@ -313,21 +414,15 @@ class GoogleSession:
             except OSError as exc:
                 msg = f"Could not start gws for {subject}: {type(exc).__name__}. Check google.gws_path: {INSTALL}."
                 raise HeinzelError(msg) from None
-            if process.exit_code is None:
-                msg = f"gws did not answer {subject} within {limit:g} seconds; retry, or raise "
-                msg += "google.timeout."
-                raise HeinzelError(msg)
-            if process.truncated:
-                msg = f"{api}'s answer for {subject} is larger than {MAX_BYTES:,} bytes."
-                raise HeinzelError(msg)
-            data = _parse(process.stdout)
-            if data is TOO_DEEP:
-                msg = f"{api}'s answer for {subject} nests too deeply to read."
-                raise HeinzelError(msg)
+            data = _output(process, api, subject, limit, writing=writing)
+            if writing and process.exit_code == 0 and not process.stdout.strip():
+                return {}, 0  # a delete answers nothing
             if process.exit_code == 0 and isinstance(data, dict) and "error" not in data:
                 return cast("dict[str, Any]", data), len(process.stdout)
             if process.exit_code == 0 and not (isinstance(data, dict) and "error" in data):
                 msg = f"gws answered {subject} with something other than a JSON object; is it the Google Workspace CLI?"
+                if writing:
+                    msg += " It may have happened: look in Google before trying again."
                 raise HeinzelError(msg)
             error = _error(data)
             limited = _reasons(error) & _RATE or error.get("code") == 429  # noqa: PLR2004 - Too Many Requests
@@ -335,7 +430,7 @@ class GoogleSession:
                 self._gws.sleep(float(2**waits))
                 waits += 1
                 continue
-            problem = self._problem(api, subject, process, error, waits)
+            problem = self._problem(api, subject, process, error, waits, writing=writing)
             raise (GwsSignInError if problem.startswith(NOT_SIGNED_IN) else HeinzelError)(problem)
 
     def pages(
@@ -416,8 +511,8 @@ class GoogleSession:
             return False, f"gws {shown} is not signed in"
         return False, f"gws {shown} has no OAuth client and is not signed in"
 
-    def _problem(  # noqa: PLR0911 - one message per kind of failure
-        self, api: str, subject: str, process: Process, error: Mapping[str, Any], waits: int
+    def _problem(  # noqa: PLR0911, PLR0913 - one message per kind of failure
+        self, api: str, subject: str, process: Process, error: Mapping[str, Any], waits: int, *, writing: bool = False
     ) -> str:
         """What went wrong, for a person; never a token, and `gws`'s own words cleaned and cut."""
         said = redact(str(error.get("message") or process.stderr.decode(errors="replace").strip() or "no details"))
@@ -429,14 +524,18 @@ class GoogleSession:
         login = LOGIN_WITH_MAIL if api == "Gmail" else f"{LOGIN} (add ,{MAIL_SCOPE} if you read mail from Google)"
         if process.exit_code == 2 or code == 401:  # noqa: PLR2004 - gws's auth error, or Unauthorized
             return f"{NOT_SIGNED_IN} Google, or its sign-in expired ({said}). Sign in: {login}"
+        if reasons & _SCOPE and writing:
+            return _unwritable(api, subject, said)
         if reasons & _SCOPE:
             return f"{api} refused {subject}: gws's sign-in lacks the read-only scope ({said}). Sign in: {login}"
         if reasons & _DISABLED:
             return f"{api} is not enabled in the Google Cloud project of gws's OAuth client ({said}); enable it there."
         if code == 404:  # noqa: PLR2004 - Not Found
             return f"{api} has no {subject}, or the signed-in account can't see it: check the link, or ask for access."
+        if code == 409 and writing:  # noqa: PLR2004 - Conflict
+            return f"{api} refused {subject}: it exists already or changed meanwhile ({said}); look before retrying."
         if code == 403:  # noqa: PLR2004 - Forbidden
             return f"{api} refused {subject} ({said}); the signed-in account may lack access to it."
         if process.exit_code == 4:  # noqa: PLR2004 - gws could not fetch the API's discovery document
             return f"gws could not load {api}'s API description ({said}); check the network and retry."
-        return f"gws failed on {subject} (exit {process.exit_code}): {said}"
+        return _failed(subject, process, code, said, writing=writing)

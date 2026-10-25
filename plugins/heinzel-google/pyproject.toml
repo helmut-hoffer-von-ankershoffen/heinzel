@@ -1,7 +1,7 @@
 [project]
 name = "heinzel-google"
 version = "0.6.0"
-description = "Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities."
+description = "Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
