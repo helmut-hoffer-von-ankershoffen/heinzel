@@ -93,11 +93,11 @@ Your team's contracts are in the checkout's `workflows/`, as `team:<name>`; your
 ([Bootstrap your team, step 8](manager.md#8-drafts-approval-and-the-success-measure)):
 
 ```bash
-hz workflow list                              # your contracts and your team's, with schedule and problems
-hz workflow show team:weekly-report           # what it reads, what is bound, whether it is ready
-hz workflow run team:weekly-report --dry-run  # the packet the agent would get: the week's pull requests and items
-hz workflow run team:weekly-report            # draft it, within the cost cap; a local file, yours to edit or discard
-hz workflow drafts --name weekly-report --latest
+hz heinzel list                              # your contracts and your team's, with schedule and problems
+hz heinzel show team:weekly-report           # what it reads, what is bound, whether it is ready
+hz heinzel wake team:weekly-report --dry-run  # the packet the agent would get: the week's pull requests and items
+hz heinzel wake team:weekly-report            # draft it, within the cost cap; a local file, yours to edit or discard
+hz heinzel drafts --name weekly-report --latest
 ```
 
 What you should see: `list` names the team's contracts ("No contracts yet." means your manager hasn't added one);
@@ -112,8 +112,8 @@ A draft of your own part of the week, offered at the end of `join` from the team
 
 ```bash
 hz system doctor                              # everything healthy? each problem with the command that fixes it
-hz workflow drafts                            # every draft, newest first
-hz workflow show team:weekly-report           # is it ready, when does it run, what to run next
+hz heinzel drafts                            # every draft, newest first
+hz heinzel show team:weekly-report           # is it ready, when does it run, what to run next
 hz org show                                   # your profile
 hz team show                                  # the team, its checkout and members
 hz ui                                         # the same in a browser, on localhost, for this session only
@@ -158,9 +158,9 @@ pull request.
 | `gh` isn't signed in, or as someone else | `gh auth login`, then run the line again; `hz team join <url> --login <your GitHub login>` says who you are without `gh` |
 | The clone fails: no access to the repository | Ask the team's owner for read access on the code host; hz adds no permission of its own |
 | "You are in the team at … already; one team for now" | One team at a time: `hz team show` names it; leave it first (above), then join |
-| A checkout from `[workflow] team_repository` | `hz team adopt <path>` makes it your team; `hz system doctor` says so until you do |
+| A checkout from `[heinzel] team_repository` | `hz team adopt <path>` makes it your team; `hz system doctor` says so until you do |
 | "Not joined: nothing was changed" | You answered no, or ran without a terminal: run the line again and say yes, or pass `--yes` |
 | `hz system doctor` is red | Each check names its fix, as a command to copy; `hz setup` runs the steps still missing |
-| A team contract isn't ready | `hz workflow show team:<name>` lists the unmet requirement and the command for it |
+| A team contract isn't ready | `hz heinzel show team:<name>` lists the unmet requirement and the command for it |
 
 All commands: [CLI_REFERENCE](../CLI_REFERENCE.md); for your manager: [Bootstrap your team](manager.md).

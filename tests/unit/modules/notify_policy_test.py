@@ -27,7 +27,7 @@ def notice(at: datetime, *, key: str = "k", popup: bool = True) -> Notice:
         title="Draft ready",
         body="",
         route="/",
-        command="hz workflow drafts",
+        command="hz heinzel drafts",
         key=key,
         at=at,
         due=at,
