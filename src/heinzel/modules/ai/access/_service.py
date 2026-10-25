@@ -20,6 +20,8 @@ from heinzel import (
     HeinzelError,
     Settings,
     Status,
+    UsageEntry,
+    UsageLog,
 )
 from heinzel.kernel import CapabilityView, clean_text
 from heinzel.modules.ai.access._models import (
@@ -97,13 +99,19 @@ class AccessService:
     """The AI access options installed on this machine (ADR 0057): list, test and switch."""
 
     def __init__(
-        self, options: Adapters[AiAccess], view: CapabilityView, editor: ConfigEditor, settings: Settings
+        self,
+        options: Adapters[AiAccess],
+        view: CapabilityView,
+        editor: ConfigEditor,
+        settings: Settings,
+        usage: UsageLog,
     ) -> None:
         """Create the service; every option's read handle, the capability view, the editor and settings are injected."""
         self._options = options
         self._view = view
         self._editor = editor
         self._tests = ResultStore(settings.state_dir / "ai")
+        self._usage = usage
 
     @staticmethod
     def bindings() -> Bindings:
@@ -249,6 +257,17 @@ class AccessService:
             model=result.model,
             cost_usd=result.cost_usd,
             duration_seconds=result.duration_seconds,
+        )
+        self._usage.record(
+            UsageEntry(
+                at=last.at,
+                cause="test",
+                access=name,
+                model=result.model,
+                input_tokens=result.input_tokens or 0,
+                output_tokens=result.output_tokens or 0,
+                cost_usd=result.cost_usd,
+            )
         )
         try:
             self._tests.keep(name, last)

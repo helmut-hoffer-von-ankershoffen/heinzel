@@ -94,4 +94,6 @@ class ClaudeCodeAccess:
             model=result.model,
             cost_usd=result.usage.cost_usd,
             duration_seconds=result.duration_seconds,
+            input_tokens=result.usage.input_tokens,
+            output_tokens=result.usage.output_tokens,
         )
