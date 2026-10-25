@@ -99,17 +99,28 @@ class AccessSettings(ModuleSettings):
 
     model: str | None = Field(
         default=None,
-        pattern=r"^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._:/@-]*$",
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$",
         title="Pydantic AI model",
-        description="The model Pydantic AI uses, as vendor:model; its key is the credential "
-        "ai.access/api-key or the vendor's own variable.",
+        description="The model Pydantic AI uses: vendor:model for a vendor's API, or the name your endpoint knows when "
+        "a base address is set. Its key is the credential ai.access/api-key or the vendor's own variable.",
         examples=["anthropic:claude-sonnet-4-5"],
+        json_schema_extra={"x-expert": True},
+    )
+    base_url: str | None = Field(
+        default=None,
+        pattern=r"^https?://[^\s/?#@]+(/[^\s?#@]*)?$",  # no user:password@, ?query or #fragment: a key never hides here
+        max_length=500,
+        title="Pydantic AI endpoint",
+        description="The address of an OpenAI-compatible endpoint, such as Ollama, LM Studio, vLLM or OpenRouter. "
+        "A key is optional and goes only over https, or over http to this computer.",
+        examples=["http://localhost:11434/v1"],
         json_schema_extra={"x-expert": True},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
         {
             "model",
+            "base_url",
             "gateway_title",
             "gateway_summary",
             "gateway_status_command",

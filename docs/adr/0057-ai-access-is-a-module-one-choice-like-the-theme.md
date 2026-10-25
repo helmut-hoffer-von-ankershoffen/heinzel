@@ -180,6 +180,21 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
   `pydantic-ai-slim` dependency, `list`, `use`, `test`, doctor. Deferred: the turn engine itself (ADR 0050),
   `[ai.roles]`, `[ai.models]`, `[ai.prices]`, gateway endpoints and tokens, and the web Settings section. Second
   slice: usage recording and `hz ai usage`; the footer meter follows once status items carry meters.
+- **Model APIs through Pydantic AI** (the `pydantic-ai` option): Anthropic's and OpenAI's own APIs with a key
+  (`model = "anthropic:..."` or `"openai:..."`), and any OpenAI-compatible endpoint (`base_url`: Ollama, LM Studio,
+  vLLM, OpenRouter) with an optional key and the model name the endpoint knows. The key is the keychain credential
+  `ai.access/api-key` or the vendor's variable, and goes only over https or over http to this machine; listings
+  follow no redirect. The models an API offers are listed during the explicit live test (`GET <base>/models`) and
+  kept in `<state_dir>/ai/models.json`, so `status` and the picker stay offline. Endpoints use OpenAI's client
+  (`heinzel[openai]`).
+- **ChatGPT plans** (checked 2026-10-25). OpenAI's "Sign in with ChatGPT" lets open-source apps use a person's ChatGPT
+  plan instead of an API key: "ChatGPT plan usage is available to all open-source partners and selected private
+  clients" (developers.openai.com/siwc/quickstart); each person approves the app by name and can limit it in ChatGPT's
+  settings, and a paid or remotely hosted app needs OpenAI's approval first (Pydantic AI's `openai-chatgpt` provider
+  documentation). hz is open source and runs locally, so the next slice signs in through that flow (Pydantic AI's
+  `openai-chatgpt` provider, its refresh token in the keychain). It does not use Pydantic AI's `openai-codex`
+  provider, which signs in as the Codex CLI with that CLI's stored credentials; a ChatGPT plan's coding agent is
+  reached through the Codex CLI itself, as its own access option and agent runner.
 - Open: whether `ai.access` options should also offer the endpoint (`endpoint()`) as a third protocol method or a
   separate capability once Pydantic AI consumes it; the recommendation is a method returning `None` for options
   without one.
