@@ -30,6 +30,7 @@ Ctrl-C stops `hz ui` at once: the notice stream and the terminals end before the
 (`_shutdown.py`).
 """
 
+import hashlib
 import mimetypes
 import os
 import re
@@ -105,7 +106,7 @@ mimetypes.add_type("application/manifest+json", ".webmanifest")
 NOT_FOUND = 404
 FONT_THEME = re.compile(r"[a-z](?:-?[a-z0-9]){0,63}")
 FONT_FILE = re.compile(r"([0-9]{1,2})\.woff2")
-LOGO_FILE = re.compile(r"(light|dark|mark)\.svg")
+LOGO_FILE = re.compile(r"(light|dark|mark|heinzel-(?:hat-(?:young|grown|old)|outfit-(?:baby|young|grown|old)))\.svg")
 SOUND_FILE = re.compile(r"(layer-[0-9]|earcon-[a-z]{1,16})\.(ogg|opus|mp3)")
 IMMUTABLE = "public, max-age=31536000, immutable"
 RESUME = "HEINZEL_UI_RESUME"
@@ -331,13 +332,13 @@ def add_logos(app: FastAPI, kernel: Kernel) -> None:
     """Serve the themes' logos at `LOGO_ROUTE`, outside `/api`, behind the app's middleware (ADR 0044)."""
 
     @app.get(LOGO_ROUTE + "/{theme}/{file}", include_in_schema=False)
-    def theme_logo(theme: str, file: str) -> Response:
+    def theme_logo(theme: str, file: str, v: str | None = None) -> Response:
         # Not async: it reads files, so FastAPI runs it in its thread pool and other requests don't wait.
-        return logo_response(kernel, theme, file)
+        return logo_response(kernel, theme, file, version=v)
 
 
-def logo_response(kernel: Kernel, theme: str, file: str) -> Response:
-    """Logo `<light|dark|mark>.svg` of the available theme `theme`, or 404; served without the token (ADR 0044)."""
+def logo_response(kernel: Kernel, theme: str, file: str, *, version: str | None = None) -> Response:
+    """An available theme's logo or content-versioned avatar layer, or 404; tokenless original artwork."""
     # Checked against fixed patterns, then looked up by theme name and logo name: a request never builds a path.
     name = LOGO_FILE.fullmatch(file)
     content = None
@@ -346,6 +347,13 @@ def logo_response(kernel: Kernel, theme: str, file: str) -> Response:
             content = kernel.resolve(ThemeFonts).logo(theme, name.group(1))
         except HeinzelError:  # system.theme can't be built (a module it needs is off): no theme ships a logo
             content = None
+    if (
+        content is not None
+        and name
+        and name.group(1).startswith("heinzel-")
+        and version != hashlib.sha256(content).hexdigest()[:16]
+    ):
+        content = None
     if content is None:
         return JSONResponse(status_code=NOT_FOUND, content={"error": "No theme ships that logo."})
     # The list's URL carries the content's version (`?v=`), so a changed logo is a new URL: the answer is immutable.

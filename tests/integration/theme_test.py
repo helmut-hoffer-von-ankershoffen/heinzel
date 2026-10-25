@@ -217,6 +217,7 @@ def test_the_web_head_lists_the_themes_and_the_pick_round_trips(acme):
         "variant",
         "shadows",
         "heinzel",
+        "heinzel_assets",
     }
     assert client.get("/api/system/theme/list").status_code == 401
     used = client.post("/api/system/theme/use", params={"name": "acme"}, headers=AUTH)
@@ -666,8 +667,55 @@ def test_theme_avatar_decorations_reach_cli_and_web_json(acme):
     code, listed = hz(kernel, "system", "theme", "list")
     assert code == 0
     look = next(theme for theme in listed["themes"] if theme["name"] == "winter")["heinzel"]
-    assert look == {"palette": {"hat": "#def"}, "decorations": ["snow"]}
+    assert look == {"palette": {"hat": "#def"}, "decorations": ["snow"], "assets": {}}
     client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url="http://127.0.0.1:8000")
     response = client.get("/api/system/theme/list", headers=AUTH)
     assert response.status_code == 200
     assert next(theme for theme in response.json()["themes"] if theme["name"] == "winter")["heinzel"] == look
+
+
+def test_original_avatar_layers_have_owned_urls_and_safe_fallback(acme, tmp_path):
+    file = tmp_path / "hat.svg"
+    file.write_text('<svg xmlns="http://www.w3.org/2000/svg"><circle r="8"/></svg>')
+    theme_file = tmp_path / "winter.toml"
+    import tomli_w
+
+    theme_file.write_text(
+        tomli_w.dumps(
+            DEFAULT_THEME.model_dump(exclude_none=True)
+            | {
+                "name": "winter",
+                "title": "Winter",
+                "heinzel": {"assets": {"hat-grown": "hat.svg"}},
+            }
+        )
+    )
+    winter = Module("winter", "Winter artwork.")
+    winter.theme(theme_file)
+    kernel = acme(extra=(winter,))
+    client = web_client(kernel)
+    _, listing = hz(kernel, "system", "theme", "list")
+    listed = next(value for value in listing["themes"] if value["name"] == "winter")
+    url = listed["heinzel_assets"]["hat-grown"]
+    assert listed["heinzel"]["assets"] == {}
+    assert client.get("/api/system/theme/list", headers=AUTH).json()["themes"][-1]["heinzel_assets"] == {
+        "hat-grown": url
+    }
+    image = client.get(url)
+    assert image.status_code == 200
+    assert image.content == file.read_bytes()
+    assert client.get(url.split("?")[0]).status_code == 404
+    assert client.get(url[:-16] + "0" * 16).status_code == 404
+    file.write_text('<svg xmlns="http://www.w3.org/2000/svg"><circle r="9"/></svg>')
+    assert client.get(url).status_code == 404
+    current = client.get("/api/system/theme/list", headers=AUTH).json()
+    changed = next(value for value in current["themes"] if value["name"] == "winter")["heinzel_assets"]["hat-grown"]
+    assert changed != url
+    assert client.get(changed).status_code == 200
+    assert image.headers["content-security-policy"] == "default-src 'none'; style-src 'unsafe-inline'"
+    assert client.get(url.replace("hat-grown", "hat-baby")).status_code == 404
+    assert client.get(url.replace("hat-grown", "outfit-old")).status_code == 404
+    file.write_text('<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.invalid/a"/></svg>')
+    assert client.get(url).status_code == 404
+    listed = client.get("/api/system/theme/list", headers=AUTH).json()
+    assert next(value for value in listed["themes"] if value["name"] == "winter")["heinzel_assets"] == {}

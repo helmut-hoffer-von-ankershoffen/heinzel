@@ -229,7 +229,8 @@ class ThemeService(ThemeFonts, ThemeChoice):
                     fonts=_fonts(offered),
                     logo=_logo(offered.logos),
                     variant=list(offered.theme.variant),
-                    heinzel=offered.theme.heinzel,
+                    heinzel=offered.theme.heinzel.model_copy(update={"assets": {}}) if offered.theme.heinzel else None,
+                    heinzel_assets=offered.let.avatar_urls() if offered.let else {},
                     shadows=offered.shadows,
                 )
                 for name, offered in available.themes.items()
@@ -260,10 +261,12 @@ class ThemeService(ThemeFonts, ThemeChoice):
     def logo(self, theme: str, name: str) -> bytes | None:
         """The content of logo `name` of the available theme `theme` (the one that wins its name), or None."""
         offered = self.available().themes.get(theme)
-        if offered is None or offered.logos is None:
+        if offered is None:
             return None
         try:
-            return offered.logos.content(name)
+            if name.startswith("heinzel-") and offered.let:
+                return offered.let.avatar(name.removeprefix("heinzel-"))
+            return offered.logos.content(name) if offered.logos else None
         except ValueError:
             return None
 
