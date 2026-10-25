@@ -38,7 +38,7 @@ Plugins add their own tables.
 | `meetings` | `HZ_CAPABILITIES__MEETINGS` | `None` | The connector for meeting summaries, such as Zoom. Never read from a project's hz.toml. |
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | The connector for issues, such as GitHub or Jira. Never read from a project's hz.toml. |
 | `team_graph` | `HZ_CAPABILITIES__TEAM_GRAPH` | `'hz-graph'` | What draws your team's graph: the built-in graph of your team's contracts and telemetry (the default), or one a plugin brings. Never read from a project's hz.toml. |
-| `weather` | `HZ_CAPABILITIES__WEATHER` | `None` | Adapter that serves `weather`, e.g. `openmeteo`. Never read from a project's hz.toml. |
+| `weather` | `HZ_CAPABILITIES__WEATHER` | `None` | The connector for the weather where you are, such as Open-Meteo. Never read from a project's hz.toml. |
 
 ## `[ai]`
 

@@ -132,7 +132,8 @@ class CapabilitySettings(ModuleSettings):
     )
     weather: str | None = Field(
         default=None,
-        description="Adapter that serves `weather`, e.g. `openmeteo`.",
+        title="Weather",
+        description="The connector for the weather where you are, such as Open-Meteo.",
         json_schema_extra=_options("weather"),
     )
 
