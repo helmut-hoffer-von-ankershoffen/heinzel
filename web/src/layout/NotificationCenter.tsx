@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import type { SchemaNotice } from "@/api/client";
 import { useNotices } from "@/api/queries";
+import { Gnome } from "@/components/Gnome";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -155,9 +156,12 @@ export function NotificationPanel({ onClose, navOpen }: { onClose: () => void; n
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {groups.length === 0 && (
-          <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-            {notices.isLoading ? t("notify.loading") : t("notify.empty")}
-          </p>
+          <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
+            {!notices.isLoading && <Gnome state="sleeping" />}
+            <p className="text-sm text-muted-foreground">
+              {notices.isLoading ? t("notify.loading") : t("notify.empty")}
+            </p>
+          </div>
         )}
         {groups.map((group) => (
           <section key={group.label} aria-label={group.label}>
