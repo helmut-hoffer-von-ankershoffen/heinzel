@@ -100,7 +100,6 @@ hz system plugin add atlassian --confirm               # Jira and Confluence: tr
 hz system plugin add google --confirm                  # Docs, Sheets, Drive, Calendar, Gmail: documents, calendar and mail
 hz system plugin add zoom --confirm                    # meetings, from Zoom's summary e-mails through the bound mail adapter
 hz system plugin add clock --confirm                   # the time for everyone on the team
-hz system plugin add openmeteo --confirm               # the weather where you are, with no key: `hz weather`
 hz setup google                              # a plugin's own step; `hz setup` runs the ones still missing
 ```
 
@@ -119,7 +118,7 @@ hz system capability list                                 # every capability, it
 What you should see: `hz system plugin list` names the plugins and the modules they bring; `hz system doctor` has a
 line per plugin (`gh` found, its version and login; bindings in place). Each plugin's README has the details:
 [heinzel-github](../../plugins/heinzel-github/README.md), [heinzel-atlassian](../../plugins/heinzel-atlassian/README.md),
-[heinzel-google](../../plugins/heinzel-google/README.md), [heinzel-openmeteo](../../plugins/heinzel-openmeteo/README.md), [heinzel-zoom](../../plugins/heinzel-zoom/README.md).
+[heinzel-google](../../plugins/heinzel-google/README.md), [heinzel-zoom](../../plugins/heinzel-zoom/README.md).
 
 **Your company's own plugins.** Anything specific to a company, org, site or team is a plugin, never part of the
 core ([INTENT: tenets](../../INTENT.md#tenets)). A company keeps its plugins in one private repository, laid out like

@@ -153,18 +153,9 @@ request (director's decisions, 2026-10-24):
   the modes they serve and are only required to implement those modes' methods. Adding a capability is additive too:
   no adapter serves it yet and no requester names it, so the core adds one whenever a first-party adapter needs it,
   in a minor release.
-- **`weather`** (maintainer's request, 2026-10-25; added under the growth rule above, so no ADR of its own): `report(place)`
-  returns the weather now and a short daily forecast at a place, a name to geocode or `lat,lon`, in metric units
-  (`WeatherReport`). The core's `weather` module (`hz weather`) owns the places (`[weather] locations`) and the units
-  and asks for the capability; the first-party `openmeteo` plugin serves it from Open-Meteo with no account and no key,
-  over urllib like [ADR 0033](0033-github-rest-api-over-urllib.md), so no dependency is added. The method takes no
-  window, so no contract reads it; module operations do. Where the person is lives in the core's settings; asking for
-  it in setup is left to the adapter's plugin (`hz setup openmeteo`), because a core setup step would ask everyone,
-  adapter or not. Tests: `tests/unit/modules/weather_service_test.py`, `tests/integration/weather_test.py` and the
-  plugin's.
 - **Each method has a mode** in the capability registry (`CAPABILITIES`); a unit test keeps the registry and the
   protocols in step. Capability names in requirements and bindings are `agent-runner`, `calendar`, `chat`,
-  `code-host`, `directory`, `documents`, `mail`, `meetings`, `tracker` and `weather`; the core defines the set (plugins cannot add capabilities yet)
+  `code-host`, `directory`, `documents`, `mail`, `meetings` and `tracker`; the core defines the set (plugins cannot add capabilities yet)
   and grows it under the growth rule above. An adapter must implement the methods of the modes it declares, checked
   when the kernel registers an adapter class and when it builds one from a factory; `heinzel.testing.assert_adapter`
   runs the same check, plus the parameter names and defaults, in a plugin's own tests (a first piece of the shared

@@ -22,7 +22,7 @@ recipients are participants too, so the workflow packet builder drops their addr
 import re
 import unicodedata
 from collections.abc import Iterable
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Literal, Protocol, Self
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -214,63 +214,6 @@ class Event(BaseModel):
     organized_by_user: bool = Field(
         default=False, description="Whether the user organizes it, and so may move or cancel it for everyone."
     )
-
-
-class WeatherPlace(BaseModel):
-    """A place weather is reported for, as the adapter resolved it from what was asked."""
-
-    name: str = Field(description="The place by name, e.g. `Berlin, Germany`; the coordinates when asked by them.")
-    latitude: float = Field(ge=-90, le=90, description="Degrees north of the equator.")
-    longitude: float = Field(ge=-180, le=180, description="Degrees east of the prime meridian.")
-
-
-class CurrentWeather(BaseModel):
-    """The weather at a place right now, in metric units (display units are the caller's business)."""
-
-    observed_at: AwareDatetime = Field(description="When it was observed or modelled, in the place's time zone.")
-    summary: str = Field(description="The sky in a few words, e.g. `light rain`.")
-    temperature_c: float = Field(description="Air temperature, degrees Celsius.")
-    feels_like_c: float = Field(description="Apparent temperature, degrees Celsius.")
-    humidity_percent: int | None = Field(default=None, description="Relative humidity; none if the source has none.")
-    wind_kmh: float = Field(ge=0, description="Wind speed, kilometres per hour.")
-    precipitation_mm: float = Field(ge=0, description="Rain and snow in the last hour, millimetres.")
-
-
-class DailyForecast(BaseModel):
-    """The forecast for one day at a place, in metric units."""
-
-    day: date = Field(description="The day, in the place's time zone.")
-    summary: str = Field(description="The sky in a few words, e.g. `overcast`.")
-    high_c: float = Field(description="The day's high, degrees Celsius.")
-    low_c: float = Field(description="The day's low, degrees Celsius.")
-    rain_chance: float | None = Field(
-        default=None, ge=0, le=1, description="Chance of rain or snow, 0 to 1; none if the source has none."
-    )
-    precipitation_mm: float = Field(ge=0, description="Rain and snow expected over the day, millimetres.")
-
-
-class WeatherReport(BaseModel):
-    """The weather now and a short daily forecast at one place."""
-
-    place: WeatherPlace = Field(description="Where, as the adapter resolved it.")
-    current: CurrentWeather = Field(description="The weather now.")
-    days: list[DailyForecast] = Field(
-        description="The next days from today, a few of them (an adapter decides how many), by day."
-    )
-
-
-class WeatherSource(Protocol):
-    """The weather at a place (capability `weather`).
-
-    Served by an adapter that needs no account when it can, such as the `openmeteo` plugin. A `place` is a name
-    such as `Lisbon, PT` (the adapter geocodes it) or coordinates `lat,lon` such as `38.72,-9.14`; the module that
-    asks knows the user's own places. Results are metric; the caller converts for display. It takes no window, so
-    no contract reads it; module operations do.
-    """
-
-    def report(self, place: str) -> WeatherReport:
-        """The weather now and the next days at `place`: a name to geocode, or `lat,lon`. Mode: read."""
-        ...
 
 
 class Chat(Protocol):

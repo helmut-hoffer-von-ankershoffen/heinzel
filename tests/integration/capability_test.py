@@ -159,7 +159,6 @@ def test_capability_list_shows_bindings_adapters_and_the_matrix(kernel):
         "meetings": None,
         "team-graph": "hz-graph",
         "tracker": None,
-        "weather": None,
     }
     assert [a for a in report["adapters"] if a["capability"] == "documents"] == [
         {
@@ -229,7 +228,7 @@ def test_doctor_reports_met_requirements_as_up(kernel):
 
 def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_one(make_kernel):
     """The core needs the chat's agent runner (ADR 0039, 0045), which its default binding serves, and, optionally, a
-    calendar for the agenda and a weather adapter, whose absence is no finding."""
+    calendar for the agenda, whose absence is no finding."""
     code, report = hz(make_kernel(builtins=True), "system", "doctor")
     assert code == 0
     assert report["checks"]["system.capability"] == [
@@ -251,12 +250,6 @@ def test_doctor_lists_only_the_core_s_own_requirements_when_no_plugin_declares_o
             "name": "agent-runner:read for system.runner.chat send",
             "status": "up",
             "detail": "served by claude-code",
-            "fix": "",
-        },
-        {
-            "name": "weather:read for weather weather",
-            "status": "up",
-            "detail": "optional: not connected; to use it: hz system plugin search --text weather",
             "fix": "",
         },
     ]
@@ -459,7 +452,6 @@ def test_capability_list_shows_the_new_capabilities_with_their_adapters(prepared
         ("prep remind", "chat:write", "talk"),
         ("system.runner ask", "agent-runner:read", "claude-code"),
         ("system.runner.chat send", "agent-runner:read", "claude-code"),
-        ("weather weather", "weather:read", None),
     ]
     rendered = CliRunner().invoke(build(prepared), ["system", "capability", "list"])
     assert rendered.exit_code == 0

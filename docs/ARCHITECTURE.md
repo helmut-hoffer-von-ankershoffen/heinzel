@@ -19,7 +19,7 @@ flowchart LR
     subgraph Modules
         System["system (built-in)<br/>├ agent ├ changelog ├ config<br/>├ daemon └ doctor └ plugin"]
         Heinzel["heinzel (built-in)<br/>your Heinzelmännchen: contracts → daemon jobs"]
-        Clock["clock · github · atlassian · google · openmeteo · zoom<br/>(first-party plugins)"]
+        Clock["clock · github · atlassian · google · zoom<br/>(first-party plugins)"]
         Ext["heinzel-*<br/>(external plugins)"]
     end
     Discovery --> Registry
@@ -68,14 +68,12 @@ declares ([ADR 0021](adr/0021-workflow-contracts.md)).
 by kind with their owning module, and injects dependencies by type: `Kernel`, `Settings`, `Config`, every type a
 `ServiceLet` provides and every `SettingsLet` model, plus `Installation` (the uv tool environment) and `Progress`
 (head-provided progress reporting: operations never print). Services are singletons per kernel and may depend on other services.
-A capability protocol (`Tracker`, `Documents`, `Chat`, `Meetings`, `Calendar`, `Mail`, `Directory`, `Weather`, ...) is injected as a handle
+A capability protocol (`Tracker`, `Documents`, `Chat`, `Meetings`, `Calendar`, `Mail`, `Directory`, ...) is injected as a handle
 on the adapter bound in `[capabilities]`, limited to the modes the asking operation, job or module declared; `write`
 reaches only publish operations (`read_only=False`); adapters pass every string they return through `clean_text`.
 Several adapters may provide one capability and the binding picks one; an adapter may build on another capability
 (meetings from summary emails, through `mail`) ([ADR 0028](adr/0028-integrations-are-capability-adapters.md)).
-The weather is the capability `weather`: the core's `weather` module (`hz weather`) asks for it and shows it in
-your units, the first-party `openmeteo` plugin serves it with no account and no key, and a company's own plugin can
-serve it instead. The org chart is the capability `directory`: a plugin's directory of record when one is bound, otherwise the core's
+The org chart is the capability `directory`: a plugin's directory of record when one is bound, otherwise the core's
 `one-on-ones` adapter (`system.directory`), which guesses reporting lines from recurring 1:1s in the bound calendar
 and marks each as a guess (with no calendar bound the draft is empty and says why); setup steps and roster
 drafting call `draft_reporting_lines`. Agent sessions are the
@@ -186,7 +184,7 @@ Every plugin, first-party or external, is named the same way
 ([ADR 0025](adr/0025-plugin-distributions-are-named-heinzel-name.md)): distribution and repository `heinzel-<name>`,
 root package `heinzel_<name>`, entry point `<name>` in the `heinzel.modules` group. `hz system plugin add <name>`
 resolves the name of a first-party plugin. First-party plugins (`plugins/`: clock and the GitHub, Atlassian,
-Google, Open-Meteo and Zoom adapters) are released with the core but never installed by default; the core imports none of them
+Google and Zoom adapters) are released with the core but never installed by default; the core imports none of them
 ([ADR 0017](adr/0017-first-party-plugins-in-the-core-repository.md),
 [ADR 0028](adr/0028-integrations-are-capability-adapters.md)).
 
