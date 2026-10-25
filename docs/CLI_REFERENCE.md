@@ -17,7 +17,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
-* `ai`: (expert) How hz reaches AI: the AI access...
+* `ai`: (expert) How hz reaches AI, and what it...
 * `atlassian`: (expert) Read Jira issues and Confluence...
 * `chat`: Chat with the agent runner in this...
 * `clock`: Show the time in each of the team&#x27;s time...
@@ -36,7 +36,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 ## `hz ai`
 
-(expert) How hz reaches AI: the AI access in use, its status and a live test.
+(expert) How hz reaches AI, and what it spends: tokens and cost per run.
 
 **Usage**:
 
@@ -51,6 +51,7 @@ $ hz ai [OPTIONS] COMMAND [ARGS]...
 **Commands**:
 
 * `access`: (expert) Pick how hz reaches AI: Claude...
+* `usage`: (expert) Show the tokens and cost of AI...
 
 ### `hz ai access`
 
@@ -121,6 +122,24 @@ $ hz ai access use [OPTIONS] {name}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz ai usage`
+
+(expert) Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.
+
+**Usage**:
+
+```console
+$ hz ai usage [OPTIONS]
+```
+
+**Options**:
+
+* `--period <today|week>`: `today` (since local midnight) or `week` (the last seven days).  [default: today]
+* `--by <access|model|heinzel|cause>`: Break down by `access`, `model`, `heinzel` or `cause`.  [default: model]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

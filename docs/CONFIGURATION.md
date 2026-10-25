@@ -39,6 +39,12 @@ Plugins add their own tables.
 | `tracker` | `HZ_CAPABILITIES__TRACKER` | `None` | Adapter that serves `tracker`, e.g. `github`. |
 | `team_graph` | `HZ_CAPABILITIES__TEAM_GRAPH` | `'hz-graph'` | Adapter that serves `team-graph`: `hz-graph` (the default, the core's graph of your team's contracts and telemetry), or one from a plugin. |
 
+## `[ai]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `daily_budget_usd` | `HZ_AI__DAILY_BUDGET_USD` | `5.0` | What you mean to spend on AI a day, in US dollars: the footer's meter fills against it and turns amber at 75% and red at 100%. Nothing is stopped by it; each run keeps its own cap. |
+
 ## `[ai.access]`
 
 | Key | Environment variable | Default | Description |
