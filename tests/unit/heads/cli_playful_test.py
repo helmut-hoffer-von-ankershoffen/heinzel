@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from rich.console import Console
+from rich.style import Style
 
 from heinzel import Settings
 from heinzel.heads.cli import _banner, _playful
@@ -10,6 +11,13 @@ from heinzel.heads.cli._art_data import BUST, PALETTE, SWARM
 from heinzel.heads.cli._progress import ConsoleProgress
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _fresh_styles():
+    """rich keeps the ANSI codes of a style it combined in the first colour depth it rendered in; start without."""
+    Style._add.cache_clear()
+
 
 GOLDEN = Path(__file__).parent / "golden" / "banner.ans"
 LINES = ["Heinzelmännchen", "hz 0.1.0", "open-source helpers", "that keep product teams running"]
