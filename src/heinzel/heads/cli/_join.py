@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from rich.console import Console
 
 from heinzel import __version__
+from heinzel.heads._presence import mark_presence
 from heinzel.heads.cli._journey import SetupState, load_answers
 from heinzel.heads.cli._render import message
 from heinzel.heads.cli._setup import (
@@ -93,6 +94,7 @@ class JoinCommand:
             ] = None,
             as_json: Annotated[bool, typer.Option("--json", help="Print what happened as JSON on stdout.")] = False,
         ) -> None:
+            mark_presence(self.kernel, "team")
             presets: dict[str, object] = {}
             presets |= {key: value for key, value in (("org.role", role), ("org.handle", handle)) if value}
             presets |= {f"{SCOPE}.{key}": True for key, flag in (("yes", yes), ("propose", propose)) if flag}

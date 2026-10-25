@@ -13,6 +13,7 @@ from pydantic.fields import FieldInfo
 from rich.console import Console
 from rich.text import Text
 
+from heinzel.heads._presence import mark_presence
 from heinzel.heads.cli import _playful
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, show, to_json
@@ -37,6 +38,7 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
     err_console: Console,
     progress: ConsoleProgress,
     *,
+    module: str = "",
     prologue: Callable[[object], None] | None = None,
     epilogue: Callable[[], None] | None = None,
 ) -> Callable[..., None]:
@@ -80,6 +82,7 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
         kernel.bind(Prompter, ConsolePrompter(console) if has_terminal() and not as_json else Prompter())
         try:
             with kernel.resolve(CurrentUser).local("cli"):
+                mark_presence(kernel, module)
                 result = kernel.invoke(operation, **kwargs)
         except HeinzelError as exc:
             if not as_json and _playful.allowed(kernel.settings, err_console):

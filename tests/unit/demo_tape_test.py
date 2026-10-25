@@ -58,6 +58,12 @@ def test_a_snippet_lives_next_to_a_module(root):
     assert demo_tape.problems(stray, root) == ["docs/demo.tape: not next to a module's __init__.py"]
 
 
+@pytest.mark.parametrize("command", ["hz system plugin remove heinzel-demo", "hz system plugin add demo --confirm"])
+def test_snippets_cannot_replace_the_environment_the_recorder_is_running_from(root, command):
+    snippet = module(root, "src/heinzel/modules/demo", f'Type "{command}"\n')
+    assert any("recording environment" in problem for problem in demo_tape.problems(snippet, root))
+
+
 def test_assembling_hoists_requires_clears_between_snippets_and_holds_the_end(root):
     module(root, "plugins/heinzel-clock/src/heinzel_clock", '# Clock.\nRequire jq\nType "hz clock --json | jq"\n')
     module(root, "src/heinzel/modules/system", 'Require jq\nRequire hz\nType "hz system doctor"\n')

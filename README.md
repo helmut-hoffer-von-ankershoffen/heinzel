@@ -198,6 +198,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.runner.chat`](docs/MODULES.md#systemrunnerchat) — Chat with the agent runner about where you are; it acts through hz once you confirm.
 - [`system.skill`](docs/MODULES.md#systemskill) — List the skills plugins ship for AI, and hand chosen ones to Claude Code.
 - [`system.sound`](docs/MODULES.md#systemsound) — Pick the web app's soundscape: off, Claude FM or one a plugin offers.
+- [`system.state`](docs/MODULES.md#systemstate) — Note how hz is used on this machine and push it to your own state repository.
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
 - [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
@@ -348,3 +349,5 @@ security issues privately, as [SECURITY.md](SECURITY.md) describes.
 
 Heinzelmännchen is free and open-source software under the [MIT license](LICENSE). The packages it ships keep their
 own licenses, listed in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+
+Presence and adoption stay local by default. Opt in to a personal state repository with `hz system config set system.state.personal <repository>`, then inspect `hz system state status` ([state repository design](docs/adr/0081-state-repositories-one-writer-per-branch-the-daemon-pushes.md)).

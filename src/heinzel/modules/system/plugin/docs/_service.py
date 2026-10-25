@@ -338,12 +338,16 @@ class DocsService:
 
     def _derived_scenes(self, name: str, modules: list[ModuleDoc]) -> list[Scene]:
         """The CLI scene of a plugin without a scenes file: `--help`, then read-only commands that need no argument."""
-        commands = [f"hz {name} --help"]
+        cli_modules = [module for module in modules if any(op.command for op in module.operations)]
+        if not cli_modules:
+            return []
+        path = cli_words(tuple(cli_modules[0].qualname.split(".")))
+        commands = [" ".join(("hz", *path, "--help"))]
         candidates = [
             op
             for module in modules
             for op in module.operations
-            if op.read_only and not any(p.required for p in op.parameters) and op.command != f"hz {name} info"
+            if op.command and op.read_only and not any(p.required for p in op.parameters) and op.name != "info"
         ]
         candidates.sort(key=lambda op: (op.audience != "everyday", op.command))
         for index, op in enumerate(candidates[:DERIVED_COMMANDS]):

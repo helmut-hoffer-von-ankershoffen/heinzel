@@ -242,6 +242,38 @@ def test_a_cli_scene_is_derived_from_the_operations(documentation):
     assert scene.commands == expected
 
 
+def test_derived_scenes_skip_operations_without_a_cli_surface(make_kernel):
+    module = Module("forecast", "Forecast metadata.")
+
+    @module.operation(heads={"api"})
+    def remote() -> str:
+        """Metadata for HTTP callers."""
+        return "sunny"
+
+    kernel = make_kernel(builtins=True, forecast=module)
+    service = kernel.resolve(DocsService)
+    surfaces = {head: exposed(kernel, head) for head in _service.HEADS}
+    record = next(record for record in kernel.modules if record.qualname == "forecast")
+    assert service._derived_scenes("weather", [service._module(record, surfaces)]) == []
+
+
+def test_derived_help_uses_the_actual_module_path_instead_of_the_distribution_name(make_kernel):
+    module = Module("forecast", "Forecast metadata.")
+
+    @module.operation
+    def today() -> str:
+        """Today's forecast."""
+        return "sunny"
+
+    kernel = make_kernel(builtins=True, forecast=module)
+    service = kernel.resolve(DocsService)
+    surfaces = {head: exposed(kernel, head) for head in _service.HEADS}
+    record = next(record for record in kernel.modules if record.qualname == "forecast")
+    (scene,) = service._derived_scenes("weather", [service._module(record, surfaces)])
+    assert scene.commands[0] == "hz forecast --help"
+    assert all(command.startswith("hz forecast ") for command in scene.commands)
+
+
 def test_declared_scenes_replace_the_derived_one(kernel, tmp_path):
     scenes = tmp_path / "scenes.toml"
     scenes.write_text(

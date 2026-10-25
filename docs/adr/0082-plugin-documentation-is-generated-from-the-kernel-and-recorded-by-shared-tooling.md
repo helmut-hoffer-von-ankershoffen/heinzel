@@ -95,8 +95,9 @@ from the code, no plugin writes tooling, and a private plugin gets the same page
 - **The scenes.** A plugin declares what to record in `docs/scenes.toml`: `[[cli]]` scenes (a title, `hz` command
   lines, hold times) and `[[ui]]` scenes (a title and steps: `goto` a route, `click` a role and name, `hover`, `fill`,
   `key`, `wait` for text, `screenshot` a caption). A scene needs no code and names roles and labels, never
-  selectors. Without the file, one CLI scene is derived from the operations (`--help`, then read-only operations
-  without required arguments, everyday ones first, the first also as `--json`); UI scenes are declared only, since
+  selectors. Without the file, one CLI scene is derived from actual CLI-visible module paths (`--help`, then read-only
+  operations without required arguments, everyday ones first, the first also as `--json`); a plugin without CLI
+  operations gets no derived CLI scene. UI scenes are declared only, since
   which screen shows an operation is the web app's knowledge (`web/src/layout/navigation.ts`), not the kernel's, and
   guessing or parsing it is what this record rejects. Commands typed in a CLI scene start with `hz ` and are checked
   like the README's `demo.tape` snippets, with a closed stdin-filter flag allowlist. Control characters, shell
@@ -107,7 +108,8 @@ from the code, no plugin writes tooling, and a private plugin gets the same page
   repository of several plugins needs it); the core's file also has `[intro] scenes`, the scenes appended to the
   README's intro. `show` and `build` take `--scenes PATH` (default `docs/scenes.toml`, when it exists), `--plugin
   NAME` and `--builtin` (the page `heinzel` of the core's own modules). The modules' `demo.tape` snippets stay: a snippet is a module's contribution to
-  the core's README intro, a scene is a plugin's own recording; the recorder renders both through the same tape
+  the core's README intro, a scene is a plugin's own recording. Dependencies are installed before recording;
+  snippets cannot remove or reinstall the tool environment they run from. The recorder renders both through the same tape
   settings, and merging the two formats is left open below.
 - **The recordings.** `scripts/docs_record.py` (PEP 723, shared through the template) builds a sandbox like
   the README demo's script did (fresh private temporary HOME/XDG and uv tool directories, its own `HZ_*` directories,
