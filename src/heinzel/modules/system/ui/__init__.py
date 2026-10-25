@@ -37,6 +37,7 @@ from heinzel.modules.system.ui._models import (
     ActionEntry,
     ContributionInfo,
     Entry,
+    NavEntry,
     StatusEntry,
     UiSettings,
     WidgetEntry,
@@ -150,6 +151,30 @@ def widgets(service: UiService, item: Item = None) -> list[WidgetEntry]:
     return service.widgets(item)
 
 
+def render_navigation(entries: list[NavEntry]) -> RenderableType:
+    """Each provider's destinations and checked semantic icon."""
+    if not entries:
+        return Text("No active module declares navigation or Settings.")
+    table = Table(box=None, pad_edge=False)
+    for column in ("Id", "Title", "Icon", "Settings", "Sidebar"):
+        table.add_column(column, overflow="fold")
+    for entry in entries:
+        table.add_row(
+            entry.id,
+            entry.title,
+            entry.icon,
+            ", ".join(entry.settings.sections) if entry.settings else "",
+            entry.problem or _does(entry.sidebar),
+        )
+    return table
+
+
+@module.operation(render=render_navigation, private=True)
+def navigation(service: UiService) -> list[NavEntry]:
+    """List active providers' navigation and owned Settings metadata without running their operations."""
+    return service.navigation()
+
+
 def render_listing(found: list[ContributionInfo]) -> RenderableType:
     """Each contribution and where it shows."""
     if not found:
@@ -213,4 +238,13 @@ def contributions(service: UiService) -> list[Check]:
     ]
 
 
-__all__ = ["ActionEntry", "ContributionInfo", "StatusEntry", "UiService", "UiSettings", "WidgetEntry", "module"]
+__all__ = [
+    "ActionEntry",
+    "ContributionInfo",
+    "NavEntry",
+    "StatusEntry",
+    "UiService",
+    "UiSettings",
+    "WidgetEntry",
+    "module",
+]

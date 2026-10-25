@@ -50,6 +50,8 @@ from heinzel.kernel._contributions import (
     LiveUntil,
     MetricWidget,
     Navigate,
+    NavLet,
+    NavSettings,
     OpenUrl,
     OperationCall,
     ProgressWidget,
@@ -76,6 +78,7 @@ from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_repo
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._identity import CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
     CorePin,
@@ -164,6 +167,8 @@ from heinzel.kernel._protocols import (
     plain_addresses,
 )
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
+from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
+from heinzel.kernel._session_store import SessionStore, SessionWriter
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._signals import SIGNALS, Signal
 from heinzel.kernel._skills import (
@@ -223,6 +228,7 @@ from heinzel.kernel._themes import (
     ThemeColours,
     ThemeFont,
     ThemeFonts,
+    ThemeHeinzel,
     ThemeLet,
     ThemeLogo,
     ThemeLogoFiles,
@@ -275,6 +281,7 @@ __all__ = [
     "Billing",
     "Budget",
     "Calendar",
+    "CallIdentity",
     "Capability",
     "CapabilityView",
     "CardWidget",
@@ -293,6 +300,7 @@ __all__ = [
     "CredentialBackend",
     "CredentialLet",
     "Credentials",
+    "CurrentUser",
     "Daypart",
     "DeclaredCredential",
     "Delivery",
@@ -355,6 +363,8 @@ __all__ = [
     "Module",
     "ModuleRecord",
     "ModuleSettings",
+    "NavLet",
+    "NavSettings",
     "Navigate",
     "Notice",
     "NoticeKind",
@@ -369,6 +379,7 @@ __all__ = [
     "PlaybookLet",
     "PlaybookSetup",
     "PostedMessage",
+    "Principal",
     "Progress",
     "ProgressWidget",
     "Prompter",
@@ -392,6 +403,12 @@ __all__ = [
     "SectionReplacement",
     "SentMail",
     "ServiceLet",
+    "SessionEvent",
+    "SessionHead",
+    "SessionProjector",
+    "SessionRead",
+    "SessionStore",
+    "SessionWriter",
     "Settings",
     "SettingsLet",
     "SetupLet",
@@ -428,6 +445,7 @@ __all__ = [
     "ThemeColours",
     "ThemeFont",
     "ThemeFonts",
+    "ThemeHeinzel",
     "ThemeLet",
     "ThemeLogo",
     "ThemeLogoFiles",

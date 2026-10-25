@@ -67,6 +67,10 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0060](0060-themes-follow-the-time-of-day-and-the-weather.md) | Themes follow the time of day and the weather: variants on a closed vocabulary of signals | proposed | 2026-10-24 |
 | [0062](0062-heinzelmaennchen-find-the-mcp-servers-and-skills-you-gave-claude.md) | Heinzelmännchen find the MCP servers and skills you already gave Claude, read-only first | proposed | 2026-10-25 |
 | [0061](0061-plugins-ship-skills-every-ai-path-can-use.md) | Plugins ship skills every AI path can use: `module.skill(...)`, read-only tools, an explicit export | proposed | 2026-10-24 |
+| [0065](0065-plugins-may-ship-versioned-react-views.md) | Plugins may ship versioned React views alongside their Python declarations | proposed | 2026-10-25 |
+| [0067](0067-hz-owns-sessions-across-pydantic-and-native-cli-turns.md) | hz owns sessions across Pydantic and native CLI turns | proposed | 2026-10-25 |
+| [0068](0068-human-approval-proofs-and-head-parity.md) | Human approval is a scoped proof carriable by every authorized head | proposed | 2026-10-25 |
+| [0072](0072-plugins-declare-navigation-and-settings-as-data.md) | Plugins declare navigation and Settings metadata as checked data | proposed | 2026-10-25 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends
@@ -166,3 +170,6 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 `joy_lets`), and ADR 0017, already implemented with the clock plugin (`plugins/heinzel-clock`), was accepted.
 
 | [0063](0063-world-clock-is-a-local-interactive-globe.md) | World Clock is a local interactive globe in the right panel | proposed | 2026-10-25 |
+| [0064](0064-themes-can-dress-the-core-heinzelmaennchen.md) | Themes can dress the core Heinzelmännchen with a palette and snow | proposed | 2026-10-25 |
+| [0071](0071-text-branding-uses-the-name-and-original-artwork.md) | Text branding uses the name and original artwork | proposed | 2026-10-25 |
+| [0073](0073-themes-supply-safe-avatar-layers.md) | Themes supply safe SVG layers for personal avatars | proposed | 2026-10-25 |

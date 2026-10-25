@@ -1,6 +1,6 @@
 [project]
 name = "heinzel"
-version = "0.7.1"
+version = "0.7.4"
 description = "Heinzelmännchen: an open-source, AI-driven operating system for product development teams."
 readme = "README.md"
 authors = [{ name = "Helmut Hoffer von Ankershoffen", email = "helmuthva@gmail.com" }]
@@ -31,7 +31,7 @@ dependencies = [
     "platformdirs>=4.5",
     "pluggy>=1.6.0,<2",
     "pydantic>=2.12.0,<3",
-    "pydantic-ai-slim>=2.61,<3",
+    "pydantic-ai-slim==2.61.0",
     "pydantic-settings>=2.11.0,<3",
     "pyyaml>=6.0.2,<7",
     "rich>=14.2.0",
@@ -43,8 +43,8 @@ dependencies = [
 
 [project.optional-dependencies]
 # A vendor's client for the `pydantic-ai` AI access option (ADR 0050, 0057); the core imports only pydantic_ai.
-anthropic = ["pydantic-ai-slim[anthropic]>=2.61,<3"]
-openai = ["pydantic-ai-slim[openai]>=2.61,<3"]
+anthropic = ["pydantic-ai-slim[anthropic]==2.61.0"]
+openai = ["pydantic-ai-slim[openai]==2.61.0"]
 
 [project.scripts]
 hz = "heinzel.heads.cli:main"
@@ -64,17 +64,17 @@ Issues = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues"
 test = [
     # The first-party plugins (workspace members), so their tests run in this suite; the release process bumps the
     # bounds. Test-only: `hz system plugin add <name>` installs them for users, nothing installs them by default.
-    "heinzel-atlassian>=0.7.1",
-    "heinzel-clock>=0.7.1",
-    "heinzel-github>=0.7.1",
-    "heinzel-google>=0.7.1",
-    "heinzel-zoom>=0.7.1",
+    "heinzel-atlassian>=0.7.4",
+    "heinzel-clock>=0.7.4",
+    "heinzel-github>=0.7.4",
+    "heinzel-google>=0.7.4",
+    "heinzel-zoom>=0.7.4",
     "coverage>=7.12",
     "httpx>=0.28",
     "hypothesis>=6.140",
     "jsonschema>=4.26",
     # OpenAI's client, so the ChatGPT sign-in flow and a test turn through Pydantic AI run in tests (ADR 0057).
-    "pydantic-ai-slim[openai]>=2.61,<3",
+    "pydantic-ai-slim[openai]==2.61.0",
     "prek>=0.2",
     "pytest>=9.0.3,<10",
     "pytest-timeout>=2.4.0,<3",
@@ -270,7 +270,7 @@ example = "fix(cli): exit with code 1 when an operation fails"
 info = "Conventional commits with the types and scopes in docs/CODING_STANDARDS.md."
 
 [tool.bumpversion]
-current_version = "0.7.1"
+current_version = "0.7.4"
 parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
 serialize = ["{major}.{minor}.{patch}"]
 commit = false
@@ -508,8 +508,8 @@ name = "Modules use only the kernel's public API, like plugins"
 type = "forbidden"
 source_modules = ["heinzel.modules"]
 forbidden_modules = [
-    "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._chat", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation", "heinzel.kernel._jobs",
-    "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._notifications", "heinzel.kernel._org", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings", "heinzel.kernel._skills", "heinzel.kernel._signals", "heinzel.kernel._soundscapes",
+    "heinzel.kernel._agents", "heinzel.kernel._bindings", "heinzel.kernel._chat", "heinzel.kernel._boot", "heinzel.kernel._capabilities", "heinzel.kernel._config", "heinzel.kernel._credentials", "heinzel.kernel._discovery", "heinzel.kernel._duration", "heinzel.kernel._errors", "heinzel.kernel._installation", "heinzel.kernel._identity", "heinzel.kernel._jobs",
+    "heinzel.kernel._kernel", "heinzel.kernel._lets", "heinzel.kernel._module", "heinzel.kernel._notifications", "heinzel.kernel._org", "heinzel.kernel._progress", "heinzel.kernel._release", "heinzel.kernel._settings", "heinzel.kernel._session", "heinzel.kernel._session_io", "heinzel.kernel._session_store", "heinzel.kernel._skills", "heinzel.kernel._signals", "heinzel.kernel._soundscapes",
     "heinzel.kernel._protocols", "heinzel.kernel._spec", "heinzel.kernel._telemetry",
 ]
 allow_indirect_imports = true # going through heinzel.kernel's public API is the point

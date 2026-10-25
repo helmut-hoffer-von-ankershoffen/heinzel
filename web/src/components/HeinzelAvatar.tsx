@@ -4,6 +4,7 @@
 // inline, so it needs no request. Motion is subtle and only without reduced motion: the badge breathes, a working
 // one bobs.
 import { cn } from "@/lib/utils";
+import { useAvatarTheme } from "./AvatarTheme";
 import {
   ACCESSORY_LABEL,
   type HeinzelLook,
@@ -62,6 +63,20 @@ function Parts({ shapes }: { shapes: Shape[] }) {
 }
 
 function Part({ shape }: { shape: Shape }) {
+  if (shape.kind === "image")
+    return (
+      <image
+        key={shape.href}
+        href={shape.href}
+        x={shape.x}
+        y={shape.y}
+        width={shape.width}
+        height={shape.height}
+        onError={(event) => {
+          event.currentTarget.style.display = "none";
+        }}
+      />
+    );
   if (shape.kind === "group")
     return (
       <g transform={shape.transform}>
@@ -86,7 +101,8 @@ function Part({ shape }: { shape: Shape }) {
 const HEAD_MOVES: readonly IdleMove[] = ["blink", "tilt", "glance-left", "glance-right", "hop"];
 
 export function HeinzelAvatar({ view = "full", label, className, alive = false, ...look }: Props) {
-  const shapes = heinzelShapes(look);
+  const theme = useAvatarTheme();
+  const shapes = heinzelShapes({ ...look, theme: look.theme ?? theme });
   const state = look.state ?? "idle";
   const accessories = parseAccessories(look.accessories);
   // Accessories are decoration: without a label the picture stays hidden; with one they are part of what is said.

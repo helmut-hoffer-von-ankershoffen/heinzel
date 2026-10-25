@@ -23,6 +23,8 @@ from heinzel.kernel._contributions import (
     ContributionLet,
     Icon,
     Navigate,
+    NavLet,
+    NavSettings,
     OpenUrl,
     RunCommand,
     RunOperation,
@@ -165,6 +167,7 @@ class Module:
         *,
         name: str | None = None,
         read_only: bool = True,
+        private: bool = False,
         render: Callable[[Any], RenderableType] | None = None,
         exit_code: Callable[[Any], int] | None = None,
         heads: Iterable[str] | None = None,
@@ -181,6 +184,7 @@ class Module:
         *,
         name: str | None = None,
         read_only: bool = True,
+        private: bool = False,
         render: Callable[[Any], RenderableType] | None = None,
         exit_code: Callable[[Any], int] | None = None,
         heads: Iterable[str] | None = None,
@@ -195,6 +199,7 @@ class Module:
             func: The function, when used as a bare decorator.
             name: Operation name; defaults to the function name with underscores as dashes.
             read_only: False if the operation changes state; heads use this for confirmations and HTTP verbs.
+            private: Require authenticated call identity; never expose on unauthenticated network heads.
             render: How human-facing heads present the result; the JSON form is the default.
             exit_code: Maps the result to an exit code for heads that have one; 0 when not given.
             heads: Restrict the operation to these heads, e.g. `{"cli"}` for interactive ones; all heads by default.
@@ -230,6 +235,7 @@ class Module:
                     func=target,
                     summary=summary.splitlines()[0],
                     read_only=read_only,
+                    private=private,
                     render=render,
                     exit_code=exit_code,
                     heads=frozenset(heads) if heads is not None else None,
@@ -814,7 +820,30 @@ class Module:
         self._contribute("action", let)
         return let
 
-    def _contribute(self, kind: str, let: ContributionLet) -> None:
+    def nav(  # noqa: PLR0913 - static data of one navigation entry, by keyword
+        self,
+        name: str = "main",
+        *,
+        title: str,
+        icon: Icon,
+        order: int = ORDER_DEFAULT,
+        settings: NavSettings | None = None,
+        sidebar: Navigate | OpenUrl | RunOperation | RunCommand | None = None,
+    ) -> NavLet:
+        """Declare checked Settings/sidebar metadata; no new page or plugin renderer is registered (ADR 0072).
+
+        Settings prefixes must belong to this module or its descendants and have active settings. The consumer
+        verifies them after discovery, resolves any sidebar operation through the same contribution effect gate,
+        and omits unavailable providers. Existing Settings declarations retain a generic compatibility entry.
+
+        Raises:
+            ValueError: If a value or target is invalid, the name is duplicated, or four entries already exist.
+        """
+        let = NavLet(name=name, title=title, icon=icon, order=order, settings=settings, sidebar=sidebar)
+        self._contribute("nav", let)
+        return let
+
+    def _contribute(self, kind: str, let: ContributionLet | NavLet) -> None:
         limit = MAX_PER_MODULE[kind]
         if sum(isinstance(existing, type(let)) for existing in self._lets) >= limit:
             msg = f"Module {self.name!r} offers {limit} {kind} contributions already, the most one module may"

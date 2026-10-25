@@ -1,7 +1,7 @@
-# Focus, a stream on YouTube (ADR 0058): the core's second soundscape, never on by default.
+# Die Heinzelmännchen, a stream on YouTube (ADR 0058), never on by default.
 # Played in YouTube's privacy-enhanced player (youtube-nocookie.com); nothing of YouTube loads until you press Play.
 name = "focus"
-title = "Focus"
+title = "Die Heinzelmännchen"
 kind = "stream"
 
 [stream]

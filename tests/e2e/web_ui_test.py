@@ -155,3 +155,27 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
     assert splash["dark"] == {"line": "Connecting to hz…", "background": "rgb(24, 24, 24)", "gone": True}
     assert "hz isn't answering" in splash["error"]
     assert "hz ui" in splash["error"]
+
+
+@pytest.mark.timeout(600)
+def test_theme_image_viewports_preserve_the_cap_hinge_in_actual_chromium(tmp_path):
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", "chromium"],
+        cwd=REPO,
+        check=True,
+        timeout=600,
+        capture_output=True,
+    )
+    shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
+    driven = subprocess.run(
+        [*run, "exec", "node", "e2e/avatar-tilt.mjs", str(shots)],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=110,
+    )
+    assert driven.returncode == 0, driven.stderr
+    result = json.loads(driven.stdout.strip().splitlines()[-1])
+    assert result == {"comparisons": 27, "reduced": True, "errors": []}

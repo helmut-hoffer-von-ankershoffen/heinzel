@@ -19,6 +19,8 @@ change like a library release: an ADR for a new concept, unit tests for every br
   handles, modules get the read-only `CapabilityView` (ADR 0028); `Kernel.handle_for` gives the compiling module's
   jobs read handles only.
 - `_credentials.py` — `Credentials`, the only way to secrets (ADR 0030), and the environment backend.
+- `_session.py`, `_session_store.py`, `_session_io.py` — `SessionStore`, provider-independent checkpoint envelopes,
+  private turn bodies and the derived SQLite index (ADR 0049); a module owns the event vocabulary and projection.
 - `_lets.py` — let types, `Check`/`Status` and `CatchUp`. A new let kind needs a head, the kernel, a `system`
   submodule or the built-in module that owns the concept to consume it (`JobLet`: `system.daemon`; `PlaybookLet`:
   `workflow`, ADR 0037; `ThemeLet`: `system.theme`, ADR 0044; `SignalLet`: `system.theme`, ADR 0060; `SoundscapeLet`:

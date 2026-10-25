@@ -60,6 +60,18 @@ def notes(ran: list[str]) -> Module:
         """Not for agents."""
         return "private"
 
+    @module.operation(private=True, audience="everyday")
+    def personal_read() -> str:
+        """Private data is granted by the durable engine, never ambient chat tools."""
+        ran.append("personal-read")
+        return "private"
+
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def personal_change() -> str:
+        """A private mutation is not an ambient chat tool either."""
+        ran.append("personal-change")
+        return "private"
+
     return module
 
 
@@ -80,22 +92,32 @@ def tools(kernel, session="0123456789abcdef"):
 
 
 def test_a_chat_asked_for_all_tools_gets_every_tool_the_mcp_head_has_and_nothing_it_hides(kernel):
-    names = {item.name for item in exposed(kernel, mcp.HEAD)}
+    ordinary = exposed(kernel, mcp.HEAD)
+    names = {item.name for item in ordinary if not item.operation.private}
+    private = {item.name for item in ordinary if item.operation.private}
+    assert {"notes_personal_read", "notes_personal_change"} <= private
 
     async def listed_tools(tools: str) -> set[str]:
         async with Client(mcp.build(kernel, chat="0123456789abcdef", chat_tools=tools)) as client:  # type: ignore[arg-type]
             return {tool.name for tool in (await client.list_tools()).tools}
 
     everyday = anyio.run(listed_tools, "everyday")  # the default: what a short message needs, far cheaper (ADR 0057)
-    assert everyday == {item.name for item in exposed(kernel, mcp.HEAD) if item.operation.audience == "everyday"}
+    assert everyday == {
+        item.name for item in ordinary if item.operation.audience == "everyday" and not item.operation.private
+    }
     listed = anyio.run(listed_tools, "all")
     assert listed == names
+    assert not (listed & private)
     assert {"notes_owner", "notes_publish", "system_doctor", "system_config_set"} <= listed
     assert "notes_private" not in listed
+    assert "system_ui_navigation" not in listed
+    assert "system_ui_navigation" in {item.name for item in exposed(kernel, mcp.HEAD)}
     # Expert mode is off and these are expert operations (the default audience): hidden in help, still tools.
     assert not kernel.settings.expert
     assert all(
-        item.operation.audience == "expert" for item in exposed(kernel, mcp.HEAD) if item.name.startswith("notes_")
+        item.operation.audience == "expert"
+        for item in ordinary
+        if item.name.startswith("notes_") and not item.operation.private
     )
     assert not any(name.startswith("system_runner_chat") for name in listed)  # never its own confirm
 

@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
-amended-by: 0025
+amended-by: 0025, 0071
 ---
 
 # 0016: The project is called Heinzelmännchen; the command is `hz`

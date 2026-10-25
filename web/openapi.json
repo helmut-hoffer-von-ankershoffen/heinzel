@@ -349,6 +349,7 @@
               "circle-check",
               "clock",
               "cloud",
+              "cloud-sun",
               "code",
               "file-text",
               "git-pull-request",
@@ -449,6 +450,222 @@
           "icon"
         ],
         "title": "ActionEntry",
+        "type": "object"
+      },
+      "ActionPreview": {
+        "description": "Service-produced text and recipients; the client never infers a target or recipient list.",
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The proposed replacement section text.",
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The original section text, when applicable.",
+            "title": "Before"
+          },
+          "diff": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The service-produced exact change for review.",
+            "title": "Diff"
+          },
+          "kind": {
+            "description": "The kind of proposed external change.",
+            "enum": [
+              "operation",
+              "document-section",
+              "email"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "recipient_snapshot_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The hash of that resolved recipient snapshot.",
+            "title": "Recipient Snapshot Hash"
+          },
+          "recipients": {
+            "description": "The exact recipient snapshot awaiting approval.",
+            "items": {
+              "$ref": "#/components/schemas/RecipientPreview"
+            },
+            "title": "Recipients",
+            "type": "array"
+          },
+          "revision": {
+            "description": "The immutable preview revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "sha256": {
+            "description": "The exact preview hash bound to a human decision.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "source_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The source revision the draft was based on.",
+            "title": "Source Revision"
+          },
+          "target": {
+            "description": "The exact operation target.",
+            "title": "Target",
+            "type": "string"
+          },
+          "title": {
+            "description": "A short description of the change.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "sha256",
+          "kind",
+          "title",
+          "target"
+        ],
+        "title": "ActionPreview",
+        "type": "object"
+      },
+      "ActionProposal": {
+        "description": "The exact stored call a human may authorize; no decision proof is returned in a snapshot.",
+        "properties": {
+          "argument_hash": {
+            "description": "The canonical argument hash bound to approval.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Argument Hash",
+            "type": "string"
+          },
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The exact stored operation arguments.",
+            "title": "Arguments",
+            "type": "object"
+          },
+          "command": {
+            "description": "A readable equivalent command for review.",
+            "title": "Command",
+            "type": "string"
+          },
+          "contract_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The approved contract version, when present.",
+            "title": "Contract Version"
+          },
+          "grant_revision": {
+            "description": "The effective grant revision bound to this proposal.",
+            "minimum": 1.0,
+            "title": "Grant Revision",
+            "type": "integer"
+          },
+          "id": {
+            "description": "The stable stored action proposal id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The declared installed operation to invoke.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "policy_revision": {
+            "description": "The effective policy revision bound to this proposal.",
+            "minimum": 1.0,
+            "title": "Policy Revision",
+            "type": "integer"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The exact server-produced change and recipient preview."
+          },
+          "status": {
+            "default": "pending",
+            "description": "The durable decision or execution state.",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed",
+              "declined",
+              "uncertain"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "turn_id": {
+            "description": "The turn that proposed this action.",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "turn_id",
+          "operation",
+          "argument_hash",
+          "grant_revision",
+          "policy_revision",
+          "command"
+        ],
+        "title": "ActionProposal",
         "type": "object"
       },
       "AdapterCandidate": {
@@ -773,6 +990,67 @@
         "title": "AssetView",
         "type": "object"
       },
+      "AttachmentRef": {
+        "description": "One session's immutable private upload; no server path or arbitrary URL is exposed.",
+        "properties": {
+          "bytes": {
+            "description": "The retained content size in bytes.",
+            "minimum": 0.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "id": {
+            "description": "The opaque retained upload id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "mime": {
+            "description": "The validated media type.",
+            "maxLength": 100,
+            "title": "Mime",
+            "type": "string"
+          },
+          "name": {
+            "description": "The display filename; never a server path.",
+            "maxLength": 200,
+            "title": "Name",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The owning durable session id.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "The exact retained content hash.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "state": {
+            "default": "retained",
+            "description": "Whether private content remains available.",
+            "enum": [
+              "retained",
+              "expired"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "name",
+          "mime",
+          "bytes",
+          "sha256"
+        ],
+        "title": "AttachmentRef",
+        "type": "object"
+      },
       "AvailablePlugin": {
         "description": "A plugin one can install with `hz system plugin add`.",
         "properties": {
@@ -881,6 +1159,90 @@
           }
         },
         "title": "Avatar",
+        "type": "object"
+      },
+      "AvatarSlot": {
+        "enum": [
+          "hat-young",
+          "hat-grown",
+          "hat-old",
+          "outfit-baby",
+          "outfit-young",
+          "outfit-grown",
+          "outfit-old"
+        ],
+        "type": "string"
+      },
+      "BackendBinding": {
+        "description": "The effective choice pinned to a turn; changing it takes effect between turns.",
+        "properties": {
+          "backend": {
+            "description": "The selected installed AI backend.",
+            "title": "Backend",
+            "type": "string"
+          },
+          "capabilities": {
+            "description": "Capabilities the selected adapter has proved it supports.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The selected reasoning effort, when supported.",
+            "title": "Effort"
+          },
+          "mode": {
+            "description": "Whether the turn uses direct API, a CLI model bridge or a native CLI loop.",
+            "enum": [
+              "api",
+              "cli-model",
+              "native-cli"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The selected model, when explicitly configured.",
+            "title": "Model"
+          },
+          "revision": {
+            "default": 1,
+            "description": "The binding revision pinned to this turn.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backend",
+          "mode"
+        ],
+        "title": "BackendBinding",
         "type": "object"
       },
       "Candidate": {
@@ -2767,6 +3129,105 @@
         "title": "ContractGraph",
         "type": "object"
       },
+      "ContractVersion": {
+        "description": "A versioned contract artifact; only an explicit approval can activate its schedule.",
+        "properties": {
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When this exact version was approved, if ever.",
+            "title": "Approved At"
+          },
+          "created_at": {
+            "description": "When this version was proposed.",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "description": "The stable contract artifact id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "parent_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The approved version this amendment follows.",
+            "title": "Parent Version"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The recorded reason for the amendment or decision.",
+            "title": "Reason"
+          },
+          "sha256": {
+            "description": "The exact artifact hash.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "status": {
+            "default": "proposed",
+            "description": "The proposal or approval state of this version.",
+            "enum": [
+              "proposed",
+              "approved",
+              "superseded",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "description": "The versioned OpenProse contract text.",
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "description": "The human-readable responsibility title.",
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "description": "The immutable contract version.",
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "sha256",
+          "title",
+          "text",
+          "created_at"
+        ],
+        "title": "ContractVersion",
+        "type": "object"
+      },
       "ContributionInfo": {
         "description": "A contribution as Settings lists it: where it may show and whether it does, without running it.",
         "properties": {
@@ -4068,6 +4529,7 @@
                   "circle-check",
                   "clock",
                   "cloud",
+                  "cloud-sun",
                   "code",
                   "file-text",
                   "git-pull-request",
@@ -4192,6 +4654,112 @@
           "checks"
         ],
         "title": "HealthReport",
+        "type": "object"
+      },
+      "HeinzelAppearance": {
+        "additionalProperties": false,
+        "description": "Personal appearance on the renderer's closed vocabulary; state and theme are application-owned.",
+        "properties": {
+          "accessories": {
+            "description": "Personal decorations from the supported closed vocabulary.",
+            "items": {
+              "enum": [
+                "umbrella",
+                "sunglasses",
+                "scarf"
+              ],
+              "type": "string"
+            },
+            "title": "Accessories",
+            "type": "array"
+          },
+          "age": {
+            "default": "grown",
+            "description": "The chosen age of this personal character.",
+            "enum": [
+              "baby",
+              "young",
+              "grown",
+              "old"
+            ],
+            "title": "Age",
+            "type": "string"
+          },
+          "beard": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "short",
+                  "medium",
+                  "long"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The explicit beard style; null inherits the age default.",
+            "title": "Beard"
+          },
+          "build": {
+            "default": "regular",
+            "description": "The chosen body shape.",
+            "enum": [
+              "slim",
+              "regular",
+              "round"
+            ],
+            "title": "Build",
+            "type": "string"
+          },
+          "hat": {
+            "anyOf": [
+              {
+                "enum": [
+                  "red",
+                  "rust",
+                  "ochre",
+                  "green",
+                  "teal",
+                  "blue",
+                  "purple",
+                  "slate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The personal hat colour; null inherits the installed theme.",
+            "title": "Hat"
+          },
+          "shirt": {
+            "anyOf": [
+              {
+                "enum": [
+                  "green",
+                  "blue",
+                  "purple",
+                  "red-brown",
+                  "ochre",
+                  "teal",
+                  "slate",
+                  "rose"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The personal shirt colour; null inherits the installed theme.",
+            "title": "Shirt"
+          }
+        },
+        "title": "HeinzelAppearance",
         "type": "object"
       },
       "HeinzelList": {
@@ -5242,6 +5810,59 @@
         "title": "MemberView",
         "type": "object"
       },
+      "MessageAccepted": {
+        "description": "The inbox acknowledgement; it reports durable acceptance, not completed model work.",
+        "properties": {
+          "disposition": {
+            "description": "Acceptance or dispatch state; queued does not mean a completed answer.",
+            "enum": [
+              "started",
+              "queued",
+              "steered"
+            ],
+            "title": "Disposition",
+            "type": "string"
+          },
+          "inbox_position": {
+            "description": "The committed control-journal position of the accepted message.",
+            "minimum": 1.0,
+            "title": "Inbox Position",
+            "type": "integer"
+          },
+          "request_id": {
+            "description": "The exact accepted client request id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable conversation that owns the inbox entry.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The assigned turn id, when work has started.",
+            "title": "Turn Id"
+          }
+        },
+        "required": [
+          "request_id",
+          "session_id",
+          "disposition",
+          "inbox_position"
+        ],
+        "title": "MessageAccepted",
+        "type": "object"
+      },
       "MetricWidget": {
         "additionalProperties": false,
         "description": "One number with a label, and how it moved.",
@@ -5476,6 +6097,188 @@
           "lets"
         ],
         "title": "ModuleInfo",
+        "type": "object"
+      },
+      "NavEntry": {
+        "description": "Checked navigation metadata from one active provider, without running an operation.",
+        "properties": {
+          "declared": {
+            "description": "True for an explicit NavLet; false for generic legacy Settings metadata.",
+            "title": "Declared",
+            "type": "boolean"
+          },
+          "icon": {
+            "description": "The provider's checked semantic icon.",
+            "enum": [
+              "activity",
+              "alarm-clock",
+              "bell",
+              "bot",
+              "calendar",
+              "calendar-clock",
+              "chart-line",
+              "circle-alert",
+              "circle-check",
+              "clock",
+              "cloud",
+              "cloud-sun",
+              "code",
+              "file-text",
+              "git-pull-request",
+              "globe",
+              "heart",
+              "inbox",
+              "info",
+              "link",
+              "list-checks",
+              "mail",
+              "message-square",
+              "play",
+              "rocket",
+              "star",
+              "terminal",
+              "timer",
+              "users",
+              "video",
+              "zap"
+            ],
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable `<qualified-module>:<name>` identity; legacy Settings use reserved `:@settings`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified module that declared this entry.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Display order; ties are sorted by stable id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its distribution, or none for a built-in provider.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why this declaration has no executable target.",
+            "title": "Problem"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NavSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Owned Settings prefixes and their group."
+          },
+          "sidebar": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The canonical sidebar effect; no new route is registered.",
+            "title": "Sidebar"
+          },
+          "title": {
+            "description": "The provider's checked display title.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "declared",
+          "plugin",
+          "title",
+          "icon",
+          "order"
+        ],
+        "title": "NavEntry",
+        "type": "object"
+      },
+      "NavSettings": {
+        "additionalProperties": false,
+        "description": "The module-owned Settings sections a navigation entry groups under an existing heading.",
+        "properties": {
+          "group": {
+            "default": "preferences",
+            "description": "The existing Settings heading under which the entry appears.",
+            "enum": [
+              "preferences",
+              "customize",
+              "organisation",
+              "computer"
+            ],
+            "title": "Group",
+            "type": "string"
+          },
+          "sections": {
+            "description": "Qualified module prefixes owned by this provider.",
+            "items": {
+              "pattern": "^[a-z](?:-?[a-z0-9])*(?:\\.[a-z](?:-?[a-z0-9])*)*$",
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Sections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sections"
+        ],
+        "title": "NavSettings",
         "type": "object"
       },
       "Navigate": {
@@ -5888,6 +6691,21 @@
         "additionalProperties": false,
         "description": "How the app runs an `operation` effect, built by `system.ui` from the operation itself, never by a plugin.",
         "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Validated flat JSON arguments for a private mutation; never a query fallback.",
+            "title": "Body"
+          },
           "command": {
             "description": "The same call as a person reads it, e.g. `hz clock`.",
             "title": "Command",
@@ -5925,7 +6743,7 @@
                 }
               ]
             },
-            "description": "The validated arguments, as query parameters.",
+            "description": "Validated query arguments; empty for private mutations.",
             "title": "Query",
             "type": "object"
           },
@@ -6928,6 +7746,102 @@
         "title": "PublishStatus",
         "type": "object"
       },
+      "Question": {
+        "description": "An answerable, stored question; answering it grants no new permission.",
+        "properties": {
+          "answer_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The validated answer shape, when constrained.",
+            "title": "Answer Schema",
+            "type": "object"
+          },
+          "choices": {
+            "description": "Suggested explicit answer choices.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "id": {
+            "description": "The stable question id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "The question shown to the user.",
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "revision": {
+            "default": 1,
+            "description": "The exact question revision an answer must reference.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "status": {
+            "default": "waiting",
+            "description": "Whether the question is still waiting, answered or cancelled.",
+            "enum": [
+              "waiting",
+              "answered",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "turn_id": {
+            "description": "The turn that is waiting for this answer.",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "turn_id",
+          "prompt"
+        ],
+        "title": "Question",
+        "type": "object"
+      },
+      "RecipientPreview": {
+        "description": "A resolved recipient in the exact snapshot awaiting human review.",
+        "properties": {
+          "address": {
+            "description": "The exact destination address awaiting approval.",
+            "title": "Address",
+            "type": "string"
+          },
+          "name": {
+            "description": "The recipient display name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "principal_id": {
+            "description": "The resolved recipient identity.",
+            "title": "Principal Id",
+            "type": "string"
+          },
+          "role": {
+            "description": "The resolved role used to select this recipient.",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "principal_id",
+          "name",
+          "address",
+          "role"
+        ],
+        "title": "RecipientPreview",
+        "type": "object"
+      },
       "RecommendationView": {
         "description": "A setting the stack recommends; applied only when you accept it.",
         "properties": {
@@ -6967,6 +7881,45 @@
           "command"
         ],
         "title": "RecommendationView",
+        "type": "object"
+      },
+      "ReferenceBlock": {
+        "description": "A question, proposal or attachment whose state is held by the application service.",
+        "properties": {
+          "fallback": {
+            "description": "Plain-text explanation of the referenced object.",
+            "minLength": 1,
+            "title": "Fallback",
+            "type": "string"
+          },
+          "id": {
+            "description": "The stable block id within its message.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Whether this block references a question, proposal or attachment.",
+            "enum": [
+              "question",
+              "proposal",
+              "attachment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "ref": {
+            "description": "The application-owned object id.",
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "ref",
+          "fallback"
+        ],
+        "title": "ReferenceBlock",
         "type": "object"
       },
       "ReleaseCheck": {
@@ -7077,6 +8030,57 @@
           "url"
         ],
         "title": "ReleaseNotes",
+        "type": "object"
+      },
+      "RendererBlock": {
+        "description": "Validated data for an installed renderer; executable markup is never a message block.",
+        "properties": {
+          "data": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Validated renderer data without executable markup.",
+            "title": "Data",
+            "type": "object"
+          },
+          "fallback": {
+            "description": "Plain-text content for heads without this renderer.",
+            "minLength": 1,
+            "title": "Fallback",
+            "type": "string"
+          },
+          "id": {
+            "description": "The stable block id within its message.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "renderer",
+            "default": "renderer",
+            "description": "A block for an installed data renderer.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "manifest_sha256": {
+            "description": "The exact renderer manifest fingerprint.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Manifest Sha256",
+            "type": "string"
+          },
+          "renderer": {
+            "description": "The installed renderer identifier.",
+            "title": "Renderer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "renderer",
+          "manifest_sha256",
+          "data",
+          "fallback"
+        ],
+        "title": "RendererBlock",
         "type": "object"
       },
       "RequirementStatus": {
@@ -7305,24 +8309,11 @@
         "description": "Run an operation of the contributing module with fixed arguments; one that writes only after confirmation.",
         "properties": {
           "arguments": {
-            "description": "Its arguments by parameter name: strings, numbers, booleans.",
+            "description": "Fixed JSON arguments by parameter name; structured values require a private mutation.",
+            "maxProperties": 32,
             "patternProperties": {
               "^[a-z_][a-z0-9_]*$": {
-                "anyOf": [
-                  {
-                    "type": "boolean"
-                  },
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "maxLength": 280,
-                    "type": "string"
-                  }
-                ]
+                "$ref": "#/components/schemas/JsonValue"
               }
             },
             "title": "Arguments",
@@ -7357,6 +8348,456 @@
           "operation"
         ],
         "title": "RunOperation",
+        "type": "object"
+      },
+      "SessionCosts": {
+        "description": "The same visible budget for every head and backend, with plan estimates labelled separately.",
+        "properties": {
+          "message_max_usd": {
+            "description": "The current allowed cap for the next model turn.",
+            "minimum": 0.0,
+            "title": "Message Max Usd",
+            "type": "number"
+          },
+          "session_max_usd": {
+            "description": "The current policy cap for the whole conversation.",
+            "exclusiveMinimum": 0.0,
+            "title": "Session Max Usd",
+            "type": "number"
+          },
+          "spent_usd": {
+            "default": 0,
+            "description": "Accounted usage in US dollars across this conversation.",
+            "minimum": 0.0,
+            "title": "Spent Usd",
+            "type": "number"
+          },
+          "unknown_turns": {
+            "default": 0,
+            "description": "Turns whose actual spend requires reconciliation.",
+            "minimum": 0.0,
+            "title": "Unknown Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_max_usd",
+          "message_max_usd"
+        ],
+        "title": "SessionCosts",
+        "type": "object"
+      },
+      "SessionList": {
+        "description": "The personal conversations visible to this installation's current identity.",
+        "properties": {
+          "sessions": {
+            "description": "Personal conversations visible to the authenticated owner, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/SessionSummary"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "title": "SessionList",
+        "type": "object"
+      },
+      "SessionMessage": {
+        "description": "A visible message or an explicit gap where private body content expired.",
+        "properties": {
+          "at": {
+            "description": "When the message was durably recorded.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "attachment_ids": {
+            "description": "Retained uploads attached to this message.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Attachment Ids",
+            "type": "array"
+          },
+          "backend_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackendBinding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The exact backend choice used for this turn."
+          },
+          "billing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan",
+                  "api"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether usage came from a subscription plan or direct API billing.",
+            "title": "Billing"
+          },
+          "blocks": {
+            "description": "Validated rich blocks with portable text fallbacks.",
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "attachment": "#/components/schemas/ReferenceBlock",
+                  "proposal": "#/components/schemas/ReferenceBlock",
+                  "question": "#/components/schemas/ReferenceBlock",
+                  "renderer": "#/components/schemas/RendererBlock",
+                  "text": "#/components/schemas/TextBlock"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/RendererBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/ReferenceBlock"
+                }
+              ]
+            },
+            "title": "Blocks",
+            "type": "array"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reported or priced cost in US dollars; absent when unknown.",
+            "title": "Cost Usd"
+          },
+          "id": {
+            "description": "The stable message id; accepted user messages retain their request id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "description": "Who produced this visible message.",
+            "enum": [
+              "user",
+              "assistant",
+              "tool",
+              "system"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "seq": {
+            "description": "The authoritative control-journal position; gaps are permitted.",
+            "minimum": 1.0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "default": "completed",
+            "description": "The persisted state of this message or its expired body.",
+            "enum": [
+              "pending",
+              "completed",
+              "failed",
+              "interrupted",
+              "expired",
+              "timeout",
+              "budget"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "description": "The portable plain-text content.",
+            "title": "Text",
+            "type": "string"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The owning turn id, when one has been assigned.",
+            "title": "Turn Id"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "role",
+          "at"
+        ],
+        "title": "SessionMessage",
+        "type": "object"
+      },
+      "SessionSnapshot": {
+        "description": "Current metadata plus one message page; a fresh Heinzel can chat before it has an approved contract.",
+        "properties": {
+          "appearance": {
+            "$ref": "#/components/schemas/HeinzelAppearance",
+            "description": "The persisted personal character overrides."
+          },
+          "attachments": {
+            "description": "Retained uploads owned by this conversation.",
+            "items": {
+              "$ref": "#/components/schemas/AttachmentRef"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
+          "backend_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackendBinding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effective backend choice for the next safe turn boundary."
+          },
+          "contract_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The currently approved contract version, if any.",
+            "title": "Contract Version"
+          },
+          "contracts": {
+            "description": "The versioned contract history visible to this owner.",
+            "items": {
+              "$ref": "#/components/schemas/ContractVersion"
+            },
+            "title": "Contracts",
+            "type": "array"
+          },
+          "costs": {
+            "$ref": "#/components/schemas/SessionCosts",
+            "description": "The shared usage accounting and current policy limits."
+          },
+          "has_more": {
+            "default": false,
+            "description": "Whether another message page remains.",
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "heinzel_id": {
+            "description": "The same stable identity as session_id.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Heinzel Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "heinzel",
+            "default": "heinzel",
+            "description": "The durable conversation kind.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_seq": {
+            "default": 0,
+            "description": "The latest acknowledged control-journal sequence.",
+            "minimum": 0.0,
+            "title": "Last Seq",
+            "type": "integer"
+          },
+          "messages": {
+            "description": "One ordered page of visible messages.",
+            "items": {
+              "$ref": "#/components/schemas/SessionMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "name": {
+            "description": "The persisted personal display name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "next_after_seq": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The last returned control sequence when another page remains.",
+            "title": "Next After Seq"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opaque cursor for the next message page; absent at the end.",
+            "title": "Next Cursor"
+          },
+          "pending_actions": {
+            "description": "Stored actions awaiting a decision or reconciliation.",
+            "items": {
+              "$ref": "#/components/schemas/ActionProposal"
+            },
+            "title": "Pending Actions",
+            "type": "array"
+          },
+          "profile_revision": {
+            "default": 1,
+            "description": "The exact name and appearance revision for optimistic updates.",
+            "minimum": 1.0,
+            "title": "Profile Revision",
+            "type": "integer"
+          },
+          "questions": {
+            "description": "Stored questions and their exact answer revisions.",
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WakeScheduleView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The authoritative schedule and effective eligibility, when available."
+          },
+          "session_id": {
+            "description": "The stable hz-owned conversation identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "state": {
+            "default": "proposed",
+            "description": "The authoritative projected lifecycle state.",
+            "enum": [
+              "proposed",
+              "asleep",
+              "awake",
+              "waiting",
+              "paused",
+              "retired"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "heinzel_id",
+          "name",
+          "costs"
+        ],
+        "title": "SessionSnapshot",
+        "type": "object"
+      },
+      "SessionSummary": {
+        "description": "Picker metadata, including proposed chats with no approved contract.",
+        "properties": {
+          "appearance": {
+            "$ref": "#/components/schemas/HeinzelAppearance",
+            "description": "The persisted character overrides for the session picker."
+          },
+          "contract_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The approved contract version, when one exists.",
+            "title": "Contract Version"
+          },
+          "last_seq": {
+            "description": "The latest acknowledged control-journal sequence.",
+            "minimum": 0.0,
+            "title": "Last Seq",
+            "type": "integer"
+          },
+          "name": {
+            "description": "The persisted personal display name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal conversation identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "state": {
+            "description": "The authoritative projected lifecycle state.",
+            "enum": [
+              "proposed",
+              "asleep",
+              "awake",
+              "waiting",
+              "paused",
+              "retired"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the latest acknowledged control was recorded.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "name",
+          "state",
+          "last_seq",
+          "updated_at"
+        ],
+        "title": "SessionSummary",
         "type": "object"
       },
       "SettingInfo": {
@@ -8332,6 +9773,7 @@
                   "circle-check",
                   "clock",
                   "cloud",
+                  "cloud-sun",
                   "code",
                   "file-text",
                   "git-pull-request",
@@ -8714,6 +10156,34 @@
         "title": "Tested",
         "type": "object"
       },
+      "TextBlock": {
+        "description": "A portable text answer, also the fallback for heads without rich rendering.",
+        "properties": {
+          "id": {
+            "description": "The stable block id within its message.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "text",
+            "default": "text",
+            "description": "A portable plain-text block.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "description": "The plain text to render.",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "TextBlock",
+        "type": "object"
+      },
       "ThemeBackdrop": {
         "additionalProperties": false,
         "description": "A gradient behind the main area (`[light.backdrop]`), of hex colours and the theme's own colour tokens.\n\nThe web app builds the CSS from these typed parts: a kind, an angle in degrees and two to four stops, each a hex\ncolour or a token name it turns into `var(--color-<token>)`; no other text reaches CSS, and no `url()` exists.",
@@ -8953,6 +10423,57 @@
           "style"
         ],
         "title": "ThemeFontView",
+        "type": "object"
+      },
+      "ThemeHeinzel": {
+        "additionalProperties": false,
+        "description": "Checked colours and decorations for the core drawing; personal look choices stay in charge.",
+        "properties": {
+          "assets": {
+            "additionalProperties": {
+              "maxLength": 200,
+              "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.svg$",
+              "type": "string"
+            },
+            "description": "Optional original SVG hat/outfit layers per age, relative to the theme file (ADR 0073).",
+            "maxProperties": 7,
+            "propertyNames": {
+              "$ref": "#/components/schemas/AvatarSlot"
+            },
+            "title": "Assets",
+            "type": "object"
+          },
+          "decorations": {
+            "default": [],
+            "description": "Optional decoration of every core avatar; snow adds a cap patch and scarf.",
+            "items": {
+              "const": "snow",
+              "type": "string"
+            },
+            "maxItems": 1,
+            "title": "Decorations",
+            "type": "array"
+          },
+          "palette": {
+            "additionalProperties": {
+              "description": "A hex colour, `#rgb` or `#rrggbb`.",
+              "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+              "type": "string"
+            },
+            "description": "Colours for default hat, shirt and scarf parts.",
+            "maxProperties": 3,
+            "propertyNames": {
+              "enum": [
+                "hat",
+                "shirt",
+                "scarf"
+              ]
+            },
+            "title": "Palette",
+            "type": "object"
+          }
+        },
+        "title": "ThemeHeinzel",
         "type": "object"
       },
       "ThemeList": {
@@ -9521,6 +11042,25 @@
             "description": "The weight of headings (`--heading-weight`), 100 to 900, e.g. `600`.",
             "title": "Heading Weight",
             "type": "integer"
+          },
+          "heinzel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeHeinzel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Core avatar colours and decorations."
+          },
+          "heinzel_assets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Available checked avatar layers as versioned same-origin URLs.",
+            "title": "Heinzel Assets",
+            "type": "object"
           },
           "icon_size": {
             "description": "The size of icons (`--icon-size`), e.g. `18px`.",
@@ -10170,6 +11710,124 @@
         "title": "Waiting",
         "type": "object"
       },
+      "WakeScheduleView": {
+        "additionalProperties": false,
+        "description": "An authoritative schedule preview or active contract; the browser never runs its own wake timer.",
+        "properties": {
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the daemon or effective authority currently prevents a wake.",
+            "title": "Blocked Reason"
+          },
+          "contract_version": {
+            "description": "The exact contract version behind this schedule.",
+            "minimum": 1.0,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "cron": {
+            "description": "The approved or proposed cron expression.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Cron",
+            "type": "string"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The last recorded scheduled run, when one exists.",
+            "title": "Last Run"
+          },
+          "next_wake": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effective next eligible wake, when known.",
+            "title": "Next Wake"
+          },
+          "notification_status": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The recorded notification policy or delivery summary.",
+            "title": "Notification Status"
+          },
+          "preview_hash": {
+            "description": "The exact preview hash for activation or control review.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The immutable control or proposal revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "status": {
+            "description": "Whether this schedule is proposed, active or paused.",
+            "enum": [
+              "proposed",
+              "active",
+              "paused"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "description": "The authoritative responsibility and schedule summary.",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "The IANA time zone used for schedule interpretation.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "cron",
+          "timezone",
+          "status",
+          "contract_version",
+          "revision",
+          "preview_hash"
+        ],
+        "title": "WakeScheduleView",
+        "type": "object"
+      },
       "Week": {
         "additionalProperties": false,
         "description": "Promises due in one ISO week, by how they ended: the team's flow, never anyone's performance.",
@@ -10256,6 +11914,7 @@
                   "circle-check",
                   "clock",
                   "cloud",
+                  "cloud-sun",
                   "code",
                   "file-text",
                   "git-pull-request",
@@ -10412,12 +12071,143 @@
         ],
         "title": "WidgetEntry",
         "type": "object"
+      },
+      "heinzel_chat_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "description": "Your message to this Heinzel, retained privately.",
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "when_busy": {
+            "default": "follow_up",
+            "description": "Queue a follow-up or request steering at the next safe boundary.",
+            "enum": [
+              "follow_up",
+              "steer"
+            ],
+            "title": "When Busy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "message"
+        ],
+        "title": "heinzel_chat_Input",
+        "type": "object"
+      },
+      "heinzel_new_chat_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeinzelAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The complete personal appearance overrides; null leaves the current look unchanged."
+          },
+          "name": {
+            "default": "New Heinzel",
+            "description": "Your personal display name for this Heinzel.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "title": "heinzel_new_chat_Input",
+        "type": "object"
+      },
+      "heinzel_profile_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeinzelAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The complete personal appearance overrides; null leaves the current look unchanged."
+          },
+          "expected_revision": {
+            "description": "The exact profile_revision you last read.",
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The new personal display name; null leaves it unchanged.",
+            "title": "Name"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "expected_revision"
+        ],
+        "title": "heinzel_profile_Input",
+        "type": "object"
       }
     }
   },
   "info": {
-    "description": "Open-source helpers that keep product teams running. Every endpoint is also a `hz` command.",
-    "title": "🧝 Heinzelmännchen"
+    "description": "Helpers accelerating product teams. Every endpoint is also a `hz` command.",
+    "title": "Heinzelmännchen"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -10744,6 +12534,48 @@
         ]
       }
     },
+    "/heinzel/chat": {
+      "post": {
+        "description": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
+        "operationId": "heinzel_chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_chat_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/check": {
       "get": {
         "description": "Check contracts and list every problem with file and line; exits with 1 on errors, so CI can gate.",
@@ -10999,6 +12831,48 @@
         ]
       }
     },
+    "/heinzel/new-chat": {
+      "post": {
+        "description": "Create a durable personal Heinzel with an idempotent request, name and look.",
+        "operationId": "heinzel_new_chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_new_chat_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create a durable personal Heinzel with an idempotent request, name and look.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/playbooks": {
       "get": {
         "description": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
@@ -11016,6 +12890,143 @@
           }
         },
         "summary": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/profile": {
+      "post": {
+        "description": "Save this Heinzel's name or look against the exact profile revision you saw.",
+        "operationId": "heinzel_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_profile_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save this Heinzel's name or look against the exact profile revision you saw.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/session": {
+      "get": {
+        "description": "Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.",
+        "operationId": "heinzel_session",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The opaque next_cursor from this session's previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The opaque next_cursor from this session's previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The most messages returned in this page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "The most messages returned in this page.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/sessions": {
+      "get": {
+        "description": "List your durable personal Heinzels, including new conversations without an approved contract.",
+        "operationId": "heinzel_sessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List your durable personal Heinzels, including new conversations without an approved contract.",
         "tags": [
           "heinzel"
         ]
@@ -13525,6 +15536,32 @@
           }
         },
         "summary": "List every contribution to the web app, where it may show and whether it does; nothing runs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/navigation": {
+      "get": {
+        "description": "List active providers' navigation and owned Settings metadata without running their operations.",
+        "operationId": "system_ui_navigation",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NavEntry"
+                  },
+                  "title": "Response System Ui Navigation",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List active providers' navigation and owned Settings metadata without running their operations.",
         "tags": [
           "system"
         ]

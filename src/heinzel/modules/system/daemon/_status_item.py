@@ -53,8 +53,14 @@ def status_item(status: DaemonStatus, now: datetime | None = None) -> StatusItem
         DetailLine(text=f"Last tick {_ago(last, now)}" if last else "No tick yet"),
         *(DetailLine(text=f"Failing: {job}", tone="bad") for job in status.failing[:5]),
     ]
-    if status.version:
-        detail.insert(1, DetailLine(text=f"Daemon version {status.version}"))
+    detail.insert(
+        1,
+        DetailLine(
+            text=f"Daemon version {status.version}"
+            if status.version
+            else "Daemon version unknown · restart it to record its version"
+        ),
+    )
     if status.version_mismatch:
         detail.insert(
             2,
@@ -62,7 +68,7 @@ def status_item(status: DaemonStatus, now: datetime | None = None) -> StatusItem
                 text=f"Daemon runs hz {status.version}, not the installed {__version__}: restart it", tone="bad"
             ),
         )
-    restart = [RESTART] if status.version_mismatch else []
+    restart = [RESTART] if status.version_mismatch or status.version is None else []
     interval = timedelta(minutes=status.interval_minutes or 0)
     stale = bool(last and interval and now - last > STALE_INTERVALS * interval)
     if status.paused:

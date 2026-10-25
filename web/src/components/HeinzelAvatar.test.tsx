@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { HeinzelAvatar } from "./HeinzelAvatar";
 import {
@@ -39,7 +39,9 @@ function contrast(a: string, b: string): number {
 
 /** Every fill in a drawing, groups included. */
 function fills(shapes: Shape[]): string[] {
-  return shapes.flatMap((shape) => (shape.kind === "group" ? fills(shape.children) : [shape.fill]));
+  return shapes.flatMap((shape) =>
+    shape.kind === "group" ? fills(shape.children) : shape.kind === "image" ? [] : [shape.fill],
+  );
 }
 
 describe("Heinzelmännchen's drawing", () => {
@@ -190,5 +192,83 @@ describe("HeinzelAvatar idle life", () => {
   it("has no waving hand when it holds an umbrella", () => {
     const { container } = render(<HeinzelAvatar accessories={["umbrella"]} />);
     expect(container.querySelector("g.hz-wave")).toBeNull();
+  });
+});
+
+describe("theme dressing", () => {
+  const winter = { palette: { hat: "#aabbcc", shirt: "#336699", scarf: "#ddeeff" }, decorations: ["snow"] as const };
+  it("dresses every age and build, preserves the baby's bare head and never duplicates a scarf", () => {
+    for (const age of AGES)
+      for (const build of BUILDS) {
+        const shapes = heinzelShapes({ age, build, accessories: ["scarf"], theme: winter });
+        expect(shapes.filter((shape) => shape.accessory === "scarf")).toHaveLength(1);
+        expect(fills(shapes)).toContain(winter.palette.shirt);
+        if (age === "baby") expect(fills(shapes)).not.toContain(winter.palette.hat);
+        else expect(fills(shapes)).toContain(winter.palette.hat);
+      }
+  });
+  it("keeps personal colours ahead of the palette, and returns to the original drawing without a theme", () => {
+    const personal = fills(heinzelShapes({ hat: "red", shirt: "green", theme: winter }));
+    expect(personal).toContain(HATS.red);
+    expect(personal).toContain(SHIRTS.green);
+    expect(personal).not.toContain(winter.palette.hat);
+    expect(heinzelShapes({ theme: undefined })).toEqual(heinzelShapes());
+  });
+  it("accepts a short hex palette without invalid mixed colours", () => {
+    const colours = fills(
+      heinzelShapes({ theme: { palette: { shirt: "#abc", scarf: "#def" }, decorations: ["snow"] } }),
+    );
+    expect(colours.some((colour) => colour.includes("NaN"))).toBe(false);
+  });
+});
+
+describe("theme avatar SVG layers", () => {
+  const asset = (slot: string) => `/theme-assets/winter/heinzel-${slot}.svg?v=0123456789abcdef`;
+  it("keeps personal colours, expressions, accessories and movable hat grouping for each age and build", () => {
+    for (const age of AGES)
+      for (const build of BUILDS)
+        for (const state of STATES) {
+          const assets = { [`hat-${age}`]: asset(`hat-${age}`), [`outfit-${age}`]: asset(`outfit-${age}`) };
+          const { container, unmount } = render(
+            <HeinzelAvatar
+              age={age}
+              build={build}
+              state={state}
+              hat="purple"
+              shirt="rose"
+              accessories={["sunglasses", "scarf"]}
+              theme={{ assets }}
+            />,
+          );
+          const images = container.querySelectorAll("image");
+          expect(images).toHaveLength(age === "baby" ? 1 : 2);
+          if (age !== "baby")
+            expect(container.querySelector(".hz-hat image")).toHaveAttribute("href", asset(`hat-${age}`));
+          expect(container.querySelector(`path[fill="${SHIRTS.rose}"]`)).not.toBeNull();
+          expect(container.querySelector("svg")).toHaveAttribute("data-state", state);
+          expect(container.querySelector(".hz-eyes")).not.toBeNull();
+          unmount();
+        }
+  });
+  it("drops unsafe URLs and leaves the complete personal drawing when a layer fails", () => {
+    const { container, rerender } = render(
+      <HeinzelAvatar theme={{ assets: { "hat-grown": "https://example.invalid/a.svg" } }} />,
+    );
+    expect(container.querySelector("image")).toBeNull();
+    const corePaths = container.querySelectorAll("path").length;
+    rerender(<HeinzelAvatar theme={{ assets: { "hat-grown": asset("hat-grown") } }} />);
+    const image = container.querySelector("image");
+    expect(image).not.toBeNull();
+    fireEvent.error(image as SVGImageElement);
+    expect(image).toHaveStyle({ display: "none" });
+    expect(container.querySelectorAll("path")).toHaveLength(corePaths);
+    rerender(
+      <HeinzelAvatar
+        theme={{ assets: { "hat-grown": asset("hat-grown").replace("0123456789abcdef", "fedcba9876543210") } }}
+      />,
+    );
+    expect(container.querySelector("image")).not.toHaveStyle({ display: "none" });
+    rerender(<HeinzelAvatar />);
+    expect(container.querySelector("image")).toBeNull();
   });
 });

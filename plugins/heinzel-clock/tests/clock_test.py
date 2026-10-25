@@ -229,7 +229,7 @@ def test_the_web_app_gets_the_clock_in_the_footer_not_the_sidebar_until_asked(hz
     assert config()["system"]["ui"]["contributions"] == {"clock:primary-zone": {"sidebar": True}}
 
 
-def test_the_header_action_opens_hz_clock_in_the_terminal(hz):
+def test_the_header_action_opens_the_existing_world_clock_panel(hz):
     (action,) = hz("system", "ui", "actions", "--item", "clock:team-clock").json
     assert action["effect"] == {"kind": "navigate", "path": "/?panel=world-clock"}
     assert isinstance(action["badge"], int)
@@ -243,3 +243,14 @@ def test_an_unknown_zone_is_a_problem_of_the_item_not_of_the_bar(hz, monkeypatch
     assert entries["clock:primary-zone"]["item"] is None
     assert "Unknown time zones: Mars/Olympus" in entries["clock:primary-zone"]["problem"]
     assert entries["system.daemon:daemon"]["problem"] is None
+
+
+def test_the_plugin_declares_its_settings_and_existing_panel_navigation():
+    from heinzel_clock import module
+
+    from heinzel import NavLet
+
+    (navigation,) = [let for let in module.lets if isinstance(let, NavLet)]
+    assert navigation.settings.sections == ("clock",)
+    assert navigation.icon == "clock"
+    assert navigation.sidebar == Navigate(path="/?panel=world-clock")

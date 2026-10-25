@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from heinzel import Module, Theme, ThemeColours, ThemeFont, ThemeFonts, ThemeLet, ThemeLogo
+from heinzel import Module, Theme, ThemeColours, ThemeFont, ThemeFonts, ThemeHeinzel, ThemeLet, ThemeLogo
 from heinzel.kernel import (
     DEFAULT_LOGO,
     DEFAULT_THEME,
@@ -1031,8 +1031,117 @@ def test_the_fixture_theme_has_variants_with_backdrops_and_stays_readable():
 
 def test_the_weather_theme_of_the_guide_is_valid_and_readable():
     guide = (Path(__file__).parents[3] / "docs" / "THEMES.md").read_text(encoding="utf-8")
-    (example,) = re.findall(r"```toml\n(.*?)```", guide, flags=re.DOTALL)
+    examples = re.findall(r"```toml\n(.*?)```", guide, flags=re.DOTALL)
+    (example,) = [text for text in examples if "name" in tomllib.loads(text)]
     weather = Theme.model_validate(tomllib.loads(example))
     assert len(weather.variant) == 6
     assert weather.colours("dark", {"daypart": "night", "weather": "rain"}).background == "#0d1016"
     assert weather.colours("light", {"daypart": "day", "weather": "clear"}).main_tint == "#e0f2fe"
+
+
+def test_theme_can_decorate_core_avatars_without_changing_existing_themes():
+    assert DEFAULT_THEME.heinzel is None
+    look = ThemeHeinzel(palette={"hat": "#eef", "shirt": "#336699"}, decorations=("snow",))
+    decorated = Theme.model_validate(DEFAULT_THEME.model_dump() | {"heinzel": look})
+    assert decorated.heinzel == look
+
+
+@pytest.mark.parametrize(
+    "look",
+    [
+        {"palette": {"skin": "#fff"}},
+        {"palette": {"hat": "url(https://example.invalid/icon)"}},
+        {"decorations": ["rain"]},
+        {"decorations": ["snow", "snow"]},
+        {"html": "<script>"},
+    ],
+)
+def test_theme_avatar_table_refuses_unknown_parts_graphics_and_decorations(look):
+    with pytest.raises(ValidationError):
+        ThemeHeinzel.model_validate(look)
+
+
+def test_the_avatar_table_of_the_guide_uses_the_checked_theme_schema():
+    guide = (Path(__file__).parents[3] / "docs" / "THEMES.md").read_text(encoding="utf-8")
+    examples = [tomllib.loads(text) for text in re.findall(r"```toml\n(.*?)```", guide, flags=re.DOTALL)]
+    tables = [ThemeHeinzel.model_validate(example["heinzel"]) for example in examples if "heinzel" in example]
+    look, assets = tables
+    assert len(assets.assets) == 7
+    assert look.decorations == ("snow",)
+    assert set(look.palette) == {"hat", "shirt", "scarf"}
+
+
+@pytest.mark.parametrize("slot", ["face", "hat-baby", "hat-unknown", "../../hat", "outfit-grown<script>"])
+def test_avatar_layers_only_use_closed_semantic_age_slots(slot):
+    with pytest.raises(ValidationError):
+        ThemeHeinzel.model_validate({"assets": {slot: "hat.svg"}})
+
+
+@pytest.mark.parametrize("file", ["../hat.svg", "/hat.svg", "https://example.invalid/hat.svg", "hat.png"])
+def test_avatar_layers_only_use_local_svg_paths(file):
+    with pytest.raises(ValidationError):
+        ThemeHeinzel.model_validate({"assets": {"hat-grown": file}})
+
+
+def test_avatar_assets_require_a_theme_file_directory():
+    value = Theme.model_validate(theme(heinzel={"assets": {"hat-grown": "hat.svg"}}))
+    with pytest.raises(ValueError, match="must come from a theme file"):
+        ThemeLet(name="acme", theme=value)
+
+
+def test_avatar_assets_validate_again_and_version_every_change(tmp_path):
+    file = tmp_path / "hat.svg"
+    file.write_text('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0H8"/></svg>')
+    value = Theme.model_validate(theme(heinzel={"assets": {"hat-grown": "hat.svg"}}))
+    offered = ThemeLet(name="acme", theme=value, directory=tmp_path)
+    first = offered.avatar_urls()["hat-grown"]
+    assert first.startswith("/theme-assets/acme/heinzel-hat-grown.svg?v=")
+    assert offered.avatar("hat-grown") == file.read_bytes()
+    file.write_text('<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>')
+    assert offered.avatar_urls()["hat-grown"] != first
+    file.write_text('<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>')
+    assert offered.avatar_urls() == {}
+    with pytest.raises(ValueError, match="script"):
+        offered.avatar("hat-grown")
+    with pytest.raises(ValueError, match="script"):
+        ThemeLet(name="acme", theme=value, directory=tmp_path)
+    file.unlink()
+    assert offered.avatar_urls() == {}
+    with pytest.raises(ValueError, match="no avatar layer"):
+        offered.avatar("outfit-old")
+    assert ThemeLet(name="acme", theme=Theme.model_validate(theme())).avatar_urls() == {}
+
+
+def test_avatar_files_swapped_during_read_fall_back(tmp_path, monkeypatch):
+    file = tmp_path / "hat.svg"
+    file.write_text("<svg/>")
+    value = Theme.model_validate(theme(heinzel={"assets": {"hat-grown": "hat.svg"}}))
+    offered = ThemeLet(name="acme", theme=value, directory=tmp_path)
+
+    def changed(*_):
+        raise FileNotFoundError
+
+    monkeypatch.setattr(themes, "read_logo", changed)
+    assert offered.avatar_urls() == {}
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<animate attributeName="opacity" values="0;1" dur="1s" repeatCount="indefinite"/>',
+        '<animateTransform attributeName="transform" type="rotate" dur="1s"/>',
+        '<set attributeName="opacity" to="0"/>',
+        '<discard begin="1s"/>',
+        "<style>path { animation: blink 1s infinite }</style>",
+        '<path style="animation: blink 1s infinite"/>',
+    ],
+)
+def test_avatar_layers_cannot_bypass_reduced_motion_with_svg_or_css_animation(tmp_path, markup):
+    file = tmp_path / "hat.svg"
+    file.write_text('<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>')
+    value = Theme.model_validate(theme(heinzel={"assets": {"hat-grown": "hat.svg"}}))
+    offered = ThemeLet(name="acme", theme=value, directory=tmp_path)
+    file.write_text(f'<svg xmlns="http://www.w3.org/2000/svg">{markup}</svg>')
+    assert offered.avatar_urls() == {}
+    with pytest.raises(ValueError, match=r"static SVG|presentation attributes"):
+        ThemeLet(name="acme", theme=value, directory=tmp_path)

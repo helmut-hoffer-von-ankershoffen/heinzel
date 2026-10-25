@@ -941,7 +941,7 @@ wheels = [
 
 [[package]]
 name = "heinzel"
-version = "0.7.1"
+version = "0.7.4"
 source = { editable = "." }
 dependencies = [
     { name = "croniter" },
@@ -1032,9 +1032,9 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.5" },
     { name = "pluggy", specifier = ">=1.6.0,<2" },
     { name = "pydantic", specifier = ">=2.12.0,<3" },
-    { name = "pydantic-ai-slim", specifier = ">=2.61,<3" },
-    { name = "pydantic-ai-slim", extras = ["anthropic"], marker = "extra == 'anthropic'", specifier = ">=2.61,<3" },
-    { name = "pydantic-ai-slim", extras = ["openai"], marker = "extra == 'openai'", specifier = ">=2.61,<3" },
+    { name = "pydantic-ai-slim", specifier = "==2.61.0" },
+    { name = "pydantic-ai-slim", extras = ["anthropic"], marker = "extra == 'anthropic'", specifier = "==2.61.0" },
+    { name = "pydantic-ai-slim", extras = ["openai"], marker = "extra == 'openai'", specifier = "==2.61.0" },
     { name = "pydantic-settings", specifier = ">=2.11.0,<3" },
     { name = "pyyaml", specifier = ">=6.0.2,<7" },
     { name = "rich", specifier = ">=14.2.0" },
@@ -1065,7 +1065,7 @@ dev = [
     { name = "mypy", specifier = ">=1.19.0,<3" },
     { name = "pip-audit", specifier = ">=2.10.0,<3" },
     { name = "prek", specifier = ">=0.2" },
-    { name = "pydantic-ai-slim", extras = ["openai"], specifier = ">=2.61,<3" },
+    { name = "pydantic-ai-slim", extras = ["openai"], specifier = "==2.61.0" },
     { name = "pyright", extras = ["nodejs"], specifier = ">=1.1.408" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
@@ -1089,7 +1089,7 @@ test = [
     { name = "hypothesis", specifier = ">=6.140" },
     { name = "jsonschema", specifier = ">=4.26" },
     { name = "prek", specifier = ">=0.2" },
-    { name = "pydantic-ai-slim", extras = ["openai"], specifier = ">=2.61,<3" },
+    { name = "pydantic-ai-slim", extras = ["openai"], specifier = "==2.61.0" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-timeout", specifier = ">=2.4.0,<3" },
     { name = "pytest-xdist", specifier = ">=3.8" },
@@ -1097,7 +1097,7 @@ test = [
 
 [[package]]
 name = "heinzel-atlassian"
-version = "0.7.1"
+version = "0.7.4"
 source = { editable = "plugins/heinzel-atlassian" }
 dependencies = [
     { name = "heinzel" },
@@ -1108,7 +1108,7 @@ requires-dist = [{ name = "heinzel", editable = "." }]
 
 [[package]]
 name = "heinzel-clock"
-version = "0.7.1"
+version = "0.7.4"
 source = { editable = "plugins/heinzel-clock" }
 dependencies = [
     { name = "heinzel" },
@@ -1119,7 +1119,7 @@ requires-dist = [{ name = "heinzel", editable = "." }]
 
 [[package]]
 name = "heinzel-github"
-version = "0.7.1"
+version = "0.7.4"
 source = { editable = "plugins/heinzel-github" }
 dependencies = [
     { name = "heinzel" },
@@ -1130,7 +1130,7 @@ requires-dist = [{ name = "heinzel", editable = "." }]
 
 [[package]]
 name = "heinzel-google"
-version = "0.7.1"
+version = "0.7.4"
 source = { editable = "plugins/heinzel-google" }
 dependencies = [
     { name = "heinzel" },
@@ -1141,7 +1141,7 @@ requires-dist = [{ name = "heinzel", editable = "." }]
 
 [[package]]
 name = "heinzel-zoom"
-version = "0.7.1"
+version = "0.7.4"
 source = { editable = "plugins/heinzel-zoom" }
 dependencies = [
     { name = "heinzel" },

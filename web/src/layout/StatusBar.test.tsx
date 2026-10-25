@@ -100,6 +100,9 @@ describe("The footer on a narrow window", () => {
       });
       expect(item.textContent).toBe("Daemon running · next tick 20:45, OK");
       expect(within(item).getByText(/Daemon running/)).toHaveClass("sr-only");
+      const credit = within(await footer()).getByText("built with AI in Berlin");
+      if (width === 1280) expect(credit).not.toHaveClass("sr-only");
+      else expect(credit).toHaveClass("sr-only");
       view.unmount();
     }
 
@@ -108,6 +111,7 @@ describe("The footer on a narrow window", () => {
     const { container } = renderAt("/doctor");
     const bar = await footer();
     expect(await within(bar).findByText(/^v0\.4\.0$/)).toBeInTheDocument();
+    expect(within(bar).getByText("built with AI in Berlin")).toHaveClass("sr-only");
     expect(await within(bar).findByRole("button", { name: /^\d{2}:\d{2}:\d{2}$|World Clock/ })).toBeInTheDocument();
     expect(within(bar).queryByText("Daemon running · next tick 20:45")).not.toBeInTheDocument();
     await user.click(within(bar).getByRole("button", { name: "More status items" }));
@@ -153,6 +157,8 @@ describe("Footer items are icons with a state and a pane", () => {
     window.innerWidth = 1280;
     const { container } = renderAt("/doctor");
     const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
+    expect(within(bar).queryByText("helpers accelerating product teams")).not.toBeInTheDocument();
+    expect(within(bar).getByText("built with AI in Berlin")).toBeInTheDocument();
     for (const [tone, word, colour] of [
       ["ok", "OK", "text-ok"],
       ["warn", "warning", "text-warn"],
@@ -219,6 +225,11 @@ describe("Footer items are icons with a state and a pane", () => {
     const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
     await user.click(await within(bar).findByRole("button", { name: "v0.4.0" }));
     const pane = await screen.findByRole("region", { name: "v0.4.0" });
+    const about = within(pane).getByRole("region", { name: "About Heinzelmännchen" });
+    expect(within(about).getByRole("img", { name: "Heinzelmännchen" })).toBeInTheDocument();
+    expect(within(about).getByText("helpers accelerating product teams")).toBeInTheDocument();
+    expect(within(about).getByText("working in the background like the elves from Cologne.")).toBeInTheDocument();
+    expect(within(about).getByText("built with AI in Berlin")).toBeInTheDocument();
     expect(await within(pane).findByText("Something new")).toBeInTheDocument();
     expect(within(pane).getByRole("link", { name: "Release notes on GitHub" })).toHaveAttribute(
       "href",
