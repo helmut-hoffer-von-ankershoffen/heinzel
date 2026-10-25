@@ -11,6 +11,7 @@ import json
 import shlex
 import subprocess
 import threading
+import time
 import tomllib
 import urllib.error
 from collections.abc import Collection, Generator, Mapping, Sequence
@@ -97,6 +98,11 @@ REFERENCE: Mapping[str, tuple[str, str]] = MappingProxyType(
     }
 )
 """First-party plugins in repositories of their own, by name: their descriptions and repositories."""
+CONTRIB = ("helmut-hoffer-von-ankershoffen", "heinzel-contrib", "main")
+"""The contrib monorepo (`plugins/heinzel-<name>`), a known community source: listed in Discover without the topic."""
+_CONTRIB_CACHE: dict[str, Any] = {}
+CONTRIB_TTL = 300.0
+"""Seconds a read contrib listing is kept, so typing in Discover doesn't spend GitHub's unauthenticated rate limit."""
 TOPIC = "heinzel-plugin"
 GITHUB_SEARCH = "https://api.github.com/search/repositories"
 GITHUB_REPOS = "https://api.github.com/repos"
@@ -536,9 +542,15 @@ class PluginService:
         community = [
             plugin
             for repository in repositories
-            if canonicalize_name(repository["name"]) not in known and not repository.get("archived")
+            if canonicalize_name(repository["name"]) not in known
+            and not repository.get("archived")
+            and str(repository.get("full_name", "")).lower() != "/".join(CONTRIB[:2])
             for plugin in self._community_plugins(repository, installed)
         ]
+        contrib = self._contrib_plugins(installed, words, {p.name for p in community} | known)
+        if contrib is None:
+            warnings.append("The heinzel-contrib plugins could not be read from GitHub.")
+        community = [*community, *(contrib or [])]
         community.sort(key=lambda plugin: (-(plugin.stars or 0), plugin.name))
         return PluginSearch(plugins=[*found, *community], warnings=warnings)
 
@@ -558,6 +570,41 @@ class PluginService:
             raise TypeError(msg)
         # Free-form JSON: repositories are dicts; their fields are read defensively in search().
         return [cast("dict[str, Any]", item) for item in cast("list[object]", items) if isinstance(item, dict)]
+
+    def _contrib_plugins(
+        self, installed: Collection[str], words: list[str], taken: Collection[str]
+    ) -> list[AvailablePlugin] | None:
+        """The plugins of the contrib monorepo that match `words` and weren't already found by the topic search.
+
+        None when the monorepo couldn't be read. A successful read is kept for `CONTRIB_TTL` seconds.
+        """
+        owner, name, branch = CONTRIB
+        url = f"https://github.com/{owner}/{name}"
+        cached = _CONTRIB_CACHE.get("entries")
+        if cached is not None and time.monotonic() - _CONTRIB_CACHE["at"] < CONTRIB_TTL:
+            entries = cached
+        else:
+            entries = self._monorepo_plugins({"full_name": f"{owner}/{name}"})
+            if not entries:
+                return None
+            _CONTRIB_CACHE.update(entries=entries, at=time.monotonic())
+        return [
+            AvailablePlugin(
+                name=dist,
+                short_name=dist.removeprefix("heinzel-"),
+                description=summary,
+                source="contrib",
+                community=True,
+                install_spec=f"{dist} @ git+{url}@{branch}#subdirectory={path}",
+                url=f"{url}/tree/{branch}/{path}",
+                repository_url=repository_url(f"git+{url}"),
+                stars=None,
+                installed=canonicalize_name(dist) in installed,
+            )
+            for dist, path, summary in entries
+            if canonicalize_name(dist) not in {canonicalize_name(t) for t in taken}
+            and all(word in f"{dist} {summary}".casefold() for word in words)
+        ]
 
     def _community_plugins(self, repository: dict[str, Any], installed: Collection[str]) -> list[AvailablePlugin]:
         """The plugins of one repository with the topic: one per entry of a monorepo, else the repository itself."""
