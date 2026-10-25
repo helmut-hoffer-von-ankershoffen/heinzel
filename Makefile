@@ -37,7 +37,8 @@ WEB_PROJECT := uv run --quiet python scripts/web.py
 # The client is generated from built-in modules and default settings, like the docs, whatever HZ_* are set.
 WEB_PROJECT_CLEAN := env -u HZ_SYSTEM_AGENT__SKILL_DIRS $(WEB_PROJECT)
 WEB_LINT := "&web-lint=$(WEB) exec biome ci ." "&web-client=$(WEB_PROJECT_CLEAN) client --check"
-WEB_TYPES := "&web-types=$(WEB) exec tsc --noEmit -p ."
+# Keep the native TypeScript CLI distinct from the compiler API openapi-typescript imports.
+WEB_TYPES := "&web-types=$(WEB) exec node node_modules/@typescript/native/bin/tsc --noEmit -p ."
 WEB_TESTS := "&web-tests=$(WEB) exec vitest run"
 
 help: ## Show this help
