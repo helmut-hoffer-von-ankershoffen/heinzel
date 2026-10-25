@@ -120,6 +120,8 @@ class OperationLet(Let):
     func: Callable[..., Any]
     summary: str
     read_only: bool = True
+    private: bool = False
+    """Requires a trusted call identity; excluded from unauthenticated network heads (ADR 0068)."""
     render: Callable[[Any], RenderableType] | None = None
     """Presentation hint for human-facing heads. Machine-facing heads always use the JSON form of the result."""
     exit_code: Callable[[Any], int] | None = None
@@ -138,6 +140,9 @@ class OperationLet(Let):
     """Who it is for in heads people browse (CLI help and completion, the web app's navigation): `everyday`
     operations are always listed, `expert` ones only in expert mode (`[hz] expert`). Hidden is never disabled: every
     operation runs when called, and machine heads (MCP, REST) list all of them (ADR 0041)."""
+    aliases: tuple[str, ...] = ()
+    """Old command paths that still run it for one minor release (`"workflow run"`), hidden from help: the CLI names
+    the new command on stderr and MCP keeps the old tool name, marked deprecated (ADR 0051)."""
 
     def __post_init__(self) -> None:
         """Refuse a read-only operation that declares a write.

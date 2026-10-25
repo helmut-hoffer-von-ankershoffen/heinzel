@@ -14,11 +14,18 @@ from pydantic.fields import FieldInfo
 from pydantic_core import to_jsonable_python
 from tomlkit.exceptions import ParseError
 
-from heinzel import Config, ConfigEditor, HeinzelError, Kernel, ModuleSettings
+from heinzel import Config, ConfigEditor, CurrentUser, HeinzelError, Kernel, ModuleSettings
 from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, toml_value, user_config_dir
-from heinzel.modules.system.config._models import ConfigFileInfo, ConfigReport, ConfigRevealed, RevealScope, SettingInfo
+from heinzel.modules.system.config._models import (
+    ConfigFileInfo,
+    ConfigReport,
+    ConfigRevealed,
+    RevealScope,
+    SettingInfo,
+    SettingRevealed,
+)
 from heinzel.modules.system.config._reveal import Revealer
-from heinzel.modules.system.config._schema import setting_schemas
+from heinzel.modules.system.config._schema import reference_hints, setting_schemas
 
 HEADER = """\
 # Heinzelmännchen configuration.
@@ -65,12 +72,14 @@ class ConfigService(ConfigEditor):
                     value=to_jsonable_python(getattr(settings, key)),
                     env=f"{env_prefix(section)}{key.upper()}",
                     description=field.description or "",
+                    section_title=type(settings).section_title,
                     default=_default(field),
                     source=self._source(config, section, key, type(settings).ignored_in_project),
                     json_schema=schemas[type(settings)].get(key),
                 )
                 for section, settings in sections
                 for key, field in type(settings).model_fields.items()
+                if self._permitted(field)
             ],
         )
 
@@ -107,6 +116,35 @@ class ConfigService(ConfigEditor):
             scope=scope, path=path, supported=done.supported, opened=done.opened, message=done.message
         )
 
+    def reveal_setting(self, key: str) -> SettingRevealed:
+        """Show the file or folder a path setting names, such as `hz.log_dir`, in this machine's file manager.
+
+        Raises:
+            HeinzelError: If the setting isn't a path, or is not set.
+        """
+        setting = self.get(key)
+        schema = setting.json_schema or {}
+        # A path, or `Path | None`: the format is on the schema or on its one branch that isn't null.
+        branches = cast("list[dict[str, Any]]", [schema, *schema.get("anyOf", [])])
+        if not any(branch.get("format") == "path" for branch in branches):
+            several = cast("dict[str, Any]", schema.get("items") or {}).get("format") == "path"
+            msg = (
+                f"{key} holds several paths; open them one by one in your file manager."
+                if several
+                else f"{key} isn't a file or folder setting; only those can be shown in a file manager."
+            )
+            raise HeinzelError(msg)
+        if not isinstance(setting.value, str) or not setting.value:
+            msg = f"{key} is not set, so there is nothing to show."
+            raise HeinzelError(msg)
+        path = Path(setting.value).expanduser()
+        if not path.is_absolute():
+            # Relative to whichever directory hz runs in, which is not what the file that set it meant.
+            msg = f"{key} is the relative path {path}; set it to a full path to show it."
+            raise HeinzelError(msg)
+        done = self.revealer.reveal(path)
+        return SettingRevealed(key=key, path=path, supported=done.supported, opened=done.opened, message=done.message)
+
     def init(self, path: Path | None = None, *, force: bool = False) -> Path:
         """Write a configuration file listing every setting, commented out, with its description and default.
 
@@ -123,7 +161,7 @@ class ConfigService(ConfigEditor):
             if setting.section != current:
                 current = setting.section
                 lines.append(f"\n[{current}]")
-            lines.append(f"# {setting.description}")
+            lines.append(f"# {setting.description}{reference_hints(setting.json_schema)}")
             # TOML has no null: a setting without a default gets a hint instead of an assignment that wouldn't parse.
             if setting.value is None:
                 lines.append(f"# {setting.key}: not set by default")
@@ -135,7 +173,8 @@ class ConfigService(ConfigEditor):
 
     def get(self, key: str) -> SettingInfo:
         """The setting `section.key` in effect, e.g. `hz.log_level` or `example.greeting`."""
-        section, name, _ = self._locate(key)
+        section, name, model = self._locate(key)
+        self._require(model.model_fields[name])
         return next(s for s in self.report().settings if s.section == section and s.key == name)
 
     def set(self, key: str, value: str, scope: Scope = "user") -> Path:
@@ -158,6 +197,7 @@ class ConfigService(ConfigEditor):
             HeinzelError: If the key is unknown or the value is invalid for it.
         """
         section, name, model = self._locate(key)
+        self._require(model.model_fields[name], write=True)
         parsed = _without_none(to_jsonable_python(value))
         if parsed is None:
             msg = f"TOML has no null; to let {key} take its default, run `hz system config unset {key}`."
@@ -180,7 +220,8 @@ class ConfigService(ConfigEditor):
         Raises:
             HeinzelError: If the key is unknown or not set in that file.
         """
-        section, name, _ = self._locate(key)
+        section, name, model = self._locate(key, old=True)
+        self._require(model.model_fields[name], write=True)
         path = self._scope_file(scope)
         document = _load(path)
         table = _table(document, section)
@@ -191,11 +232,41 @@ class ConfigService(ConfigEditor):
         _save(path, document)
         return path
 
-    def _locate(self, key: str) -> tuple[str, str, type[ModuleSettings]]:
+    def _permitted(self, field: FieldInfo, *, write: bool = False) -> bool:
+        metadata = field.json_schema_extra
+        if not isinstance(metadata, dict) or not cast("dict[str, object]", metadata).get("x-private"):
+            return True
+        try:
+            identity = self._kernel.resolve(CurrentUser).context()
+        except HeinzelError:
+            return False
+        return ("private:write" if write else "private:read") in identity.permissions
+
+    def _require(self, field: FieldInfo, *, write: bool = False) -> None:
+        if not self._permitted(field, write=write):
+            msg = "This setting requires an authenticated private API, local CLI or stdio MCP connection"
+            raise HeinzelError(msg)
+
+    def _locate(self, key: str, *, old: bool = False) -> tuple[str, str, type[ModuleSettings]]:
+        """The section, field and model of `key`; with `old`, also a key under a renamed module's old table.
+
+        Raises:
+            HeinzelError: If no module has the key, naming the new key when only its old table had it.
+        """
         section, _, name = key.rpartition(".")
+        renamed = self._kernel.renamed(section)
         for candidate, settings in self._kernel.settings_of():
-            if candidate == section and name in type(settings).model_fields:
+            if name not in type(settings).model_fields:
+                continue
+            if candidate == section:
                 return section, name, type(settings)
+            if candidate == renamed:
+                if old:  # removing the old key is how it moves (ADR 0051)
+                    return section, name, type(settings)
+                msg = (
+                    f"[{section}] is now [{renamed}]: use {renamed}.{name}, e.g. hz system config get {renamed}.{name}"
+                )
+                raise HeinzelError(msg)
         known = ", ".join(f"{s.section}.{s.key}" for s in self.report().settings)
         msg = f"Unknown setting {key!r}. Known settings: {known}"
         raise HeinzelError(msg)

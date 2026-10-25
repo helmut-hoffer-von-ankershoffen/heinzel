@@ -1,6 +1,6 @@
 """What the state module keeps and returns: its settings, the lines of its two streams, and push and status results.
 
-A line is strict metadata (ADR 0062): a kind, a local date, the hz version and the operating system's family. It has
+A line is strict metadata (ADR 0081): a kind, a local date, the hz version and the operating system's family. It has
 no user and no machine, because the writer branch it is pushed to names both; no time of day, no count, no command,
 no path and no host, so there is nothing in it to aggregate into a measure of a person.
 """
@@ -30,6 +30,8 @@ class StateSettings(ModuleSettings):
 
     personal: str | None = Field(
         default=None,
+        title="Personal state repository",
+        json_schema_extra={"x-private": True},
         description="Your own private state repository, which hz pushes this machine's presence and adoption to, "
         "on the branch hz/<your handle>/<machine>; e.g. https://github.com/mira-example/heinzel-state-mira. "
         "Unset, nothing leaves this machine.",
@@ -125,3 +127,24 @@ class Pushed(BaseModel):
     segments: int = Field(description="Files those lines are in.")
     commit: str | None = Field(description="The branch's commit after the push; none when it is still empty.")
     pushed: bool = Field(description="Whether anything went over the network; false when the branch was current.")
+
+
+class PushRecord(BaseModel):
+    """Private, validated push state for exactly one repository and writer branch."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    repository: str
+    branch: str
+    last_attempt: dt.datetime | None = None
+    last_push: dt.datetime | None = None
+    failures: int = Field(default=0, ge=0)
+    error: str | None = None
+    refused: bool = False
+
+    @field_validator("last_attempt", "last_push")
+    @classmethod
+    def _aware(cls, value: dt.datetime | None) -> dt.datetime | None:
+        if value is not None and value.utcoffset() is None:
+            msg = "push timestamps must have a timezone"
+            raise ValueError(msg)
+        return value

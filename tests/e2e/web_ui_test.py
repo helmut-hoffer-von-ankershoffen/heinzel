@@ -94,7 +94,7 @@ def environment(tmp_path):
         "HZ_SYSTEM_DAEMON__UNIT_DIR": str(tmp_path / "units"),
         "HZ_SYSTEM_CREDENTIAL__BACKEND": "environment",
         "HZ_PLUGINS_ENABLED": "false",
-        "HZ_WORKFLOW__USER_DIR": str(tmp_path / "workflows"),
+        "HZ_HEINZEL__USER_DIR": str(tmp_path / "workflows"),
         "HZ_ORG__HANDLE": "mira",
         "HZ_ORG__ROLE": "engineering-manager",
         "HZ_ORG__TIMEZONE": "Europe/Berlin",
@@ -149,3 +149,9 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
     assert result["errors"] == []  # no CSP violation, no failed request, no exception
     assert {screen: found for screen, found in result["violations"].items() if found} == {}
     assert set(result["screens"]) >= {"doctor", "home", "settings", "contracts", "team", "doctor-dark"}
+    # The splash: in the mode the system asks for from the first paint, gone by itself, and the fix when hz is gone.
+    splash = result["splash"]
+    assert splash["light"] == {"line": "Connecting to hz…", "background": "rgb(255, 255, 255)", "gone": True}
+    assert splash["dark"] == {"line": "Connecting to hz…", "background": "rgb(24, 24, 24)", "gone": True}
+    assert "hz isn't answering" in splash["error"]
+    assert "hz ui" in splash["error"]

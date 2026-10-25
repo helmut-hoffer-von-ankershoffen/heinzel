@@ -1,12 +1,13 @@
 from collections.abc import Callable
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field, SecretStr
+from pydantic_settings import SettingsConfigDict
 
 from heinzel import Config, Module, ModuleSettings
 from heinzel.modules.system.config import ConfigService
-from heinzel.modules.system.config._schema import setting_schemas
+from heinzel.modules.system.config._schema import reference_hints, setting_schemas
 
 pytestmark = pytest.mark.unit
 
@@ -102,3 +103,32 @@ def test_every_setting_reports_its_schema(make_kernel):
         "type": "string",
     }
     assert ConfigService(kernel).get("hz.log_level").json_schema is not None
+
+
+class VaultSettings(ModuleSettings):
+    """A setting also read from another variable, under an alias."""
+
+    model_config = SettingsConfigDict(populate_by_name=True)
+    section_title: ClassVar[str | None] = "The vault"
+
+    token: SecretStr | None = Field(default=None, validation_alias=AliasChoices("VAULT_TOKEN", "VAULT_PASSWORD"))
+
+
+def test_a_setting_with_an_alias_has_its_schema_under_its_name_and_a_secret_is_write_only():
+    token = setting_schemas(VaultSettings)["token"]
+    assert {"format": "password", "type": "string", "writeOnly": True} in token["anyOf"]
+
+
+def test_a_settings_title_names_its_section(make_kernel):
+    module = Module("vault", "A vault.")
+    module.settings(VaultSettings)
+    kernel = make_kernel(vault=module, config=Config(files=(), data={}))
+    assert ConfigService(kernel).get("vault.token").section_title == "The vault"
+    assert ConfigService(kernel).get("hz.log_level").section_title == "General"
+
+
+def test_a_file_and_the_docs_say_the_choices_and_an_example_settings_shows_as_controls():
+    schema = {"anyOf": [{"enum": ["a", "b"], "type": "string"}, {"type": "null"}], "examples": [["x", "{y}"]]}
+    assert reference_hints(schema) == ' Choices: a, b. Example: ["x", "{y}"].'
+    assert reference_hints({"type": "string"}) == ""
+    assert reference_hints(None) == ""

@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from heinzel import Config, HeinzelError, Status
+from heinzel import Config, HeinzelError, JobInactive, Status
 from heinzel.heads._presence import mark_presence
 from heinzel.kernel import CommandFailed, Presence
 from heinzel.modules.system.state import LocalPresence, StateService, StateSettings
@@ -71,7 +71,8 @@ def test_without_a_repository_or_a_handle_the_daemon_skips_but_still_notes_the_v
 
     result = service(tmp_path, url=url, user=user, git=git).scheduled()
 
-    assert reason in result["skipped"]
+    assert isinstance(result, JobInactive)
+    assert reason in result.reason
     assert git.calls == []
     assert [line["kind"] for line in adoption(tmp_path)] == ["installed"]
 
@@ -116,7 +117,7 @@ def test_failures_back_off_doubling_from_the_schedule(tmp_path):
     with pytest.raises(HeinzelError):
         state.scheduled()
 
-    assert "backing off after 2" in waiting["skipped"]
+    assert "backing off after 2" in waiting.reason
     assert len(git.calls) > tried
 
 
@@ -127,14 +128,14 @@ def test_a_rejected_push_stops_the_sink_until_reset(tmp_path):
     with pytest.raises(HeinzelError, match="HZS001"):
         state.push()
     calls = len(git.calls)
-    skipped = state.scheduled()
+    with pytest.raises(HeinzelError, match="HZS001"):
+        state.scheduled()
     with pytest.raises(HeinzelError, match="Pushing stopped"):
         state.push()
     status = state.status()
     health = state.health()[0]
     after = state.reset()
 
-    assert skipped == {"skipped": "pushing stopped; see hz system state status"}
     assert len(git.calls) == calls
     assert status.refused
     assert "reset" in status.next[0]
@@ -193,10 +194,10 @@ def test_the_doctor_says_where_state_goes_and_when_it_went_silent(tmp_path):
 
     assert (nowhere.status, nowhere.detail) == (Status.UP, "none named; nothing leaves this machine")
     assert nobody.status is Status.DEGRADED
-    assert fresh.status is Status.UP
-    assert fresh.detail.startswith("hz/mira/")
+    assert fresh.status is Status.DEGRADED
+    assert "never taken a push" in fresh.detail
     assert silent.status is Status.DEGRADED
-    assert "no push since 2026-10-24" in silent.detail
+    assert "never taken a push" in silent.detail
 
 
 def test_status_says_what_to_do_next(tmp_path):
@@ -256,3 +257,53 @@ def test_errors_lose_the_user_info_of_every_url():
 @pytest.mark.parametrize(("platform", "family"), [("darwin", "macos"), ("linux", "linux"), ("win32", "other")])
 def test_an_adoption_line_names_only_the_operating_systems_family(platform, family):
     assert os_family(platform) == family
+
+
+@pytest.mark.parametrize("failures", [38, 1000, 10**100])
+def test_backoff_caps_before_exponentiation(tmp_path, failures):
+    from heinzel.modules.system.state._models import PushRecord
+
+    state = service(tmp_path)
+    record = PushRecord(repository=URL, branch=state.branch, failures=failures, last_attempt=NOW)
+    assert state._backoff(record) == NOW + timedelta(days=1, minutes=-1)
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        {"failures": "wrong"},
+        {"failures": -1},
+        {"failures": True},
+        {"last_attempt": "2026-10-24T00:00:00"},
+        {"last_push": "invalid"},
+        {"extra": 1},
+    ],
+)
+def test_malformed_private_push_records_are_ignored(tmp_path, damage):
+    state = service(tmp_path)
+    state.streams.machine()
+    state._push_file().write_text(json.dumps({"repository": URL, "branch": state.branch, **damage}))
+    assert state.status().failures == 0
+    assert state.status().last_push is None
+    assert state.status().refused
+    assert "HZS001" in state.health()[0].detail
+
+
+def test_clone_identity_includes_the_writer_handle_and_url(tmp_path):
+    mira = service(tmp_path)
+    other = service(tmp_path, user="other")
+    elsewhere = service(tmp_path, url="https://github.com/mira-example/another")
+    assert len({s._sink().clone for s in [mira, other, elsewhere]}) == 3
+
+
+def test_both_commit_dates_are_midnight_on_the_local_day():
+    pinned = dict(_runner("mira", NOW).pinned)
+    assert pinned["GIT_AUTHOR_DATE"] == pinned["GIT_COMMITTER_DATE"] == "2026-10-24T00:00:00+00:00"
+
+
+def test_state_job_has_the_promised_quarter_hour_schedule():
+    from heinzel import JobLet
+    from heinzel.modules.system.state import module
+
+    [job] = [let for let in module.lets if isinstance(let, JobLet)]
+    assert job.schedule == "*/15 * * * *"

@@ -17,11 +17,13 @@ def test_discovers_builtin_modules_and_submodules():
         "ai",
         "ai.access",
         "graph",
+        "heinzel",
         "org",
         "system",
         "system.agent",
         "system.capability",
         "system.changelog",
+        "system.claude",
         "system.config",
         "system.connector",
         "system.credential",
@@ -34,11 +36,13 @@ def test_discovers_builtin_modules_and_submodules():
         "system.plugin",
         "system.runner",
         "system.runner.chat",
+        "system.skill",
+        "system.sound",
         "system.state",
         "system.theme",
+        "system.ui",
         "team",
         "report",  # the package telemetry, named for what a Heinzelmännchen does with it
-        "workflow",
     ]
     assert all(r.origin.builtin for r in records)
     assert errors == {}
@@ -73,6 +77,7 @@ def test_kernel_boots_from_discovery(settings):
         "system.agent",
         "system.capability",
         "system.changelog",
+        "system.claude",
         "system.config",
         "system.connector",
         "system.credential",
@@ -84,6 +89,9 @@ def test_kernel_boots_from_discovery(settings):
         "system.notify",
         "system.plugin",
         "system.runner",
+        "system.skill",
+        "system.sound",
         "system.state",
         "system.theme",
+        "system.ui",
     ]

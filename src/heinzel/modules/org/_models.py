@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import Annotated, Any, ClassVar, Literal, Self, get_args
 from zoneinfo import available_timezones
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, JsonValue, ValidationInfo, WithJsonSchema, field_validator
 from pydantic_settings import NoDecode
 
 from heinzel import ModuleSettings
@@ -30,6 +30,17 @@ ROLE_MEANINGS = {
     "product-leadership": "leads product across teams",
     "program-manager": "coordinates work across teams",
 }
+
+ROLE_LABELS: dict[str, JsonValue] = {
+    "engineer": "Engineer",
+    "principal": "Principal engineer",
+    "engineering-manager": "Engineering manager",
+    "engineering-leadership": "Engineering leadership",
+    "product-manager": "Product manager",
+    "product-leadership": "Product leadership",
+    "program-manager": "Program manager",
+}
+"""How Settings names each role."""
 
 CodingAgent = Literal["claude-code", "command", "none"]
 CODING_AGENTS: tuple[CodingAgent, ...] = get_args(CodingAgent)
@@ -122,32 +133,51 @@ class OrgSettings(ModuleSettings):
     A project `hz.toml` can't set any of it: a repository someone else controls must not decide who you are.
     """
 
+    section_title: ClassVar[str | None] = "Your profile"  # the heading in Settings
+
     handle: str | None = Field(
         default=None,
-        description="Your handle in teams, pull requests and contracts: lowercase letters, digits and dashes, "
-        "e.g. mira. Your GitHub login is a good one.",
+        title="Handle",
+        description="Your short name in teams, pull requests and contracts: lowercase letters, digits and dashes. "
+        "Your GitHub login is a good choice.",
+        examples=["mira"],
     )
-    role: str | None = Field(
+    role: Annotated[str, WithJsonSchema({"type": "string", "enum": list(ROLES)})] | None = Field(
         default=None,
-        description=f"Your role, one of {', '.join(ROLES)}.",
+        title="Role",
+        description="What you do on your team.",
+        json_schema_extra={"x-labels": ROLE_LABELS},
     )
-    timezone: TimeZoneName | None = Field(default=None, description="Your IANA time zone, e.g. Europe/Berlin.")
+    timezone: TimeZoneName | None = Field(default=None, title="Time zone", description="Your time zone.")
     working_hours: Annotated[tuple[Hour, Hour], NoDecode] = Field(
         default=DEFAULT_HOURS,
-        description='Start and end hour of your working day, e.g. [9, 18] or "09-18" (HZ_ORG__WORKING_HOURS=09-18).',
+        title="Working hours",
+        description="When your working day starts and ends. In the environment, write them as 09-18.",
+        json_schema_extra={"x-unit": "hour-of-day"},
     )
-    github: str | None = Field(default=None, description="Your GitHub login, needed to approve and own in a team.")
+    github: str | None = Field(
+        default=None,
+        title="GitHub login",
+        description="Your GitHub login, needed to approve and own contracts in a team.",
+        examples=["mira"],
+    )
     coding_agent: CodingAgent | None = Field(
         default=None,
-        description="The coding agent you draft with: claude-code, command (one of your own) or none.",
+        title="Coding agent",
+        description="The coding agent you write drafts with.",
+        json_schema_extra={"x-labels": {"claude-code": "Claude Code", "command": "Your own command", "none": "None"}},
     )
     name: str | None = Field(
         default=None,
-        description="Your name, from your Google or GitHub login; stays on this machine, never in a repository.",
+        title="Name",
+        description="Your name, from your Google or GitHub sign-in. It stays on this computer, never in a repository.",
     )
     email: str | None = Field(
         default=None,
-        description="Your work email, from your Google login; stays on this machine, never in a repository.",
+        title="Work email",
+        description="Your work email, from your Google sign-in. It stays on this computer, never in a repository.",
+        json_schema_extra={"format": "email"},
+        examples=["mira@example.com"],
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(

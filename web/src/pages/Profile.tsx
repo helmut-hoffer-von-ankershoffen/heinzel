@@ -2,6 +2,7 @@
 import { Link } from "react-router";
 import { useProfile } from "@/api/queries";
 import { CopyCommand, Loaded, Page } from "@/components/common";
+import { ErrorScreen } from "@/components/ErrorScreen";
 import { Card } from "@/components/ui/card";
 import { type MessageKey, t } from "@/i18n";
 
@@ -51,9 +52,11 @@ export function Profile() {
 export function NotFound() {
   return (
     <Page title={t("notFound.title")}>
-      <Link to="/" className="text-primary underline">
-        {t("notFound.back")}
-      </Link>
+      <ErrorScreen compact state="waiting" message={t("notFound.message")}>
+        <Link to="/" className="inline-flex min-h-6 items-center text-primary underline">
+          {t("notFound.back")}
+        </Link>
+      </ErrorScreen>
     </Page>
   );
 }

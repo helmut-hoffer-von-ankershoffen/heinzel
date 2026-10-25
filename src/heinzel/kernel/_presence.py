@@ -1,4 +1,4 @@
-"""Presence: that a person used hz on a day, on this machine (ADR 0062).
+"""Presence: that a person used hz on a day, on this machine (ADR 0081).
 
 Heads note it when they run an operation for someone; the module that keeps the state streams (`system.state` in
 the core) turns it into one line per local day, which its daemon job pushes to the person's own state repository.

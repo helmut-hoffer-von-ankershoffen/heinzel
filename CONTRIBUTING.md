@@ -95,6 +95,23 @@ Definitions and conventions: [CODING_STANDARDS.md#tests](docs/CODING_STANDARDS.m
 | Every supported Python, 3.12 to 3.15 | `make test-all-pythons` |
 | What CI runs, before you push | `make preflight` (`PREFLIGHT=full` adds e2e and the dependency audit) |
 
+## What a pull request needs
+
+A contribution is accepted when it meets all of these; reviewers and CI hold every pull request to them, the
+maintainer's own included:
+
+- **Tests.** New behaviour comes with tests at the right level, and a bug fix with a test that fails without it
+  (a regression test). Coverage of unit and integration tests stays at least 90 % (branch coverage, `make test`
+  fails below it), and new code should be fully covered; an uncovered line needs a reason.
+- **The coding standards** in [docs/CODING_STANDARDS.md](docs/CODING_STANDARDS.md): formatted and linted with ruff,
+  strict types with mypy and pyright, no warnings (the test suite turns every warning into an error), the
+  architecture's import contracts. The hooks and `make check` enforce them; fix the cause, don't silence a check.
+- **Docs in the same change.** Behaviour a user sees is documented where users look (README, `docs/`, the
+  generated CLI reference); a structural change has an ADR.
+- **A conventional commit title**, small enough to review in one sitting, and green CI (`CI OK`).
+- **Your right to contribute it.** By opening a pull request you agree that your contribution is licensed under the
+  project's [MIT license](LICENSE).
+
 ## Review and merging
 
 - CI must pass: the `CI OK` check gates `main`. It runs lint and types, the tests on macOS and Linux for every
@@ -177,6 +194,9 @@ On `main`, the Demo workflow re-renders it on macOS whenever the tape changes, a
 ## Questions
 
 - Bugs and feature ideas: [open an issue](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues/new/choose).
+  The bug form asks for what happened, the steps to reproduce it and the output of `hz --version` and
+  `hz system doctor --json`; search [the open and closed issues](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/issues?q=is%3Aissue)
+  first. A maintainer answers within 14 days.
 - A question about how to do something: an issue is fine too; or open a draft pull request (`make pr DRAFT=1
   TITLE="..."`) and ask in its description.
 - Security vulnerabilities: privately, as [SECURITY.md](SECURITY.md) describes, never in a public issue.
@@ -186,13 +206,14 @@ Be kind, assume good intent, critique code and ideas, not people ([CODE_OF_CONDU
 
 ## For maintainers
 
-**Releases** are pull requests ([ADR 0013](docs/adr/0013-pull-request-based-development-and-releases.md)): Actions →
-**Release** → Run workflow (`auto` derives the bump from the commits, or force `patch`, `minor`, `major`; `make
-release` does the same from a workstation) opens `chore(release): vX.Y.Z` with the version and `CHANGELOG.md`
+**Releases** are pull requests ([ADR 0013](docs/adr/0013-pull-request-based-development-and-releases.md)): `make release`
+(`BUMP=minor`; or Actions → **Prepare release** → Run workflow) dispatches a GitHub runner that derives the bump from
+the commits (`auto`, or force `patch`, `minor`, `major`), prepares the branch, dispatches CI on it and enables squash
+auto-merge, so nothing runs on your machine (`make release-local` is the same script locally). It opens `chore(release): vX.Y.Z` with the version and `CHANGELOG.md`
 updated. The optional **intro** (`make release INTRO="..."`) becomes the release's introduction under its heading in
-`CHANGELOG.md` and in the release notes; edit it in the pull request like the rest. Introductions of earlier releases
-survive the regeneration; hand edits to their entries don't, because entries come from the commits. Merging the pull
-request tags the commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
+`CHANGELOG.md` and in the release notes; to change it, edit the pull request before CI turns green, or dispatch again with the intro. Introductions of earlier releases
+survive the regeneration; hand edits to their entries don't, because entries come from the commits. (If it ever doesn't tag, run **Release tag** by hand from `main`.) The pull request merges itself once
+`CI OK` is green; that tags the commit, and **Publish** builds wheel and sdist, attests their provenance and creates the GitHub
 release with the changelog section as notes.
 
 **Pinned tools** live in [scripts/tools.toml](scripts/tools.toml); to bump one, change its version and run

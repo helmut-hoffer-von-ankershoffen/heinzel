@@ -9,11 +9,12 @@ and `confirm` must never be reachable by an agent, so neither the MCP head (the 
 unauthenticated REST head exposes them.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field
 
 from heinzel import ActionGate, AgentRunner, Module
+from heinzel.kernel import Effort
 from heinzel.modules.system.runner.chat._models import (
     ChatAction,
     ChatContext,
@@ -63,7 +64,7 @@ def open(  # noqa: A001 - the command is `hz chat open`
 
 # Spends money, within the per-message and the session cap.
 @module.operation(read_only=False, heads=HEADS, requires=["agent-runner:read"], audience="everyday")
-def send(
+def send(  # noqa: PLR0913, PLR0917 - one parameter per input of the operation
     service: ChatService,
     runner: AgentRunner,
     session: Session,
@@ -72,13 +73,28 @@ def send(
         float | None,
         Field(gt=0, description="Most this answer may cost in US dollars, within the per-message and session caps."),
     ] = None,
+    model: Annotated[
+        str | None,
+        Field(
+            pattern=r"^$|^[A-Za-z0-9][A-Za-z0-9._:/@\[\]-]*$",  # a name, never an option
+            max_length=100,
+            description="The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes "
+            "back to the default.",
+        ),
+    ] = None,
+    effort: Annotated[
+        Literal["", "low", "medium", "high", "xhigh", "max"] | None,
+        Field(
+            description="The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default."
+        ),
+    ] = None,
 ) -> ChatSession:
     """Send a message in a chat session and wait for the answer; this may cost money.
 
     Raises:
         HeinzelError: If the session is unknown, busy, full or at its cap, or the runner is misconfigured.
     """
-    return service.send(runner, session, message, budget_usd)
+    return service.send(runner, session, message, budget_usd, model=model, effort=effort)
 
 
 @module.operation(read_only=False, heads=HEADS, audience="everyday")
@@ -138,5 +154,6 @@ __all__ = [
     "ChatSettings",
     "ChatStore",
     "ChatSummary",
+    "Effort",
     "module",
 ]

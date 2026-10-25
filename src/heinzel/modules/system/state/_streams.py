@@ -1,4 +1,4 @@
-"""The local streams: append-only JSON Lines files in your state directory, one per stream and month (ADR 0062).
+"""The local streams: append-only JSON Lines files in your state directory, one per stream and month (ADR 0081).
 
 `<state dir>/state/<stream>/<YYYY-MM>.jsonl` is laid out exactly as the writer branch is, so a push copies a file
 whose copy on the branch is a prefix of it, and what hasn't been pushed yet is the bytes past that prefix: nothing

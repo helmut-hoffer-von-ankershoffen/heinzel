@@ -49,7 +49,17 @@ GIT_HARDENING = (
 )
 """Options every git command hz runs on a repository starts with."""
 DROPPED = frozenset(
-    {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR", "GIT_NAMESPACE"}
+    {
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_COMMON_DIR",
+        "GIT_NAMESPACE",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_CONFIG_PARAMETERS",
+        "GIT_CONFIG_COUNT",
+    }
 )
 """Variables that would point `git -C <checkout>` at another repository, e.g. when hz runs inside a git hook."""
 ALLOWED = frozenset(
@@ -167,7 +177,7 @@ class CommandFailed(Exception):  # noqa: N818 - says what happened, like ScriptE
         self.stderr = stderr
 
 
-RunCommand = Callable[[Sequence[str], Path | None], str]
+RunGitCommand = Callable[[Sequence[str], Path | None], str]
 """Runs a command (`git`, `gh`) in a directory and returns its standard output; the seam tests fake."""
 
 
@@ -229,5 +239,7 @@ def _environment() -> dict[str, str]:
     return {
         key: value
         for key, value in subprocess_environment().items()
-        if (key in ALLOWED or key.startswith(ALLOWED_PREFIXES)) and key not in DROPPED
+        if (key in ALLOWED or key.startswith(ALLOWED_PREFIXES))
+        and key not in DROPPED
+        and not key.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))
     } | QUIET

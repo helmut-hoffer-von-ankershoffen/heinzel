@@ -3,12 +3,13 @@
 import base64
 import json
 from datetime import UTC, datetime
+from email import message_from_bytes, policy
 
 import pytest
 from heinzel_google import LOGIN_WITH_MAIL, Gmail, Process, _mail
 from heinzel_google._mail import gmail_search, html_to_text
 
-from heinzel import HeinzelError, MailQuery, Window
+from heinzel import HeinzelError, MailDraft, MailQuery, Window
 
 pytestmark = pytest.mark.unit
 
@@ -45,6 +46,7 @@ def message(message_id: str, when: datetime, *, sender: str = "Zoe Example <zoe@
 @pytest.fixture
 def gmail(session, fake_gws):
     fake_gws.json(LABELS, {"labels": [{"id": "INBOX", "name": "INBOX"}, {"id": "Label_1", "name": "Summaries"}]})
+    fake_gws.json(("gmail", "users", "getProfile"), {"emailAddress": "ada@example.com"})
     return Gmail(session)
 
 
@@ -335,3 +337,254 @@ def test_long_address_headers_are_cut_before_parsing(gmail, fake_gws):
     many["payload"]["headers"].append({"name": "To", "value": ", ".join(f"p{i}@example.com" for i in range(20_000))})
     fake_gws.json(GET, many)
     assert len(gmail.read("m1").message.recipients) < 1_000
+
+
+THREAD = ("gmail", "users", "threads", "get")
+DRAFT = ("gmail", "users", "drafts", "get")
+CREATE = ("gmail", "users", "drafts", "create")
+SEND = ("gmail", "users", "drafts", "send")
+MODIFY = ("gmail", "users", "threads", "modify")
+PROFILE = ("gmail", "users", "getProfile")
+
+
+def text(message_id: str, when: datetime, body: str, labels: list[str] | None = None, **extra: object):
+    found = message(message_id, when, mimeType="text/plain", body={"data": b64(body)}, **extra)
+    if labels is not None:
+        found["labelIds"] = labels
+    return found
+
+
+def sent(created) -> object:
+    """The MIME message a draft was created with, parsed back."""
+    raw = created.body["message"]["raw"]
+    return message_from_bytes(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4)), policy=policy.default)
+
+
+def test_a_thread_has_its_messages_oldest_first_without_drafts_spam_or_trash(gmail, fake_gws):
+    fake_gws.json(
+        THREAD,
+        {
+            "id": "t1",
+            "messages": [
+                text("m2", datetime(2026, 10, 21, tzinfo=UTC), "Second"),
+                text("m1", datetime(2026, 10, 20, tzinfo=UTC), "First"),
+                text("m3", datetime(2026, 10, 22, tzinfo=UTC), "Unsent", labels=["DRAFT"]),
+                text("m4", datetime(2026, 10, 22, tzinfo=UTC), "Junk", labels=["SPAM"]),
+            ],
+        },
+    )
+    thread = gmail.thread("t1")
+    assert [(m.message.id, m.text) for m in thread.messages] == [("m1", "First"), ("m2", "Second")]
+    assert thread.subject == "Meeting summary: Plan"
+    assert "reply-to" not in thread.messages[0].headers
+    assert next(r for r in fake_gws.api_runs if r.command == THREAD).params == {
+        "userId": "me",
+        "id": "t1",
+        "format": "full",
+    }
+
+
+def test_a_thread_only_in_trash_or_too_long_is_refused(gmail, fake_gws, monkeypatch):
+    fake_gws.json(THREAD, {"messages": [text("m1", SINCE, "x", labels=["TRASH"])]})
+    with pytest.raises(HeinzelError, match="outside Spam and Trash"):
+        gmail.thread("t1")
+    monkeypatch.setattr(_mail, "MAX_THREAD", 0)
+    with pytest.raises(HeinzelError, match="more than 0 messages"):
+        gmail.thread("t1")
+    with pytest.raises(HeinzelError, match="is not a Gmail conversation id"):
+        gmail.thread("../t1")
+
+
+def test_a_draft_reads_as_it_stands_with_its_link(gmail, fake_gws):
+    fake_gws.json(DRAFT, {"id": "r-1", "message": text("m9", SINCE, "Hi Zoe", labels=["DRAFT"])})
+    draft = gmail.draft("r-1")
+    assert (draft.id, draft.content.text, draft.content.message.id) == ("r-1", "Hi Zoe", "m9")
+    assert draft.url == "https://mail.google.com/mail/#drafts?compose=m9"
+    fake_gws.json(DRAFT, {"id": "r-1"})
+    with pytest.raises(HeinzelError, match="lacks its message"):
+        gmail.draft("r-1")
+
+
+def test_a_new_draft_is_one_plain_text_message_and_is_read_back(gmail, fake_gws):
+    fake_gws.json(CREATE, {"id": "r-2", "message": {"id": "m9"}})
+    fake_gws.json(DRAFT, {"id": "r-2", "message": text("m9", SINCE, "Hello Zoe", labels=["DRAFT"])})
+    draft = gmail.create_draft(
+        MailDraft(to=["zoe@example.com"], cc=["grace@example.com"], subject="Plän", text="Hello Zoe\n")
+    )
+    assert draft.id == "r-2"
+    created = next(r for r in fake_gws.api_runs if r.command == CREATE)
+    assert created.params == {"userId": "me"}
+    assert "threadId" not in created.body["message"]
+    mime = sent(created)
+    assert (mime["To"], mime["Cc"], mime["Subject"]) == ("zoe@example.com", "grace@example.com", "Plän")
+    assert mime.get_content_type() == "text/plain"
+    assert mime.get_content() == "Hello Zoe\r\n"  # SMTP's line ends
+    assert mime["In-Reply-To"] is None
+
+
+def test_a_reply_answers_the_reply_to_in_the_same_conversation_with_its_references(gmail, fake_gws):
+    original = message("m1", SINCE)
+    original["payload"]["headers"] += [
+        {"name": "Message-ID", "value": "<abc@mail.example.com>"},
+        {"name": "References", "value": "<root@mail.example.com> not-an-id"},
+    ]
+    fake_gws.json(GET, original)
+    fake_gws.json(CREATE, {"id": "r-3"})
+    fake_gws.json(DRAFT, {"id": "r-3", "message": text("m9", SINCE, "Thanks", labels=["DRAFT"])})
+    gmail.create_draft(MailDraft(text="Thanks", reply_to="m1"))
+    get = next(r for r in fake_gws.api_runs if r.command == GET)
+    assert "Reply-To" in get.params["metadataHeaders"]
+    created = next(r for r in fake_gws.api_runs if r.command == CREATE)
+    assert created.body["message"]["threadId"] == "tm1"
+    mime = sent(created)
+    assert mime["To"] == "hidden@example.com"
+    assert mime["Cc"] is None
+    assert mime["Subject"] == "Re: Meeting summary: Plan"
+    assert mime["In-Reply-To"] == "<abc@mail.example.com>"
+    assert mime["References"] == "<root@mail.example.com> <abc@mail.example.com>"
+
+
+def test_reply_all_copies_the_other_recipients_but_not_you(gmail, fake_gws):
+    original = message("m1", SINCE)
+    original["payload"]["headers"] = [h for h in original["payload"]["headers"] if h["name"] != "Reply-To"]
+    original["payload"]["headers"].append({"name": "Subject", "value": "Re: done"})
+    fake_gws.json(GET, original)
+    fake_gws.json(PROFILE, {"emailAddress": "Ada@Example.com"})
+    fake_gws.json(CREATE, {"id": "r-4"})
+    fake_gws.json(DRAFT, {"id": "r-4", "message": text("m9", SINCE, "Thanks", labels=["DRAFT"])})
+    gmail.create_draft(MailDraft(text="Thanks", reply_to="m1", reply_all=True, subject="Our plan"))
+    mime = sent(next(r for r in fake_gws.api_runs if r.command == CREATE))
+    assert mime["To"] == "zoe@example.com"
+    assert mime["Cc"] == "grace@example.com, team@example.com"
+    assert mime["Subject"] == "Our plan"
+
+
+def test_a_reply_to_a_message_without_a_sender_goes_nowhere_and_is_refused(gmail, fake_gws):
+    original = message("m1", SINCE, sender="")
+    original["payload"]["headers"] = [h for h in original["payload"]["headers"] if h["name"] != "Reply-To"]
+    fake_gws.json(GET, original)
+    with pytest.raises(HeinzelError, match="would go to nobody"):
+        gmail.create_draft(MailDraft(text="Thanks", reply_to="m1"))
+    assert all(r.command != CREATE for r in fake_gws.api_runs)
+
+
+def test_sending_a_draft_sends_it_if_it_is_still_what_was_shown(gmail, fake_gws):
+    fake_gws.json(DRAFT, {"id": "r-1", "message": text("m9", SINCE, "Hi", labels=["DRAFT"])})
+    fake_gws.json(SEND, {"id": "m10", "threadId": "t1", "labelIds": ["SENT"]})
+    done = gmail.send_draft("r-1", seen="m9")
+    assert (done.id, done.thread, done.url) == ("m10", "t1", "https://mail.google.com/mail/#all/m10")
+    (run,) = [r for r in fake_gws.api_runs if r.command == SEND]
+    assert (run.params, run.body) == ({"userId": "me"}, {"id": "r-1"})
+    fake_gws.json(SEND, {})
+    with pytest.raises(HeinzelError, match="look in Sent"):
+        gmail.send_draft("r-1", seen="m9")
+
+
+def test_a_draft_edited_since_it_was_shown_is_not_sent(gmail, fake_gws):
+    fake_gws.json(DRAFT, {"id": "r-1", "message": text("m11", SINCE, "Hi, and more", labels=["DRAFT"])})
+    with pytest.raises(HeinzelError, match="changed since you saw it; nothing was sent"):
+        gmail.send_draft("r-1", seen="m9")
+    assert all(r.command != SEND for r in fake_gws.api_runs)
+
+
+@pytest.mark.parametrize(("draft", "seen"), [("r 1", "m9"), ("../x", "m9"), ("r-1", "m/9")])
+def test_malformed_ids_never_reach_a_send(gmail, fake_gws, draft, seen):
+    with pytest.raises(HeinzelError, match="is not a Gmail"):
+        gmail.send_draft(draft, seen=seen)
+    assert fake_gws.api_runs == []
+
+
+def test_relabelling_archives_and_files_by_label_name(gmail, fake_gws):
+    fake_gws.json(MODIFY, {"id": "t1", "messages": [{"labelIds": ["Label_1", "UNREAD"]}, {"labelIds": ["Label_1"]}]})
+    filed = gmail.relabel("t1", add=["summaries", " "], remove=["inbox", "INBOX"])
+    assert (filed.thread, filed.labels) == ("t1", ["Summaries", "UNREAD"])
+    run = fake_gws.api_runs[-1]
+    assert (run.params, run.body) == (
+        {"userId": "me", "id": "t1"},
+        {"addLabelIds": ["Label_1"], "removeLabelIds": ["INBOX"]},
+    )
+
+
+@pytest.mark.parametrize(
+    ("add", "remove", "problem"),
+    [
+        ([], [], "Name a label"),
+        (["Nope"], [], "has no label 'Nope'; create it in Gmail first"),
+        (["TRASH"], [], "TRASH can't be set or removed here"),
+        ([], ["SPAM"], "SPAM can't be set or removed here"),
+    ],
+)
+def test_relabelling_refuses_nothing_unknown_labels_and_spam_or_trash(gmail, fake_gws, add, remove, problem):
+    fake_gws.json(
+        LABELS,
+        {"labels": [{"id": i, "name": i} for i in ("INBOX", "SPAM", "TRASH", "UNREAD")]},
+    )
+    with pytest.raises(HeinzelError, match=problem):
+        gmail.relabel("t1", add=add, remove=remove)
+    assert all(r.command != MODIFY for r in fake_gws.api_runs)
+
+
+def test_a_reply_to_your_own_message_answers_whom_it_went_to(gmail, fake_gws):
+    mine = message("m1", SINCE, sender="Ada <ada@example.com>")
+    mine["payload"]["headers"] = [h for h in mine["payload"]["headers"] if h["name"] != "Reply-To"]
+    fake_gws.json(GET, mine)
+    fake_gws.json(CREATE, {"id": "r-5"})
+    fake_gws.json(DRAFT, {"id": "r-5", "message": text("m9", SINCE, "Ping", labels=["DRAFT"])})
+    gmail.create_draft(MailDraft(text="Ping", reply_to="m1"))
+    mime = sent(next(r for r in fake_gws.api_runs if r.command == CREATE))
+    assert mime["To"] == "grace@example.com, team@example.com"
+
+
+def test_a_reply_leaves_out_what_is_no_plain_address_and_refuses_a_crowd(gmail, fake_gws):
+    original = message("m1", SINCE, sender='"foo,bar"@example.com, Zoe <zoe@example.com>')
+    original["payload"]["headers"] = [h for h in original["payload"]["headers"] if h["name"] != "Reply-To"]
+    fake_gws.json(GET, original)
+    fake_gws.json(CREATE, {"id": "r-6"})
+    fake_gws.json(DRAFT, {"id": "r-6", "message": text("m9", SINCE, "x", labels=["DRAFT"])})
+    gmail.create_draft(MailDraft(text="x", reply_to="m1"))
+    assert sent(next(r for r in fake_gws.api_runs if r.command == CREATE))["To"] == "zoe@example.com"
+    crowd = message("m2", SINCE)
+    crowd["payload"]["headers"].append({"name": "Cc", "value": ", ".join(f"p{i}@example.com" for i in range(101))})
+    fake_gws.json(GET, crowd)
+    with pytest.raises(HeinzelError, match="more than 100 people"):
+        gmail.create_draft(MailDraft(text="x", reply_to="m2", reply_all=True))
+
+
+def test_a_reply_without_a_usable_message_id_or_conversation_carries_neither(gmail, fake_gws):
+    original = message("m1", SINCE)
+    original.pop("threadId")
+    original["payload"]["headers"].append({"name": "Message-ID", "value": "<a b>\r\nBcc: x@example.com"})
+    fake_gws.json(GET, original)
+    fake_gws.json(CREATE, {"id": "r-7"})
+    fake_gws.json(DRAFT, {"id": "r-7", "message": text("m9", SINCE, "x", labels=["DRAFT"])})
+    gmail.create_draft(MailDraft(text="x", reply_to="m1"))
+    created = next(r for r in fake_gws.api_runs if r.command == CREATE)
+    assert "threadId" not in created.body["message"]
+    mime = sent(created)
+    assert (mime["In-Reply-To"], mime["References"], mime["Bcc"]) == (None, None, None)
+
+
+def test_a_reply_to_a_message_without_id_or_time_is_refused(gmail, fake_gws):
+    broken = message("m1", SINCE)
+    broken.pop("internalDate")
+    fake_gws.json(GET, broken)
+    with pytest.raises(HeinzelError, match="lacks its id or time"):
+        gmail.create_draft(MailDraft(text="x", reply_to="m1"))
+    assert all(r.command != CREATE for r in fake_gws.api_runs)
+
+
+def test_a_draft_made_but_not_read_back_says_it_exists(gmail, fake_gws):
+    fake_gws.json(CREATE, {})
+    with pytest.raises(HeinzelError, match="lacks its id; look in Drafts"):
+        gmail.create_draft(MailDraft(to=["zoe@example.com"], subject="s", text="x"))
+    fake_gws.json(CREATE, {"id": "r-8"})
+    fake_gws.on(DRAFT, Process(1, json.dumps({"error": {"code": 500, "message": "oops"}}).encode()))
+    with pytest.raises(HeinzelError, match=r"The draft r-8 was made.*look in Drafts, don't redo it"):
+        gmail.create_draft(MailDraft(to=["zoe@example.com"], subject="s", text="x"))
+
+
+def test_your_own_label_named_like_a_system_one_is_yours_to_set(gmail, fake_gws):
+    fake_gws.json(LABELS, {"labels": [{"id": "SPAM", "name": "SPAM"}, {"id": "Label_9", "name": "Spam"}]})
+    fake_gws.json(MODIFY, {"id": "t1", "messages": [{"labelIds": ["Label_9"]}]})
+    assert gmail.relabel("t1", add=["spam"], remove=[]).labels == ["Spam"]
+    assert fake_gws.api_runs[-1].body == {"addLabelIds": ["Label_9"], "removeLabelIds": []}

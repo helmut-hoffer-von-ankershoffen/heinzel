@@ -24,7 +24,13 @@ export async function popUp(
   registration: () => Promise<ServiceWorkerRegistration | null> = workerRegistration,
 ): Promise<boolean> {
   const path = noticePath(notice);
-  const options = { body: notice.body, tag: notice.id, icon: "/icons/icon-192.png", data: { path } };
+  const options = {
+    body: notice.body,
+    tag: notice.id,
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    data: { path },
+  };
   try {
     const worker = await registration();
     if (worker) {

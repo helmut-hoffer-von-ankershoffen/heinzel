@@ -32,7 +32,7 @@ describe("the Team graph screen", () => {
   it("says so when the server fails, rather than showing an empty graph", async () => {
     mockApi({ ...shell, "/api/graph": { status: 500, body: { error: "the store is locked" } } });
     renderAt("/graph");
-    expect(await screen.findByText(/the store is locked/, {}, { timeout: 5000 })).toBeInTheDocument();
+    expect(await screen.findByRole("alert", {}, { timeout: 5000 })).toHaveTextContent(/the store is locked/);
   });
 
   it("heads the graph with how the flow is doing, and draws each state in words", async () => {

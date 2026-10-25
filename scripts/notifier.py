@@ -15,7 +15,7 @@ exits 1.
 are drawn from too, an original drawing and never an emoji font's artwork: heinzel.svg (the default one, cropped to
 the bust) and heinzel-swarm.svg (a busy swarm of them, the product's logo). From those it makes everything else:
 web/public/favicon.svg, favicon.ico, the images the web app's manifest names and the built-in theme's logo (ADR
-0044); an icon shows the swarm from SWARM_FROM pixels on, one Heinzelmännchen below. They are committed, because
+0044); every app icon shows one Heinzelmännchen on white, the swarm is the logo. They are committed, because
 the Linux build has nothing to draw them with; tests check the SVGs. The PNG files' bytes depend on the macOS that
 drew them, so redraw them only when the drawing changes.
 """
@@ -45,16 +45,16 @@ WEB_ICONS = {
     "icons/maskable-512.png": (512, "maskable"),
     "icons/apple-touch-icon.png": (180, "maskable"),  # iOS and macOS round it themselves
 }
-"""The web app's icons by path under web/public: their size and icon.swift's style; all large enough for the swarm."""
+"""The web app's icons by path under web/public: their size and icon.swift's style; on a white tile."""
 FAVICON_SIZES = (16, 32)
 DRAWING = ROOT / "web" / "src" / "components" / "heinzel.ts"
 """Where Heinzelmännchen is drawn, as shapes the web app also draws its avatars from."""
 ARTWORK = SOURCES / "heinzel.svg"
-"""One Heinzelmännchen, the default one (grown, cropped to the bust): what the icons show below SWARM_FROM pixels."""
+"""One Heinzelmännchen, the default one (grown, cropped to the bust): what every app icon shows."""
+DANCE = ROOT / "web" / "public" / "loading-dance.svg"
+"""The four dancing in a ring while hz starts."""
 SWARM = SOURCES / "heinzel-swarm.svg"
-"""A busy swarm of them, the product's logo: what the icons show from SWARM_FROM pixels on."""
-SWARM_FROM = 48
-"""Below this many pixels the swarm doesn't read, and one Heinzelmännchen stands for it."""
+"""A busy swarm of them, the product's logo: the logo, not an app icon."""
 THEME_LOGO = ROOT / "src" / "heinzel" / "kernel" / "assets" / "theme" / "logo"
 """The built-in theme's logo (ADR 0044): the swarm as its mark, and wordmarks made from it."""
 COPIES = {PUBLIC / "favicon.svg": ARTWORK, THEME_LOGO / "mark.svg": SWARM}
@@ -135,16 +135,20 @@ def _svg_ready() -> bool:
     return release >= MACOS_FOR_SVG
 
 
-def artwork_for(pixels: int) -> Path:
-    """The drawing an icon of this many pixels shows: the swarm where it reads, else one Heinzelmännchen."""
-    return SWARM if pixels >= SWARM_FROM else ARTWORK
+def artwork_for(pixels: int) -> Path:  # noqa: ARG001 - the size no longer matters: an app icon is one Heinzelmännchen
+    """The drawing an icon of this many pixels shows: one friendly Heinzelmännchen at every size.
+
+    The swarm is the product's logo (README, hero, the theme's mark), never an app icon.
+    """
+    return ARTWORK
 
 
 DRAW = (
     "const m = await import(process.argv[1]); const fs = await import('node:fs');"
     " fs.writeFileSync(process.argv[2], m.heinzelSvg()); fs.writeFileSync(process.argv[3], m.heinzelSwarmSvg());"
+    " fs.writeFileSync(process.argv[4], m.heinzelDanceSvg());"
 )
-"""Writes heinzel.svg and heinzel-swarm.svg from the drawing (node runs TypeScript without imports as it is)."""
+"""Writes heinzel.svg, heinzel-swarm.svg and loading-dance.svg from the drawing (node runs TypeScript as it is)."""
 
 
 def draw() -> None:
@@ -157,7 +161,7 @@ def draw() -> None:
     if node is None:
         msg = "node not found: make setup installs what the web app needs"
         raise SystemExit(msg)
-    _run(node, "--input-type=module", "-e", DRAW, DRAWING.as_uri(), str(ARTWORK), str(SWARM))
+    _run(node, "--input-type=module", "-e", DRAW, DRAWING.as_uri(), str(ARTWORK), str(SWARM), str(DANCE))
 
 
 def icons() -> None:

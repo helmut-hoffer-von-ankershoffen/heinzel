@@ -53,54 +53,81 @@ class CapabilitySettings(ModuleSettings):
     can.
     """
 
+    section_title: ClassVar[str | None] = "Which connector serves what"  # the heading in Settings
+
     agent_runner: str | None = Field(
         default="claude-code",
-        description="Adapter that serves `agent-runner`: `claude-code` (the default, because `command` needs a "
-        "command line first), `command`, or one from a plugin.",
+        title="Agent runner",
+        description=(
+            "What runs drafts and chats: Claude Code (the default), your own command, or a runner a plugin brings."
+        ),
         json_schema_extra=_options("agent-runner"),
     )
     ai_access: str | None = Field(
         default="claude-code",
-        description="How hz reaches AI, the AI access in use: `claude-code` (the default), `gateway` (a company CLI "
-        "configured in `[ai.access]`), `pydantic-ai`, or one from a plugin; `hz ai access use` sets it (ADR 0057).",
+        title="AI access",
+        description="How Heinzelmännchen reaches AI: Claude Code (the default), your company's AI "
+        "gateway, Pydantic AI, or a way a plugin brings.",
         json_schema_extra=_options("ai-access"),
     )
     calendar: str | None = Field(
         default=None,
-        description="Adapter that serves `calendar`, e.g. `google`.",
+        title="Calendar",
+        description="The connector that reads your calendar, such as Google.",
         json_schema_extra=_options("calendar"),
     )
     chat: str | None = Field(
-        default=None, description="Adapter that serves `chat`, e.g. `slack`.", json_schema_extra=_options("chat")
+        default=None,
+        title="Chat",
+        description="The connector for team chat, such as Slack.",
+        json_schema_extra=_options("chat"),
     )
     code_host: str | None = Field(
         default=None,
-        description="Adapter that serves `code-host`, e.g. `github`.",
+        title="Code host",
+        description="The connector for pull requests and code, such as GitHub.",
         json_schema_extra=_options("code-host"),
     )
     directory: str | None = Field(
         default="one-on-ones",
-        description="Adapter that serves `directory`: `one-on-ones` (the default, the core's guesses from recurring "
-        "1:1s in the bound calendar, each marked as a guess for the user to confirm), or one from a plugin that reads "
-        "a directory of record.",
+        title="Directory",
+        description=(
+            "Who reports to whom: guessed from recurring one-on-ones in your calendar (the default, each "
+            "guess for you to confirm), or read from a directory a plugin connects."
+        ),
         json_schema_extra=_options("directory"),
     )
     documents: str | None = Field(
-        default=None, description="Adapter that serves `documents`.", json_schema_extra=_options("documents")
+        default=None,
+        title="Documents",
+        description="The connector for documents and pages, such as Confluence.",
+        json_schema_extra=_options("documents"),
     )
     mail: str | None = Field(
-        default=None, description="Adapter that serves `mail`, e.g. `google`.", json_schema_extra=_options("mail")
+        default=None,
+        title="Mail",
+        description="The connector that reads your mail, such as Google.",
+        json_schema_extra=_options("mail"),
     )
     meetings: str | None = Field(
-        default=None, description="Adapter that serves `meetings`, e.g. `zoom`.", json_schema_extra=_options("meetings")
+        default=None,
+        title="Meetings",
+        description="The connector for meeting summaries, such as Zoom.",
+        json_schema_extra=_options("meetings"),
     )
     tracker: str | None = Field(
-        default=None, description="Adapter that serves `tracker`, e.g. `github`.", json_schema_extra=_options("tracker")
+        default=None,
+        title="Tracker",
+        description="The connector for issues, such as GitHub or Jira.",
+        json_schema_extra=_options("tracker"),
     )
     team_graph: str | None = Field(
         default="hz-graph",
-        description="Adapter that serves `team-graph`: `hz-graph` (the default, the core's graph of your team's "
-        "contracts and telemetry), or one from a plugin.",
+        title="Team graph",
+        description=(
+            "What draws your team's graph: the built-in graph of your team's contracts and telemetry (the "
+            "default), or one a plugin brings."
+        ),
         json_schema_extra=_options("team-graph"),
     )
 
@@ -431,7 +458,8 @@ class Capabilities:
         """The adapter that serves `capability` unless a requirement pins another, and how it was chosen (ADR 0055).
 
         A configured binding wins, `none` included. Otherwise the only installed adapter of the capability serves
-        it automatically: installing it was the choice, and there is nothing to choose between. With several, the
+        it automatically: installing it was the choice, and there is nothing to choose between; except for a
+        capability that is never automatic (`mail`), which waits for the person's binding. With several, the
         core's default serves, if the capability has one; else nothing until the person picks one.
         """
         if self.settings.configured(capability):
@@ -439,7 +467,8 @@ class Capabilities:
             return (bound, "configured") if bound is not None else (None, "off")
         installed = self.installed(capability)
         default = self.settings.bound(capability)
-        if len(installed) == 1 and installed[0] != default:
+        spec = CAPABILITIES.get(capability)
+        if spec is not None and spec.automatic and len(installed) == 1 and installed[0] != default:
             return installed[0], "automatic"
         if default is not None:
             return default, "default"

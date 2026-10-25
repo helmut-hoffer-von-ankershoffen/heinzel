@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from heinzel.kernel import GIT_HARDENING as HARDENING
 from heinzel.kernel import CommandFailed
 from heinzel.kernel import GitRunner as Runner
-from heinzel.kernel import RunCommand as Run
+from heinzel.kernel import RunGitCommand as Run
 from heinzel.kernel import check_repository_url as check_url
 from heinzel.kernel import git_command as git
 

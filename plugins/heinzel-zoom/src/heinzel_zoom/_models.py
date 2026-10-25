@@ -35,9 +35,11 @@ class ZoomSettings(ModuleSettings):
 
     query: str = Field(
         default=QUERY,
-        description="Mail query that finds Zoom's meeting-summary emails, in the mail capability's syntax "
-        "(`from:`, `subject:`, `label:`), e.g. `from:zoom.us label:Meetings`; subjects that are no summary are "
-        "skipped. Never read from a project hz.toml.",
+        title="Summary mail search",
+        description="The mail search that finds Zoom's meeting-summary emails, in your mail's "
+        "search syntax; mails that aren't summaries are skipped. Never read from a "
+        "project's settings.",
+        examples=["from:zoom.us label:Meetings"],
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"query"})

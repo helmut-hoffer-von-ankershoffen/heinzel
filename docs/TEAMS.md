@@ -45,7 +45,7 @@ The repository holds:
 | `hz.yaml` | the team's name, the roles that own the roster, its plugin if it has one | owners |
 | `team/roster.yaml` | handle, GitHub login, roles and dates of each member; no names, titles or managers | owners |
 | `people/<handle>.yaml` | each person's preferences | that person |
-| `workflows/` | team contracts ([WORKFLOWS](WORKFLOWS.md)), checked by the repository's Actions workflow | owners and members |
+| `workflows/` | team contracts ([WORKFLOWS](HEINZELMAENNCHEN.md)), checked by the repository's Actions workflow | owners and members |
 | `inventory/`, `policies/` | declared artefacts and systems; owned policies | owners |
 
 CODEOWNERS says who approves what. GitHub enforces it only when the default branch requires a pull request reviewed
@@ -65,8 +65,8 @@ recommend:
 ```
 
 `hz org sync` shows each recommendation beside what you have, and where it comes from. `--accept <ids>` (or `all`)
-writes what you accept to your user file: a binding to `[capabilities]`, a contract to `[workflow] schedule_team`,
-pinned to the content you read with `hz workflow show team:<name>`. `all` takes only what you have no choice for yet;
+writes what you accept to your user file: a binding to `[capabilities]`, a contract to `[heinzel] schedule_team`,
+pinned to the content you read with `hz heinzel show team:<name>`. `all` takes only what you have no choice for yet;
 what you chose otherwise switches only when you name it. Plugins and credentials stay commands you run yourself, which
 `sync` names. `hz system doctor` says when recommendations wait for you. An entry hz can't check is dropped, and
 `hz team show` says which.
@@ -105,7 +105,7 @@ nothing is counted per person. Your sessions, drafts and edits stay yours. Logs 
 Heinzelmännchen, and in `telemetry/<handle>/<id>.jsonl` in the team repository, one writer each; `sync` refuses a copy
 your log doesn't extend. Pushing is still yours; automatic sync is the next step.
 
-The graph keeper watches it for you: `hz workflow new keeper --template graph:team-graph-keeper` writes a contract that
+The graph keeper watches it for you: `hz heinzel new keeper --template graph:team-graph-keeper` writes a contract that
 reads the graph and drafts a morning note for you alone; uncomment its schedule when its drafts read right.
 
 ## Your own state repository
@@ -113,7 +113,7 @@ reads the graph and drafts a morning note for you alone; uncomment its schedule 
 hz notes, on your machine, the days you used it (one line a day: no time, no count, no command) and each version it
 ran. Nothing of it leaves until you name a private repository of your own; then the daemon pushes what is new every
 15 minutes to this machine's branch `hz/<handle>/<machine>`, fast-forward only, with your git credentials
-([ADR 0062](adr/0062-state-repositories-one-writer-per-branch-the-daemon-pushes.md)):
+([ADR 0081](adr/0081-state-repositories-one-writer-per-branch-the-daemon-pushes.md)):
 
 ```bash
 hz system config set system.state.personal https://github.com/mira-example/heinzel-state-mira   # private, yours
@@ -132,4 +132,4 @@ yes again to being named.
 directory) runs at once. Steps that change something outside your machine (creating a repository, pushing, opening a
 pull request) and making a team yours wait for `--yes`. The commands are CLI and MCP only.
 
-An existing checkout from the deprecated `[workflow] team_repository` becomes your team with `hz team adopt <path>`.
+An existing checkout from the deprecated `[heinzel] team_repository` becomes your team with `hz team adopt <path>`.

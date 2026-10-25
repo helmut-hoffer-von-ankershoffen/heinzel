@@ -21,7 +21,11 @@ class SettingInfo(BaseModel):
     key: str = Field(description="Setting name within its section.")
     value: Any = Field(description="Value in effect.")
     env: str = Field(description="Environment variable that overrides it.")
-    description: str = Field(description="What the setting controls.")
+    description: str = Field(description="What the setting controls, in plain words.")
+    section_title: str | None = Field(
+        default=None,
+        description="What Settings calls the setting's section: its settings model's section_title; none without one.",
+    )
     default: Any = Field(default=None, description="Its default; none when it has none.")
     source: str = Field(
         default="default",
@@ -64,3 +68,13 @@ class ConfigRevealed(BaseModel):
     supported: bool = Field(description="Whether this machine has a file manager hz can open.")
     opened: bool = Field(description="Whether the file manager was opened.")
     message: str = Field(description="What happened, or why nothing did, with the file's path.")
+
+
+class SettingRevealed(BaseModel):
+    """What `hz system config reveal-setting` did."""
+
+    key: str = Field(description="The setting, as section.key.")
+    path: Path = Field(description="The file or folder it names.")
+    supported: bool = Field(description="Whether this machine has a file manager hz can open.")
+    opened: bool = Field(description="Whether the file manager was opened.")
+    message: str = Field(description="What happened, or why nothing did, with the path.")

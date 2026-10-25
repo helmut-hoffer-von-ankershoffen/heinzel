@@ -1,16 +1,21 @@
 // The status bar under the screen: hz's version on the left; the meeting running now or the next
-// one, and a clock, on the right. The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
+// one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, Video } from "lucide-react";
+import { Calendar, CalendarClock, Ellipsis, Video } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
-import { useInfo } from "@/api/queries";
+import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
+import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
+import { FooterItem } from "@/components/FooterItem";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
+import { Prose } from "@/components/Prose";
 import { t } from "@/i18n";
+import { useWidth } from "@/lib/useWidth";
 import { cn } from "@/lib/utils";
-import { zoneHour, zoneTime } from "@/lib/zoneTime";
-import { CLOCK_SETTINGS } from "./settingsSections";
+import { zoneClock, zoneHour, zoneTime } from "@/lib/zoneTime";
+import { CLOCK_SETTINGS, CONNECTORS } from "./settingsSections";
 
 type Meeting = { title: string; start: string; end: string; conference_url?: string | null };
 type Agenda = { current: Meeting | null; next: Meeting | null; problem: string | null; fix: string | null };
@@ -31,10 +36,10 @@ function useAgenda() {
   });
 }
 
-type ZoneTime = { zone: string; time: string; hours: [number, number]; working: boolean };
+export type ZoneTime = { zone: string; time: string; hours: [number, number]; working: boolean };
 
 /** `GET /api/clock` from the clock plugin: the team's zones and whether they're at work; null without the plugin. */
-function useZones() {
+export function useZones() {
   // Only with the clock plugin: without it there is no /api/clock to ask, and asking would log a 404.
   const info = useInfo();
   const enabled = Boolean(info.data?.modules.some((module) => module.qualname === "clock"));
@@ -107,10 +112,10 @@ const offsetText = (minutes: number) => {
 };
 
 /** `America/Los_Angeles` → `Los Angeles`. */
-const city = (zone: string) => (zone.split("/").at(-1) ?? zone).replaceAll("_", " ");
+export const city = (zone: string) => (zone.split("/").at(-1) ?? zone).replaceAll("_", " ");
 
 /** Whether this browser knows the IANA zone `zone`; formatting an unknown one throws. */
-function knownZone(zone: string): boolean {
+export function knownZone(zone: string): boolean {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: zone });
     return true;
@@ -133,11 +138,10 @@ function Clock({ now }: { now: Date }) {
   const wrapper = useRef<HTMLSpanElement>(null);
   const panelId = useId();
   const open = hovered || focused || pinned;
-  // The first zone is yours (`clock.zones` is ordered): the clock shows its time; the others are in the panel. Zones
-  // this browser doesn't know are left out rather than breaking the bar.
+  // The first zone is yours (`clock.zones` is ordered): the clock shows its time and the panel lists it first, with
+  // the others after it. Zones this browser doesn't know are left out rather than breaking the bar.
   const known = (zones.data ?? []).filter((zone) => knownZone(zone.zone));
   const primary = known[0]?.zone;
-  const list = known.slice(1);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   const enter = () => {
     window.clearTimeout(timer.current);
@@ -187,9 +191,7 @@ function Clock({ now }: { now: Date }) {
         aria-describedby={`${panelId}-hint`}
         className="rounded px-1 font-mono text-foreground/80 tabular-nums hover:bg-accent/60"
       >
-        <time dateTime={now.toISOString()}>
-          {now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZone: primary })}
-        </time>
+        <time dateTime={now.toISOString()}>{zoneClock(now, primary)}</time>
         <span id={`${panelId}-hint`} className="sr-only">
           {t("status.zones")}
         </span>
@@ -201,14 +203,10 @@ function Clock({ now }: { now: Date }) {
             aria-label={t("status.zones")}
             className="w-80 rounded-xl border border-border bg-popover p-1.5 text-sm shadow-xl"
           >
-            {primary && (
-              <p className="px-2.5 pt-1.5 pb-1 text-xs text-muted-foreground">
-                {t("status.primary", { city: city(primary) })}
-              </p>
-            )}
-            {list.length > 0 ? (
+            {known.length > 0 ? (
+              // Yours first, then the others in the order of `clock.zones`; every time on the 24-hour clock.
               <ul>
-                {list.map((zone) => {
+                {known.map((zone, index) => {
                   const at = partsIn(zone.zone, now);
                   const sameDay = at.weekday === now.getDay();
                   return (
@@ -223,7 +221,13 @@ function Clock({ now }: { now: Date }) {
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline gap-2">
                           <span className="truncate text-foreground">{city(zone.zone)}</span>
-                          <span className="text-xs text-muted-foreground">{offsetText(at.offset)}</span>
+                          {index === 0 ? (
+                            <span className="rounded-md border border-primary/40 px-1.5 text-[11px] text-primary">
+                              {t("settings.primary")}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">{offsetText(at.offset)}</span>
+                          )}
                         </span>
                         <span className={cn("block text-xs", zone.working ? "text-ok" : "text-muted-foreground")}>
                           {availability(zone, at)}
@@ -263,7 +267,7 @@ function useNow(): Date {
   return now;
 }
 
-const time = (date: Date) => date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const time = (date: Date) => zoneTime(date);
 
 /** "in 12 min", "in 2 h 5 min", or the time when it's tomorrow or later. */
 function until(start: Date, now: Date): string {
@@ -274,58 +278,223 @@ function until(start: Date, now: Date): string {
   return t("status.inHours", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
 }
 
-export function StatusBar() {
-  const info = useInfo();
+/** How the footer shows its items for its width: everything, icons without text, or the lesser ones under "…". */
+export type FooterMode = "full" | "icons" | "overflow";
+const FULL_FROM = 900;
+const ICONS_FROM = 480;
+export const footerMode = (width: number): FooterMode =>
+  width >= FULL_FROM ? "full" : width >= ICONS_FROM ? "icons" : "overflow";
+
+/** The meeting now or next, or why there is none; one line that truncates, whole in its tooltip. */
+function MeetingLine({ now, wrap = false }: { now: Date; wrap?: boolean }) {
   const agenda = useAgenda();
-  const now = useNow();
+  const meeting = useShown("org:meeting", "footer");
   const current = agenda.data?.current;
   const next = agenda.data?.next;
+  const line = (text: string) => (
+    <span className="truncate" title={text}>
+      {text}
+    </span>
+  );
   return (
-    <footer className="flex h-[60px] min-w-0 shrink-0 items-center gap-3 border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
-      <span className="flex min-w-0 items-center gap-2">
-        {/* The branding is the sidebar's; here only the version, which opens what changed. */}
-        {info.data && (
-          <Link
-            to="?panel=changelog"
-            title={t("account.changelog")}
-            className="shrink-0 rounded px-1 text-ui-sm hover:bg-accent/60 hover:text-foreground"
+    <span className={cn("flex min-w-0 items-center gap-1.5", wrap ? "w-full" : "shrink")}>
+      {!meeting ? null : current ? (
+        <>
+          <Video aria-hidden className="size-3.5 shrink-0 text-primary" />
+          {line(t("status.current", { title: current.title, end: time(new Date(current.end)) }))}
+          {current.conference_url && (
+            <a
+              href={current.conference_url}
+              target="_blank"
+              rel="noreferrer"
+              className="shrink-0 text-primary underline"
+            >
+              {t("status.join")}
+            </a>
+          )}
+        </>
+      ) : next ? (
+        <>
+          <CalendarClock aria-hidden className="size-3.5 shrink-0" />
+          {line(t("status.next", { title: next.title, when: until(new Date(next.start), now) }))}
+        </>
+      ) : agenda.data?.problem ? (
+        <span className="truncate" title={agenda.data.fix ?? t("status.noCalendar")}>
+          {t("status.noCalendar")}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+const RELEASES = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag";
+
+/** What changed in the running release, from the changelog installed with it (so offline), as the version's pane. */
+function ReleaseNotes({ version }: { version: string }) {
+  const changelog = useChangelog(false);
+  return (
+    <div className="px-1.5 pb-1">
+      <section aria-label={t("status.about")} className="mb-3 border-b border-border pb-3">
+        <div className="flex items-center gap-3">
+          <HeinzelAvatar label={t("app.name")} className="h-20 w-12" />
+          <p className="min-w-0 font-medium">{t("status.tagline")}</p>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">{t("status.origin")}</p>
+        <p className="mt-2 text-xs text-muted-foreground">{t("status.built")}</p>
+      </section>
+      <p className="mb-1 text-xs text-muted-foreground">{t("status.whatChanged")}</p>
+      {typeof changelog.data === "string" && (
+        <div className="max-h-64 overflow-y-auto pr-1 text-xs">
+          <Prose>{changelog.data}</Prose>
+        </div>
+      )}
+      <div className="mt-2 flex flex-wrap gap-3 border-t border-border pt-2 text-xs">
+        <Link to="?panel=changelog" className="underline hover:text-foreground">
+          {t("status.fullChangelog")}
+        </Link>
+        <a
+          href={`${RELEASES}/v${version}`}
+          target="_blank"
+          rel="noreferrer"
+          className="underline hover:text-foreground"
+        >
+          {t("status.release")}
+        </a>
+      </div>
+    </div>
+  );
+}
+
+/** The meeting now or next as an icon: green with its line and Join in the pane, or red when no calendar is connected. */
+function MeetingItem({ now }: { now: Date }) {
+  const agenda = useAgenda();
+  const meeting = useShown("org:meeting", "footer");
+  const current = agenda.data?.current;
+  const next = agenda.data?.next;
+  if (!meeting) return null;
+  if (current)
+    return (
+      <FooterItem
+        label={t("status.current", { title: current.title, end: time(new Date(current.end)) })}
+        state="ok"
+        icon={Video}
+      >
+        {current.conference_url && (
+          <a
+            href={current.conference_url}
+            target="_blank"
+            rel="noreferrer"
+            className="block rounded-lg px-2.5 py-1.5 text-primary underline"
           >
-            v{info.data.version}
-          </Link>
+            {t("status.join")}
+          </a>
         )}
+      </FooterItem>
+    );
+  if (next)
+    return (
+      <FooterItem
+        label={t("status.next", { title: next.title, when: until(new Date(next.start), now) })}
+        state="ok"
+        icon={CalendarClock}
+      />
+    );
+  if (agenda.data?.problem)
+    return (
+      <FooterItem label={t("status.noCalendar")} state="bad" icon={Calendar}>
+        <p className="px-2.5 py-1.5 text-muted-foreground">{agenda.data.fix ?? agenda.data.problem}</p>
+        <Link
+          to={`?settings=${CONNECTORS}`}
+          className="block rounded-lg border-t border-border px-2.5 pt-2 pb-1 text-xs underline hover:text-foreground"
+        >
+          {t("status.connectCalendar")}
+        </Link>
+      </FooterItem>
+    );
+  return null;
+}
+
+/** The "…" button of a narrow footer: what doesn't fit opens above it, stacked. */
+function Overflow({ now }: { now: Date }) {
+  const [open, setOpen] = useState(false);
+  const wrapper = useRef<HTMLSpanElement>(null);
+  const id = useId();
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event: MouseEvent) => {
+      if (!wrapper.current?.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", outside);
+    return () => window.removeEventListener("mousedown", outside);
+  }, [open]);
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: Escape closes what the button opens
+    <span
+      ref={wrapper}
+      className="relative shrink-0"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && open) {
+          event.stopPropagation();
+          setOpen(false);
+        }
+      }}
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={id}
+        aria-label={t("status.more")}
+        title={t("status.more")}
+        onClick={() => setOpen((was) => !was)}
+        className="flex size-6 items-center justify-center rounded hover:bg-accent/60 hover:text-foreground"
+      >
+        <Ellipsis aria-hidden className="size-4" />
+      </button>
+      {open && (
+        <section
+          id={id}
+          aria-label={t("status.more")}
+          className="absolute right-0 bottom-full z-40 mb-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
+        >
+          <StatusItems slot="footer" except={NATIVE_FOOTER} stacked />
+          <MeetingLine now={now} wrap />
+        </section>
+      )}
+    </span>
+  );
+}
+
+export function StatusBar() {
+  const info = useInfo();
+  const clock = useShown("clock:primary-zone", "footer");
+  const now = useNow();
+  const footer = useRef<HTMLElement>(null);
+  const mode = footerMode(useWidth(footer));
+  return (
+    <footer
+      ref={footer}
+      className="flex h-[60px] min-w-0 shrink-0 items-center gap-3 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground"
+    >
+      {/* The branding is the sidebar's; here only the version, which opens what changed. It never gives way. */}
+      {info.data && (
+        <FooterItem label={`v${info.data.version}`} state="off" text={`v${info.data.version}`} align="left">
+          <ReleaseNotes version={info.data.version} />
+        </FooterItem>
+      )}
+      <span aria-hidden className="ml-auto" />
+      {mode === "overflow" ? (
+        <Overflow now={now} />
+      ) : (
+        <>
+          <StatusItems slot="footer" except={NATIVE_FOOTER} />
+          <MeetingItem now={now} />
+        </>
+      )}
+      {clock && <Clock now={now} />}
+      <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-ui-sm" title={t("status.built")}>
+        <span aria-hidden>🐻</span>
+        <span className={mode === "full" ? undefined : "sr-only"}>{t("status.built")}</span>
       </span>
-      <span className="ml-auto flex min-w-0 items-center gap-1.5">
-        {current ? (
-          <>
-            <Video aria-hidden className="size-3.5 shrink-0 text-primary" />
-            <span className="truncate">
-              {t("status.current", { title: current.title, end: time(new Date(current.end)) })}
-            </span>
-            {current.conference_url && (
-              <a
-                href={current.conference_url}
-                target="_blank"
-                rel="noreferrer"
-                className="shrink-0 text-primary underline"
-              >
-                {t("status.join")}
-              </a>
-            )}
-          </>
-        ) : next ? (
-          <>
-            <CalendarClock aria-hidden className="size-3.5 shrink-0" />
-            <span className="truncate">
-              {t("status.next", { title: next.title, when: until(new Date(next.start), now) })}
-            </span>
-          </>
-        ) : agenda.data?.problem ? (
-          <span className="truncate" title={agenda.data.fix ?? undefined}>
-            {t("status.noCalendar")}
-          </span>
-        ) : null}
-      </span>
-      <Clock now={now} />
     </footer>
   );
 }

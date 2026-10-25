@@ -7,7 +7,16 @@ from types import SimpleNamespace
 
 import pytest
 from heinzel_google import GoogleSession, GoogleSettings, Process, _gws
-from heinzel_google._gws import LOGIN, MAIL_SCOPE, MAX_SAID, redact
+from heinzel_google._gws import (
+    CALENDAR_WRITE_SCOPE,
+    LOGIN,
+    MAIL_SCOPE,
+    MAIL_WRITE_SCOPE,
+    MAX_SAID,
+    SCOPES,
+    login_command,
+    redact,
+)
 
 from heinzel import HeinzelError
 
@@ -264,3 +273,94 @@ def test_gws_gets_an_allowlisted_environment():
 def test_a_gws_that_starts_for_its_version_but_not_for_a_call(session, fake_gws):
     fake_gws.error, fake_gws.fail_after = PermissionError("denied"), 1
     assert "Could not start gws for file x: PermissionError" in failure(session)
+
+
+INSERT = ("calendar", "events", "insert")
+
+
+def write_failure(session: GoogleSession, api: str = "Google Calendar") -> str:
+    with pytest.raises(HeinzelError) as caught:
+        session.write(api, INSERT, {"calendarId": "primary"}, {"summary": "x"}, "the new event")
+    return str(caught.value)
+
+
+def test_a_write_passes_its_body_as_one_json_argument(session, fake_gws):
+    fake_gws.json(INSERT, {"id": "e1"})
+    assert session.write("Google Calendar", INSERT, {"calendarId": "primary"}, {"summary": "a; b"}, "x") == {"id": "e1"}
+    (run,) = fake_gws.api_runs
+    assert run.arguments == [
+        *INSERT,
+        "--params",
+        '{"calendarId":"primary"}',
+        "--json",
+        '{"summary":"a; b"}',
+        "--format",
+        "json",
+    ]
+
+
+def test_a_write_without_a_body_or_an_answer_is_an_empty_object(session, fake_gws):
+    fake_gws.on(INSERT, Process(0, b""))
+    assert session.write("Google Calendar", INSERT, {"eventId": "e1"}, None, "event e1") == {}
+    assert "--json" not in fake_gws.api_runs[0].arguments
+
+
+def test_a_write_that_timed_out_says_to_look_before_retrying_and_is_not_retried(session, fake_gws):
+    fake_gws.on(INSERT, Process(None, b""))
+    assert "it may have happened: look in Google before trying again." in write_failure(session)
+    assert len(fake_gws.api_runs) == 1
+
+
+def test_a_rate_limited_write_is_retried_because_google_refused_it(session, fake_gws):
+    fake_gws.on(INSERT, output({"error": {"code": 429}}, 1), output({"id": "e1"}))
+    assert session.write("Google Calendar", INSERT, {}, {"summary": "x"}, "x") == {"id": "e1"}
+    assert fake_gws.slept == [1.0]
+
+
+@pytest.mark.parametrize(("api", "scope"), [("Google Calendar", CALENDAR_WRITE_SCOPE), ("Gmail", MAIL_WRITE_SCOPE)])
+def test_a_write_without_the_write_scope_names_the_sign_in_that_adds_it(session, fake_gws, api, scope):
+    fake_gws.on(INSERT, output({"error": {"code": 403, "errors": [{"reason": "insufficientPermissions"}]}}, 1))
+    text = write_failure(session, api)
+    assert "may read but not write" in text
+    assert scope in text.split("Sign in: ")[1]
+    other = MAIL_SCOPE if scope == CALENDAR_WRITE_SCOPE else CALENDAR_WRITE_SCOPE
+    assert f"add ,{other}" in text  # gws replaces scopes: keep the other capability's
+
+
+def test_a_conflicting_write_says_to_read_again(session, fake_gws):
+    fake_gws.on(INSERT, output({"error": {"code": 409, "message": "changed"}}, 1))
+    assert "it exists already or changed meanwhile (changed); look before retrying" in write_failure(session)
+
+
+@pytest.mark.parametrize(
+    "process",
+    [
+        output({"error": {"code": 503, "message": "backendError"}}, 1),
+        Process(7, b"", b"connection reset"),
+        Process(0, b"<html>"),
+    ],
+    ids=["a server error", "no answer", "no JSON"],
+)
+def test_a_write_that_failed_without_a_refusal_may_have_happened(session, fake_gws, process):
+    fake_gws.on(INSERT, process)
+    assert write_failure(session).endswith("It may have happened: look in Google before trying again.")
+    assert len(fake_gws.api_runs) == 1
+
+
+def test_a_refused_write_says_nothing_about_maybe(session, fake_gws):
+    fake_gws.on(INSERT, output({"error": {"code": 400, "message": "bad"}}, 1))
+    assert "may have happened" not in write_failure(session)
+
+
+def test_a_read_may_post_a_body(session, fake_gws):
+    fake_gws.json(INSERT, {"calendars": {}})
+    assert session.get("Google Calendar", INSERT, {}, "x", body={"items": []})[0] == {"calendars": {}}
+    assert fake_gws.api_runs[0].body == {"items": []}
+
+
+def test_the_sign_in_asks_for_write_scopes_only_when_writes_are_allowed():
+    assert login_command() == LOGIN
+    assert login_command(mail=True).endswith(MAIL_SCOPE)
+    both = login_command(mail=True, write=frozenset({"calendar", "mail"})).split()[-1].split(",")
+    assert both == [*SCOPES, MAIL_WRITE_SCOPE, CALENDAR_WRITE_SCOPE]
+    assert MAIL_SCOPE not in both  # gmail.modify reads too

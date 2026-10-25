@@ -2,36 +2,37 @@
 
 Writing is local and always on: a line a day, and a line per version, in your state directory. Nothing leaves the
 machine until you name your own private repository in `[system.state] personal`; then the daemon's `push` job, every
-15 minutes with up to 90 seconds of jitter, copies what is new to this machine's writer branch (ADR 0062). A failed
+15 minutes with up to 90 seconds of jitter, copies what is new to this machine's writer branch (ADR 0081). A failed
 push backs off, doubling up to a day; a branch that holds what this machine didn't write stops pushing until
 `hz system state reset`. The service reads user-scope configuration only, so a project's `hz.toml` can't redirect it.
 """
 
+import fcntl
 import hashlib
-import json
 import os
 import secrets
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
 
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
-from heinzel import Check, Config, HeinzelError, Settings, Status, __version__
-from heinzel.kernel import KERNEL_SECTION, GitRunner, Presence, RunCommand
+from heinzel import Check, Config, HeinzelError, JobInactive, Settings, Status, __version__
+from heinzel.kernel import KERNEL_SECTION, CommandFailed, GitRunner, Presence, RunGitCommand
 from heinzel.modules.system.state._models import (
     STREAMS,
     Os,
     Pushed,
+    PushRecord,
     ReportUser,
     StateSettings,
     StateStatus,
     StreamStatus,
 )
-from heinzel.modules.system.state._sink import PushFailed, Refused, Sink, scrub
+from heinzel.modules.system.state._sink import PushFailed, Refused, Sink, scrub, write_private
 from heinzel.modules.system.state._streams import Segment, Streams, problems
 
 MODULE_SECTION = "system.state"
@@ -64,7 +65,7 @@ class StateService:
         state_dir: Path,
         data_dir: Path,
         *,
-        run: RunCommand | None = None,
+        run: RunGitCommand | None = None,
         clock: Callable[[], datetime] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         jitter: Callable[[], float] = lambda: float(secrets.randbelow(JITTER + 1)),
@@ -123,7 +124,9 @@ class StateService:
 
     def _clone(self, url: str) -> Path:
         # One clone per repository, so naming another repository never pushes the old one's history to it.
-        return self._data_dir / "state" / f"personal-{hashlib.sha256(url.encode()).hexdigest()[:12]}"
+        return (
+            self._data_dir / "state" / f"personal-{hashlib.sha256(f'{url}\0{self.branch}'.encode()).hexdigest()[:12]}"
+        )
 
     def _sink(self) -> Sink:
         url = self.settings.personal
@@ -140,7 +143,12 @@ class StateService:
             raise HeinzelError(msg)
         machine = self.streams.machine()
         return Sink(
-            url, f"hz/{self.user}/{machine}", self._clone(url), self.user, machine, self._run or _runner(self.user)
+            url,
+            f"hz/{self.user}/{machine}",
+            self._clone(url),
+            self.user,
+            machine,
+            self._run or _runner(self.user, self._clock()),
         )
 
     def push(self) -> Pushed:
@@ -150,11 +158,15 @@ class StateService:
             HeinzelError: Without a repository or a handle, if a local segment is damaged, or if the push fails or
                 was refused; the failure is recorded for `status` and the backoff.
         """
+        with self._locked():
+            return self._push()
+
+    def _push(self) -> Pushed:
         self.collect()
         sink = self._sink()
         record = self._record(sink.url)
-        if record.get("refused"):
-            msg = f"Pushing stopped: {record.get('error')}. {self._reset_hint(sink)}"
+        if record.refused:
+            msg = f"Pushing stopped: {record.error}. {self._reset_hint(sink)}"
             raise HeinzelError(msg)
         segments = self.streams.everything()
         if damaged := [problem for segment in segments for problem in problems(segment)]:
@@ -181,7 +193,7 @@ class StateService:
             pushed=outcome.pushed,
         )
 
-    def scheduled(self) -> JsonValue:
+    def scheduled(self) -> JsonValue | JobInactive:
         """The daemon's push: after a random wait of up to 90 s, unless nothing is configured or it backs off.
 
         Raises:
@@ -189,22 +201,23 @@ class StateService:
         """
         self.collect()  # adoption lines are local; they are written whether or not anything leaves
         if self.settings.personal is None or self.user is None:
-            return {"skipped": "no personal state repository" if self.user else "no handle in report.user"}
+            return JobInactive(reason="no personal state repository" if self.user else "no handle in report.user")
         record = self._record(self.settings.personal)
-        if record.get("refused"):
-            return {"skipped": "pushing stopped; see hz system state status"}
+        if record.refused:
+            msg = f"Pushing stopped: {record.error}; see hz system state status (HZS001)"
+            raise HeinzelError(msg)
         if (wait := self._backoff(record)) is not None:
-            return {"skipped": f"backing off after {record.get('failures')} failed push(es) until {wait.isoformat()}"}
+            return JobInactive(reason=f"backing off after {record.failures} failed push(es) until {wait.isoformat()}")
         self._sleep(self._jitter())
         pushed = self.push()
         return {"pushed": pushed.pushed, "lines": pushed.lines, "segments": pushed.segments}
 
-    def _backoff(self, record: dict[str, Any]) -> datetime | None:
-        failures = int(record.get("failures") or 0)
-        attempt = _time(record.get("last_attempt"))
+    def _backoff(self, record: PushRecord) -> datetime | None:
+        failures = record.failures
+        attempt = record.last_attempt
         if not failures or attempt is None:
             return None
-        until = attempt + min(EVERY * 2 ** (failures - 1), MAX_BACKOFF) - timedelta(minutes=1)
+        until = attempt + min(EVERY * 2 ** min(failures - 1, 7), MAX_BACKOFF) - timedelta(minutes=1)
         return until if self._clock() < until else None
 
     def reset(self) -> StateStatus:
@@ -213,11 +226,15 @@ class StateService:
         Raises:
             HeinzelError: Without a repository or a handle.
         """
+        with self._locked():
+            self._reset()
+            return self.status()
+
+    def _reset(self) -> None:
         sink = self._sink()
         if sink.clone.exists():
-            sink.clone.rename(sink.clone.with_name(f"{sink.clone.name}.moved-{self._clock():%Y%m%dT%H%M%S}"))
+            sink.clone.rename(sink.clone.with_name(f"{sink.clone.name}.moved-{secrets.token_hex(8)}"))
         self._push_file().unlink(missing_ok=True)
-        return self.status()
 
     @staticmethod
     def _reset_hint(sink: Sink) -> str:
@@ -234,24 +251,30 @@ class StateService:
             HeinzelError: If the local streams can't be read.
         """
         url = self.settings.personal
-        record = self._record(url) if url else {}
-        clone = self._clone(url) if url else None
+        record = self._record(url or "")
+        sink = self._sink() if url and self.user else None
+        try:
+            confirmed = sink.confirmed if sink else None
+        except Refused as exc:
+            confirmed = None
+            record.refused = True
+            record.error = str(exc)
         streams: list[StreamStatus] = []
         for stream in STREAMS:
             segments = self.streams.segments(stream)
             lines = sum(s.data.count(b"\n") for s in segments)
-            pushed = sum(_pushed_lines(clone, s) for s in segments) if clone else 0
+            pushed = sum(_pushed_lines(sink, confirmed, s) for s in segments) if sink and confirmed else 0
             streams.append(StreamStatus(name=stream, lines=lines, pending=lines - pushed))
         status = StateStatus(
             repository=url,
             branch=self.branch,
             machine=self.streams.machine(),
             streams=streams,
-            last_push=_time(record.get("last_push")),
-            last_attempt=_time(record.get("last_attempt")),
-            failures=int(record.get("failures") or 0),
-            error=record.get("error"),
-            refused=bool(record.get("refused")),
+            last_push=record.last_push,
+            last_attempt=record.last_attempt,
+            failures=record.failures,
+            error=record.error,
+            refused=record.refused,
         )
         if url is None:
             status.next.append(
@@ -273,16 +296,20 @@ class StateService:
             return [Check(name=name, status=Status.UP, detail="none named; nothing leaves this machine")]
         try:
             status = self.status()
-        except HeinzelError as exc:
+        except (HeinzelError, OSError, Refused) as exc:
             return [Check(name=name, status=Status.DOWN, detail=str(exc), fix=f"check {self.streams.root}")]
         if status.branch is None:
             fix = "hz system config set report.user <handle>"
             return [Check(name=name, status=Status.DEGRADED, detail="no handle names your branch", fix=fix)]
         if status.refused:
             return [Check(name=name, status=Status.DOWN, detail=status.error or "refused", fix="hz system state reset")]
-        since = status.last_push or status.last_attempt
-        if status.failures and since is not None and self._clock() - since > SILENT_AFTER:
-            detail = f"no push since {since:%Y-%m-%d}: {status.error}"
+        since = status.last_push
+        if since is None or (status.failures and self._clock() - since > SILENT_AFTER):
+            detail = (
+                "this repository has never taken a push"
+                if since is None
+                else f"no push since {since:%Y-%m-%d}: {status.error}"
+            )
             return [Check(name=name, status=Status.DEGRADED, detail=detail, fix="hz system state push")]
         return [Check(name=name, status=Status.UP, detail=f"{status.branch} in {status.repository}")]
 
@@ -291,68 +318,68 @@ class StateService:
     def _push_file(self) -> Path:
         return self.streams.root / PUSH_FILE
 
-    def _record(self, url: str) -> dict[str, Any]:
-        """The record of pushes to `url`; empty for another repository, or when it is missing or damaged."""
+    @contextmanager
+    def _locked(self) -> Generator[None]:
+        # One outer lock, then machine/stream locks; reset never removes this stable lock inode.
+        self.streams.machine()
+        path = self.streams.root / "push.lock"
+        descriptor = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(descriptor, "r+") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            yield
+
+    def _record(self, url: str) -> PushRecord:
+        empty = PushRecord(repository=url, branch=self.branch or "")
         try:
-            data: object = json.loads(self._push_file().read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return {}
-        if not isinstance(data, dict):
-            return {}
-        record = cast("dict[str, Any]", data)
-        return record if record.get("repository") == url else {}
+            record = PushRecord.model_validate_json(self._push_file().read_bytes())
+        except FileNotFoundError:
+            return empty
+        except (OSError, ValidationError):
+            empty.refused = True
+            empty.error = "private push record is damaged (HZS001)"
+            return empty
+        return record if (record.repository, record.branch) == (url, self.branch) else empty
 
     def _save(  # noqa: PLR0913 - one record's fields
         self,
         url: str,
-        record: dict[str, Any],
+        record: PushRecord,
         now: datetime,
         *,
         error: str | None,
         refused: bool = False,
         pushed: bool = False,
     ) -> None:
-        data = {
-            "repository": url,
-            "last_attempt": now.isoformat(),
-            "last_push": now.isoformat() if pushed else record.get("last_push"),
-            "failures": 0 if pushed else int(record.get("failures") or 0) + 1,
-            "error": None if error is None else scrub(error),
-            "refused": refused,
-        }
-        path = self._push_file()
-        temporary = path.with_name(f".{path.name}.tmp")
-        temporary.unlink(missing_ok=True)
-        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(json.dumps(data, indent=2) + "\n")
-        temporary.replace(path)
+        data = PushRecord(
+            repository=url,
+            branch=self.branch or "",
+            last_attempt=now,
+            last_push=now if pushed else record.last_push,
+            failures=0 if pushed else record.failures + 1,
+            error=None if error is None else scrub(error),
+            refused=refused,
+        )
+        write_private(self._push_file(), data.model_dump_json().encode())
 
 
-def _runner(handle: str) -> GitRunner:
+def _runner(handle: str, now: datetime | None = None) -> GitRunner:
     """The hardened runner, with the commit identity pinned so `GIT_AUTHOR_*` and `GIT_COMMITTER_*` can't name you."""
     email = f"{handle}@hz.invalid"
+    day = f"{now or datetime.now().astimezone():%Y-%m-%d}T00:00:00+00:00"
     pinned = tuple(
         (f"GIT_{who}_{what}", value)
         for who in ("AUTHOR", "COMMITTER")
-        for what, value in (("NAME", handle), ("EMAIL", email))
+        for what, value in (("NAME", handle), ("EMAIL", email), ("DATE", day))
     )
     return GitRunner(pinned=pinned)
 
 
-def _time(value: object) -> datetime | None:
+def _pushed_lines(sink: Sink, commit: str, segment: Segment) -> int:
+    """Lines contained in a confirmed remote commit, regardless of unpushed worktree changes."""
     try:
-        return datetime.fromisoformat(str(value)) if value else None
-    except ValueError:
-        return None
-
-
-def _pushed_lines(clone: Path, segment: Segment) -> int:
-    """Lines of `segment` the clone's copy has, that is, the last push carried."""
-    copy = clone / segment.stream / segment.name
-    if copy.is_symlink() or not copy.is_file():
+        data = sink.read_segment(commit, segment.path)
+    except CommandFailed:
         return 0
-    data = copy.read_bytes()
     return data.count(b"\n") if segment.data.startswith(data) else 0
 
 

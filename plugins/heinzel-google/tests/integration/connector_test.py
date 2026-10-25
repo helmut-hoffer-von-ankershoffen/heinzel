@@ -33,8 +33,18 @@ def test_signed_in_and_bound_it_is_connected_and_lists_its_tools(google_kernel, 
     assert {(t["capability"], t["method"]) for t in connector["tools"]} == {
         ("documents", "read"),
         ("calendar", "events"),
+        ("calendar", "free_busy"),
+        ("calendar", "create_event"),
+        ("calendar", "update_event"),
+        ("calendar", "cancel_event"),
+        ("calendar", "respond"),
         ("mail", "messages"),
         ("mail", "read"),
+        ("mail", "thread"),
+        ("mail", "draft"),
+        ("mail", "create_draft"),
+        ("mail", "send_draft"),
+        ("mail", "relabel"),
     }
     assert fake_gws.api_runs == []
 

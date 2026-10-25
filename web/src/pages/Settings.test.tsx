@@ -7,7 +7,7 @@ import { expectAccessible, mockApi, renderAt } from "@/test/render";
 describe("Settings dialog", () => {
   it("opens over the screen with a module's settings, each with its control", async () => {
     mockApi(shell);
-    const { container } = renderAt("/?settings=hz");
+    const { container } = renderAt("/?settings=files");
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
     expect(await within(dialog).findByLabelText("Log level")).toHaveValue("INFO");
     await expectAccessible(container);

@@ -1,4 +1,4 @@
-// `hz workflow show NAME`: one contract as the daemon runs it, and what to do next.
+// `hz heinzel show NAME`: one contract as the daemon runs it, and what to do next.
 import { useParams } from "react-router";
 import { useContract } from "@/api/queries";
 import { CopyCommand, Loaded, Page } from "@/components/common";

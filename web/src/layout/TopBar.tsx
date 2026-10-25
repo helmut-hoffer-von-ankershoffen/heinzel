@@ -3,7 +3,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, Link2, RefreshCw, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { matchPath, useLocation } from "react-router";
-import { HeinzelIcon } from "@/components/HeinzelIcon";
+import { usePlayful } from "@/api/queries";
+import { HeaderActions } from "@/components/Contributions";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
 import type { MessageKey } from "@/i18n";
 import { t } from "@/i18n";
@@ -13,12 +15,13 @@ import { cn } from "@/lib/utils";
 const screens: { path: string; title: MessageKey; command: string }[] = [
   { path: "/", title: "nav.home", command: "hz system info" },
   { path: "/settings", title: "nav.settings", command: "hz system config show" },
-  { path: "/contracts", title: "nav.graph", command: "hz workflow graph" },
+  { path: "/heinzel", title: "nav.heinzelmaennchen", command: "hz heinzel list" },
+  { path: "/contracts", title: "nav.graph", command: "hz heinzel graph" },
   { path: "/graph", title: "nav.teamGraph", command: "hz graph" },
   { path: "/org", title: "nav.orgChart", command: "hz org show" },
   { path: "/team", title: "nav.team", command: "hz team show" },
-  { path: "/inventory/types", title: "nav.assetTypes", command: "hz workflow playbooks" },
-  { path: "/inventory/assets", title: "nav.assets", command: "hz workflow discover" },
+  { path: "/inventory/types", title: "nav.assetTypes", command: "hz heinzel playbooks" },
+  { path: "/inventory/assets", title: "nav.assets", command: "hz heinzel discover" },
   { path: "/doctor", title: "nav.doctor", command: "hz system doctor" },
   { path: "/profile", title: "nav.profile", command: "hz org show" },
 ];
@@ -28,7 +31,7 @@ function useScreen(): { title: string; command: string } {
   const contract = matchPath("/contracts/:name", pathname);
   if (contract?.params.name) {
     const name = decodeURIComponent(contract.params.name);
-    return { title: name, command: `hz workflow show ${name}` };
+    return { title: name, command: `hz heinzel show ${name}` };
   }
   const screen = screens.find((s) => matchPath({ path: s.path, end: true }, pathname));
   return screen ? { title: t(screen.title), command: screen.command } : { title: "", command: "hz --help" };
@@ -44,6 +47,7 @@ type Props = {
 export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal }: Props) {
   const { title, command } = useScreen();
   const queries = useQueryClient();
+  const playful = usePlayful();
   const [menu, setMenu] = useState(false);
   const [copied, setCopied] = useState<"command" | "link" | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -108,6 +112,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
         )}
       </div>
       <div className="ml-auto flex items-center gap-0.5 text-icon">
+        <HeaderActions />
         <Button variant="ghost" size="icon" onClick={refresh} aria-label={t("top.refresh")} title={t("top.refresh")}>
           <RefreshCw aria-hidden />
         </Button>
@@ -122,7 +127,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
         >
           <SquareTerminal aria-hidden />
         </Button>
-        {/* The chat is a conversation with your Heinzelmännchen, so its button is the Heinzel; open, a pill behind it. */}
+        {/* The chat is a conversation with your Heinzelmännchen, so its button is a Heinzelmännchen head (not the sidebar's logo); open shows as a dot under it, never a background. */}
         <Button
           variant="ghost"
           size="icon"
@@ -131,9 +136,17 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           aria-pressed={chatOpen}
           aria-label={chatOpen ? t("chat.collapse") : t("chat.expand")}
           title={chatOpen ? t("chat.collapse") : t("chat.expand")}
-          className={cn(chatOpen && "bg-accent")}
+          className="relative hover:bg-transparent hover:opacity-70"
         >
-          <HeinzelIcon className="text-lg" />
+          <HeinzelAvatar view="head" age="young" shirt="teal" alive={playful} className="size-[1.4em] text-lg" />
+          <span
+            aria-hidden
+            data-testid="chat-open-dot"
+            className={cn(
+              "absolute bottom-0.5 left-1/2 size-1 -translate-x-1/2 rounded-full bg-primary transition-opacity",
+              chatOpen ? "opacity-100" : "opacity-0",
+            )}
+          />
         </Button>
       </div>
       <span className="sr-only" aria-live="polite">

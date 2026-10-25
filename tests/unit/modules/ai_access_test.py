@@ -9,11 +9,12 @@ import pytest
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from heinzel import AccessStatus, Credentials
+from heinzel import AccessStatus, Config, Credentials, Settings
 from heinzel.kernel import EnvironmentBackend
+from heinzel.modules.ai.access._discovery import ModelCache, fetch, is_local, listing
 from heinzel.modules.ai.access._gateway import Finished, GatewayAccess, environment, run_command
 from heinzel.modules.ai.access._models import AccessSettings, Bindings, LastTest
-from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess, model_hosts
+from heinzel.modules.ai.access._pydantic import API_KEY, PydanticAiAccess, endpoint_model, model_hosts
 from heinzel.modules.ai.access._service import ResultStore, state
 from heinzel.modules.system.runner._access import ClaudeCodeAccess
 from heinzel.modules.system.runner._models import RunnerSettings
@@ -149,12 +150,27 @@ def test_a_real_command_runs_without_a_shell_in_an_empty_directory_with_a_timeou
 # Pydantic AI
 
 
-def pydantic(model: str | None, credentials: Credentials | None = None, build=None, installed=True):
+def offline(url: str, headers: dict[str, str]) -> bytes:
+    msg = "offline"
+    raise OSError(msg)
+
+
+def pydantic(  # noqa: PLR0913 - every seam of the option
+    model: str | None,
+    *,
+    credentials: Credentials | None = None,
+    build=None,
+    installed=True,
+    base_url: str | None = None,
+    get=offline,
+):
     return PydanticAiAccess(
-        AccessSettings(model=model),
+        AccessSettings(model=model, base_url=base_url),
         credentials or Credentials(EnvironmentBackend(), [("ai.access", API_KEY)]),
-        build=build or (lambda _model, _key: TestModel(custom_output_text="OK")),
+        Config.empty().settings(Settings, "hz"),
+        build=build or (lambda _model, _key, _base: TestModel(custom_output_text="OK")),
         installed=lambda _package: installed,
+        get=get,
     )
 
 
@@ -183,12 +199,13 @@ def test_a_pydantic_ai_test_is_one_turn_through_the_model(monkeypatch):
     monkeypatch.setenv("HZ_CREDENTIAL_AI_ACCESS_API_KEY", "sk-stored")
     keys: list[str | None] = []
 
-    def build(model: str, key: str | None) -> TestModel:
+    def build(model: str, key: str | None, base: str | None) -> TestModel:
         keys.append(key)
         return TestModel(custom_output_text="OK")
 
     result = pydantic("anthropic:claude-sonnet-4-5", build=build).test()
-    assert (result.ok, result.detail, result.model) == (True, "OK", "anthropic:claude-sonnet-4-5")
+    assert (result.ok, result.model) == (True, "anthropic:claude-sonnet-4-5")
+    assert result.detail.startswith("OK; models not listed")  # offline here: the listing is a note, not a failure
     assert keys == ["sk-stored"]
 
 
@@ -199,7 +216,7 @@ def test_a_failing_model_is_a_failed_test_without_the_key(monkeypatch):
         msg = "invalid key sk-secret"
         raise RuntimeError(msg)
 
-    result = pydantic("openai:gpt-5", build=lambda _m, _k: FunctionModel(refuse)).test()
+    result = pydantic("openai:gpt-5", build=lambda _m, _k, _b: FunctionModel(refuse)).test()
     assert not result.ok
     assert "sk-secret" not in result.detail
     assert "RuntimeError" in result.detail
@@ -252,5 +269,198 @@ def test_a_vendor_variable_key_is_kept_out_of_a_failure_too(monkeypatch):
         msg = "invalid key sk-from-env"
         raise RuntimeError(msg)
 
-    result = pydantic("openai:gpt-5", build=lambda _m, _k: FunctionModel(refuse)).test()
+    result = pydantic("openai:gpt-5", build=lambda _m, _k, _b: FunctionModel(refuse)).test()
     assert "sk-from-env" not in result.detail
+
+
+# Model APIs: OpenAI-compatible endpoints and model discovery
+
+
+def test_an_endpoint_needs_no_key_and_its_listing_feeds_the_models(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    asked: list[tuple[str, dict[str, str]]] = []
+
+    def get(url: str, headers: dict[str, str]) -> bytes:
+        asked.append((url, headers))
+        return b'{"data": [{"id": "llama3.1:8b"}, {"id": "qwen3:14b"}, {"id": "--bad"}, {"x": 1}]}'
+
+    built: list[tuple[str, str | None, str | None]] = []
+
+    def build(model: str, key: str | None, base: str | None) -> TestModel:
+        built.append((model, key, base))
+        return TestModel(custom_output_text="OK")
+
+    option = pydantic("llama3.1:8b", base_url="http://localhost:11434/v1/", build=build, get=get)
+    before = option.status()
+    assert (before.installed, before.signed_in, before.models) == (True, None, ["llama3.1:8b"])
+    assert "no key" in before.detail
+    result = option.test()
+    assert result.ok
+    assert "2 models listed" in result.detail
+    assert asked == [("http://localhost:11434/v1/models", {"Accept": "application/json"})]  # no key sent
+    assert built == [("llama3.1:8b", None, "http://localhost:11434/v1/")]
+    assert option.status().models == ["llama3.1:8b", "qwen3:14b"]  # kept for the picker, offline
+
+
+def test_a_key_goes_only_over_https_or_to_this_machine(monkeypatch):
+    monkeypatch.setenv("HZ_CREDENTIAL_AI_ACCESS_API_KEY", "sk-endpoint")
+    sent: list[dict[str, str]] = []
+
+    def get(url: str, headers: dict[str, str]) -> bytes:
+        sent.append(headers)
+        return b'{"data": []}'
+
+    remote = pydantic("some-model", base_url="http://models.example.net/v1", get=get)
+    assert remote.status().signed_in is False
+    assert not remote.test().ok
+    assert sent == []  # the key never left
+    secure = pydantic("some-model", base_url="https://openrouter.ai/api/v1", get=get)
+    assert secure.test().ok
+    assert sent == [{"Accept": "application/json", "Authorization": "Bearer sk-endpoint"}]
+
+
+def test_anthropic_and_openai_list_their_models_with_their_own_headers(monkeypatch):
+    monkeypatch.setenv("HZ_CREDENTIAL_AI_ACCESS_API_KEY", "sk-vendor")
+    seen: list[tuple[str, dict[str, str]]] = []
+
+    def get(url: str, headers: dict[str, str]) -> bytes:
+        seen.append((url, headers))
+        return b'{"data": [{"id": "claude-sonnet-4-5"}]}'
+
+    assert pydantic("anthropic:claude-sonnet-4-5", get=get).test().ok
+    assert pydantic("openai:gpt-5", get=get).test().ok
+    assert seen[0] == (
+        "https://api.anthropic.com/v1/models",
+        {"Accept": "application/json", "x-api-key": "sk-vendor", "anthropic-version": "2023-06-01"},
+    )
+    assert seen[1] == (
+        "https://api.openai.com/v1/models",
+        {"Accept": "application/json", "Authorization": "Bearer sk-vendor"},
+    )
+
+
+def test_a_failed_listing_is_a_note_without_the_key_and_the_test_goes_on(monkeypatch):
+    monkeypatch.setenv("HZ_CREDENTIAL_AI_ACCESS_API_KEY", "sk-secret")
+
+    def get(url: str, headers: dict[str, str]) -> bytes:
+        msg = "refused sk-secret"
+        raise OSError(msg)
+
+    result = pydantic("openai:gpt-5", get=get).test()
+    assert result.ok
+    assert "models not listed" in result.detail
+    assert "sk-secret" not in result.detail
+
+
+def test_a_model_without_a_vendor_or_an_endpoint_says_what_to_set():
+    found = pydantic("llama3").status()
+    assert not found.installed
+    assert "base_url" in found.fix
+
+
+def test_the_endpoint_s_host_is_what_the_matrix_shows():
+    assert model_hosts(AccessSettings(model="m", base_url="http://localhost:1234/v1")) == ["localhost"]
+
+
+@pytest.mark.parametrize(
+    ("url", "local"),
+    [
+        ("http://localhost:11434/v1", True),
+        ("http://127.0.0.1:8000", True),
+        ("http://[::1]:8000", True),
+        ("http://models.example.net", False),
+        ("https://openrouter.ai/api/v1", False),
+        ("http://127.0.0.1.example.net", False),
+        ("http://localhost.example.net", False),
+        ("http://[::ffff:127.0.0.1]:80", True),
+        ("http://[::ffff:192.0.2.1]:80", False),
+    ],
+)
+def test_what_counts_as_this_machine(url, local):
+    assert is_local(url) is local
+
+
+def test_the_listing_refuses_what_isn_t_one():
+    with pytest.raises(ValueError, match="no `data` list"):
+        listing("openai", None, None, lambda _u, _h: b'{"models": []}')
+    with pytest.raises(ValueError, match="isn't JSON"):
+        listing("openai", None, None, lambda _u, _h: b"<html>")
+    assert listing("google-gla", None, None, offline) == []  # no listing endpoint known: nothing asked
+
+
+def test_fetch_refuses_other_schemes():
+    with pytest.raises(ValueError, match="http or https"):
+        fetch("file:///etc/passwd", {})
+
+
+@pytest.mark.parametrize(
+    "url", ["https://user:secret@models.example.net/v1", "https://models.example.net/v1?key=secret", "http://x/#k"]
+)
+def test_a_base_url_can_hide_no_credentials(url):
+    with pytest.raises(ValueError, match="base_url"):
+        AccessSettings(base_url=url)
+
+
+def test_an_endpoint_s_name_with_a_colon_without_base_url_asks_for_the_endpoint():
+    found = pydantic("llama3.1:8b").status()
+    assert not found.installed
+    assert "base_url" in found.fix
+
+
+def test_a_vendor_prefix_left_on_an_endpoint_s_model_is_dropped():
+    assert endpoint_model("openai:gpt-5") == "gpt-5"
+    assert endpoint_model("llama3.1:8b") == "llama3.1:8b"
+
+
+def test_an_endpoint_s_key_from_the_keychain_goes_with_the_listing_and_the_turn(monkeypatch):
+    monkeypatch.setenv("HZ_CREDENTIAL_AI_ACCESS_API_KEY", "sk-local")
+    sent: list[dict[str, str]] = []
+    built: list[str | None] = []
+
+    def get(url: str, headers: dict[str, str]) -> bytes:
+        sent.append(headers)
+        return b'{"data": [{"id": "tiny"}]}'
+
+    def build(model: str, key: str | None, base: str | None) -> TestModel:
+        built.append(key)
+        return TestModel(custom_output_text="OK")
+
+    assert pydantic("tiny", base_url="http://127.0.0.1:8000/v1", get=get, build=build).test().ok
+    assert sent == [{"Accept": "application/json", "Authorization": "Bearer sk-local"}]
+    assert built == ["sk-local"]
+
+
+def test_the_cache_keeps_each_source_and_survives_a_broken_file(tmp_path):
+    cache = ModelCache(tmp_path / "ai")
+    assert cache.load("openai") == []
+    cache.keep("openai", ["gpt-5"])
+    cache.keep("http://localhost:11434/v1", ["llama3.1:8b", "--bad"])
+    assert cache.load("openai") == ["gpt-5"]
+    assert cache.load("http://localhost:11434/v1") == ["llama3.1:8b"]  # an id that isn't one is left out
+    cache.path.write_text("[not json", encoding="utf-8")
+    assert cache.load("openai") == []
+    cache.keep("openai", ["gpt-5"])
+    assert cache.load("openai") == ["gpt-5"]
+    assert (tmp_path / "ai").stat().st_mode & 0o077 == 0
+
+
+def test_a_listing_too_large_is_refused_not_cut(monkeypatch):
+    import heinzel.modules.ai.access._discovery as discovery
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self, size):
+            return b"x" * size
+
+    class Opener:
+        def open(self, request, timeout):
+            return Response()
+
+    monkeypatch.setattr(discovery, "LOCAL_OPENER", Opener())
+    with pytest.raises(ValueError, match="larger than"):
+        discovery.fetch("http://localhost:1/v1/models", {})

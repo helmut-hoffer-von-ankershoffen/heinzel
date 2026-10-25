@@ -1,7 +1,7 @@
 """Models of the system module."""
 
 import datetime as dt
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -60,6 +60,25 @@ class ReleaseNotes(BaseModel):
     url: str | None = Field(description="Its release page, on github.com.")
 
 
+class PluginUpdate(BaseModel):
+    """What `hz system update` did to one installed plugin."""
+
+    distribution: str = Field(description="Distribution name, e.g. heinzel-clock.")
+    status: Literal["upgraded", "unchanged", "failed"] = Field(
+        description="`upgraded` (a newer version or commit is installed), `unchanged` (it is as new as its install "
+        "spec allows) or `failed` (it couldn't be moved to the new hz; see `reason`)."
+    )
+    before: str | None = Field(description="Version installed before; none if it couldn't be told.")
+    after: str | None = Field(description="Version installed now; none if the plugin is no longer installed.")
+    disabled: bool = Field(
+        default=False,
+        description="Whether the plugin does not work with the new hz at all and was taken out of the installation: "
+        "it is not loaded until a release that allows the new hz is added (`next`).",
+    )
+    reason: str | None = Field(default=None, description="Why it failed, and what became of it.")
+    next: list[str] = Field(default_factory=list, description="Commands that bring a failed plugin back.")
+
+
 class UpdateResult(BaseModel):
     """What `hz system update` did, or why it left the installation as it was."""
 
@@ -76,3 +95,8 @@ class UpdateResult(BaseModel):
     updated: bool = Field(description="Whether Heinzelmännchen was reinstalled.")
     message: str = Field(description="What happened, or what the installation is pinned to and how to move it.")
     next: list[str] = Field(description="Commands that would move the installation, when it was left pinned.")
+    plugins: list[PluginUpdate] = Field(
+        default_factory=list[PluginUpdate],
+        description="What happened to each installed plugin: upgraded together with hz, unchanged or failed. A plugin "
+        "that doesn't allow the new hz never blocks it.",
+    )

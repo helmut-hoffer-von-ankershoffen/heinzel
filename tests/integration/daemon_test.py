@@ -7,7 +7,7 @@ reaches the real launchd or systemd.
 import json
 import subprocess
 import threading
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from typer.testing import CliRunner
@@ -56,9 +56,8 @@ def calls() -> list[str]:
 
 @pytest.fixture
 def without_workflow(settings):
-    """Kernel settings without the modules whose jobs would join ticks: `workflow:prune` near midnight, and
-    `system.state:push` every 15 minutes."""
-    return settings.model_copy(update={"disabled_modules": frozenset({"workflow", "system.state"})})
+    """Isolate daemon tests from the built-in Heinzel and state jobs."""
+    return settings.model_copy(update={"disabled_modules": frozenset({"heinzel", "system.state"})})
 
 
 @pytest.fixture
@@ -92,7 +91,9 @@ def test_a_job_that_overruns_its_timeout_fails(make_kernel):
     STUCK.set()
 
 
-def test_rendered_tick_jobs_and_dry_run(kernel):
+def test_rendered_tick_jobs_and_dry_run(kernel, settings):
+    noon = datetime(2026, 3, 4, 12, 0, 30, tzinfo=UTC)  # a pinned clock: the minute never rolls over between ticks
+    kernel.bind(DaemonService, DaemonService(kernel, settings, DaemonSettings(), clock=lambda: noon, zone=UTC))
     assert "Dry run" in hz(kernel, "system", "daemon", "tick", "--dry-run").output
     assert "example:minutely" in hz(kernel, "system", "daemon", "tick").output
     assert "Nothing was due" in hz(kernel, "system", "daemon", "tick").output

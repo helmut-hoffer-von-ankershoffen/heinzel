@@ -1,11 +1,12 @@
-"""Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
+"""Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
 
 A Heinzelmännchen plugin, discovered through the `heinzel.modules` entry point in pyproject.toml. It is the default
-provider of the `documents` (Docs and Sheets), `calendar` (Google Calendar) and `mail` (Gmail) capabilities for
-Google Workspace, in read mode (Heinzelmännchen ADR 0028), backed by the Google Workspace CLI (`gws`), which signs in
-and talks to Google (ADR 0035). Bind it with `[capabilities] documents = "google"`, `calendar = "google"` and, if you
-want mail read, `mail = "google"` in your user configuration; another plugin providing the same capabilities can be
-bound instead.
+provider of the `documents` (Docs and Sheets, read), `calendar` (Google Calendar, read and write) and `mail` (Gmail,
+read and write) capabilities for Google Workspace (Heinzelmännchen ADR 0028), backed by the Google Workspace CLI
+(`gws`), which signs in and talks to Google (ADR 0035, ADR 0042). Bind it with `[capabilities] documents = "google"`,
+`calendar = "google"` and, if you want mail read, `mail = "google"` in your user configuration; another plugin
+providing the same capabilities can be bound instead. Writes (events, drafts, sending, filing) run only from publish
+operations, after the person confirmed them, and need the write scopes `hz setup google` offers.
 """
 
 from typing import Annotated
@@ -16,7 +17,18 @@ from heinzel import Check, ConfigEditor, Prompter
 from heinzel.kernel import CapabilityView
 from heinzel_google._calendar import GoogleCalendar
 from heinzel_google._documents import Drive, GoogleDocuments
-from heinzel_google._gws import LOGIN, LOGIN_WITH_MAIL, MAIL_SCOPE, SCOPES, GoogleSession, Gws, Process
+from heinzel_google._gws import (
+    CALENDAR_WRITE_SCOPE,
+    LOGIN,
+    LOGIN_WITH_MAIL,
+    MAIL_SCOPE,
+    MAIL_WRITE_SCOPE,
+    SCOPES,
+    GoogleSession,
+    Gws,
+    Process,
+    login_command,
+)
 from heinzel_google._mail import Gmail
 from heinzel_google._models import DriveFile, GoogleAbout, GoogleSettings
 from heinzel_google._module import module
@@ -26,9 +38,9 @@ from heinzel_google._setup import run_setup
 DOCUMENT_HOSTS = ["www.googleapis.com", "docs.googleapis.com", "sheets.googleapis.com", "oauth2.googleapis.com"]
 """Where `documents` reads go, through `gws`: Drive v3 (on www.googleapis.com), Docs v1 and Sheets v4."""
 MAIL_HOSTS = ["gmail.googleapis.com", "oauth2.googleapis.com"]
-"""Where `mail` reads go, through `gws`: Gmail v1."""
+"""Where `mail` reads and writes go, through `gws`: Gmail v1."""
 CALENDAR_HOSTS = ["www.googleapis.com", "oauth2.googleapis.com"]
-"""Where `calendar` reads go, through `gws`: Calendar v3; every provider's `gws` refreshes its sign-in at
+"""Where `calendar` reads and writes go, through `gws`: Calendar v3; every provider's `gws` refreshes its sign-in at
 oauth2.googleapis.com."""
 
 module.settings(GoogleSettings)
@@ -37,8 +49,8 @@ module.service(GoogleSession)
 module.service(Drive)
 module.service(Gws)
 module.provides("documents", modes={"read"}, hosts=DOCUMENT_HOSTS)(GoogleDocuments)
-module.provides("calendar", modes={"read"}, hosts=CALENDAR_HOSTS)(GoogleCalendar)
-module.provides("mail", modes={"read"}, hosts=MAIL_HOSTS)(Gmail)
+module.provides("calendar", modes={"read", "write"}, hosts=CALENDAR_HOSTS)(GoogleCalendar)
+module.provides("mail", modes={"read", "write"}, hosts=MAIL_HOSTS)(Gmail)
 
 Days = Annotated[int, Field(ge=1, le=366, description="How many days back to look for changes, 1 to 366.")]
 Name = Annotated[
@@ -67,11 +79,12 @@ def setup(  # noqa: PLR0913, PLR0917 - what the step is injected with
     prompter: Prompter,
     editor: ConfigEditor,
 ) -> None:
-    """Find the Google Workspace CLI, sign it in read-only and read documents, calendar and, if you like, mail from it.
+    """Find the Google Workspace CLI, sign it in and read documents, calendar and, if you like, mail from it.
 
-    Without a terminal, do it by hand: install gws (`npm install -g @googleworkspace/cli`), run
-    `gws auth login --scopes` with the read-only scopes `hz google info` lists (and Gmail's for mail), then
-    `hz system config set capabilities.documents google`, and the same for `calendar` and `mail`.
+    It asks whether hz may also write your calendar and mail (each write only after you confirm it); only then does
+    the sign-in ask Google for the write scopes. Without a terminal, do it by hand: install gws
+    (`npm install -g @googleworkspace/cli`), run `gws auth login --scopes` with the scopes `hz google info` lists,
+    then `hz system config set capabilities.documents google`, and the same for `calendar` and `mail`.
     """
     run_setup(settings, session, gws, view, prompter, editor)
 
@@ -96,11 +109,13 @@ def live(service: GoogleService) -> list[Check]:
 
 __all__ = [
     "CALENDAR_HOSTS",
+    "CALENDAR_WRITE_SCOPE",
     "DOCUMENT_HOSTS",
     "LOGIN",
     "LOGIN_WITH_MAIL",
     "MAIL_HOSTS",
     "MAIL_SCOPE",
+    "MAIL_WRITE_SCOPE",
     "SCOPES",
     "Drive",
     "DriveFile",
@@ -113,5 +128,6 @@ __all__ = [
     "GoogleSettings",
     "Gws",
     "Process",
+    "login_command",
     "module",
 ]
