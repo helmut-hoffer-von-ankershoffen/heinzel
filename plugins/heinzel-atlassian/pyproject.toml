@@ -1,11 +1,11 @@
 [project]
 name = "heinzel-atlassian"
-version = "0.7.7"
+version = "0.7.8"
 description = "Read Jira issues and Confluence pages through acli: the tracker and documents capabilities."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-dependencies = ["heinzel>=0.7.7"] # released together; the release process bumps the bound
+dependencies = ["heinzel>=0.7.8"] # released together; the release process bumps the bound
 
 [project.urls]
 Source = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-atlassian"
