@@ -13,6 +13,7 @@ import {
   type View,
   viewBox,
 } from "./heinzel";
+import { type IdleMove, useIdleLife } from "./useIdleLife";
 
 const STATE_LABEL = {
   idle: "",
@@ -30,16 +31,41 @@ type Props = HeinzelLook & {
   /** What a screen reader hears, e.g. the Heinzelmännchen's name; without it the picture is decoration. */
   label?: string;
   className?: string;
+  /** Idle life: small moves at random moments (a blink, a hat tilt, a wave, a glance, a hop); the caller passes `playful`. */
+  alive?: boolean;
 };
+
+/** Runs of shapes of one movable part share a group, so a cap tilts or a hand waves as one. */
+function Parts({ shapes }: { shapes: Shape[] }) {
+  const runs: Shape[][] = [];
+  for (const shape of shapes) {
+    const last = runs[runs.length - 1];
+    if (last && shape.part && last[0]?.part === shape.part) last.push(shape);
+    else runs.push([shape]);
+  }
+  return runs.map((run, index) => {
+    const part = run[0]?.part;
+    const inner = run.map((shape, i) => (
+      // biome-ignore lint/suspicious/noArrayIndexKey: a fixed drawing, never reordered
+      <Part key={i} shape={shape} />
+    ));
+    return part && part !== "badge" ? (
+      // biome-ignore lint/suspicious/noArrayIndexKey: a fixed drawing, never reordered
+      <g key={index} className={`hz-${part}`}>
+        {inner}
+      </g>
+    ) : (
+      // biome-ignore lint/suspicious/noArrayIndexKey: a fixed drawing, never reordered
+      <g key={index}>{inner}</g>
+    );
+  });
+}
 
 function Part({ shape }: { shape: Shape }) {
   if (shape.kind === "group")
     return (
       <g transform={shape.transform}>
-        {shape.children.map((child, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed drawing, never reordered
-          <Part key={index} shape={child} />
-        ))}
+        <Parts shapes={shape.children} />
       </g>
     );
   if (shape.kind === "circle") return <circle cx={shape.cx} cy={shape.cy} r={shape.r} fill={shape.fill} />;
@@ -57,7 +83,9 @@ function Part({ shape }: { shape: Shape }) {
   );
 }
 
-export function HeinzelAvatar({ view = "full", label, className, ...look }: Props) {
+const HEAD_MOVES: readonly IdleMove[] = ["blink", "tilt", "glance-left", "glance-right", "hop"];
+
+export function HeinzelAvatar({ view = "full", label, className, alive = false, ...look }: Props) {
   const shapes = heinzelShapes(look);
   const state = look.state ?? "idle";
   const accessories = parseAccessories(look.accessories);
@@ -67,6 +95,8 @@ export function HeinzelAvatar({ view = "full", label, className, ...look }: Prop
         .filter(Boolean)
         .join(", ")
     : undefined;
+  // Only a Heinzelmännchen at rest has idle moves; one with a state is busy with that.
+  const move = useIdleLife(alive && (look.state ?? "idle") === "idle", view === "head" ? HEAD_MOVES : undefined);
   const body = shapes.filter((shape) => shape.part !== "badge");
   const badge = shapes.filter((shape) => shape.part === "badge");
   return (
@@ -77,20 +107,15 @@ export function HeinzelAvatar({ view = "full", label, className, ...look }: Prop
       aria-hidden={name ? undefined : true}
       data-state={state}
       data-view={view}
+      data-idle={move ?? undefined}
       className={cn(view !== "full" ? "size-[1.25em]" : "h-[2.1em] w-[1.25em]", "shrink-0 overflow-visible", className)}
     >
       <g className={state === "working" ? "motion-safe:animate-[hz-bob_1.6s_ease-in-out_infinite]" : undefined}>
-        {body.map((shape, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed drawing, never reordered
-          <Part key={index} shape={shape} />
-        ))}
+        <Parts shapes={body} />
       </g>
       {badge.length > 0 && (
         <g className="motion-safe:animate-[hz-breathe_2.4s_ease-in-out_infinite]">
-          {badge.map((shape, index) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: a fixed drawing, never reordered
-            <Part key={index} shape={shape} />
-          ))}
+          <Parts shapes={badge} />
         </g>
       )}
     </svg>
