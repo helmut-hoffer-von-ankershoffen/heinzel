@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, Link2, RefreshCw, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { matchPath, useLocation } from "react-router";
+import { usePlayful } from "@/api/queries";
 import { HeaderActions } from "@/components/Contributions";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
@@ -46,6 +47,7 @@ type Props = {
 export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal }: Props) {
   const { title, command } = useScreen();
   const queries = useQueryClient();
+  const playful = usePlayful();
   const [menu, setMenu] = useState(false);
   const [copied, setCopied] = useState<"command" | "link" | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -136,7 +138,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           title={chatOpen ? t("chat.collapse") : t("chat.expand")}
           className="relative hover:bg-transparent hover:opacity-70"
         >
-          <HeinzelAvatar view="head" age="young" shirt="teal" className="size-[1.4em] text-lg" />
+          <HeinzelAvatar view="head" age="young" shirt="teal" alive={playful} className="size-[1.4em] text-lg" />
           <span
             aria-hidden
             data-testid="chat-open-dot"

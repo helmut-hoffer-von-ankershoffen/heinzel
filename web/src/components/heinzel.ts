@@ -162,7 +162,15 @@ export type Shape = (
   | { kind: "path"; d: string; fill: string; stroke?: string; width?: number }
   | { kind: "circle"; cx: number; cy: number; r: number; fill: string }
   | { kind: "group"; transform: string; children: Shape[] }
-) & { part?: "badge"; accessory?: Accessory };
+) & { part?: Part; accessory?: Accessory };
+
+/** Parts the avatar can move on their own (idle life): the state's badge, the eyes, the hat, the waving hand. */
+export type Part = "badge" | "eyes" | "hat" | "wave";
+
+/** The shapes tagged as one part, e.g. all of a cap's pieces, so they move together. */
+function tag(part: Part, shapes: Shape[]): Shape[] {
+  return shapes.map((shape) => ({ ...shape, part }));
+}
 
 const FACE = "#FFD45E";
 const EAR = "#F2B547";
@@ -386,14 +394,14 @@ function head(age: Age, beard: Beard, hat: Hat, state: HeinzelState, glasses: bo
       look.hair,
     ),
     ...(beard === "none" ? [] : [beardShape(beard, look.hair)]),
-    ...(look.tip === null ? [] : cap(look.tip, HATS[hat])),
+    ...(look.tip === null ? [] : tag("hat", cap(look.tip, HATS[hat]))),
     circle(160, 318, 24, CHEEK),
     circle(352, 318, 24, CHEEK),
     // Brows: soft and raised; worried when blocked.
     ...(state === "blocked"
       ? [line("M176 230 L224 214", look.brow, 11), line("M288 214 L336 230", look.brow, 11)]
       : [line("M178 232 Q202 216 226 230", look.brow, brow), line("M286 230 Q310 216 334 232", look.brow, brow)]),
-    ...eyes(state, look.eye),
+    ...tag("eyes", eyes(state, look.eye)),
     ...(glasses ? [sunglasses()] : []),
     ...mouth(state, beard !== "none", look.light),
   ];
@@ -416,7 +424,8 @@ function arm(shoulder: number, x: number, y: number, sleeve: string): Shape[] {
 function arms(state: HeinzelState, sleeve: string, build: BuildLook, holding: boolean): Shape[] {
   const [left, right] = [256 - build.shoulder, 256 + build.shoulder];
   const rightDown = holding ? arm(right, GRIP.x, GRIP.y, sleeve) : arm(right, 256 + build.belly + 12, 640, sleeve);
-  const down = [...arm(left, 256 - build.belly - 12, 640, sleeve), ...rightDown];
+  // The right hand down is the one that waves in idle life.
+  const down = [...arm(left, 256 - build.belly - 12, 640, sleeve), ...(holding ? rightDown : tag("wave", rightDown))];
   // The right hand holds the umbrella's pole, so it neither waves nor stays down; a working one carries the tray in
   // its left hand alone.
   switch (holding && state === "waiting" ? "idle" : state) {

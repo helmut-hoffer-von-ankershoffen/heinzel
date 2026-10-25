@@ -180,3 +180,15 @@ describe("HeinzelAvatar", () => {
       expect(group.getAttribute("class")).toMatch(/^motion-safe:/);
   });
 });
+
+describe("HeinzelAvatar idle life", () => {
+  it("draws the eyes, the hat and the waving hand as their own groups so they can move", () => {
+    const { container } = render(<HeinzelAvatar age="grown" />);
+    for (const part of ["eyes", "hat", "wave"]) expect(container.querySelector(`g.hz-${part}`)).not.toBeNull();
+  });
+
+  it("has no waving hand when it holds an umbrella", () => {
+    const { container } = render(<HeinzelAvatar accessories={["umbrella"]} />);
+    expect(container.querySelector("g.hz-wave")).toBeNull();
+  });
+});
