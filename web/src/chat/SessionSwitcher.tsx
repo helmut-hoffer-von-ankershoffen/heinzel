@@ -108,7 +108,7 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
         <div
           role="dialog"
           aria-label={t("chat.sessions")}
-          className="absolute top-full left-0 z-30 mt-1 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-border bg-popover p-1.5 shadow-xl"
+          className="absolute top-full left-0 z-(--layer-popover) mt-1 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-border bg-popover p-1.5 shadow-xl"
         >
           <SearchField
             quietFocus

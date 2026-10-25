@@ -119,7 +119,10 @@ export function FooterItem({
       </button>
       {open && (
         // The gap is padding inside this transparent box, so the pointer never leaves it on the way up.
-        <div id={id} className={cn("absolute bottom-full z-40 pb-2", align === "right" ? "right-0" : "left-0")}>
+        <div
+          id={id}
+          className={cn("absolute bottom-full z-(--layer-popover) pb-2", align === "right" ? "right-0" : "left-0")}
+        >
           <section
             aria-label={label}
             className="w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
