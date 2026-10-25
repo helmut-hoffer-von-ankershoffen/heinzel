@@ -197,16 +197,23 @@ pr: ## Push this branch and open a squash-merged, auto-merging pull request to m
 sync: ## Rebase this branch onto the latest main (upstream's, in a fork)
 	@git fetch --quiet $(REMOTE) && git rebase --quiet $(REMOTE)/main && git log --oneline $(REMOTE)/main..HEAD
 
-release: ## Open a release pull request on GitHub (workflow "Prepare release"): BUMP=auto|patch|minor|major (default auto), INTRO="prose"
+# Keep release prose literal: Make must not interpret dollar expressions in a command-line INTRO.
+RELEASE_INTRO := $(value INTRO)
+unexport INTRO
+export RELEASE_INTRO
+
+release: ## Open a release pull request on GitHub (workflow "Prepare release"): BUMP=auto|patch|minor|major (default auto), INTRO="prose" (required)
+	@if ! printf '%s' "$$RELEASE_INTRO" | grep -q '[^[:space:]]'; then echo 'error: INTRO is required: summarize what changed for users.' >&2; exit 1; fi
 	@since="$$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
-		gh workflow run prepare-release.yml -f bump=$(or $(BUMP),auto) -f intro="$$INTRO" && \
+		gh workflow run prepare-release.yml -f bump=$(or $(BUMP),auto) -f intro="$$RELEASE_INTRO" && \
 		for _ in 1 2 3 4 5 6 7 8 9 10; do sleep 2; \
 			url="$$(gh run list --workflow prepare-release.yml --event workflow_dispatch --limit 5 --json url,createdAt --jq "map(select(.createdAt >= \"$$since\")) | .[0].url // empty")"; \
 			[ -z "$$url" ] || { echo "$$url"; exit 0; }; done; echo "dispatched; see the Actions tab"
 
-release-local: ## Open a release pull request from this machine, from an up-to-date main: BUMP=auto|patch|minor|major, INTRO="prose"
+release-local: ## Open a release pull request from this machine, from an up-to-date main: BUMP=auto|patch|minor|major, INTRO="prose" (required)
+	@if ! printf '%s' "$$RELEASE_INTRO" | grep -q '[^[:space:]]'; then echo 'error: INTRO is required: summarize what changed for users.' >&2; exit 1; fi
 	@echo "Local path: no CI is dispatched and nothing auto-merges; merge the pull request after its checks (dispatch ci.yml on the branch)."
-	bash scripts/release.sh $(or $(BUMP),auto) --open-pr
+	INTRO="$$RELEASE_INTRO" bash scripts/release.sh $(or $(BUMP),auto) --open-pr
 
 clean: ## Remove build and test artifacts
 	rm -rf dist build .coverage* coverage.xml htmlcov reports .pytest_cache .mypy_cache .ruff_cache src/heinzel/heads/web/static
