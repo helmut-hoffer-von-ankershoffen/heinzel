@@ -201,7 +201,8 @@ describe("Contribution toggles", () => {
 
 describe("Contribution data", () => {
   it("maps every icon and renders live values", () => {
-    expect(Object.keys(ICONS)).toHaveLength(30);
+    expect(Object.keys(ICONS)).toHaveLength(31);
+    expect(ICONS["cloud-sun"]).toBeDefined();
     const now = new Date("2026-10-26T10:00:00Z");
     expect(liveText({ kind: "until", at: "2026-10-26T10:12:00Z" }, now)).toBe("in 12 min");
     expect(liveText({ kind: "until", at: "2026-10-26T09:59:59Z" }, now)).toBe("now");

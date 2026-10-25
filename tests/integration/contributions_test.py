@@ -117,6 +117,7 @@ def test_a_confirmed_call_reaches_the_operation_the_server_named(make_kernel):
         "method": "POST",
         "path": "/acme/sync",
         "query": {"dry_run": True},
+        "body": None,
         "command": "hz acme sync --dry-run true",
         "summary": "Sync the reviews.",
         "read_only": False,

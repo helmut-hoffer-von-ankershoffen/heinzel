@@ -1689,6 +1689,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/ui/navigation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List active providers' navigation and owned Settings metadata without running their operations.
+         * @description List active providers' navigation and owned Settings metadata without running their operations.
+         */
+        get: operations["system_ui_navigation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/ui/show": {
         parameters: {
             query?: never;
@@ -2006,7 +2026,7 @@ export interface components {
              * @description The icon the app shows.
              * @enum {string}
              */
-            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap";
+            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap";
             /**
              * Id
              * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
@@ -4468,7 +4488,7 @@ export interface components {
              * Icon
              * @description An icon beside the value.
              */
-            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
             /**
              * @description A graphic. (enum property replaced by openapi-typescript)
              * @enum {string}
@@ -5344,6 +5364,78 @@ export interface components {
             version: string;
         };
         /**
+         * NavEntry
+         * @description Checked navigation metadata from one active provider, without running an operation.
+         */
+        NavEntry: {
+            /**
+             * Declared
+             * @description True for an explicit NavLet; false for generic legacy Settings metadata.
+             */
+            declared: boolean;
+            /**
+             * Icon
+             * @description The provider's checked semantic icon.
+             * @enum {string}
+             */
+            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap";
+            /**
+             * Id
+             * @description Stable `<qualified-module>:<name>` identity; legacy Settings use reserved `:@settings`.
+             */
+            id: string;
+            /**
+             * Module
+             * @description The qualified module that declared this entry.
+             */
+            module: string;
+            /**
+             * Order
+             * @description Display order; ties are sorted by stable id.
+             */
+            order: number;
+            /**
+             * Plugin
+             * @description Its distribution, or none for a built-in provider.
+             */
+            plugin: string | null;
+            /**
+             * Problem
+             * @description Why this declaration has no executable target.
+             */
+            problem?: string | null;
+            /** @description Owned Settings prefixes and their group. */
+            settings?: components["schemas"]["NavSettings"] | null;
+            /**
+             * Sidebar
+             * @description The canonical sidebar effect; no new route is registered.
+             */
+            sidebar?: (components["schemas"]["Navigate"] | components["schemas"]["OpenUrl"] | components["schemas"]["RunOperation"] | components["schemas"]["RunCommand"]) | null;
+            /**
+             * Title
+             * @description The provider's checked display title.
+             */
+            title: string;
+        };
+        /**
+         * NavSettings
+         * @description The module-owned Settings sections a navigation entry groups under an existing heading.
+         */
+        NavSettings: {
+            /**
+             * Group
+             * @description The existing Settings heading under which the entry appears.
+             * @default preferences
+             * @enum {string}
+             */
+            group: "preferences" | "customize" | "organisation" | "computer";
+            /**
+             * Sections
+             * @description Qualified module prefixes owned by this provider.
+             */
+            sections: string[];
+        };
+        /**
          * Navigate
          * @description Open a screen of the app.
          */
@@ -5584,6 +5676,13 @@ export interface components {
          */
         OperationCall: {
             /**
+             * Body
+             * @description Validated flat JSON arguments for a private mutation; never a query fallback.
+             */
+            body?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
              * Command
              * @description The same call as a person reads it, e.g. `hz clock`.
              */
@@ -5601,7 +5700,7 @@ export interface components {
             path: string;
             /**
              * Query
-             * @description The validated arguments, as query parameters.
+             * @description Validated query arguments; empty for private mutations.
              */
             query: {
                 [key: string]: boolean | number | string;
@@ -6509,10 +6608,10 @@ export interface components {
         RunOperation: {
             /**
              * Arguments
-             * @description Its arguments by parameter name: strings, numbers, booleans.
+             * @description Fixed JSON arguments by parameter name; structured values require a private mutation.
              */
             arguments?: {
-                [key: string]: boolean | number | string;
+                [key: string]: components["schemas"]["JsonValue"];
             };
             /** @description Filled in by `system.ui`; whatever a plugin sets here is replaced. */
             call?: components["schemas"]["OperationCall"] | null;
@@ -7372,7 +7471,7 @@ export interface components {
              * Icon
              * @description An icon before the text.
              */
-            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
             /**
              * Live
              * @description A time the app renders after `text` and keeps current.
@@ -8533,7 +8632,7 @@ export interface components {
              * Icon
              * @description An icon before the label.
              */
-            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
             /**
              * Label
              * @description What the button says.
@@ -8758,6 +8857,8 @@ export type SchemaMetricWidget = components['schemas']['MetricWidget'];
 export type SchemaModelChoice = components['schemas']['ModelChoice'];
 export type SchemaModelList = components['schemas']['ModelList'];
 export type SchemaModuleInfo = components['schemas']['ModuleInfo'];
+export type SchemaNavEntry = components['schemas']['NavEntry'];
+export type SchemaNavSettings = components['schemas']['NavSettings'];
 export type SchemaNavigate = components['schemas']['Navigate'];
 export type SchemaNode = components['schemas']['Node'];
 export type SchemaNodeMetadata = components['schemas']['NodeMetadata'];
@@ -11059,6 +11160,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContributionInfo"][];
+                };
+            };
+        };
+    };
+    system_ui_navigation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NavEntry"][];
                 };
             };
         };

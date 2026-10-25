@@ -130,6 +130,7 @@ def test_an_operation_effect_carries_the_call_the_server_built(service):
         "method": "POST",
         "path": "/acme/sync",
         "query": {},
+        "body": None,
         "command": "hz acme sync",
         "summary": "Sync the reviews.",
         "read_only": False,

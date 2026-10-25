@@ -7,6 +7,7 @@ Every text is cleaned and length-limited, every link is https or an in-app path,
 so what reaches the browser is data a strict model accepted.
 """
 
+import json
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -23,6 +24,7 @@ from pydantic import (
     BeforeValidator,
     ConfigDict,
     Field,
+    JsonValue,
     StrictBool,
     StrictFloat,
     StrictInt,
@@ -46,6 +48,7 @@ Icon = Literal[
     "circle-check",
     "clock",
     "cloud",
+    "cloud-sun",
     "code",
     "file-text",
     "git-pull-request",
@@ -87,7 +90,7 @@ MAX_ACTIONS = 3
 MAX_ITEM_ACTIONS = 4
 MAX_ITEMS = 8
 MAX_URL = 2048
-MAX_PER_MODULE = {"status": 3, "action": 2, "widget": 4}
+MAX_PER_MODULE = {"status": 3, "action": 2, "widget": 4, "nav": 4}
 """How many contributions of each kind one module may offer."""
 ORDER_MIN, ORDER_MAX, ORDER_DEFAULT = 0, 1000, 500
 STATUS_REFRESH = (timedelta(seconds=15), timedelta(days=1))
@@ -103,7 +106,47 @@ COMMAND = re.compile(r"^hz(?: +(?:[\w./:=@,+-]+|'(?:[^'\\\x00-\x1f\x7f-\x9f]|'\\
 """An `hz` command the terminal panel runs as typed: plain words, or single-quoted arguments without control
 characters, which a terminal would act on (Ctrl-C, Enter, escape sequences) even inside quotes."""
 MAX_COMMAND = 300
-Scalar = StrictBool | StrictInt | StrictFloat | Annotated[str, Field(max_length=MAX_BODY)]
+MAX_ARGUMENT_DEPTH = 8
+MAX_ARGUMENT_BYTES = 16_384
+Scalar = (
+    StrictBool
+    | StrictInt
+    | Annotated[StrictFloat, Field(allow_inf_nan=False)]
+    | Annotated[str, Field(max_length=MAX_BODY)]
+)
+
+
+def _argument(value: JsonValue) -> JsonValue:
+    """Bound nested fixed arguments before they reach a generic client or command preview.
+
+    Raises:
+        ValueError: If an argument exceeds the size/depth bounds or has a nonfinite JSON number.
+    """
+
+    def depth(item: JsonValue, level: int = 0) -> None:
+        if level > MAX_ARGUMENT_DEPTH:
+            msg = "Operation arguments may nest at most 8 levels"
+            raise ValueError(msg)
+        if isinstance(item, dict):
+            for child in item.values():
+                depth(child, level + 1)
+        elif isinstance(item, list):
+            for child in item:
+                depth(child, level + 1)
+
+    depth(value)
+    try:
+        encoded = json.dumps(value, allow_nan=False, separators=(",", ":"), ensure_ascii=False).encode()
+    except ValueError as exc:
+        msg = "Operation arguments need finite JSON values"
+        raise ValueError(msg) from exc
+    if len(encoded) > MAX_ARGUMENT_BYTES:
+        msg = "Operation arguments may contain at most 16 KiB of JSON per parameter"
+        raise ValueError(msg)
+    return value
+
+
+JsonArgument = Annotated[JsonValue, AfterValidator(_argument)]
 
 
 def _one_line(value: object) -> object:
@@ -217,7 +260,10 @@ class OperationCall(_Data):
 
     method: Literal["GET", "POST"] = Field(description="`GET` for a read-only operation, `POST` for one that writes.")
     path: str = Field(description="The operation's path under `/api`, e.g. `/clock`.")
-    query: dict[str, Scalar] = Field(description="The validated arguments, as query parameters.")
+    query: dict[str, Scalar] = Field(description="Validated query arguments; empty for private mutations.")
+    body: dict[str, JsonArgument] | None = Field(
+        default=None, description="Validated flat JSON arguments for a private mutation; never a query fallback."
+    )
     command: str = Field(description="The same call as a person reads it, e.g. `hz clock`.")
     summary: str = Field(description="What the operation does: the first line of its docstring.")
     read_only: bool = Field(description="Whether it only reads; the app asks before running one that doesn't.")
@@ -228,8 +274,10 @@ class RunOperation(_Data):
 
     kind: Literal["operation"] = Field(default="operation", description="Run an operation of the module.")
     operation: str = Field(pattern=NAME_PATTERN.pattern, description="The operation's name in its module, e.g. `sync`.")
-    arguments: dict[Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_]*$")], Scalar] = Field(
-        default_factory=dict[str, Scalar], description="Its arguments by parameter name: strings, numbers, booleans."
+    arguments: dict[Annotated[str, Field(pattern=r"^[a-z_][a-z0-9_]*$")], JsonArgument] = Field(
+        default_factory=dict[str, JsonArgument],
+        max_length=32,
+        description="Fixed JSON arguments by parameter name; structured values require a private mutation.",
     )
     call: OperationCall | None = Field(
         default=None, description="Filled in by `system.ui`; whatever a plugin sets here is replaced."
@@ -250,6 +298,40 @@ class RunCommand(_Data):
 
 Effect = Annotated[Navigate | OpenUrl | RunOperation | RunCommand, Field(discriminator="kind")]
 """What a click does: exactly one of navigate, open, operation and command."""
+
+
+class NavSettings(_Data):
+    """The module-owned Settings sections a navigation entry groups under an existing heading."""
+
+    sections: tuple[Annotated[str, Field(pattern=r"^[a-z](?:-?[a-z0-9])*(?:\.[a-z](?:-?[a-z0-9])*)*$")], ...] = Field(
+        min_length=1, max_length=8, description="Qualified module prefixes owned by this provider."
+    )
+    group: Literal["preferences", "customize", "organisation", "computer"] = Field(
+        default="preferences", description="The existing Settings heading under which the entry appears."
+    )
+
+    @model_validator(mode="after")
+    def _unique(self) -> Self:
+        if len(set(self.sections)) != len(self.sections):
+            msg = "Navigation settings sections must be unique"
+            raise ValueError(msg)
+        return self
+
+
+class _NavData(_Data):
+    name: Annotated[str, Field(pattern=NAME_PATTERN.pattern, max_length=64)]
+    title: Text
+    icon: Icon
+    order: Annotated[int, Field(ge=ORDER_MIN, le=ORDER_MAX, strict=True)] = ORDER_DEFAULT
+    settings: NavSettings | None = None
+    sidebar: Effect | None = None
+
+    @model_validator(mode="after")
+    def _target(self) -> Self:
+        if self.settings is None and self.sidebar is None:
+            msg = "A navigation entry needs Settings sections or a sidebar effect"
+            raise ValueError(msg)
+        return self
 
 
 class WidgetAction(_Data):
@@ -526,3 +608,24 @@ class ActionLet(ContributionLet):
             raise ValueError(msg)
         if self.source is not None:
             _source("action", self.name, self.source)
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class NavLet(Let):
+    """Static Settings and sidebar navigation offered by a module, consumed by `system.ui` (ADR 0072)."""
+
+    title: str
+    icon: Icon
+    order: int = ORDER_DEFAULT
+    settings: NavSettings | None = None
+    sidebar: Effect | None = None
+
+    def __post_init__(self) -> None:
+        """Validate shape at declaration time; the consumer checks actual Settings ownership and effects.
+
+        Raises:
+            ValueError: If the name, display values, order or target is invalid.
+        """
+        checked = _NavData.model_validate({name: getattr(self, name) for name in _NavData.model_fields})
+        for name in _NavData.model_fields:
+            object.__setattr__(self, name, getattr(checked, name))

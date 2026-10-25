@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 
 from heinzel import (
     ActionLet,
@@ -19,9 +19,12 @@ from heinzel import (
     Kernel,
     ListWidget,
     ModuleRecord,
+    NavLet,
+    NavSettings,
     OperationLet,
     RunCommand,
     RunOperation,
+    SettingsLet,
     Slot,
     StatusItem,
     StatusLet,
@@ -34,6 +37,7 @@ from heinzel.modules.system.ui._models import (
     ContributionInfo,
     Entry,
     Kind,
+    NavEntry,
     StatusEntry,
     UiSettings,
     WidgetEntry,
@@ -223,6 +227,64 @@ class UiService:
             )
         return entries
 
+    def navigation(self) -> list[NavEntry]:
+        """Project active navigation declarations and generic legacy Settings entries without running sources."""
+        entries = [self._navigation(record, let) for record, let in self._kernel.lets(NavLet)]
+        claimed = [prefix for entry in entries if entry.settings for prefix in entry.settings.sections]
+        seen: set[str] = set()
+        for record, let in self._kernel.lets(SettingsLet):
+            section = record.qualname
+            if section in seen or any(section == prefix or section.startswith(f"{prefix}.") for prefix in claimed):
+                continue
+            seen.add(section)
+            title = " ".join(clean_text(let.model.section_title or record.module.name.replace("-", " ")).split())
+            fallback = NavLet(
+                name="settings",
+                title=(title or record.module.name)[:80],
+                icon="code",
+                settings=NavSettings(sections=(section,)),
+            )
+            entries.append(self._navigation(record, fallback, declared=False))
+        return sorted(entries, key=lambda entry: (entry.order, entry.id))
+
+    def _navigation(self, record: ModuleRecord, let: NavLet, *, declared: bool = True) -> NavEntry:
+        settings, sidebar, problem = let.settings, let.sidebar, None
+        try:
+            if settings is not None:
+                self._navigation_settings(record, settings)
+            if sidebar is not None:
+                sidebar = self.resolve(record, sidebar)
+        except Unusable as exc:
+            settings, sidebar, problem = None, None, str(exc)
+        except Exception as exc:  # noqa: BLE001 - isolate a provider, never expose an unexpected exception's text
+            settings, sidebar, problem = None, None, f"{record.qualname}:{let.name} failed: {type(exc).__name__}"
+        return NavEntry(
+            id=f"{record.qualname}:{let.name}" if declared else f"{record.qualname}:@settings",
+            module=record.qualname,
+            declared=declared,
+            plugin=None if record.origin.builtin else record.origin.distribution,
+            title=let.title,
+            icon=let.icon,
+            order=let.order,
+            settings=settings,
+            sidebar=sidebar,
+            problem=problem,
+        )
+
+    def _navigation_settings(self, record: ModuleRecord, settings: NavSettings) -> None:
+        for prefix in settings.sections:
+            if prefix != record.qualname and not prefix.startswith(f"{record.qualname}."):
+                msg = f"Settings prefix {prefix!r} is not owned by this module"
+                raise Unusable(msg)
+            owners = [
+                owner
+                for owner, _ in self._kernel.lets(SettingsLet)
+                if owner.qualname == prefix or owner.qualname.startswith(f"{prefix}.")
+            ]
+            if not owners or any(owner.origin != record.origin for owner in owners):
+                msg = f"Settings prefix {prefix!r} has no active settings owned by this provider"
+                raise Unusable(msg)
+
     def problems(self) -> list[tuple[str, str]]:
         """What keeps a declaration from working, without running anything: `(id, problem)` for doctor."""
         found: list[tuple[str, str]] = []
@@ -237,6 +299,7 @@ class UiService:
                         self.resolve(contribution.record, let.effect)
                 except Unusable as exc:
                     found.append((contribution.id, str(exc)))
+        found.extend((entry.id, entry.problem) for entry in self.navigation() if entry.problem is not None)
         return found
 
     def source(self, record: ModuleRecord, name: str) -> OperationLet:
@@ -296,22 +359,34 @@ class UiService:
         ):
             msg = f"`{effect.operation}` needs {', '.join(missing)}"
             raise Unusable(msg)
+        body = operation.private and not operation.read_only
+        arguments: dict[str, JsonValue] = {}
+        query: dict[str, str | bool | int | float] = {}
         for name, value in effect.arguments.items():
             try:
-                TypeAdapter(parameters[name].annotation).validate_python(value)
+                adapter: TypeAdapter[Any] = TypeAdapter(parameters[name].annotation)
+                validated = adapter.validate_python(value, strict=operation.private)
+                arguments[name] = adapter.dump_python(validated, mode="json")
             except ValidationError as exc:
                 msg = f"`{effect.operation}` argument {name}: {_problems(exc)}"
                 raise Unusable(msg) from exc
+            if not body:
+                argument = arguments[name]
+                if not isinstance(argument, str | bool | int | float):
+                    msg = f"`{effect.operation}` structured argument {name} needs a private mutation with a JSON body"
+                    raise Unusable(msg)
+                query[name] = argument
         path = operation_path(self._kernel, record, operation)
         words = ["hz", *path]
-        for name, value in effect.arguments.items():
+        for name, value in arguments.items():
             text = value if isinstance(value, str) else json.dumps(value)
             words += [f"--{name.replace('_', '-')}", shlex.quote(text)]
         summary = next(iter((inspect.getdoc(operation.func) or operation.summary).splitlines()), operation.name)
         return OperationCall(
             method="GET" if operation.read_only else "POST",
             path="/" + "/".join(path),
-            query=dict(effect.arguments),
+            query=query,
+            body=arguments if body else None,
             command=" ".join(words),
             summary=summary,
             read_only=operation.read_only,
