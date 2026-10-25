@@ -30,6 +30,7 @@ from pydantic import (
 )
 
 from heinzel.kernel._lets import Let
+from heinzel.kernel._theme_signals import Daypart, Weather
 
 THEME_SUFFIX = ".toml"
 DEFAULT = "default"
@@ -72,6 +73,12 @@ LOGO_NAMES = ("light", "dark", "mark")
 """The logo files a theme can have, by the name the web head serves them under: `<name>.svg`."""
 LOGO_CSP = "default-src 'none'; style-src 'unsafe-inline'"
 """The Content Security Policy of a served logo: opened on its own, it loads nothing and runs nothing."""
+MAX_STOPS = 4
+MAX_BACKDROP_OPACITY = 0.9
+"""A backdrop never covers `background` entirely, and the contrast check decides the rest."""
+MAX_VARIANTS = 32
+MIN_CONTRAST = 4.5
+"""The WCAG AA contrast of body text, checked for the base and every variant in both modes."""
 _SVG = "{http://www.w3.org/2000/svg}"
 _REFERENCES = frozenset({"href", "src"})
 _LOGO_PATH_RULE = (
@@ -228,6 +235,44 @@ class ThemeLogo(BaseModel):
         return tuple(dict.fromkeys(file for file in (self.light, self.dark, self.mark) if file))
 
 
+def _stop(value: str) -> str:
+    if re.fullmatch(HEX, value):
+        return value.lower()
+    if value in COLOUR_TOKENS:
+        return value
+    msg = f"a stop is a hex colour, e.g. #fde68a, or a colour token of the theme, e.g. primary; not {value[:40]!r}"
+    raise ValueError(msg)
+
+
+Stop = Annotated[str, AfterValidator(_stop)]
+
+
+class ThemeBackdrop(BaseModel):
+    """A gradient behind the main area (`[light.backdrop]`), of hex colours and the theme's own colour tokens.
+
+    The web app builds the CSS from these typed parts: a kind, an angle in degrees and two to four stops, each a hex
+    colour or a token name it turns into `var(--color-<token>)`; no other text reaches CSS, and no `url()` exists.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
+
+    gradient: Literal["linear", "radial"] = Field(description="`linear` (along `angle`) or `radial` (from the centre).")
+    angle: int = Field(
+        default=180, ge=0, le=360, strict=True, description="The direction of a linear gradient in degrees, e.g. `180`."
+    )
+    stops: tuple[Stop, ...] = Field(
+        min_length=2,
+        max_length=MAX_STOPS,
+        description="Two to four colours: hex, e.g. `#fde68a`, or a token of the theme, e.g. `primary`.",
+    )
+    opacity: float = Field(
+        default=0.6,
+        ge=0,
+        le=MAX_BACKDROP_OPACITY,
+        description=f"How strongly it shows over `background`, 0 to {MAX_BACKDROP_OPACITY}, e.g. `0.6`.",
+    )
+
+
 class ThemeColours(BaseModel):
     """The colours of the web app's tokens in one mode; each becomes `--color-<token>` (underscores as dashes)."""
 
@@ -256,6 +301,9 @@ class ThemeColours(BaseModel):
     main_tint: Colour | None = Field(
         default=None, description="A tint behind the main content area (`--color-main-tint`); none when not given."
     )
+    backdrop: ThemeBackdrop | None = Field(
+        default=None, description="A gradient behind the main area only; sidebar and cards stay solid."
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -268,6 +316,183 @@ class ThemeColours(BaseModel):
                     given[token] = given[source]
             return given
         return data
+
+
+COLOUR_TOKENS = frozenset(name for name in ThemeColours.model_fields if name != "backdrop")
+"""The colour tokens of a theme, which a backdrop's stops may name."""
+
+
+Override = Annotated[Colour | None, Field(description="A hex colour replacing the base's; unset keeps it.")]
+
+
+class ThemeOverrides(BaseModel):
+    """What a variant changes in one mode: any colour token, the main tint and the backdrop; the rest stays."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
+
+    background: Override = None
+    foreground: Override = None
+    muted: Override = None
+    muted_foreground: Override = None
+    card: Override = None
+    border: Override = None
+    primary: Override = None
+    primary_foreground: Override = None
+    accent: Override = None
+    ok: Override = None
+    warn: Override = None
+    bad: Override = None
+    ring: Override = None
+    sidebar: Override = None
+    input: Override = None
+    popover: Override = None
+    accent_foreground: Override = None
+    icon: Override = None
+    main_tint: Override = None
+    backdrop: ThemeBackdrop | None = Field(default=None, description="A backdrop that replaces the base's.")
+
+
+def _words(value: object) -> object:
+    """One word or a list of them: `"rain"` is `["rain"]`."""
+    return [value] if isinstance(value, str) else value
+
+
+class ThemeWhen(BaseModel):
+    """When a variant applies, e.g. `when = { daypart = "night", weather = ["rain", "drizzle"] }`.
+
+    Every signal it names has one of its values. Signals are a closed vocabulary (ADR 0060), so a misspelt one is
+    refused at import.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
+
+    daypart: tuple[Daypart, ...] = Field(default=(), max_length=6, description="Any of these dayparts, e.g. `night`.")
+    weather: tuple[Weather, ...] = Field(default=(), max_length=10, description="Any of these, e.g. `rain`.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lists(cls, data: object) -> object:
+        if isinstance(data, dict):
+            given = cast("dict[str, object]", data)
+            return {key: _words(value) for key, value in given.items()}
+        return data
+
+    @model_validator(mode="after")
+    def _some(self) -> "ThemeWhen":
+        if not (self.daypart or self.weather):
+            msg = 'a variant\'s `when` names at least one signal, e.g. { daypart = "night" }'
+            raise ValueError(msg)
+        return self
+
+    @property
+    def specificity(self) -> int:
+        """How many signals it names: the variant naming more of them wins."""
+        return bool(self.daypart) + bool(self.weather)
+
+    def matches(self, signals: "Signals") -> bool:
+        """Whether every signal it names has one of its values now; an unknown signal matches nothing."""
+        return (not self.daypart or signals.get("daypart") in self.daypart) and (
+            not self.weather or signals.get("weather") in self.weather
+        )
+
+
+type Signals = dict[str, str | None]
+"""Signal values by name, e.g. `{"daypart": "night", "weather": None}`; None when no module provides one."""
+
+
+class ThemeVariant(BaseModel):
+    """A variant of a theme (`[[variant]]`): colours that apply when its signals match (ADR 0060)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
+
+    when: ThemeWhen = Field(description='The signals it follows, e.g. `{ daypart = "night" }`.')
+    light: ThemeOverrides | None = Field(default=None, description="What changes in light mode.")
+    dark: ThemeOverrides | None = Field(default=None, description="What changes in dark mode.")
+
+    def overrides(self, mode: Literal["light", "dark"]) -> ThemeOverrides | None:
+        """What it changes in `mode`."""
+        return self.light if mode == "light" else self.dark
+
+
+def variant_of(variants: tuple[ThemeVariant, ...], signals: Signals) -> int | None:
+    """The index of the variant in effect: of those matching, the one naming most signals, the first on a tie."""
+    best: int | None = None
+    for index, variant in enumerate(variants):
+        if variant.when.matches(signals) and (
+            best is None or variant.when.specificity > variants[best].when.specificity
+        ):
+            best = index
+    return best
+
+
+def apply(colours: ThemeColours, overrides: ThemeOverrides | None) -> ThemeColours:
+    """`colours` with what `overrides` sets."""
+    if overrides is None:
+        return colours
+    return ThemeColours.model_validate(colours.model_dump() | overrides.model_dump(exclude_none=True))
+
+
+def _channel(value: int) -> float:
+    unit = value / 255
+    return unit / 12.92 if unit <= 0.04045 else ((unit + 0.055) / 1.055) ** 2.4  # noqa: PLR2004 - sRGB constants
+
+
+def _rgb(colour: str) -> tuple[int, int, int]:
+    digits = colour.removeprefix("#")
+    if len(digits) == 3:  # noqa: PLR2004 - #rgb
+        digits = "".join(digit * 2 for digit in digits)
+    return int(digits[0:2], 16), int(digits[2:4], 16), int(digits[4:6], 16)
+
+
+def _luminance(rgb: tuple[float, float, float]) -> float:
+    red, green, blue = (_channel(round(part)) for part in rgb)
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def contrast(first: str, second: str) -> float:
+    """The WCAG contrast ratio of two hex colours, 1 to 21."""
+    lighter, darker = sorted((_luminance(_rgb(first)), _luminance(_rgb(second))), reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def _blend(top: str, bottom: str, opacity: float) -> str:
+    opacity = round(opacity * 100) / 100  # as the web app draws it: `color-mix` at a whole percent
+    mixed = (t * opacity + b * (1 - opacity) for t, b in zip(_rgb(top), _rgb(bottom), strict=True))
+    return "#" + "".join(f"{round(part):02x}" for part in mixed)
+
+
+def _surfaces(colours: ThemeColours) -> list[tuple[str, str]]:
+    """What the main area's text sits on, by name: the background, the tint, each backdrop stop over the background."""
+    surfaces = [("background", colours.background)]
+    if colours.main_tint:
+        surfaces.append(("main_tint", colours.main_tint))
+    if backdrop := colours.backdrop:
+        for stop in backdrop.stops:
+            value = stop if stop.startswith("#") else getattr(colours, stop) or colours.background
+            surfaces.append((f"backdrop stop {stop}", _blend(value, colours.background, backdrop.opacity)))
+    return surfaces
+
+
+def contrast_problems(colours: ThemeColours) -> list[str]:
+    """Where text in `colours` falls under 4.5:1, in words.
+
+    `foreground` and `muted_foreground` are checked on cards, the sidebar, popovers and every main surface.
+    """
+    pairs = [
+        (text, surface, getattr(colours, text), getattr(colours, surface))
+        for surface in ("card", "sidebar", "popover")
+        for text in ("foreground", "muted_foreground")
+    ]
+    for surface, value in _surfaces(colours):
+        pairs += [
+            ("foreground", surface, colours.foreground, value),
+            ("muted_foreground", surface, colours.muted_foreground, value),
+        ]
+    return [
+        f"{text} on {surface} is {ratio:.2f}:1, under {MIN_CONTRAST}:1"
+        for text, surface, first, second in pairs
+        if (ratio := contrast(first, second)) < MIN_CONTRAST
+    ]
 
 
 class Theme(BaseModel):
@@ -311,6 +536,36 @@ class Theme(BaseModel):
     logo: ThemeLogo | None = Field(
         default=None, description="The logo the theme ships (`[logo]` in its file), SVG files beside it; none if not."
     )
+    variant: tuple[ThemeVariant, ...] = Field(
+        default=(),
+        max_length=MAX_VARIANTS,
+        description="Colours that follow the time of day and the weather (`[[variant]]` in its file, ADR 0060).",
+    )
+
+    @model_validator(mode="after")
+    def _readable(self) -> "Theme":
+        """Refuse a theme whose text is hard to read, in either mode, as it is or in any variant (ADR 0060).
+
+        Raises:
+            ValueError: If text falls under 4.5:1 on a surface it sits on.
+        """
+        problems: list[str] = []
+        for mode in ("light", "dark"):
+            base: ThemeColours = getattr(self, mode)
+            cases = [(mode, base)] + [
+                (f"variant.{index}.{mode}", apply(base, variant.overrides(mode)))
+                for index, variant in enumerate(self.variant)
+            ]
+            problems += [f"{where}: {problem}" for where, colours in cases for problem in contrast_problems(colours)]
+        if problems:
+            raise ValueError("text must stay readable: " + "; ".join(problems))
+        return self
+
+    def colours(self, mode: Literal["light", "dark"], signals: Signals) -> ThemeColours:
+        """The colours of `mode` with the variant `signals` select applied."""
+        index = variant_of(self.variant, signals)
+        base: ThemeColours = getattr(self, mode)
+        return base if index is None else apply(base, self.variant[index].overrides(mode))
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
