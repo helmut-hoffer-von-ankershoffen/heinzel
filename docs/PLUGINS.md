@@ -15,6 +15,7 @@ Start with `hz system plugin new --help`, then scaffold a plugin with the CLI. U
 | A command or a tool | `@module.operation`, with typed parameters and a serializable result | Same operation remains the source of data |
 | A footer indicator | `@module.status`, a `StatusItem` with detail and actions | Keep the generic accessible icon and detail pane |
 | A header action | `module.action` and a checked effect | Keep the generic button for ordinary actions |
+| Settings or sidebar navigation | `module.nav`, checked icons and existing effects | Rich custom views remain separate |
 | A Today card | `@module.widget` and a supported widget shape | Keep data shapes for common views |
 | A colour palette, logo or fonts | `module.theme` | Optional theme figure sets, with core fallbacks |
 | Background work | `@module.job` | Persisted triggers and wake scheduling need their own implementation |
@@ -23,6 +24,27 @@ Start with `hz system plugin new --help`, then scaffold a plugin with the CLI. U
 
 The public Python API is exported from `heinzel` and `heinzel.kernel`. Plugins do not import private kernel files,
 heads, built-in modules or another plugin. [Import contracts](CODING_STANDARDS.md#architecture-rules) enforce this.
+
+## Navigation and Settings
+
+A plugin declares its title and semantic icon, and groups only its own Settings sections. Sidebar links use the
+existing checked effects; a declaration does not add a renderer or make an unknown route exist.
+
+```python
+from heinzel import NavSettings, Navigate
+
+module.nav(
+    title="Harbor",
+    icon="cloud-sun",
+    settings=NavSettings(sections=("harbor",), group="customize"),
+    sidebar=Navigate(path="/?settings=harbor"),
+)
+```
+
+`hz system ui navigation --json` lists the same metadata the authenticated app uses. Disabled/uninstalled providers
+are absent. An invalid declaration has a diagnostic and no executable target. Explicit valid entries replace the
+generic Settings compatibility entry, so the app needs no plugin-name map. [ADR 0072](adr/0072-plugins-declare-navigation-and-settings-as-data.md)
+records the ownership rules. Declare the core range that supplies this additive API when publishing a plugin.
 
 ## Python, CLI, MCP and REST
 
@@ -65,7 +87,7 @@ test the refusal paths as well as the successful call. Never put a private opera
 | Full pages | Proposed | Versioned React renderer and a declared route; ordinary data pages can use host renderers |
 | Today | Available | Card, list, metric, progress and graphic widget shapes; ids identify contributions and avoid duplicates |
 | Settings fields | Available | JSON Schema chooses the control; slot switches belong with the contributing module |
-| Settings section icons | Proposed | A validated plugin-info icon field; not an arbitrary SVG or component name |
+| Settings and sidebar metadata | Available | `module.nav`, `NavSettings`, checked `Icon` and existing effects; only active owned Settings sections |
 | Custom Settings panes | Proposed | Versioned React view, distinct from the existing schema-driven controls |
 | Connectors | Available, limited | Capability providers appear through the host's connector management; no arbitrary connector-card renderer |
 | Search | Available, limited | Host navigation, settings, contracts and artifact types are searched; generic operation search and plugin result providers are proposed |
