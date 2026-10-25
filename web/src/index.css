@@ -205,7 +205,6 @@ body {
    blink, a hat tilt, a little wave, a glance, a tiny hop. Transforms on the existing parts, subtle by design. */
 @media (prefers-reduced-motion: no-preference) {
   svg[data-idle] .hz-eyes,
-  svg[data-idle] .hz-hat,
   svg[data-idle] .hz-wave {
     transform-box: fill-box;
   }
@@ -220,7 +219,9 @@ body {
     animation: hz-glance-right 1.2s ease-in-out;
   }
   svg[data-idle="tilt"] .hz-hat {
-    transform-origin: 50% 100%;
+    /* The cap's brim in head coordinates; a theme image has a full canvas, not the cap's bounds. */
+    transform-box: view-box;
+    transform-origin: 256px 202px;
     animation: hz-tilt 1s ease-in-out;
   }
   svg[data-idle="wave"] .hz-wave {

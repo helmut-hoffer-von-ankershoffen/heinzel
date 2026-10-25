@@ -133,10 +133,11 @@ export type HeinzelLook = {
   theme?: ThemeLook;
 };
 
-/** A theme dresses defaults; explicit personal colours still win. No arbitrary graphics or CSS. */
+/** A theme dresses defaults and adds checked original SVG layers; personal look choices still win. */
 export type ThemeLook = {
   palette?: Partial<Record<"hat" | "shirt" | "scarf", string>>;
   decorations?: readonly "snow"[];
+  assets?: Partial<Record<`hat-${Exclude<Age, "baby">}` | `outfit-${Age}`, string>>;
 };
 
 type AgeLook = { tip: number | null; hair: string; brow: string; light: string; eye: number; beard: Beard };
@@ -169,6 +170,7 @@ export type Shape = (
   | { kind: "path"; d: string; fill: string; stroke?: string; width?: number }
   | { kind: "circle"; cx: number; cy: number; r: number; fill: string }
   | { kind: "group"; transform: string; children: Shape[] }
+  | { kind: "image"; href: string; x: number; y: number; width: number; height: number }
 ) & { part?: Part; accessory?: Accessory };
 
 /** Parts the avatar can move on their own (idle life): the state's badge, the eyes, the hat, the waving hand. */
@@ -387,7 +389,15 @@ function mouth(state: HeinzelState, bearded: boolean, light: string): Shape[] {
 }
 
 /** The head in the face's own 512 coordinates (centre 256,236, radius 158): ears, face, hair, beard, cap, features. */
-function head(age: Age, beard: Beard, hat: string, state: HeinzelState, glasses: boolean, snow: boolean): Shape[] {
+function head(
+  age: Age,
+  beard: Beard,
+  hat: string,
+  state: HeinzelState,
+  glasses: boolean,
+  snow: boolean,
+  asset?: Shape,
+): Shape[] {
   const look = BY_AGE[age];
   const brow = age === "old" ? 14 : 10;
   return [
@@ -406,6 +416,7 @@ function head(age: Age, beard: Beard, hat: string, state: HeinzelState, glasses:
       ? []
       : tag("hat", [
           ...cap(look.tip, hat),
+          ...(asset ? [asset] : []),
           ...(snow
             ? [
                 path(
@@ -503,6 +514,19 @@ function legs(sitting: boolean, hem: number): Shape[] {
   ];
 }
 
+/** Only owned, versioned theme-layer URLs can become image references, even from malformed cached data. */
+function assetLayer(theme: ThemeLook | undefined, slot: string, head = false): Shape | undefined {
+  const href = theme?.assets?.[slot as keyof NonNullable<ThemeLook["assets"]>];
+  if (
+    !href ||
+    !/^\/theme-assets\/[a-z](?:-?[a-z0-9])*\/heinzel-(?:hat-(?:young|grown|old)|outfit-(?:baby|young|grown|old))\.svg\?v=[a-f0-9]{16}$/.test(
+      href,
+    )
+  )
+    return;
+  return { kind: "image", href, x: 0, y: head ? -240 : 0, width: 512, height: head ? 840 : 860 };
+}
+
 /** The whole Heinzelmännchen on the 512 by 860 canvas, back to front; the top 512 square is its bust. */
 export function heinzelShapes({
   age = "grown",
@@ -525,6 +549,8 @@ export function heinzelShapes({
   const [bl, br, hl, hr] = [256 - b.belly, 256 + b.belly, 256 - b.hem, 256 + b.hem];
   const scale = 0.75;
   const bow = state === "done" ? 18 : 0;
+  const outfit = assetLayer(theme, `outfit-${age}`);
+  const hatAsset = assetLayer(theme, `hat-${age}`, true);
   return [
     ...legs(state === "sleeping", b.hem),
     path(
@@ -542,8 +568,9 @@ export function heinzelShapes({
       transform: `matrix(${+(scale * b.head).toFixed(4)} 0 0 ${scale} ${+(256 - 256 * scale * b.head).toFixed(2)} ${
         350 - 236 * scale + bow
       })`,
-      children: head(age, chin, capColour, state, worn.includes("sunglasses"), snow),
+      children: head(age, chin, capColour, state, worn.includes("sunglasses"), snow, hatAsset),
     },
+    ...(outfit ? [group(`translate(256 0) scale(${b.shoulder / 108} 1) translate(-256 0)`, [outfit])] : []),
     ...(worn.includes("scarf") ? [scarf(b, theme?.palette?.scarf)] : []),
     ...signs(age, state),
   ];
@@ -551,6 +578,8 @@ export function heinzelShapes({
 
 /** One shape as SVG markup, indented. */
 export function svgShape(shape: Shape, indent = "  "): string {
+  if (shape.kind === "image")
+    return `${indent}<image href="${shape.href}" x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}"/>`;
   if (shape.kind === "group")
     return [
       `${indent}<g transform="${shape.transform}">`,

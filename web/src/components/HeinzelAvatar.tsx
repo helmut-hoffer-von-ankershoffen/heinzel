@@ -63,6 +63,20 @@ function Parts({ shapes }: { shapes: Shape[] }) {
 }
 
 function Part({ shape }: { shape: Shape }) {
+  if (shape.kind === "image")
+    return (
+      <image
+        key={shape.href}
+        href={shape.href}
+        x={shape.x}
+        y={shape.y}
+        width={shape.width}
+        height={shape.height}
+        onError={(event) => {
+          event.currentTarget.style.display = "none";
+        }}
+      />
+    );
   if (shape.kind === "group")
     return (
       <g transform={shape.transform}>

@@ -163,6 +163,38 @@ scarf = "#b7daed"
 The palette changes the default hat, shirt and scarf. A person who chose a hat or shirt colour keeps that choice.
 Snow adds a cap patch (a baby keeps its bare head), static snow dots and a scarf, across ages, builds and states.
 A scarf already requested is drawn once. Selecting a theme without the table restores the original look immediately.
-Only these three hex-colour keys and the `snow` decoration are accepted. The theme list on the CLI, MCP and web
-includes the table, so an agent can inspect it too. This table styles core drawings; custom icon files and splash
-art are separate future work ([ADR 0064](adr/0064-themes-can-dress-the-core-heinzelmaennchen.md)).
+These three hex-colour keys and the `snow` decoration are checked. The theme list on the CLI, MCP and web includes
+the table, so an agent can inspect it too ([ADR 0064](adr/0064-themes-can-dress-the-core-heinzelmaennchen.md)).
+
+### Original theme artwork
+
+A theme may also ship its own SVG hat and outfit layers. Put their relative paths in the optional table:
+
+```toml
+[heinzel.assets]
+hat-young = "avatars/snow-small-cap.svg"
+hat-grown = "avatars/snow-medium-cap.svg"
+hat-old = "avatars/snow-tall-cap.svg"
+outfit-baby = "avatars/small-scarf.svg"
+outfit-young = "avatars/scarf.svg"
+outfit-grown = "avatars/scarf.svg"
+outfit-old = "avatars/scarf.svg"
+```
+
+Every slot is optional. Hats use `viewBox="0 -240 512 840"` in the head's own coordinates; outfits use
+`viewBox="0 0 512 860"` in the full figure's coordinates. The host scales hats with the head and outfits with shoulder
+width. Hat layers move with cap gestures. Outfit layers sit under explicit accessories. Keep the face and personal
+colours visible; these layers add clothing details rather than replacing the character. A baby has no hat slot.
+Use the five look choices and every state to review an asset before shipping it.
+
+Files must stay inside the theme directory, end in `.svg`, fit within 200 KB and pass the same SVG checks as logos.
+Scripts, event handlers, entities and external references are refused. Avatar layers must be static: use SVG
+presentation attributes, without SMIL animation, stylesheets or inline CSS, so reduced-motion preferences remain
+under the host's control. The host loads them as images and checks
+files again when resolving URLs or serving bytes. A missing or changed unsafe layer falls back to the original
+avatar. The theme listing's `heinzel_assets` contains only available, content-versioned same-origin URLs; the
+`heinzel.assets` file paths are omitted from listings. Selecting another theme updates mounted avatars immediately.
+
+Do not combine a scarf asset with the built-in `snow` decoration unless both are intentionally designed to layer.
+App/PWA, native notification, face and splash replacements remain future extensions; the existing white app icons
+stay in place. See [ADR 0073](adr/0073-themes-supply-safe-avatar-layers.md).

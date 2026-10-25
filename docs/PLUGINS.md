@@ -109,8 +109,9 @@ installing a plugin does not currently load a React bundle.
 | Soundscapes and earcons | Available | `module.soundscape`; checked assets or an allowed stream provider; [ADR 0058](adr/0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md) |
 | Avatar accessories in graphic widgets | Available | Checked accessory data; the host draws the character |
 | Dressing the user's own avatar | Proposed | A policy for selecting accessories across plugins, separate from a widget's own avatar |
-| Avatar palette and seasonal decorations | Proposed | Optional checked theme data, for example snow, retaining the person's look choices |
-| Theme avatar and face icon sets | Proposed | Per-state assets; fallback to core where an age, build, state or accessory is unsupported |
+| Avatar palette and seasonal decorations | Available | Optional checked theme data, for example snow, retaining the person's look choices |
+| Original avatar SVG layers | Available | Optional per-age hat/outfit files, checked like logos; missing slots fall back to core; [ADR 0073](adr/0073-themes-supply-safe-avatar-layers.md) |
+| Full avatar and face icon sets | Proposed | Per-state assets need an explicit supported-look/fixed-choice contract |
 | App, PWA and notification icon sets | Proposed | Validated source assets and generated required sizes; no remote asset URLs |
 | Splash artwork and dance | Proposed | A declared theme asset with reduced-motion fallback; no arbitrary startup JavaScript |
 | Terminal artwork | Host-owned today | Generated core art; a plugin artwork API needs a separate contract |
@@ -118,7 +119,7 @@ installing a plugin does not currently load a React bundle.
 A fictional winter theme can add a snow cap, falling snow and a scarf. It must preserve a readable face and accessible
 state labels. Supported personal choices remain age, beard, hat colour, shirt colour and build; a fixed artwork set
 must say which choices it cannot represent. Themes cannot supply executable SVG, scripts or uncontrolled CSS.
-The full asset-set contract remains proposed in ADR 0065; the palette/decorations implementation can ship separately.
+The full asset-set contract remains proposed in ADR 0065. Semantic avatar layers are available through ADR 0073.
 
 ## Background work, observability and content
 
