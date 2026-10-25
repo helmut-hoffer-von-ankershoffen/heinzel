@@ -78,6 +78,14 @@ from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_repo
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._git import (
+    GIT_HARDENING,
+    CommandFailed,
+    GitRunner,
+    RunGitCommand,
+    check_repository_url,
+    git_command,
+)
 from heinzel.kernel._identity import CallIdentity, CurrentUser, Principal
 from heinzel.kernel._installation import (
     CORE_DISTRIBUTION,
@@ -85,7 +93,7 @@ from heinzel.kernel._installation import (
     Installation,
     requirement_from_receipt,
 )
-from heinzel.kernel._jobs import CompiledJobs
+from heinzel.kernel._jobs import CompiledJobs, JobInactive
 from heinzel.kernel._kernel import Kernel, ModuleRecord, Origin
 from heinzel.kernel._layers import (
     Label,
@@ -123,6 +131,7 @@ from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifica
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
 from heinzel.kernel._paths import collapses, operation_path, owns_path, public_parameters
 from heinzel.kernel._playbooks import AssetType, ContractTemplate, DiscoveryHint, PlaybookLet, PlaybookSetup
+from heinzel.kernel._presence import Presence
 from heinzel.kernel._progress import Emit, Progress
 from heinzel.kernel._prompter import INTERRUPT, Prompter, ScriptedPrompter, ScriptExhausted
 from heinzel.kernel._protocols import (
@@ -246,6 +255,7 @@ __all__ = [
     "ENTRY_POINT_GROUP",
     "FILENAME",
     "FONT_ROUTE",
+    "GIT_HARDENING",
     "HEINZEL_ID",
     "HOWS",
     "ICONS",
@@ -289,6 +299,7 @@ __all__ = [
     "Chat",
     "Check",
     "CodeHost",
+    "CommandFailed",
     "CompiledJobs",
     "Config",
     "ConfigEditor",
@@ -319,6 +330,7 @@ __all__ = [
     "EventChange",
     "EventDraft",
     "FreeBusy",
+    "GitRunner",
     "GraphicWidget",
     "HealthLet",
     "HeinzelError",
@@ -327,6 +339,7 @@ __all__ = [
     "InfoLet",
     "Installation",
     "Issue",
+    "JobInactive",
     "JobLet",
     "Kernel",
     "Label",
@@ -379,6 +392,7 @@ __all__ = [
     "PlaybookLet",
     "PlaybookSetup",
     "PostedMessage",
+    "Presence",
     "Principal",
     "Progress",
     "ProgressWidget",
@@ -396,6 +410,7 @@ __all__ = [
     "Requirement",
     "RequirementLet",
     "RunCommand",
+    "RunGitCommand",
     "RunOperation",
     "RunStatus",
     "ScriptExhausted",
@@ -468,6 +483,7 @@ __all__ = [
     "WidgetLet",
     "Window",
     "boot",
+    "check_repository_url",
     "check_target",
     "clean_text",
     "collapses",
@@ -479,6 +495,7 @@ __all__ = [
     "font_stack_problem",
     "format_duration",
     "free_busy_people",
+    "git_command",
     "link_problem",
     "operation_path",
     "owns_path",

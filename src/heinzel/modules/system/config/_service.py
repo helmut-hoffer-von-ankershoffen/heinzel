@@ -14,7 +14,7 @@ from pydantic.fields import FieldInfo
 from pydantic_core import to_jsonable_python
 from tomlkit.exceptions import ParseError
 
-from heinzel import Config, ConfigEditor, HeinzelError, Kernel, ModuleSettings
+from heinzel import Config, ConfigEditor, CurrentUser, HeinzelError, Kernel, ModuleSettings
 from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, toml_value, user_config_dir
 from heinzel.modules.system.config._models import (
     ConfigFileInfo,
@@ -79,6 +79,7 @@ class ConfigService(ConfigEditor):
                 )
                 for section, settings in sections
                 for key, field in type(settings).model_fields.items()
+                if self._permitted(field)
             ],
         )
 
@@ -172,7 +173,8 @@ class ConfigService(ConfigEditor):
 
     def get(self, key: str) -> SettingInfo:
         """The setting `section.key` in effect, e.g. `hz.log_level` or `example.greeting`."""
-        section, name, _ = self._locate(key)
+        section, name, model = self._locate(key)
+        self._require(model.model_fields[name])
         return next(s for s in self.report().settings if s.section == section and s.key == name)
 
     def set(self, key: str, value: str, scope: Scope = "user") -> Path:
@@ -195,6 +197,7 @@ class ConfigService(ConfigEditor):
             HeinzelError: If the key is unknown or the value is invalid for it.
         """
         section, name, model = self._locate(key)
+        self._require(model.model_fields[name], write=True)
         parsed = _without_none(to_jsonable_python(value))
         if parsed is None:
             msg = f"TOML has no null; to let {key} take its default, run `hz system config unset {key}`."
@@ -217,7 +220,8 @@ class ConfigService(ConfigEditor):
         Raises:
             HeinzelError: If the key is unknown or not set in that file.
         """
-        section, name, _ = self._locate(key, old=True)
+        section, name, model = self._locate(key, old=True)
+        self._require(model.model_fields[name], write=True)
         path = self._scope_file(scope)
         document = _load(path)
         table = _table(document, section)
@@ -227,6 +231,21 @@ class ConfigService(ConfigEditor):
         del table[name]
         _save(path, document)
         return path
+
+    def _permitted(self, field: FieldInfo, *, write: bool = False) -> bool:
+        metadata = field.json_schema_extra
+        if not isinstance(metadata, dict) or not cast("dict[str, object]", metadata).get("x-private"):
+            return True
+        try:
+            identity = self._kernel.resolve(CurrentUser).context()
+        except HeinzelError:
+            return False
+        return ("private:write" if write else "private:read") in identity.permissions
+
+    def _require(self, field: FieldInfo, *, write: bool = False) -> None:
+        if not self._permitted(field, write=write):
+            msg = "This setting requires an authenticated private API, local CLI or stdio MCP connection"
+            raise HeinzelError(msg)
 
     def _locate(self, key: str, *, old: bool = False) -> tuple[str, str, type[ModuleSettings]]:
         """The section, field and model of `key`; with `old`, also a key under a renamed module's old table.

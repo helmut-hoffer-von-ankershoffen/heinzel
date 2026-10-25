@@ -20,7 +20,7 @@ def calls() -> list[str]:
 
 
 @pytest.fixture
-def kernel(make_kernel, calls):
+def kernel(make_kernel, settings, calls):
     module = Module("example", "Jobs for tests.")
 
     @module.job(schedule="* * * * *")
@@ -28,7 +28,8 @@ def kernel(make_kernel, calls):
         """Run every minute."""
         calls.append("minutely")
 
-    return make_kernel(builtins=True, example=module)
+    quiet = settings.model_copy(update={"disabled_modules": frozenset({"system.state"})})  # its job every 15 minutes
+    return make_kernel(builtins=True, settings_=quiet, example=module)
 
 
 def test_serve_daemon_prints_each_tick_as_a_json_line(kernel, monkeypatch, calls):

@@ -7746,6 +7746,58 @@
         "title": "PublishStatus",
         "type": "object"
       },
+      "Pushed": {
+        "description": "What a push carried to your personal state repository.",
+        "properties": {
+          "branch": {
+            "description": "This machine's writer branch.",
+            "title": "Branch",
+            "type": "string"
+          },
+          "commit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The branch's commit after the push; none when it is still empty.",
+            "title": "Commit"
+          },
+          "lines": {
+            "description": "New lines it carried.",
+            "title": "Lines",
+            "type": "integer"
+          },
+          "pushed": {
+            "description": "Whether anything went over the network; false when the branch was current.",
+            "title": "Pushed",
+            "type": "boolean"
+          },
+          "repository": {
+            "description": "Your personal state repository.",
+            "title": "Repository",
+            "type": "string"
+          },
+          "segments": {
+            "description": "Files those lines are in.",
+            "title": "Segments",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "repository",
+          "branch",
+          "lines",
+          "segments",
+          "commit",
+          "pushed"
+        ],
+        "title": "Pushed",
+        "type": "object"
+      },
       "Question": {
         "description": "An answerable, stored question; answering it grants no new permission.",
         "properties": {
@@ -9606,6 +9658,113 @@
         "title": "StackView",
         "type": "object"
       },
+      "StateStatus": {
+        "description": "Where this machine's state goes and how the last push went; asks nothing over the network.",
+        "properties": {
+          "branch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "This machine's writer branch, hz/<handle>/<machine>; none without a handle.",
+            "title": "Branch"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the last push failed.",
+            "title": "Error"
+          },
+          "failures": {
+            "default": 0,
+            "description": "Failed pushes since the last that worked.",
+            "title": "Failures",
+            "type": "integer"
+          },
+          "last_attempt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When a push was last tried.",
+            "title": "Last Attempt"
+          },
+          "last_push": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When a push last succeeded.",
+            "title": "Last Push"
+          },
+          "machine": {
+            "description": "This machine's id: random, never its host name.",
+            "title": "Machine",
+            "type": "string"
+          },
+          "next": {
+            "description": "What to run next, if anything.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "refused": {
+            "default": false,
+            "description": "Whether pushing stopped because the branch holds lines this machine didn't write.",
+            "title": "Refused",
+            "type": "boolean"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Your personal state repository; none when nothing leaves.",
+            "title": "Repository"
+          },
+          "streams": {
+            "description": "Each stream's lines.",
+            "items": {
+              "$ref": "#/components/schemas/StreamStatus"
+            },
+            "title": "Streams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "repository",
+          "branch",
+          "machine"
+        ],
+        "title": "StateStatus",
+        "type": "object"
+      },
       "Status": {
         "description": "Health of one check, or of everything: DOWN beats DEGRADED beats UP.",
         "enum": [
@@ -9878,6 +10037,33 @@
           "why"
         ],
         "title": "Step",
+        "type": "object"
+      },
+      "StreamStatus": {
+        "description": "One stream on this machine and what of it the state repository doesn't have yet.",
+        "properties": {
+          "lines": {
+            "description": "Lines this machine wrote.",
+            "title": "Lines",
+            "type": "integer"
+          },
+          "name": {
+            "description": "The stream: presence or adoption.",
+            "title": "Name",
+            "type": "string"
+          },
+          "pending": {
+            "description": "Lines the last push didn't carry yet.",
+            "title": "Pending",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "lines",
+          "pending"
+        ],
+        "title": "StreamStatus",
         "type": "object"
       },
       "SystemInfo": {
@@ -12201,6 +12387,18 @@
           "expected_revision"
         ],
         "title": "heinzel_profile_Input",
+        "type": "object"
+      },
+      "system_state_push_Input": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "system_state_push_Input",
+        "type": "object"
+      },
+      "system_state_reset_Input": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "system_state_reset_Input",
         "type": "object"
       }
     }
@@ -15298,6 +15496,112 @@
           }
         },
         "summary": "Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/state/push": {
+      "post": {
+        "description": "Push this machine's new presence and adoption lines to your personal state repository now.",
+        "operationId": "system_state_push",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_state_push_Input",
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Pushed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Push this machine's new presence and adoption lines to your personal state repository now.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/state/reset": {
+      "post": {
+        "description": "Start this machine's clone of its branch afresh after a refused push; the old one is kept aside.",
+        "operationId": "system_state_reset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/system_state_reset_Input",
+                "default": {}
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start this machine's clone of its branch afresh after a refused push; the old one is kept aside.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/state/status": {
+      "get": {
+        "description": "Show where this machine's state goes, what is still to push and how the last push went.",
+        "operationId": "system_state_status",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StateStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show where this machine's state goes, what is still to push and how the last push went.",
         "tags": [
           "system"
         ]
