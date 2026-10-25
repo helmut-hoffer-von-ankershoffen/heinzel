@@ -184,7 +184,7 @@ function Layout() {
           <main
             id="content"
             tabIndex={-1}
-            className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem)]"
+            className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]"
           >
             <Outlet />
           </main>
