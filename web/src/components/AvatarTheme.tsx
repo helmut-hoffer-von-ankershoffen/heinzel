@@ -8,7 +8,8 @@ const AvatarTheme = createContext<ThemeLook | undefined>(undefined);
 export function AvatarThemeProvider({ children }: { children: ReactNode }) {
   const themes = useThemes();
   const selected = themes.data?.themes.find((theme) => theme.name === themes.data?.selected);
-  return <AvatarTheme value={selected?.heinzel ?? undefined}>{children}</AvatarTheme>;
+  const value = selected?.heinzel ? { ...selected.heinzel, assets: selected.heinzel_assets } : undefined;
+  return <AvatarTheme value={value}>{children}</AvatarTheme>;
 }
 
 export const useAvatarTheme = () => useContext(AvatarTheme);

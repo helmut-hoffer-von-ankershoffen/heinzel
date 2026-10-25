@@ -495,6 +495,11 @@ def contrast_problems(colours: ThemeColours) -> list[str]:
     ]
 
 
+type AvatarSlot = Literal[
+    "hat-young", "hat-grown", "hat-old", "outfit-baby", "outfit-young", "outfit-grown", "outfit-old"
+]
+
+
 class ThemeHeinzel(BaseModel):
     """Checked colours and decorations for the core drawing; personal look choices stay in charge."""
 
@@ -504,6 +509,11 @@ class ThemeHeinzel(BaseModel):
         default_factory=dict[Literal["hat", "shirt", "scarf"], Colour],
         max_length=3,
         description="Colours for default hat, shirt and scarf parts.",
+    )
+    assets: dict[AvatarSlot, LogoFile] = Field(
+        default_factory=dict[AvatarSlot, LogoFile],
+        max_length=7,
+        description="Optional original SVG hat/outfit layers per age, relative to the theme file (ADR 0073).",
     )
     decorations: tuple[Literal["snow"], ...] = Field(
         default=(),
@@ -624,7 +634,45 @@ class ThemeLet(Let):
         if theme.logo:
             for file in theme.logo.files():
                 logo_file(self._directory(), file)
+        self._check_avatar_assets(theme)
         object.__setattr__(self, "theme", theme)
+
+    def _check_avatar_assets(self, theme: Theme) -> None:
+        if not theme.heinzel or not theme.heinzel.assets:
+            return
+        if self.directory is None:
+            msg = f"Theme {theme.name!r} ships avatar layers, so it must come from a theme file"
+            raise ValueError(msg)
+        for file in theme.heinzel.assets.values():
+            _read_avatar(self._directory(), file)
+
+    def avatar(self, name: str) -> bytes:
+        """The checked original SVG layer in a closed avatar slot.
+
+        Raises:
+            ValueError: If the slot is missing or its SVG no longer passes the logo-file checks.
+        """
+        assets = self.theme.heinzel.assets if self.theme.heinzel else {}
+        file = next((file for slot, file in assets.items() if slot == name), None)
+        if file is None:
+            msg = f"Theme {self.theme.name!r} has no avatar layer {name!r}"
+            raise ValueError(msg)
+        try:
+            return _read_avatar(self._directory(), file)
+        except OSError as exc:
+            msg = f"Theme {self.theme.name!r} avatar layer {name!r} changed while being read"
+            raise ValueError(msg) from exc
+
+    def avatar_urls(self) -> dict[str, str]:
+        """Safe content-versioned URLs for available avatar layers; absent or changed files use the core drawing."""
+        urls: dict[str, str] = {}
+        for slot in self.theme.heinzel.assets if self.theme.heinzel else ():
+            try:
+                version = hashlib.sha256(self.avatar(slot)).hexdigest()[:16]
+            except ValueError:
+                continue
+            urls[slot] = f"{LOGO_ROUTE}/{self.theme.name}/heinzel-{slot}.svg?v={version}"
+        return urls
 
     def logos(self) -> "ThemeLogoFiles | None":
         """The theme's logo files, to read and serve; None if it ships no logo."""
@@ -856,6 +904,25 @@ def read_logo(directory: Path, file: str) -> bytes:
     return content
 
 
+def _read_avatar(directory: Path, file: str) -> bytes:
+    """Checked static SVG bytes; CSS and SMIL cannot bypass the host's reduced-motion policy.
+
+    Raises:
+        ValueError: If the image fails the logo checks or includes styling/animation instructions.
+    """
+    content = read_logo(directory, file)
+    root = ET.fromstring(content)  # noqa: S314 - read_logo already refused DOCTYPE/entities and checked XML
+    for element in root.iter():
+        tag = _local(element.tag)
+        if tag.startswith("animate") or tag in {"set", "discard", "style"}:
+            msg = f"Avatar file {file!r} must be static SVG without animation or stylesheets"
+            raise ValueError(msg)
+        if any(_local(name) == "style" for name in element.attrib):
+            msg = f"Avatar file {file!r} must use SVG presentation attributes instead of inline styles"
+            raise ValueError(msg)
+    return content
+
+
 @dataclass(frozen=True, kw_only=True, slots=True)
 class ThemeLogoFiles:
     """The logo files of one theme where they are on disk: what the web head serves at `LOGO_ROUTE`."""
@@ -900,7 +967,7 @@ class ThemeFonts:
         raise NotImplementedError
 
     def logo(self, theme: str, name: str) -> bytes | None:
-        """The content of logo `name` (`light`, `dark`, `mark`) of the available theme `theme`, or None if none."""
+        """Checked logo or `heinzel-<slot>` avatar-layer bytes from an available theme, or None if absent."""
         raise NotImplementedError
 
 
