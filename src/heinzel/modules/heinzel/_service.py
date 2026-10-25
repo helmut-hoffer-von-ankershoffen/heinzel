@@ -712,10 +712,14 @@ class HeinzelService:
         """The next slot of a cron expression in local time, as the daemon reads it; none if it never fires."""
         now = self._clock().astimezone()
         try:
-            slot = croniter(schedule, now.replace(tzinfo=None)).get_next(datetime)
+            iterator = croniter(schedule, now.replace(tzinfo=None))
+            # Match the daemon: a repeated wall time runs once (fold0); a missing time shifts by the gap.
+            slot = iterator.get_next(datetime).replace(fold=0).astimezone()
+            while slot <= now:
+                slot = iterator.get_next(datetime).replace(fold=0).astimezone()
         except (CroniterBadDateError, ValueError):
             return None
-        return slot.replace(tzinfo=now.tzinfo)
+        return slot
 
     def show(self, name: str) -> CompiledContract:
         """A contract as the daemon runs it: schedule, requirements with their adapters, inputs, publishes, limits.

@@ -145,6 +145,7 @@ def test_a_session_is_kept_privately_and_lists_most_recent_first(store, settings
     assert oct((folder / "session.json").stat().st_mode & 0o777) == "0o600"
     assert second.title == "contract weekly"
     assert [s.id for s in store.sessions()] == [second.id, first.id]
+    assert [s.context for s in store.sessions()] == [second.context, None]
     assert store.load(second.id).context == second.context
 
 
@@ -361,6 +362,8 @@ def test_the_session_is_locked_while_the_agent_runs(service, store):
         ("system.config", "unset", {"key": "system.runner.chat.session_max_usd"}),
         ("system.config", "init", {"path": "/etc/passwd", "force": True}),
         ("system.config", "set", {"key": "heinzel.schedule_team", "value": '["team:payroll"]'}),
+        ("system.config", "set", {"key": "heinzel.retention_days", "value": "1"}),
+        ("system.config", "unset", {"key": " HEINZEL.retention-days "}),
         ("system.config", "set", {"key": "team.repository", "value": "https://example.org/other.git"}),
         ("system.daemon", "resume", {}),
         ("system.config", "set", {"key": "org.email", "value": "someone@example.org"}),
@@ -391,6 +394,12 @@ def test_a_setting_that_changes_nothing_that_runs_may_be_proposed(store, service
         command="hz system config set",
     )
     assert StoreGate(store, kernel).propose(proposal) == "a1"
+
+
+@pytest.mark.parametrize("operation", ["set", "unset"])
+@pytest.mark.parametrize("key", ["heinzel.retention_days", " HEINZEL.retention-days ", "heinzel.future_policy"])
+def test_heinzel_settings_are_guarded_even_without_registered_setting_metadata(operation, key):
+    assert refusal("system.config", operation, {"key": key}) is not None
 
 
 def test_what_the_person_reads_is_built_from_what_runs_and_only_parameters_run(service, store, seen):
