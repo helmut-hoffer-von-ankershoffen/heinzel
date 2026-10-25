@@ -678,17 +678,15 @@ def test_original_avatar_layers_have_owned_urls_and_safe_fallback(acme, tmp_path
     file = tmp_path / "hat.svg"
     file.write_text('<svg xmlns="http://www.w3.org/2000/svg"><circle r="8"/></svg>')
     theme_file = tmp_path / "winter.toml"
-    import tomli_w
-
+    colours = "\n".join(
+        f"[{mode}]\n"
+        + "\n".join(f"{key} = {json.dumps(value)}" for key, value in values.model_dump(exclude_none=True).items())
+        for mode, values in (("light", DEFAULT_THEME.light), ("dark", DEFAULT_THEME.dark))
+    )
     theme_file.write_text(
-        tomli_w.dumps(
-            DEFAULT_THEME.model_dump(exclude_none=True)
-            | {
-                "name": "winter",
-                "title": "Winter",
-                "heinzel": {"assets": {"hat-grown": "hat.svg"}},
-            }
-        )
+        'name = "winter"\ntitle = "Winter"\nfont_sans = "system-ui, sans-serif"\n'
+        'font_mono = "monospace"\nborder_width = "1px"\n[heinzel.assets]\nhat-grown = "hat.svg"\n' + colours,
+        encoding="utf-8",
     )
     winter = Module("winter", "Winter artwork.")
     winter.theme(theme_file)
