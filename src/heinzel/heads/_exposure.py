@@ -10,12 +10,15 @@ MCP_STDIO = "mcp-stdio"
 """An operation's `heads` entry for MCP over stdio only: the client started the server as you, while streamable HTTP
 MCP (head `mcp-http`) has no authentication, so whatever can reach its port could call it (ADR 0047)."""
 MCP_HTTP = "mcp-http"
+API_PRIVATE = "api-private"
 
 
 def restricts(heads: frozenset[str] | None, head: str) -> bool:
     """Whether `heads` leaves `head` out. `mcp` in `heads` covers both MCP transports, `mcp-stdio` only stdio."""
     if heads is None or head in heads:
         return False
+    if head == API_PRIVATE:
+        return "api" not in heads
     if head == MCP_HTTP:
         return "mcp" not in heads
     if head == "mcp":
@@ -50,6 +53,8 @@ def exposed(kernel: Kernel, head: str) -> list[Exposed]:
     """
     result: list[Exposed] = []
     for record, operation in kernel.lets(OperationLet):
+        if operation.private and head in {"api", MCP_HTTP}:
+            continue
         if not kernel.available(operation.func) or restricts(operation.heads, head):
             continue
         signature = operation.signature()
@@ -65,4 +70,14 @@ def exposed(kernel: Kernel, head: str) -> list[Exposed]:
     return result
 
 
-__all__ = ["MCP_HTTP", "MCP_STDIO", "Exposed", "collapses", "exposed", "owns_path", "public_parameters", "restricts"]
+__all__ = [
+    "API_PRIVATE",
+    "MCP_HTTP",
+    "MCP_STDIO",
+    "Exposed",
+    "collapses",
+    "exposed",
+    "owns_path",
+    "public_parameters",
+    "restricts",
+]

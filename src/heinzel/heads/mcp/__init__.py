@@ -25,7 +25,7 @@ from pydantic_core import to_jsonable_python
 from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
 from heinzel.heads.mcp._skills import add_skills
-from heinzel.kernel import ActionGate, HeinzelError, Kernel, ProposedCall, boot, redact_emails
+from heinzel.kernel import ActionGate, CurrentUser, HeinzelError, Kernel, ProposedCall, boot, redact_emails
 
 HEAD = "mcp"
 log = logging.getLogger(__name__)
@@ -68,13 +68,15 @@ def build(
     items = exposed(kernel, HEAD if transport == "stdio" else MCP_HTTP)
     names = {item.name for item in items}
     for item in items:
+        if chat is not None and item.operation.private:
+            continue  # Private session data is granted by the durable engine, never ambient chat tools.
         if chat is not None and chat_tools == "everyday" and item.operation.audience != "everyday":
             continue
         annotations = ToolAnnotations(
             read_only_hint=item.operation.read_only, destructive_hint=not item.operation.read_only
         )
         server.add_tool(
-            tool(kernel, item) if chat is None else chat_tool(kernel, item, chat),
+            tool(kernel, item, local=transport == "stdio") if chat is None else chat_tool(kernel, item, chat),
             name=item.name,
             description=item.operation.summary,
             annotations=annotations,
@@ -86,7 +88,7 @@ def build(
                 continue
             names.add(alias)
             server.add_tool(
-                _signed(tool(kernel, item), item, item.returns, name=alias),
+                _signed(tool(kernel, item, local=transport == "stdio"), item, item.returns, name=alias),
                 name=alias,
                 description=f"Deprecated: use `{item.name}`, which this runs; goes in the next minor release. "
                 f"{item.operation.summary}",
@@ -97,12 +99,15 @@ def build(
     return server
 
 
-def tool(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
+def tool(kernel: Kernel, item: Exposed, *, local: bool = True) -> Callable[..., Any]:
     """A function with the operation's public signature that runs it through the kernel."""
+    # Resolve once at server construction, before concurrent tool calls can race lazy service creation.
+    user = kernel.resolve(CurrentUser)
 
     def run(**kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
         try:
-            return kernel.invoke(item.operation, **kwargs)
+            with user.local("mcp-stdio") if local else user.using(None):
+                return kernel.invoke(item.operation, **kwargs)
         except HeinzelError as exc:
             raise ToolError(str(exc)) from exc
 

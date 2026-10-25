@@ -69,6 +69,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0061](0061-plugins-ship-skills-every-ai-path-can-use.md) | Plugins ship skills every AI path can use: `module.skill(...)`, read-only tools, an explicit export | proposed | 2026-10-24 |
 | [0065](0065-plugins-may-ship-versioned-react-views.md) | Plugins may ship versioned React views alongside their Python declarations | proposed | 2026-10-25 |
 | [0067](0067-hz-owns-sessions-across-pydantic-and-native-cli-turns.md) | hz owns sessions across Pydantic and native CLI turns | proposed | 2026-10-25 |
+| [0068](0068-human-approval-proofs-and-head-parity.md) | Human approval is a scoped proof carriable by every authorized head | proposed | 2026-10-25 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends

@@ -165,6 +165,7 @@ class Module:
         *,
         name: str | None = None,
         read_only: bool = True,
+        private: bool = False,
         render: Callable[[Any], RenderableType] | None = None,
         exit_code: Callable[[Any], int] | None = None,
         heads: Iterable[str] | None = None,
@@ -181,6 +182,7 @@ class Module:
         *,
         name: str | None = None,
         read_only: bool = True,
+        private: bool = False,
         render: Callable[[Any], RenderableType] | None = None,
         exit_code: Callable[[Any], int] | None = None,
         heads: Iterable[str] | None = None,
@@ -195,6 +197,7 @@ class Module:
             func: The function, when used as a bare decorator.
             name: Operation name; defaults to the function name with underscores as dashes.
             read_only: False if the operation changes state; heads use this for confirmations and HTTP verbs.
+            private: Require authenticated call identity; never expose on unauthenticated network heads.
             render: How human-facing heads present the result; the JSON form is the default.
             exit_code: Maps the result to an exit code for heads that have one; 0 when not given.
             heads: Restrict the operation to these heads, e.g. `{"cli"}` for interactive ones; all heads by default.
@@ -230,6 +233,7 @@ class Module:
                     func=target,
                     summary=summary.splitlines()[0],
                     read_only=read_only,
+                    private=private,
                     render=render,
                     exit_code=exit_code,
                     heads=frozenset(heads) if heads is not None else None,
