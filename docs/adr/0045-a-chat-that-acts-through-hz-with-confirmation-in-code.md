@@ -192,5 +192,5 @@ terminal under it (each alone when the other is closed); it sits beside the scre
 30rem next to it, and below the screen, the same stack across the width, when the window is narrower; never both, and
 no overlay. Home shows "Today" in the main area and opens the panel; its cards start a chat about themselves in it. The
 panel's header switches between sessions (`hz chat list`), the Workshop (a session about nothing in particular) and a
-new chat; its list groups items by kind, so the durable Heinzelmännchen of ADR 0049 become one more group. Nothing about
+new chat; its list groups items by kind, so the durable Heinzelmännchen of ADR 0049 become one more group. Amended: the list leads with your Heinzelmännchen, each with its own conversation, then "Ask hz" and "Earlier questions" (started chats only), and "+" opens a chat to create a new Heinzelmännchen. Nothing about
 sessions, tools or confirmation changes.

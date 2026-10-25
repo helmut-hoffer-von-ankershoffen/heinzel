@@ -23,7 +23,7 @@ export type SwitcherGroup = { label: string; items: SwitcherItem[] };
 
 /** What "New Heinzelmännchen" opens the chat about: the agent asks, then proposes `heinzel_new` for you to confirm. */
 export const NEW_HEINZEL =
-  "text:the person wants a new Heinzelmännchen. They say what it should keep true in one sentence, or pick a template from heinzel_playbooks; then heinzel_new writes it, once they confirm.";
+  "text:the person wants a new Heinzelmännchen. They name it and say what it should keep true, or pick a template from heinzel_playbooks; heinzel_new then creates a starter or the template once they confirm, and they edit the contract from there.";
 
 const qualified = (heinzel: SchemaHeinzelSummary) => `${heinzel.namespace}:${heinzel.name}`;
 
@@ -49,7 +49,7 @@ export function switcherGroups(
   }));
   const ask: SwitcherItem = { kind: "ask", id: "ask", title: t("chat.ask") };
   const earlier: SwitcherItem[] = sessions
-    .filter((session) => !mine.has(heinzelOf(session.context) ?? ""))
+    .filter((session) => !mine.has(heinzelOf(session.context) ?? "") && (session.messages > 0 || session.pending > 0))
     .map((session) => ({
       kind: "session",
       id: session.id,

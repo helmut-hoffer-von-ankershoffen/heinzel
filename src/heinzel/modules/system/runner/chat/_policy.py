@@ -33,7 +33,8 @@ GUARDED_SETTINGS = (
     "system.runner.",
     "system.credential.",
     "system.daemon.",
-    "workflow.",
+    "heinzel.",
+    "workflow.",  # the section's old name
     "team.",
     "system.agent.",
     "system.changelog.",

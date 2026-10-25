@@ -175,6 +175,9 @@ describe("The chat's switcher of Heinzelmännchen", () => {
     // A session about a contract you no longer have is an earlier question, not a Heinzelmännchen.
     const gone = switcherGroups([{ ...weekly, context: contract("me:gone") }], [], "");
     expect(gone.map((group) => group.label)).toEqual(["Questions", "Earlier questions"]);
+    // An opened chat nobody wrote in yet is not an earlier question.
+    const unstarted = { ...weekly, context: contract("me:gone"), messages: 0 };
+    expect(switcherGroups([unstarted], [], "").map((group) => group.label)).toEqual(["Questions"]);
     expect([heinzelOf(contract("me:x")), heinzelOf({ kind: "route", ref: "/", detail: "" }), heinzelOf(null)]).toEqual([
       "me:x",
       null,

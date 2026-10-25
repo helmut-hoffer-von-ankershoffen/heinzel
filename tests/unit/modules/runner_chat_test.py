@@ -362,6 +362,7 @@ def test_the_session_is_locked_while_the_agent_runs(service, store):
         ("system.config", "unset", {"key": "system.runner.chat.session_max_usd"}),
         ("system.config", "init", {"path": "/etc/passwd", "force": True}),
         ("system.config", "set", {"key": "heinzel.schedule_team", "value": '["team:payroll"]'}),
+        ("system.config", "set", {"key": "heinzel.retention_days", "value": "1"}),
         ("system.config", "set", {"key": "team.repository", "value": "https://example.org/other.git"}),
         ("system.daemon", "resume", {}),
         ("system.config", "set", {"key": "org.email", "value": "someone@example.org"}),

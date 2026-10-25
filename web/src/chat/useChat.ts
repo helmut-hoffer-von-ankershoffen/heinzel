@@ -51,9 +51,13 @@ export function useChat() {
     [client],
   );
 
+  const opening = useRef(new Set<string>());
+
   /** A new session about `context` (`event:<id>`, `route:/doctor`), with what the opener knows in `detail`. */
   const openAbout = useCallback(
     async (context: string, detail?: string) => {
+      if (opening.current.has(context)) return; // a second click while it opens would open a second session
+      opening.current.add(context);
       shown.current += 1; // another conversation from now on, as `leave` below
       setLive(null);
       setError(null);
@@ -63,6 +67,8 @@ export function useChat() {
         void client.invalidateQueries({ queryKey: chatListKey });
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : String(reason));
+      } finally {
+        opening.current.delete(context);
       }
     },
     [adopt, client],
