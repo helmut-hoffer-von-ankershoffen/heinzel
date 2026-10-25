@@ -1240,6 +1240,7 @@ $ hz system config [OPTIONS] COMMAND [ARGS]...
 * `get`: (expert) Show one setting in effect, with...
 * `init`: (expert) Write a configuration file with...
 * `reveal`: (expert) Show a configuration file in...
+* `reveal-setting`: (expert) Show the file or folder a path...
 * `set`: (expert) Change a setting in the user or...
 * `show`: (expert) Show the configuration files...
 * `unset`: (expert) Remove a setting from the user or...
@@ -1295,6 +1296,26 @@ $ hz system config reveal [OPTIONS] {scope}:<site|user|project>
 **Arguments**:
 
 * `scope:<site|user|project>`: Which configuration file: site, user or project.  [required]
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system config reveal-setting`
+
+(expert) Show the file or folder a path setting names, such as hz.log_dir, in your file manager.
+
+**Usage**:
+
+```console
+$ hz system config reveal-setting [OPTIONS] {key}
+```
+
+**Arguments**:
+
+* `key`: Setting as section.key, e.g. hz.log_level or example.greeting.  [required]
 
 **Options**:
 

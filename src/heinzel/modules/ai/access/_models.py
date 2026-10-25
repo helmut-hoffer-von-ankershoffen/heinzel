@@ -22,55 +22,89 @@ class AccessSettings(ModuleSettings):
     repository someone else controls must not decide what runs on your machine.
     """
 
+    section_title: ClassVar[str | None] = "AI access"  # the heading in Settings
+
     gateway_title: str = Field(
-        default="Company AI gateway", max_length=64, description="What people pick the gateway by, e.g. `Acme AI`."
+        default="Company AI gateway",
+        max_length=64,
+        title="Gateway name",
+        description="What people pick your company's AI gateway by.",
+        examples=["Example AI"],
+        json_schema_extra={"x-expert": True},
     )
     gateway_summary: str = Field(
         default="Your company's AI gateway CLI, set up in [ai.access].",
         max_length=200,
+        title="Gateway summary",
         description="One sentence on how the gateway reaches AI.",
+        json_schema_extra={"x-expert": True},
     )
     gateway_status_command: list[str] = Field(
         default_factory=list[str],
-        description="Says whether you are signed in without calling a model: exit code 0 when signed in, and "
-        'optionally a JSON object on stdout, `{"signed_in": true, "models": ["..."], "detail": "..."}`; e.g. '
-        '`["acme", "ai", "status", "--json"]`. Unset: the gateway isn\'t set up.',
+        title="Status command",
+        description="The command, one argument per item, that says whether you are signed in "
+        "without calling a model: exit code 0 when signed in, optionally with a JSON "
+        "object on its output naming signed_in, models and detail. The gateway isn't "
+        "set up until this is.",
+        examples=[["example", "ai", "status", "--json"]],
+        json_schema_extra={"x-expert": True},
     )
     gateway_test_command: list[str] = Field(
         default_factory=list[str],
-        description="One cheap live call, run only by `hz ai access test --name gateway`: exit code 0 when it "
-        "answered, and "
-        'optionally a JSON object, `{"ok": true, "detail": "...", "model": "...", "cost_usd": 0.001}`; e.g. '
-        '`["acme", "ai", "ping"]`.',
+        title="Test command",
+        description="One cheap live call, one argument per item, run only when you test the "
+        "gateway: exit code 0 when it answered, optionally with a JSON object naming "
+        "ok, detail, model and cost_usd.",
+        examples=[["example", "ai", "ping"]],
+        json_schema_extra={"x-expert": True},
     )
     gateway_sign_in: str = Field(
-        default="", max_length=200, description="The command that signs you in, shown as the fix, e.g. `acme login`."
+        default="",
+        max_length=200,
+        title="Sign-in command",
+        description="The command that signs you in, shown as the fix when you aren't.",
+        examples=["example login"],
+        json_schema_extra={"x-expert": True},
     )
     gateway_runner: str | None = Field(
         default=None,
         pattern=ADAPTER_PATTERN,
-        description="The agent runner that serves the gateway's chat and coding uses, e.g. `command` with "
-        "`[system.runner] command` set to the gateway's agent CLI; `hz ai access use gateway` binds it.",
+        title="Gateway's agent runner",
+        description="The agent runner that serves the gateway's chat and coding, such as your own "
+        "command runner set to the gateway's agent CLI. Choosing the gateway as your "
+        "AI access binds it.",
+        json_schema_extra={"x-expert": True},
     )
     gateway_hosts: list[str] = Field(
         default_factory=list[str],
-        description="Hosts the gateway sends prompts to, as host names or URLs, e.g. `ai.acme.example`; shown in the "
-        "listing and the capability matrix.",
+        title="Gateway hosts",
+        description="The hosts the gateway sends prompts to, as host names or addresses; shown "
+        "wherever AI access is listed.",
+        examples=["ai.example.com"],
+        json_schema_extra={"x-expert": True},
     )
     gateway_models: list[str] = Field(
-        default_factory=list[str], description="Models the gateway offers, when its status command doesn't say."
+        default_factory=list[str],
+        title="Gateway models",
+        description="The models the gateway offers, when its status command doesn't say.",
+        json_schema_extra={"x-expert": True},
     )
     gateway_env: list[str] = Field(
         default_factory=list[str],
-        description="Environment variables passed to the gateway's commands besides PATH, HOME, LANG, LC_* and "
-        "TMPDIR; HZ_CREDENTIAL_* variables are never passed.",
+        title="Variables passed to the gateway",
+        description="Environment variables the gateway's commands get besides PATH, HOME, LANG, "
+        "LC_* and TMPDIR. Heinzelmännchen's credential variables are never passed.",
+        json_schema_extra={"x-expert": True},
     )
 
     model: str | None = Field(
         default=None,
         pattern=r"^[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._:/@-]*$",
-        description="The model of the `pydantic-ai` option, as Pydantic AI names it, `<vendor>:<model>`, e.g. "
-        "`anthropic:claude-sonnet-4-5`; its key is the credential `ai.access/api-key` or the vendor's variable.",
+        title="Pydantic AI model",
+        description="The model Pydantic AI uses, as vendor:model; its key is the credential "
+        "ai.access/api-key or the vendor's own variable.",
+        examples=["anthropic:claude-sonnet-4-5"],
+        json_schema_extra={"x-expert": True},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(

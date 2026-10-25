@@ -6671,7 +6671,7 @@
             "title": "Default"
           },
           "description": {
-            "description": "What the setting controls.",
+            "description": "What the setting controls, in plain words.",
             "title": "Description",
             "type": "string"
           },
@@ -6703,6 +6703,18 @@
             "title": "Section",
             "type": "string"
           },
+          "section_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What Settings calls the setting's section: its settings model's section_title; none without one.",
+            "title": "Section Title"
+          },
           "source": {
             "default": "default",
             "description": "Where the value in effect comes from: `default`, a file's scope (`site`, `user`, `project`, `explicit`) or `env`.",
@@ -6722,6 +6734,46 @@
           "description"
         ],
         "title": "SettingInfo",
+        "type": "object"
+      },
+      "SettingRevealed": {
+        "description": "What `hz system config reveal-setting` did.",
+        "properties": {
+          "key": {
+            "description": "The setting, as section.key.",
+            "title": "Key",
+            "type": "string"
+          },
+          "message": {
+            "description": "What happened, or why nothing did, with the path.",
+            "title": "Message",
+            "type": "string"
+          },
+          "opened": {
+            "description": "Whether the file manager was opened.",
+            "title": "Opened",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "The file or folder it names.",
+            "format": "path",
+            "title": "Path",
+            "type": "string"
+          },
+          "supported": {
+            "description": "Whether this machine has a file manager hz can open.",
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "path",
+          "supported",
+          "opened",
+          "message"
+        ],
+        "title": "SettingRevealed",
         "type": "object"
       },
       "Skill": {
@@ -10152,6 +10204,51 @@
           }
         },
         "summary": "Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/config/reveal-setting": {
+      "post": {
+        "description": "Show the file or folder a path setting names, such as hz.log_dir, in your file manager.\n\nA folder opens; a file is selected, never opened. On Linux without a desktop session nothing opens and the\nmessage names the path.",
+        "operationId": "system_config_reveal_setting",
+        "parameters": [
+          {
+            "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingRevealed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the file or folder a path setting names, such as hz.log_dir, in your file manager.",
         "tags": [
           "system"
         ]

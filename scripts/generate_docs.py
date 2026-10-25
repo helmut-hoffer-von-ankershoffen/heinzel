@@ -34,6 +34,7 @@ from heinzel.heads.cli._chat import command_words
 from heinzel.kernel import Origin, discover, env_prefix, walk
 from heinzel.modules.graph import TeamGraphDocument
 from heinzel.modules.heinzel._models import SCHEMA_VERSION, Frontmatter
+from heinzel.modules.system.config._schema import reference_hints, setting_schemas
 from heinzel.modules.system.plugin._service import FIRST_PARTY
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,6 +98,8 @@ def configuration_reference() -> str:
     """Every setting as a table per section."""
     lines = [CONFIGURATION_HEADER]
     for section, settings in kernel().settings_of():
+        schemas = setting_schemas(type(settings))
+        user_only = type(settings).ignored_in_project
         lines += [
             f"## `[{section}]`",
             "",
@@ -105,7 +108,10 @@ def configuration_reference() -> str:
         ]
         for key, field in type(settings).model_fields.items():
             default = "platform-specific" if field.default is PydanticUndefined else f"`{_default(field.default)}`"
-            lines.append(f"| `{key}` | `{env_prefix(section)}{key.upper()}` | {default} | {field.description or ''} |")
+            text = (field.description or "") + reference_hints(schemas.get(key))
+            if key in user_only and "project" not in text:
+                text += " Never read from a project's hz.toml."
+            lines.append(f"| `{key}` | `{env_prefix(section)}{key.upper()}` | {default} | {text.replace('|', '\\|')} |")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 

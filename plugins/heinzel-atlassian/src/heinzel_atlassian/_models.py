@@ -36,17 +36,27 @@ class AtlassianSettings(ModuleSettings):
 
     site_url: str | None = Field(
         default=None,
-        description="The Atlassian Cloud site acli is logged in to, `https://<site>.atlassian.net`: issue and page "
-        "links are built on it, and page URLs must name it. Only the site, user and HZ_CONFIG files and the "
-        "environment can set it, never a project hz.toml.",
+        title="Atlassian site",
+        description="The Atlassian Cloud site you are signed in to with the Atlassian CLI; links "
+        "to issues and pages are built on it. Only your own settings can set it, "
+        "never a project's.",
+        examples=["https://example.atlassian.net"],
+        json_schema_extra={"format": "uri"},
     )
     acli: str = Field(
         default="acli",
-        description="Atlassian's CLI: a name looked up on PATH (only absolute PATH entries count) or an absolute "
-        "path. Never read from a project hz.toml.",
+        title="Atlassian CLI",
+        description="The Atlassian CLI to run: a name found on your PATH, or the full path to it. "
+        "Never read from a project's settings.",
+        json_schema_extra={"x-expert": True},
     )
     timeout: float = Field(
-        default=60.0, gt=0, le=600, description="Seconds to wait for each acli command before stopping it."
+        default=60.0,
+        gt=0,
+        le=600,
+        title="Time limit",
+        description="How long to wait for each Atlassian CLI command before stopping it.",
+        json_schema_extra={"x-expert": True, "x-unit": "seconds"},
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"site_url", "acli", "timeout"})
