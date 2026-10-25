@@ -1161,6 +1161,18 @@
         "title": "Avatar",
         "type": "object"
       },
+      "AvatarSlot": {
+        "enum": [
+          "hat-young",
+          "hat-grown",
+          "hat-old",
+          "outfit-baby",
+          "outfit-young",
+          "outfit-grown",
+          "outfit-old"
+        ],
+        "type": "string"
+      },
       "BackendBinding": {
         "description": "The effective choice pinned to a turn; changing it takes effect between turns.",
         "properties": {
@@ -10603,6 +10615,20 @@
         "additionalProperties": false,
         "description": "Checked colours and decorations for the core drawing; personal look choices stay in charge.",
         "properties": {
+          "assets": {
+            "additionalProperties": {
+              "maxLength": 200,
+              "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.svg$",
+              "type": "string"
+            },
+            "description": "Optional original SVG hat/outfit layers per age, relative to the theme file (ADR 0073).",
+            "maxProperties": 7,
+            "propertyNames": {
+              "$ref": "#/components/schemas/AvatarSlot"
+            },
+            "title": "Assets",
+            "type": "object"
+          },
           "decorations": {
             "default": [],
             "description": "Optional decoration of every core avatar; snow adds a cap patch and scarf.",
@@ -11213,6 +11239,14 @@
               }
             ],
             "description": "Core avatar colours and decorations."
+          },
+          "heinzel_assets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Available checked avatar layers as versioned same-origin URLs.",
+            "title": "Heinzel Assets",
+            "type": "object"
           },
           "icon_size": {
             "description": "The size of icons (`--icon-size`), e.g. `18px`.",

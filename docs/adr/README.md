@@ -172,5 +172,5 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 | [0063](0063-world-clock-is-a-local-interactive-globe.md) | World Clock is a local interactive globe in the right panel | proposed | 2026-10-25 |
 | [0064](0064-themes-can-dress-the-core-heinzelmaennchen.md) | Themes can dress the core Heinzelmännchen with a palette and snow | proposed | 2026-10-25 |
 | [0071](0071-text-branding-uses-the-name-and-original-artwork.md) | Text branding uses the name and original artwork | proposed | 2026-10-25 |
-
+| [0073](0073-themes-supply-safe-avatar-layers.md) | Themes supply safe SVG layers for personal avatars | proposed | 2026-10-25 |
 | [0081](0081-state-repositories-one-writer-per-branch-the-daemon-pushes.md) | State repositories: one writer per branch, append-only segments, the daemon pushes | proposed | 2026-10-25 |
