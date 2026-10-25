@@ -229,6 +229,7 @@ class ThemeService(ThemeFonts, ThemeChoice):
                     fonts=_fonts(offered),
                     logo=_logo(offered.logos),
                     variant=list(offered.theme.variant),
+                    heinzel=offered.theme.heinzel,
                     shadows=offered.shadows,
                 )
                 for name, offered in available.themes.items()

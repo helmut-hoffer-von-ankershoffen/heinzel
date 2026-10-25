@@ -145,3 +145,24 @@ dark = { main_tint = "#1e293b", backdrop = { gradient = "linear", angle = 180, s
 
 Animated wallpapers (drifting clouds, falling rain and snow, stars at night) come with layered wallpapers, the next
 step of ADR 0060's More Information.
+
+## Dressing the core Heinzelmännchen
+
+A theme can decorate the original drawing without replacing personal choices. Add this optional table to its TOML:
+
+```toml
+[heinzel]
+decorations = ["snow"]
+
+[heinzel.palette]
+hat = "#dceaf5"
+shirt = "#386387"
+scarf = "#b7daed"
+```
+
+The palette changes the default hat, shirt and scarf. A person who chose a hat or shirt colour keeps that choice.
+Snow adds a cap patch (a baby keeps its bare head), static snow dots and a scarf, across ages, builds and states.
+A scarf already requested is drawn once. Selecting a theme without the table restores the original look immediately.
+Only these three hex-colour keys and the `snow` decoration are accepted. The theme list on the CLI, MCP and web
+includes the table, so an agent can inspect it too. This table styles core drawings; custom icon files and splash
+art are separate future work ([ADR 0064](adr/0064-themes-can-dress-the-core-heinzelmaennchen.md)).

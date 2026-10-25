@@ -5,7 +5,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
-from heinzel import ModuleSettings, ThemeColours, ThemeVariant
+from heinzel import ModuleSettings, ThemeColours, ThemeHeinzel, ThemeVariant
 from heinzel.kernel import Daypart, Weather
 
 NAME_PATTERN = r"^[a-z](?:-?[a-z0-9])*$"
@@ -79,6 +79,7 @@ class ThemeView(BaseModel):
         default_factory=list[ThemeFontView], description="Font files the theme ships, for the web app to load."
     )
     logo: ThemeLogoView | None = Field(default=None, description="The theme's logo; none if it ships none.")
+    heinzel: ThemeHeinzel | None = Field(default=None, description="Core avatar colours and decorations.")
     variant: list[ThemeVariant] = Field(
         default_factory=list[ThemeVariant],
         description="Colours that apply when the signals match (ADR 0060); the one naming most signals wins.",
