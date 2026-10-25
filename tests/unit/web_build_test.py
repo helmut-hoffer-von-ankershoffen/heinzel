@@ -37,6 +37,7 @@ def test_the_node_the_build_uses_is_the_one_uv_lock_has():
     name, version = build.NODE_REQUIREMENT.split("==")
     assert LOCKED[name] == version
     assert PACKAGE["engines"]["node"] == version
+    assert PACKAGE["devDependencies"]["@types/node"].split(".")[0] == version.split(".")[0]
     assert f'"{build.NODE_REQUIREMENT}"' in (REPO / "scripts" / "web_build.py").read_text(encoding="utf-8")
 
 
