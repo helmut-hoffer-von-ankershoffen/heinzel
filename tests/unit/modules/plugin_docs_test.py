@@ -1,6 +1,7 @@
 """`system.plugin.docs`: the model of what a plugin brings, read from the kernel, and the pages written from it."""
 
 import os
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
@@ -437,6 +438,21 @@ def test_build_writes_pages_swatches_and_the_gallery_then_check_reports_stale_on
     assert (stale.stale, stale.written, stale.stale_pages) == (True, [], ["heinzel-weather/index.md"])
     assert stale.next == [f"hz system plugin docs build --directory {tmp_path}"]
     assert (tmp_path / "heinzel-weather" / "index.md").read_text(encoding="utf-8") == "stale"  # check writes nothing
+
+
+def test_new_documentation_files_and_directories_start_private(documentation, tmp_path):
+    directory = tmp_path / "generated"
+    previous = os.umask(0)
+    try:
+        result = _build.build_pages(documentation, directory, index=True, check=False)
+    finally:
+        os.umask(previous)
+    assert result.written
+    assert all(stat.S_IMODE((directory / relative).stat().st_mode) == 0o600 for relative in result.written)
+    assert all(
+        stat.S_IMODE(path.stat().st_mode) == 0o700
+        for path in (directory, directory / "heinzel-weather", directory / "heinzel-weather/assets")
+    )
 
 
 def test_a_missing_directory_is_stale_so_a_fresh_plugin_runs_make_fix_first(documentation, tmp_path):

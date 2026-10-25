@@ -691,7 +691,7 @@ def output_directory(path: Path) -> Iterator[int]:
     try:
         for part in absolute.parts[1:]:
             with contextlib.suppress(FileExistsError):
-                os.mkdir(part, dir_fd=descriptor)
+                os.mkdir(part, mode=0o700, dir_fd=descriptor)
             child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
             os.close(descriptor)
             descriptor = child
@@ -720,7 +720,7 @@ def export_asset(source: Path, destination: Path, parent: int, limit: int) -> No
         msg = "A recording changed beyond its size limit before export"
         raise RecordError(msg)
     temporary = f".hz-docs-{os.urandom(16).hex()}.tmp"
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=parent)
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
     try:
         with os.fdopen(descriptor, "wb") as stream:
             stream.write(data)

@@ -87,7 +87,8 @@ from the code, no plugin writes tooling, and a private plugin gets the same page
   and endpoints, then settings, credentials, capabilities, theme swatches (SVG written beside the page from the
   colours, light and dark), playbooks, jobs, layers, and the lets the renderer has no section for. A `README.md` in
   `OUT` lists the pages built. One shared writer validates the complete plan, refuses custom files and links, and
-  rechecks generated markers on the actual no-follow descriptors. Recording inputs are bounded regular files;
+  rechecks generated markers on the actual no-follow descriptors. New files and directories start owner-only before
+  deliberate publication. Recording inputs are bounded regular files;
   linked transcripts cannot copy outside content into a page. In the core, `scripts/generate_docs.py` writes that gallery instead, adding the
   plugins the core knows of but doesn't ship: the reference company and `docs/plugins/registry.toml`, a list
   community repositories add themselves to (repository data, so core-only). `--check` reports the pages that differ

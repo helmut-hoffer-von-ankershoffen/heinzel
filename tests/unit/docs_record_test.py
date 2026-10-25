@@ -111,3 +111,24 @@ def test_verified_recordings_export_across_filesystems_without_leaving_temporary
     assert {path.name for path in exported} == {"scene.gif", "scene.png"}
     assert all(path.read_bytes() == b"verified media" for path in exported)
     assert sorted(target.parent.iterdir()) == sorted(exported)
+
+
+def test_new_recording_files_and_directories_start_private(tmp_path, monkeypatch):
+    video = tmp_path / "input.mp4"
+    video.write_bytes(b"source")
+    target = tmp_path / "private" / "assets" / "scene"
+
+    def encode(command, **_kwargs):
+        Path(command[-1]).write_bytes(b"verified media")
+        return ""
+
+    monkeypatch.setattr(recorder, "run", encode)
+    previous = recorder.os.umask(0)
+    try:
+        exported = recorder.publish(video, target, {}, budget_mb=2)
+    finally:
+        recorder.os.umask(previous)
+    assert exported
+    assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in exported)
+    assert stat.S_IMODE(target.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(target.parent.parent.stat().st_mode) == 0o700

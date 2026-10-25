@@ -28,7 +28,7 @@ def _parent(path: Path, *, create: bool) -> Generator[int | None]:
                     return
                 # Another writer may create it; opening the result still refuses a link.
                 with suppress(FileExistsError):
-                    os.mkdir(part, mode=0o755, dir_fd=descriptor)
+                    os.mkdir(part, mode=0o700, dir_fd=descriptor)
                 child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
             os.close(descriptor)
             descriptor = child
@@ -46,7 +46,7 @@ def _file(path: Path, text: str, *, write: bool, marker: bool) -> bool:
         try:
             if write:
                 try:
-                    descriptor = os.open(path.name, flags | os.O_CREAT | os.O_EXCL, 0o644, dir_fd=parent)
+                    descriptor = os.open(path.name, flags | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent)
                     created = True
                 except FileExistsError:
                     descriptor = os.open(path.name, flags, dir_fd=parent)
