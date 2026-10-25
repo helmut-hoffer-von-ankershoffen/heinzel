@@ -349,6 +349,7 @@
               "circle-check",
               "clock",
               "cloud",
+              "cloud-sun",
               "code",
               "file-text",
               "git-pull-request",
@@ -4516,6 +4517,7 @@
                   "circle-check",
                   "clock",
                   "cloud",
+                  "cloud-sun",
                   "code",
                   "file-text",
                   "git-pull-request",
@@ -6085,6 +6087,188 @@
         "title": "ModuleInfo",
         "type": "object"
       },
+      "NavEntry": {
+        "description": "Checked navigation metadata from one active provider, without running an operation.",
+        "properties": {
+          "declared": {
+            "description": "True for an explicit NavLet; false for generic legacy Settings metadata.",
+            "title": "Declared",
+            "type": "boolean"
+          },
+          "icon": {
+            "description": "The provider's checked semantic icon.",
+            "enum": [
+              "activity",
+              "alarm-clock",
+              "bell",
+              "bot",
+              "calendar",
+              "calendar-clock",
+              "chart-line",
+              "circle-alert",
+              "circle-check",
+              "clock",
+              "cloud",
+              "cloud-sun",
+              "code",
+              "file-text",
+              "git-pull-request",
+              "globe",
+              "heart",
+              "inbox",
+              "info",
+              "link",
+              "list-checks",
+              "mail",
+              "message-square",
+              "play",
+              "rocket",
+              "star",
+              "terminal",
+              "timer",
+              "users",
+              "video",
+              "zap"
+            ],
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable `<qualified-module>:<name>` identity; legacy Settings use reserved `:@settings`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified module that declared this entry.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Display order; ties are sorted by stable id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its distribution, or none for a built-in provider.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why this declaration has no executable target.",
+            "title": "Problem"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NavSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Owned Settings prefixes and their group."
+          },
+          "sidebar": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The canonical sidebar effect; no new route is registered.",
+            "title": "Sidebar"
+          },
+          "title": {
+            "description": "The provider's checked display title.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "declared",
+          "plugin",
+          "title",
+          "icon",
+          "order"
+        ],
+        "title": "NavEntry",
+        "type": "object"
+      },
+      "NavSettings": {
+        "additionalProperties": false,
+        "description": "The module-owned Settings sections a navigation entry groups under an existing heading.",
+        "properties": {
+          "group": {
+            "default": "preferences",
+            "description": "The existing Settings heading under which the entry appears.",
+            "enum": [
+              "preferences",
+              "customize",
+              "organisation",
+              "computer"
+            ],
+            "title": "Group",
+            "type": "string"
+          },
+          "sections": {
+            "description": "Qualified module prefixes owned by this provider.",
+            "items": {
+              "pattern": "^[a-z](?:-?[a-z0-9])*(?:\\.[a-z](?:-?[a-z0-9])*)*$",
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Sections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sections"
+        ],
+        "title": "NavSettings",
+        "type": "object"
+      },
       "Navigate": {
         "additionalProperties": false,
         "description": "Open a screen of the app.",
@@ -6495,6 +6679,21 @@
         "additionalProperties": false,
         "description": "How the app runs an `operation` effect, built by `system.ui` from the operation itself, never by a plugin.",
         "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Validated flat JSON arguments for a private mutation; never a query fallback.",
+            "title": "Body"
+          },
           "command": {
             "description": "The same call as a person reads it, e.g. `hz clock`.",
             "title": "Command",
@@ -6532,7 +6731,7 @@
                 }
               ]
             },
-            "description": "The validated arguments, as query parameters.",
+            "description": "Validated query arguments; empty for private mutations.",
             "title": "Query",
             "type": "object"
           },
@@ -8098,24 +8297,11 @@
         "description": "Run an operation of the contributing module with fixed arguments; one that writes only after confirmation.",
         "properties": {
           "arguments": {
-            "description": "Its arguments by parameter name: strings, numbers, booleans.",
+            "description": "Fixed JSON arguments by parameter name; structured values require a private mutation.",
+            "maxProperties": 32,
             "patternProperties": {
               "^[a-z_][a-z0-9_]*$": {
-                "anyOf": [
-                  {
-                    "type": "boolean"
-                  },
-                  {
-                    "type": "integer"
-                  },
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "maxLength": 280,
-                    "type": "string"
-                  }
-                ]
+                "$ref": "#/components/schemas/JsonValue"
               }
             },
             "title": "Arguments",
@@ -9575,6 +9761,7 @@
                   "circle-check",
                   "clock",
                   "cloud",
+                  "cloud-sun",
                   "code",
                   "file-text",
                   "git-pull-request",
@@ -11693,6 +11880,7 @@
                   "circle-check",
                   "clock",
                   "cloud",
+                  "cloud-sun",
                   "code",
                   "file-text",
                   "git-pull-request",
@@ -15314,6 +15502,32 @@
           }
         },
         "summary": "List every contribution to the web app, where it may show and whether it does; nothing runs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/navigation": {
+      "get": {
+        "description": "List active providers' navigation and owned Settings metadata without running their operations.",
+        "operationId": "system_ui_navigation",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NavEntry"
+                  },
+                  "title": "Response System Ui Navigation",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List active providers' navigation and owned Settings metadata without running their operations.",
         "tags": [
           "system"
         ]

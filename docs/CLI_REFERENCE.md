@@ -2672,6 +2672,7 @@ $ hz system ui [OPTIONS] COMMAND [ARGS]...
 * `actions`: (expert) List the buttons modules add to...
 * `hide`: (expert) Hide a contribution from a slot...
 * `list`: (expert) List every contribution to the...
+* `navigation`: (expert) List active providers&#x27; navigation...
 * `show`: (expert) Show a contribution in a slot of...
 * `status`: (expert) List the status items modules add...
 * `widgets`: (expert) List the widgets modules add to...
@@ -2722,6 +2723,22 @@ $ hz system ui hide [OPTIONS] {item}
 
 ```console
 $ hz system ui list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system ui navigation`
+
+(expert) List active providers&#x27; navigation and owned Settings metadata without running their operations.
+
+**Usage**:
+
+```console
+$ hz system ui navigation [OPTIONS]
 ```
 
 **Options**:

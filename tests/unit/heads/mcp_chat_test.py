@@ -110,6 +110,8 @@ def test_a_chat_asked_for_all_tools_gets_every_tool_the_mcp_head_has_and_nothing
     assert not (listed & private)
     assert {"notes_owner", "notes_publish", "system_doctor", "system_config_set"} <= listed
     assert "notes_private" not in listed
+    assert "system_ui_navigation" not in listed
+    assert "system_ui_navigation" in {item.name for item in exposed(kernel, mcp.HEAD)}
     # Expert mode is off and these are expert operations (the default audience): hidden in help, still tools.
     assert not kernel.settings.expert
     assert all(
