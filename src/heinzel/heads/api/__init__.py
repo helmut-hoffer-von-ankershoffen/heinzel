@@ -7,7 +7,7 @@ Read-only operations are `GET`, the others `POST`; parameters are query paramete
 The server has no authentication, so it answers only requests that name a loopback host (or one listed in
 `[hz] api_allowed_hosts`) on its own port, and refuses requests from another origin with `403`: a web page in your
 browser can reach `127.0.0.1` too, directly or through DNS rebinding, and must not be able to call operations.
-Operations that spend money or act unattended (`hz workflow run`, `hz system daemon tick`) aren't exposed here.
+Operations that spend money or act unattended (`hz heinzel wake`, `hz system daemon tick`) aren't exposed here.
 
 The web head (`hz ui`) mounts the same endpoints with `head="web"` and a per-session `token`: every request must then
 carry the token as `Authorization: Bearer <token>` as well, and the operations that list the `web` head are exposed too.
