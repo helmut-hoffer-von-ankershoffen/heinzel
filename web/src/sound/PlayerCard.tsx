@@ -1,8 +1,10 @@
-// The stream's mini-player card, docked or floating (see dock.ts). Docked it is a block in the sidebar column, as wide
-// as the column and between the clock line and the account row, so nothing overlaps; floating it is a card over the
-// content that can be dragged, moved with the arrow keys, and snapped back by letting go near the dock spot.
+// The stream's mini-player card, docked or floating (see dock.ts). The card always lives in document.body, so docking
+// and popping out never move it in the DOM: a moved iframe reloads and the stream would restart. Docked it is laid
+// over the sidebar's dock slot (its position and width follow the slot, and the slot keeps the card's height, so
+// nothing overlaps); floating it is a card over the content that can be dragged, moved with the arrow keys, and
+// snapped back by letting go near the dock spot.
 import { ExternalLink, GripHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
-import { type KeyboardEvent, type PointerEvent, type ReactNode, useRef, useState } from "react";
+import { type KeyboardEvent, type PointerEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -17,13 +19,6 @@ const STEP = 16;
 
 const iconButton = "flex size-7 items-center justify-center rounded-lg text-icon hover:bg-accent";
 
-/** Whether the player is docked in the sidebar now: wanted, and the sidebar is expanded. */
-export function useDocked(): boolean {
-  const pref = useDockPref();
-  const slot = useDockSlot();
-  return pref.docked && slot !== null;
-}
-
 type Props = { title: string; watchUrl: string; host: string; children: ReactNode };
 
 export function PlayerCard({ title, watchUrl, host, children }: Props) {
@@ -34,6 +29,51 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
   const drag = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
   // While dragging: how far the card is from where it began.
   const [offset, setOffset] = useState<{ dx: number; dy: number } | null>(null);
+  // Docked: where the dock slot is now; the card is laid over it.
+  const [at, setAt] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!docked || !slot) {
+      setAt(null);
+      return;
+    }
+    const measure = () => {
+      const rect = slot.getBoundingClientRect();
+      setAt((was) =>
+        was && was.left === rect.left && was.top === rect.top && was.width === rect.width
+          ? was
+          : { left: rect.left, top: rect.top, width: rect.width },
+      );
+    };
+    measure();
+    const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    watch?.observe(slot);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    document.addEventListener("transitionend", measure, true);
+    return () => {
+      watch?.disconnect();
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+      document.removeEventListener("transitionend", measure, true);
+    };
+  }, [docked, slot]);
+
+  // Docked, the slot keeps the card's height, so what follows it in the sidebar stays below the card.
+  useLayoutEffect(() => {
+    const element = card.current;
+    if (!docked || !slot || !element) return;
+    const reserve = () => {
+      slot.style.height = `${element.offsetHeight}px`;
+    };
+    reserve();
+    const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(reserve);
+    watch?.observe(element);
+    return () => {
+      watch?.disconnect();
+      slot.style.height = "";
+    };
+  }, [docked, slot]);
 
   const size = () => {
     const rect = card.current?.getBoundingClientRect();
@@ -94,10 +134,9 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
   };
 
   const floatingStyle = pref.x === null || pref.y === null ? { left: 12, bottom: 68 } : { left: pref.x, top: pref.y };
+  const dockedAt = at ?? { left: 0, top: 0, width: WIDTH };
   const style = docked
-    ? offset
-      ? { transform: `translate(${offset.dx}px, ${offset.dy}px)`, position: "relative" as const, zIndex: 40 }
-      : undefined
+    ? { left: dockedAt.left + (offset?.dx ?? 0), top: dockedAt.top + (offset?.dy ?? 0), width: dockedAt.width }
     : offset
       ? { left: (pref.x ?? drag.current?.left ?? 0) + offset.dx, top: (pref.y ?? drag.current?.top ?? 0) + offset.dy }
       : floatingStyle;
@@ -109,10 +148,8 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
       data-dock={docked ? "docked" : "floating"}
       style={style}
       className={cn(
-        "overflow-hidden bg-popover",
-        docked
-          ? "w-full border-y border-border"
-          : "fixed z-40 w-72 max-w-[calc(100vw-1rem)] rounded-xl border border-border shadow-xl",
+        "fixed z-40 overflow-hidden bg-popover",
+        docked ? "border-y border-border" : "w-72 max-w-[calc(100vw-1rem)] rounded-xl border border-border shadow-xl",
       )}
     >
       <header
@@ -191,5 +228,5 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
       {children}
     </section>
   );
-  return createPortal(body, docked ? slot : document.body);
+  return createPortal(body, document.body);
 }
