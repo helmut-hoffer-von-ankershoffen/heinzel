@@ -15,9 +15,9 @@ import {
   GIVE_UP_MS,
   leaveAt,
   type Phase,
-  POLL_MS,
   type Problem,
   polling,
+  retryDelay,
   type SplashState,
   visible,
   waiting,
@@ -97,6 +97,7 @@ function Fix({ problem }: { problem: Problem }) {
       <p className="text-muted-foreground">{t(text, { command: START })}</p>
       <p className="text-muted-foreground">{t(lead, { command: START })}</p>
       <Command command={START} />
+      {problem === "unreachable" && <p className="text-xs text-muted-foreground">{t("splash.retrying")}</p>}
     </div>
   );
 }
@@ -220,10 +221,11 @@ export function Splash({ store = splash, probe = probeServer, now = clock }: Pro
     if (!asking) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let misses = 0;
     const loop = async () => {
       if (stopped) return;
       if (await ask()) {
-        if (!stopped) timer = setTimeout(loop, POLL_MS);
+        if (!stopped) timer = setTimeout(loop, retryDelay(++misses));
       }
     };
     void loop();

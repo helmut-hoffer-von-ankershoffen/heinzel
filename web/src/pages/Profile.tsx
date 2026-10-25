@@ -1,8 +1,8 @@
 // `hz org show`: your profile, and the command that completes or changes it.
 import { Link } from "react-router";
-import { usePlayful, useProfile } from "@/api/queries";
+import { useProfile } from "@/api/queries";
 import { CopyCommand, Loaded, Page } from "@/components/common";
-import { Gnome } from "@/components/Gnome";
+import { ErrorScreen } from "@/components/ErrorScreen";
 import { Card } from "@/components/ui/card";
 import { type MessageKey, t } from "@/i18n";
 
@@ -50,22 +50,13 @@ export function Profile() {
 }
 
 export function NotFound() {
-  const playful = usePlayful();
   return (
     <Page title={t("notFound.title")}>
-      <div className="flex items-end gap-4">
-        <Gnome state="waiting" age="grown" />
-        <div className="flex flex-col gap-1 pb-2">
-          {playful && (
-            <p className="text-sm text-muted-foreground" aria-hidden>
-              {t("notFound.guide")}
-            </p>
-          )}
-          <Link to="/" className="text-primary underline">
-            {t("notFound.back")}
-          </Link>
-        </div>
-      </div>
+      <ErrorScreen compact state="waiting" message={t("notFound.message")}>
+        <Link to="/" className="inline-flex min-h-6 items-center text-primary underline">
+          {t("notFound.back")}
+        </Link>
+      </ErrorScreen>
     </Page>
   );
 }
