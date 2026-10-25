@@ -4,6 +4,11 @@
 // and tall), its beard, its hat's colour, its shirt's colour and its build. Its state shows in its face, its posture
 // and a small badge (asleep, working, thinking, waiting for you, blocked, done).
 //
+// Accessories are data on top of the look: a list from a closed set (umbrella, sunglasses, scarf) that anything can
+// set, e.g. a weather plugin dressing a Heinzelmännchen for rain, sun and cold. `parseAccessories` validates it (unknown
+// names are dropped, duplicates collapse), the drawing layers each accessory onto the full figure and the bust, and
+// every age and build wears every accessory, a baby included (see ACCESSORIES). With none, the drawing is unchanged.
+//
 // The drawing is a full figure on a 512 by 860 canvas; its top 512 by 512 square is the head-and-shoulders crop that
 // small slots and the icons show. `make icons` writes heinzel.svg (the default one, cropped: the favicon and the small
 // icons) and heinzel-swarm.svg (a busy group, the product's logo) from here; everything else is made from those.
@@ -41,6 +46,36 @@ export const BUILDS = ["slim", "regular", "round"] as const;
 export type Build = (typeof BUILDS)[number];
 export const STATES = ["idle", "sleeping", "working", "thinking", "waiting", "blocked", "done"] as const;
 export type HeinzelState = (typeof STATES)[number];
+/**
+ * What a Heinzelmännchen can wear or carry beyond its five choices, in the order they are layered. A closed set:
+ * adding one is a code change, never something a plugin invents. Every age and build wears all of them. A baby too:
+ * baby sunglasses and a baby umbrella are real and cute, the drawing scales them with the head, and a baby's cap-less
+ * head leaves the umbrella and the scarf nothing to collide with.
+ */
+export const ACCESSORIES = ["umbrella", "sunglasses", "scarf"] as const;
+export type Accessory = (typeof ACCESSORIES)[number];
+
+/** How a screen reader hears each accessory, appended to the avatar's name when it has one. */
+export const ACCESSORY_LABEL: Record<Accessory, string> = {
+  umbrella: "with an umbrella",
+  sunglasses: "wearing sunglasses",
+  scarf: "wearing a scarf",
+};
+
+export function isAccessory(value: unknown): value is Accessory {
+  return typeof value === "string" && (ACCESSORIES as readonly string[]).includes(value);
+}
+
+/**
+ * Accessories from untrusted data (a plugin's contribution, a stored profile): the known names once each, in layering
+ * order. Anything else (an unknown name, a non-string, a non-list) is dropped, so bad data dresses nobody rather than
+ * breaking the picture.
+ */
+export function parseAccessories(value: unknown): Accessory[] {
+  const given = Array.isArray(value) ? value : [];
+  return ACCESSORIES.filter((accessory) => given.includes(accessory));
+}
+
 export const VIEWS = ["full", "bust"] as const;
 export type View = (typeof VIEWS)[number];
 
@@ -52,15 +87,48 @@ const BUST: Record<Age, [number, number, number]> = {
   old: [0, 0, 512],
 };
 
-/** The viewBox of a Heinzelmännchen of this age: the whole figure, or its bust. */
-export function viewBox(age: Age = "grown", view: View = "full"): string {
-  if (view === "full") return "0 0 512 860";
+/** The umbrella's canopy: half width, height, and how far above the cap's top its rim sits (behind the head). */
+const CANOPY = { half: 170, height: 84, rim: -40 };
+/** Where the umbrella's pole is held, and where its canopy is centred horizontally. */
+const GRIP = { x: 430, y: 600, canopyX: 335 };
+
+/** The canvas y of the top of the head's drawing (the cap's tip, or the crown for a baby). */
+function headTop(age: Age): number {
+  return 173 + 0.75 * Math.min(BY_AGE[age].tip ?? 38, 38);
+}
+
+/** The canvas y of the top of the umbrella's canopy for this age, with room for its tilt. */
+function umbrellaTop(age: Age): number {
+  return Math.floor(headTop(age) - CANOPY.rim - CANOPY.height - 14 - 70);
+}
+
+/**
+ * The viewBox of a Heinzelmännchen of this age: the whole figure, or its bust. An umbrella reaches above the head, so
+ * with one the box grows upwards to hold it (the bust stays square).
+ */
+export function viewBox(age: Age = "grown", view: View = "full", accessories: readonly Accessory[] = []): string {
+  const top = parseAccessories(accessories).includes("umbrella") ? umbrellaTop(age) : Number.POSITIVE_INFINITY;
+  if (view === "full") {
+    const y = Math.min(0, top);
+    return `0 ${y} 512 ${860 - y}`;
+  }
   const [x, y, side] = BUST[age];
-  return `${x} ${y} ${side} ${side}`;
+  const reach = accessories.includes("umbrella") ? GRIP.canopyX + CANOPY.half + 10 : 0;
+  const grow = Math.max(0, y - top, 2 * (reach - (x + side)));
+  return `${x - grow / 2} ${y - grow} ${side + grow} ${side + grow}`;
 }
 
 /** How a Heinzelmännchen looks. A baby has no beard, whatever is asked. */
-export type HeinzelLook = { age?: Age; beard?: Beard; hat?: Hat; shirt?: Shirt; build?: Build; state?: HeinzelState };
+export type HeinzelLook = {
+  age?: Age;
+  beard?: Beard;
+  hat?: Hat;
+  shirt?: Shirt;
+  build?: Build;
+  state?: HeinzelState;
+  /** Accessories to layer on, data only; unknown names are ignored (parseAccessories). */
+  accessories?: readonly Accessory[];
+};
 
 type AgeLook = { tip: number | null; hair: string; brow: string; light: string; eye: number; beard: Beard };
 
@@ -92,7 +160,7 @@ export type Shape = (
   | { kind: "path"; d: string; fill: string; stroke?: string; width?: number }
   | { kind: "circle"; cx: number; cy: number; r: number; fill: string }
   | { kind: "group"; transform: string; children: Shape[] }
-) & { part?: "badge" };
+) & { part?: "badge"; accessory?: Accessory };
 
 const FACE = "#FFD45E";
 const EAR = "#F2B547";
@@ -153,6 +221,86 @@ function signs(age: Age, state: HeinzelState): Shape[] {
     default:
       return [];
   }
+}
+
+const FRAME = "#2B2B38";
+const LENS = "#171722";
+const GLINT = "#9AA5CE";
+const CANOPY_COLOUR = "#2F80ED";
+const POLE = "#5D4037";
+const SCARF = "#C0392B";
+const SCARF_STRIPE = "#F3E5C8";
+
+/** Wraps shapes as one accessory's layer, so a drawing can say (and a test check) which shapes it added. */
+function layer(accessory: Accessory, children: Shape[], transform = "translate(0 0)"): Shape {
+  return { kind: "group", transform, children, accessory };
+}
+
+/** Sunglasses over the eyes, in the head's own coordinates: two dark lenses, a bridge, arms to the ears, a glint. */
+function sunglasses(): Shape {
+  const lens = (cx: number) => {
+    const [l, r] = [cx - 52, cx + 52];
+    return path(
+      `M${l} 264 Q${l} 250 ${l + 14} 250 H${r - 14} Q${r} 250 ${r} 264 V286 Q${r} 312 ${r - 26} 312 H${l + 26} ` +
+        `Q${l} 312 ${l} 286 Z`,
+      LENS,
+    );
+  };
+  return layer("sunglasses", [
+    line("M150 262 L102 254", FRAME, 8),
+    line("M362 262 L410 254", FRAME, 8),
+    lens(202),
+    lens(310),
+    line("M252 266 Q256 258 260 266", FRAME, 8),
+    line("M170 296 L188 268", GLINT, 6),
+    line("M278 296 L296 268", GLINT, 6),
+  ]);
+}
+
+/** The umbrella, held in the right hand and tilted over the head; drawn behind the head and arm, so the cap shows under it. */
+function umbrella(age: Age): Shape {
+  const centre = { x: GRIP.canopyX, y: headTop(age) - CANOPY.rim };
+  const [dx, dy] = [centre.x - GRIP.x, GRIP.y - centre.y];
+  const length = Math.round(Math.hypot(dx, dy));
+  const angle = +((Math.atan2(dx, dy) * 180) / Math.PI).toFixed(2);
+  const { half: w, height: h } = CANOPY;
+  const third = Math.round(w / 3);
+  const dome = path(
+    `M${-w} 0 C${-w} ${-h * 0.75} ${-w * 0.45} ${-h} 0 ${-h} C${w * 0.45} ${-h} ${w} ${-h * 0.75} ${w} 0 ` +
+      `Q${third * 2} 22 ${third} 0 Q0 22 ${-third} 0 Q${-third * 2} 22 ${-w} 0 Z`,
+    CANOPY_COLOUR,
+  );
+  const rib = mix(CANOPY_COLOUR, -0.25);
+  return layer(
+    "umbrella",
+    [
+      line(`M0 0 V${-length + 4}`, POLE, 9),
+      group(`translate(0 ${-length})`, [
+        dome,
+        line(`M0 ${-h} L${-third} 0`, rib, 5),
+        line(`M0 ${-h} L${third} 0`, rib, 5),
+        circle(0, -h - 6, 8, POLE),
+      ]),
+    ],
+    `translate(${GRIP.x} ${GRIP.y}) rotate(${angle})`,
+  );
+}
+
+function group(transform: string, children: Shape[]): Shape {
+  return { kind: "group", transform, children };
+}
+
+/** A scarf wound round the neck, over the beard, with a striped tail hanging down the shirt. */
+function scarf(b: BuildLook): Shape {
+  const [sl, sr] = [256 - b.shoulder, 256 + b.shoulder];
+  return layer("scarf", [
+    path(`M296 490 L330 494 L338 612 L302 616 Z`, mix(SCARF, -0.15)),
+    line("M300 548 L335 551", SCARF_STRIPE, 9),
+    line("M301 580 L336 583", SCARF_STRIPE, 9),
+    path(`M${sl + 6} 468 Q256 484 ${sr - 6} 468 L${sr - 2} 492 Q256 516 ${sl + 2} 492 Z`, SCARF),
+    line(`M${sl + 38} 478 Q${sl + 44} 494 ${sl + 40} 500`, SCARF_STRIPE, 8),
+    line(`M${sr - 38} 478 Q${sr - 44} 494 ${sr - 40} 500`, SCARF_STRIPE, 8),
+  ]);
 }
 
 function cap(tip: number, colour: string): Shape[] {
@@ -221,7 +369,7 @@ function mouth(state: HeinzelState, bearded: boolean, light: string): Shape[] {
 }
 
 /** The head in the face's own 512 coordinates (centre 256,236, radius 158): ears, face, hair, beard, cap, features. */
-function head(age: Age, beard: Beard, hat: Hat, state: HeinzelState): Shape[] {
+function head(age: Age, beard: Beard, hat: Hat, state: HeinzelState, glasses: boolean): Shape[] {
   const look = BY_AGE[age];
   const brow = age === "old" ? 14 : 10;
   return [
@@ -244,6 +392,7 @@ function head(age: Age, beard: Beard, hat: Hat, state: HeinzelState): Shape[] {
       ? [line("M176 230 L224 214", look.brow, 11), line("M288 214 L336 230", look.brow, 11)]
       : [line("M178 232 Q202 216 226 230", look.brow, brow), line("M286 230 Q310 216 334 232", look.brow, brow)]),
     ...eyes(state, look.eye),
+    ...(glasses ? [sunglasses()] : []),
     ...mouth(state, beard !== "none", look.light),
   ];
 }
@@ -262,15 +411,18 @@ function arm(shoulder: number, x: number, y: number, sleeve: string): Shape[] {
 }
 
 /** The arms for a state: down, holding a tray, a hand raised or at the chin, or together in a little bow. */
-function arms(state: HeinzelState, sleeve: string, build: BuildLook): Shape[] {
+function arms(state: HeinzelState, sleeve: string, build: BuildLook, holding: boolean): Shape[] {
   const [left, right] = [256 - build.shoulder, 256 + build.shoulder];
-  const down = [...arm(left, 256 - build.belly - 12, 640, sleeve), ...arm(right, 256 + build.belly + 12, 640, sleeve)];
-  switch (state) {
+  const rightDown = holding ? arm(right, GRIP.x, GRIP.y, sleeve) : arm(right, 256 + build.belly + 12, 640, sleeve);
+  const down = [...arm(left, 256 - build.belly - 12, 640, sleeve), ...rightDown];
+  // The right hand holds the umbrella's pole, so it neither waves nor stays down; a working one carries the tray in
+  // its left hand alone.
+  switch (holding && state === "waiting" ? "idle" : state) {
     case "working":
       // A tray with a mug of something good, carried in both hands: busy helping.
       return [
         ...arm(left, 170, 580, sleeve),
-        ...arm(right, 342, 580, sleeve),
+        ...(holding ? rightDown : arm(right, 342, 580, sleeve)),
         path("M120 572 H392 Q404 572 404 584 Q404 596 392 596 H120 Q108 596 108 584 Q108 572 120 572 Z", "#9AA0A6"),
         path("M228 506 H284 V562 Q284 572 274 572 H238 Q228 572 228 562 Z", BUCKLE),
         line("M284 518 Q308 518 308 538 Q308 556 284 556", "#C98A1E", 8),
@@ -288,9 +440,12 @@ function arms(state: HeinzelState, sleeve: string, build: BuildLook): Shape[] {
         circle(right + 50, 376, 26, FACE),
       ];
     case "thinking":
-      return [...arm(left, 256 - build.belly - 12, 640, sleeve), ...arm(right, 306, 452, sleeve)];
+      return [
+        ...arm(left, 256 - build.belly - 12, 640, sleeve),
+        ...(holding ? rightDown : arm(right, 306, 452, sleeve)),
+      ];
     case "done":
-      return [...arm(left, 226, 600, sleeve), ...arm(right, 286, 600, sleeve)];
+      return [...arm(left, 226, 600, sleeve), ...(holding ? rightDown : arm(right, 286, 600, sleeve))];
     default:
       return down;
   }
@@ -324,7 +479,10 @@ export function heinzelShapes({
   shirt = "green",
   build = "regular",
   state = "idle",
+  accessories,
 }: HeinzelLook = {}): Shape[] {
+  const worn = parseAccessories(accessories);
+  const holding = worn.includes("umbrella");
   const chin: Beard = age === "baby" ? "none" : (beard ?? BY_AGE[age].beard);
   const b = BY_BUILD[build];
   const colour = SHIRTS[shirt];
@@ -342,14 +500,16 @@ export function heinzelShapes({
     path("M200 466 C216 506 296 506 312 466 C290 476 222 476 200 466 Z", mix(colour, 0.25)),
     path(`M${bl + 6} 622 H${br - 6} V648 H${bl + 6} Z`, BELT),
     path("M238 618 H274 V652 H238 Z M248 628 V642 H264 V628 Z", BUCKLE),
-    ...arms(state, mix(colour, -0.08), b),
+    ...(worn.includes("umbrella") ? [umbrella(age)] : []),
+    ...arms(state, mix(colour, -0.08), b, holding),
     {
       kind: "group",
       transform: `matrix(${+(scale * b.head).toFixed(4)} 0 0 ${scale} ${+(256 - 256 * scale * b.head).toFixed(2)} ${
         350 - 236 * scale + bow
       })`,
-      children: head(age, chin, hat, state),
+      children: head(age, chin, hat, state, worn.includes("sunglasses")),
     },
+    ...(worn.includes("scarf") ? [scarf(b)] : []),
     ...signs(age, state),
   ];
 }
@@ -383,7 +543,7 @@ function svg(viewBox: string, body: string[]): string {
 /** One Heinzelmännchen as an SVG file; with no look and the bust, the app's icon (heinzel.svg). */
 export function heinzelSvg(look: HeinzelLook = {}, view: View = "bust"): string {
   return svg(
-    viewBox(look.age, view),
+    viewBox(look.age, view, look.accessories),
     heinzelShapes(look).map((shape) => svgShape(shape)),
   );
 }
