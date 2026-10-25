@@ -1048,6 +1048,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `runner`: Run bounded agent sessions with Claude...
 * `serve`: (expert) Serve every operation to coding...
 * `theme`: (expert) Pick how the web app looks: the...
+* `ui`: (expert) List what modules add to the web...
 * `update`: Update Heinzelmännchen, keeping plugins;...
 
 ### `hz system agent`
@@ -2308,6 +2309,138 @@ $ hz system theme use [OPTIONS] {name}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system ui`
+
+(expert) List what modules add to the web app: status items, header actions and Today widgets.
+
+**Usage**:
+
+```console
+$ hz system ui [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `actions`: (expert) List the buttons modules add to...
+* `hide`: (expert) Hide a contribution from a slot...
+* `list`: (expert) List every contribution to the...
+* `show`: (expert) Show a contribution in a slot of...
+* `status`: (expert) List the status items modules add...
+* `widgets`: (expert) List the widgets modules add to...
+
+#### `hz system ui actions`
+
+(expert) List the buttons modules add to the web app&#x27;s header, with what each does and its badge.
+
+**Usage**:
+
+```console
+$ hz system ui actions [OPTIONS]
+```
+
+**Options**:
+
+* `--item <str>`: Only this one, by id (`&lt;module&gt;:&lt;name&gt;`), e.g. `clock:primary-zone`.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system ui hide`
+
+(expert) Hide a contribution from a slot of the web app, such as the clock from the footer.
+
+**Usage**:
+
+```console
+$ hz system ui hide [OPTIONS] {item}
+```
+
+**Arguments**:
+
+* `item`: The contribution, by id (`&lt;module&gt;:&lt;name&gt;`), e.g. `clock:primary-zone`.  [required]
+
+**Options**:
+
+* `--slot <str>`: Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system ui list`
+
+(expert) List every contribution to the web app, where it may show and whether it does; nothing runs.
+
+**Usage**:
+
+```console
+$ hz system ui list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system ui show`
+
+(expert) Show a contribution in a slot of the web app, such as the clock in the sidebar.
+
+**Usage**:
+
+```console
+$ hz system ui show [OPTIONS] {item}
+```
+
+**Arguments**:
+
+* `item`: The contribution, by id (`&lt;module&gt;:&lt;name&gt;`), e.g. `clock:primary-zone`.  [required]
+
+**Options**:
+
+* `--slot <str>`: Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system ui status`
+
+(expert) List the status items modules add to the web app&#x27;s status bar, with what each shows now.
+
+**Usage**:
+
+```console
+$ hz system ui status [OPTIONS]
+```
+
+**Options**:
+
+* `--item <str>`: Only this one, by id (`&lt;module&gt;:&lt;name&gt;`), e.g. `clock:primary-zone`.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system ui widgets`
+
+(expert) List the widgets modules add to the web app&#x27;s Today screen, with what each shows now.
+
+**Usage**:
+
+```console
+$ hz system ui widgets [OPTIONS]
+```
+
+**Options**:
+
+* `--item <str>`: Only this one, by id (`&lt;module&gt;:&lt;name&gt;`), e.g. `clock:primary-zone`.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

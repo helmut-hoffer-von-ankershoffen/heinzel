@@ -491,6 +491,7 @@ modules = [
     "heinzel.modules.system.plugin",
     "heinzel.modules.system.runner",
     "heinzel.modules.system.theme",
+    "heinzel.modules.system.ui",
 ]
 
 [[tool.importlinter.contracts]]

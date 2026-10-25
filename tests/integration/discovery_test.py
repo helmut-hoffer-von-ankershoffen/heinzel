@@ -37,6 +37,7 @@ def test_discovers_builtin_modules_and_submodules():
         "system.runner",
         "system.runner.chat",
         "system.theme",
+        "system.ui",
         "team",
         "report",  # the package telemetry, named for what a Heinzelmännchen does with it
     ]
@@ -86,4 +87,5 @@ def test_kernel_boots_from_discovery(settings):
         "system.plugin",
         "system.runner",
         "system.theme",
+        "system.ui",
     ]
