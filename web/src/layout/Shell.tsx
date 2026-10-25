@@ -140,7 +140,7 @@ function Layout() {
     return () => window.removeEventListener("keydown", open);
   }, [setParams]);
   return (
-    <div className="relative flex h-dvh overflow-hidden">
+    <div className="relative flex h-dvh overflow-clip">
       <a
         href="#content"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-card focus:p-2"
