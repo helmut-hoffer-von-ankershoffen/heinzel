@@ -20,6 +20,7 @@ describe("Shell", () => {
     for (const name of ["Workflow", "Org chart", "Team roster", "Asset types", "Assets"]) {
       expect(await within(navigation).findByRole("link", { name })).toBeInTheDocument();
     }
+    expect(within(navigation).getByRole("button", { name: "Artifacts" })).toBeInTheDocument(); // asset types, assets
     expect(await within(navigation).findByRole("link", { name: "Weekly digest" })).toHaveAttribute(
       "href",
       "/contracts/me%3Aweekly-digest",
@@ -43,7 +44,7 @@ describe("Shell", () => {
     for (const name of ["Workflow", "Org chart", "Asset types", "Assets"]) {
       expect(within(navigation).queryByRole("link", { name })).not.toBeInTheDocument();
     }
-    expect(within(navigation).queryByText("Inventory")).not.toBeInTheDocument();
+    expect(within(navigation).queryByText("Artifacts")).not.toBeInTheDocument();
     await user.keyboard("{Meta>}k{/Meta}");
     await user.type(await screen.findByRole("combobox", { name: /Search/ }), "Workflow");
     expect(screen.getByText("Nothing matches.")).toBeInTheDocument();
