@@ -7,14 +7,14 @@ so it never parses a contract and never sees a body.
 from typing import override
 
 from heinzel.kernel import TeamPromise, TeamPromises
-from heinzel.modules.workflow._graph import asset
-from heinzel.modules.workflow._service import WorkflowService
+from heinzel.modules.heinzel._graph import asset
+from heinzel.modules.heinzel._service import HeinzelService
 
 
 class ContractPromises(TeamPromises):
     """Team contracts read afresh on every call, so a pull merged into the checkout counts at once."""
 
-    def __init__(self, service: WorkflowService) -> None:
+    def __init__(self, service: HeinzelService) -> None:
         """Read the contracts through `service`."""
         self._service = service
 

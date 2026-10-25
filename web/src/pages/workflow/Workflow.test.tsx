@@ -30,7 +30,7 @@ const playbooks: SchemaPlaybookList = {
       templates: [
         {
           template: "teamwork:weekly-report",
-          command: "hz workflow new weekly-report --template teamwork:weekly-report",
+          command: "hz heinzel new weekly-report --template teamwork:weekly-report",
           assets: ["weekly-report", "team-project"],
           keeps: ["weekly-report"],
         },
@@ -65,11 +65,13 @@ const capabilities: SchemaCapabilityReport = {
   ],
 } as unknown as SchemaCapabilityReport;
 
-const noContracts = { directories: [], contracts: [], next: [] };
+const noContracts = { directories: [], heinzelmaennchen: [], filtered: false, next: [] };
 
 describe("the workflow model", () => {
   it("lays out sources, contracts and outputs left to right", () => {
-    const { nodes, edges } = layoutWorkflow(buildWorkflow({ graph, contracts: shell["/api/workflow/list"].contracts }));
+    const { nodes, edges } = layoutWorkflow(
+      buildWorkflow({ graph, contracts: shell["/api/heinzel/list"].heinzelmaennchen }),
+    );
     const x = (id: string) => nodes.find((node) => node.id === id)?.position.x ?? Number.NaN;
     expect(x("cap:tracker")).toBeLessThan(x("contract:me:weekly-digest"));
     expect(x("contract:me:weekly-digest")).toBeLessThan(x("out:contract:me/weekly-digest#digest"));
@@ -91,12 +93,12 @@ describe("the workflow model", () => {
   it("fills a template's placeholders with what discovery found once", () => {
     const [template] = playbooks.playbooks[0]?.templates ?? [];
     expect(template && templateCommand(template, discovery.candidates)).toBe(
-      "hz workflow new weekly-report --template teamwork:weekly-report --asset weekly-report=doc-123",
+      "hz heinzel new weekly-report --template teamwork:weekly-report --asset weekly-report=doc-123",
     );
   });
 
   it("stops suggesting a template once a contract by its name exists", () => {
-    const written = { ...shell["/api/workflow/list"].contracts[0], name: "weekly-report" } as never;
+    const written = { ...shell["/api/heinzel/list"].heinzelmaennchen[0], name: "weekly-report" } as never;
     const built = buildWorkflow({ playbooks: playbooks.playbooks, contracts: [written] });
     expect(built.nodes.some((node) => node.kind === "template")).toBe(false);
   });
@@ -104,10 +106,10 @@ describe("the workflow model", () => {
 
 describe("the Workflow screen", () => {
   it("explains the next step when hz knows of nothing yet", async () => {
-    mockApi({ ...shell, "/api/workflow/list": noContracts, "/api/workflow/graph": emptyGraph });
+    mockApi({ ...shell, "/api/heinzel/list": noContracts, "/api/heinzel/graph": emptyGraph });
     const { container } = renderAt("/contracts");
     expect(await screen.findByText("Your workflow starts with a contract")).toBeInTheDocument();
-    expect(screen.getByText("hz workflow new weekly-digest")).toBeInTheDocument();
+    expect(screen.getByText("hz heinzel new weekly-digest")).toBeInTheDocument();
     expect(screen.getByText("hz system plugin search --text playbook")).toBeInTheDocument();
     await expectAccessible(container);
   });
@@ -115,9 +117,9 @@ describe("the Workflow screen", () => {
   it("draws the templates playbooks suggest before any contract exists", async () => {
     mockApi({
       ...shell,
-      "/api/workflow/list": noContracts,
-      "/api/workflow/graph": emptyGraph,
-      "/api/workflow/playbooks": playbooks,
+      "/api/heinzel/list": noContracts,
+      "/api/heinzel/graph": emptyGraph,
+      "/api/heinzel/playbooks": playbooks,
       "/api/system/capability/list": capabilities,
     });
     const { container } = renderAt("/contracts");
@@ -132,14 +134,14 @@ describe("the Workflow screen", () => {
   it("adds discovered assets after Discover, and only then", async () => {
     const { calls } = mockApi({
       ...shell,
-      "/api/workflow/list": noContracts,
-      "/api/workflow/graph": emptyGraph,
-      "/api/workflow/playbooks": playbooks,
-      "/api/workflow/discover": discovery,
+      "/api/heinzel/list": noContracts,
+      "/api/heinzel/graph": emptyGraph,
+      "/api/heinzel/playbooks": playbooks,
+      "/api/heinzel/discover": discovery,
     });
     renderAt("/contracts");
     await screen.findByRole("button", { name: /^weekly-report.*, Suggested contract$/ });
-    expect(calls.some((call) => call.url.includes("/workflow/discover"))).toBe(false);
+    expect(calls.some((call) => call.url.includes("/heinzel/discover"))).toBe(false);
     expect(screen.queryByRole("button", { name: /Discovered asset/ })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Discover" }));
     expect(
@@ -151,10 +153,10 @@ describe("the Workflow screen", () => {
   it("says so when discovery fails, and keeps the graph", async () => {
     mockApi({
       ...shell,
-      "/api/workflow/list": noContracts,
-      "/api/workflow/graph": emptyGraph,
-      "/api/workflow/playbooks": playbooks,
-      "/api/workflow/discover": { status: 500, body: { error: "the tracker timed out" } },
+      "/api/heinzel/list": noContracts,
+      "/api/heinzel/graph": emptyGraph,
+      "/api/heinzel/playbooks": playbooks,
+      "/api/heinzel/discover": { status: 500, body: { error: "the tracker timed out" } },
     });
     renderAt("/contracts");
     await screen.findByRole("button", { name: /^weekly-report.*, Suggested contract$/ });
@@ -167,28 +169,28 @@ describe("the Workflow screen", () => {
   it("opens a node's details with its hz command", async () => {
     mockApi({
       ...shell,
-      "/api/workflow/list": noContracts,
-      "/api/workflow/graph": emptyGraph,
-      "/api/workflow/playbooks": playbooks,
+      "/api/heinzel/list": noContracts,
+      "/api/heinzel/graph": emptyGraph,
+      "/api/heinzel/playbooks": playbooks,
     });
     const { container } = renderAt("/contracts");
     fireEvent.click(await screen.findByRole("button", { name: /^weekly-report.*, Suggested contract$/ }));
     const panel = await screen.findByRole("complementary", { name: "weekly-report" });
     expect(
-      within(panel).getByText("hz workflow new weekly-report --template teamwork:weekly-report"),
+      within(panel).getByText("hz heinzel new weekly-report --template teamwork:weekly-report"),
     ).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: /Run hz workflow new weekly-report/ })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: /Run hz heinzel new weekly-report/ })).toBeInTheDocument();
     await expectAccessible(container);
     await userEvent.click(within(panel).getByRole("button", { name: "Close details" }));
     await waitFor(() => expect(screen.queryByRole("complementary", { name: "weekly-report" })).toBeNull());
   });
 
   it("shows existing contracts as solid nodes that open the contract", async () => {
-    mockApi({ ...shell, "/api/workflow/graph": graph });
+    mockApi({ ...shell, "/api/heinzel/graph": graph });
     renderAt("/contracts");
     fireEvent.click(await screen.findByRole("button", { name: /^Weekly digest.*, Contract$/ }));
     const panel = await screen.findByRole("complementary", { name: "Weekly digest" });
-    expect(within(panel).getByText("hz workflow show me:weekly-digest")).toBeInTheDocument();
+    expect(within(panel).getByText("hz heinzel show me:weekly-digest")).toBeInTheDocument();
     expect(within(panel).getByRole("link", { name: "Open the contract" })).toHaveAttribute(
       "href",
       "/contracts/me%3Aweekly-digest",
