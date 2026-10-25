@@ -71,6 +71,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0067](0067-hz-owns-sessions-across-pydantic-and-native-cli-turns.md) | hz owns sessions across Pydantic and native CLI turns | proposed | 2026-10-25 |
 | [0068](0068-human-approval-proofs-and-head-parity.md) | Human approval is a scoped proof carriable by every authorized head | proposed | 2026-10-25 |
 | [0072](0072-plugins-declare-navigation-and-settings-as-data.md) | Plugins declare navigation and Settings metadata as checked data | proposed | 2026-10-25 |
+| [0082](0082-plugin-documentation-is-generated-from-the-kernel-and-recorded-by-shared-tooling.md) | Plugin documentation is generated from the kernel and recorded by the tooling every plugin shares | proposed | 2026-10-24 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
 [0016](0016-name-heinzelmaennchen.md) (plugin naming); [0013](0013-pull-request-based-development-and-releases.md) amends

@@ -1,0 +1,78 @@
+# What the documentation records of Heinzelmännchen itself (ADR 0082): the README's intro and the core's scenes.
+# `make demo` renders the intro into docs/assets/demo.{gif,webp,mp4}: the CLI part comes from docs/assets/demo.tape
+# (the intro tape and the modules' demo.tape snippets, assembled by `make fix`), then the `[intro] scenes` below.
+# A plugin's own docs/scenes.toml holds its [[cli]] and [[ui]] scenes the same way; `hz system plugin docs show`
+# checks the grammar, scripts/docs_record.py records them, and the page embeds what it finds beside it.
+#
+# Scenes name roles and labels as the app shows them, never selectors. Steps of a UI scene: goto (a route), click or
+# hover (role + target), fill (a labelled field), key (a key), wait (text), screenshot (a caption and a hold in
+# seconds). A step with `optional = true` is skipped when its element isn't there. `[scenes] plugin` names whose
+# scenes these are: Heinzelmännchen's own here, never a plugin's.
+
+[scenes]
+plugin = "heinzel"
+
+[intro]
+scenes = ["tour", "equivalents"]
+
+[[ui]]
+name = "tour"
+title = "The web app: Today, a Heinzelmännchen, the team graph, a theme"
+
+[[ui.steps]]
+action = "goto"
+target = "/"
+
+[[ui.steps]]
+action = "screenshot"
+caption = "Today: what needs you, and the chat beside it"
+hold = 2.5
+
+[[ui.steps]]
+action = "goto"
+target = "/contracts"
+
+[[ui.steps]]
+action = "screenshot"
+caption = "The workflow: every Heinzelmännchen and what it keeps true"
+hold = 2.5
+
+[[ui.steps]]
+action = "click"
+role = "link"
+target = "Weekly digest"
+optional = true
+
+[[ui.steps]]
+action = "screenshot"
+caption = "A Heinzelmännchen: its contract, what it reads, what it maintains, when it is done"
+hold = 3
+
+[[ui.steps]]
+action = "goto"
+target = "/graph"
+
+[[ui.steps]]
+action = "screenshot"
+caption = "The team graph: promises, artifacts, where the flow waits"
+hold = 3
+
+[[ui.steps]]
+action = "click"
+role = "button"
+target = "Switch between light and dark"
+
+[[ui.steps]]
+action = "screenshot"
+caption = "The same, in dark mode"
+hold = 2.5
+
+[[cli]]
+name = "equivalents"
+title = "The same from the terminal"
+commands = [
+  "hz heinzel show weekly-digest",
+  "hz graph",
+  "hz system theme list",
+]
+hold = 3

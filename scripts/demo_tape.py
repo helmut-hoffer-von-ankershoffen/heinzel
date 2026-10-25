@@ -10,6 +10,7 @@ plugins/) adds its part as a `demo.tape` next to its `__init__.py`: a few real `
 to the header. Settings and `Output` belong to the intro only. The order is stable: the intro, then first-party plugins,
 then built-in modules, each sorted by path; built-in commands such as `hz system doctor` come last because they report
 on everything installed before them. Every snippet starts on a cleared screen.
+Dependencies are installed before recording; snippets must not replace that running tool environment.
 
 Usage: uv run --script scripts/demo_tape.py [--check]   writes docs/assets/demo.tape, or fails if it is out of date
 """
@@ -26,6 +27,7 @@ SNIPPET = "demo.tape"
 ALLOWED = {"Type", "Enter", "Wait", "Sleep", "Hide", "Show", "Require"}
 COMMAND = re.compile(r"^(?P<command>[A-Z][a-zA-Z]*)(?:[@+]\S*)?(?:\s+(?P<args>.*))?$")
 TYPED = re.compile(r"""^(["'`])(?P<text>.*)\1$""")
+REPLACES_TOOL = re.compile(r"^hz(?:\s+--expert)?\s+system\s+(?:update\b|plugin\s+(?:add|remove|develop)\b)")
 CLEAR = ["Hide", 'Type "clear"', "Enter", "Show"]
 # Holds the last output on screen for the final frames, which a render may otherwise cut short.
 HOLD = "Sleep 2s"
@@ -55,6 +57,8 @@ def problems(snippet: Path, root: Path = ROOT) -> list[str]:
             text = typed["text"] if typed else ""
             if not (text.startswith("hz ") or text == "clear"):
                 found.append(f"{where}:{number}: type real `hz` commands (or `clear`), nothing faked: {stripped}")
+            elif REPLACES_TOOL.match(text):
+                found.append(f"{where}:{number}: install plugins before recording; preserve the recording environment")
     return found
 
 
@@ -75,6 +79,14 @@ def assemble(root: Path = ROOT) -> str:
     if found := [problem for snippet in parts for problem in problems(snippet, root)]:
         raise ValueError("\n".join(found))
     intro = _without_leading_comments((root / INTRO.relative_to(ROOT)).read_text(encoding="utf-8"))
+    for line in intro:
+        match = COMMAND.match(line.strip())
+        if match and match["command"] == "Type":
+            typed = TYPED.match(match["args"] or "")
+            text = typed["text"] if typed else ""
+            if not (text.startswith("hz ") or text in {"clear", "export PS1='$ '"}):
+                msg = "The intro types real hz commands only; install dependencies before recording"
+                raise ValueError(msg)
     requires = [line for line in intro if line.startswith("Require ")]
     body: list[str] = []
     for snippet in parts:

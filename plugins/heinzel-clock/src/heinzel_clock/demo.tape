@@ -1,12 +1,7 @@
-# The clock plugin in the README demo: add it, show the clocks, then the same as JSON into jq.
+# The recorder already installed the plugins: show the inventory, the clocks, then the same as JSON into jq.
 Require jq
 
-Hide
-Type "hz system plugin remove heinzel-clock >/dev/null 2>&1; clear"
-Enter
-Wait@60s
-Show
-Type "hz system plugin add clock --confirm"
+Type "hz system plugin list"
 Enter
 Wait@60s
 Sleep 1.5s

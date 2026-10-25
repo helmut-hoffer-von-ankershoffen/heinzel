@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web build changelog ci-logs pr sync release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web build changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -149,7 +149,7 @@ licenses: ## Check that runtime dependencies' licenses are on .license-allowlist
 template-test: ## Render the plugin template, run its checks and audit against this checkout (KEEP=dir keeps it; AUDIT=0 skips the audit, which needs network)
 	TEMPLATE_AUDIT=$(if $(filter 0,$(AUDIT)),,1) bash scripts/template-test.sh $(KEEP)
 
-docs: ## Regenerate docs/CLI_REFERENCE.md from the code
+docs: ## Regenerate the references (MODULES, CLI_REFERENCE, CONFIGURATION) and every plugin's page from the code
 	uv run python scripts/generate_docs.py
 
 attributions: ## Regenerate ATTRIBUTIONS.md: every package hz ships (Python and web app), with its license text
@@ -158,8 +158,18 @@ attributions: ## Regenerate ATTRIBUTIONS.md: every package hz ships (Python and 
 fuzz: ## Fuzz the workflow contract parser with atheris for FUZZ_SECONDS (default 60; x86_64 Linux, Python 3.12 to 3.14)
 	uv run --group fuzz python fuzz/contract_fuzz.py -max_total_time=$(or $(FUZZ_SECONDS),60) -timeout=10
 
-demo: ## Assemble docs/assets/demo.tape from the intro and the modules' demo.tape snippets and render the GIF with VHS
-	bash scripts/demo.sh
+demo: ## Render the README's intro, docs/assets/demo.{gif,webp,mp4}: the demo tape's CLI part, then the UI scenes of docs/scenes.toml
+	uv run --quiet --script scripts/demo_tape.py
+	uv run --quiet --script scripts/docs_record.py --intro-only
+
+docs-plugins: ## Write the page of every installed plugin into docs/plugins (ADR 0082); here part of `make docs`, which also writes the gallery
+	env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py
+
+docs-record: ## Record every plugin page's scenes (CLI with VHS, UI with Playwright) into docs/plugins/*/assets, and the README's intro; PLUGIN=name, SCENE=name narrow it
+	uv run --quiet --script scripts/docs_record.py --intro $(if $(PLUGIN),--plugin $(PLUGIN)) $(if $(SCENE),--scene $(SCENE))
+
+docs-site: ## Build the documentation site (MkDocs Material) into site/ from docs/; SERVE=1 serves it with reload instead
+	uv run --quiet --group docs mkdocs $(if $(SERVE),serve,build --strict)
 
 template-sync: ## Regenerate the template's Makefile, CI workflow and pyproject from Heinzelmännchen's
 	uv run --script scripts/sync_template.py
@@ -216,4 +226,4 @@ release-local: ## Open a release pull request from this machine, from an up-to-d
 	INTRO="$$RELEASE_INTRO" bash scripts/release.sh $(or $(BUMP),auto) --open-pr
 
 clean: ## Remove build and test artifacts
-	rm -rf dist build .coverage* coverage.xml htmlcov reports .pytest_cache .mypy_cache .ruff_cache src/heinzel/heads/web/static
+	rm -rf dist build .coverage* coverage.xml htmlcov reports .pytest_cache .mypy_cache .ruff_cache site src/heinzel/heads/web/static

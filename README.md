@@ -37,9 +37,12 @@ them all off, and they stay away from JSON, pipes, CI and `NO_COLOR` anyway.
 This release is the foundation — kernel, heads, plugins and release automation; the first team workflows arrive in
 0.x ([roadmap](INTENT.md#where-we-are)).
 
-![hz from install to the first commands: version, system info, adding the clock plugin, clock, JSON into jq, doctor](docs/assets/demo.gif)
+<picture>
+  <source srcset="docs/assets/demo.png" media="(prefers-reduced-motion: reduce)" />
+  <img src="docs/assets/demo.gif" alt="hz in the terminal and web app: first commands, Today, a contract and the team graph in light and dark mode" width="100%" />
+</picture>
 
-<!-- recording: a short CLI + web UI walkthrough (hz, then the app) goes here once it is recorded -->
+[Video](docs/assets/demo.mp4) · [Still](docs/assets/demo.png)
 
 **What you can do today:**
 
@@ -190,6 +193,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.layer`](docs/MODULES.md#systemlayer) — Show the layer plugins installed and the stack you are in, general to specific.
 - [`system.notify`](docs/MODULES.md#systemnotify) — Pop up what deserves your attention: in the web app while it is open, else natively.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, enable, disable, list and scaffold plugins.
+- [`system.plugin.docs`](docs/MODULES.md#systemplugindocs) — Document installed plugins: what each brings, as a model and as Markdown pages.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
 - [`system.runner.chat`](docs/MODULES.md#systemrunnerchat) — Chat with the agent runner about where you are; it acts through hz once you confirm.
 - [`system.skill`](docs/MODULES.md#systemskill) — List the skills plugins ship for AI, and hand chosen ones to Claude Code.

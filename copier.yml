@@ -16,7 +16,7 @@ _envops:
   keep_trailing_newline: true
 _message_after_copy: |
   Your Heinzelmännchen plugin is ready in [[ _copier_conf.dst_path ]]. Next:
-    cd [[ _copier_conf.dst_path ]] && git init -b main && make setup && make check
+    cd [[ _copier_conf.dst_path ]] && git init -b main && make setup && make fix && make check
     hz system plugin develop .
     hz [[ plugin_name ]] --help
 

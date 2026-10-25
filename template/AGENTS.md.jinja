@@ -23,6 +23,7 @@ Instructions for coding agents and humans working on [[ project_name ]], a plugi
 | Fix what tools can fix | `make fix` |
 | Tests by level | `make test-unit`, `make test-integration`, `make test-e2e` |
 | Try it with Heinzelmännchen | `hz system plugin develop .` then `hz [[ plugin_name ]] --help` |
+| The plugin's page (`make fix` writes it), its recordings, the site | `make docs-plugins`, `make docs-record`, `make docs-site` |
 | Update to the latest Heinzelmännchen template | `make update-template` |
 
 ## Map
@@ -34,7 +35,7 @@ src/[[ package_name ]]/
   _service.py   the logic; operations stay thin
   hello/        a submodule: any package below that declares `module` is discovered
 tests/          unit/, integration/ (Heinzelmännchen's CLI head with the real entry point), e2e/ (uv tool install)
-docs/           CODING_STANDARDS.md (from Heinzelmännchen), adr/
+docs/           CODING_STANDARDS.md (from Heinzelmännchen), adr/, scenes.toml (what to record), plugins/ (generated)
 .claude/        reviewer agents, skills and hooks (from Heinzelmännchen)
 ```
 

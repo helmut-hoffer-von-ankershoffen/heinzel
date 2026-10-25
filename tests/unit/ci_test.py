@@ -24,7 +24,10 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "tar -czf notifier.tar.gz": "packs the app the macOS job built, with its executable bit, for the build job",
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
     },
-    "demo.yml": {"uv tool install --editable .": "installs hz from this checkout for the recording"},
+    "docs.yml": {
+        "sudo apt-get update": "fonts for the terminal recordings, from the runner's packages",
+        "uv run --quiet --group docs playwright install-deps": "Chromium's system libraries, from the runner",
+    },
     "publish.yml": {
         'test "v$(uv version --short)" = "$TAG"': "refuses a tag that doesn't match the project version",
         "uv run --script scripts/check_confidentiality.py": "scans the tagged tree with the term list from the secret",
@@ -97,6 +100,16 @@ def test_every_not_make_exemption_is_used():
         if not any(run.startswith(start) for run in runs.get(name, []))
     ]
     assert stale == [], "remove stale NOT_MAKE entries"
+
+
+def test_release_docs_only_publish_existing_recordings_even_when_the_caller_was_a_push():
+    release = yaml.safe_load((REPO / ".github/workflows/release-tag.yml").read_text(encoding="utf-8"))
+    docs = yaml.safe_load((REPO / ".github/workflows/docs.yml").read_text(encoding="utf-8"))
+    assert release["jobs"]["docs"].get("with", {}).get("site_only") is True
+    assert docs[True]["workflow_call"]["inputs"]["site_only"]["default"] is False
+    assert docs["jobs"]["record"]["if"] == (
+        "inputs.site_only != true && (github.event_name == 'push' || inputs.record == true)"
+    )
 
 
 # A script named by path needs its executable bit, which copier drops when it follows the template's symlinks into a

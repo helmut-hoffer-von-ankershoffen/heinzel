@@ -33,6 +33,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.layer`](#systemlayer) | Show the layer plugins installed and the stack you are in, general to specific. |
 | [`system.notify`](#systemnotify) | Pop up what deserves your attention: in the web app while it is open, else natively. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
+| [`system.plugin.docs`](#systemplugindocs) | Document installed plugins: what each brings, as a model and as Markdown pages. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
 | [`system.skill`](#systemskill) | List the skills plugins ship for AI, and hand chosen ones to Claude Code. |
@@ -380,6 +381,15 @@ Find, add, remove, enable, disable, list and scaffold plugins.
 | Find plugins to install: first-party ones, and community ones by querying the GitHub API. | `hz system plugin search` | `system_plugin_search` | `GET /system/plugin/search` | `GET /api/system/plugin/search` |  | expert |
 
 Settings: [`[system.plugin]`](CONFIGURATION.md#systemplugin).
+
+## `system.plugin.docs`
+
+Document installed plugins: what each brings, as a model and as Markdown pages.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Show what each installed plugin brings; `--json` is the full model its page is built from. | `hz system plugin docs show` | `system_plugin_docs_show` | — | `GET /api/system/plugin/docs/show` |  | expert |
+| Write a Markdown page per installed plugin, with theme swatches and its recordings when they exist. | `hz system plugin docs build` | `system_plugin_docs_build` | — | — | yes | expert |
 
 ## `system.runner`
 

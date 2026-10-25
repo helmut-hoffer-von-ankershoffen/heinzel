@@ -1,0 +1,21 @@
+# What the documentation records of this plugin (Heinzelmännchen ADR 0082). `make docs-record` renders every scene
+# into docs/plugins/[[ project_name ]]/assets/, and the page `make fix` writes embeds it. Without this file one CLI
+# scene is derived from the operations; a [[cli]] scene replaces it, a [[ui]] scene drives the web app (`hz ui`).
+#
+# A CLI scene types real `hz` commands. A UI scene's steps: goto (a route), click or hover (role + target, as the app
+# labels them), fill (a labelled field), key (a key), wait (text), screenshot (a caption and a hold in seconds); a
+# step with `optional = true` is skipped when its element isn't there. `[scenes] plugin` names whose scenes these are.
+
+[scenes]
+plugin = "[[ project_name ]]"
+
+[[cli]]
+name = "cli"
+title = "[[ plugin_name ]] in the terminal"
+commands = [
+  "hz [[ plugin_name ]] --help",
+  "hz [[ plugin_name ]] info",
+  "hz [[ plugin_name ]] hello --name Ada",
+  "hz [[ plugin_name ]] info --json",
+]
+hold = 2.5

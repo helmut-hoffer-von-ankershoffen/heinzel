@@ -2122,6 +2122,7 @@ $ hz system plugin [OPTIONS] COMMAND [ARGS]...
 * `add`: (expert) Show what a plugin would install,...
 * `develop`: (expert) Add the plugin in a directory on...
 * `disable`: (expert) Switch a plugin off without...
+* `docs`: (expert) Document installed plugins: what...
 * `enable`: (expert) Switch a disabled plugin on again.
 * `history`: (expert) List plugin changes made on this...
 * `list`: (expert) List installed plugins, enabled...
@@ -2186,6 +2187,66 @@ $ hz system plugin disable [OPTIONS] {distribution}
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system plugin docs`
+
+(expert) Document installed plugins: what each brings, as a model and as Markdown pages.
+
+**Usage**:
+
+```console
+$ hz system plugin docs [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `build`: (expert) Write a Markdown page per...
+* `show`: (expert) Show what each installed plugin...
+
+##### `hz system plugin docs build`
+
+(expert) Write a Markdown page per installed plugin, with theme swatches and its recordings when they exist.
+
+**Usage**:
+
+```console
+$ hz system plugin docs build [OPTIONS]
+```
+
+**Options**:
+
+* `--directory <path>`: Where the pages go: one `&lt;distribution&gt;/index.md` each, with an `assets/` beside it.  [default: docs/plugins]
+* `--plugin <str>`: One plugin, by its short name (`clock`) or distribution (`heinzel-clock`); every one if absent.
+* `--scenes <path>`: The `docs/scenes.toml` declaring what to record for the plugin (ADR 0082); when the default doesn&#x27;t exist, a CLI scene is derived from the operations.  [default: docs/scenes.toml]
+* `--builtin / --no-builtin`: Include Heinzelmännchen&#x27;s own modules as the page `heinzel`.  [default: no-builtin]
+* `--index / --no-index`: Also write `README.md`, a gallery of the pages built.  [default: index]
+* `--check / --no-check`: Write nothing; report the pages that differ from what would be written, for CI.  [default: no-check]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+##### `hz system plugin docs show`
+
+(expert) Show what each installed plugin brings; `--json` is the full model its page is built from.
+
+**Usage**:
+
+```console
+$ hz system plugin docs show [OPTIONS]
+```
+
+**Options**:
+
+* `--plugin <str>`: One plugin, by its short name (`clock`) or distribution (`heinzel-clock`); every one if absent.
+* `--scenes <path>`: The `docs/scenes.toml` declaring what to record for the plugin (ADR 0082); when the default doesn&#x27;t exist, a CLI scene is derived from the operations.  [default: docs/scenes.toml]
+* `--builtin / --no-builtin`: Include Heinzelmännchen&#x27;s own modules as the page `heinzel`.  [default: no-builtin]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

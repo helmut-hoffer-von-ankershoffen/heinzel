@@ -34,6 +34,7 @@ def test_discovers_builtin_modules_and_submodules():
         "system.layer",
         "system.notify",
         "system.plugin",
+        "system.plugin.docs",
         "system.runner",
         "system.runner.chat",
         "system.skill",

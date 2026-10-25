@@ -78,6 +78,7 @@ from heinzel.kernel._directory import ConfirmedLines, ReportingDraft, draft_repo
 from heinzel.kernel._discovery import BUILTIN_PACKAGE, ENTRY_POINT_GROUP, discover, walk
 from heinzel.kernel._duration import MAX_WINDOW, WINDOW_PATTERN, Span, format_duration, parse_duration, parse_window
 from heinzel.kernel._errors import HeinzelError
+from heinzel.kernel._exposure import MCP_HTTP, MCP_STDIO, Exposed, exposed, input_schema, restricts
 from heinzel.kernel._git import (
     GIT_HARDENING,
     CommandFailed,
@@ -265,6 +266,8 @@ __all__ = [
     "LOGO_ROUTE",
     "MAX_SKILL_LOAD",
     "MAX_WINDOW",
+    "MCP_HTTP",
+    "MCP_STDIO",
     "MODES",
     "NO_ADAPTER",
     "PROJECT_FILENAME",
@@ -329,6 +332,7 @@ __all__ = [
     "EventCancellation",
     "EventChange",
     "EventDraft",
+    "Exposed",
     "FreeBusy",
     "GitRunner",
     "GraphicWidget",
@@ -492,10 +496,12 @@ __all__ = [
     "draft_reporting_lines",
     "env_prefix",
     "environment_variable",
+    "exposed",
     "font_stack_problem",
     "format_duration",
     "free_busy_people",
     "git_command",
+    "input_schema",
     "link_problem",
     "operation_path",
     "owns_path",
@@ -508,6 +514,7 @@ __all__ = [
     "record_usage",
     "redact_emails",
     "requirement_from_receipt",
+    "restricts",
     "schedule_problem",
     "skill_frame",
     "skill_instructions",

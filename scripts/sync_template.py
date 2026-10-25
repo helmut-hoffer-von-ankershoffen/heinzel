@@ -25,12 +25,33 @@ def makefile() -> str:
     text = text.replace(" release clean\n", " release clean update-template\n", 1)
     text = text.replace(" (KEEP=dir keeps it)", "")
     text = re.sub(r"\n(template-test|template-sync|docs|attributions|fuzz|demo):.*?\n(?:\t.*\n)+", "\n", text)
-    # Steps only Heinzelmännchen has: import contracts, the template, generated docs, demo tape, ATTRIBUTIONS.md
-    # (never a last step).
-    text = re.sub(r'\n\t\t"&?(contracts|template|docs|demo|attributions)=[^\n]*', "", text)
+    # The core's generate_docs.py writes the plugin pages with everything else; a plugin runs the builder (ADR 0082).
+    text = text.replace(
+        '"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py --check"',
+        '"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins --check"',
+    )
+    text = text.replace(
+        '"&docs=env -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py"',
+        '"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins"',
+    )
+    # A plugin writes its pages with the builder, and has no README intro to record.
+    text = text.replace(
+        "docs-plugins: ## Write the page of every installed plugin into docs/plugins (ADR 0082); here part of `make "
+        "docs`, which also writes the gallery\n"
+        "\tenv -u HZ_SYSTEM_AGENT__SKILL_DIRS uv run python scripts/generate_docs.py",
+        "docs-plugins: ## Write the page of every installed plugin into docs/plugins with "
+        "`hz system plugin docs build` (ADR 0082)\n"
+        "\tuv run --quiet hz system plugin docs build --directory docs/plugins",
+    )
+    text = text.replace(", and the README's intro; PLUGIN=name", "; PLUGIN=name")
+    text = text.replace("scripts/docs_record.py --intro $(if", "scripts/docs_record.py $(if")
+    # Steps only Heinzelmännchen has: import contracts, the template, demo tape, ATTRIBUTIONS.md (never a last step).
+    text = re.sub(r'\n\t\t"&?(contracts|template|demo|attributions)=[^\n]*', "", text)
     text = text.replace("uv build --all-packages", "uv build")
     text = text.replace("lint, import contracts, types, tests", "lint, types, tests")
-    text = text.replace("format, lint, contracts, generated files, unit tests", "format, lint, unit tests")
+    text = text.replace(
+        "format, lint, contracts, generated files, unit tests", "format, lint, generated pages, unit tests"
+    )
     text = text.replace("check with coverage, template, build", "check with coverage, build")
     text = text.replace("lint, architecture contracts and workflows", "lint and workflows")
     # The web head's app (web/, ADR 0039): plugins bring operations, not UI.
