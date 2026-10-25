@@ -69,7 +69,9 @@ def test_the_listing_shows_every_option_with_the_one_in_use(make_kernel, fakes):
     code, listing = hz(make_kernel(builtins=True, config=gateway_config()), "ai", "access", "list")
     assert code == 0
     assert listing["selected"] == "claude-code"
-    rows = {o["name"]: (o["in_use"], o["status"], o["hosts"]) for o in listing["options"]}
+    # codex reads this machine's own `codex`, if any: its status is the machine's, so only its presence is checked
+    rows = {o["name"]: (o["in_use"], o["status"], o["hosts"]) for o in listing["options"] if o["name"] != "codex"}
+    assert "codex" in {o["name"] for o in listing["options"]}
     assert rows == {
         "claude-code": (True, "signed in", ["api.anthropic.com"]),
         "gateway": (False, "signed in", ["ai.acme.example"]),
@@ -92,7 +94,7 @@ def test_use_binds_the_access_and_the_runner_it_names(make_kernel, fakes):
 def test_use_refuses_an_option_nobody_installed(make_kernel, fakes):
     result = CliRunner().invoke(build(make_kernel(builtins=True)), ["ai", "access", "use", "nope"])
     assert result.exit_code != 0
-    assert "installed: claude-code, gateway, pydantic-ai" in result.output
+    assert "installed: claude-code, codex, gateway, pydantic-ai" in result.output
 
 
 def test_a_test_is_explicit_kept_and_shown_in_the_listing(make_kernel, fakes):
