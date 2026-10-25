@@ -201,6 +201,9 @@ importers:
       clsx:
         specifier: 2.1.1
         version: 2.1.1
+      cobe:
+        specifier: 2.0.1
+        version: 2.0.1
       elkjs:
         specifier: 0.12.0
         version: 0.12.0
@@ -1044,6 +1047,10 @@ packages:
   colorette@1.4.0:
     resolution:
       { integrity: sha512-Y2oEozpomLn7Q3HFP7dpww7AtMJplbM9lGZP6RDfHqmbeRjiwRg4n6VM6j4KLmRke85uWEI7JqF17f3pqdRA0g== }
+
+  cobe@2.0.1:
+    resolution:
+      integrity: sha512-aaa6vcIlaC8C1SF50LDH0Anybo/EAXnrxqe+bwvr4+YUtZydqjeBjTTD7ziCCkbRrRGSns3I3F6cZsf3W+L+ag==
 
   comma-separated-tokens@2.0.3:
     resolution:
@@ -2673,6 +2680,8 @@ snapshots:
   clsx@2.1.1: {}
 
   colorette@1.4.0: {}
+
+  cobe@2.0.1: {}
 
   comma-separated-tokens@2.0.3: {}
 

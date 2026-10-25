@@ -164,3 +164,5 @@ Drivers, status annotations became `amends`/`amended-by` front matter, and each 
 names the checks that exist in the repository. Where no alternatives were written down, the record says so instead
 of inventing them. Two factual corrections came with it: ADR 0004 names the pluggy hook `heinzel_lets` (renamed from
 `joy_lets`), and ADR 0017, already implemented with the clock plugin (`plugins/heinzel-clock`), was accepted.
+
+| [0063](0063-world-clock-is-a-local-interactive-globe.md) | World Clock is a local interactive globe in the right panel | proposed | 2026-10-25 |
