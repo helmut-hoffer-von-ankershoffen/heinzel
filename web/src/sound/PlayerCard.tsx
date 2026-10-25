@@ -148,7 +148,7 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
       data-dock={docked ? "docked" : "floating"}
       style={style}
       className={cn(
-        "fixed z-40 overflow-hidden bg-popover",
+        "fixed z-(--layer-media) overflow-hidden bg-popover",
         docked ? "border-y border-border" : "w-72 max-w-[calc(100vw-1rem)] rounded-xl border border-border shadow-xl",
       )}
     >

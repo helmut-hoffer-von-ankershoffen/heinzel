@@ -169,7 +169,7 @@ function Popover({
       role="dialog"
       aria-label={t("sound.title")}
       style={at ? { left: at.left, top: at.top } : { left: 0, top: 0, visibility: "hidden" }}
-      className="fixed z-50 max-h-[calc(100vh-1rem)] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl"
+      className="fixed z-(--layer-popover) max-h-[calc(100vh-1rem)] w-72 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl"
     >
       {children}
     </div>,

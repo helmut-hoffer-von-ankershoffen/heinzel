@@ -93,7 +93,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
         {menu && (
           <div
             role="menu"
-            className="absolute top-full left-0 z-20 mt-1 w-64 rounded-xl border border-border bg-card p-1 shadow-lg"
+            className="absolute top-full left-0 z-(--layer-popover) mt-1 w-64 rounded-xl border border-border bg-card p-1 shadow-lg"
           >
             <MenuItem
               onSelect={() => copy("command")}

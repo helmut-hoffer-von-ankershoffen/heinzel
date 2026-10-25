@@ -198,7 +198,7 @@ function Clock({ now }: { now: Date }) {
       </button>
       {open && (
         // The spacing is padding inside this transparent box, so the pointer never leaves it on the way up.
-        <div id={panelId} className="absolute right-0 bottom-full z-40 pb-2">
+        <div id={panelId} className="absolute right-0 bottom-full z-(--layer-popover) pb-2">
           <section
             aria-label={t("status.zones")}
             className="w-80 rounded-xl border border-border bg-popover p-1.5 text-sm shadow-xl"
@@ -454,7 +454,7 @@ function Overflow({ now }: { now: Date }) {
         <section
           id={id}
           aria-label={t("status.more")}
-          className="absolute right-0 bottom-full z-40 mb-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
+          className="absolute right-0 bottom-full z-(--layer-popover) mb-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
         >
           <StatusItems slot="footer" except={NATIVE_FOOTER} stacked />
           <MeetingLine now={now} wrap />

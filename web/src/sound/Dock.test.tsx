@@ -225,9 +225,9 @@ describe("the sound popover", () => {
     await user.click((await screen.findAllByRole("button", { name: "Sound options" }))[0] as HTMLElement);
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
     expect(dialog.parentElement).toBe(document.body);
-    expect(dialog.className).toContain("z-50");
+    expect(dialog.className).toContain("z-(--layer-popover)");
     expect(dialog.className).toContain("fixed");
-    expect((await player()).className).not.toContain("z-50");
+    expect((await player()).className).toContain("z-(--layer-media)");
     for (const name of ["Sound on", "Softer while I type", "Follow my theme", "Mute during meetings"])
       expect(within(dialog).getByRole("switch", { name })).toBeInTheDocument();
     expect(

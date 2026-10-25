@@ -20,7 +20,8 @@ import {
   Sun,
   UserRound,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { NavLink } from "react-router";
 import { useContracts, useExpert, useProfile, useSetExpert } from "@/api/queries";
 import { StatusItems } from "@/components/Contributions";
@@ -28,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { InstallApp } from "@/pwa/InstallApp";
-import { registerSlot } from "@/sound/dock";
+import { placePopover, registerSlot } from "@/sound/dock";
 import { SoundButton } from "@/sound/SoundControls";
 import { Branding } from "./Branding";
 import { BellButton } from "./NotificationCenter";
@@ -265,17 +266,59 @@ const ROLE_SHORT: Record<string, string> = {
 function Footer({ compact = false }: { compact?: boolean }) {
   const profile = useProfile();
   const me = profile.data;
-  const shown = me?.name?.split(" ")[0] ?? me?.handle;
-  const initial = (me?.name ?? me?.handle ?? "?").slice(0, 1).toUpperCase();
+  const name = me?.name?.trim() || me?.handle || t("nav.profile");
+  const shown = name.split(" ")[0];
+  const initial = (me?.name?.trim() || me?.handle?.trim() || "?").slice(0, 1).toUpperCase();
   const role = me?.role ? (ROLE_SHORT[me.role] ?? me.role.replaceAll("-", " ")) : undefined;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open) {
+      setAt(null);
+      return;
+    }
+    const anchor = trigger.current,
+      pane = menu.current;
+    if (!anchor || !pane) return;
+    const place = () => {
+      const box = pane.getBoundingClientRect();
+      const maxHeight = Math.max(1, window.innerHeight - 16);
+      setAt({
+        ...placePopover(
+          anchor.getBoundingClientRect(),
+          { width: box.width, height: Math.min(box.height, maxHeight) },
+          compact ? "right" : "above",
+        ),
+        maxHeight,
+      });
+    };
+    place();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    observer?.observe(pane);
+    observer?.observe(anchor);
+    if (ref.current?.parentElement) observer?.observe(ref.current.parentElement);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, compact]);
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+      if (!ref.current?.contains(event.target as Node) && !menu.current?.contains(event.target as Node)) setOpen(false);
     };
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        trigger.current?.focus();
+      }
+    };
     window.addEventListener("mousedown", close);
     window.addEventListener("keydown", onKey);
     return () => {
@@ -289,60 +332,62 @@ function Footer({ compact = false }: { compact?: boolean }) {
       ref={ref}
       className={cn(
         "relative flex items-center gap-1",
-        // 60px like the status bar, so the hairlines above both line up across the window.
-        "h-[60px] shrink-0 border-t-[0.5px] border-foreground/20",
-        compact ? "w-full flex-col justify-center gap-0.5" : "-mx-2 mt-2 px-2",
+        // The compact controls determine their own height; the divider stays above the whole cluster.
+        "shrink-0 border-t-[0.5px] border-foreground/20 [&>button]:shrink-0",
+        compact ? "w-full flex-col gap-1 py-2" : "-mx-2 mt-2 h-[60px] px-2",
       )}
     >
-      {open && (
-        <div
-          role="menu"
-          className={cn(
-            "absolute z-30 rounded-xl border border-border bg-popover p-1.5 shadow-xl",
-            compact ? "bottom-0 left-full ml-2 w-64" : "right-2 bottom-full left-2 mb-1.5",
-          )}
-        >
-          {me?.email && <p className="truncate px-2.5 pt-1 pb-1.5 text-ui-sm text-muted-foreground">{me.email}</p>}
-          <MenuLink to="?settings=" icon={Settings} onSelect={close} shortcut="⌘,">
-            {t("nav.settings")}
-          </MenuLink>
-          <MenuLink to="/profile" icon={UserRound} onSelect={close}>
-            {t("nav.profile")}
-          </MenuLink>
-          <MenuLink to="?onboarding=" icon={Sparkles} onSelect={close}>
-            {t("account.setup")}
-          </MenuLink>
-          <MenuLink to="/doctor" icon={Stethoscope} onSelect={close}>
-            {t("account.doctor")}
-          </MenuLink>
-          <ExpertItem />
-          <MenuLink to="?panel=help" icon={CircleHelp} onSelect={close}>
-            {t("account.help")}
-          </MenuLink>
-          <div className="px-1 py-0.5">
-            <InstallApp compact />
-          </div>
-          <hr className="mx-2 my-1 border-border" />
-          <MenuLink to="?panel=changelog" icon={FileClock} onSelect={close}>
-            {t("account.changelog")}
-          </MenuLink>
-          <MenuLink href={`${REPO}#readme`} icon={Info} onSelect={close}>
-            {t("account.learn")}
-          </MenuLink>
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={menu}
+            role="menu"
+            style={at ?? { left: 0, top: 0, visibility: "hidden" }}
+            className="fixed z-(--layer-popover) w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl"
+          >
+            {me?.email && <p className="truncate px-2.5 pt-1 pb-1.5 text-ui-sm text-muted-foreground">{me.email}</p>}
+            <MenuLink to="?settings=" icon={Settings} onSelect={close} shortcut="⌘,">
+              {t("nav.settings")}
+            </MenuLink>
+            <MenuLink to="/profile" icon={UserRound} onSelect={close}>
+              {t("nav.profile")}
+            </MenuLink>
+            <MenuLink to="?onboarding=" icon={Sparkles} onSelect={close}>
+              {t("account.setup")}
+            </MenuLink>
+            <MenuLink to="/doctor" icon={Stethoscope} onSelect={close}>
+              {t("account.doctor")}
+            </MenuLink>
+            <ExpertItem />
+            <MenuLink to="?panel=help" icon={CircleHelp} onSelect={close}>
+              {t("account.help")}
+            </MenuLink>
+            <div className="px-1 py-0.5">
+              <InstallApp compact />
+            </div>
+            <hr className="mx-2 my-1 border-border" />
+            <MenuLink to="?panel=changelog" icon={FileClock} onSelect={close}>
+              {t("account.changelog")}
+            </MenuLink>
+            <MenuLink href={`${REPO}#readme`} icon={Info} onSelect={close}>
+              {t("account.learn")}
+            </MenuLink>
+          </div>,
+          document.body,
+        )}
       {compact && <SoundButton compact />}
       {compact && <ThemeButton compact />}
       <button
+        ref={trigger}
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={compact ? (me?.name ?? t("nav.profile")) : undefined}
-        title={[me?.name, me?.role?.replaceAll("-", " ")].filter(Boolean).join(" · ") || undefined}
+        aria-label={compact ? name : undefined}
+        title={[name, me?.role?.replaceAll("-", " ")].filter(Boolean).join(" · ")}
         className={cn(
           "flex min-w-0 items-center gap-2 rounded-lg text-left transition-colors hover:bg-accent/70",
-          compact ? "size-7 justify-center" : "flex-1 px-1.5 py-1.5",
+          compact ? "size-8 justify-center rounded-full" : "flex-1 px-1.5 py-1.5",
         )}
       >
         <span
