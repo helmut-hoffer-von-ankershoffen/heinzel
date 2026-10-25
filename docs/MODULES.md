@@ -22,6 +22,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
 | [`system.capability`](#systemcapability) | Show which adapters serve which capabilities, and who reads and writes what. |
 | [`system.changelog`](#systemchangelog) | Release notes of the installed version and of newer releases. |
+| [`system.claude`](#systemclaude) | See the MCP servers and skills you already set up for Claude, without using any of them. |
 | [`system.config`](#systemconfig) | Show, get, set and initialize configuration. |
 | [`system.connector`](#systemconnector) | Show whether each connector is signed in and serves something, and test one live. |
 | [`system.credential`](#systemcredential) | Store and check the credentials modules need, in the OS keychain. |
@@ -229,6 +230,17 @@ Release notes of the installed version and of newer releases.
 | Show the installed version's changelog as Markdown, or with `--newer` what newer releases bring. | `hz system changelog` | `system_changelog` | `GET /system/changelog` | `GET /api/system/changelog` |  | expert |
 
 Settings: [`[system.changelog]`](CONFIGURATION.md#systemchangelog).
+
+## `system.claude`
+
+See the MCP servers and skills you already set up for Claude, without using any of them.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on. | `hz system claude list` | — | — | `GET /api/system/claude/list` |  | expert |
+| Count the MCP servers and skills found in Claude's configuration per source, without their names. | `hz system claude summary` | `system_claude_summary` | `GET /system/claude/summary` | `GET /api/system/claude/summary` |  | expert |
+
+Health checks: reported by `hz system doctor`.
 
 ## `system.config`
 
