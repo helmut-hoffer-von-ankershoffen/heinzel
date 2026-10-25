@@ -1,4 +1,4 @@
-"""Measuring drafts (`_measure`), recording what was sent (`WorkflowService.sent`) and the shipped templates."""
+"""Measuring drafts (`_measure`), recording what was sent (`HeinzelService.sent`) and the shipped templates."""
 
 import json
 import re
@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 from heinzel import AgentResult, Config, ContractTemplate, Document, HeinzelError, Module, Settings
-from heinzel.modules.workflow import WorkflowService, WorkflowSettings
-from heinzel.modules.workflow import _measure as measure
-from heinzel.modules.workflow._contracts import read_contract
-from heinzel.modules.workflow._starter import from_template, starter
+from heinzel.modules.heinzel import HeinzelService, HeinzelSettings
+from heinzel.modules.heinzel import _measure as measure
+from heinzel.modules.heinzel._contracts import read_contract
+from heinzel.modules.heinzel._starter import from_template, starter
 
 pytestmark = pytest.mark.unit
 
@@ -113,21 +113,21 @@ def make_service(make_kernel, tmp_path):
     (me / "plain.prose.md").write_text(starter("plain"))
     CLOCK[:] = [NOW]
 
-    def build(capabilities: dict[str, str] | None = None) -> WorkflowService:
+    def build(capabilities: dict[str, str] | None = None) -> HeinzelService:
         fakes = Module("fakes", "Test-only runner and documents.")
         fakes.provides("agent-runner", modes={"read"}, name="fake")(Runner)
         fakes.provides("documents", modes={"read"}, name="docs")(Docs)
         bound = capabilities if capabilities is not None else {"agent_runner": "fake", "documents": "docs"}
-        config = Config(files=(), data={"capabilities": bound, "workflow": {"user_dir": str(me)}})
+        config = Config(files=(), data={"capabilities": bound, "heinzel": {"user_dir": str(me)}})
         kernel = make_kernel(builtins=True, fakes=fakes, config=config)
         settings = Config(files=(), data={}).settings(Settings, "hz")
-        return WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings, clock=lambda: CLOCK[0])
+        return HeinzelService(kernel, kernel.resolve(HeinzelSettings), settings, clock=lambda: CLOCK[0])
 
     return build
 
 
 @pytest.fixture
-def service(make_service) -> WorkflowService:
+def service(make_service) -> HeinzelService:
     return make_service()
 
 

@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from pydantic_core import ErrorDetails
 from yaml.nodes import MappingNode, Node, ScalarNode, SequenceNode
 
-from heinzel.modules.workflow._models import (
+from heinzel.modules.heinzel._models import (
     SCHEMA_VERSION,
     SUFFIX,
     Agent,
@@ -131,7 +131,7 @@ class Contract:
     lines: Mapping[KeyPath, int] = field(default_factory=dict[KeyPath, int])
     """The 0-based frontmatter line of every key path, for diagnostics added later."""
     sha256: str = ""
-    """SHA-256 of the file's bytes, as `sha256:<hex>`; what `[workflow] schedule_team` pins."""
+    """SHA-256 of the file's bytes, as `sha256:<hex>`; what `[heinzel] schedule_team` pins."""
 
     def line_of(self, *path: str | int) -> int:
         """The file line of the deepest known key along `path`; 1 when there is no frontmatter."""

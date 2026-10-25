@@ -278,7 +278,7 @@ class DaemonService:
                     name="compiled jobs",
                     status=Status.DEGRADED,
                     detail=f"compiling jobs failed, so only declared jobs run: {self.compile_error}",
-                    fix="See `hz system daemon logs`; `hz workflow check` lists problems in contracts",
+                    fix="See `hz system daemon logs`; `hz heinzel check` lists problems in contracts",
                 )
             )
         if status.failing:
@@ -356,6 +356,7 @@ class DaemonService:
         now = self._clock()
         jobs = self._jobs()
         if job is not None:
+            job = self._current_id(job, jobs)
             jobs = [j for j in jobs if j.id == job]
             if not jobs:
                 msg = f"No job {job!r}; `hz system daemon jobs` lists them."
@@ -378,6 +379,15 @@ class DaemonService:
             finally:
                 log.close()
         return TickReport(at=now, dry_run=False, paused=False, locked=False, runs=runs)
+
+    def _current_id(self, job: str, jobs: list[Job]) -> str:
+        """`job`, or its id under its module's new name when it names a renamed module's job by the old (ADR 0051)."""
+        module, sep, name = job.partition(":")
+        if not sep or any(j.id == job for j in jobs) or (renamed := self._kernel.renamed(module)) is None:
+            return job
+        current = f"{renamed}:{name}"
+        logger.warning("Job %s is now %s; the old id works for one more minor release.", job, current)
+        return current
 
     def _post_notices(self, log: TickLog) -> None:
         """Pop up due notices natively when no web app shows them (ADR 0043); a failure only costs the pop-up."""

@@ -3,7 +3,7 @@
 Contract files are untrusted data (ADR 0021). `read_contract` turns any exception into the diagnostic "can't read
 the contract", an isolation boundary; this target fails when that boundary is needed, or when parsing hangs.
 Run it with `make fuzz` (Linux, Python 3.12 to 3.14, where atheris has wheels); CI runs it weekly (fuzz.yml).
-The hypothesis properties in tests/unit/modules/workflow_contracts_property_test.py check the same in every test run.
+The hypothesis properties in tests/unit/modules/heinzel_contracts_property_test.py check the same in every test run.
 """
 
 import sys
@@ -12,7 +12,7 @@ from pathlib import Path
 import atheris
 
 with atheris.instrument_imports():
-    from heinzel.modules.workflow._contracts import read_contract
+    from heinzel.modules.heinzel._contracts import read_contract
 
 PATH = Path("fuzz.prose.md")
 BOUNDARY = "can't read the contract"

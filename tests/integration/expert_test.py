@@ -24,7 +24,7 @@ def test_the_web_api_reads_the_mode_and_every_operations_audience(client):
     assert mode["expert"] is False
     audiences = {(o["module"], o["operation"]): o["audience"] for o in mode["operations"]}
     assert audiences[("system.doctor", "doctor")] == "everyday"
-    assert audiences[("workflow", "graph")] == "expert"
+    assert audiences[("heinzel", "graph")] == "expert"
     assert audiences[("system.expert", "on")] == "everyday"
 
 
@@ -46,6 +46,7 @@ def test_machine_heads_list_expert_operations_outside_expert_mode(make_kernel):
     assert not kernel.settings.expert
     for head in ("mcp", "api", "web"):
         names = {item.name for item in exposed(kernel, head)}
-        assert {"system_info", "system_config_show", "workflow_graph", "system_expert"} <= names
+        assert {"system_info", "system_config_show", "system_expert"} <= names
+        assert ("heinzel_graph" in names) is (head != "api")  # the module's HTTP API is the web app's (ADR 0051)
     paths = {route.path for route in api.build(kernel).routes}  # type: ignore[attr-defined]
     assert {"/system/info", "/system/expert", "/system/expert/on"} <= paths

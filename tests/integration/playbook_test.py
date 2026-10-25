@@ -147,7 +147,7 @@ def make(make_kernel, tmp_path):
     Runner.calls.clear()
 
     def build_kernel(bindings: dict[str, str] = BINDINGS) -> Kernel:
-        data = {"capabilities": bindings, "workflow": {"user_dir": str(tmp_path / "workflows")}}
+        data = {"capabilities": bindings, "heinzel": {"user_dir": str(tmp_path / "workflows")}}
         # Without `graph`, whose graph keeper is the core's one playbook: these tests are about what plugins bring.
         no_graph = Settings(disabled_modules=frozenset({"graph"}))
         return make_kernel(
@@ -173,7 +173,7 @@ def hz(kernel: Kernel, *args: str, json_output: bool = True, stdin: str | None =
 def written(kernel: Kernel, *, schedule: bool = False) -> Path:
     """The weekly report written from the playbook's template, with the person's assets; where its drafts go."""
     args = [arg for pair in (*ASSETS, "team-tracker=doc-tracker") for arg in ("--asset", pair)]
-    code, result = hz(kernel, "workflow", "new", "weekly-report", "--template", "teamwork:weekly-report", *args)
+    code, result = hz(kernel, "heinzel", "new", "weekly-report", "--template", "teamwork:weekly-report", *args)
     assert code == 0, result
     path = Path(result["file"])
     if schedule:
@@ -188,7 +188,7 @@ def daemon(kernel: Kernel, tmp_path: Path, now: datetime) -> DaemonService:
 
 
 def test_playbooks_list_asset_types_templates_and_recommended_settings(kernel):
-    code, listed = hz(kernel, "workflow", "playbooks")
+    code, listed = hz(kernel, "heinzel", "playbooks")
     assert code == 0, listed
     (playbook,) = listed["playbooks"]
     assert playbook["module"] == "teamwork"
@@ -203,7 +203,7 @@ def test_playbooks_list_asset_types_templates_and_recommended_settings(kernel):
             "template": "teamwork:weekly-report",
             "assets": ["team-repository", "team-project", "weekly-report", "team-tracker"],
             "keeps": ["weekly-report"],
-            "command": "hz workflow new weekly-report --template teamwork:weekly-report",
+            "command": "hz heinzel new weekly-report --template teamwork:weekly-report",
         }
     ]
     assert [d["command"] for d in playbook["defaults"]] == [
@@ -211,20 +211,20 @@ def test_playbooks_list_asset_types_templates_and_recommended_settings(kernel):
         "hz system config set capabilities.tracker host",
         "hz system config set capabilities.documents docs",
     ]
-    code, text = hz(kernel, "workflow", "playbooks", json_output=False)
+    code, text = hz(kernel, "heinzel", "playbooks", json_output=False)
     assert "recommends" in str(text)
     assert listed["next"][-1]["command"] == "hz teamwork setup"
 
 
 def test_discover_finds_candidates_through_what_you_can_read(make):
-    code, found = hz(make(), "workflow", "discover")
+    code, found = hz(make(), "heinzel", "discover")
     assert code == 0, found
     assert [(c["playbook"], c["asset"], c["ref"], c["title"]) for c in found["candidates"]] == [
         ("teamwork", "weekly-report", "doc-previous", "Team update, week 43"),
         ("teamwork", "team-tracker", "doc-tracker", "Team tracker"),
     ]
     assert found["problems"] == []
-    code, text = hz(make(), "workflow", "discover", json_output=False)
+    code, text = hz(make(), "heinzel", "discover", json_output=False)
     assert code == 0
     assert "doc-previous" in str(text)
     assert "--asset <type>=<reference>" in " ".join(str(text).split())
@@ -232,17 +232,17 @@ def test_discover_finds_candidates_through_what_you_can_read(make):
 
 def test_discover_says_once_how_to_bind_an_unbound_capability(make):
     off = {"agent_runner": "fake", "documents": "none"}  # the sole adapter would serve it automatically (ADR 0055)
-    code, found = hz(make(off), "workflow", "discover")
+    code, found = hz(make(off), "heinzel", "discover")
     assert code == 0
     assert [p["hint"] for p in found["problems"]] == ["documents.read"]
     assert "hz system config set capabilities.documents docs" in found["problems"][0]["problem"]
-    code, text = hz(make(off), "workflow", "discover", json_output=False)
+    code, text = hz(make(off), "heinzel", "discover", json_output=False)
     assert "No candidates found." in str(text)
     assert "capabilities.documents" in "".join(str(text).split())
 
 
 def test_discover_names_an_unknown_playbook(make):
-    code, text = hz(make(), "workflow", "discover", "--playbook", "nope", json_output=False)
+    code, text = hz(make(), "heinzel", "discover", "--playbook", "nope", json_output=False)
     assert code == 1
     assert "No playbook 'nope'" in str(text)
 
@@ -267,7 +267,7 @@ def test_setup_applies_settings_only_on_yes_proposes_assets_and_writes_the_templ
     assert 'args: {ref: "doc-previous"}' in contract
     assert 'args: {ref: "doc-tracker"}' in contract
     assert "{{asset:team-repository}}" in contract  # no hint: the person fills it in
-    left = [(d["code"], d["field"]) for d in hz(kernel, "workflow", "check")[1]["diagnostics"]]
+    left = [(d["code"], d["field"]) for d in hz(kernel, "heinzel", "check")[1]["diagnostics"]]
     assert left == [("HZC025", "hz.inputs.merged.args.repository"), ("HZC025", "hz.inputs.issues.args.project")]
     code, text = hz(kernel, "setup", "teamwork", json_output=False, stdin="y\ny\ny\n2\n2\n\n\n")
     assert code == 0, text
@@ -280,24 +280,22 @@ def test_setup_applies_settings_only_on_yes_proposes_assets_and_writes_the_templ
 
 
 def test_new_from_a_template_fills_assets_and_says_what_is_left(kernel):
-    code, result = hz(kernel, "workflow", "new", "team-update", "--template", "weekly-report", "--asset", ASSETS[2])
+    code, result = hz(kernel, "heinzel", "new", "team-update", "--template", "weekly-report", "--asset", ASSETS[2])
     assert code == 0, result
     text = Path(result["file"]).read_text(encoding="utf-8")
     assert re.search(r"^name: team-update$", text, re.MULTILINE)
-    assert result["next"][0]["command"] == "hz workflow discover"
-    code, output = hz(kernel, "workflow", "new", "x", "--template", "nope", json_output=False)
+    assert result["next"][0]["command"] == "hz heinzel discover"
+    code, output = hz(kernel, "heinzel", "new", "x", "--template", "nope", json_output=False)
     assert (code, "the templates are: teamwork:weekly-report" in str(output)) == (1, True)
-    code, output = hz(
-        kernel, "workflow", "new", "x", "--template", "weekly-report", "--asset", "y=z", json_output=False
-    )
+    code, output = hz(kernel, "heinzel", "new", "x", "--template", "weekly-report", "--asset", "y=z", json_output=False)
     assert (code, "has no placeholder for the asset 'y'" in str(output)) == (1, True)
-    code, output = hz(kernel, "workflow", "new", "x", "--template", "weekly-report", "--asset", "y", json_output=False)
+    code, output = hz(kernel, "heinzel", "new", "x", "--template", "weekly-report", "--asset", "y", json_output=False)
     assert (code, "must read type=reference" in str(output)) == (1, True)
 
 
 def test_a_dry_run_reads_every_input_and_costs_nothing(kernel):
     drafts = written(kernel)
-    code, dry = hz(kernel, "workflow", "run", "weekly-report", "--dry-run")
+    code, dry = hz(kernel, "heinzel", "wake", "weekly-report", "--dry-run")
     assert code == 0, dry
     assert Runner.calls == []  # no agent session: nothing spent
     assert not drafts.exists()  # no draft, no record
@@ -314,13 +312,13 @@ def test_a_dry_run_reads_every_input_and_costs_nothing(kernel):
 def test_the_daemon_drafts_it_on_friday_at_17_local_with_lineage(kernel, tmp_path):
     """Nothing on Thursday 17:03 or Friday 16:58; the Friday 17:00 slot at the 17:03 tick, once."""
     drafts = written(kernel, schedule=True)
-    assert "workflow:me-weekly-report" in [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]]
+    assert "heinzel:me-weekly-report" in [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]]
     thursday = FRIDAY - timedelta(days=1)
     assert daemon(kernel, tmp_path, thursday.replace(hour=17, minute=3)).tick().runs == []
     assert daemon(kernel, tmp_path, FRIDAY.replace(hour=16, minute=58)).tick().runs == []
     report = daemon(kernel, tmp_path, FRIDAY.replace(hour=17, minute=3)).tick()
     assert [(r.job, r.disposition.value, r.error) for r in report.runs] == [
-        ("workflow:me-weekly-report", "rendered", None)
+        ("heinzel:me-weekly-report", "rendered", None)
     ]
     slot = report.runs[0].as_of
     assert (slot.astimezone(ZONE).strftime("%a %H:%M"), slot.utcoffset()) == ("Fri 17:00", timedelta(hours=-7))
@@ -345,32 +343,32 @@ def test_the_daemon_drafts_it_on_friday_at_17_local_with_lineage(kernel, tmp_pat
 
 def test_show_reports_drafting_time_and_how_much_was_changed_before_sending(kernel, tmp_path):
     written(kernel)
-    code, result = hz(kernel, "workflow", "run", "weekly-report")
+    code, result = hz(kernel, "heinzel", "wake", "weekly-report")
     assert code == 0, result
     draft = result["rendered"]["draft"]
-    code, shown = hz(kernel, "workflow", "show", "weekly-report")
+    code, shown = hz(kernel, "heinzel", "show", "weekly-report")
     assert (shown["measurements"]["drafts"], shown["measurements"]["sent"]) == (1, 0)
     assert shown["measurements"]["recent"][0]["cost_usd"] == pytest.approx(0.05)
     assert shown["measurements"]["recent"][0]["drafting_seconds"] >= 0
     sent = tmp_path / "sent.md"
     sent.write_text(DRAFT.replace("- Beta.", "- Beta for two customers."), encoding="utf-8")
-    code, recorded = hz(kernel, "workflow", "sent", "weekly-report", "--file", str(sent), "--edit-minutes", "6")
+    code, recorded = hz(kernel, "heinzel", "sent", "weekly-report", "--file", str(sent), "--edit-minutes", "6")
     assert code == 0, recorded
     assert 0 < recorded["changed"] < 0.2
     assert recorded["sent_sha256"].startswith("sha256:")
     assert "customers" not in Path(recorded["record"]).read_text(encoding="utf-8")  # the sent text isn't kept
-    code, shown = hz(kernel, "workflow", "show", "weekly-report")
+    code, shown = hz(kernel, "heinzel", "show", "weekly-report")
     measurements = shown["measurements"]
     assert (measurements["sent"], measurements["total_edit_minutes"]) == (1, 6)
     assert measurements["mean_changed"] == recorded["changed"]
-    assert hz(kernel, "workflow", "drafts", "--name", "weekly-report")[1]["drafts"][0]["draft"] == draft
-    code, text = hz(kernel, "workflow", "show", "weekly-report", json_output=False)
+    assert hz(kernel, "heinzel", "drafts", "--name", "weekly-report")[1]["drafts"][0]["draft"] == draft
+    code, text = hz(kernel, "heinzel", "show", "weekly-report", json_output=False)
     assert "Success test" in str(text)
     assert "1 sent" in " ".join(str(text).split())
-    code, text = hz(kernel, "workflow", "sent", "weekly-report", "--file", str(sent), json_output=False)
+    code, text = hz(kernel, "heinzel", "sent", "weekly-report", "--file", str(sent), json_output=False)
     assert code == 0
     assert "of the words changed" in str(text)
-    code, approved = hz(kernel, "workflow", "sent", "weekly-report", "--ref", "doc-previous")
+    code, approved = hz(kernel, "heinzel", "sent", "weekly-report", "--ref", "doc-previous")
     assert code == 0, approved
     assert approved["sent"] == "documents:doc-previous"  # the approved version, read from where the asset lives
     assert approved["changed"] > recorded["changed"]

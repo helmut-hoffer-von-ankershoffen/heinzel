@@ -147,6 +147,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`github`](docs/MODULES.md#github) — Read pull requests and issues from GitHub: the code-host and tracker capabilities. *First-party plugin: `hz system plugin add github --confirm`.*
 - [`google`](docs/MODULES.md#google) — Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. *First-party plugin: `hz system plugin add google --confirm`.*
 - [`graph`](docs/MODULES.md#graph) — Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.
+- [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable agents that keep your team's documents true.
 - [`org`](docs/MODULES.md#org) — Your profile, and the team, org and company you work with.
 - [`report`](docs/MODULES.md#report) — Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
@@ -167,7 +168,6 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.runner.chat`](docs/MODULES.md#systemrunnerchat) — Chat with the agent runner about where you are; it acts through hz once you confirm.
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
-- [`workflow`](docs/MODULES.md#workflow) — Workflow contracts: Markdown files an agent drafts from, by hand or on your daemon's schedule (`hz workflow new` starts one).
 - [`zoom`](docs/MODULES.md#zoom) — Read meetings from Zoom's meeting-summary emails: the meetings capability. *First-party plugin: `hz system plugin add zoom --confirm`.*
 <!-- modules:end -->
 
@@ -206,15 +206,15 @@ state repository) names the capabilities it reads, the inputs to fetch and the a
 the draft must achieve. Drafts are saved locally; nothing is published by itself.
 
 ```bash
-hz workflow new weekly-digest             # a starter contract, valid as written, with comments; creates the directory
-hz workflow check                         # every problem by file and line
-hz workflow show weekly-digest            # what it requires, what is bound, whether it is ready, what to run next
-hz workflow run weekly-digest --dry-run   # the packet the agent would get; nothing is spent
-hz workflow run weekly-digest             # draft it now; then `hz workflow drafts`
+hz heinzel new weekly-digest             # a starter contract, valid as written, with comments; creates the directory
+hz heinzel check                         # every problem by file and line
+hz heinzel show weekly-digest            # what it requires, what is bound, whether it is ready, what to run next
+hz heinzel wake weekly-digest --dry-run   # the packet the agent would get; nothing is spent
+hz heinzel wake weekly-digest             # draft it now; then `hz heinzel drafts`
 ```
 
 Give it a `schedule:` and the daemon runs it. The journey from nothing to a scheduled team contract, and the contract
-reference: [docs/WORKFLOWS.md](docs/WORKFLOWS.md). Decisions: [ADR 0021](docs/adr/0021-workflow-contracts.md).
+reference: [docs/HEINZELMAENNCHEN.md](docs/HEINZELMAENNCHEN.md). Decisions: [ADR 0021](docs/adr/0021-workflow-contracts.md).
 
 ## Configure
 
