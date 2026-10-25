@@ -21,7 +21,9 @@ class SkillSettings(ModuleSettings):
 
     chat: list[str] | None = Field(
         default=None,
-        description='Skills the chat may load, by name, e.g. `["explain-heinzel"]`; none means the core\'s skills.',
+        title="Skills the chat may use",
+        description="The skills the chat may load, by name; when not set, the core's own skills.",
+        json_schema_extra={"x-expert": True},
     )
     personal_dir: Path | None = Field(
         default=None,
