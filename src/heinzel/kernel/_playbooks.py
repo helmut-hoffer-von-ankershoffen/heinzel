@@ -4,7 +4,7 @@ A playbook names the **asset types** a team keeps (a weekly report, a team track
 (**discovery hints**: capability reads the person can already make, narrowed by a title pattern), **template
 contracts** that keep those assets true, and **recommended configuration**. It is data: the kernel checks its shape
 and collects it; the module that owns contracts (the built-in `workflow`) evaluates the hints, offers the templates
-(`hz workflow new --template`) and applies a recommended setting only when the person accepts it (`hz setup <module>`,
+(`hz heinzel new --template`) and applies a recommended setting only when the person accepts it (`hz setup <module>`,
 `hz setup`). Nothing in a playbook runs by itself: hints only read, a template can't carry an active schedule, and
 defaults are proposals limited to capability bindings and the module's own settings.
 """
