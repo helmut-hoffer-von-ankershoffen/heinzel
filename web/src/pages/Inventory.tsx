@@ -1,4 +1,4 @@
-// Playbooks' asset types (`hz workflow playbooks`) and the assets found for them (`hz workflow discover`).
+// Playbooks' asset types (`hz heinzel playbooks`) and the assets found for them (`hz heinzel discover`).
 import { Search } from "lucide-react";
 import { useState } from "react";
 import { useDiscover, usePlaybooks } from "@/api/queries";

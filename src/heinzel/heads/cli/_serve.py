@@ -106,6 +106,8 @@ def serve_group(
 
 
 UI_HELP = "Open the web app in your browser, served on localhost; Ctrl-C stops it."
+UI_STOPPED = "Heinzelmännchen stopped. Run `hz ui` to start it again."
+"""What `hz ui` says when Ctrl-C stops it: its normal end, so it exits 0, unlike an interrupted `hz setup` (130)."""
 
 
 def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
@@ -133,6 +135,8 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
         It listens on one port (`[hz] ui_port`), so an installed app keeps its address and, once paired, reopens
         without a new link; `--devices` lists the paired ones and `--revoke` unpairs them.
 
+        Ctrl-C stops it; that is its normal end, so it exits 0.
+
         Raises:
             typer.Exit: With 1 when the app isn't built, the port is taken or there is no such device.
         """
@@ -154,6 +158,8 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
             web.serve(
                 kernel, port=kernel.settings.ui_port if port is None else port, browser=browser, announce=announce
             )
+        except KeyboardInterrupt:  # Ctrl-C before the server took it over: stopped all the same
+            pass
         except HeinzelError as exc:
             err_console.print(message("Can't start the web app:", str(exc)))
             raise typer.Exit(1) from exc
@@ -162,6 +168,9 @@ def ui_command(kernel: Kernel, err_console: Console) -> Callable[..., None]:
                 message("Can't listen:", f"{exc}; is `hz ui` running already? Or try another --port, 0 for a free one")
             )
             raise typer.Exit(1) from exc
+        if err_console.is_terminal:
+            err_console.print()  # past the ^C the terminal echoed
+        err_console.print(UI_STOPPED, highlight=False, markup=False)
 
     return ui
 

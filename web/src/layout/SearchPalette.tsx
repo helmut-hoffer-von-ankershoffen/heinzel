@@ -23,7 +23,7 @@ function useEntries(): Entry[] {
       for (const item of section.items) entries.push({ label: t(item.label), hint: t(section.label), to: item.to });
     }
     entries.push({ label: t("nav.profile"), hint: "", to: "/profile" });
-    for (const contract of contracts.data?.contracts ?? []) {
+    for (const contract of contracts.data?.heinzelmaennchen ?? []) {
       const qualified = `${contract.namespace}:${contract.name}`;
       entries.push({ label: contract.title ?? contract.name, hint: qualified, to: contractPath(qualified) });
     }
@@ -31,7 +31,7 @@ function useEntries(): Entry[] {
       const key = `${setting.section}.${setting.key}`;
       entries.push({ label: key, hint: setting.description, to: `?settings=&q=${encodeURIComponent(key)}` });
     }
-    const assetTypes = listed("workflow:playbooks", expert.data) ? (playbooks.data?.playbooks ?? []) : [];
+    const assetTypes = listed("heinzel:playbooks", expert.data) ? (playbooks.data?.playbooks ?? []) : [];
     for (const playbook of assetTypes) {
       for (const asset of playbook.assets) {
         entries.push({

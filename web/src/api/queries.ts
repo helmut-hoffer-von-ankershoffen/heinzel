@@ -7,11 +7,11 @@ export const keys = {
   config: ["system", "config", "show"],
   profile: ["org", "show"],
   team: ["team", "show"],
-  contracts: ["workflow", "list"],
-  graph: ["workflow", "graph"],
-  contract: (name: string) => ["workflow", "show", name],
-  playbooks: ["workflow", "playbooks"],
-  discover: ["workflow", "discover"],
+  contracts: ["heinzel", "list"],
+  graph: ["heinzel", "graph"],
+  contract: (name: string) => ["heinzel", "show", name],
+  playbooks: ["heinzel", "playbooks"],
+  discover: ["heinzel", "discover"],
   jobs: ["system", "daemon", "jobs"],
   expert: ["system", "expert"],
 } as const;
@@ -27,19 +27,22 @@ export function usePlayful(): boolean {
 }
 export const useProfile = () => useQuery({ queryKey: keys.profile, queryFn: () => unwrap(api.GET("/org/show")) });
 export const useTeam = () => useQuery({ queryKey: keys.team, queryFn: () => unwrap(api.GET("/team/show")) });
+/** `hz heinzel list`: your Heinzelmännchen, one per contract; the sidebar and search read the same list. */
+export const useHeinzelmaennchen = () =>
+  useQuery({ queryKey: keys.contracts, queryFn: () => unwrap(api.GET("/heinzel/list")) });
 export const useContracts = () =>
-  useQuery({ queryKey: keys.contracts, queryFn: () => unwrap(api.GET("/workflow/list")) });
-export const useGraph = () => useQuery({ queryKey: keys.graph, queryFn: () => unwrap(api.GET("/workflow/graph")) });
+  useQuery({ queryKey: keys.contracts, queryFn: () => unwrap(api.GET("/heinzel/list")) });
+export const useGraph = () => useQuery({ queryKey: keys.graph, queryFn: () => unwrap(api.GET("/heinzel/graph")) });
 export const useContract = (name: string) =>
   useQuery({
     queryKey: keys.contract(name),
-    queryFn: () => unwrap(api.GET("/workflow/show", { params: { query: { name } } })),
+    queryFn: () => unwrap(api.GET("/heinzel/show", { params: { query: { name } } })),
   });
 export const usePlaybooks = () =>
-  useQuery({ queryKey: keys.playbooks, queryFn: () => unwrap(api.GET("/workflow/playbooks")) });
+  useQuery({ queryKey: keys.playbooks, queryFn: () => unwrap(api.GET("/heinzel/playbooks")) });
 /** Discovery reads your systems through bound capabilities; it runs when asked, not on every visit. */
 export const useDiscover = (enabled: boolean) =>
-  useQuery({ queryKey: keys.discover, queryFn: () => unwrap(api.GET("/workflow/discover")), enabled });
+  useQuery({ queryKey: keys.discover, queryFn: () => unwrap(api.GET("/heinzel/discover")), enabled });
 export const useJobs = () => useQuery({ queryKey: keys.jobs, queryFn: () => unwrap(api.GET("/system/daemon/jobs")) });
 
 /** Expert mode and every operation's audience: which screens the navigation lists (ADR 0041). */
