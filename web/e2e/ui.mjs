@@ -141,20 +141,36 @@ try {
     await page.waitForFunction(() => !document.body.textContent?.includes("Loading…"));
     if (name === "settings") {
       const search = page.getByRole("searchbox", { name: "Filter settings" });
+      const oneFocusIndicator = async () => {
+        try {
+          // React applies the ring after its keyboard event. Wait for that committed visual state, as we do for
+          // other async UI, rather than reading the previous render immediately after pressSequentially/Shift+Tab.
+          await page.waitForFunction(
+            (input) =>
+              input === document.activeElement &&
+              getComputedStyle(input).outlineStyle === "none" &&
+              getComputedStyle(input).boxShadow === "none" &&
+              getComputedStyle(input.closest("label")).boxShadow !== "none",
+            await search.elementHandle(),
+            { timeout: 5000 },
+          );
+        } catch {
+          const focus = await search.evaluate((input) => ({
+            active: input === document.activeElement,
+            inputClass: input.className,
+            parentClass: input.closest("label").className,
+            inputOutline: getComputedStyle(input).outlineStyle,
+            inputShadow: getComputedStyle(input).boxShadow,
+            parentShadow: getComputedStyle(input.closest("label")).boxShadow,
+          }));
+          result.errors.push(`Settings search must have one parent focus indicator: ${JSON.stringify(focus)}`);
+        }
+      };
       await search.pressSequentially("volume");
-      const focused = await search.evaluate((input) => ({
-        inputOutline: getComputedStyle(input).outlineStyle,
-        inputShadow: getComputedStyle(input).boxShadow,
-        parentShadow: getComputedStyle(input.closest("label")).boxShadow,
-      }));
-      if (focused.inputOutline !== "none" || focused.inputShadow !== "none" || focused.parentShadow === "none") {
-        result.errors.push(`Settings search must have one parent focus indicator: ${JSON.stringify(focused)}`);
-      }
+      await oneFocusIndicator();
       await page.keyboard.press("Tab");
       await page.keyboard.press("Shift+Tab");
-      if (!(await search.evaluate((input) => getComputedStyle(input.closest("label")).boxShadow !== "none"))) {
-        result.errors.push("Settings search lost its keyboard focus indicator");
-      }
+      await oneFocusIndicator();
       await search.fill("");
     }
     await audit(name);
