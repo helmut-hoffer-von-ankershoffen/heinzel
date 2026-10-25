@@ -4,7 +4,7 @@ import { Check, ChevronDown, Link2, RefreshCw, SquareTerminal } from "lucide-rea
 import { useEffect, useRef, useState } from "react";
 import { matchPath, useLocation } from "react-router";
 import { HeaderActions } from "@/components/Contributions";
-import { HeinzelIcon } from "@/components/HeinzelIcon";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
 import type { MessageKey } from "@/i18n";
 import { t } from "@/i18n";
@@ -125,7 +125,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
         >
           <SquareTerminal aria-hidden />
         </Button>
-        {/* The chat is a conversation with your Heinzelmännchen, so its button is the Heinzel; open, a pill behind it. */}
+        {/* The chat is a conversation with your Heinzelmännchen, so its button is a Heinzelmännchen head (not the sidebar's logo); open shows as a dot under it, never a background. */}
         <Button
           variant="ghost"
           size="icon"
@@ -134,9 +134,17 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           aria-pressed={chatOpen}
           aria-label={chatOpen ? t("chat.collapse") : t("chat.expand")}
           title={chatOpen ? t("chat.collapse") : t("chat.expand")}
-          className={cn(chatOpen && "bg-accent")}
+          className="relative hover:bg-transparent hover:opacity-70"
         >
-          <HeinzelIcon className="text-lg" />
+          <HeinzelAvatar view="head" age="young" shirt="teal" className="size-[1.4em] text-lg" />
+          <span
+            aria-hidden
+            data-testid="chat-open-dot"
+            className={cn(
+              "absolute bottom-0.5 left-1/2 size-1 -translate-x-1/2 rounded-full bg-primary transition-opacity",
+              chatOpen ? "opacity-100" : "opacity-0",
+            )}
+          />
         </Button>
       </div>
       <span className="sr-only" aria-live="polite">
