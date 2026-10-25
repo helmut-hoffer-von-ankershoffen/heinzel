@@ -9,6 +9,10 @@ Soundscapes work the same way ([ADR 0058](adr/0058-soundscapes-are-data-a-plugin
 offers its own with `module.soundscape(Path(__file__).parent / "soundscapes")`, and they appear in `hz system sound
 list` and the web app's picker beside Claude FM.
 
+The sound options include volume, softer sound while typing and muting during meetings. A stream's mini-player
+starts in the sidebar; pop it out, drag it near the sidebar to dock it again, or move the floating player with its
+arrow-key button. Docking, undocking and collapsing the sidebar keep the stream playing.
+
 ## Themes that follow the time of day and the weather
 
 A theme can declare variants ([ADR 0060](adr/0060-themes-follow-the-time-of-day-and-the-weather.md)): colours that
@@ -141,3 +145,24 @@ dark = { main_tint = "#1e293b", backdrop = { gradient = "linear", angle = 180, s
 
 Animated wallpapers (drifting clouds, falling rain and snow, stars at night) come with layered wallpapers, the next
 step of ADR 0060's More Information.
+
+## Dressing the core Heinzelmännchen
+
+A theme can decorate the original drawing without replacing personal choices. Add this optional table to its TOML:
+
+```toml
+[heinzel]
+decorations = ["snow"]
+
+[heinzel.palette]
+hat = "#dceaf5"
+shirt = "#386387"
+scarf = "#b7daed"
+```
+
+The palette changes the default hat, shirt and scarf. A person who chose a hat or shirt colour keeps that choice.
+Snow adds a cap patch (a baby keeps its bare head), static snow dots and a scarf, across ages, builds and states.
+A scarf already requested is drawn once. Selecting a theme without the table restores the original look immediately.
+Only these three hex-colour keys and the `snow` decoration are accepted. The theme list on the CLI, MCP and web
+includes the table, so an agent can inspect it too. This table styles core drawings; custom icon files and splash
+art are separate future work ([ADR 0064](adr/0064-themes-can-dress-the-core-heinzelmaennchen.md)).

@@ -25,7 +25,6 @@ from heinzel import (
     ModuleSettings,
     Navigate,
     Prompter,
-    RunCommand,
     Status,
     StatusItem,
 )
@@ -189,7 +188,7 @@ module.action(
     "team-clock",
     label="World Clock",
     icon="globe",
-    effect=RunCommand(command="hz clock"),
+    effect=Navigate(path="/?panel=world-clock"),
     source="clock",
     badge=working,
 )

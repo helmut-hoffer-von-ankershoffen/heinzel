@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useSearchParams } from "react-router";
 import { ChatProvider } from "@/chat/ChatContext";
+import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { t } from "@/i18n";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
@@ -20,6 +21,7 @@ import { StatusBar } from "./StatusBar";
 import { TerminalPanel } from "./TerminalPanel";
 import { ThemeTokens } from "./ThemeTokens";
 import { TopBar } from "./TopBar";
+import { WorldClock } from "./WorldClock";
 
 /** A pane's open state, remembered in this browser; without storage it starts from `initial` each time. */
 function useRemembered(
@@ -63,7 +65,9 @@ export function fitsBeside(areaPx: number, remPx: number): boolean {
 export function Shell() {
   return (
     <ChatProvider>
-      <Layout />
+      <AvatarThemeProvider>
+        <Layout />
+      </AvatarThemeProvider>
     </ChatProvider>
   );
 }
@@ -101,10 +105,17 @@ function Layout() {
   const area = useRef<HTMLDivElement>(null);
   const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const beside = fitsBeside(useWidth(area), rem);
-  const full = terminalOpen && terminalFull;
   // Settings is a dialog over the screen, open while the URL has `?settings=<section>`, so links can point into it.
   const [params, setParams] = useSearchParams();
   const settings = params.get("settings");
+  const clockOpen = params.get("panel") === "world-clock";
+  const full = terminalOpen && terminalFull && !clockOpen;
+  const closeClock = () =>
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("panel");
+      return next;
+    });
   const setSettings = (section: string | null) =>
     setParams((current) => {
       const next = new URLSearchParams(current);
@@ -160,10 +171,20 @@ function Layout() {
       <div ref={area} className={cn("relative flex min-w-0 flex-1", beside ? "flex-row" : "flex-col")}>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <TopBar
-            chatOpen={chatOpen}
-            onToggleChat={() => setChatOpen((open) => !open)}
-            terminalOpen={terminalOpen}
-            onToggleTerminal={() => setTerminalOpen((open) => !open)}
+            chatOpen={chatOpen && !clockOpen}
+            onToggleChat={() => {
+              if (clockOpen) {
+                closeClock();
+                setChatOpen(true);
+              } else setChatOpen((open) => !open);
+            }}
+            terminalOpen={terminalOpen && !clockOpen}
+            onToggleTerminal={() => {
+              if (clockOpen) {
+                closeClock();
+                setTerminalOpen(true);
+              } else setTerminalOpen((open) => !open);
+            }}
           />
           <main
             id="content"
@@ -174,7 +195,7 @@ function Layout() {
           </main>
           {beside && <StatusBar />}
         </div>
-        {(chatOpen || terminalOpen) && (
+        {(chatOpen || terminalOpen || clockOpen) && (
           // One panel: the chat on top, the terminal under it, each alone when the other is closed. Beside the screen
           // it is a column; below it, the same stack across the width. In full screen the terminal covers the screen
           // and the panel, and the chat stays mounted with its conversation.
@@ -189,13 +210,28 @@ function Layout() {
                   : "h-[min(36rem,55%)] shrink-0 border-t border-border",
             )}
           >
+            {clockOpen && (
+              <aside aria-label={t("worldClock.panel")} className="min-h-0 flex-1">
+                <WorldClock onClose={closeClock} />
+              </aside>
+            )}
             {chatOpen && (
-              <aside aria-label={t("chat.title")} className={cn("min-h-0 flex-1", full && "hidden")}>
+              <aside
+                hidden={full || clockOpen}
+                aria-label={t("chat.title")}
+                className={cn("min-h-0 flex-1", (full || clockOpen) && "hidden")}
+              >
                 <ChatPanel onCollapse={() => setChatOpen(false)} />
               </aside>
             )}
             {terminalOpen && (
-              <div className={cn("min-h-0", chatOpen && !full ? "h-1/2 border-t border-border" : "flex-1")}>
+              <div
+                className={cn(
+                  "min-h-0",
+                  clockOpen && "hidden",
+                  chatOpen && !full ? "h-1/2 border-t border-border" : "flex-1",
+                )}
+              >
                 <TerminalPanel
                   full={terminalFull}
                   onToggleFull={() => setTerminalFull((value) => !value)}
