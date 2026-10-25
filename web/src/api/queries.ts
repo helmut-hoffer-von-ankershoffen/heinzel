@@ -98,6 +98,14 @@ export const useInfo = () =>
 export const useThemes = () =>
   useQuery({ queryKey: ["system", "theme", "list"], queryFn: () => unwrap(api.GET("/system/theme/list")) });
 
+/** `hz system theme signals`: the daypart and the weather the theme's variants follow, asked again every minute. */
+export const useThemeSignals = () =>
+  useQuery({
+    queryKey: ["system", "theme", "signals"],
+    queryFn: () => unwrap(api.GET("/system/theme/signals")),
+    refetchInterval: (query) => (query.state.data?.refresh ?? 60) * 1000,
+  });
+
 /** `hz system theme use <name>`; the app applies it as soon as the list is read again. */
 export const useSetTheme = () => {
   const client = useQueryClient();
