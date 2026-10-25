@@ -7,7 +7,7 @@ resuming are operations the app runs only after the person confirms the exact ca
 
 from datetime import UTC, datetime, timedelta
 
-from heinzel import DetailLine, LiveTime, RunCommand, RunOperation, StatusItem, WidgetAction
+from heinzel import DetailLine, LiveTime, RunCommand, RunOperation, StatusItem, WidgetAction, __version__
 from heinzel.modules.system.daemon._models import DaemonStatus
 from heinzel.modules.system.daemon._service import PLATFORMS
 
@@ -18,6 +18,7 @@ INSTALL = WidgetAction(label="Install", icon="play", effect=RunCommand(command="
 UNINSTALL = WidgetAction(
     label="Uninstall", icon="circle-alert", effect=RunCommand(command="hz system daemon uninstall")
 )
+RESTART = WidgetAction(label="Restart daemon", icon="zap", effect=RunOperation(operation="restart"))
 PAUSE = WidgetAction(label="Pause", icon="timer", effect=RunOperation(operation="pause"))
 RESUME = WidgetAction(label="Resume", icon="play", effect=RunOperation(operation="resume"))
 LOGS = WidgetAction(label="Logs", icon="file-text", effect=RunCommand(command="hz system daemon logs"))
@@ -52,11 +53,21 @@ def status_item(status: DaemonStatus, now: datetime | None = None) -> StatusItem
         DetailLine(text=f"Last tick {_ago(last, now)}" if last else "No tick yet"),
         *(DetailLine(text=f"Failing: {job}", tone="bad") for job in status.failing[:5]),
     ]
+    if status.version:
+        detail.insert(1, DetailLine(text=f"Daemon version {status.version}"))
+    if status.version_mismatch:
+        detail.insert(
+            2,
+            DetailLine(
+                text=f"Daemon runs hz {status.version}, not the installed {__version__}: restart it", tone="bad"
+            ),
+        )
+    restart = [RESTART] if status.version_mismatch else []
     interval = timedelta(minutes=status.interval_minutes or 0)
     stale = bool(last and interval and now - last > STALE_INTERVALS * interval)
     if status.paused:
         return StatusItem(
-            text="Daemon paused", tone="warn", icon="bot", detail=detail, actions=[RESUME, LOGS, UNINSTALL]
+            text="Daemon paused", tone="warn", icon="bot", detail=detail, actions=[*restart, RESUME, LOGS, UNINSTALL]
         )
     if not status.loaded or status.failing or stale:
         text = (
@@ -66,13 +77,17 @@ def status_item(status: DaemonStatus, now: datetime | None = None) -> StatusItem
             if status.failing
             else "Daemon not ticking"
         )
-        return StatusItem(text=text, tone="bad", icon="bot", detail=detail, actions=[LOGS, PAUSE, UNINSTALL])
+        return StatusItem(text=text, tone="bad", icon="bot", detail=detail, actions=[*restart, LOGS, PAUSE, UNINSTALL])
     upcoming = last + interval if last and interval else None
     return StatusItem(
-        text="Daemon running · next tick" if upcoming else "Daemon running",
-        tone="ok",
+        text="Daemon needs a restart"
+        if status.version_mismatch
+        else "Daemon running · next tick"
+        if upcoming
+        else "Daemon running",
+        tone="warn" if status.version_mismatch else "ok",
         icon="bot",
         live=LiveTime(at=upcoming) if upcoming else None,
         detail=detail,
-        actions=[LOGS, PAUSE, UNINSTALL],
+        actions=[*restart, LOGS, PAUSE, UNINSTALL],
     )

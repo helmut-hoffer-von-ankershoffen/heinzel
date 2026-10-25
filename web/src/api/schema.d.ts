@@ -721,6 +721,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/daemon/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restart the daemon so it runs with the installed hz.
+         * @description Restart the daemon so it runs with the installed hz.
+         */
+        post: operations["system_daemon_restart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/daemon/resume": {
         parameters: {
             query?: never;
@@ -1648,8 +1668,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
-         * @description Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.
+         * Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.
+         * @description Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.
          *
          *     Installed from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases
          *     only if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`
@@ -1657,6 +1677,10 @@ export interface paths {
          *     `update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,
          *     it changes nothing and says which `--source` moves it. It never moves or suggests a release older than the
          *     installed version.
+         *
+         *     Plugins are updated in the same run, each from the install spec it was added with (a git spec pinned to `@main`
+         *     gets its newest commit). A plugin that doesn't allow the new hz never blocks it: it is kept at its version if that
+         *     still works, else taken out with the command that brings it back. The result reports each plugin.
          *     Following a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new
          *     version, the error names it and the previous version stays installed.
          *
@@ -3430,6 +3454,17 @@ export interface components {
              * @description The platform's service manager: darwin (launchd) or linux (systemd).
              */
             platform: string;
+            /**
+             * Version
+             * @description The hz version the daemon was started with (installed or last restarted); none if it isn't installed or was installed by an older hz.
+             */
+            version?: string | null;
+            /**
+             * Version Mismatch
+             * @description Whether `version` differs from the hz that answers: after `hz system update` the daemon should be restarted (`hz system daemon restart`).
+             * @default false
+             */
+            version_mismatch: boolean;
         };
         /**
          * DefaultView
@@ -5501,6 +5536,49 @@ export interface components {
             warnings: string[];
         };
         /**
+         * PluginUpdate
+         * @description What `hz system update` did to one installed plugin.
+         */
+        PluginUpdate: {
+            /**
+             * After
+             * @description Version installed now; none if the plugin is no longer installed.
+             */
+            after: string | null;
+            /**
+             * Before
+             * @description Version installed before; none if it couldn't be told.
+             */
+            before: string | null;
+            /**
+             * Disabled
+             * @description Whether the plugin does not work with the new hz at all and was taken out of the installation: it is not loaded until a release that allows the new hz is added (`next`).
+             * @default false
+             */
+            disabled: boolean;
+            /**
+             * Distribution
+             * @description Distribution name, e.g. heinzel-clock.
+             */
+            distribution: string;
+            /**
+             * Next
+             * @description Commands that bring a failed plugin back.
+             */
+            next?: string[];
+            /**
+             * Reason
+             * @description Why it failed, and what became of it.
+             */
+            reason?: string | null;
+            /**
+             * Status
+             * @description `upgraded` (a newer version or commit is installed), `unchanged` (it is as new as its install spec allows) or `failed` (it couldn't be moved to the new hz; see `reason`).
+             * @enum {string}
+             */
+            status: "upgraded" | "unchanged" | "failed";
+        };
+        /**
          * Profile
          * @description Your profile as hz knows it, and what is still missing.
          */
@@ -5763,6 +5841,27 @@ export interface components {
              * @description Always true: poll any endpoint until it answers again.
              */
             restarting: boolean;
+        };
+        /**
+         * Restarted
+         * @description What `restart` did.
+         */
+        Restarted: {
+            /**
+             * Interval Minutes
+             * @description Minutes between ticks, as installed; none if not installed.
+             */
+            interval_minutes: number | null;
+            /**
+             * Restarted
+             * @description Whether the daemon was reloaded; false if it isn't installed.
+             */
+            restarted: boolean;
+            /**
+             * Version
+             * @description The hz version the daemon runs with now.
+             */
+            version: string;
         };
         /**
          * RunCommand
@@ -7298,6 +7397,11 @@ export interface components {
              */
             pinned_to: string | null;
             /**
+             * Plugins
+             * @description What happened to each installed plugin: upgraded together with hz, unchanged or failed. A plugin that doesn't allow the new hz never blocks it.
+             */
+            plugins?: components["schemas"]["PluginUpdate"][];
+            /**
              * Updated
              * @description Whether Heinzelmännchen was reinstalled.
              */
@@ -7676,6 +7780,7 @@ export type SchemaPluginEvent = components['schemas']['PluginEvent'];
 export type SchemaPluginInfo = components['schemas']['PluginInfo'];
 export type SchemaPluginLayer = components['schemas']['PluginLayer'];
 export type SchemaPluginSearch = components['schemas']['PluginSearch'];
+export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaProfile = components['schemas']['Profile'];
 export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
@@ -7684,6 +7789,7 @@ export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
 export type SchemaRestart = components['schemas']['Restart'];
+export type SchemaRestarted = components['schemas']['Restarted'];
 export type SchemaRunCommand = components['schemas']['RunCommand'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaRunOperation = components['schemas']['RunOperation'];
@@ -8675,6 +8781,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Toggled"];
+                };
+            };
+        };
+    };
+    system_daemon_restart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Restarted"];
                 };
             };
         };

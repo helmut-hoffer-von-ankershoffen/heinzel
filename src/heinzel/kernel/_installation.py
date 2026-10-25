@@ -199,16 +199,24 @@ class Installation:
         entries = self._receipt()
         return pin_from_receipt(entries[0]) if entries else None
 
+    def plugin_pins(self) -> list[CorePin]:
+        """What each plugin in the uv tool environment installs from, as the receipt has it; empty outside of one."""
+        return [pin_from_receipt(entry) for entry in (self._receipt() or [])[1:]]
+
     def _receipt(self) -> list[dict[str, Any]] | None:
         if not self.is_tool:
             return None
         data = tomllib.loads((self.prefix / RECEIPT_FILENAME).read_text(encoding="utf-8"))
         return list(data["tool"]["requirements"])
 
-    def tool_install_command(self, core: str, plugins: Sequence[str]) -> list[str]:
-        """Reinstall the tool environment from `core` with `plugins`, on the Python Heinzelmännchen runs on."""
+    def tool_install_command(self, core: str, plugins: Sequence[str], *, refresh: bool = False) -> list[str]:
+        """Reinstall the tool environment from `core` with `plugins`, on the Python Heinzelmännchen runs on.
+
+        With `refresh` uv asks the indexes and git remotes again instead of trusting its cache, so a branch is
+        resolved to its newest commit and an index to its newest release.
+        """
         python = f"{sys.version_info.major}.{sys.version_info.minor}"
-        command = [self.uv, "tool", "install", "--force", "--python", python, core]
+        command = [self.uv, "tool", "install", "--force", *(["--refresh"] if refresh else []), "--python", python, core]
         for plugin in plugins:
             command += ["--with", plugin]
         return command
@@ -216,10 +224,6 @@ class Installation:
     def pip_command(self, action: str, spec: str) -> list[str]:
         """`uv pip install` or `uninstall` into the environment Heinzelmännchen runs in."""
         return [self.uv, "pip", action, "--python", sys.executable, spec]
-
-    def upgrade_command(self) -> list[str]:
-        """Upgrade Heinzelmännchen from where it was installed from, keeping plugins."""
-        return [self.uv, "tool", "upgrade", CORE_DISTRIBUTION]
 
     def run(
         self, command: list[str], failure: str, activity: str, environment: Mapping[str, str] | None = None

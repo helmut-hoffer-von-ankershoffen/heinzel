@@ -71,4 +71,5 @@ def render_release(check: ReleaseCheck) -> RenderableType:
 
 def render_update(result: UpdateResult) -> RenderableType:
     """What the update did, or what the installation is pinned to and the command that moves it."""
-    return Text(result.message)
+    unchanged = [p.distribution for p in result.plugins if p.status == "unchanged"]
+    return Text("\n".join([result.message, *([f"Plugins unchanged: {', '.join(unchanged)}."] if unchanged else [])]))

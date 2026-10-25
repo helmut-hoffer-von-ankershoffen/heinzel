@@ -2957,6 +2957,24 @@
             "description": "The platform's service manager: darwin (launchd) or linux (systemd).",
             "title": "Platform",
             "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The hz version the daemon was started with (installed or last restarted); none if it isn't installed or was installed by an older hz.",
+            "title": "Version"
+          },
+          "version_mismatch": {
+            "default": false,
+            "description": "Whether `version` differs from the hz that answers: after `hz system update` the daemon should be restarted (`hz system daemon restart`).",
+            "title": "Version Mismatch",
+            "type": "boolean"
           }
         },
         "required": [
@@ -6593,6 +6611,84 @@
         "title": "PluginSearch",
         "type": "object"
       },
+      "PluginUpdate": {
+        "description": "What `hz system update` did to one installed plugin.",
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Version installed now; none if the plugin is no longer installed.",
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Version installed before; none if it couldn't be told.",
+            "title": "Before"
+          },
+          "disabled": {
+            "default": false,
+            "description": "Whether the plugin does not work with the new hz at all and was taken out of the installation: it is not loaded until a release that allows the new hz is added (`next`).",
+            "title": "Disabled",
+            "type": "boolean"
+          },
+          "distribution": {
+            "description": "Distribution name, e.g. heinzel-clock.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "next": {
+            "description": "Commands that bring a failed plugin back.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it failed, and what became of it.",
+            "title": "Reason"
+          },
+          "status": {
+            "description": "`upgraded` (a newer version or commit is installed), `unchanged` (it is as new as its install spec allows) or `failed` (it couldn't be moved to the new hz; see `reason`).",
+            "enum": [
+              "upgraded",
+              "unchanged",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "distribution",
+          "status",
+          "before",
+          "after"
+        ],
+        "title": "PluginUpdate",
+        "type": "object"
+      },
       "Profile": {
         "description": "Your profile as hz knows it, and what is still missing.",
         "properties": {
@@ -7055,6 +7151,40 @@
           "message"
         ],
         "title": "Restart",
+        "type": "object"
+      },
+      "Restarted": {
+        "description": "What `restart` did.",
+        "properties": {
+          "interval_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minutes between ticks, as installed; none if not installed.",
+            "title": "Interval Minutes"
+          },
+          "restarted": {
+            "description": "Whether the daemon was reloaded; false if it isn't installed.",
+            "title": "Restarted",
+            "type": "boolean"
+          },
+          "version": {
+            "description": "The hz version the daemon runs with now.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "restarted",
+          "version",
+          "interval_minutes"
+        ],
+        "title": "Restarted",
         "type": "object"
       },
       "RunCommand": {
@@ -9762,6 +9892,14 @@
             "description": "The release tag, branch, commit, path, URL or version specifier the installation is pinned to now; none if it follows a git repository's default branch or the package index without a specifier.",
             "title": "Pinned To"
           },
+          "plugins": {
+            "description": "What happened to each installed plugin: upgraded together with hz, unchanged or failed. A plugin that doesn't allow the new hz never blocks it.",
+            "items": {
+              "$ref": "#/components/schemas/PluginUpdate"
+            },
+            "title": "Plugins",
+            "type": "array"
+          },
           "updated": {
             "description": "Whether Heinzelmännchen was reinstalled.",
             "title": "Updated",
@@ -11752,6 +11890,28 @@
         ]
       }
     },
+    "/system/daemon/restart": {
+      "post": {
+        "description": "Restart the daemon so it runs with the installed hz.",
+        "operationId": "system_daemon_restart",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Restarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Restart the daemon so it runs with the installed hz.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/daemon/resume": {
       "post": {
         "description": "Resume a paused daemon.",
@@ -13551,7 +13711,7 @@
     },
     "/system/update": {
       "post": {
-        "description": "Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.\n\nInstalled from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases\nonly if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`\nmakes. With `--channel main` (or the setting\n`update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,\nit changes nothing and says which `--source` moves it. It never moves or suggests a release older than the\ninstalled version.\nFollowing a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new\nversion, the error names it and the previous version stays installed.\n\nRaises:\n    HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.",
+        "description": "Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.\n\nInstalled from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases\nonly if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`\nmakes. With `--channel main` (or the setting\n`update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,\nit changes nothing and says which `--source` moves it. It never moves or suggests a release older than the\ninstalled version.\n\nPlugins are updated in the same run, each from the install spec it was added with (a git spec pinned to `@main`\ngets its newest commit). A plugin that doesn't allow the new hz never blocks it: it is kept at its version if that\nstill works, else taken out with the command that brings it back. The result reports each plugin.\nFollowing a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new\nversion, the error names it and the previous version stays installed.\n\nRaises:\n    HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.",
         "operationId": "system_update",
         "parameters": [
           {
@@ -13617,7 +13777,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.",
+        "summary": "Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.",
         "tags": [
           "system"
         ]

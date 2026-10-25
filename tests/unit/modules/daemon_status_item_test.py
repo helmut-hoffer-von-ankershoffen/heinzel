@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from heinzel import LiveTime, RunCommand, RunOperation
+from heinzel import LiveTime, RunCommand, RunOperation, __version__
 from heinzel.modules.system.daemon._models import DaemonStatus
 from heinzel.modules.system.daemon._status_item import status_item
 
@@ -86,3 +86,20 @@ def test_a_long_ago_tick_reads_in_hours_and_none_says_so():
 def test_other_platforms_are_unsupported():
     item = status_item(daemon(platform="win32", installed=False), NOW)
     assert (item.text, item.actions) == ("Daemon unsupported here", [])
+
+
+def test_the_version_the_daemon_started_with_is_shown():
+    item = status_item(daemon(version=__version__), NOW)
+    assert [line.text for line in item.detail][1] == f"Daemon version {__version__}"
+    assert (item.text, item.tone, labels(item)) == ("Daemon running · next tick", "ok", ["Logs", "Pause", "Uninstall"])
+
+
+def test_a_daemon_from_an_older_hz_warns_and_offers_a_restart():
+    item = status_item(daemon(version="0.0.1", version_mismatch=True), NOW)
+    assert (item.text, item.tone, labels(item)) == (
+        "Daemon needs a restart", "warn", ["Restart daemon", "Logs", "Pause", "Uninstall"],
+    )  # fmt: skip
+    assert f"Daemon runs hz 0.0.1, not the installed {__version__}: restart it" in [line.text for line in item.detail]
+    restart = item.actions[0].effect
+    assert isinstance(restart, RunOperation)
+    assert restart.operation == "restart"

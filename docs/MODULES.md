@@ -202,7 +202,7 @@ Inspect, configure, diagnose and update Heinzelmännchen itself.
 | Show versions, interpreter, settings, modules and what modules report. | `hz system info` | `system_info` | `GET /system/info` | `GET /api/system/info` |  | expert |
 | List every module and the lets it advertises. | `hz system modules` | `system_modules` | `GET /system/modules` | `GET /api/system/modules` |  | expert |
 | Ask where Heinzelmännchen was installed from for its latest release, and whether to update. | `hz system release` | `system_release` | `GET /system/release` | `GET /api/system/release` |  | expert |
-| Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
+| Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
 
 ## `system.agent`
 
@@ -292,6 +292,7 @@ Run modules' jobs in the background, supervised by launchd or systemd.
 | --- | --- | --- | --- | --- | --- | --- |
 | Install and load the launchd agent or systemd timer that ticks every few minutes. | `hz system daemon install` | — | — | — | yes | expert |
 | Unload and remove the daemon's unit; receipts and logs stay. | `hz system daemon uninstall` | — | — | — | yes | expert |
+| Restart the daemon so it runs with the installed hz. | `hz system daemon restart` | `system_daemon_restart` | `POST /system/daemon/restart` | `POST /api/system/daemon/restart` | yes | expert |
 | Show whether the daemon is installed, loaded and paused, its last tick and failing jobs. | `hz system daemon status` | `system_daemon_status` | `GET /system/daemon/status` | `GET /api/system/daemon/status` |  | expert |
 | Show the latest lines of the daemon's log. | `hz system daemon logs` | `system_daemon_logs` | `GET /system/daemon/logs` | `GET /api/system/daemon/logs` |  | expert |
 | Run the jobs that are due and write a receipt for each; exits with 1 if any job failed. | `hz system daemon tick` | `system_daemon_tick` | — | — | yes | expert |
