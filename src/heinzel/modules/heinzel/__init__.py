@@ -54,6 +54,7 @@ from heinzel.modules.heinzel._render import (
     render_show,
 )
 from heinzel.modules.heinzel._service import HeinzelService
+from heinzel.modules.heinzel._session_operations import register_session_operations
 
 module = Module(
     "heinzel",
@@ -70,6 +71,7 @@ def _compiled(service: HeinzelService) -> CompiledJobs:
 
 module.service(CompiledJobs, _compiled)
 module.service(TeamPromises, ContractPromises)
+register_session_operations(module)
 
 Name = Annotated[
     str,
