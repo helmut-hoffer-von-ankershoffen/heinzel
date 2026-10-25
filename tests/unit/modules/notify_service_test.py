@@ -70,7 +70,7 @@ def draft(service: NotifyService, key: str = "draft:me:weekly", **values: object
         "Draft ready: Weekly",
         "Read it.",
         route="/contracts/me%3Aweekly",
-        command="hz workflow drafts --name me:weekly --latest",
+        command="hz heinzel drafts --name me:weekly --latest",
         key=key,
         **values,
     )
@@ -144,7 +144,7 @@ def test_the_daemon_pops_up_due_notices_natively_and_marks_them(make, runner):
     assert service.post_native() == 1
     title, body = runner.commands[0][-2:]
     assert title == "Draft ready: Weekly"
-    assert body == "Read it. Run: hz workflow drafts --name me:weekly --latest"  # notify-send can't open a link
+    assert body == "Read it. Run: hz heinzel drafts --name me:weekly --latest"  # notify-send can't open a link
     assert service.recent()[0].delivered_by is Delivery.DAEMON
     assert service.post_native() == 0
 

@@ -105,7 +105,8 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 - Security fixes use the `security` scope (`fix(security): ...`); commits that resolve a `CVE-…` or `GHSA-…` name it
   in the body. Both land in the changelog's **Security** section. Breaking changes (`!` or a `BREAKING CHANGE:`
   footer) land in **Breaking changes**, with the footer's explanation.
-- Scopes are optional; Heinzelmännchen's are `kernel`, `cli`, `heads`, `ai`, `system`, `setup`, `workflow`, `team`,
+- Scopes are optional; Heinzelmännchen's are `kernel`, `cli`, `heads`, `ai`, `system`, `setup`, `heinzel`, `workflow`,
+  `team`,
   `org`, `plugin`, `template`, `ci`, `docs`, `adr`, `agents`, `dx`, `security`, `release`, `deps`, `web`, `chat`,
   `graph`, `report`, and the
   first-party plugins `clock`, `github`, `atlassian`, `google`, `zoom`. A plugin's scopes are its own module and area names.
