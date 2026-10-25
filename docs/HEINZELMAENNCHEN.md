@@ -14,6 +14,32 @@ This page is the journey from nothing to a scheduled contract, then the referenc
 [ADR 0021](adr/0021-workflow-contracts.md); every command and option is in [CLI_REFERENCE.md](CLI_REFERENCE.md#hz-heinzel),
 every setting in [CONFIGURATION.md](CONFIGURATION.md#heinzel).
 
+## Personal conversations
+
+A personal Heinzel can have a durable identity, name and look before it has a contract. Create one with a stable
+request id, then use the returned `session_id` to reopen it or change its appearance:
+
+```bash
+hz heinzel new-chat create-helper --name "My helper" --appearance '{"hat":"blue"}' --json
+hz heinzel sessions --json
+hz heinzel session <session-id> --json
+hz heinzel profile <session-id> change-look 1 --appearance '{"hat":"teal","accessories":["scarf"]}' --json
+```
+
+Profile changes name the revision displayed in the snapshot. If another change arrived first, reload before
+saving. Retrying an identical request id and payload returns its durable result; changing that payload is refused.
+Omitted personal fields inherit the renderer's defaults, including theme colours. To restore those defaults, send
+an empty appearance object. A profile update does not replace an already queued message or approve a contract.
+
+`hz heinzel chat <session-id> <request-id> <message> --json` currently acknowledges a durable inbox entry. A queued
+receipt confirms acceptance, not a completed model response. The same `request_id` appears on the user message,
+so a lost network acknowledgement can be reconciled without submitting another message. Session snapshots page
+through an opaque cursor and stay readable while a turn is running.
+
+These operations are private: local CLI, stdio MCP, paired web and the authenticated private API use the same owner
+and service. The unauthenticated REST API and network MCP do not expose them. Names, appearance and message text
+live in hash-verified private bodies; the durable journals contain opaque references and revisions.
+
 ## What happens to a contract
 
 ```mermaid

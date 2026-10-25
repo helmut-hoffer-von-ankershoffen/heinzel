@@ -126,8 +126,11 @@ class SessionStore:
         self.projection_version = projection_version
 
     @contextlib.contextmanager
-    def writer(self, session: str) -> Generator["SessionWriter"]:
+    def writer(self, session: str, *, wait: bool = False) -> Generator["SessionWriter"]:
         """Hold one session's writer lock across a turn; index locks are held only during checkpoints.
+
+        `wait=True` is for short control/catalog journals whose callers never acquire a long turn writer while
+        holding them. The default refuses a busy writer immediately, preserving one active turn per session.
 
         Yields:
             The writer, valid only until the context exits.
@@ -140,7 +143,7 @@ class SessionStore:
         with (
             directory(self.root) as root,
             child(root, session, create=True) as folder,
-            _lock(folder, "lock", wait=False),
+            _lock(folder, "lock", wait=wait),
         ):
             writer = SessionWriter(self, root, folder, session)
             try:

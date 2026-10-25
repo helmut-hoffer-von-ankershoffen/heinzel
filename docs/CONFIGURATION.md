@@ -109,6 +109,8 @@ Plugins add their own tables.
 | `team_repository` | `HZ_HEINZEL__TEAM_REPOSITORY` | `None` | Deprecated: `hz team join` or `hz team adopt` sets your team's checkout in `[team]` instead. A checkout of your team's state repository, used when `[team]` names none; its contracts are in `workflows/`. Never read from a project's hz.toml. |
 | `schedule_team` | `HZ_HEINZEL__SCHEDULE_TEAM` | platform-specific | Team contracts your daemon runs on their schedule, by name; add @sha256: and a hash to run only the version you approved. The others run only when started by hand, so a team's contracts don't run on everyone's daemon. Never read from a project's hz.toml. |
 | `max_usd` | `HZ_HEINZEL__MAX_USD` | `1.0` | The most one run of a contract may cost in US dollars, scheduled or by hand, whatever the contract asks for. A scheduled run's retries share it. Never read from a project's hz.toml. |
+| `session_max_usd` | `HZ_HEINZEL__SESSION_MAX_USD` | `2.0` | The most one durable Heinzel conversation may cost in US dollars, across its model turns. Never read from a project's hz.toml. |
+| `message_max_usd` | `HZ_HEINZEL__MESSAGE_MAX_USD` | `0.2` | The most one model turn in a durable Heinzel conversation may cost in US dollars. Never read from a project's hz.toml. |
 | `retention_days` | `HZ_HEINZEL__RETENTION_DAYS` | `90` | How long drafts and the inputs they were made from are kept, counted from when they were made; 0 keeps them forever. Receipts are always kept, with a hash of the draft instead of its text. Never read from a project's hz.toml. |
 
 ## `[org]`

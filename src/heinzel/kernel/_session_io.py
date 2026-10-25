@@ -93,7 +93,16 @@ def open_file(parent: int, name: str, flags: int) -> int:
     Raises:
         HeinzelError: If the target is not a private regular file owned by this user.
     """
-    descriptor = os.open(name, flags | os.O_NOFOLLOW | os.O_NONBLOCK, PRIVATE_FILE, dir_fd=parent)
+    safe_flags = flags | os.O_NOFOLLOW | os.O_NONBLOCK
+    if flags & os.O_CREAT and not flags & os.O_EXCL:
+        # Darwin can report ENOENT to simultaneous O_CREAT|O_NOFOLLOW callers. Exclusive creation followed by
+        # opening an existing entry avoids that race while retaining descriptor-relative no-follow validation.
+        try:
+            descriptor = os.open(name, safe_flags | os.O_EXCL, PRIVATE_FILE, dir_fd=parent)
+        except FileExistsError:
+            descriptor = os.open(name, safe_flags & ~os.O_CREAT, dir_fd=parent)
+    else:
+        descriptor = os.open(name, safe_flags, PRIVATE_FILE, dir_fd=parent)
     info = os.fstat(descriptor)
     if (
         not stat.S_ISREG(info.st_mode)
