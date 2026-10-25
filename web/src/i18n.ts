@@ -160,6 +160,10 @@ const en = {
   "settings.themeInUse": "In use",
   "settings.previewCard": "Weekly digest",
   "settings.previewDetail": "Due Friday · 3 updates",
+  "settings.previewConditions": "Preview conditions",
+  "settings.previewDaypart": "Daypart",
+  "settings.previewWeather": "Weather",
+  "settings.previewNow": "Now",
   "settings.previewButton": "Confirm",
   "settings.expertOn":
     "On: the navigation, search and `hz --help` list every screen and command. Your choice, in your user configuration.",
