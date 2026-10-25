@@ -42,6 +42,7 @@ def test_discovers_builtin_modules_and_submodules():
         "system.ui",
         "team",
         "report",  # the package telemetry, named for what a Heinzelmännchen does with it
+        "weather",
     ]
     assert all(r.origin.builtin for r in records)
     assert errors == {}

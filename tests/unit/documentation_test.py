@@ -11,6 +11,7 @@ import heinzel_atlassian
 import heinzel_clock
 import heinzel_github
 import heinzel_google
+import heinzel_openmeteo
 import heinzel_zoom
 import pytest
 from pydantic import BaseModel, Field
@@ -186,6 +187,7 @@ def test_every_parameter_setting_and_module_is_described(make_kernel):
         clock=heinzel_clock.module,
         github=heinzel_github.module,
         google=heinzel_google.module,
+        openmeteo=heinzel_openmeteo.module,
         zoom=heinzel_zoom.module,
     )  # first-party plugins too
     missing = [r.qualname for r in kernel.modules if not r.module.summary]
@@ -260,6 +262,7 @@ def test_operation_summaries_are_one_short_sentence_and_module_names_singular(ma
         clock=heinzel_clock.module,
         github=heinzel_github.module,
         google=heinzel_google.module,
+        openmeteo=heinzel_openmeteo.module,
         zoom=heinzel_zoom.module,
     )  # first-party plugins too
     problems = [

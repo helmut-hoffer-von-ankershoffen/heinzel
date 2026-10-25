@@ -1,0 +1,81 @@
+{
+ "latitude": 38.746044,
+ "longitude": -9.175565,
+ "generationtime_ms": 0.2200603485107422,
+ "utc_offset_seconds": 3600,
+ "timezone": "Europe/Lisbon",
+ "timezone_abbreviation": "GMT+1",
+ "elevation": 48.0,
+ "current_units": {
+  "time": "iso8601",
+  "interval": "seconds",
+  "temperature_2m": "\u00b0C",
+  "apparent_temperature": "\u00b0C",
+  "relative_humidity_2m": "%",
+  "precipitation": "mm",
+  "weather_code": "wmo code",
+  "wind_speed_10m": "km/h"
+ },
+ "current": {
+  "time": "2026-10-25T00:15",
+  "interval": 900,
+  "temperature_2m": 12.4,
+  "apparent_temperature": 11.5,
+  "relative_humidity_2m": 82,
+  "precipitation": 0.0,
+  "weather_code": 1,
+  "wind_speed_10m": 4.6
+ },
+ "daily_units": {
+  "time": "iso8601",
+  "weather_code": "wmo code",
+  "temperature_2m_max": "\u00b0C",
+  "temperature_2m_min": "\u00b0C",
+  "precipitation_sum": "mm",
+  "precipitation_probability_max": "%"
+ },
+ "daily": {
+  "time": [
+   "2026-10-25",
+   "2026-10-26",
+   "2026-10-27",
+   "2026-10-28",
+   "2026-10-29"
+  ],
+  "weather_code": [
+   2,
+   45,
+   63,
+   45,
+   2
+  ],
+  "temperature_2m_max": [
+   24.0,
+   22.6,
+   23.7,
+   25.7,
+   24.6
+  ],
+  "temperature_2m_min": [
+   10.9,
+   11.9,
+   12.4,
+   13.7,
+   13.4
+  ],
+  "precipitation_sum": [
+   0.0,
+   0.0,
+   3.2,
+   0.0,
+   0.0
+  ],
+  "precipitation_probability_max": [
+   0,
+   0,
+   80,
+   0,
+   0
+  ]
+ }
+}

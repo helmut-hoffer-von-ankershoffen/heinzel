@@ -122,7 +122,7 @@ flowchart TB
     end
     subgraph Modules["Modules and plugins"]
         System["system<br/>(built-in)"]
-        Clock["clock · github · atlassian · google<br/>(first-party)"]
+        Clock["clock · github · atlassian · google · openmeteo · zoom<br/>(first-party)"]
         Ext["heinzel-*<br/>(external)"]
     end
     CLI & MCP & REST & Web & Daemon --> Core
@@ -148,6 +148,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`google`](docs/MODULES.md#google) — Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. *First-party plugin: `hz system plugin add google --confirm`.*
 - [`graph`](docs/MODULES.md#graph) — Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits.
 - [`heinzel`](docs/MODULES.md#heinzel) — Your Heinzelmännchen: durable agents that keep your team's documents true.
+- [`openmeteo`](docs/MODULES.md#openmeteo) — Weather from Open-Meteo, with no account and no key: the weather capability. *First-party plugin: `hz system plugin add openmeteo --confirm`.*
 - [`org`](docs/MODULES.md#org) — Your profile, and the team, org and company you work with.
 - [`report`](docs/MODULES.md#report) — Telemetry: log what a Heinzelmännchen did, for your team's graph (`hz report published <id> <url>`).
 - [`system`](docs/MODULES.md#system) — Inspect, configure, diagnose and update Heinzelmännchen itself.
@@ -172,6 +173,7 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
 - [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
+- [`weather`](docs/MODULES.md#weather) — The weather where you are, from whichever adapter serves the weather capability.
 - [`zoom`](docs/MODULES.md#zoom) — Read meetings from Zoom's meeting-summary emails: the meetings capability. *First-party plugin: `hz system plugin add zoom --confirm`.*
 <!-- modules:end -->
 
@@ -189,6 +191,7 @@ so you only get the integrations you use. `hz system plugin add <name>` shows th
 | [heinzel-github](plugins/heinzel-github) | Pull requests and issues from GitHub: the `code-host` and `tracker` capabilities | `hz system plugin add github --confirm` |
 | [heinzel-atlassian](plugins/heinzel-atlassian) | Jira issues and Confluence pages: the `tracker` and `documents` capabilities | `hz system plugin add atlassian --confirm` |
 | [heinzel-google](plugins/heinzel-google) | Google Docs, Sheets, Drive, Calendar and Gmail through the Google Workspace CLI: the `documents`, `calendar` and `mail` capabilities | `hz system plugin add google --confirm` |
+| [heinzel-openmeteo](plugins/heinzel-openmeteo) | The weather where you are from Open-Meteo, with no account and no key: the `weather` capability behind `hz weather` | `hz system plugin add openmeteo --confirm` |
 | [heinzel-zoom](plugins/heinzel-zoom) | Meetings from Zoom's meeting-summary emails, read through the bound `mail` adapter: the `meetings` capability | `hz system plugin add zoom --confirm` |
 
 Slack adapters are planned as first-party plugins too.

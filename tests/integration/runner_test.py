@@ -82,6 +82,7 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
         "org agenda → calendar:read": "optional: not connected: no adapter bound",
         "system.runner ask → agent-runner:read": "claude-code → api.anthropic.com",
         "system.runner.chat send → agent-runner:read": "claude-code → api.anthropic.com",
+        "weather weather → weather:read": "optional: not connected: no adapter bound",
     }
     kernel = make_kernel(builtins=True, digest=digest(), config=command_config(tmp_path))
     assert hz(kernel, "system", "info")[1]["sections"]["system.capability"] == {  # type: ignore[index]
@@ -91,6 +92,7 @@ def test_the_matrix_shows_the_runner_and_its_hosts(make_kernel, tmp_path):
         "org agenda → calendar:read": "optional: not connected: no adapter bound",
         "system.runner ask → agent-runner:read": "command → unknown (configured)",
         "system.runner.chat send → agent-runner:read": "command → unknown (configured)",
+        "weather weather → weather:read": "optional: not connected: no adapter bound",
     }
 
 
