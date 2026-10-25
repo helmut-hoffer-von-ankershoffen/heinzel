@@ -6,7 +6,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from heinzel.modules.workflow._contracts import _load, _split, read_contract
+from heinzel.modules.heinzel._contracts import _load, _split, read_contract
 
 pytestmark = pytest.mark.unit
 

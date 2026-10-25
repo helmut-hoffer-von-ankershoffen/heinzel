@@ -7,7 +7,8 @@ sends an Origin with a WebSocket, so one without it is refused too. After that, 
 text frames are JSON control messages, `{"resize": [cols, rows]}`; the shell's output comes back as binary frames.
 Both directions are bounded: a shell that prints faster than the browser reads is paused by the pseudo-terminal,
 and a browser that types faster than the shell reads stops being read. Closing the socket hangs up the shell's
-whole process group (ADR 0048).
+whole process group (ADR 0048). When `hz ui` stops, each terminal hangs up its shell the same way and closes its
+socket with "going away" and a reason the app shows (`Stopping`).
 
 POSIX only: on Windows the socket closes with a reason the app shows.
 """
@@ -29,6 +30,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
 from heinzel.heads import api
+from heinzel.heads.web._shutdown import Stopping
 
 if os.name == "posix":
     import fcntl
@@ -38,6 +40,10 @@ if os.name == "posix":
 POLICY_VIOLATION = 1008
 UNSUPPORTED = 1003
 TRY_AGAIN_LATER = 1013
+GOING_AWAY = 1001
+STOPPED = "The web app stopped. Run hz ui to start it again."
+RESTARTED = "The web app is restarting. Open the terminal again in a moment."
+"""Close reasons the app shows as they are, so plain text: Ctrl-C stopped `hz ui`, or it restarts (ADR 0047)."""
 TOKEN_SECONDS = 5.0
 READ_BYTES = 65536
 OUTPUT_CHUNKS = 64
@@ -89,21 +95,33 @@ def environment() -> dict[str, str]:
     return env | COLOURS
 
 
-def add_route(app: FastAPI, *, token: str, port: int | None, accept: Callable[[str], object]) -> None:
+def add_route(
+    app: FastAPI,
+    *,
+    token: str,
+    port: int | None,
+    accept: Callable[[str], object],
+    stopping: Stopping | None = None,
+) -> None:
     """Serve the terminal at `/api/terminal` on `app`; register it before mounting the API there."""
 
     @app.websocket("/api/terminal")
     async def terminal(websocket: WebSocket) -> None:
-        await session(websocket, token=token, port=port, accept=accept)
+        await session(websocket, token=token, port=port, accept=accept, stopping=stopping)
 
 
 async def session(
-    websocket: WebSocket, *, token: str, port: int | None, accept: Callable[[str], object] | None = None
+    websocket: WebSocket,
+    *,
+    token: str,
+    port: int | None,
+    accept: Callable[[str], object] | None = None,
+    stopping: Stopping | None = None,
 ) -> None:
-    """Serve one terminal on `websocket` until either side closes it.
+    """Serve one terminal on `websocket` until either side closes it, or the server stops.
 
     `accept` admits another token besides the session's: the web head's paired devices (ADR 0046), so the installed
-    app's terminal works after it reopens without a new link.
+    app's terminal works after it reopens without a new link. `stopping` closes the terminal when the server stops.
     """
     headers = websocket.headers
     origin = headers.get("origin")
@@ -124,7 +142,9 @@ async def session(
     terminal = _Terminal(websocket)
     _open.add(terminal)
     try:
-        await terminal.run()
+        stopping = stopping or Stopping()
+        with stopping.watch() as stopped:
+            await terminal.run(stopped, stopping)
     finally:
         _open.discard(terminal)
 
@@ -155,21 +175,30 @@ class _Terminal:
         self.drained.set()
         self.main = -1
 
-    async def run(self) -> None:
+    async def run(self, stopped: asyncio.Event, stopping: Stopping) -> None:
         self.main, process = _spawn()
         self.loop.add_reader(self.main, self._readable)
         sender = asyncio.create_task(self._send())
+        closer = asyncio.create_task(self._close_when(stopped, stopping))
         try:
             await self._receive()
         finally:
             self.loop.remove_reader(self.main)
             self.loop.remove_writer(self.main)
             sender.cancel()
+            closer.cancel()
             try:
                 with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError, OSError):
                     await sender
+                with contextlib.suppress(asyncio.CancelledError, RuntimeError, OSError):
+                    await closer
             finally:
                 await _hang_up(process, self.main)
+
+    async def _close_when(self, stopped: asyncio.Event, stopping: Stopping) -> None:
+        """Close the socket as the server stops or restarts; the browser's answer to the close ends `_receive`."""
+        await stopped.wait()
+        await self.websocket.close(code=GOING_AWAY, reason=STOPPED if stopping.interrupted else RESTARTED)
 
     def _readable(self) -> None:
         try:
