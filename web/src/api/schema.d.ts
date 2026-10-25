@@ -2204,10 +2204,10 @@ export interface components {
             short_name: string;
             /**
              * Source
-             * @description Where it was found: `first-party` (maintained with Heinzelmännchen) or `github` (a repository with the topic heinzel-plugin).
+             * @description Where it was found: `first-party` (maintained with Heinzelmännchen), `contrib` (the heinzel-contrib monorepo) or `github` (a repository with the topic heinzel-plugin).
              * @enum {string}
              */
-            source: "first-party" | "github";
+            source: "first-party" | "contrib" | "github";
             /**
              * Stars
              * @description GitHub stars; none for first-party plugins.

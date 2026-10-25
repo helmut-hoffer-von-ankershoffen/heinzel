@@ -1,9 +1,10 @@
 // Settings → Plugins, as in a desktop chat app: "Yours" lists what's installed, "Discover" what can be (first-party
 // and community plugins), "Add" installs from a name or a git URL. Installing runs code, so it takes two steps: the
 // backend first answers what a spec would install (source, version, publisher, pinned), and only the confirm sends
-// that pinned requirement with `confirm=true` (ADR 0047). A running `hz ui` loads a change after a restart.
+// that pinned requirement with `confirm=true` (ADR 0047). The app then restarts `hz ui` itself and reloads.
 import {
   BookOpen,
+  Check,
   ExternalLink,
   type LucideIcon,
   Package,
@@ -148,6 +149,12 @@ type Pending =
   | { action: "add"; candidate: SchemaPluginCandidate }
   | { action: "remove" | "enable" | "disable"; name: string };
 
+/** The short success line shown while the server restarts: "Installed heinzel-weather, reloading…". */
+function doneMessage(pending: Pending): string {
+  const name = pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name;
+  return t(`plugins.done.${pending.action}`, { name });
+}
+
 function request(pending: Pending): PluginChangeRequest {
   switch (pending.action) {
     case "add":
@@ -204,7 +211,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
-  const [restartNeeded, setRestartNeeded] = useState(false);
+  const [reloading, setReloading] = useState<string | null>(null);
   const preview = usePluginPreview();
   const change = useChangePlugin();
   const restart = useRestartServer({ reload, interval: restartInterval });
@@ -228,12 +235,17 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   };
   const confirm = () => {
     if (!pending) return;
+    const message = doneMessage(pending);
     change.mutate(request(pending), {
       onSuccess: (answer) => {
         setPending(null);
         setAdding(false);
         setSpec("");
-        if (answer.restart_required) setRestartNeeded(true);
+        // The server loads plugins at start: restart it, and the page reloads once it answers again.
+        if (answer.restart_required) {
+          setReloading(message);
+          restart.mutate();
+        }
       },
     });
   };
@@ -300,13 +312,16 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       <p className="-mt-2 mb-4 text-sm text-muted-foreground">
         {tab === "yours" ? t("plugins.yoursIntro") : t("plugins.discoverIntro")}
       </p>
-      {restartNeeded && (
-        <div role="status" className="mb-4 flex items-center gap-3 rounded-xl border border-border p-3 text-sm">
-          <span className="flex-1">{t("plugins.restartNeeded")}</span>
+      {reloading && (
+        <div role="status" className="mb-4 flex items-center gap-3 rounded-xl border border-ok/50 p-3 text-sm">
+          <Check aria-hidden className="size-4 shrink-0 text-ok" />
+          <span className="flex-1">{restart.error ? t("plugins.restartNeeded") : reloading}</span>
           {restart.error && <span className="text-xs text-bad">{restart.error.message}</span>}
-          <Button size="sm" onClick={() => restart.mutate()} disabled={restart.isPending}>
-            {restart.isPending ? t("plugins.restarting") : t("plugins.restart")}
-          </Button>
+          {restart.error && (
+            <Button size="sm" onClick={() => restart.mutate()} disabled={restart.isPending}>
+              {restart.isPending ? t("plugins.restarting") : t("plugins.restart")}
+            </Button>
+          )}
         </div>
       )}
       {adding && (
@@ -407,18 +422,6 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
                             plugin.summary || entry?.description,
                           )}
                           <KindBadges plugin={plugin} />
-                          {/* Where it comes from and its version, flush right and aligned across the rows. */}
-                          <span className="ml-auto flex shrink-0 items-center gap-2">
-                            {!enabled && (
-                              <span className="rounded-md border border-warn/50 px-1.5 text-[11px] text-muted-foreground">
-                                {t("plugins.disabled")}
-                              </span>
-                            )}
-                            <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
-                              {source}
-                            </span>
-                            <span className={VERSION}>v{plugin.version}</span>
-                          </span>
                         </span>
                         <span className="block truncate text-sm text-muted-foreground">
                           {plugin.error ??
@@ -427,6 +430,18 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
                               t("plugins.modules", { modules: plugin.modules.join(", ") || "—" }))}
                         </span>
                         <RepositoryLine url={url} />
+                      </span>
+                      {/* Where it comes from and its version: their own column, flush right and aligned across rows. */}
+                      <span className="flex shrink-0 items-center gap-2">
+                        {!enabled && (
+                          <span className="rounded-md border border-warn/50 px-1.5 text-[11px] text-muted-foreground">
+                            {t("plugins.disabled")}
+                          </span>
+                        )}
+                        <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
+                          {source}
+                        </span>
+                        <span className={VERSION}>v{plugin.version}</span>
                       </span>
                       {sourceLink(url, plugin.distribution)}
                       <Button
@@ -567,15 +582,19 @@ function Discover({ query, onInstall }: { query: string; onInstall: (spec: strin
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2 text-ui">
                     {displayName(plugin.short_name, plugin.description)}
-                    <span className="ml-auto flex shrink-0 items-center gap-2">
-                      <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
-                        {plugin.community ? t("plugins.community") : t("plugins.firstParty")}
-                      </span>
-                      <span aria-hidden className={VERSION} />
-                    </span>
                   </span>
                   <span className="block truncate text-sm text-muted-foreground">{plugin.description}</span>
                   <RepositoryLine url={repositoryOfEntry(plugin)} />
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
+                    {plugin.source === "contrib"
+                      ? t("plugins.contrib")
+                      : plugin.community
+                        ? t("plugins.community")
+                        : t("plugins.firstParty")}
+                  </span>
+                  <span aria-hidden className={VERSION} />
                 </span>
                 {sourceLink(repositoryOfEntry(plugin), plugin.name)}
                 <Button size="sm" variant="outline" onClick={() => onInstall(plugin.install_spec)}>

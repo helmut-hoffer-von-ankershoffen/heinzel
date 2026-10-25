@@ -101,7 +101,7 @@ def render_change(change: PluginChange) -> RenderableType:
         parts.append(Text("Restart hz ui to load it (or click Restart in the app)."))
         parts.extend(Text(line) for line in _brings(change))
     else:
-        parts.append(Text(f"{done[change.action]} {change.distribution or 'the plugin'}."))
+        parts.append(Text(f"✓ {done[change.action]} {change.distribution or 'the plugin'}.", style="green"))
         if change.restart_required:
             parts.append(Text(RESTART, style="dim"))
     parts.extend(Text(f"Undo with: {command}", style="dim") for command in change.next)
