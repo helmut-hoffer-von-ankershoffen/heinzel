@@ -164,6 +164,8 @@ from heinzel.kernel._protocols import (
     plain_addresses,
 )
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
+from heinzel.kernel._session import SessionEvent, SessionHead, SessionProjector, SessionRead
+from heinzel.kernel._session_store import SessionStore, SessionWriter
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._signals import SIGNALS, Signal
 from heinzel.kernel._skills import (
@@ -393,6 +395,12 @@ __all__ = [
     "SectionReplacement",
     "SentMail",
     "ServiceLet",
+    "SessionEvent",
+    "SessionHead",
+    "SessionProjector",
+    "SessionRead",
+    "SessionStore",
+    "SessionWriter",
     "Settings",
     "SettingsLet",
     "SetupLet",
