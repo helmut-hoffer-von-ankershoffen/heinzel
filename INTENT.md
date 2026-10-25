@@ -55,6 +55,8 @@ When in doubt, these decide.
    stays generic and usable anywhere.
 10. **Agent-ready by construction.** Typed operations, machine-readable output, documented intent and decisions, and
     standards that the repository itself enforces on every contributor, human or agent.
+11. **Perfect onboarding.** Joining is one line posted in chat; hz finds out who you are from the logins you already
+    have, and the first thing it does for you is a win ([ADR 0080](docs/adr/0080-one-invite-line-and-a-reviewed-first-win.md)).
 
 ## Non-goals
 
