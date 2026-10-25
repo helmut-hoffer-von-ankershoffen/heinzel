@@ -13,7 +13,10 @@ export function InfoDialog({ panel, onClose }: { panel: Panel; onClose: () => vo
   const titleId = useId();
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes it; Escape and the close button do for keyboards
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onMouseDown={onClose}>
+    <div
+      className="fixed inset-0 z-(--layer-modal) flex items-center justify-center bg-black/50 p-4"
+      onMouseDown={onClose}
+    >
       <div
         role="dialog"
         aria-modal="true"

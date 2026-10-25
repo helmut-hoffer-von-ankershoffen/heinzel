@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
+import { verifyLayers } from "./layers.mjs";
 
 const [url, shots] = process.argv.slice(2);
 const base = new URL(url).origin;
@@ -198,6 +199,7 @@ try {
   await page.goto(`${base}/doctor`);
   await page.locator("tbody tr").first().waitFor();
   await audit("doctor-dark");
+  result.layers = await verifyLayers(page, shots, true);
   await splash();
 } finally {
   await browser.close();

@@ -61,7 +61,7 @@ export function MessageInfo({ message, first }: { message: SchemaChatMessage; fi
         id={panelId}
         role="tooltip"
         hidden={!open}
-        className="absolute bottom-6 left-0 z-20 w-72 rounded-lg border border-border bg-popover p-3 text-xs text-foreground shadow-md"
+        className="absolute bottom-6 left-0 z-(--layer-popover) w-72 rounded-lg border border-border bg-popover p-3 text-xs text-foreground shadow-md"
       >
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
           <dt className="text-muted-foreground">{t("chat.generated")}</dt>

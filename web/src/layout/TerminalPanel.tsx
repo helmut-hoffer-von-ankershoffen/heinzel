@@ -308,7 +308,7 @@ function OptionsMenu({ options, onChange }: { options: Options; onChange: (patch
       {open && (
         <div
           role="menu"
-          className="absolute top-full right-0 z-40 mt-1 w-60 rounded-xl border border-border bg-popover p-1.5 shadow-xl"
+          className="absolute top-full right-0 z-(--layer-popover) mt-1 w-60 rounded-xl border border-border bg-popover p-1.5 shadow-xl"
         >
           <button
             type="button"
