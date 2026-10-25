@@ -170,6 +170,9 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `model` | `HZ_SYSTEM_RUNNER__MODEL` | `None` | Model for every run, e.g. `sonnet`; the agent's own default when not set. |
 | `claude_executable` | `HZ_SYSTEM_RUNNER__CLAUDE_EXECUTABLE` | `'claude'` | The Claude Code CLI, a name on PATH or a path. |
+| `codex_executable` | `HZ_SYSTEM_RUNNER__CODEX_EXECUTABLE` | `'codex'` | The Codex CLI, a name on PATH or a path. |
+| `codex_model` | `HZ_SYSTEM_RUNNER__CODEX_MODEL` | `None` | Model for every Codex run, e.g. `gpt-5-codex`; Codex's own default when not set. |
+| `codex_effort` | `HZ_SYSTEM_RUNNER__CODEX_EFFORT` | `None` | Reasoning effort for every Codex run; Codex's own default when not set. |
 | `read_only_tools` | `HZ_SYSTEM_RUNNER__READ_ONLY_TOOLS` | `['Read', 'Grep', 'Glob']` | Claude Code tools a run may use; a profile asking for anything else is refused. Add only tools that cannot change anything. |
 | `command` | `HZ_SYSTEM_RUNNER__COMMAND` | platform-specific | The `command` runner's command line, one argument per item, never through a shell. Placeholders: {prompt_file}, {contract_file}, {output_file}, {working_dir}, {tools}, {model}, {timeout_seconds}, {max_usd}, {mcp_config} (a JSON file of MCP servers in the `mcpServers` shape, for a chat's hz tools); `{{` and `}}` are literal braces; e.g. ["mytool", "ai", "run", "--prompt", "{prompt_file}"]. |
 | `command_output` | `HZ_SYSTEM_RUNNER__COMMAND_OUTPUT` | `'stdout'` | Where the `command` runner reads the result: stdout, or {output_file}. |
