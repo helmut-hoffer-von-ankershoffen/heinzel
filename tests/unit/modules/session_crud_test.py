@@ -141,6 +141,26 @@ def test_assistant_reply_uses_main_immutable_body_but_control_paging_order(servi
     assert messages[-1].seq == event.seq
 
 
+@pytest.mark.parametrize("message_id", ["reply-other", "../outside", True])
+def test_reply_checkpoint_cannot_replace_or_bypass_the_immutable_message_identity(services, message_id):
+    service, repository, _current = services
+    first = service.new_chat("create-1")
+    with repository.main_writer(first.session_id) as main:
+        body = immutable_body(
+            main,
+            "reply",
+            SessionMessage(id="reply-t1", seq=1, turn_id="t1", role="assistant", text="Hi", at=AT).model_dump(
+                mode="json"
+            ),
+        )
+        with repository.control_writer(first.session_id) as control:
+            control.append(
+                "message.replied", key="reply-t1", data={"message_id": message_id, **body.model_dump(mode="json")}
+            )
+    with pytest.raises(HeinzelError, match="message identity"):
+        service.snapshot(first.session_id)
+
+
 def test_unreferenced_body_after_crash_cannot_change_committed_profile_hash(services):
     service, repository, _current = services
     first = service.new_chat("create-1")

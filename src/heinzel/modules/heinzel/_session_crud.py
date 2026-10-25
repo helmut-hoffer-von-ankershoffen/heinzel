@@ -226,10 +226,15 @@ class SessionCrud:
 
     def _message(self, session_id: str, event: SessionEvent) -> SessionMessage:
         try:
+            message_id = _REQUEST.validate_python(event.data.get("message_id"), strict=True)
+        except ValidationError:
+            msg = "This message checkpoint has an invalid message identity"
+            raise HeinzelError(msg) from None
+        try:
             value = self._body(session_id, event)
         except FileNotFoundError:
             return SessionMessage(
-                id=str(event.data["message_id"]),
+                id=message_id,
                 seq=event.seq,
                 role="user" if event.kind == "message.accepted" else "assistant",
                 at=event.ts,
@@ -238,7 +243,7 @@ class SessionCrud:
             )
         if event.kind == "message.accepted":
             request = MessageRequest.model_validate_json(_json(value))
-            if request.request_id != event.data.get("message_id"):
+            if request.request_id != message_id:
                 msg = "This accepted message's identity no longer matches its checkpoint"
                 raise HeinzelError(msg)
             return SessionMessage(
@@ -251,7 +256,10 @@ class SessionCrud:
                 status="pending",
             )
         message = SessionMessage.model_validate_json(_json(value))
-        return message.model_copy(update={"seq": event.seq, "id": event.data["message_id"]})
+        if message.id != message_id:
+            msg = "This reply's immutable message identity no longer matches its checkpoint"
+            raise HeinzelError(msg)
+        return SessionMessage.model_validate({**message.model_dump(), "seq": event.seq})
 
     def snapshot(self, session_id: str, *, cursor: str | None = None, limit: int = 50) -> SessionSnapshot:
         """Read profile and an ordered inbox page while a long main turn owns its separate writer lock.
