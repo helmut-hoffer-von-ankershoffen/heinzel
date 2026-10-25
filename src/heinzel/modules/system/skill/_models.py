@@ -27,13 +27,17 @@ class SkillSettings(ModuleSettings):
     )
     personal_dir: Path | None = Field(
         default=None,
-        description="A directory of your own skills, each a directory with a SKILL.md; they win over every plugin's. "
-        "Defaults to `skills` in your hz configuration directory.",
+        title="Your own skills",
+        description="A folder of your own skills, each a folder with a SKILL.md; they win over every plugin's. "
+        "Defaults to a skills folder in your configuration folder.",
+        json_schema_extra={"x-expert": True},
     )
     export_dirs: list[Path] = Field(
         default_factory=lambda: [DEFAULT_EXPORT_DIR],
-        description="Directories `hz system skill export` writes chosen skills into, one per coding agent, as "
-        "`heinzel-<name>`.",
+        title="Where skills are exported",
+        description="The folders chosen skills are exported into, one per coding agent, each named after the skill "
+        "with heinzel- before it.",
+        json_schema_extra={"x-expert": True},
     )
 
 

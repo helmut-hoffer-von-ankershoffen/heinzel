@@ -214,8 +214,8 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `chat` | `HZ_SYSTEM_SKILL__CHAT` | `None` | The skills the chat may load, by name; when not set, the core's own skills. Never read from a project's hz.toml. |
-| `personal_dir` | `HZ_SYSTEM_SKILL__PERSONAL_DIR` | `None` | A directory of your own skills, each a directory with a SKILL.md; they win over every plugin's. Defaults to `skills` in your hz configuration directory. Never read from a project's hz.toml. |
-| `export_dirs` | `HZ_SYSTEM_SKILL__EXPORT_DIRS` | platform-specific | Directories `hz system skill export` writes chosen skills into, one per coding agent, as `heinzel-<name>`. Never read from a project's hz.toml. |
+| `personal_dir` | `HZ_SYSTEM_SKILL__PERSONAL_DIR` | `None` | A folder of your own skills, each a folder with a SKILL.md; they win over every plugin's. Defaults to a skills folder in your configuration folder. Never read from a project's hz.toml. |
+| `export_dirs` | `HZ_SYSTEM_SKILL__EXPORT_DIRS` | platform-specific | The folders chosen skills are exported into, one per coding agent, each named after the skill with heinzel- before it. Never read from a project's hz.toml. |
 
 ## `[system.sound]`
 
