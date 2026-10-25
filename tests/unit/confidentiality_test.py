@@ -1,6 +1,7 @@
 """The confidentiality check, with made-up terms: the real ones never enter the repository, not even in tests."""
 
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -135,7 +136,7 @@ def test_the_identity_check_refuses_a_hostname_email_and_says_how_to_fix_it(monk
     assert "author email dev@Some-MacBook-Air.local" in err
     assert "committer email" in err
     assert "git config --global user.email" in err
-    assert "users.noreply.github.com" in err
+    assert re.search(r"\bID\+USERNAME@users\.noreply\.github\.com\b", err)  # an address, not a URL check
 
 
 def test_the_hostname_check_runs_without_terms(monkeypatch):
