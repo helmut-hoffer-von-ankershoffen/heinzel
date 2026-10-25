@@ -4,6 +4,7 @@ import { type ReactNode, useState } from "react";
 import { ApiError } from "@/api/client";
 import { t } from "@/i18n";
 import { runInTerminal, runsAsIs } from "@/lib/terminal";
+import { ErrorScreen } from "./ErrorScreen";
 import { Gnome } from "./Gnome";
 import type { Age, HeinzelState } from "./heinzel";
 import { Button } from "./ui/button";
@@ -39,7 +40,7 @@ export function Loaded<T>({
   query,
   children,
 }: {
-  query: { data?: T; error: Error | null; isPending: boolean };
+  query: { data?: T; error: Error | null; isPending: boolean; refetch?: () => unknown };
   children: (data: T) => ReactNode;
 }) {
   if (query.error instanceof ApiError && query.error.status === 401) {
@@ -53,12 +54,14 @@ export function Loaded<T>({
   }
   if (query.error) {
     return (
-      <div className="flex items-center gap-3 rounded-md border border-bad/40 p-3">
-        <p role="alert" className="min-w-0 flex-1 text-sm text-bad">
-          {t("state.error")} {query.error.message}
-        </p>
-        <Gnome state="blocked" view="bust" />
-      </div>
+      <ErrorScreen
+        compact
+        alert
+        title={t("error.loadTitle")}
+        message={`${t("state.error")} ${query.error.message}`}
+        detail={query.error instanceof ApiError ? `ApiError ${query.error.status}` : query.error.name}
+        onRetry={query.refetch ? () => void query.refetch?.() : undefined}
+      />
     );
   }
   if (query.isPending || query.data === undefined) {

@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { createBrowserRouter, Navigate, type RouteObject, RouterProvider, useSearchParams } from "react-router";
 import { ApiError } from "@/api/client";
 import { CopyCommand } from "@/components/common";
+import { ErrorBoundary, RouteError } from "@/components/ErrorScreen";
 import { t } from "@/i18n";
 import { Shell } from "@/layout/Shell";
 import { Contract } from "@/pages/Contract";
@@ -28,6 +29,7 @@ function SettingsLink() {
 export const routes: RouteObject[] = [
   {
     element: <Shell />,
+    errorElement: <RouteError />,
     children: [
       { index: true, element: <Home /> },
       { path: "settings", element: <SettingsLink /> },
@@ -94,7 +96,9 @@ export function App({ hasToken }: { hasToken: boolean }) {
   return (
     <Providers client={queryClient()}>
       <Splash />
-      <RouterProvider router={createBrowserRouter(routes)} />
+      <ErrorBoundary>
+        <RouterProvider router={createBrowserRouter(routes)} />
+      </ErrorBoundary>
     </Providers>
   );
 }

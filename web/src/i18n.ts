@@ -566,6 +566,13 @@ const en = {
   "notFound.title": "Nothing here",
   "notFound.back": "Go home",
   "notFound.guide": "This way, not that way.",
+  "notFound.message": "The Heinzelmännchen looked everywhere and found no page at this address.",
+  "error.title": "Oh no, we dropped something",
+  "error.message": "The Heinzelmännchen are on it. Try again; if it keeps happening, the details below help.",
+  "error.loadTitle": "Couldn't load this",
+  "error.details": "Show details",
+  "error.retry": "Try again",
+  "splash.retrying": "Trying again every few seconds; this page reconnects by itself.",
   "workflow.intro":
     "What hz knows of your workflow: the systems you connected, the assets playbooks keep and discovery finds, your contracts and the ones playbooks suggest, and what they maintain. Select a node for its details and its command.",
   "workflow.graph": "Workflow graph",

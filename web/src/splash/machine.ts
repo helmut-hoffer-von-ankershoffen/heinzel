@@ -7,6 +7,13 @@ export const FADE_MS = 200;
 export const GIVE_UP_MS = 8_000;
 /** How often an unanswered hz is asked again. */
 export const POLL_MS = 1_000;
+/** The longest wait between two questions once hz keeps not answering. */
+export const POLL_MAX_MS = 8_000;
+
+/** How long to wait after the `attempt`th unanswered question (1 is the first): POLL_MS at first, then doubling. */
+export function retryDelay(attempt: number): number {
+  return Math.min(POLL_MAX_MS, POLL_MS * 2 ** Math.max(0, attempt - 3));
+}
 
 export type Phase = "starting" | "connecting" | "signing-in" | "restarting" | "reconnecting" | "ready" | "error";
 /** Why it gave up: hz doesn't answer, or it refuses this page's token. */
