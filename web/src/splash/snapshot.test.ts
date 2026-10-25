@@ -43,7 +43,7 @@ describe("index.html's splash", () => {
     paint();
     // The shared icon file, never a copy: new artwork reaches the splash with no change here.
     const icon = document.querySelector("#splash-brand img");
-    expect(icon).toHaveAttribute("src", "/favicon.svg");
+    expect(icon?.getAttribute("src")).toMatch(/^\/favicon\.svg\?v=[a-f0-9]{12}$/);
     expect(icon).toHaveAttribute("alt", "");
     expect(markup).not.toMatch(/data:|<svg|🧝/);
     // One progress element, swappable for an animation file.

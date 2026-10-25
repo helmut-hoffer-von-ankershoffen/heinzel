@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="47.5 95 417 417" role="img" aria-label="Heinzelmännchen">
   <!-- Heinzelmännchen, an original drawing made by web/src/components/heinzel.ts (`make icons`); never an emoji
        font's artwork. The favicon, the app icons, the theme's logo and the notifier's icon are made from it. -->
+  <rect x="47.5" y="95" width="417" height="417" fill="#ffffff"/>
   <path d="M166 680 H250 V804 H172 Z" fill="#6D4C41"/>
   <path d="M346 680 H262 V804 H340 Z" fill="#6D4C41"/>
   <path d="M144 846 Q144 800 182 800 H250 V846 Z" fill="#3E2723"/>
