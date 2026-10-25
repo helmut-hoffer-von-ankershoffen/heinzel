@@ -9,6 +9,10 @@ Soundscapes work the same way ([ADR 0058](adr/0058-soundscapes-are-data-a-plugin
 offers its own with `module.soundscape(Path(__file__).parent / "soundscapes")`, and they appear in `hz system sound
 list` and the web app's picker beside Claude FM.
 
+The sound options include volume, softer sound while typing and muting during meetings. A stream's mini-player
+starts in the sidebar; pop it out, drag it near the sidebar to dock it again, or move the floating player with its
+arrow-key button. Docking, undocking and collapsing the sidebar keep the stream playing.
+
 ## Themes that follow the time of day and the weather
 
 A theme can declare variants ([ADR 0060](adr/0060-themes-follow-the-time-of-day-and-the-weather.md)): colours that

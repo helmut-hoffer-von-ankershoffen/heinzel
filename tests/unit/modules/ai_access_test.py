@@ -373,6 +373,7 @@ def test_the_endpoint_s_host_is_what_the_matrix_shows():
         ("http://127.0.0.1.example.net", False),
         ("http://localhost.example.net", False),
         ("http://[::ffff:127.0.0.1]:80", True),
+        ("http://[::ffff:192.0.2.1]:80", False),
     ],
 )
 def test_what_counts_as_this_machine(url, local):
