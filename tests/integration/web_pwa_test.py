@@ -3,6 +3,7 @@
 import json
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
@@ -42,6 +43,9 @@ def test_the_manifest_and_the_worker_are_served_fresh_under_the_csp(client):
     assert "worker-src 'self'" in csp
     assert "manifest-src 'self'" in csp
     assert client.get("/icons/icon-192.png").headers["content-type"] == "image/png"
+    revisioned_icon = manifest.json()["icons"][0]["src"]
+    assert urlsplit(revisioned_icon).query.startswith("v=")
+    assert client.get(revisioned_icon).headers["content-type"] == "image/png"
 
 
 def test_the_manifest_makes_an_installable_standalone_app():
@@ -52,7 +56,7 @@ def test_the_manifest_makes_an_installable_standalone_app():
     sizes = {(icon["sizes"], icon["purpose"]) for icon in manifest["icons"]}
     assert {("192x192", "any"), ("512x512", "any"), ("512x512", "maskable")} <= sizes
     for icon in manifest["icons"]:
-        assert (PUBLIC / icon["src"].lstrip("/")).is_file()
+        assert (PUBLIC / urlsplit(icon["src"]).path.lstrip("/")).is_file()
     assert (PUBLIC / "icons" / "apple-touch-icon.png").is_file()
     assert (PUBLIC / "favicon.ico").is_file()
 

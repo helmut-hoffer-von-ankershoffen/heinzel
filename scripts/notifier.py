@@ -21,6 +21,7 @@ drew them, so redraw them only when the drawing changes.
 """
 
 import hashlib
+import json
 import platform
 import re
 import shutil
@@ -145,7 +146,8 @@ def artwork_for(pixels: int) -> Path:  # noqa: ARG001 - the size no longer matte
 
 DRAW = (
     "const m = await import(process.argv[1]); const fs = await import('node:fs');"
-    " fs.writeFileSync(process.argv[2], m.heinzelSvg()); fs.writeFileSync(process.argv[3], m.heinzelSwarmSvg());"
+    " fs.writeFileSync(process.argv[2], m.heinzelSvg({}, 'bust', true));"
+    " fs.writeFileSync(process.argv[3], m.heinzelSwarmSvg());"
     " fs.writeFileSync(process.argv[4], m.heinzelDanceSvg());"
 )
 """Writes heinzel.svg, heinzel-swarm.svg and loading-dance.svg from the drawing (node runs TypeScript as it is)."""
@@ -192,10 +194,36 @@ def icons() -> None:
         copy.write_bytes(source.read_bytes())
     for name, (background, fill) in WORDMARKS.items():
         (THEME_LOGO / name).write_text(wordmark(background, fill), encoding="utf-8")
+    stamp_icons()
     print(
         f"Drew {len(WEB_ICONS)} icons and favicon.ico into {PUBLIC.relative_to(ROOT)}, "
         f"and the theme's logo, from {DRAWING.name}"
     )
+
+
+def icon_revision() -> str:
+    """A shared content fingerprint for every favicon and installed-app icon reference."""
+    digest = hashlib.sha256()
+    for name in ("favicon.svg", "favicon.ico", *WEB_ICONS):
+        digest.update(name.encode() + b"\0" + (PUBLIC / name).read_bytes() + b"\0")
+    return digest.hexdigest()[:12]
+
+
+def stamp_icons() -> None:
+    """Give browsers and installed apps new URLs when the committed artwork bytes change."""
+    revision = icon_revision()
+    page = ROOT / "web" / "index.html"
+    paths = ("favicon.svg", "favicon.ico", "icons/apple-touch-icon.png", "manifest.webmanifest")
+    pattern = r"/(?:" + "|".join(re.escape(path) for path in paths) + r")(?:\?v=[a-f0-9]+)?"
+    page.write_text(
+        re.sub(pattern, lambda match: match[0].split("?")[0] + f"?v={revision}", page.read_text("utf-8")),
+        encoding="utf-8",
+    )
+    path = PUBLIC / "manifest.webmanifest"
+    manifest = json.loads(path.read_text("utf-8"))
+    for icon in manifest["icons"]:
+        icon["src"] = icon["src"].split("?")[0] + f"?v={revision}"
+    path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 def build() -> None:
