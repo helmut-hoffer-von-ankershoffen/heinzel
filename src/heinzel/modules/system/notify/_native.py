@@ -44,9 +44,10 @@ BANNERS = (
 )
 """The usual reasons a macOS notification is delivered but no banner shows, with where to change them."""
 ALLOW = (
-    "macOS asks once whether Heinzel Notifier may show notifications: choose Allow. Missed it? System Settings > "
-    "Notifications > Heinzel Notifier: turn on Allow notifications and choose Banners."
+    "If no notification appeared: System Settings \u2192 Notifications \u2192 Heinzel Notifier \u2192 "
+    "turn on Allow notifications (Banners)."
 )
+ICON_CACHE = "macOS may show the old icon until you remove Heinzel Notifier there once and run this again."
 DENIED_DETAIL = "macOS doesn't allow Heinzel Notifier's notifications"
 DENIED_FIX = (
     "System Settings > Notifications > Heinzel Notifier: turn on Allow notifications; then `hz system notify install`"
@@ -134,9 +135,10 @@ def _through_app(app: NotifierApp, title: str, body: str, *, url: str | None, as
     if not asking and app.status() == "not-determined":
         return NOT_ASKED
     said = app.post(sanitise(title, TITLE_LIMIT), sanitise(body, BODY_LIMIT), url, asking=asking)
-    if said == "posted":
+    word = said.split(maxsplit=1)[0] if said.split() else ""  # older builds print "posted error=nil"
+    if word == "posted":
         return None
-    return DENIED if said == "denied" else f"Heinzel Notifier: {said}"
+    return DENIED if word == "denied" else f"Heinzel Notifier: {said}"
 
 
 def native(

@@ -157,6 +157,7 @@ def without_notifier(hook_module, monkeypatch, app: Path | None = None, *, curre
             APP=app or Path("/nonexistent/HeinzelNotifier.app"),
             PACKAGED="heinzel/modules/system/notify/macos/HeinzelNotifier.app",
             current=lambda: current,
+            build=lambda: (_ for _ in ()).throw(SystemExit("swiftc not found")),  # a Mac without the tools
         )
 
     monkeypatch.setattr(hook_module, "_script", script)
@@ -192,9 +193,37 @@ def test_the_build_hook_ships_heinzel_notifier_when_it_matches_its_sources(hook_
     assert str(app) not in stale["force_include"]
 
 
+def test_the_build_hook_tries_to_build_heinzel_notifier_on_a_mac(hook_module, monkeypatch, tmp_path, capsys):
+    app = tmp_path / "HeinzelNotifier.app"
+    app.mkdir()
+    built = []
+    state = {"current": False}
+
+    def build_it() -> None:
+        built.append(True)
+        state["current"] = True
+
+    def script(name: str):
+        if name != "notifier":
+            return original(name)
+        return types.SimpleNamespace(
+            APP=app, PACKAGED="p/HeinzelNotifier.app", current=lambda: state["current"], build=build_it
+        )
+
+    original = hook_module._script
+    monkeypatch.setattr(hook_module, "_script", script)
+    monkeypatch.setattr(build, "current", lambda: True)
+    monkeypatch.setattr(hook_module.sys, "platform", "darwin")
+    data: dict[str, dict[str, str]] = {"force_include": {}}
+    hook_module.WebAppHook().initialize("standard", data)
+    assert built == [True]
+    assert data["force_include"][str(app)] == "p/HeinzelNotifier.app"
+
+
 def test_the_build_hook_builds_a_stale_app_and_skips_editable_installs(hook_module, monkeypatch):
     hook = hook_module.WebAppHook()
     built = []
+    without_notifier(hook_module, monkeypatch)
     monkeypatch.setattr(build, "current", lambda: False)
     monkeypatch.setattr(build, "build", lambda: built.append(True))
     editable: dict[str, dict[str, str]] = {"force_include": {}}

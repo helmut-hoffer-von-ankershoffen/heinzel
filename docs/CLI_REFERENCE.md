@@ -1032,6 +1032,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `agent`: (expert) Install the Heinzelmännchen...
 * `capability`: (expert) Show which adapters serve which...
 * `changelog`: (expert) Show the installed version&#x27;s...
+* `claude`: (expert) See the MCP servers and skills...
 * `config`: (expert) Show, get, set and initialize...
 * `connector`: (expert) Show whether each connector is...
 * `credential`: (expert) Store and check the credentials...
@@ -1164,6 +1165,57 @@ $ hz system changelog [OPTIONS]
 **Options**:
 
 * `--newer / --no-newer`: Show what the releases newer than the installed version bring instead, newest first; asks GitHub, with GH_TOKEN or GITHUB_TOKEN if set. As JSON: a list of {version, date, notes, url}.  [default: no-newer]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz system claude`
+
+(expert) See the MCP servers and skills you already set up for Claude, without using any of them.
+
+**Usage**:
+
+```console
+$ hz system claude [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `list`: (expert) List the MCP servers and skills...
+* `summary`: (expert) Count the MCP servers and skills...
+
+#### `hz system claude list`
+
+(expert) List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.
+
+**Usage**:
+
+```console
+$ hz system claude list [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+#### `hz system claude summary`
+
+(expert) Count the MCP servers and skills found in Claude&#x27;s configuration per source, without their names.
+
+**Usage**:
+
+```console
+$ hz system claude summary [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
