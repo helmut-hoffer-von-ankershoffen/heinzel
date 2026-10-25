@@ -46,11 +46,25 @@ def render_list(result: NoticeList) -> RenderableType:
 
 
 def render_installed(result: Installed) -> RenderableType:
-    """What was installed, whether the test popped up, and what to do now."""
-    where = f" ({result.path}, {result.state})" if result.path else ""
-    lines = [Text(f"Native notifier: {result.notifier or 'none'}{where}")]
-    lines.append(Text("A test notification is on its way." if result.shown else f"No test: {result.problem}"))
-    lines.extend(Text(f"- {step}") for step in result.next)
+    """What was installed or updated, whether the test went out, and what to do if no notification appeared."""
+    lines: list[Text] = []
+    if result.notifier is None:
+        lines.append(Text(f"No native notifier: {result.problem}"))
+    elif result.notifier != "heinzel-notifier":
+        lines.append(Text(f"Using {result.notifier} for notifications."))
+    elif result.state == "current":
+        lines.append(Text("Heinzel Notifier is installed and up to date."))
+    elif result.state == "installed":
+        done = (
+            "Updated Heinzel Notifier (new icon)." if result.previous == "outdated" else "Installed Heinzel Notifier."
+        )
+        lines.append(Text(done))
+    else:
+        lines.append(Text(f"Couldn't update Heinzel Notifier: {result.detail or 'it differs from the bundled app'}."))
+    if result.notifier is not None:
+        sent = "Sent a test notification \u2014 you should see it now."
+        lines.append(Text(sent if result.shown else f"The test notification failed: {result.problem}"))
+    lines.extend(Text(step) for step in result.next)
     return Group(*lines)
 
 

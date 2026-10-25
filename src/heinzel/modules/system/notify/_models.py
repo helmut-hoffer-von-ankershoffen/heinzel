@@ -125,6 +125,8 @@ class Installed(BaseModel):
     notifier: str | None = Field(description="The native notifier: heinzel-notifier, osascript, notify-send, or none.")
     path: str | None = Field(default=None, description="Where Heinzel Notifier is installed; none elsewhere.")
     state: str | None = Field(default=None, description="current, installed, outdated or missing; none elsewhere.")
+    previous: str | None = Field(default=None, description="What was installed before: current, outdated or missing.")
+    detail: str | None = Field(default=None, description="Why Heinzel Notifier could not be updated, if it could not.")
     shown: bool = Field(description="Whether the test notification was handed to the system.")
     problem: str | None = Field(default=None, description="Why it wasn't, or why there is no notifier.")
     next: list[str] = Field(default_factory=list, description="What to do now, in words.")
