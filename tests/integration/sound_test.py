@@ -83,11 +83,11 @@ def client(kernel: Kernel, static: Path | None = None) -> TestClient:
     return TestClient(web.build(kernel, port=8000, token=TOKEN, static=static), base_url="http://127.0.0.1:8000")
 
 
-def test_sound_is_off_by_default_and_the_list_shows_off_claude_fm_and_each_plugins_soundscape(kernel):
+def test_sound_is_off_by_default_and_the_list_shows_off_the_core_streams_and_each_plugins_soundscape(kernel):
     code, listed = hz(kernel("heinzel_sound_demo"), "system", "sound", "list")
     assert code == 0, listed
     assert (listed["selected"], listed["effective"]) == ("off", "off")
-    off, fm, demo = listed["soundscapes"]
+    off, fm, focus, demo = listed["soundscapes"]
     assert (off["name"], off["kind"], off["selected"], off["effective"]) == ("off", "off", True, True)
     assert (fm["name"], fm["title"], fm["module"], fm["plugin"]) == (
         "claude-fm",
@@ -102,6 +102,8 @@ def test_sound_is_off_by_default_and_the_list_shows_off_claude_fm_and_each_plugi
         "frame_origin": "https://www.youtube-nocookie.com",
         "watch_url": "https://www.youtube.com/watch?v=tRsQsTMvPNg",
     }
+    assert (focus["name"], focus["title"], focus["plugin"]) == ("focus", "Focus", "heinzel")
+    assert focus["stream"]["video"] == "5Le8Mrx3uA0"
     assert (demo["name"], demo["kind"], demo["plugin"], demo["pairs_with"]) == (
         "demo",
         "layers",
@@ -127,7 +129,7 @@ def test_sound_use_writes_the_user_setting_refuses_an_unknown_name_and_off_switc
     assert '[system.sound]\nname = "claude-fm"' in (user_config_dir() / "config.toml").read_text(encoding="utf-8")
     code, output = hz(hzk, "system", "sound", "use", "nope", json_output=False)
     assert code != 0
-    assert "No soundscape is called 'nope'; available: off, claude-fm, demo" in " ".join(str(output).split())
+    assert "No soundscape is called 'nope'; available: off, claude-fm, focus, demo" in " ".join(str(output).split())
     assert hz(hzk, "system", "sound", "use", "off")[1]["effective"] == "off"
 
 
