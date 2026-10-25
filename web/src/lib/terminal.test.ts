@@ -51,7 +51,6 @@ describe("followSize", () => {
   });
 });
 
-
 describe("the terminal's typing", () => {
   it("runs plain hz commands as typed, never ones with control characters", () => {
     expect(runsAsIs("hz clock")).toBe(true);
