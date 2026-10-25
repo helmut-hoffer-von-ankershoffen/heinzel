@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { acmeTheme, shell, theme, themeList } from "@/test/fixtures";
+import { acmeTheme, config, shell, theme, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { previewStyle } from "./ThemePreviews";
 
@@ -28,6 +28,80 @@ function themedApi(initial: string) {
 }
 
 describe("Themes", () => {
+  it("uses the custom Appearance controls once and keeps hidden/expert raw fields out of the page", async () => {
+    const managed = [
+      ["system.theme", "name", "default"],
+      ["system.sound", "name", "off"],
+      ["system.sound", "volume", 50],
+      ["system.sound", "follow_theme", false],
+      ["system.sound", "mute_in_meetings", true],
+      ["system.sound", "duck_while_typing", true],
+    ] as const;
+    mockApi({
+      ...shell,
+      "/api/system/config/show": {
+        ...config,
+        settings: [
+          ...config.settings,
+          ...managed.map(([section, key, value]) => ({
+            section,
+            key,
+            value,
+            default: value,
+            source: "default",
+            env: "EXAMPLE",
+            description: "Managed by custom Appearance controls.",
+            json_schema: { "x-hidden": true },
+          })),
+          {
+            section: "system.theme",
+            key: "diagnostic",
+            value: true,
+            default: false,
+            source: "default",
+            env: "EXAMPLE",
+            description: "Expert theme diagnostic.",
+            json_schema: { type: "boolean", "x-expert": true },
+          },
+        ],
+      },
+      "/api/system/theme/list": themeList("default", [theme()]),
+      "/api/system/sound/list": {
+        selected: "off",
+        effective: "off",
+        volume: 50,
+        follow_theme: false,
+        mute_in_meetings: true,
+        duck_while_typing: true,
+        signals: {},
+        soundscapes: [
+          {
+            name: "off",
+            title: "Off",
+            kind: "off",
+            module: null,
+            plugin: null,
+            selected: true,
+            effective: true,
+            fade_seconds: 4,
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    const { container } = renderAt("/doctor?settings=appearance");
+    expect(await screen.findByRole("slider", { name: "Volume" })).toBeInTheDocument();
+    expect(screen.getAllByRole("slider", { name: "Volume" })).toHaveLength(1);
+    expect(screen.getAllByRole("switch", { name: "Follow my theme" })).toHaveLength(1);
+    expect(screen.queryByText("system.sound")).not.toBeInTheDocument();
+    expect(screen.queryByText("system.theme")).not.toBeInTheDocument();
+    expect(screen.queryByText("Expert theme diagnostic.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No setting matches.")).not.toBeInTheDocument();
+    await user.type(screen.getByRole("searchbox", { name: "Filter settings" }), "volume");
+    expect(screen.getByRole("region", { name: "Settings pages" })).toHaveTextContent("Appearance");
+    expect(screen.queryByText("No setting matches.")).not.toBeInTheDocument();
+    await expectAccessible(container);
+  });
   it("switching to a theme with other corners and icon colour changes the app's custom properties", async () => {
     const { calls } = themedApi("default");
     const user = userEvent.setup();

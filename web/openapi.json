@@ -11984,8 +11984,8 @@
     }
   },
   "info": {
-    "description": "Open-source helpers that keep product teams running. Every endpoint is also a `hz` command.",
-    "title": "🧝 Heinzelmännchen"
+    "description": "Helpers accelerating product teams. Every endpoint is also a `hz` command.",
+    "title": "Heinzelmännchen"
   },
   "openapi": "3.1.0",
   "paths": {

@@ -102,7 +102,7 @@ def test_sound_is_off_by_default_and_the_list_shows_off_the_core_streams_and_eac
         "frame_origin": "https://www.youtube-nocookie.com",
         "watch_url": "https://www.youtube.com/watch?v=tRsQsTMvPNg",
     }
-    assert (focus["name"], focus["title"], focus["plugin"]) == ("focus", "Focus", "heinzel")
+    assert (focus["name"], focus["title"], focus["plugin"]) == ("focus", "Die Heinzelmännchen", "heinzel")
     assert focus["stream"]["video"] == "5Le8Mrx3uA0"
     assert (demo["name"], demo["kind"], demo["plugin"], demo["pairs_with"]) == (
         "demo",
@@ -243,8 +243,9 @@ def test_the_cli_renders_the_soundscapes_with_the_one_in_effect_marked(kernel):
     code, output = hz(kernel("heinzel_sound_demo"), "system", "sound", "list", json_output=False)
     assert code == 0, output
     assert "*  off" in str(output)
-    assert "claude-fm   Claude FM  stream (youtube)" in str(output)
-    assert "demo        Demo hum   1 layer " in str(output)
+    lines = [" ".join(line.split()) for line in str(output).splitlines()]
+    assert any("claude-fm Claude FM stream (youtube)" in line for line in lines)
+    assert any("demo Demo hum 1 layer" in line for line in lines)
 
 
 def test_the_web_head_lists_soundscapes_and_the_pick_round_trips_behind_the_token(kernel):

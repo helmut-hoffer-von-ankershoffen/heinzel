@@ -22,7 +22,17 @@ function keyboardFocus(element: HTMLElement): boolean {
   }
 }
 
-export function SearchField({ label, quietFocus, className, inputClassName, ref, onFocus, onBlur, ...input }: Props) {
+export function SearchField({
+  label,
+  quietFocus,
+  className,
+  inputClassName,
+  ref,
+  onFocus,
+  onBlur,
+  onKeyDown,
+  ...input
+}: Props) {
   const own = useRef<HTMLInputElement | null>(null);
   const [ring, setRing] = useState(false);
   const quiet = useRef(false);
@@ -34,8 +44,8 @@ export function SearchField({ label, quietFocus, className, inputClassName, ref,
   return (
     <label
       className={cn(
-        "flex items-center gap-2 rounded-lg bg-input px-2.5 py-1.5 text-icon ring-ring",
-        ring && "ring-2",
+        "flex items-center gap-2 rounded-lg bg-input px-2.5 py-1.5 text-icon ring-foreground/80",
+        ring && "ring-1",
         className,
       )}
     >
@@ -49,6 +59,12 @@ export function SearchField({ label, quietFocus, className, inputClassName, ref,
           else if (ref) ref.current = element;
         }}
         type="search"
+        data-focus-ring="parent"
+        onKeyDown={(event) => {
+          quiet.current = false;
+          setRing(true);
+          onKeyDown?.(event);
+        }}
         onFocus={(event) => {
           setRing(!quiet.current && keyboardFocus(event.currentTarget));
           onFocus?.(event);

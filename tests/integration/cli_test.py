@@ -151,7 +151,9 @@ def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app, mak
     expert = sum(let.audience == "expert" for _, let in kernel.lets(OperationLet) if kernel.available(let.func))
     hidden = expert + 3  # and `hz system serve mcp | api | daemon`
     last = screen.strip().splitlines()[-1].strip()
-    assert last == f"{hidden} more commands for experts are hidden; hz system expert on lists them."
+    assert f"{hidden} more commands for experts are hidden; hz system expert on lists them." in screen
+    assert last.startswith(f"v{__version__}")
+    assert last.endswith("🐻 built with AI in Berlin")
 
 
 def test_a_group_that_hides_commands_says_how_many(app):
