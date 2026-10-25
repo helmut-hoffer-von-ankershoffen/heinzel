@@ -68,6 +68,32 @@ def _read_spine(folder: int) -> SessionRead:
         return SessionRead(problem="Session spine is not a readable private regular file")
 
 
+def _read_body(parent: int, turn: str, expected_hash: str | None) -> list[JsonValue]:
+    identifier(turn)
+    if expected_hash is not None and re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None:
+        msg = "A body checkpoint hash must be a SHA-256 hex digest"
+        raise HeinzelError(msg)
+    with child(parent, "turns") as folder:
+        descriptor = open_file(folder, f"{turn}.jsonl", os.O_RDONLY)
+        with os.fdopen(descriptor, "rb") as handle:
+            values: list[JsonValue] = []
+            digest = hashlib.sha256()
+            for line in handle:
+                digest.update(line)
+                if not line.endswith(b"\n"):
+                    msg = "The turn body ends with an incomplete record"
+                    raise HeinzelError(msg)
+                try:
+                    values.append(JSON_VALUE.validate_json(line))
+                except ValidationError:
+                    msg = "The turn body contains an invalid JSON record"
+                    raise HeinzelError(msg) from None
+            if expected_hash is not None and digest.hexdigest() != expected_hash:
+                msg = "The turn body differs from its saved checkpoint; restore the body before resuming"
+                raise HeinzelError(msg)
+            return values
+
+
 @contextlib.contextmanager
 def _lock(parent: int, name: str, *, wait: bool) -> Generator[None]:
     descriptor = open_file(parent, name, os.O_RDWR | os.O_CREAT)
@@ -167,6 +193,23 @@ class SessionStore:
             self._sync(root, index, force=True)
             index.commit()
             return [self._head(row) for row in index.execute("SELECT * FROM sessions ORDER BY session")]
+
+    def body(self, session: str, turn: str, *, expected_hash: str) -> list[JsonValue]:
+        """Read a committed body without taking a writer lock, verifying its exact saved bytes.
+
+        Use a body id and hash from a verified checkpoint. A caller using immutable body ids can read a committed
+        snapshot while another turn writes the session. A changed or incomplete body is refused, never returned.
+
+        Raises:
+            HeinzelError: If an id, hash, directory or file is unsafe, or its content differs from the checkpoint.
+            OSError: If the body is absent, expired or cannot be read.
+        """
+        identifier(session)
+        if re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None:
+            msg = "A body checkpoint hash must be a SHA-256 hex digest"
+            raise HeinzelError(msg)
+        with directory(self.root) as root, child(root, session) as folder:
+            return _read_body(folder, turn, expected_hash)
 
     @contextlib.contextmanager
     def _index(self, root: int) -> Generator[sqlite3.Connection]:
@@ -428,26 +471,4 @@ class SessionWriter:
             OSError: If the body is absent or cannot be read.
         """
         self._require_active()
-        identifier(turn)
-        if expected_hash is not None and re.fullmatch(r"[0-9a-f]{64}", expected_hash) is None:
-            msg = "A body checkpoint hash must be a SHA-256 hex digest"
-            raise HeinzelError(msg)
-        with child(self.folder, "turns") as folder:
-            descriptor = open_file(folder, f"{turn}.jsonl", os.O_RDONLY)
-            with os.fdopen(descriptor, "rb") as handle:
-                values: list[JsonValue] = []
-                digest = hashlib.sha256()
-                for line in handle:
-                    digest.update(line)
-                    if not line.endswith(b"\n"):
-                        msg = "The turn body ends with an incomplete record"
-                        raise HeinzelError(msg)
-                    try:
-                        values.append(JSON_VALUE.validate_json(line))
-                    except ValidationError:
-                        msg = "The turn body contains an invalid JSON record"
-                        raise HeinzelError(msg) from None
-                if expected_hash is not None and digest.hexdigest() != expected_hash:
-                    msg = "The turn body differs from its saved checkpoint; restore the body before resuming"
-                    raise HeinzelError(msg)
-                return values
+        return _read_body(self.folder, turn, expected_hash)
