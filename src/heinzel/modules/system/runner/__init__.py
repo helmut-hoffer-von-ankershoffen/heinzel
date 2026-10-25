@@ -16,6 +16,9 @@ from heinzel.kernel import CapabilityView
 from heinzel.modules.system.runner._access import ClaudeCodeAccess
 from heinzel.modules.system.runner._claude import BIND_COMMAND_RUNNER, HOSTS, ClaudeCodeRunner, login_check
 from heinzel.modules.system.runner._claude import DOCS as CLAUDE_CODE_DOCS
+from heinzel.modules.system.runner._codex import HOSTS as CODEX_HOSTS
+from heinzel.modules.system.runner._codex import NAME as CODEX
+from heinzel.modules.system.runner._codex import CodexAccess, CodexRunner
 from heinzel.modules.system.runner._command import SET_COMMAND, TRUST_COMMAND, CommandRunner
 from heinzel.modules.system.runner._models import RunnerSettings
 
@@ -25,6 +28,9 @@ module.provides("agent-runner", modes={"read"}, hosts=HOSTS, name="claude-code")
 module.provides("agent-runner", modes={"read"}, name="command")(CommandRunner)
 # The same CLI as an AI access option, which names the runner above (ADR 0057).
 module.provides("ai-access", modes={"read"}, hosts=HOSTS, name="claude-code")(ClaudeCodeAccess)
+# The Codex CLI, a ChatGPT plan's coding agent, the same two ways (ADR 0057).
+module.provides("agent-runner", modes={"read"}, hosts=CODEX_HOSTS, name=CODEX)(CodexRunner)
+module.provides("ai-access", modes={"read"}, hosts=CODEX_HOSTS, name=CODEX)(CodexAccess)
 
 
 ASK_TIMEOUT = timedelta(minutes=3)
@@ -97,14 +103,25 @@ def claude_code_checks(settings: RunnerSettings) -> list[Check]:
     return [installed, login_check(found)]
 
 
+def codex_checks(settings: RunnerSettings) -> list[Check]:
+    """Codex is on PATH and signed in, as `codex login status` says; nothing spent."""
+    found = CodexAccess(settings).status()
+    status = Status.UP if found.installed and found.signed_in else Status.DEGRADED
+    return [Check(name="codex", status=status, detail=found.detail, fix=found.fix)]
+
+
+CLI_CHECKS = {"claude-code": claude_code_checks, CODEX: codex_checks}
+"""The checks of each core runner that is an agent's CLI, by name."""
+
+
 @module.health
 def runner(capabilities: CapabilityView, settings: RunnerSettings) -> list[Check]:
     """The bound core runner: its CLI is there, and whether it enforces the read-only tool profile."""
     bound = capabilities.bound("agent-runner")
     if not any(use.capability == "agent-runner" for use in capabilities.matrix()):
         return [Check(name="runner", status=Status.UP, detail=f"no module requires agent-runner (bound: {bound})")]
-    if bound == "claude-code":
-        return claude_code_checks(settings)
+    if bound in CLI_CHECKS:
+        return CLI_CHECKS[bound](settings)
     if bound == "command":
         if not settings.command or shutil.which(settings.command[0]) is None:
             return [

@@ -153,6 +153,18 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
 
 - Builds on [ADR 0028](0028-integrations-are-capability-adapters.md) (adapters, bindings, hosts) and
   [ADR 0044](0044-themes-are-data-a-plugin-ships.md) (the choice and its listing).
+- **The `codex` option and runner**, a ChatGPT plan's coding agent. Unlike ADR 0029's "other agents as plugins", the
+  core ships Codex beside Claude Code, as both an `agent-runner` adapter and an AI access option that names it: the
+  maintainer wants a ChatGPT plan as first-class as a Claude one. A run is `codex exec --json --sandbox read-only
+  --ephemeral --skip-git-repo-check -C <dir> [-m <model>] [-c model_reasoning_effort=<effort>] [-c
+  mcp_servers.<name>.command|args|env=...] -` with the contract and the prompt on standard input (Codex has no system
+  prompt flag); the answer is the last `item.completed` of type `agent_message`, the usage `turn.completed`'s
+  (`input_tokens`, `cached_input_tokens`, `output_tokens`), failures `turn.failed` and `error`; `codex login status`
+  says whether it is signed in. Codex reports no cost and takes no budget or tool allowlist, and its read-only sandbox
+  prevents writes, not reads: every run says so in its warnings. Its environment is PATH, HOME, LANG, LC_*, TMPDIR and
+  `CODEX_HOME`, never `HZ_CREDENTIAL_*`; `[system.runner] codex_executable`, `codex_model` and `codex_effort`
+  configure it. **These flags and events are verified against OpenAI's Codex documentation only (2026-10-25), not
+  against a live run**; the tests use a fake `codex` on PATH.
 - First slice: the protocol, `Adapters[P]`, the `claude-code`, `gateway` and `pydantic-ai` options with the
   `pydantic-ai-slim` dependency, `list`, `use`, `test`, doctor. Deferred: the turn engine itself (ADR 0050),
   `[ai.roles]`, `[ai.models]`, `[ai.prices]`, gateway endpoints and tokens, and the web Settings section.
