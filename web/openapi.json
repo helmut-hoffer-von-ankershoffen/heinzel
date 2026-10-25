@@ -8955,6 +8955,43 @@
         "title": "ThemeFontView",
         "type": "object"
       },
+      "ThemeHeinzel": {
+        "additionalProperties": false,
+        "description": "Checked colours and decorations for the core drawing; personal look choices stay in charge.",
+        "properties": {
+          "decorations": {
+            "default": [],
+            "description": "Optional decoration of every core avatar; snow adds a cap patch and scarf.",
+            "items": {
+              "const": "snow",
+              "type": "string"
+            },
+            "maxItems": 1,
+            "title": "Decorations",
+            "type": "array"
+          },
+          "palette": {
+            "additionalProperties": {
+              "description": "A hex colour, `#rgb` or `#rrggbb`.",
+              "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+              "type": "string"
+            },
+            "description": "Colours for default hat, shirt and scarf parts.",
+            "maxProperties": 3,
+            "propertyNames": {
+              "enum": [
+                "hat",
+                "shirt",
+                "scarf"
+              ]
+            },
+            "title": "Palette",
+            "type": "object"
+          }
+        },
+        "title": "ThemeHeinzel",
+        "type": "object"
+      },
       "ThemeList": {
         "description": "Every available theme and which one is in effect.",
         "properties": {
@@ -9521,6 +9558,17 @@
             "description": "The weight of headings (`--heading-weight`), 100 to 900, e.g. `600`.",
             "title": "Heading Weight",
             "type": "integer"
+          },
+          "heinzel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeHeinzel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Core avatar colours and decorations."
           },
           "icon_size": {
             "description": "The size of icons (`--icon-size`), e.g. `18px`.",

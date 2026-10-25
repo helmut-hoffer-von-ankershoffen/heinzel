@@ -130,6 +130,13 @@ export type HeinzelLook = {
   state?: HeinzelState;
   /** Accessories to layer on, data only; unknown names are ignored (parseAccessories). */
   accessories?: readonly Accessory[];
+  theme?: ThemeLook;
+};
+
+/** A theme dresses defaults; explicit personal colours still win. No arbitrary graphics or CSS. */
+export type ThemeLook = {
+  palette?: Partial<Record<"hat" | "shirt" | "scarf", string>>;
+  decorations?: readonly "snow"[];
 };
 
 type AgeLook = { tip: number | null; hair: string; brow: string; light: string; eye: number; beard: Beard };
@@ -197,6 +204,7 @@ function line(d: string, colour: string, width: number): Shape {
 
 /** A colour mixed with black (amount < 0) or white (amount > 0). */
 function mix(hex: string, amount: number): string {
+  if (hex.length === 4) hex = `#${[...hex.slice(1)].map((value) => value + value).join("")}`;
   const target = amount < 0 ? 0 : 255;
   const channels = [1, 3, 5].map((i) => {
     const value = Number.parseInt(hex.slice(i, i + 2), 16);
@@ -301,13 +309,13 @@ function group(transform: string, children: Shape[]): Shape {
 }
 
 /** A scarf wound round the neck, over the beard, with a striped tail hanging down the shirt. */
-function scarf(b: BuildLook): Shape {
+function scarf(b: BuildLook, colour = SCARF): Shape {
   const [sl, sr] = [256 - b.shoulder, 256 + b.shoulder];
   return layer("scarf", [
-    path(`M296 490 L330 494 L338 612 L302 616 Z`, mix(SCARF, -0.15)),
+    path(`M296 490 L330 494 L338 612 L302 616 Z`, mix(colour, -0.15)),
     line("M300 548 L335 551", SCARF_STRIPE, 9),
     line("M301 580 L336 583", SCARF_STRIPE, 9),
-    path(`M${sl + 6} 468 Q256 484 ${sr - 6} 468 L${sr - 2} 492 Q256 516 ${sl + 2} 492 Z`, SCARF),
+    path(`M${sl + 6} 468 Q256 484 ${sr - 6} 468 L${sr - 2} 492 Q256 516 ${sl + 2} 492 Z`, colour),
     line(`M${sl + 38} 478 Q${sl + 44} 494 ${sl + 40} 500`, SCARF_STRIPE, 8),
     line(`M${sr - 38} 478 Q${sr - 44} 494 ${sr - 40} 500`, SCARF_STRIPE, 8),
   ]);
@@ -379,7 +387,7 @@ function mouth(state: HeinzelState, bearded: boolean, light: string): Shape[] {
 }
 
 /** The head in the face's own 512 coordinates (centre 256,236, radius 158): ears, face, hair, beard, cap, features. */
-function head(age: Age, beard: Beard, hat: Hat, state: HeinzelState, glasses: boolean): Shape[] {
+function head(age: Age, beard: Beard, hat: string, state: HeinzelState, glasses: boolean, snow: boolean): Shape[] {
   const look = BY_AGE[age];
   const brow = age === "old" ? 14 : 10;
   return [
@@ -394,7 +402,19 @@ function head(age: Age, beard: Beard, hat: Hat, state: HeinzelState, glasses: bo
       look.hair,
     ),
     ...(beard === "none" ? [] : [beardShape(beard, look.hair)]),
-    ...(look.tip === null ? [] : tag("hat", cap(look.tip, HATS[hat]))),
+    ...(look.tip === null
+      ? []
+      : tag("hat", [
+          ...cap(look.tip, hat),
+          ...(snow
+            ? [
+                path(
+                  `M228 ${look.tip + 22} Q264 ${look.tip - 11} 302 ${look.tip + 3} L310 ${look.tip + 22} Q266 ${look.tip + 17} 234 ${look.tip + 38} Z`,
+                  WHITE,
+                ),
+              ]
+            : []),
+        ])),
     circle(160, 318, 24, CHEEK),
     circle(352, 318, 24, CHEEK),
     // Brows: soft and raised; worried when blocked.
@@ -404,6 +424,7 @@ function head(age: Age, beard: Beard, hat: Hat, state: HeinzelState, glasses: bo
     ...tag("eyes", eyes(state, look.eye)),
     ...(glasses ? [sunglasses()] : []),
     ...mouth(state, beard !== "none", look.light),
+    ...(snow ? [circle(118, 140, 9, WHITE), circle(394, 105, 7, WHITE), circle(370, 360, 6, WHITE)] : []),
   ];
 }
 
@@ -486,17 +507,20 @@ function legs(sitting: boolean, hem: number): Shape[] {
 export function heinzelShapes({
   age = "grown",
   beard,
-  hat = "red",
-  shirt = "green",
+  hat,
+  shirt,
   build = "regular",
   state = "idle",
   accessories,
+  theme,
 }: HeinzelLook = {}): Shape[] {
-  const worn = parseAccessories(accessories);
+  const snow = theme?.decorations?.includes("snow") ?? false;
+  const worn = parseAccessories([...(accessories ?? []), ...(snow ? ["scarf"] : [])]);
   const holding = worn.includes("umbrella");
   const chin: Beard = age === "baby" ? "none" : (beard ?? BY_AGE[age].beard);
   const b = BY_BUILD[build];
-  const colour = SHIRTS[shirt];
+  const colour = shirt ? SHIRTS[shirt] : (theme?.palette?.shirt ?? SHIRTS.green);
+  const capColour = hat ? HATS[hat] : (theme?.palette?.hat ?? HATS.red);
   const [sl, sr] = [256 - b.shoulder, 256 + b.shoulder];
   const [bl, br, hl, hr] = [256 - b.belly, 256 + b.belly, 256 - b.hem, 256 + b.hem];
   const scale = 0.75;
@@ -518,9 +542,9 @@ export function heinzelShapes({
       transform: `matrix(${+(scale * b.head).toFixed(4)} 0 0 ${scale} ${+(256 - 256 * scale * b.head).toFixed(2)} ${
         350 - 236 * scale + bow
       })`,
-      children: head(age, chin, hat, state, worn.includes("sunglasses")),
+      children: head(age, chin, capColour, state, worn.includes("sunglasses"), snow),
     },
-    ...(worn.includes("scarf") ? [scarf(b)] : []),
+    ...(worn.includes("scarf") ? [scarf(b, theme?.palette?.scarf)] : []),
     ...signs(age, state),
   ];
 }
