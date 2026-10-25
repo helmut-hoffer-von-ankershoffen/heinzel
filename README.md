@@ -18,7 +18,7 @@
 | src/heinzel/heads/web/\_\_init\_\_.py                         |      207 |       15 |       46 |        3 |     93% |309-311, 353, 363-\>367, 371-373, 381-\>exit, 401-402, 405-410 |
 | src/heinzel/heads/web/\_devices.py                            |      100 |        2 |       12 |        0 |     98% |   125-126 |
 | src/heinzel/heads/web/\_stream.py                             |       46 |        5 |       14 |        4 |     82% |36, 66-\>65, 70-\>73, 75-78 |
-| src/heinzel/heads/web/\_terminal.py                           |      190 |       12 |       36 |        8 |     91% |33-\>38, 74, 85-\>89, 119-120, 136-137, 139, 178, 206-\>199, 212-\>exit, 220-221, 283-284, 286 |
+| src/heinzel/heads/web/\_terminal.py                           |      190 |       14 |       36 |        9 |     90% |33-\>38, 74, 85-\>89, 119-120, 136-137, 139, 178, 206-\>199, 212-\>exit, 218-221, 225-\>exit, 283-284, 286 |
 | src/heinzel/kernel/\_bindings.py                              |      324 |        6 |       74 |        1 |     98% |144-146, 530-532 |
 | src/heinzel/kernel/\_discovery.py                             |       66 |        2 |       16 |        0 |     98% |     60-61 |
 | src/heinzel/kernel/\_duration.py                              |       52 |        1 |       18 |        1 |     97% |        76 |
@@ -85,7 +85,7 @@
 | src/heinzel/modules/workflow/\_render.py                      |      213 |       15 |      104 |       10 |     90% |98, 116, 159-\>161, 164, 165-\>167, 197-203, 229, 263, 284-294, 352 |
 | src/heinzel/modules/workflow/\_retention.py                   |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
 | src/heinzel/modules/workflow/\_service.py                     |      718 |       17 |      236 |        6 |     98% |338, 426-427, 532-533, 573, 587-\>exit, 598-599, 960-961, 977-979, 1206-1207, 1239-1240 |
-| **TOTAL**                                                     | **19988** |  **427** | **5016** |  **179** | **97%** |           |
+| **TOTAL**                                                     | **19988** |  **429** | **5016** |  **180** | **97%** |           |
 
 130 files skipped due to complete coverage.
 
