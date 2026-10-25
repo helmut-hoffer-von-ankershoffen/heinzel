@@ -4,7 +4,7 @@ The kernel knows nothing about any head. Heads (`heinzel.heads`) ask it for lets
 """
 
 from heinzel.kernel._agents import AgentResult, AgentRunner, Budget, McpServer, RunStatus, TokenUsage, ToolProfile
-from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess
+from heinzel.kernel._ai import AccessStatus, AccessTest, AiAccess, UsageCause, UsageEntry, UsageLog, record_usage
 from heinzel.kernel._bindings import HOWS, Adapters, CapabilityView, How, Requester
 from heinzel.kernel._boot import boot
 from heinzel.kernel._capabilities import CAPABILITIES, MODES, NO_ADAPTER, Capability, Mode, Requirement
@@ -286,6 +286,9 @@ __all__ = [
     "Tracker",
     "Transcript",
     "TranscriptSegment",
+    "UsageCause",
+    "UsageEntry",
+    "UsageLog",
     "Verb",
     "Weather",
     "Window",
@@ -301,6 +304,7 @@ __all__ = [
     "format_duration",
     "parse_duration",
     "parse_window",
+    "record_usage",
     "redact_emails",
     "requirement_from_receipt",
     "schedule_problem",
