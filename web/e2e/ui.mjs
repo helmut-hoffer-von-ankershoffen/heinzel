@@ -132,7 +132,7 @@ try {
     ["contracts", "/contracts", "Workflow"],
     ["team-graph", "/graph", "Team graph"],
     ["team", "/team", "Team roster"],
-    ["asset-types", "/inventory/types", "Asset types"],
+    ["artifact-types", "/inventory/types", "Types"],
   ]) {
     await page.goto(`${base}${path}`);
     await page.getByRole("heading", { name: heading, exact: true }).waitFor();
