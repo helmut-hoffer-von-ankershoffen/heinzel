@@ -20,8 +20,8 @@ from heinzel import (
     Window,
 )
 from heinzel.kernel import ScriptedPrompter
-from heinzel.modules.workflow import WorkflowService, WorkflowSettings
-from heinzel.modules.workflow import _playbooks as playbooks
+from heinzel.modules.heinzel import HeinzelService, HeinzelSettings
+from heinzel.modules.heinzel import _playbooks as playbooks
 
 pytestmark = pytest.mark.unit
 
@@ -100,19 +100,19 @@ NO_GRAPH = Settings(disabled_modules=frozenset({"graph"}))
 def make(make_kernel, tmp_path):
     Tracker.windows.clear()
 
-    def build(*modules: Module, bindings: dict[str, str] | None = None) -> WorkflowService:
+    def build(*modules: Module, bindings: dict[str, str] | None = None) -> HeinzelService:
         capabilities = {"agent_runner": "claude-code", "documents": "docs", "tracker": "tracker"}
-        data = {"capabilities": capabilities if bindings is None else bindings, "workflow": {"user_dir": str(tmp_path)}}
+        data = {"capabilities": capabilities if bindings is None else bindings, "heinzel": {"user_dir": str(tmp_path)}}
         named = {m.name: m for m in modules or (plugin(),)}
         # Without `graph`, whose graph keeper is the core's one playbook: these tests are about what plugins bring.
         kernel = make_kernel(builtins=True, config=Config(files=(), data=data), settings_=NO_GRAPH, **named)
         settings = Config(files=(), data={}).settings(Settings, "hz")
-        return WorkflowService(kernel, kernel.resolve(WorkflowSettings), settings, clock=lambda: NOW)
+        return HeinzelService(kernel, kernel.resolve(HeinzelSettings), settings, clock=lambda: NOW)
 
     return build
 
 
-def the_playbook(service: WorkflowService, name: str = "teamwork") -> PlaybookLet:
+def the_playbook(service: HeinzelService, name: str = "teamwork") -> PlaybookLet:
     return next(p for q, p in playbooks.playbooks(service._kernel) if q == name)
 
 
@@ -150,7 +150,7 @@ def test_an_unbound_capability_is_one_problem_per_playbook_with_its_fix(make):
 def test_discovery_of_one_playbook_leaves_the_others_alone(make):
     found = make(plugin("teamwork"), plugin("other", adapters=False)).discover("other")
     assert {c.playbook for c in found.candidates} == {"other"}
-    assert [s.command for s in found.next] == ["hz workflow new weekly-report --template other:weekly-report"]
+    assert [s.command for s in found.next] == ["hz heinzel new weekly-report --template other:weekly-report"]
 
 
 def test_discovery_without_playbooks_points_at_plugins(make):
@@ -279,7 +279,7 @@ def layer(name: str, parent: str | None = None, site: str | None = None, **defau
     return module
 
 
-def acme(make, **team: str) -> WorkflowService:
+def acme(make, **team: str) -> HeinzelService:
     """Acme, its org Payments and site Lisbon disagreeing on the calendar, and the team Checkout with `team`."""
     return make(
         plugin(defaults=False),

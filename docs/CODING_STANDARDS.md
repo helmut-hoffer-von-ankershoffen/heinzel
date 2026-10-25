@@ -93,6 +93,9 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 - Assert on outcomes (return values, JSON output, files), not on implementation details.
 - Coverage: ≥ 90 % branch coverage for unit + integration. New code should be fully covered; an uncovered line
   needs a reason.
+- Tests don't read the wall clock: inject a fixed clock (`clock=` on services). An assertion on elapsed time (linear
+  time, a budget) is a performance test: it carries `@pytest.mark.perf` besides its level, `make check-fast` and
+  `make test` skip it, and `make test-perf` runs it in CI.
 - No sleeping, no ordering dependencies, no shared mutable fixtures. Tests run on macOS and Linux, Python 3.12–3.15.
 
 ## Commits, branches and releases
@@ -105,7 +108,8 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 - Security fixes use the `security` scope (`fix(security): ...`); commits that resolve a `CVE-…` or `GHSA-…` name it
   in the body. Both land in the changelog's **Security** section. Breaking changes (`!` or a `BREAKING CHANGE:`
   footer) land in **Breaking changes**, with the footer's explanation.
-- Scopes are optional; Heinzelmännchen's are `kernel`, `cli`, `heads`, `ai`, `system`, `setup`, `workflow`, `team`,
+- Scopes are optional; Heinzelmännchen's are `kernel`, `cli`, `heads`, `ai`, `system`, `setup`, `heinzel`, `workflow`,
+  `team`,
   `org`, `plugin`, `template`, `ci`, `docs`, `adr`, `agents`, `dx`, `security`, `release`, `deps`, `web`, `chat`,
   `graph`, `report`, and the
   first-party plugins `clock`, `github`, `atlassian`, `google`, `zoom`. A plugin's scopes are its own module and area names.
