@@ -520,17 +520,45 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 
 **Commands**:
 
+* `chat`: Durably queue a message for this Heinzel;...
 * `check`: (expert) Check contracts and list every...
 * `discover`: (expert) Find candidates for each...
 * `drafts`: List the drafts runs saved locally, newest...
 * `graph`: (expert) Show the workflow your contracts...
 * `list`: List your Heinzelmännchen, one per...
 * `new`: Write a starter contract, or a playbook&#x27;s...
+* `new-chat`: Create a durable personal Heinzel with an...
 * `playbooks`: (expert) List the playbooks plugins...
+* `profile`: Save this Heinzel&#x27;s name or look against...
 * `prune`: (expert) Delete drafts and records older...
 * `sent`: (expert) Record how much of a draft you...
+* `session`: Open one durable Heinzel and an ordered...
+* `sessions`: List your durable personal Heinzels,...
 * `show`: Show a contract as the daemon runs it:...
 * `wake`: Wake a Heinzelmännchen now: fetch its...
+
+### `hz heinzel chat`
+
+Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.
+
+**Usage**:
+
+```console
+$ hz heinzel chat [OPTIONS] {session_id} {request_id} {message}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `message`: Your message to this Heinzel, retained privately.  [required]
+
+**Options**:
+
+* `--when-busy <follow_up|steer>`: Queue a follow-up or request steering at the next safe boundary.  [default: follow_up]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
 
 ### `hz heinzel check`
 
@@ -643,6 +671,28 @@ $ hz heinzel new [OPTIONS] {name}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel new-chat`
+
+Create a durable personal Heinzel with an idempotent request, name and look.
+
+**Usage**:
+
+```console
+$ hz heinzel new-chat [OPTIONS] {request_id}
+```
+
+**Arguments**:
+
+* `request_id`: [required]
+
+**Options**:
+
+* `--name <str>`: Your personal display name for this Heinzel.  [default: New Heinzel]
+* `--appearance JSON`: The complete personal appearance overrides; null leaves the current look unchanged.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel playbooks`
 
 (expert) List the playbooks plugins contribute: asset types, template contracts and recommended settings.
@@ -655,6 +705,30 @@ $ hz heinzel playbooks [OPTIONS]
 
 **Options**:
 
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel profile`
+
+Save this Heinzel&#x27;s name or look against the exact profile revision you saw.
+
+**Usage**:
+
+```console
+$ hz heinzel profile [OPTIONS] {session_id} {request_id} {expected_revision}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `expected_revision`: The exact profile_revision you last read.  [required]
+
+**Options**:
+
+* `--name <str>`: The new personal display name; null leaves it unchanged.
+* `--appearance JSON`: The complete personal appearance overrides; null leaves the current look unchanged.
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -696,6 +770,44 @@ $ hz heinzel sent [OPTIONS] {name}
 * `--ref <str>`: The document the approved version lives in, read through the documents capability.
 * `--draft <path>`: The draft it was edited from; the contract&#x27;s newest draft if omitted.
 * `--edit-minutes <float>`: Your own estimate of the minutes you spent editing; optional.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel session`
+
+Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.
+
+**Usage**:
+
+```console
+$ hz heinzel session [OPTIONS] {session_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+
+**Options**:
+
+* `--cursor <str>`: The opaque next_cursor from this session&#x27;s previous page.
+* `--limit <int>`: The most messages returned in this page.  [default: 50]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel sessions`
+
+List your durable personal Heinzels, including new conversations without an approved contract.
+
+**Usage**:
+
+```console
+$ hz heinzel sessions [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
@@ -2278,6 +2390,8 @@ $ hz system serve api [OPTIONS]
 
 * `--host <str>`: Interface to listen on.  [default: 127.0.0.1]
 * `--port <int>`: Port to listen on.  [default: 8000]
+* `--private`: Require a server-scoped bearer for private operations.
+* `--credential-file <path>`: New owner-only file for the private API credential; never put the token in arguments.
 * `--help`: Show this message and exit.
 
 #### `hz system serve daemon`

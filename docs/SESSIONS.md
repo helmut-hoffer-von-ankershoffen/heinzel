@@ -22,6 +22,14 @@ Different sessions can hold their own turn locks concurrently. Repeating a check
 original event; using that identity with different data or another turn is refused. This deduplicates checkpoints,
 not external effects: an adapter still needs the effect ledger and idempotency key described by ADR 0049.
 
+`writer(session, wait=True)` waits for a short catalog or control journal writer; ordinary turn writers retain the
+nonblocking default. The durable conversation repository separates creation catalogs, main turns and inbox/control
+journals into private namespaces scoped by the authenticated principal. Its lock order is reservation (released),
+then main writer, then short control writer, then the store's short index lock. Profile changes and message
+acceptance take only the control writer and never wait for a main turn. Every visible message receives its control
+journal sequence, including an assistant reply whose immutable body is stored in the main session. Profile and
+control events may leave gaps in that message sequence; cursors preserve the committed order across those gaps.
+
 Each session has `session.jsonl`, `lock` and `turns/<turn>.jsonl`. The root and subdirectories require mode 0700;
 files require mode 0600 and the current user's ownership. File opens reject symlinks, nonregular files and hardlinks.
 SQLite lives in the private root. Its inode is checked around opening; malicious concurrent directory replacement

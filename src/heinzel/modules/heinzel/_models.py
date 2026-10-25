@@ -492,6 +492,23 @@ class HeinzelSettings(ModuleSettings):
         json_schema_extra={"x-unit": "usd"},
     )
 
+    session_max_usd: float = Field(
+        default=2.0,
+        gt=0,
+        allow_inf_nan=False,
+        title="Most per durable chat",
+        description="The most one durable Heinzel conversation may cost in US dollars, across its model turns.",
+        json_schema_extra={"x-unit": "usd"},
+    )
+    message_max_usd: float = Field(
+        default=0.2,
+        ge=0,
+        allow_inf_nan=False,
+        title="Most per message",
+        description="The most one model turn in a durable Heinzel conversation may cost in US dollars.",
+        json_schema_extra={"x-unit": "usd"},
+    )
+
     retention_days: int = Field(
         default=90,
         ge=0,
@@ -504,7 +521,15 @@ class HeinzelSettings(ModuleSettings):
     )
 
     ignored_in_project: ClassVar[frozenset[str]] = frozenset(
-        {"user_dir", "team_repository", "schedule_team", "max_usd", "retention_days"}
+        {
+            "user_dir",
+            "team_repository",
+            "schedule_team",
+            "max_usd",
+            "session_max_usd",
+            "message_max_usd",
+            "retention_days",
+        }
     )
 
     @field_validator("schedule_team")

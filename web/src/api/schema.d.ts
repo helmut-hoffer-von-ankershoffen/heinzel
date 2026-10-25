@@ -128,6 +128,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.
+         * @description Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.
+         */
+        post: operations["heinzel_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/check": {
         parameters: {
             query?: never;
@@ -208,6 +228,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/new-chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create a durable personal Heinzel with an idempotent request, name and look.
+         * @description Create a durable personal Heinzel with an idempotent request, name and look.
+         */
+        post: operations["heinzel_new_chat"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/playbooks": {
         parameters: {
             query?: never;
@@ -220,6 +260,66 @@ export interface paths {
          * @description List the playbooks plugins contribute: asset types, template contracts and recommended settings.
          */
         get: operations["heinzel_playbooks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save this Heinzel's name or look against the exact profile revision you saw.
+         * @description Save this Heinzel's name or look against the exact profile revision you saw.
+         */
+        post: operations["heinzel_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.
+         * @description Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.
+         */
+        get: operations["heinzel_session"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your durable personal Heinzels, including new conversations without an approved contract.
+         * @description List your durable personal Heinzels, including new conversations without an approved contract.
+         */
+        get: operations["heinzel_sessions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1951,6 +2051,130 @@ export interface components {
             };
         };
         /**
+         * ActionPreview
+         * @description Service-produced text and recipients; the client never infers a target or recipient list.
+         */
+        ActionPreview: {
+            /**
+             * After
+             * @description The proposed replacement section text.
+             */
+            after?: string | null;
+            /**
+             * Before
+             * @description The original section text, when applicable.
+             */
+            before?: string | null;
+            /**
+             * Diff
+             * @description The service-produced exact change for review.
+             */
+            diff?: string | null;
+            /**
+             * Kind
+             * @description The kind of proposed external change.
+             * @enum {string}
+             */
+            kind: "operation" | "document-section" | "email";
+            /**
+             * Recipient Snapshot Hash
+             * @description The hash of that resolved recipient snapshot.
+             */
+            recipient_snapshot_hash?: string | null;
+            /**
+             * Recipients
+             * @description The exact recipient snapshot awaiting approval.
+             */
+            recipients?: components["schemas"]["RecipientPreview"][];
+            /**
+             * Revision
+             * @description The immutable preview revision.
+             */
+            revision: number;
+            /**
+             * Sha256
+             * @description The exact preview hash bound to a human decision.
+             */
+            sha256: string;
+            /**
+             * Source Revision
+             * @description The source revision the draft was based on.
+             */
+            source_revision?: string | null;
+            /**
+             * Target
+             * @description The exact operation target.
+             */
+            target: string;
+            /**
+             * Title
+             * @description A short description of the change.
+             */
+            title: string;
+        };
+        /**
+         * ActionProposal
+         * @description The exact stored call a human may authorize; no decision proof is returned in a snapshot.
+         */
+        ActionProposal: {
+            /**
+             * Argument Hash
+             * @description The canonical argument hash bound to approval.
+             */
+            argument_hash: string;
+            /**
+             * Arguments
+             * @description The exact stored operation arguments.
+             */
+            arguments?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Command
+             * @description A readable equivalent command for review.
+             */
+            command: string;
+            /**
+             * Contract Version
+             * @description The approved contract version, when present.
+             */
+            contract_version?: number | null;
+            /**
+             * Grant Revision
+             * @description The effective grant revision bound to this proposal.
+             */
+            grant_revision: number;
+            /**
+             * Id
+             * @description The stable stored action proposal id.
+             */
+            id: string;
+            /**
+             * Operation
+             * @description The declared installed operation to invoke.
+             */
+            operation: string;
+            /**
+             * Policy Revision
+             * @description The effective policy revision bound to this proposal.
+             */
+            policy_revision: number;
+            /** @description The exact server-produced change and recipient preview. */
+            preview?: components["schemas"]["ActionPreview"] | null;
+            /**
+             * Status
+             * @description The durable decision or execution state.
+             * @default pending
+             * @enum {string}
+             */
+            status: "pending" | "running" | "done" | "failed" | "declined" | "uncertain";
+            /**
+             * Turn Id
+             * @description The turn that proposed this action.
+             */
+            turn_id: string;
+        };
+        /**
          * AdapterCandidate
          * @description An adapter that can serve a capability, and the state of its connector.
          */
@@ -2140,6 +2364,49 @@ export interface components {
             name: string;
         };
         /**
+         * AttachmentRef
+         * @description One session's immutable private upload; no server path or arbitrary URL is exposed.
+         */
+        AttachmentRef: {
+            /**
+             * Bytes
+             * @description The retained content size in bytes.
+             */
+            bytes: number;
+            /**
+             * Id
+             * @description The opaque retained upload id.
+             */
+            id: string;
+            /**
+             * Mime
+             * @description The validated media type.
+             */
+            mime: string;
+            /**
+             * Name
+             * @description The display filename; never a server path.
+             */
+            name: string;
+            /**
+             * Session Id
+             * @description The owning durable session id.
+             */
+            session_id: string;
+            /**
+             * Sha256
+             * @description The exact retained content hash.
+             */
+            sha256: string;
+            /**
+             * State
+             * @description Whether private content remains available.
+             * @default retained
+             * @enum {string}
+             */
+            state: "retained" | "expired";
+        };
+        /**
          * AvailablePlugin
          * @description A plugin one can install with `hz system plugin add`.
          */
@@ -2206,6 +2473,44 @@ export interface components {
              * @description What it wears or carries: umbrella, sunglasses, scarf.
              */
             accessories?: ("umbrella" | "sunglasses" | "scarf")[];
+        };
+        /**
+         * BackendBinding
+         * @description The effective choice pinned to a turn; changing it takes effect between turns.
+         */
+        BackendBinding: {
+            /**
+             * Backend
+             * @description The selected installed AI backend.
+             */
+            backend: string;
+            /**
+             * Capabilities
+             * @description Capabilities the selected adapter has proved it supports.
+             */
+            capabilities?: string[];
+            /**
+             * Effort
+             * @description The selected reasoning effort, when supported.
+             */
+            effort?: ("low" | "medium" | "high" | "xhigh" | "max") | null;
+            /**
+             * Mode
+             * @description Whether the turn uses direct API, a CLI model bridge or a native CLI loop.
+             * @enum {string}
+             */
+            mode: "api" | "cli-model" | "native-cli";
+            /**
+             * Model
+             * @description The selected model, when explicitly configured.
+             */
+            model?: string | null;
+            /**
+             * Revision
+             * @description The binding revision pinned to this turn.
+             * @default 1
+             */
+            revision: number;
         };
         /**
          * Candidate
@@ -3328,6 +3633,65 @@ export interface components {
             unmaintained: components["schemas"]["Unmaintained"][];
         };
         /**
+         * ContractVersion
+         * @description A versioned contract artifact; only an explicit approval can activate its schedule.
+         */
+        ContractVersion: {
+            /**
+             * Approved At
+             * @description When this exact version was approved, if ever.
+             */
+            approved_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description When this version was proposed.
+             */
+            created_at: string;
+            /**
+             * Id
+             * @description The stable contract artifact id.
+             */
+            id: string;
+            /**
+             * Parent Version
+             * @description The approved version this amendment follows.
+             */
+            parent_version?: number | null;
+            /**
+             * Reason
+             * @description The recorded reason for the amendment or decision.
+             */
+            reason?: string | null;
+            /**
+             * Sha256
+             * @description The exact artifact hash.
+             */
+            sha256: string;
+            /**
+             * Status
+             * @description The proposal or approval state of this version.
+             * @default proposed
+             * @enum {string}
+             */
+            status: "proposed" | "approved" | "superseded" | "rejected";
+            /**
+             * Text
+             * @description The versioned OpenProse contract text.
+             */
+            text: string;
+            /**
+             * Title
+             * @description The human-readable responsibility title.
+             */
+            title: string;
+            /**
+             * Version
+             * @description The immutable contract version.
+             */
+            version: number;
+        };
+        /**
          * ContributionInfo
          * @description A contribution as Settings lists it: where it may show and whether it does, without running it.
          */
@@ -4154,6 +4518,46 @@ export interface components {
             status: components["schemas"]["Status"];
         };
         /**
+         * HeinzelAppearance
+         * @description Personal appearance on the renderer's closed vocabulary; state and theme are application-owned.
+         */
+        HeinzelAppearance: {
+            /**
+             * Accessories
+             * @description Personal decorations from the supported closed vocabulary.
+             */
+            accessories?: ("umbrella" | "sunglasses" | "scarf")[];
+            /**
+             * Age
+             * @description The chosen age of this personal character.
+             * @default grown
+             * @enum {string}
+             */
+            age: "baby" | "young" | "grown" | "old";
+            /**
+             * Beard
+             * @description The explicit beard style; null inherits the age default.
+             */
+            beard?: ("none" | "short" | "medium" | "long") | null;
+            /**
+             * Build
+             * @description The chosen body shape.
+             * @default regular
+             * @enum {string}
+             */
+            build: "slim" | "regular" | "round";
+            /**
+             * Hat
+             * @description The personal hat colour; null inherits the installed theme.
+             */
+            hat?: ("red" | "rust" | "ochre" | "green" | "teal" | "blue" | "purple" | "slate") | null;
+            /**
+             * Shirt
+             * @description The personal shirt colour; null inherits the installed theme.
+             */
+            shirt?: ("green" | "blue" | "purple" | "red-brown" | "ochre" | "teal" | "slate" | "rose") | null;
+        };
+        /**
          * HeinzelList
          * @description `hz heinzel list`: the directories searched and one Heinzelmännchen per contract found in them.
          */
@@ -4773,6 +5177,38 @@ export interface components {
              * @description When they joined.
              */
             since: string;
+        };
+        /**
+         * MessageAccepted
+         * @description The inbox acknowledgement; it reports durable acceptance, not completed model work.
+         */
+        MessageAccepted: {
+            /**
+             * Disposition
+             * @description Acceptance or dispatch state; queued does not mean a completed answer.
+             * @enum {string}
+             */
+            disposition: "started" | "queued" | "steered";
+            /**
+             * Inbox Position
+             * @description The committed control-journal position of the accepted message.
+             */
+            inbox_position: number;
+            /**
+             * Request Id
+             * @description The exact accepted client request id.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable conversation that owns the inbox entry.
+             */
+            session_id: string;
+            /**
+             * Turn Id
+             * @description The assigned turn id, when work has started.
+             */
+            turn_id?: string | null;
         };
         /**
          * MetricWidget
@@ -5709,6 +6145,78 @@ export interface components {
             provided: boolean;
         };
         /**
+         * Question
+         * @description An answerable, stored question; answering it grants no new permission.
+         */
+        Question: {
+            /**
+             * Answer Schema
+             * @description The validated answer shape, when constrained.
+             */
+            answer_schema?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Choices
+             * @description Suggested explicit answer choices.
+             */
+            choices?: string[];
+            /**
+             * Id
+             * @description The stable question id.
+             */
+            id: string;
+            /**
+             * Prompt
+             * @description The question shown to the user.
+             */
+            prompt: string;
+            /**
+             * Revision
+             * @description The exact question revision an answer must reference.
+             * @default 1
+             */
+            revision: number;
+            /**
+             * Status
+             * @description Whether the question is still waiting, answered or cancelled.
+             * @default waiting
+             * @enum {string}
+             */
+            status: "waiting" | "answered" | "cancelled";
+            /**
+             * Turn Id
+             * @description The turn that is waiting for this answer.
+             */
+            turn_id: string;
+        };
+        /**
+         * RecipientPreview
+         * @description A resolved recipient in the exact snapshot awaiting human review.
+         */
+        RecipientPreview: {
+            /**
+             * Address
+             * @description The exact destination address awaiting approval.
+             */
+            address: string;
+            /**
+             * Name
+             * @description The recipient display name.
+             */
+            name: string;
+            /**
+             * Principal Id
+             * @description The resolved recipient identity.
+             */
+            principal_id: string;
+            /**
+             * Role
+             * @description The resolved role used to select this recipient.
+             */
+            role: string;
+        };
+        /**
          * RecommendationView
          * @description A setting the stack recommends; applied only when you accept it.
          */
@@ -5737,6 +6245,32 @@ export interface components {
             layer: string;
             /** @description The value offered: the most specific layer's. */
             value: components["schemas"]["JsonValue"];
+        };
+        /**
+         * ReferenceBlock
+         * @description A question, proposal or attachment whose state is held by the application service.
+         */
+        ReferenceBlock: {
+            /**
+             * Fallback
+             * @description Plain-text explanation of the referenced object.
+             */
+            fallback: string;
+            /**
+             * Id
+             * @description The stable block id within its message.
+             */
+            id: string;
+            /**
+             * @description Whether this block references a question, proposal or attachment. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "attachment" | "proposal" | "question";
+            /**
+             * Ref
+             * @description The application-owned object id.
+             */
+            ref: string;
         };
         /**
          * ReleaseCheck
@@ -5799,6 +6333,44 @@ export interface components {
              * @description Version of the release.
              */
             version: string;
+        };
+        /**
+         * RendererBlock
+         * @description Validated data for an installed renderer; executable markup is never a message block.
+         */
+        RendererBlock: {
+            /**
+             * Data
+             * @description Validated renderer data without executable markup.
+             */
+            data: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Fallback
+             * @description Plain-text content for heads without this renderer.
+             */
+            fallback: string;
+            /**
+             * Id
+             * @description The stable block id within its message.
+             */
+            id: string;
+            /**
+             * @description A block for an installed data renderer. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "renderer";
+            /**
+             * Manifest Sha256
+             * @description The exact renderer manifest fingerprint.
+             */
+            manifest_sha256: string;
+            /**
+             * Renderer
+             * @description The installed renderer identifier.
+             */
+            renderer: string;
         };
         /**
          * RequirementStatus
@@ -5954,6 +6526,254 @@ export interface components {
              * @description The operation's name in its module, e.g. `sync`.
              */
             operation: string;
+        };
+        /**
+         * SessionCosts
+         * @description The same visible budget for every head and backend, with plan estimates labelled separately.
+         */
+        SessionCosts: {
+            /**
+             * Message Max Usd
+             * @description The current allowed cap for the next model turn.
+             */
+            message_max_usd: number;
+            /**
+             * Session Max Usd
+             * @description The current policy cap for the whole conversation.
+             */
+            session_max_usd: number;
+            /**
+             * Spent Usd
+             * @description Accounted usage in US dollars across this conversation.
+             * @default 0
+             */
+            spent_usd: number;
+            /**
+             * Unknown Turns
+             * @description Turns whose actual spend requires reconciliation.
+             * @default 0
+             */
+            unknown_turns: number;
+        };
+        /**
+         * SessionList
+         * @description The personal conversations visible to this installation's current identity.
+         */
+        SessionList: {
+            /**
+             * Sessions
+             * @description Personal conversations visible to the authenticated owner, newest first.
+             */
+            sessions?: components["schemas"]["SessionSummary"][];
+        };
+        /**
+         * SessionMessage
+         * @description A visible message or an explicit gap where private body content expired.
+         */
+        SessionMessage: {
+            /**
+             * At
+             * Format: date-time
+             * @description When the message was durably recorded.
+             */
+            at: string;
+            /**
+             * Attachment Ids
+             * @description Retained uploads attached to this message.
+             */
+            attachment_ids?: string[];
+            /** @description The exact backend choice used for this turn. */
+            backend_binding?: components["schemas"]["BackendBinding"] | null;
+            /**
+             * Billing
+             * @description Whether usage came from a subscription plan or direct API billing.
+             */
+            billing?: ("plan" | "api") | null;
+            /**
+             * Blocks
+             * @description Validated rich blocks with portable text fallbacks.
+             */
+            blocks?: (components["schemas"]["TextBlock"] | components["schemas"]["RendererBlock"] | components["schemas"]["ReferenceBlock"])[];
+            /**
+             * Cost Usd
+             * @description Reported or priced cost in US dollars; absent when unknown.
+             */
+            cost_usd?: number | null;
+            /**
+             * Id
+             * @description The stable message id; accepted user messages retain their request id.
+             */
+            id: string;
+            /**
+             * Role
+             * @description Who produced this visible message.
+             * @enum {string}
+             */
+            role: "user" | "assistant" | "tool" | "system";
+            /**
+             * Seq
+             * @description The authoritative control-journal position; gaps are permitted.
+             */
+            seq: number;
+            /**
+             * Status
+             * @description The persisted state of this message or its expired body.
+             * @default completed
+             * @enum {string}
+             */
+            status: "pending" | "completed" | "failed" | "interrupted" | "expired" | "timeout" | "budget";
+            /**
+             * Text
+             * @description The portable plain-text content.
+             * @default
+             */
+            text: string;
+            /**
+             * Turn Id
+             * @description The owning turn id, when one has been assigned.
+             */
+            turn_id?: string | null;
+        };
+        /**
+         * SessionSnapshot
+         * @description Current metadata plus one message page; a fresh Heinzel can chat before it has an approved contract.
+         */
+        SessionSnapshot: {
+            /** @description The persisted personal character overrides. */
+            appearance?: components["schemas"]["HeinzelAppearance"];
+            /**
+             * Attachments
+             * @description Retained uploads owned by this conversation.
+             */
+            attachments?: components["schemas"]["AttachmentRef"][];
+            /** @description The effective backend choice for the next safe turn boundary. */
+            backend_binding?: components["schemas"]["BackendBinding"] | null;
+            /**
+             * Contract Version
+             * @description The currently approved contract version, if any.
+             */
+            contract_version?: number | null;
+            /**
+             * Contracts
+             * @description The versioned contract history visible to this owner.
+             */
+            contracts?: components["schemas"]["ContractVersion"][];
+            /** @description The shared usage accounting and current policy limits. */
+            costs: components["schemas"]["SessionCosts"];
+            /**
+             * Has More
+             * @description Whether another message page remains.
+             * @default false
+             */
+            has_more: boolean;
+            /**
+             * Heinzel Id
+             * @description The same stable identity as session_id.
+             */
+            heinzel_id: string;
+            /**
+             * Kind
+             * @description The durable conversation kind.
+             * @default heinzel
+             * @constant
+             */
+            kind: "heinzel";
+            /**
+             * Last Seq
+             * @description The latest acknowledged control-journal sequence.
+             * @default 0
+             */
+            last_seq: number;
+            /**
+             * Messages
+             * @description One ordered page of visible messages.
+             */
+            messages?: components["schemas"]["SessionMessage"][];
+            /**
+             * Name
+             * @description The persisted personal display name.
+             */
+            name: string;
+            /**
+             * Next After Seq
+             * @description The last returned control sequence when another page remains.
+             */
+            next_after_seq?: number | null;
+            /**
+             * Next Cursor
+             * @description Opaque cursor for the next message page; absent at the end.
+             */
+            next_cursor?: string | null;
+            /**
+             * Pending Actions
+             * @description Stored actions awaiting a decision or reconciliation.
+             */
+            pending_actions?: components["schemas"]["ActionProposal"][];
+            /**
+             * Profile Revision
+             * @description The exact name and appearance revision for optimistic updates.
+             * @default 1
+             */
+            profile_revision: number;
+            /**
+             * Questions
+             * @description Stored questions and their exact answer revisions.
+             */
+            questions?: components["schemas"]["Question"][];
+            /** @description The authoritative schedule and effective eligibility, when available. */
+            schedule?: components["schemas"]["WakeScheduleView"] | null;
+            /**
+             * Session Id
+             * @description The stable hz-owned conversation identity.
+             */
+            session_id: string;
+            /**
+             * State
+             * @description The authoritative projected lifecycle state.
+             * @default proposed
+             * @enum {string}
+             */
+            state: "proposed" | "asleep" | "awake" | "waiting" | "paused" | "retired";
+        };
+        /**
+         * SessionSummary
+         * @description Picker metadata, including proposed chats with no approved contract.
+         */
+        SessionSummary: {
+            /** @description The persisted character overrides for the session picker. */
+            appearance?: components["schemas"]["HeinzelAppearance"];
+            /**
+             * Contract Version
+             * @description The approved contract version, when one exists.
+             */
+            contract_version?: number | null;
+            /**
+             * Last Seq
+             * @description The latest acknowledged control-journal sequence.
+             */
+            last_seq: number;
+            /**
+             * Name
+             * @description The persisted personal display name.
+             */
+            name: string;
+            /**
+             * Session Id
+             * @description The stable personal conversation identity.
+             */
+            session_id: string;
+            /**
+             * State
+             * @description The authoritative projected lifecycle state.
+             * @enum {string}
+             */
+            state: "proposed" | "asleep" | "awake" | "waiting" | "paused" | "retired";
+            /**
+             * Updated At
+             * Format: date-time
+             * @description When the latest acknowledged control was recorded.
+             */
+            updated_at: string;
         };
         /**
          * SettingInfo
@@ -6752,6 +7572,27 @@ export interface components {
              * @default true
              */
             pops_up: boolean;
+        };
+        /**
+         * TextBlock
+         * @description A portable text answer, also the fallback for heads without rich rendering.
+         */
+        TextBlock: {
+            /**
+             * Id
+             * @description The stable block id within its message.
+             */
+            id: string;
+            /**
+             * @description A portable plain-text block. (enum property replaced by openapi-typescript)
+             * @enum {string}
+             */
+            kind: "text";
+            /**
+             * Text
+             * @description The plain text to render.
+             */
+            text: string;
         };
         /**
          * ThemeBackdrop
@@ -7586,6 +8427,68 @@ export interface components {
             summary: string;
         };
         /**
+         * WakeScheduleView
+         * @description An authoritative schedule preview or active contract; the browser never runs its own wake timer.
+         */
+        WakeScheduleView: {
+            /**
+             * Blocked Reason
+             * @description Why the daemon or effective authority currently prevents a wake.
+             */
+            blocked_reason?: string | null;
+            /**
+             * Contract Version
+             * @description The exact contract version behind this schedule.
+             */
+            contract_version: number;
+            /**
+             * Cron
+             * @description The approved or proposed cron expression.
+             */
+            cron: string;
+            /**
+             * Last Run
+             * @description The last recorded scheduled run, when one exists.
+             */
+            last_run?: string | null;
+            /**
+             * Next Wake
+             * @description The effective next eligible wake, when known.
+             */
+            next_wake?: string | null;
+            /**
+             * Notification Status
+             * @description The recorded notification policy or delivery summary.
+             */
+            notification_status?: string | null;
+            /**
+             * Preview Hash
+             * @description The exact preview hash for activation or control review.
+             */
+            preview_hash: string;
+            /**
+             * Revision
+             * @description The immutable control or proposal revision.
+             */
+            revision: number;
+            /**
+             * Status
+             * @description Whether this schedule is proposed, active or paused.
+             * @enum {string}
+             */
+            status: "proposed" | "active" | "paused";
+            /**
+             * Summary
+             * @description The authoritative responsibility and schedule summary.
+             */
+            summary: string;
+            /**
+             * Timezone
+             * @description The IANA time zone used for schedule interpretation.
+             */
+            timezone: string;
+        };
+        /**
          * Week
          * @description Promises due in one ISO week, by how they ended: the team's flow, never anyone's performance.
          */
@@ -7685,6 +8588,72 @@ export interface components {
              */
             widget?: (components["schemas"]["CardWidget"] | components["schemas"]["ListWidget"] | components["schemas"]["MetricWidget"] | components["schemas"]["ProgressWidget"] | components["schemas"]["GraphicWidget"]) | null;
         };
+        /** heinzel_chat_Input */
+        heinzel_chat_Input: {
+            /**
+             * Message
+             * @description Your message to this Heinzel, retained privately.
+             */
+            message: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+            /**
+             * When Busy
+             * @description Queue a follow-up or request steering at the next safe boundary.
+             * @default follow_up
+             * @enum {string}
+             */
+            when_busy: "follow_up" | "steer";
+        };
+        /** heinzel_new_chat_Input */
+        heinzel_new_chat_Input: {
+            /** @description The complete personal appearance overrides; null leaves the current look unchanged. */
+            appearance?: components["schemas"]["HeinzelAppearance"] | null;
+            /**
+             * Name
+             * @description Your personal display name for this Heinzel.
+             * @default New Heinzel
+             */
+            name: string;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+        };
+        /** heinzel_profile_Input */
+        heinzel_profile_Input: {
+            /** @description The complete personal appearance overrides; null leaves the current look unchanged. */
+            appearance?: components["schemas"]["HeinzelAppearance"] | null;
+            /**
+             * Expected Revision
+             * @description The exact profile_revision you last read.
+             */
+            expected_revision: number;
+            /**
+             * Name
+             * @description The new personal display name; null leaves it unchanged.
+             */
+            name?: string | null;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -7697,13 +8666,17 @@ export type SchemaAccessOption = components['schemas']['AccessOption'];
 export type SchemaAccessTestReport = components['schemas']['AccessTestReport'];
 export type SchemaAccessUse = components['schemas']['AccessUse'];
 export type SchemaActionEntry = components['schemas']['ActionEntry'];
+export type SchemaActionPreview = components['schemas']['ActionPreview'];
+export type SchemaActionProposal = components['schemas']['ActionProposal'];
 export type SchemaAdapterCandidate = components['schemas']['AdapterCandidate'];
 export type SchemaAdapterInfo = components['schemas']['AdapterInfo'];
 export type SchemaAgenda = components['schemas']['Agenda'];
 export type SchemaAgentResult = components['schemas']['AgentResult'];
 export type SchemaAssetView = components['schemas']['AssetView'];
+export type SchemaAttachmentRef = components['schemas']['AttachmentRef'];
 export type SchemaAvailablePlugin = components['schemas']['AvailablePlugin'];
 export type SchemaAvatar = components['schemas']['Avatar'];
+export type SchemaBackendBinding = components['schemas']['BackendBinding'];
 export type SchemaCandidate = components['schemas']['Candidate'];
 export type SchemaCapabilityChoice = components['schemas']['CapabilityChoice'];
 export type SchemaCapabilityInfo = components['schemas']['CapabilityInfo'];
@@ -7732,6 +8705,7 @@ export type SchemaConnectorCapability = components['schemas']['ConnectorCapabili
 export type SchemaConnectorReport = components['schemas']['ConnectorReport'];
 export type SchemaConnectorTest = components['schemas']['ConnectorTest'];
 export type SchemaContractGraph = components['schemas']['ContractGraph'];
+export type SchemaContractVersion = components['schemas']['ContractVersion'];
 export type SchemaContributionInfo = components['schemas']['ContributionInfo'];
 export type SchemaCredentialInfo = components['schemas']['CredentialInfo'];
 export type SchemaDaemonStatus = components['schemas']['DaemonStatus'];
@@ -7758,6 +8732,7 @@ export type SchemaGraphNode = components['schemas']['GraphNode'];
 export type SchemaGraphicWidget = components['schemas']['GraphicWidget'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthReport = components['schemas']['HealthReport'];
+export type SchemaHeinzelAppearance = components['schemas']['HeinzelAppearance'];
 export type SchemaHeinzelList = components['schemas']['HeinzelList'];
 export type SchemaHeinzelSummary = components['schemas']['HeinzelSummary'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
@@ -7778,6 +8753,7 @@ export type SchemaLogLine = components['schemas']['LogLine'];
 export type SchemaLogin = components['schemas']['Login'];
 export type SchemaMeasurements = components['schemas']['Measurements'];
 export type SchemaMemberView = components['schemas']['MemberView'];
+export type SchemaMessageAccepted = components['schemas']['MessageAccepted'];
 export type SchemaMetricWidget = components['schemas']['MetricWidget'];
 export type SchemaModelChoice = components['schemas']['ModelChoice'];
 export type SchemaModelList = components['schemas']['ModelList'];
@@ -7805,15 +8781,24 @@ export type SchemaPluginUpdate = components['schemas']['PluginUpdate'];
 export type SchemaProfile = components['schemas']['Profile'];
 export type SchemaProgressWidget = components['schemas']['ProgressWidget'];
 export type SchemaPublishStatus = components['schemas']['PublishStatus'];
+export type SchemaQuestion = components['schemas']['Question'];
+export type SchemaRecipientPreview = components['schemas']['RecipientPreview'];
 export type SchemaRecommendationView = components['schemas']['RecommendationView'];
+export type SchemaReferenceBlock = components['schemas']['ReferenceBlock'];
 export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
+export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRestarted = components['schemas']['Restarted'];
 export type SchemaRunCommand = components['schemas']['RunCommand'];
 export type SchemaRunMeasure = components['schemas']['RunMeasure'];
 export type SchemaRunOperation = components['schemas']['RunOperation'];
+export type SchemaSessionCosts = components['schemas']['SessionCosts'];
+export type SchemaSessionList = components['schemas']['SessionList'];
+export type SchemaSessionMessage = components['schemas']['SessionMessage'];
+export type SchemaSessionSnapshot = components['schemas']['SessionSnapshot'];
+export type SchemaSessionSummary = components['schemas']['SessionSummary'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
 export type SchemaSkill = components['schemas']['Skill'];
@@ -7836,6 +8821,7 @@ export type SchemaTeamGraphDocument = components['schemas']['TeamGraphDocument']
 export type SchemaTeamShow = components['schemas']['TeamShow'];
 export type SchemaTemplateView = components['schemas']['TemplateView'];
 export type SchemaTested = components['schemas']['Tested'];
+export type SchemaTextBlock = components['schemas']['TextBlock'];
 export type SchemaThemeBackdrop = components['schemas']['ThemeBackdrop'];
 export type SchemaThemeColours = components['schemas']['ThemeColours'];
 export type SchemaThemeFontView = components['schemas']['ThemeFontView'];
@@ -7857,9 +8843,13 @@ export type SchemaUsageRow = components['schemas']['UsageRow'];
 export type SchemaUsageTotal = components['schemas']['UsageTotal'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWaiting = components['schemas']['Waiting'];
+export type SchemaWakeScheduleView = components['schemas']['WakeScheduleView'];
 export type SchemaWeek = components['schemas']['Week'];
 export type SchemaWidgetAction = components['schemas']['WidgetAction'];
 export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
+export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
+export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
+export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
 export type $defs = Record<string, never>;
 export interface operations {
     ai_access_list: {
@@ -8038,6 +9028,39 @@ export interface operations {
             };
         };
     };
+    heinzel_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_chat_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_check: {
         parameters: {
             query?: {
@@ -8179,6 +9202,39 @@ export interface operations {
             };
         };
     };
+    heinzel_new_chat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_new_chat_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     heinzel_playbooks: {
         parameters: {
             query?: never;
@@ -8195,6 +9251,94 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaybookList"];
+                };
+            };
+        };
+    };
+    heinzel_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_profile_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_session: {
+        parameters: {
+            query: {
+                session_id: string;
+                /** @description The opaque next_cursor from this session's previous page. */
+                cursor?: string | null;
+                /** @description The most messages returned in this page. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionList"];
                 };
             };
         };

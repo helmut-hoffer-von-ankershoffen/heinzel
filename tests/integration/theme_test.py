@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from heinzel import Config, HeinzelError, Kernel, Module, ModuleRecord, Settings, Theme, ThemeSignals
+from heinzel import Config, HeinzelError, Kernel, Module, ModuleRecord, Settings, Theme, ThemeFonts, ThemeSignals
 from heinzel.heads import web
 from heinzel.heads.cli import build
 from heinzel.kernel import DEFAULT_THEME, Origin, discover, user_config_dir, walk
@@ -331,9 +331,13 @@ def test_no_fonts_are_served_when_the_theme_module_is_off(acme, monkeypatch):
 def test_no_fonts_are_served_when_the_theme_service_cannot_be_built(acme, monkeypatch):
     kernel = acme("heinzel_acme")
 
+    resolve = kernel.resolve
+
     def unbuildable(kind: type) -> object:
-        msg = f"No module provides {kind.__name__}"
-        raise HeinzelError(msg)
+        if kind is ThemeFonts:
+            msg = f"No module provides {kind.__name__}"
+            raise HeinzelError(msg)
+        return resolve(kind)
 
     monkeypatch.setattr(kernel, "resolve", unbuildable)
     assert web_client(kernel).get("/theme-fonts/acme/0.woff2").status_code == 404
@@ -462,9 +466,13 @@ def test_no_logos_are_served_when_the_theme_module_is_off_or_cannot_be_built(acm
         patch.setattr(kernel, "provides", lambda kind: False)
         assert client.get("/theme-assets/acme/light.svg").status_code == 404
 
+    resolve = kernel.resolve
+
     def unbuildable(kind: type) -> object:
-        msg = f"No module provides {kind.__name__}"
-        raise HeinzelError(msg)
+        if kind is ThemeFonts:
+            msg = f"No module provides {kind.__name__}"
+            raise HeinzelError(msg)
+        return resolve(kind)
 
     monkeypatch.setattr(kernel, "resolve", unbuildable)
     assert client.get("/theme-assets/default/light.svg").status_code == 404
