@@ -228,6 +228,52 @@ def test_a_saved_hash_detects_valid_json_edits_before_resume(tmp_path):
             writer.body("turn-1", expected_hash="not-a-hash")
 
 
+def test_a_committed_body_can_be_read_while_the_session_writer_is_active(tmp_path):
+    sessions = store(tmp_path)
+    with sessions.writer("one") as writer:
+        digest = writer.append_body("snapshot-1", {"message": "committed"})
+        writer.append("step.finished", data={"body_id": "snapshot-1", "body_hash": digest})
+        writer.append_body("snapshot-2", {"message": "new work"})
+        assert sessions.body("one", "snapshot-1", expected_hash=digest) == [{"message": "committed"}]
+    assert sessions.body("one", "snapshot-1", expected_hash=digest) == [{"message": "committed"}]
+
+
+def test_public_body_read_requires_a_hash_and_rejects_changed_or_missing_content(tmp_path):
+    sessions = store(tmp_path)
+    with sessions.writer("one") as writer:
+        digest = writer.append_body("snapshot-1", {"message": "original"})
+    with pytest.raises(HeinzelError, match="hex digest"):
+        sessions.body("one", "snapshot-1", expected_hash="not-a-hash")
+    with pytest.raises(TypeError):
+        sessions.body("one", "snapshot-1", expected_hash=None)
+    path = sessions.root / "one/turns/snapshot-1.jsonl"
+    path.write_text('{"message":"edited"}\n')
+    with pytest.raises(HeinzelError, match="saved checkpoint"):
+        sessions.body("one", "snapshot-1", expected_hash=digest)
+    path.unlink()
+    with pytest.raises(FileNotFoundError):
+        sessions.body("one", "snapshot-1", expected_hash=digest)
+
+
+def test_public_body_read_cannot_follow_a_symlink_or_escape_its_session(tmp_path):
+    sessions = store(tmp_path)
+    with sessions.writer("one") as writer:
+        digest = writer.append_body("snapshot-1", {"message": "private"})
+    outside = tmp_path / "outside"
+    outside.write_text('{"message":"outside"}\n')
+    outside.chmod(0o600)
+    path = sessions.root / "one/turns/snapshot-1.jsonl"
+    path.unlink()
+    path.symlink_to(outside)
+    with pytest.raises(OSError, match="snapshot-1"):
+        sessions.body("one", "snapshot-1", expected_hash=digest)
+    with pytest.raises(HeinzelError):
+        sessions.body("../outside", "snapshot-1", expected_hash=digest)
+    with pytest.raises(HeinzelError):
+        sessions.body("one", "../outside", expected_hash=digest)
+    assert outside.read_text() == '{"message":"outside"}\n'
+
+
 def test_a_root_symlink_reports_safe_guidance_without_the_private_path(tmp_path):
     private = tmp_path / "private"
     private.mkdir(mode=0o700)
