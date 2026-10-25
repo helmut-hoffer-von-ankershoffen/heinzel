@@ -10,6 +10,7 @@ import { Contract } from "@/pages/Contract";
 import { Contracts } from "@/pages/Contracts";
 import { Doctor } from "@/pages/Doctor";
 import { GraphView } from "@/pages/graph/GraphView";
+import { Heinzelmaennchen } from "@/pages/Heinzelmaennchen";
 import { Home } from "@/pages/Home";
 import { Assets, AssetTypes } from "@/pages/Inventory";
 import { OrgChart, Team } from "@/pages/Organisation";
@@ -29,6 +30,7 @@ export const routes: RouteObject[] = [
       { index: true, element: <Home /> },
       { path: "settings", element: <SettingsLink /> },
       { path: "notifications", element: <Navigate replace to="/?panel=notifications" /> },
+      { path: "heinzel", element: <Heinzelmaennchen /> },
       { path: "contracts", element: <Contracts /> },
       { path: "contracts/:name", element: <Contract /> },
       { path: "graph", element: <GraphView /> },

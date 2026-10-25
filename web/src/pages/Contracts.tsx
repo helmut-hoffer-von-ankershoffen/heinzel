@@ -53,7 +53,7 @@ export function Contracts() {
     () =>
       buildWorkflow({
         graph: graph.data,
-        contracts: contracts.data?.contracts,
+        contracts: contracts.data?.heinzelmaennchen,
         playbooks: playbooks.data?.playbooks,
         capabilities: capabilities.data?.capabilities,
         discovery: discovery.data,
@@ -100,7 +100,7 @@ export function Contracts() {
         {(data) => (
           <>
             {isEmpty(workflow) && <EmptyWorkflow hasSources={workflow.nodes.length > 0} />}
-            {!isEmpty(workflow) && suggestions > 0 && (contracts.data?.contracts.length ?? 0) === 0 && (
+            {!isEmpty(workflow) && suggestions > 0 && (contracts.data?.heinzelmaennchen.length ?? 0) === 0 && (
               <p className="text-sm text-muted-foreground">{t("workflow.suggestionsHint", { count: suggestions })}</p>
             )}
             {workflow.nodes.length > 0 && (
@@ -149,11 +149,11 @@ export function Contracts() {
           </>
         )}
       </Loaded>
-      {contracts.data && contracts.data.contracts.length > 0 && (
+      {contracts.data && contracts.data.heinzelmaennchen.length > 0 && (
         <Card>
           <CardTitle>{t("contracts.list")}</CardTitle>
           <ul className="flex flex-col gap-1 text-sm">
-            {contracts.data.contracts.map((contract) => {
+            {contracts.data.heinzelmaennchen.map((contract) => {
               const qualified = `${contract.namespace}:${contract.name}`;
               return (
                 <li key={qualified} className="flex flex-wrap items-center gap-2">

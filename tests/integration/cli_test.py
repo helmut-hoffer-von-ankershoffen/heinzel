@@ -140,12 +140,13 @@ def top_level(app: typer.Typer, *args: str) -> set[str]:
 
 def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app, make_kernel):
     screen = runner.invoke(app, []).output
-    assert {"join", "setup", "ui", "system", "team", "org", "workflow"} <= top_level(app)
+    assert {"join", "setup", "ui", "system", "team", "org", "heinzel"} <= top_level(app)
+    assert "workflow" not in top_level(app)  # the old name runs, hidden (ADR 0051)
     assert "example" not in top_level(app)  # a module of expert operations only
     assert top_level(app, "system") >= {"doctor", "update", "expert"}
     assert not top_level(app, "system") & {"info", "config", "plugin", "serve", "changelog"}
-    assert top_level(app, "workflow") >= {"list", "show", "drafts", "run"}
-    assert "graph" not in top_level(app, "workflow")
+    assert top_level(app, "heinzel") >= {"list", "show", "drafts", "wake"}
+    assert "graph" not in top_level(app, "heinzel")
     kernel = make_kernel(builtins=True, **example_modules())
     expert = sum(let.audience == "expert" for _, let in kernel.lets(OperationLet) if kernel.available(let.func))
     hidden = expert + 3  # and `hz system serve mcp | api | daemon`
@@ -154,7 +155,7 @@ def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app, mak
 
 
 def test_a_group_that_hides_commands_says_how_many(app):
-    last = runner.invoke(app, ["workflow", "--help"]).output.strip().splitlines()[-1].strip()
+    last = runner.invoke(app, ["heinzel", "--help"]).output.strip().splitlines()[-1].strip()
     assert re.fullmatch(r"\d+ more commands? for experts (are|is) hidden; hz system expert on lists them\.", last)
     assert "are hidden" not in runner.invoke(app, ["system", "plugin", "--help"]).output  # hides nothing itself
 
