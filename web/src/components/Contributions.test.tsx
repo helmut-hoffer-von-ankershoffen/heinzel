@@ -101,9 +101,9 @@ describe("Contributions", () => {
   it("shows each module's footer and sidebar items; a failing one is only a mark with its problem", async () => {
     mockApi(answers);
     const { container } = renderAt("/doctor");
-    const footer = await screen.findByText("3 reviews");
+    const footer = await screen.findByRole("button", { name: /^3 reviews/ });
     expect(footer.closest("[data-slot]")).toHaveAttribute("data-slot", "footer");
-    expect(screen.getByLabelText("acme:broken failed: RuntimeError")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^acme:broken failed: RuntimeError, error$/ })).toBeInTheDocument();
     // In the sidebar only: its footer slot is off.
     const zone = await screen.findByText(/^Lisbon \d\d:\d\d:\d\d/);
     expect(zone.closest("[data-slot]")).toHaveAttribute("data-slot", "sidebar");
@@ -114,7 +114,7 @@ describe("Contributions", () => {
     const { calls } = mockApi(answers);
     const user = userEvent.setup();
     renderAt("/doctor");
-    await user.hover(await screen.findByText("3 reviews"));
+    await user.hover(await screen.findByRole("button", { name: /^3 reviews/ }));
     await user.click(await screen.findByRole("button", { name: "Sync" }));
     const dialog = await screen.findByRole("alertdialog", { name: "Sync the reviews." });
     expect(within(dialog).getByText("hz acme sync --dry-run true")).toBeInTheDocument();

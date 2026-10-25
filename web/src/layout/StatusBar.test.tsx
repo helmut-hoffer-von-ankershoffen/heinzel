@@ -89,21 +89,19 @@ describe("The footer on a narrow window", () => {
     expect([footerMode(375), footerMode(768), footerMode(1280)]).toEqual(["overflow", "icons", "full"]);
   });
 
-  it("shows every item whole at 1280, the icon with the text as its tooltip at 768, and keeps the rest under … at 375", async () => {
+  it("shows an item as an icon at every width above the narrow one, its text in a pane, and keeps the rest under … at 375", async () => {
     mockApi(footerAnswers);
-    window.innerWidth = 1280;
-    const wide = renderAt("/doctor");
     const footer = async () => (await screen.findByRole("contentinfo")) as HTMLElement;
-    expect(await within(await footer()).findByText("Daemon running · next tick 20:45")).not.toHaveClass("sr-only");
-    expect(within(await footer()).queryByRole("button", { name: "More status items" })).not.toBeInTheDocument();
-    wide.unmount();
-
-    window.innerWidth = 768;
-    const medium = renderAt("/doctor");
-    const item = await within(await footer()).findByText("Daemon running · next tick 20:45");
-    expect(item).toHaveClass("sr-only");
-    expect(item.closest("button")).toHaveAttribute("title", "Daemon running · next tick 20:45");
-    medium.unmount();
+    for (const width of [1280, 768]) {
+      window.innerWidth = width;
+      const view = renderAt("/doctor");
+      const item = await within(await footer()).findByRole("button", {
+        name: /^Daemon running · next tick 20:45, OK$/,
+      });
+      expect(item.textContent).toBe("Daemon running · next tick 20:45, OK");
+      expect(within(item).getByText(/Daemon running/)).toHaveClass("sr-only");
+      view.unmount();
+    }
 
     window.innerWidth = 375;
     const user = userEvent.setup();
@@ -116,5 +114,115 @@ describe("The footer on a narrow window", () => {
     expect(await within(bar).findByText("Daemon running · next tick 20:45")).toBeInTheDocument();
     expect(within(bar).getByText("No calendar connected")).toBeInTheDocument();
     await expectAccessible(container);
+  });
+});
+
+describe("Footer items are icons with a state and a pane", () => {
+  const entry = { module: "system", plugin: null, order: 1, refresh: 60, problem: null };
+  const item = (id: string, tone: "ok" | "warn" | "bad" | "neutral") => ({
+    ...entry,
+    id,
+    slots: { footer: true },
+    item: {
+      text: `Thing ${tone}`,
+      tone,
+      icon: "bot",
+      detail: [{ text: "Jobs: 3", tone: "neutral" }],
+      actions: [{ label: "Logs", icon: "file-text", effect: { kind: "command", command: "hz system daemon logs" } }],
+    },
+  });
+  const states = {
+    ...answers,
+    "/api/system/ui/status": [
+      item("a:ok", "ok"),
+      item("a:warn", "warn"),
+      item("a:bad", "bad"),
+      item("a:off", "neutral"),
+    ],
+    "/api/org/agenda": { current: null, next: null, problem: "no calendar", fix: null },
+    "/api/org/meeting": null,
+    "/api/system/changelog": "## [0.4.0] - 2026-10-25\n\n### Features\n\n- Something new\n",
+  };
+  const widthBefore = window.innerWidth;
+  afterEach(() => {
+    window.innerWidth = widthBefore;
+  });
+
+  it("gives each state its own colour and shape, named for assistive tech, and passes axe", async () => {
+    mockApi(states);
+    window.innerWidth = 1280;
+    const { container } = renderAt("/doctor");
+    const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
+    for (const [tone, word, colour] of [
+      ["ok", "OK", "text-ok"],
+      ["warn", "warning", "text-warn"],
+      ["bad", "error", "text-bad"],
+      ["off", "off", "text-muted-foreground"],
+    ] as const) {
+      const button = await within(bar).findByRole("button", {
+        name: `Thing ${tone === "off" ? "neutral" : tone}, ${word}`,
+      });
+      expect(button).toHaveClass(colour);
+      expect(button.parentElement).toHaveAttribute("data-state", tone);
+      expect(button.querySelectorAll("svg")).toHaveLength(2); // the icon and the shape of the state
+    }
+    await expectAccessible(container);
+  });
+
+  it("opens the pane on hover and focus, closes it on Escape and on blur, and pins it on click, by keyboard too", async () => {
+    mockApi(states);
+    window.innerWidth = 1280;
+    const user = userEvent.setup();
+    const { container } = renderAt("/doctor");
+    const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
+    const button = await within(bar).findByRole("button", { name: "Thing ok, OK" });
+    expect(screen.queryByRole("region", { name: "Thing ok" })).not.toBeInTheDocument();
+    fireEvent.mouseEnter(button.parentElement as HTMLElement);
+    const pane = await screen.findByRole("region", { name: "Thing ok" });
+    expect(within(pane).getByText("Jobs: 3")).toBeInTheDocument();
+    expect(within(pane).getByRole("button", { name: "Logs" })).toBeInTheDocument();
+    await expectAccessible(container);
+    fireEvent.mouseLeave(button.parentElement as HTMLElement);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(screen.queryByRole("region", { name: "Thing ok" })).not.toBeInTheDocument();
+    button.focus(); // keyboard: tabbing onto the button is the same focus
+    expect(await screen.findByRole("region", { name: "Thing ok" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("region", { name: "Thing ok" })).not.toBeInTheDocument();
+    await user.click(button);
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    await user.unhover(button);
+    await user.click(document.body);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(screen.queryByRole("region", { name: "Thing ok" })).not.toBeInTheDocument();
+  });
+
+  it("shows the calendar as a red icon that says so and links to connect one", async () => {
+    mockApi(states);
+    window.innerWidth = 1280;
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
+    const calendar = await within(bar).findByRole("button", { name: "No calendar connected, error" });
+    expect(calendar).toHaveClass("text-bad");
+    await user.click(calendar);
+    const pane = await screen.findByRole("region", { name: "No calendar connected" });
+    await user.click(within(pane).getByRole("link", { name: "Connect a calendar…" }));
+    expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("shows what changed in the running release from the installed changelog, with the release on GitHub", async () => {
+    mockApi(states);
+    window.innerWidth = 1280;
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
+    await user.click(await within(bar).findByRole("button", { name: "v0.4.0" }));
+    const pane = await screen.findByRole("region", { name: "v0.4.0" });
+    expect(await within(pane).findByText("Something new")).toBeInTheDocument();
+    expect(within(pane).getByRole("link", { name: "Release notes on GitHub" })).toHaveAttribute(
+      "href",
+      "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.4.0",
+    );
   });
 });
