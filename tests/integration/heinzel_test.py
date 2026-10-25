@@ -482,8 +482,8 @@ def test_an_unknown_contract_is_an_error(kernel):
 def test_the_daemon_runs_a_contract_and_writes_a_receipt_naming_the_draft(kernel):
     code, jobs = hz(kernel, "system", "daemon", "jobs")
     assert code == 0
-    assert [j["job"] for j in jobs] == ["heinzel:prune", "heinzel:me-weekly-digest"]
-    assert jobs[1]["timeout_seconds"] == timedelta(minutes=12).total_seconds()
+    assert [j["job"] for j in jobs] == ["heinzel:prune", "system.state:push", "heinzel:me-weekly-digest"]
+    assert jobs[2]["timeout_seconds"] == timedelta(minutes=12).total_seconds()
     code, report = hz(kernel, "system", "daemon", "tick", "--job", "heinzel:me-weekly-digest")
     assert code == 0, report
     run = report["runs"][0]
@@ -521,7 +521,7 @@ def test_disabling_the_module_removes_its_jobs(make_kernel, contracts):
     disabled = make_kernel(builtins=True, fakes=fakes(), config=config, settings_=config.settings(Settings, "hz"))
     code, jobs = hz(disabled, "system", "daemon", "jobs")
     assert code == 0
-    assert jobs == []
+    assert [job["job"] for job in jobs] == ["system.state:push"]
 
 
 def test_a_project_file_cant_point_discovery_at_its_own_contracts(make_kernel, tmp_path, monkeypatch):
@@ -540,7 +540,7 @@ def test_a_project_file_cant_point_discovery_at_its_own_contracts(make_kernel, t
     code, listed = hz(kernel, "heinzel", "list")
     assert (code, listed["heinzelmaennchen"]) == (0, [])
     assert listed["directories"][0]["path"] == str(user / "workflows")
-    assert [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]] == ["heinzel:prune"]
+    assert [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]] == ["heinzel:prune", "system.state:push"]
     _, report = hz(kernel, "system", "doctor")
     ignored = sorted(c["name"] for c in report["checks"]["system.doctor"] if c["name"].startswith("project setting"))
     assert ignored == [
@@ -561,6 +561,7 @@ def test_one_bad_schedule_leaves_the_other_jobs_and_matrix_rows_and_fails_check(
     assert [(d["code"], d["field"]) for d in report["diagnostics"]] == [("HZC011", "hz.schedule")]
     assert [job["job"] for job in hz(kernel, "system", "daemon", "jobs")[1]] == [
         "heinzel:prune",
+        "system.state:push",
         "heinzel:me-weekly-digest",
     ]
     uses = {use["requester"] for use in hz(kernel, "system", "capability", "list")[1]["uses"]}

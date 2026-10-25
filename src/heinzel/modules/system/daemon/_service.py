@@ -21,7 +21,19 @@ from typing import TYPE_CHECKING, cast
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
 
-from heinzel import CatchUp, Check, Config, HeinzelError, JobLet, Kernel, Notifications, Settings, Status, __version__
+from heinzel import (
+    CatchUp,
+    Check,
+    Config,
+    HeinzelError,
+    JobInactive,
+    JobLet,
+    Kernel,
+    Notifications,
+    Settings,
+    Status,
+    __version__,
+)
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._ledger import Ledger
@@ -474,6 +486,10 @@ class DaemonService:
         if skip is None and previous is not None and previous.is_alive():
             skip = "its previous run timed out and is still running"
         outcome = Outcome(error=skip) if skip is not None else self._execute(job)
+        if isinstance(outcome.value, JobInactive) and outcome.error is None:
+            return JobRun(
+                job=job.id, as_of=due.slot, wake=due.wake, disposition=Disposition.SKIPPED, error=outcome.value.reason
+            )
         if skip is not None:
             disposition = Disposition.SKIPPED
         else:

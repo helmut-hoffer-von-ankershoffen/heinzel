@@ -33,6 +33,7 @@ from pydantic.fields import FieldInfo
 
 from heinzel import __version__
 from heinzel.heads._exposure import API_PRIVATE, Exposed, exposed
+from heinzel.heads._presence import mark_authenticated_presence
 from heinzel.heads._stream import streamed
 from heinzel.heads.api._auth import ApiBearer
 from heinzel.kernel import CallIdentity, CurrentUser, HeinzelError, Kernel, boot
@@ -226,6 +227,7 @@ def endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
     body = item.operation.private and not item.operation.read_only
 
     def run(response: Response, **kwargs: Any) -> Any:  # noqa: ANN401 - whatever the operation returns
+        mark_authenticated_presence(kernel, item.record.qualname)
         result = kernel.invoke(item.operation, **_arguments(item, kwargs, body=body))
         if item.operation.exit_code is not None and item.operation.exit_code(result):
             response.status_code = UNAVAILABLE
@@ -243,7 +245,9 @@ def stream_endpoint(kernel: Kernel, item: Exposed) -> Callable[..., Any]:
     """Like `endpoint`, but the answer is the operation's events as a server-sent event stream."""
 
     async def run(**kwargs: Any) -> Any:  # noqa: ANN401 - a streaming response
-        return streamed(kernel, item.operation, _arguments(item, kwargs, body=item.operation.private))
+        return streamed(
+            kernel, item.operation, _arguments(item, kwargs, body=item.operation.private), module=item.record.qualname
+        )
 
     run.__signature__ = inspect.Signature(_parameters(item, body=item.operation.private))  # type: ignore[attr-defined]
     run.__name__ = f"{item.name}_stream"
