@@ -23,10 +23,14 @@ from heinzel.modules.system.agent._service import parse_frontmatter
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
+# Vite removes/recreates this ignored output during parallel preflight; it is not authored documentation.
+WEB_BUILD = REPO / "src/heinzel/heads/web/static"
 MARKDOWN = sorted(
     p
     for p in REPO.rglob("*.md")
-    if not {".venv", "node_modules", ".pytest_cache", "worktrees"} & set(p.relative_to(REPO).parts) and p.is_file()
+    if not {".venv", "node_modules", ".pytest_cache", "worktrees"} & set(p.relative_to(REPO).parts)
+    and not p.is_relative_to(WEB_BUILD)
+    and p.is_file()
 )
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 # Links to GitHub pages of the repository, not to files in it. GitHub resolves them against the document's URL

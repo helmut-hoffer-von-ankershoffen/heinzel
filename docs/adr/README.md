@@ -67,6 +67,7 @@ One record per decision that shapes the code ([ADR 0001](0001-record-architectur
 | [0060](0060-themes-follow-the-time-of-day-and-the-weather.md) | Themes follow the time of day and the weather: variants on a closed vocabulary of signals | proposed | 2026-10-24 |
 | [0062](0062-heinzelmaennchen-find-the-mcp-servers-and-skills-you-gave-claude.md) | Heinzelmännchen find the MCP servers and skills you already gave Claude, read-only first | proposed | 2026-10-25 |
 | [0061](0061-plugins-ship-skills-every-ai-path-can-use.md) | Plugins ship skills every AI path can use: `module.skill(...)`, read-only tools, an explicit export | proposed | 2026-10-24 |
+| [0065](0065-plugins-may-ship-versioned-react-views.md) | Plugins may ship versioned React views alongside their Python declarations | proposed | 2026-10-25 |
 | [0068](0068-human-approval-proofs-and-head-parity.md) | Human approval is a scoped proof carriable by every authorized head | proposed | 2026-10-25 |
 
 Amendments: [0025](0025-plugin-distributions-are-named-heinzel-name.md) amends
