@@ -55,6 +55,8 @@ from heinzel.kernel import (
     Requester,
     Requirement,
     ToolProfile,
+    UsageEntry,
+    record_usage,
     toml_value,
 )
 from heinzel.modules.heinzel import _measure, _playbooks
@@ -713,7 +715,7 @@ class HeinzelService:
             slot = croniter(schedule, now.replace(tzinfo=None)).get_next(datetime)
         except (CroniterBadDateError, ValueError):
             return None
-        # The offset of the slot's own date: a run after a daylight-saving change is an hour from today's offset.
+        # Local conversion uses the slot's own date, rather than today's fixed offset across a DST change.
         return slot.astimezone()
 
     def show(self, name: str) -> CompiledContract:
@@ -1393,6 +1395,7 @@ class HeinzelService:
                 timeout=timedelta(seconds=packet.timeout_seconds),
                 budget=Budget(max_usd=packet.max_usd),
             )
+        record_usage(self._kernel, UsageEntry.of(result, "scheduled" if scheduled else "render", contract.qualified))
         if result.status != "completed":
             cost = f"; it cost {result.usage.cost_usd} USD" if result.usage.cost_usd is not None else ""
             msg = f"{contract.qualified}: the agent run ended {result.status}: {result.detail or 'no detail'}{cost}"

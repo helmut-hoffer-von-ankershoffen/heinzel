@@ -4,7 +4,7 @@ date: 2026-10-24
 decision-makers: maintainer
 amends: 0018, 0029, 0039
 related: 0003, 0019, 0020, 0024, 0027, 0028, 0030, 0038, 0043
-amended-by: 0049, 0050, 0051
+amended-by: 0049, 0050, 0051, 0068
 ---
 
 # 0045: A chat that knows where you are and acts through hz, with every change confirmed in code
@@ -192,5 +192,5 @@ terminal under it (each alone when the other is closed); it sits beside the scre
 30rem next to it, and below the screen, the same stack across the width, when the window is narrower; never both, and
 no overlay. Home shows "Today" in the main area and opens the panel; its cards start a chat about themselves in it. The
 panel's header switches between sessions (`hz chat list`), the Workshop (a session about nothing in particular) and a
-new chat; its list groups items by kind, so the durable Heinzelmännchen of ADR 0049 become one more group. Amended: the list leads with your Heinzelmännchen, each with its own conversation, then "Ask hz" and "Earlier questions" (started chats only), and "+" opens a chat to create a new Heinzelmännchen. Nothing about
+new chat; its list groups items by kind, so the durable Heinzelmännchen of ADR 0049 become one more group. Nothing about
 sessions, tools or confirmation changes.

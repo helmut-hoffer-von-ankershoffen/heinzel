@@ -27,7 +27,7 @@ import pathlib, sys
 env = pathlib.Path({env!r})
 with (env / "uv.log").open("a") as log:
     log.write(" ".join(sys.argv[1:]) + "\\n")
-if (env / "block").exists():
+if (env / "block").exists() and "--with" in sys.argv:
     sys.stderr.write("error: No solution found when resolving dependencies\\n  cause: Because heinzel-acme==1.0.0 "
                      "depends on heinzel<0.3 and you require heinzel, we can conclude that your requirements are "
                      "unsatisfiable.\\n")
@@ -43,7 +43,17 @@ receipt[2] = '    {{ name = "heinzel", git = "' + url + '?rev=' + tag + '" }},'
 (env / "uv-receipt.toml").write_text("\\n".join(receipt) + "\\n")
 """
 FAKE_HZ = """#!/bin/sh
-printf 'hz %s\\n' "$(cat {env}/version)"
+case "$*" in
+*"plugin list"*)
+  printf '[{{"distribution": "heinzel-acme", "version": "1.0.0"}}]'
+  ;;
+*"daemon restart"*)
+  printf '{{"restarted": false}}'
+  ;;
+*)
+  printf 'hz %s\\n' "$(cat {env}/version)"
+  ;;
+esac
 """
 
 
@@ -94,8 +104,9 @@ def test_a_tag_pinned_install_updates_to_the_latest_release_and_keeps_plugins(ap
     github_releases(monkeypatch, "v99.0.0", f"v{__version__}", "v99.1.0rc1")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == f"Updated hz {__version__} → 99.0.0."
+    assert result.output.strip() == f"Updated hz {__version__} → 99.0.0.\nPlugins unchanged: heinzel-acme."
     [command] = uv_log(env)
+    assert command.startswith("tool install --force --refresh ")
     assert command.endswith(f"heinzel @ git+{REPO}@v99.0.0 --with {PLUGIN}")
     assert "rev=v99.0.0" in (env / "uv-receipt.toml").read_text()
 
@@ -129,7 +140,7 @@ def test_a_main_pin_is_updated_in_place_to_the_newest_commit(app, env, monkeypat
     github_releases(monkeypatch, "v0.0.1")
     result = runner.invoke(app, ["system", "update", "--channel", "main"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == f"Updated hz {__version__} \u2192 99.0.0.dev7."
+    assert result.output.strip() == f"Updated hz {__version__} \u2192 99.0.0.dev7.\nPlugins unchanged: heinzel-acme."
     [command] = uv_log(env)
     assert command.endswith(f"heinzel @ git+{REPO}@main --with {PLUGIN}")
     assert "rev=main" in receipt.read_text()
@@ -149,15 +160,29 @@ def test_a_branch_pin_is_left_alone_with_the_command_that_moves_it(app, env, mon
     assert uv_log(env) == []
 
 
-def test_a_blocking_plugin_is_named_and_the_previous_hz_stays(app, env, monkeypatch):
+def test_a_blocking_plugin_is_taken_out_and_hz_still_updates(app, env, monkeypatch):
     (env / "block").touch()
     github_releases(monkeypatch, "v99.0.0")
-    before = (env / "uv-receipt.toml").read_text()
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
-    assert result.exit_code == 1
-    assert "the plugin heinzel-acme does not allow it" in result.output
-    assert f"hz {__version__} is still installed, with every plugin." in result.output
-    assert (env / "uv-receipt.toml").read_text() == before
+    assert result.exit_code == 0, result.output
+    output = " ".join(result.output.split())
+    assert f"Updated hz {__version__} → 99.0.0." in output
+    assert "Plugin heinzel-acme: failed." in output
+    assert f"hz system plugin add '{PLUGIN}' --confirm" in output
+    first, second, third = uv_log(env)
+    assert first == second  # kept at its spec, which fails too
+    assert "--with" not in third  # then hz alone
+    assert "rev=v99.0.0" in (env / "uv-receipt.toml").read_text()
+
+
+def test_json_reports_each_plugin(app, env, monkeypatch):
+    (env / "block").touch()
+    github_releases(monkeypatch, "v99.0.0")
+    invoked = runner.invoke(app, ["system", "update", "--json"])
+    assert invoked.exit_code == 0, invoked.output
+    [acme] = json.loads(invoked.output)["plugins"]
+    assert (acme["distribution"], acme["status"], acme["disabled"]) == ("heinzel-acme", "failed", True)
+    assert acme["next"] == [f"hz system plugin add '{PLUGIN}' --confirm"]
 
 
 def test_channel_release_switches_a_main_pin_to_the_newest_release(app, env, monkeypatch):
@@ -166,5 +191,5 @@ def test_channel_release_switches_a_main_pin_to_the_newest_release(app, env, mon
     github_releases(monkeypatch, "v99.0.0")
     result = runner.invoke(app, ["system", "update"], env={"COLUMNS": "200"})
     assert result.exit_code == 0, result.output
-    assert result.output.strip() == f"Updated hz {__version__} \u2192 99.0.0."
+    assert result.output.strip().splitlines()[0] == f"Updated hz {__version__} \u2192 99.0.0."
     assert "rev=v99.0.0" in receipt.read_text()

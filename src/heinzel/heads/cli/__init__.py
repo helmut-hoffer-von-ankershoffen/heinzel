@@ -29,7 +29,9 @@ from typer.core import TyperGroup
 
 from heinzel import __version__
 from heinzel.heads._exposure import collapses, owns_path
-from heinzel.heads.cli import _update
+from heinzel.heads.cli import _playful, _update
+from heinzel.heads.cli._branding import TAGLINE
+from heinzel.heads.cli._branding import footer as brand_footer
 from heinzel.heads.cli._chat import CHAT, chat_callback
 from heinzel.heads.cli._chat import HELP as CHAT_HELP
 from heinzel.heads.cli._command import command
@@ -46,16 +48,11 @@ from heinzel.kernel import HeinzelError, Kernel, ModuleRecord, OperationLet, Ori
 console = Console()
 err_console = Console(stderr=True)
 
-LOGO = "🧝"
-TAGLINE = "open-source helpers that keep product teams running"
-FOOTER = f"{LOGO} [bold magenta]Heinzelmännchen[/bold magenta] [dim]hz {__version__} · {TAGLINE}[/dim]"
 HELP = (
-    f"{LOGO} [bold magenta]Heinzelmännchen[/bold magenta]: {TAGLINE}, working in the background like the "
-    "helpers of Cologne.\n\nEvery operation accepts [bold]--json[/bold]. Start with [bold]hz setup[/bold], then "
-    "[bold]hz system doctor[/bold]."
+    "Every operation accepts [bold]--json[/bold]. Start with [bold]hz setup[/bold], then [bold]hz system doctor[/bold]."
 )
 PLAIN_HELP = (
-    f"{LOGO} Heinzelmännchen: {TAGLINE}. Every operation accepts --json. Commands marked (expert) run like any other "
+    f"Heinzelmännchen: {TAGLINE}. Every operation accepts --json. Commands marked (expert) run like any other "
     "but are listed in help and completion only in expert mode: hz system expert on."
 )
 CORE_PANEL = "Core"
@@ -86,7 +83,7 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
         plain: Help without Rich markup and footer, for the generated reference docs: every command listed, the ones
             for experts marked.
     """
-    footer = None if plain else FOOTER
+    footer = None if plain else brand_footer(console.width)
     app = typer.Typer(
         name="hz",
         help=PLAIN_HELP if plain else HELP,
@@ -119,7 +116,7 @@ def build(kernel: Kernel, *, plain: bool = False) -> typer.Typer:
             handlers=[RichHandler(console=err_console, show_path=False)],
         )
 
-    progress = ConsoleProgress(err_console)
+    progress = ConsoleProgress(err_console, playful=_playful.allowed(kernel.settings, err_console))
     kernel.bind(Progress, progress)
     mount = _Mount(kernel, progress, footer, plain=plain, expert=kernel.settings.expert)
     count = mount(app, None) + Count(commands=3)  # setup, join and ui: everyday, for everyone
@@ -168,6 +165,8 @@ def main() -> None:
         err_console.print("Check the files `hz system config show` lists and your HZ_* environment variables.")
         sys.exit(EX_CONFIG)
     check = start_check(kernel)  # in the background, at most once an hour (ADR 0031)
+    if not sys.argv[1:]:
+        _banner(kernel)  # the bare `hz`: the start screen follows
     try:
         build(kernel)()
     finally:
@@ -385,15 +384,16 @@ def plugin_line(origin: Origin) -> str | None:
 
 
 def start_screen_footer(kernel: Kernel, hidden: int = 0) -> str:
-    """The footer of `hz` and `hz --help`, ending with how many commands expert mode would add (ADR 0041).
+    """The footer of `hz` and `hz --help`, after the expert-mode hint and any update notice (ADR 0041).
 
     The update notice comes before that line when stdout is a terminal and there is one.
     """
     text = _update.notice(kernel) if _update.is_terminal(console) else None
-    footer = f"{FOOTER}\n\n[yellow]{text}[/yellow]" if text else FOOTER
-    if hidden:
-        footer += f"\n\n{expert_hint(hidden)}"
-    return footer
+    parts = [expert_hint(hidden)] if hidden else []
+    if text:
+        parts.append(f"[yellow]{text}[/yellow]")
+    parts.append(brand_footer(console.width))
+    return "\n\n".join(parts)
 
 
 def expert_hint(hidden: int) -> str:
@@ -402,9 +402,19 @@ def expert_hint(hidden: int) -> str:
     return f"[dim]{hidden} more {commands} hidden; [bold]hz system expert on[/bold] lists them.[/dim]"
 
 
+def _banner(kernel: Kernel) -> None:
+    """The Heinzelmännchen beside its name and tagline, where a person watches a colour terminal."""
+    if "--json" in sys.argv or "json" in sys.argv:
+        return  # the flag is parsed later; a script asking for JSON gets no art
+    if _playful.allowed(kernel.settings, console):
+        lines = ["Heinzelmännchen", TAGLINE]
+        console.print(_playful.banner(lines), end="")
+
+
 def _print_version(kernel: Kernel, value: bool) -> None:
     if not value:
         return
+    _banner(kernel)
     origins = {(r.origin.distribution, r.origin.version, r.origin.url, r.origin.builtin) for r in kernel.modules}
     core = next((url for _, _, url, builtin in origins if builtin and url), None)
     lines = [f"hz {__version__}"]

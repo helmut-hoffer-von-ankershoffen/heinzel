@@ -6,6 +6,8 @@ adapter `github` for the capabilities `code-host` and `tracker` in read mode (AD
 through the GitHub CLI `gh`, which owns authentication: run `gh auth login` once.
 """
 
+from pathlib import Path
+
 from heinzel import Check
 from heinzel.kernel import CapabilityView
 from heinzel_github._adapter import GitHub
@@ -17,6 +19,7 @@ from heinzel_github._service import GithubService
 module.settings(GithubSettings)
 module.service(GithubService)
 module.service(Gh)
+module.skill(Path(__file__).parent / "skills")  # advice for AI, read-only (ADR 0061)
 
 
 def hosts(settings: GithubSettings) -> list[str]:

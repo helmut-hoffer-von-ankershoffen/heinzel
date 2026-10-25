@@ -18,6 +18,9 @@ fetches a font for `FontFace` or `@font-face` itself and can't add a header. The
 `Sec-Fetch-Site` checks, hold nothing private (what an installed plugin ships), and come through `ThemeFonts`, which
 checks each file again as it reads it (ADR 0044). Themes' logos are served the same way at
 `/theme-assets/<theme>/<light|dark|mark>.svg`, as `image/svg+xml` under a CSP of their own that loads and runs nothing.
+Soundscapes' audio files are served the same way at `/sound-assets/<name>/<layer-n|earcon-kind>.<ext>`, typed by their
+checked signature (ADR 0058). The page itself (`index.html`) admits one frame origin, from `STREAM_PROVIDERS` in code,
+only while the soundscape in effect is a stream: the configuration is read for each page, and any error admits none.
 
 `POST /api/restart` restarts the server in place, for changes a running process can't load, such as an added plugin
 (`restart_required`, ADR 0047): the process executes `hz` again with the same arguments, handing over its listening
@@ -27,6 +30,7 @@ Ctrl-C stops `hz ui` at once: the notice stream and the terminals end before the
 (`_shutdown.py`).
 """
 
+import hashlib
 import mimetypes
 import os
 import re
@@ -48,6 +52,7 @@ from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _terminal
 from heinzel.heads.web._devices import Devices
 from heinzel.heads.web._pairing import add_pairing
+from heinzel.heads.web._ports import wait_for_port
 from heinzel.heads.web._shutdown import GRACE_SECONDS, Stopping
 from heinzel.heads.web._shutdown import server as stopping_server
 from heinzel.heads.web._stream import add_stream
@@ -56,11 +61,15 @@ from heinzel.kernel import (
     KERNEL_SECTION,
     LOGO_CSP,
     LOGO_ROUTE,
+    SOUND_CSP,
+    SOUND_ROUTE,
+    STREAM_PROVIDERS,
     Config,
     HeinzelError,
     Kernel,
     Progress,
     Settings,
+    SoundAssets,
     ThemeFonts,
 )
 
@@ -69,28 +78,36 @@ STATIC = Path(__file__).parent / "static"
 """Where the build puts the app (`make web-build`, or the wheel's build hook); not in git."""
 HOST = "127.0.0.1"
 OK = 200
+SPLASH_SCRIPT = "'sha256-pN9jYRjUn1PxYq7efc0qmdmmc/sy6sTVaGnaajkcymU='"
+"""The one inline script allowed, by its hash: the splash's in `web/index.html`, which paints the last theme before the
+app loads (ADR 0046). A test recomputes it from the file, so a changed script fails until this changes with it."""
 CSP = (
-    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; "
-    "connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; "
-    "frame-ancestors 'none'"
+    f"default-src 'none'; script-src 'self' {SPLASH_SCRIPT}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    "font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; "
+    "form-action 'none'; frame-ancestors 'none'"
 )
-"""Only this origin, for everything; no inline scripts, no frames, no forms posting elsewhere. Inline styles are allowed
-because the terminal (xterm.js) writes its measurements into `<style>` elements; scripts stay this origin's only."""
+"""Only this origin, for everything; no frames, no forms posting elsewhere, and no inline script but the splash's, by
+hash. Inline styles are allowed because the terminal (xterm.js) writes its measurements into `<style>` elements, and
+the splash's critical CSS is one."""
+CSP_HEADER = "Content-Security-Policy"
 SECURITY_HEADERS = {
-    "Content-Security-Policy": CSP,
+    CSP_HEADER: CSP,
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
     "X-Frame-Options": "DENY",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
 }
+"""How others may treat our answers; none of them limits what the page embeds. Never add COEP `require-corp`: it
+would block the stream soundscape's player (ADR 0058)."""
 NO_CACHE = frozenset({"sw.js", "manifest.webmanifest", "favicon.svg"})
 """Top-level files a browser must check for a new version every time: the service worker and the manifest."""
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 NOT_FOUND = 404
 FONT_THEME = re.compile(r"[a-z](?:-?[a-z0-9]){0,63}")
 FONT_FILE = re.compile(r"([0-9]{1,2})\.woff2")
-LOGO_FILE = re.compile(r"(light|dark|mark)\.svg")
+LOGO_FILE = re.compile(r"(light|dark|mark|heinzel-(?:hat-(?:young|grown|old)|outfit-(?:baby|young|grown|old)))\.svg")
+SOUND_FILE = re.compile(r"(layer-[0-9]|earcon-[a-z]{1,16})\.(ogg|opus|mp3)")
 IMMUTABLE = "public, max-age=31536000, immutable"
 RESUME = "HEINZEL_UI_RESUME"
 """How a restarting `hz ui` hands its listening socket and token to the process it becomes: `<fd>:<token>`. A
@@ -223,6 +240,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     app.mount("/api", endpoints)
     add_fonts(app, kernel)
     add_logos(app, kernel)
+    add_sounds(app, kernel)
     if static is None:
         return app
     if (static / "assets").is_dir():
@@ -234,21 +252,51 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     files = {file.name: file for file in static.iterdir() if file.is_file() and file != index}
 
     @app.get("/{path:path}", include_in_schema=False)
-    async def page(path: str) -> Response:
+    def page(path: str) -> Response:
+        # Not async: the page's CSP reads the configuration, so FastAPI runs it in its thread pool.
         # Top-level files as themselves; every other path is a route of the app.
         if path in files:
             headers = {"Cache-Control": "no-cache"} if path in NO_CACHE else None
             return FileResponse(files[path], headers=headers)
-        return FileResponse(index, headers={"Cache-Control": "no-store"})
+        return FileResponse(index, headers={"Cache-Control": "no-store", CSP_HEADER: page_csp(kernel)})
 
     return app
 
 
+PAGE_CSPS = frozenset(f"{CSP}; frame-src {provider.frame_origin}" for provider in STREAM_PROVIDERS.values())
+"""Every CSP the page may carry besides `CSP`: one per stream provider, its frame origin admitted."""
+
+
+def page_csp(kernel: Kernel) -> str:
+    """The CSP of the app's page: `CSP`, with `frame-src` for the one host the stream soundscape in effect plays from.
+
+    The origin comes from `STREAM_PROVIDERS`, never from configuration or a plugin; anything going wrong admits none.
+    """
+    try:
+        provider = kernel.resolve(SoundAssets).stream_provider() if kernel.provides(SoundAssets) else None
+    except Exception:  # noqa: BLE001 - fail closed: the page loads with the strict CSP, sound just can't stream
+        provider = None
+    stream = STREAM_PROVIDERS.get(provider) if provider else None
+    return f"{CSP}; frame-src {stream.frame_origin}" if stream else CSP
+
+
 def secure(response: Response, path: str) -> None:
-    """Add the security headers to the answer for `path`, and what the answers of some paths need besides."""
+    """Add the security headers to the answer for `path`, and what the answers of some paths need besides.
+
+    The page's own CSP (`page_csp`) is kept: only it may admit a frame, and only by extending `CSP`.
+    """
+    own = response.headers.get(CSP_HEADER)
     response.headers.update(SECURITY_HEADERS)
+    if (
+        own
+        and own.startswith(CSP + "; frame-src ")
+        and response.headers.get("content-type", "").startswith("text/html")
+    ):
+        response.headers[CSP_HEADER] = own
     if response.status_code != OK:
         return
+    if path.startswith(SOUND_ROUTE + "/"):
+        response.headers[CSP_HEADER] = SOUND_CSP  # an audio file opened on its own loads and runs nothing
     if path.startswith(LOGO_ROUTE + "/"):
         response.headers["Content-Security-Policy"] = LOGO_CSP  # an SVG opened on its own loads and runs nothing
     if path.startswith("/assets/"):
@@ -284,13 +332,13 @@ def add_logos(app: FastAPI, kernel: Kernel) -> None:
     """Serve the themes' logos at `LOGO_ROUTE`, outside `/api`, behind the app's middleware (ADR 0044)."""
 
     @app.get(LOGO_ROUTE + "/{theme}/{file}", include_in_schema=False)
-    def theme_logo(theme: str, file: str) -> Response:
+    def theme_logo(theme: str, file: str, v: str | None = None) -> Response:
         # Not async: it reads files, so FastAPI runs it in its thread pool and other requests don't wait.
-        return logo_response(kernel, theme, file)
+        return logo_response(kernel, theme, file, version=v)
 
 
-def logo_response(kernel: Kernel, theme: str, file: str) -> Response:
-    """Logo `<light|dark|mark>.svg` of the available theme `theme`, or 404; served without the token (ADR 0044)."""
+def logo_response(kernel: Kernel, theme: str, file: str, *, version: str | None = None) -> Response:
+    """An available theme's logo or content-versioned avatar layer, or 404; tokenless original artwork."""
     # Checked against fixed patterns, then looked up by theme name and logo name: a request never builds a path.
     name = LOGO_FILE.fullmatch(file)
     content = None
@@ -299,10 +347,46 @@ def logo_response(kernel: Kernel, theme: str, file: str) -> Response:
             content = kernel.resolve(ThemeFonts).logo(theme, name.group(1))
         except HeinzelError:  # system.theme can't be built (a module it needs is off): no theme ships a logo
             content = None
+    if (
+        content is not None
+        and name
+        and name.group(1).startswith("heinzel-")
+        and version != hashlib.sha256(content).hexdigest()[:16]
+    ):
+        content = None
     if content is None:
         return JSONResponse(status_code=NOT_FOUND, content={"error": "No theme ships that logo."})
     # The list's URL carries the content's version (`?v=`), so a changed logo is a new URL: the answer is immutable.
     return Response(content, media_type="image/svg+xml", headers={"Cache-Control": IMMUTABLE})
+
+
+def add_sounds(app: FastAPI, kernel: Kernel) -> None:
+    """Serve the soundscapes' audio files at `SOUND_ROUTE`, outside `/api`, behind the app's middleware (ADR 0058)."""
+
+    @app.get(SOUND_ROUTE + "/{soundscape}/{file}", include_in_schema=False)
+    def soundscape_file(soundscape: str, file: str) -> Response:
+        # Not async: it reads files, so FastAPI runs it in its thread pool and other requests don't wait.
+        return sound_response(kernel, soundscape, file)
+
+
+def sound_response(kernel: Kernel, soundscape: str, file: str) -> Response:
+    """Audio file `<layer-n|earcon-kind>.<ext>` of the available `soundscape`, or 404; served without the token.
+
+    Its type is the one its checked signature says, and the extension asked for must be the declared file's.
+    """
+    # Checked against fixed patterns, then looked up by name and part: a request never builds a path.
+    match = SOUND_FILE.fullmatch(file)
+    found = None
+    if FONT_THEME.fullmatch(soundscape) and match and kernel.provides(SoundAssets):
+        try:
+            found = kernel.resolve(SoundAssets).asset(soundscape, match.group(1), match.group(2))
+        except Exception:  # noqa: BLE001 - system.sound can't be built or read: no soundscape ships files
+            found = None
+    if found is None:
+        return JSONResponse(status_code=NOT_FOUND, content={"error": "No soundscape ships that file."})
+    content, media_type = found
+    # The list's URL carries the content's version (`?v=`), so a changed file is a new URL: the answer is immutable.
+    return Response(content, media_type=media_type, headers={"Cache-Control": IMMUTABLE})
 
 
 def free_socket(host: str = HOST, port: int = 0) -> socket.socket:
@@ -337,6 +421,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     base: str | None = None,
     restartable: bool = True,
     execute: Execute = os.execve,
+    waiting: Callable[[str], None] = print,
 ) -> None:
     """Serve the web head on localhost until Ctrl-C stops it, with a new token, and open the browser at it.
 
@@ -355,6 +440,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
         restartable: Whether `POST /api/restart` runs this process's command again; false where the command isn't
             `hz ui` (`make web-dev`).
         execute: Replaces the process on restart; a fake in tests.
+        waiting: Reports a bounded wait when a recently stopped UI still holds the requested port.
 
     Raises:
         HeinzelError: If the app isn't built.
@@ -364,7 +450,7 @@ def serve(  # noqa: PLR0913 - all but the kernel by keyword
     if static is not None and not (static / "index.html").is_file():
         raise HeinzelError(NOT_BUILT)  # before binding a port, so nothing is left open
     # Read and removed at once, so nothing this process starts inherits the token.
-    sock, token, resumed = _session(os.environ.pop(RESUME, None), port)
+    sock, token, resumed = _session(os.environ.pop(RESUME, None), port, waiting)
     browser = browser and not resumed
     bound = int(sock.getsockname()[1])
     handover: list[int] = []
@@ -425,11 +511,14 @@ def _listening_on_loopback(sock: socket.socket) -> bool:
         return False
 
 
-def _session(handed_over: str | None, port: int) -> tuple[socket.socket, str, bool]:
+def _session(
+    handed_over: str | None, port: int, waiting: Callable[[str], None] = print
+) -> tuple[socket.socket, str, bool]:
     """The listening socket and token: those a restarting `hz ui` handed over, else new ones; and whether resumed.
 
     Raises:
-        OSError: If `port` is taken.
+        HeinzelError: If a fixed port stays busy after the bounded wait.
+        OSError: If binding fails for another reason.
     """
     fd, _, token = (handed_over or "").partition(":")
     if fd.isdigit() and TOKEN_PATTERN.match(token):
@@ -442,4 +531,4 @@ def _session(handed_over: str | None, port: int) -> tuple[socket.socket, str, bo
                 os.set_inheritable(sock.fileno(), False)  # noqa: FBT003 - os API; a restart hands it on explicitly
                 return sock, token, True
             sock.detach()  # not ours to close: whatever handed it over keeps it
-    return free_socket(HOST, port), secrets.token_urlsafe(32), False
+    return wait_for_port(lambda: free_socket(HOST, port), port, waiting), secrets.token_urlsafe(32), False

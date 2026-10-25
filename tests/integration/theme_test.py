@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
-from heinzel import Config, HeinzelError, Kernel, Module, ModuleRecord, Settings, Theme, ThemeSignals
+from heinzel import Config, HeinzelError, Kernel, Module, ModuleRecord, Settings, Theme, ThemeFonts, ThemeSignals
 from heinzel.heads import web
 from heinzel.heads.cli import build
 from heinzel.kernel import DEFAULT_THEME, Origin, discover, user_config_dir, walk
@@ -216,6 +216,8 @@ def test_the_web_head_lists_the_themes_and_the_pick_round_trips(acme):
         "logo",
         "variant",
         "shadows",
+        "heinzel",
+        "heinzel_assets",
     }
     assert client.get("/api/system/theme/list").status_code == 401
     used = client.post("/api/system/theme/use", params={"name": "acme"}, headers=AUTH)
@@ -330,9 +332,13 @@ def test_no_fonts_are_served_when_the_theme_module_is_off(acme, monkeypatch):
 def test_no_fonts_are_served_when_the_theme_service_cannot_be_built(acme, monkeypatch):
     kernel = acme("heinzel_acme")
 
+    resolve = kernel.resolve
+
     def unbuildable(kind: type) -> object:
-        msg = f"No module provides {kind.__name__}"
-        raise HeinzelError(msg)
+        if kind is ThemeFonts:
+            msg = f"No module provides {kind.__name__}"
+            raise HeinzelError(msg)
+        return resolve(kind)
 
     monkeypatch.setattr(kernel, "resolve", unbuildable)
     assert web_client(kernel).get("/theme-fonts/acme/0.woff2").status_code == 404
@@ -461,9 +467,13 @@ def test_no_logos_are_served_when_the_theme_module_is_off_or_cannot_be_built(acm
         patch.setattr(kernel, "provides", lambda kind: False)
         assert client.get("/theme-assets/acme/light.svg").status_code == 404
 
+    resolve = kernel.resolve
+
     def unbuildable(kind: type) -> object:
-        msg = f"No module provides {kind.__name__}"
-        raise HeinzelError(msg)
+        if kind is ThemeFonts:
+            msg = f"No module provides {kind.__name__}"
+            raise HeinzelError(msg)
+        return resolve(kind)
 
     monkeypatch.setattr(kernel, "resolve", unbuildable)
     assert client.get("/theme-assets/default/light.svg").status_code == 404
@@ -639,3 +649,71 @@ def test_a_hanging_plugin_leaves_its_signals_unknown_and_holds_up_nobody(acme, m
     assert answers == [None] * 4
     assert time.monotonic() - started < 4  # the 5 s hang held up nobody
     assert len(calls) == 1  # one call in flight; the others got the last values, unknown
+
+
+def test_theme_avatar_decorations_reach_cli_and_web_json(acme):
+    winter = Module("winter", "A winter look.")
+    winter.theme(
+        Theme.model_validate(
+            DEFAULT_THEME.model_dump()
+            | {
+                "name": "winter",
+                "title": "Winter",
+                "heinzel": {"palette": {"hat": "#def"}, "decorations": ["snow"]},
+            }
+        )
+    )
+    kernel = acme(extra=(winter,))
+    code, listed = hz(kernel, "system", "theme", "list")
+    assert code == 0
+    look = next(theme for theme in listed["themes"] if theme["name"] == "winter")["heinzel"]
+    assert look == {"palette": {"hat": "#def"}, "decorations": ["snow"], "assets": {}}
+    client = TestClient(web.build(kernel, port=8000, token=TOKEN, static=None), base_url="http://127.0.0.1:8000")
+    response = client.get("/api/system/theme/list", headers=AUTH)
+    assert response.status_code == 200
+    assert next(theme for theme in response.json()["themes"] if theme["name"] == "winter")["heinzel"] == look
+
+
+def test_original_avatar_layers_have_owned_urls_and_safe_fallback(acme, tmp_path):
+    file = tmp_path / "hat.svg"
+    file.write_text('<svg xmlns="http://www.w3.org/2000/svg"><circle r="8"/></svg>')
+    theme_file = tmp_path / "winter.toml"
+    colours = "\n".join(
+        f"[{mode}]\n"
+        + "\n".join(f"{key} = {json.dumps(value)}" for key, value in values.model_dump(exclude_none=True).items())
+        for mode, values in (("light", DEFAULT_THEME.light), ("dark", DEFAULT_THEME.dark))
+    )
+    theme_file.write_text(
+        'name = "winter"\ntitle = "Winter"\nfont_sans = "system-ui, sans-serif"\n'
+        'font_mono = "monospace"\nborder_width = "1px"\n[heinzel.assets]\nhat-grown = "hat.svg"\n' + colours,
+        encoding="utf-8",
+    )
+    winter = Module("winter", "Winter artwork.")
+    winter.theme(theme_file)
+    kernel = acme(extra=(winter,))
+    client = web_client(kernel)
+    _, listing = hz(kernel, "system", "theme", "list")
+    listed = next(value for value in listing["themes"] if value["name"] == "winter")
+    url = listed["heinzel_assets"]["hat-grown"]
+    assert listed["heinzel"]["assets"] == {}
+    assert client.get("/api/system/theme/list", headers=AUTH).json()["themes"][-1]["heinzel_assets"] == {
+        "hat-grown": url
+    }
+    image = client.get(url)
+    assert image.status_code == 200
+    assert image.content == file.read_bytes()
+    assert client.get(url.split("?")[0]).status_code == 404
+    assert client.get(url[:-16] + "0" * 16).status_code == 404
+    file.write_text('<svg xmlns="http://www.w3.org/2000/svg"><circle r="9"/></svg>')
+    assert client.get(url).status_code == 404
+    current = client.get("/api/system/theme/list", headers=AUTH).json()
+    changed = next(value for value in current["themes"] if value["name"] == "winter")["heinzel_assets"]["hat-grown"]
+    assert changed != url
+    assert client.get(changed).status_code == 200
+    assert image.headers["content-security-policy"] == "default-src 'none'; style-src 'unsafe-inline'"
+    assert client.get(url.replace("hat-grown", "hat-baby")).status_code == 404
+    assert client.get(url.replace("hat-grown", "outfit-old")).status_code == 404
+    file.write_text('<svg xmlns="http://www.w3.org/2000/svg"><image href="https://example.invalid/a"/></svg>')
+    assert client.get(url).status_code == 404
+    listed = client.get("/api/system/theme/list", headers=AUTH).json()
+    assert next(value for value in listed["themes"] if value["name"] == "winter")["heinzel_assets"] == {}

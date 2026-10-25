@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from heinzel import Config
+from heinzel import Config, HeinzelError
 from heinzel.kernel import FILENAME, ConfigFile, user_config_dir
 from heinzel.modules.system.config import ConfigService
 from heinzel.modules.system.config._reveal import Revealer, launch
@@ -156,3 +156,63 @@ def test_the_report_says_whether_and_how_a_file_can_be_revealed(make_kernel):
     }
     linux = service(make_kernel, [], revealer("linux")).report()
     assert (linux.can_reveal, linux.file_manager) == (False, "file manager")
+
+
+@pytest.mark.parametrize(
+    ("platform", "program", "name"),
+    [("darwin", "open", "Finder"), ("win32", "explorer", "Explorer"), ("linux", "xdg-open", "file manager")],
+)
+def test_a_folder_opens_itself_not_its_parent(tmp_path, platform, program, name):
+    opener = FakeOpener()
+    done = revealer(platform, DESKTOP, opener=opener).reveal(tmp_path)
+    assert opener.commands == [[f"/usr/bin/{program}", str(tmp_path)]]
+    assert (done.opened, done.message) == (True, f"Opened {tmp_path} in {name}.")
+
+
+def test_on_macos_a_folder_with_a_suffix_is_selected_never_opened_as_it_may_be_an_app(tmp_path):
+    app = tmp_path / "Tool.app"
+    app.mkdir()
+    opener = FakeOpener()
+    revealer("darwin", opener=opener).reveal(app)
+    assert opener.commands == [["/usr/bin/open", "-R", str(app)]]
+
+
+def test_a_path_setting_shows_its_folder(make_kernel):
+    opener = FakeOpener()
+    config = service(make_kernel, [], revealer("darwin", opener=opener))
+    folder = Path(config.get("hz.log_dir").value)
+    folder.mkdir(parents=True, exist_ok=True)
+    done = config.reveal_setting("hz.log_dir")
+    assert (done.key, done.path, done.opened) == ("hz.log_dir", folder, True)
+    assert opener.commands == [["/usr/bin/open", str(folder)]]
+
+
+def test_a_setting_that_is_no_path_is_refused(make_kernel):
+    opener = FakeOpener()
+    with pytest.raises(HeinzelError, match="isn't a file or folder setting"):
+        service(make_kernel, [], revealer("darwin", opener=opener)).reveal_setting("hz.log_level")
+    assert opener.commands == []
+
+
+def builtin(make_kernel) -> ConfigService:
+    config = ConfigService(make_kernel(builtins=True, config=Config(files=(), data={})))
+    config.revealer = revealer("darwin")
+    return config
+
+
+def test_an_unset_path_setting_is_refused(make_kernel):
+    with pytest.raises(HeinzelError, match="is not set"):
+        builtin(make_kernel).reveal_setting("team.checkout")
+
+
+def test_a_relative_path_is_refused_as_it_would_be_read_against_the_wrong_folder(make_kernel, monkeypatch):
+    monkeypatch.setenv("HZ_LOG_DIR", "logs")
+    opener = FakeOpener()
+    with pytest.raises(HeinzelError, match="relative path"):
+        service(make_kernel, [], revealer("darwin", opener=opener)).reveal_setting("hz.log_dir")
+    assert opener.commands == []
+
+
+def test_a_list_of_folders_says_so(make_kernel):
+    with pytest.raises(HeinzelError, match="several paths"):
+        builtin(make_kernel).reveal_setting("system.agent.skill_dirs")

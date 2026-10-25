@@ -22,6 +22,8 @@ export type JsonSchema = {
   title?: string;
   deprecated?: boolean;
   description?: string;
+  "x-hidden"?: boolean;
+  "x-expert"?: boolean;
 };
 
 export const TIMEZONE = "iana-timezone";

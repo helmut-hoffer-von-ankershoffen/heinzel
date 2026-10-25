@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, cast
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
 
-from heinzel import CatchUp, Check, Config, HeinzelError, JobLet, Kernel, Notifications, Settings, Status
+from heinzel import CatchUp, Check, Config, HeinzelError, JobLet, Kernel, Notifications, Settings, Status, __version__
 from heinzel.kernel import KERNEL_SECTION
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._ledger import Ledger
@@ -33,6 +33,7 @@ from heinzel.modules.system.daemon._models import (
     JobInfo,
     JobRun,
     LogLine,
+    Restarted,
     TickReport,
     Toggled,
     Uninstalled,
@@ -185,6 +186,7 @@ class DaemonService:
                 "executable": str(executable),
                 "platform": self._platform,
                 "installed_at": self._clock().isoformat(),
+                "version": __version__,
             },
         )
         if self._platform == "darwin":  # bootstrap fails on a loaded agent; unload the old one, if any, first
@@ -204,6 +206,20 @@ class DaemonService:
             dry_run=False,
             hint=hint,
         )
+
+    def restart(self) -> Restarted:
+        """Reload the installed daemon with the interval it has, so it runs with the hz that is installed now.
+
+        Raises:
+            HeinzelError: If loading fails.
+        """
+        recorded = self._read_state("install.json")
+        installed = self._platform in PLATFORMS and all(path.exists() for path in self._unit_paths())
+        if not installed or "interval_minutes" not in recorded:
+            return Restarted(restarted=False, version=__version__, interval_minutes=None)
+        minutes = int(recorded["interval_minutes"])
+        self.install(timedelta(minutes=minutes))
+        return Restarted(restarted=True, version=__version__, interval_minutes=minutes)
 
     def uninstall(self) -> Uninstalled:
         """Unload and remove the unit; receipts, logs and the pause flag stay. Nothing to do is not an error.
@@ -236,6 +252,7 @@ class DaemonService:
         installed = self._platform in PLATFORMS and all(path.exists() for path in self._unit_paths())
         recorded = self._read_state("install.json")
         jobs = self.jobs()
+        version = str(recorded["version"]) if installed and "version" in recorded else None
         return DaemonStatus(
             platform=self._platform,
             installed=installed,
@@ -246,6 +263,8 @@ class DaemonService:
             last_tick=self._last_tick(),
             jobs=len(jobs),
             failing=[job.job for job in jobs if job.problem or job.last_disposition is Disposition.FAILED],
+            version=version,
+            version_mismatch=version is not None and version != __version__,
         )
 
     def health(self) -> list[Check]:

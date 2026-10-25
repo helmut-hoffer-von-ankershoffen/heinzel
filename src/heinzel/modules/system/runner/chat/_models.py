@@ -6,6 +6,7 @@ from typing import Annotated, ClassVar, Literal
 from pydantic import BaseModel, Field, JsonValue, StringConstraints
 
 from heinzel import ModuleSettings
+from heinzel.kernel import Billing, Effort
 
 ContextKind = Literal["route", "contract", "draft", "event", "text"]
 SessionId = Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{16}$")]
@@ -19,21 +20,42 @@ class ChatSettings(ModuleSettings):
     Each message may cost at most `[system.runner] ask_max_usd`; a session at most `session_max_usd` in all.
     """
 
+    section_title: ClassVar[str | None] = "Chat"  # the heading in Settings
+
     session_max_usd: float = Field(
         default=2.0,
         gt=0,
         allow_inf_nan=False,
-        description="Most one chat session may cost in US dollars, all its messages together; a message never "
-        "costs more than system.runner.ask_max_usd.",
+        title="Most per chat",
+        description="The most one chat may cost in US dollars, all its messages together. One "
+        "message never costs more than the most per answer.",
+        json_schema_extra={"x-unit": "usd"},
     )
     keep_days: int = Field(
-        default=30, ge=1, le=3650, description="Days a chat session is kept after its last message, then removed."
+        default=30,
+        ge=1,
+        le=3650,
+        title="Keep chats for",
+        description="How long a chat is kept after its last message, then removed.",
+        json_schema_extra={"x-unit": "days"},
     )
     keep_sessions: int = Field(
-        default=50, ge=1, le=1000, description="Chat sessions kept at most; the oldest beyond are removed."
+        default=50,
+        ge=1,
+        le=1000,
+        title="Chats kept",
+        description="How many chats are kept at most; the oldest beyond that are removed.",
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"session_max_usd"})
+    tools: Literal["everyday", "all"] = Field(
+        default="everyday",
+        title="What the chat can use",
+        description="Which operations the chat's agent can use: the everyday ones, or all of them. Every tool is sent "
+        "with every message, so fewer make each message cheaper.",
+        json_schema_extra={"x-expert": True},
+    )
+
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"session_max_usd", "tools"})
 
 
 class ChatContext(BaseModel):
@@ -92,6 +114,19 @@ class ChatMessage(BaseModel):
     tools: dict[str, int] = Field(default_factory=dict, description="Tools the agent called, by name.")
     actions: list[str] = Field(default_factory=list, description="Ids of the actions the agent proposed in it.")
     warnings: list[str] = Field(default_factory=list, description="Limits the runner could not enforce.")
+    access: str | None = Field(default=None, description="The AI access in use when it answered, e.g. `claude-code`.")
+    model: str | None = Field(default=None, description="The model that answered, as the runner reported it.")
+    effort: Effort | None = Field(default=None, description="The effort it was asked for; none: the default.")
+    billing: Billing | None = Field(
+        default=None,
+        description="`plan`: on a subscription, so `cost_usd` is what it would cost at API prices, covered by the "
+        "plan; `api`: billed per token; none when the runner can't tell.",
+    )
+    duration_seconds: float | None = Field(default=None, description="How long the answer took.")
+    input_tokens: int | None = Field(default=None, description="Tokens sent, without cache reads, if reported.")
+    output_tokens: int | None = Field(default=None, description="Tokens produced, if reported.")
+    cache_read_tokens: int | None = Field(default=None, description="Input tokens read from the prompt cache.")
+    cache_write_tokens: int | None = Field(default=None, description="Input tokens written to the prompt cache.")
 
 
 class ChatCosts(BaseModel):
@@ -117,6 +152,8 @@ class ChatSession(BaseModel):
         default_factory=list[ChatAction], description="What the agent proposed, oldest first."
     )
     costs: ChatCosts = Field(description="What it cost and may still cost.")
+    model: str | None = Field(default=None, description="The model this chat asks for; none: the runner's default.")
+    effort: Effort | None = Field(default=None, description="The effort this chat asks for; none: the default.")
 
     @property
     def pending(self) -> list[ChatAction]:
@@ -133,7 +170,4 @@ class ChatSummary(BaseModel):
     messages: int = Field(description="How many messages it has.")
     pending: int = Field(description="Actions waiting for confirmation.")
     spent_usd: float = Field(description="What it cost so far.")
-    context: ChatContext | None = Field(
-        default=None,
-        description="What it was opened about; a Heinzelmännchen's conversation is the one about its contract.",
-    )
+    context: ChatContext | None = Field(default=None, description="What this session was opened about, if anything.")

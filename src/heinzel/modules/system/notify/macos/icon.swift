@@ -26,19 +26,19 @@ NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
 NSGraphicsContext.current!.imageInterpolation = .high
 let side = CGFloat(pixels)
 let square = NSRect(x: 0, y: 0, width: side, height: side)
-let dark = NSColor(srgbRed: 0x18 / 255, green: 0x18 / 255, blue: 0x18 / 255, alpha: 1)
+let backdrop = NSColor.white
 
 // How large the drawing is on its background; it stands on the bottom edge, the tunic cut off like a portrait's.
 var scale: CGFloat = 1
 switch style {
 case "tile":
     let tile = NSBezierPath(roundedRect: square, xRadius: side * 112 / 512, yRadius: side * 112 / 512)
-    dark.setFill()
+    backdrop.setFill()
     tile.fill()
     tile.addClip()
     scale = 0.84
 case "maskable":
-    dark.setFill()
+    backdrop.setFill()
     NSBezierPath(rect: square).fill()
     scale = 0.8
 default:

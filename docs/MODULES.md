@@ -8,12 +8,12 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 
 | Module | What it does |
 | --- | --- |
-| [`ai`](#ai) | How hz reaches AI: the AI access in use, its status and a live test. |
+| [`ai`](#ai) | How hz reaches AI, and what it spends: tokens and cost per run. |
 | [`ai.access`](#aiaccess) | Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plugin adds. |
 | [`atlassian`](#atlassian) | Read Jira issues and Confluence pages through acli: the tracker and documents capabilities. |
-| [`clock`](#clock) | What time it is for everyone on the team. |
+| [`clock`](#clock) | World Clock: what time it is for everyone on the team. |
 | [`github`](#github) | Read pull requests and issues from GitHub: the code-host and tracker capabilities. |
-| [`google`](#google) | Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
+| [`google`](#google) | Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities. |
 | [`graph`](#graph) | Are your team's promises kept? Artifacts and Heinzelmännchen, and where the flow waits. |
 | [`heinzel`](#heinzel) | Your Heinzelmännchen: durable agents that keep your team's documents true. |
 | [`org`](#org) | Your profile, and the team, org and company you work with. |
@@ -22,6 +22,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.agent`](#systemagent) | Install the Heinzelmännchen skills for coding agents. |
 | [`system.capability`](#systemcapability) | Show which adapters serve which capabilities, and who reads and writes what. |
 | [`system.changelog`](#systemchangelog) | Release notes of the installed version and of newer releases. |
+| [`system.claude`](#systemclaude) | See the MCP servers and skills you already set up for Claude, without using any of them. |
 | [`system.config`](#systemconfig) | Show, get, set and initialize configuration. |
 | [`system.connector`](#systemconnector) | Show whether each connector is signed in and serves something, and test one live. |
 | [`system.credential`](#systemcredential) | Store and check the credentials modules need, in the OS keychain. |
@@ -34,13 +35,23 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
+| [`system.skill`](#systemskill) | List the skills plugins ship for AI, and hand chosen ones to Claude Code. |
+| [`system.sound`](#systemsound) | Pick the web app's soundscape: off, Claude FM or one a plugin offers. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
+| [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`zoom`](#zoom) | Read meetings from Zoom's meeting-summary emails: the meetings capability. |
 
 ## `ai`
 
-How hz reaches AI: the AI access in use, its status and a live test.
+How hz reaches AI, and what it spends: tokens and cost per run.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause. | `hz ai usage` | `ai_usage` | — | `GET /api/ai/usage` |  | expert |
+| List the models and efforts of the AI access in use, for the chat's model and effort picker. | `hz ai models` | `ai_models` | — | `GET /api/ai/models` |  | expert |
+
+Settings: [`[ai]`](CONFIGURATION.md#ai).
 
 ## `ai.access`
 
@@ -51,6 +62,7 @@ Pick how hz reaches AI: Claude Code, your company's gateway, or an option a plug
 | List the AI access options, the one in use, whether each is signed in, and what runs each use. | `hz ai access list` | `ai_access_list` | — | `GET /api/ai/access/list` |  | expert |
 | Use an AI access option: sets capabilities.ai_access, and agent_runner if the option names one. | `hz ai access use` | — | — | `POST /api/ai/access/use` | yes | expert |
 | Run one cheap live check of an AI access option and keep the result; this may cost a little. | `hz ai access test` | — | — | `POST /api/ai/access/test` | yes | expert |
+| Sign in to ChatGPT in your browser, so the `chatgpt` option uses your plan instead of an API key. | `hz ai access login` | — | — | — | yes | expert |
 
 Settings: [`[ai.access]`](CONFIGURATION.md#aiaccess).
 
@@ -72,7 +84,7 @@ Health checks: reported by `hz system doctor`.
 
 ## `clock`
 
-What time it is for everyone on the team.
+World Clock: what time it is for everyone on the team.
 
 First-party plugin `heinzel-clock`: `hz system plugin add clock --confirm`.
 
@@ -102,7 +114,7 @@ Health checks: reported by `hz system doctor`.
 
 ## `google`
 
-Read Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
+Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail capabilities.
 
 First-party plugin `heinzel-google`: `hz system plugin add google --confirm`.
 
@@ -133,6 +145,11 @@ Your Heinzelmännchen: durable agents that keep your team's documents true.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
+| Create a durable personal Heinzel with an idempotent request, name and look. | `hz heinzel new-chat` | `heinzel_new_chat` | — | `POST /api/heinzel/new-chat` | yes |  |
+| List your durable personal Heinzels, including new conversations without an approved contract. | `hz heinzel sessions` | `heinzel_sessions` | — | `GET /api/heinzel/sessions` |  |  |
+| Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn. | `hz heinzel session` | `heinzel_session` | — | `GET /api/heinzel/session` |  |  |
+| Save this Heinzel's name or look against the exact profile revision you saw. | `hz heinzel profile` | `heinzel_profile` | — | `POST /api/heinzel/profile` | yes |  |
+| Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer. | `hz heinzel chat` | `heinzel_chat` | — | `POST /api/heinzel/chat` | yes |  |
 | List your Heinzelmännchen, one per contract: owner, schedule, state, last and next run. | `hz heinzel list` | `heinzel_list` | — | `GET /api/heinzel/list` |  |  |
 | Write a starter contract, or a playbook's template (--template), into your workflows directory. | `hz heinzel new` | `heinzel_new` | — | — | yes |  |
 | List the playbooks plugins contribute: asset types, template contracts and recommended settings. | `hz heinzel playbooks` | `heinzel_playbooks` | — | `GET /api/heinzel/playbooks` |  | expert |
@@ -190,7 +207,7 @@ Inspect, configure, diagnose and update Heinzelmännchen itself.
 | Show versions, interpreter, settings, modules and what modules report. | `hz system info` | `system_info` | `GET /system/info` | `GET /api/system/info` |  | expert |
 | List every module and the lets it advertises. | `hz system modules` | `system_modules` | `GET /system/modules` | `GET /api/system/modules` |  | expert |
 | Ask where Heinzelmännchen was installed from for its latest release, and whether to update. | `hz system release` | `system_release` | `GET /system/release` | `GET /api/system/release` |  | expert |
-| Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
+| Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`. | `hz system update` | `system_update` | `POST /system/update` | `POST /api/system/update` | yes |  |
 
 ## `system.agent`
 
@@ -224,6 +241,17 @@ Release notes of the installed version and of newer releases.
 
 Settings: [`[system.changelog]`](CONFIGURATION.md#systemchangelog).
 
+## `system.claude`
+
+See the MCP servers and skills you already set up for Claude, without using any of them.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on. | `hz system claude list` | — | — | `GET /api/system/claude/list` |  | expert |
+| Count the MCP servers and skills found in Claude's configuration per source, without their names. | `hz system claude summary` | `system_claude_summary` | `GET /system/claude/summary` | `GET /api/system/claude/summary` |  | expert |
+
+Health checks: reported by `hz system doctor`.
+
 ## `system.config`
 
 Show, get, set and initialize configuration.
@@ -236,6 +264,7 @@ Show, get, set and initialize configuration.
 | Change a setting in the user or project configuration file, after validating it. | `hz system config set` | `system_config_set` | `POST /system/config/set` | `POST /api/system/config/set` | yes | expert |
 | Remove a setting from the user or project configuration file, so its default applies again. | `hz system config unset` | `system_config_unset` | `POST /system/config/unset` | `POST /api/system/config/unset` | yes | expert |
 | Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created. | `hz system config reveal` | — | — | `POST /api/system/config/reveal` | yes | expert |
+| Show the file or folder a path setting names, such as hz.log_dir, in your file manager. | `hz system config reveal-setting` | — | — | `POST /api/system/config/reveal-setting` | yes | expert |
 
 ## `system.connector`
 
@@ -268,6 +297,7 @@ Run modules' jobs in the background, supervised by launchd or systemd.
 | --- | --- | --- | --- | --- | --- | --- |
 | Install and load the launchd agent or systemd timer that ticks every few minutes. | `hz system daemon install` | — | — | — | yes | expert |
 | Unload and remove the daemon's unit; receipts and logs stay. | `hz system daemon uninstall` | — | — | — | yes | expert |
+| Restart the daemon so it runs with the installed hz. | `hz system daemon restart` | `system_daemon_restart` | `POST /system/daemon/restart` | `POST /api/system/daemon/restart` | yes | expert |
 | Show whether the daemon is installed, loaded and paused, its last tick and failing jobs. | `hz system daemon status` | `system_daemon_status` | `GET /system/daemon/status` | `GET /api/system/daemon/status` |  | expert |
 | Show the latest lines of the daemon's log. | `hz system daemon logs` | `system_daemon_logs` | `GET /system/daemon/logs` | `GET /api/system/daemon/logs` |  | expert |
 | Run the jobs that are due and write a receipt for each; exits with 1 if any job failed. | `hz system daemon tick` | `system_daemon_tick` | — | — | yes | expert |
@@ -378,6 +408,32 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 
 Settings: [`[system.runner.chat]`](CONFIGURATION.md#systemrunnerchat).
 
+## `system.skill`
+
+List the skills plugins ship for AI, and hand chosen ones to Claude Code.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the skills in effect: which module offers each, what it hides, and where it is exported. | `hz system skill list` | — | — | `GET /api/system/skill/list` |  | expert |
+| Show a skill: where it comes from, its files and hints, and its body. | `hz system skill show` | — | — | `GET /api/system/skill/show` |  | expert |
+| Export the skills you name for Claude Code, as `heinzel-<name>` in each export directory. | `hz system skill export` | — | — | — | yes | expert |
+| Remove skills hz exported for Claude Code; directories hz didn't write are left alone. | `hz system skill unexport` | — | — | — | yes | expert |
+
+Settings: [`[system.skill]`](CONFIGURATION.md#systemskill).
+
+Health checks: reported by `hz system doctor`.
+
+## `system.sound`
+
+Pick the web app's soundscape: off, Claude FM or one a plugin offers.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the soundscapes of the web app, where each comes from, which one is picked and which plays. | `hz system sound list` | `system_sound_list` | `GET /system/sound/list` | `GET /api/system/sound/list` |  | expert |
+| Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file. | `hz system sound use` | `system_sound_use` | — | `POST /api/system/sound/use` | yes | expert |
+
+Settings: [`[system.sound]`](CONFIGURATION.md#systemsound).
+
 ## `system.theme`
 
 Pick how the web app looks: the built-in theme or one a plugin offers.
@@ -389,6 +445,24 @@ Pick how the web app looks: the built-in theme or one a plugin offers.
 | Use a theme in the web app: writes `[system.theme] name` to your configuration file. | `hz system theme use` | `system_theme_use` | `POST /system/theme/use` | `POST /api/system/theme/use` | yes | expert |
 
 Settings: [`[system.theme]`](CONFIGURATION.md#systemtheme).
+
+## `system.ui`
+
+List what modules add to the web app: status items, header actions and Today widgets.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the status items modules add to the web app's status bar, with what each shows now. | `hz system ui status` | `system_ui_status` | — | `GET /api/system/ui/status` |  | expert |
+| List the buttons modules add to the web app's header, with what each does and its badge. | `hz system ui actions` | `system_ui_actions` | — | `GET /api/system/ui/actions` |  | expert |
+| List the widgets modules add to the web app's Today screen, with what each shows now. | `hz system ui widgets` | `system_ui_widgets` | — | `GET /api/system/ui/widgets` |  | expert |
+| List active providers' navigation and owned Settings metadata without running their operations. | `hz system ui navigation` | `system_ui_navigation` | — | `GET /api/system/ui/navigation` |  | expert |
+| List every contribution to the web app, where it may show and whether it does; nothing runs. | `hz system ui list` | `system_ui_list` | — | `GET /api/system/ui/list` |  | expert |
+| Show a contribution in a slot of the web app, such as the clock in the sidebar. | `hz system ui show` | `system_ui_show` | — | `POST /api/system/ui/show` | yes | expert |
+| Hide a contribution from a slot of the web app, such as the clock from the footer. | `hz system ui hide` | `system_ui_hide` | — | `POST /api/system/ui/hide` | yes | expert |
+
+Settings: [`[system.ui]`](CONFIGURATION.md#systemui).
+
+Health checks: reported by `hz system doctor`.
 
 ## `team`
 

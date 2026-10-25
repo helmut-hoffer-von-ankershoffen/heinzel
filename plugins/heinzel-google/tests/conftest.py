@@ -44,6 +44,11 @@ class Run:
     def params(self) -> dict[str, Any]:
         return json.loads(self.arguments[self.arguments.index("--params") + 1]) if "--params" in self.arguments else {}
 
+    @property
+    def body(self) -> dict[str, Any] | None:
+        """The request body (`--json`), or None without one."""
+        return json.loads(self.arguments[self.arguments.index("--json") + 1]) if "--json" in self.arguments else None
+
 
 def output(body: object, exit_code: int = 0, stderr: bytes = b"") -> Process:
     """What `gws` prints: `body` as JSON on stdout."""

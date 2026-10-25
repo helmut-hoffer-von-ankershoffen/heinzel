@@ -144,7 +144,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-:focus-visible {
+:focus-visible:not([data-focus-ring="parent"]) {
   outline: 2px solid var(--color-ring);
   outline-offset: 2px;
 }
@@ -182,6 +182,15 @@ body {
   }
 }
 
+@keyframes hz-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes hz-breathe {
   0%,
   100% {
@@ -189,5 +198,105 @@ body {
   }
   50% {
     opacity: 0.55;
+  }
+}
+
+/* HeinzelAvatar's idle life (data-idle, set by useIdleLife; the scheduler also stays quiet under reduced motion): a
+   blink, a hat tilt, a little wave, a glance, a tiny hop. Transforms on the existing parts, subtle by design. */
+@media (prefers-reduced-motion: no-preference) {
+  svg[data-idle] .hz-eyes,
+  svg[data-idle] .hz-wave {
+    transform-box: fill-box;
+  }
+  svg[data-idle="blink"] .hz-eyes {
+    transform-origin: 50% 50%;
+    animation: hz-blink 0.28s ease-in-out;
+  }
+  svg[data-idle="glance-left"] .hz-eyes {
+    animation: hz-glance-left 1.2s ease-in-out;
+  }
+  svg[data-idle="glance-right"] .hz-eyes {
+    animation: hz-glance-right 1.2s ease-in-out;
+  }
+  svg[data-idle="tilt"] .hz-hat {
+    /* The cap's brim in head coordinates; a theme image has a full canvas, not the cap's bounds. */
+    transform-box: view-box;
+    transform-origin: 256px 202px;
+    animation: hz-tilt 1s ease-in-out;
+  }
+  svg[data-idle="wave"] .hz-wave {
+    transform-origin: 50% 0%;
+    animation: hz-wave 1.2s ease-in-out;
+  }
+  svg[data-idle="hop"] {
+    animation: hz-hop 0.5s ease-out;
+  }
+}
+
+@keyframes hz-blink {
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.1);
+  }
+}
+
+@keyframes hz-glance-left {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25%,
+  75% {
+    transform: translateX(-9px);
+  }
+}
+
+@keyframes hz-glance-right {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25%,
+  75% {
+    transform: translateX(9px);
+  }
+}
+
+@keyframes hz-tilt {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  35%,
+  65% {
+    transform: rotate(-5deg);
+  }
+}
+
+@keyframes hz-wave {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  20%,
+  60% {
+    transform: rotate(-16deg);
+  }
+  40%,
+  80% {
+    transform: rotate(-4deg);
+  }
+}
+
+@keyframes hz-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-3px);
   }
 }

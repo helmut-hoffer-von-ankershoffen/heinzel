@@ -291,3 +291,12 @@ def test_a_command_without_the_mcp_placeholder_says_its_agent_had_no_hz_tools():
 def test_a_profile_without_file_tools_says_the_command_decides_them():
     result = run(runner(FakeCli()), tools=ToolProfile(read_files=False))
     assert result.warnings == ["the command decides its agent's file tools itself; this run asked for none"]
+
+
+def test_a_run_s_model_fills_the_placeholder_and_an_effort_is_a_warning():
+    fake = FakeCli()
+    target = runner(fake, command=["mytool", "--model", "{model}"], model="deep")
+    result = run(target, model="quick", effort="high")
+    assert fake.command[1:] == ["--model", "quick"]
+    assert result.model == "quick"
+    assert any("effort high" in warning for warning in result.warnings)

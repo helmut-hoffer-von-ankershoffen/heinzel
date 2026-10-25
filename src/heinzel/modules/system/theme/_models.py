@@ -5,7 +5,7 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field
 
-from heinzel import ModuleSettings, ThemeColours, ThemeVariant
+from heinzel import ModuleSettings, ThemeColours, ThemeHeinzel, ThemeVariant
 from heinzel.kernel import Daypart, Weather
 
 NAME_PATTERN = r"^[a-z](?:-?[a-z0-9])*$"
@@ -18,13 +18,17 @@ class ThemeSettings(ModuleSettings):
     person's tool looks.
     """
 
+    section_title: ClassVar[str | None] = "Theme"  # the heading in Settings
+
     ignored_in_project: ClassVar[frozenset[str]] = frozenset({"name"})
 
     name: str = Field(
         default="default",
         pattern=NAME_PATTERN,
         max_length=64,
-        description="The theme of the web app, one `hz system theme list` shows, e.g. `acme`; `default` is built in.",
+        title="Theme",
+        description="The theme of the web app; default is the built-in one, and plugins can bring others.",
+        json_schema_extra={"x-hidden": True},
     )
 
 
@@ -75,6 +79,10 @@ class ThemeView(BaseModel):
         default_factory=list[ThemeFontView], description="Font files the theme ships, for the web app to load."
     )
     logo: ThemeLogoView | None = Field(default=None, description="The theme's logo; none if it ships none.")
+    heinzel: ThemeHeinzel | None = Field(default=None, description="Core avatar colours and decorations.")
+    heinzel_assets: dict[str, str] = Field(
+        default_factory=dict[str, str], description="Available checked avatar layers as versioned same-origin URLs."
+    )
     variant: list[ThemeVariant] = Field(
         default_factory=list[ThemeVariant],
         description="Colours that apply when the signals match (ADR 0060); the one naming most signals wins.",

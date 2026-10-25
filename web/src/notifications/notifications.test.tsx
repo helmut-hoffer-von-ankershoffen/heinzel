@@ -147,6 +147,7 @@ describe("desktop notifications", () => {
       body: notice.body,
       tag: notice.id,
       icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
       data: { path: `/contracts/me%3Aweekly-digest?event=${notice.id}` },
     });
   });

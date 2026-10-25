@@ -105,6 +105,13 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
 8. **Cost.** Budgets stay per run (`Budget.max_usd`, the chat's and turns' caps). A runner reports its cost
    (`AgentResult`); a model API run is priced with `[ai.prices]` (per model id, shipped defaults overridable; a model
    without a price counts at the cap, as ADR 0050 says). A test reports its cost like any run.
+   **Usage is recorded per run**: every agent run (chat, `ask`, scheduled and manual renders, handoffs) and every
+   live test appends a `UsageEntry` (time, cause, access option, runner, model, Heinzelmännchen, tokens, cost;
+   never prompt or answer text) through `UsageLog`, a kernel base class the `ai` module provides with a ledger in
+   `<state_dir>/ai/usage.jsonl` (private, pruned to 60 days). `hz ai usage [--period today|week] [--by
+   access|model|heinzel|cause]` reports it, with today's level against `[ai] daily_budget_usd` (green below 75%,
+   amber to 100%, red beyond) and a compact label (`182k tok`) for the footer's status item. The budget shows,
+   it doesn't stop: each run keeps its own cap. Recording never fails a run, and nothing records with `ai` off.
 9. **Heads.** `list` is on the CLI, MCP and web heads, never the unauthenticated REST head, since it names hosts and
    sign-in state ([ADR 0039](0039-a-web-head-a-react-app-served-by-the-api-head.md)). `use` and `test` change
    configuration or spend money and are the person's own acts: CLI and web only, so an agent on MCP can't move work
@@ -114,6 +121,17 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
    decision: it is a user-facing choice like `chat`, not administration ([ADR 0018](0018-one-administrative-namespace.md)).
 10. **Doctor.** The `ai` health check: the chosen option is installed and signed in, as far as status can tell
     offline; the bound agent runner is the one it names. `system.runner` keeps its runner checks.
+11. **Model, effort and honest cost per answer.** `AgentRunner.run` takes an optional `model` and `effort` (`low`,
+    `medium`, `high`, `xhigh`, `max`) that override the configured ones for one run; a runner that can't pass one
+    says so in its warnings. `hz ai models` lists the models and efforts of the AI access in use (`AccessStatus`
+    gains `efforts` and `billing`) for the chat composer's picker; a chat keeps its choice for its later messages.
+    Every answer keeps when it was made, how long it took, the AI access, model, effort, tokens and cost, shown
+    behind an (i). `billing` is `plan` when the agent ran on a subscription (Claude Code's `apiKeySource` is `none`,
+    its `authMethod` `claude.ai`): its cost is what the run would cost at API prices, which the plan covers, and is
+    labelled "uses your plan · ≈ $X at API prices" wherever it shows; `api` is real spend. A run without file tools
+    (a chat, a question, a test) is lean: its contract replaces Claude Code's own system prompt, and a chat's agent
+    gets the everyday operations as tools (`[system.runner.chat] tools = "all"` for every one), since every tool's
+    schema goes with every message.
 
 ### Consequences
 
@@ -136,7 +154,11 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
   option's status and a test turn through `TestModel` and `FunctionModel`, the key kept out of a failure.
 - `tests/integration/ai_access_test.py`: `hz ai access list|use|test` through the CLI head with fake `claude` and
   gateway CLIs on PATH; the operations are absent from the REST head.
-- `tests/unit/public_api_test.py`: `AiAccess`, `AccessStatus`, `AccessTest` and `Adapters` are public.
+- `tests/unit/public_api_test.py`: `AiAccess`, `AccessStatus`, `AccessTest`, `Adapters`, `UsageEntry` and
+  `UsageLog` are public.
+- `tests/unit/modules/ai_usage_test.py`: entries carry no text, the ledger is private and never raises, today and
+  the week split, every breakdown, the meter's tones; `tests/integration/ai_access_test.py`: a test and an `ask`
+  are recorded and reported, and `usage` is absent from the REST head.
 
 ## More Information
 
@@ -154,9 +176,28 @@ status, tests one on request, and keeps `agent-runner` as the runner an option n
   `CODEX_HOME`, never `HZ_CREDENTIAL_*`; `[system.runner] codex_executable`, `codex_model` and `codex_effort`
   configure it. **These flags and events are verified against OpenAI's Codex documentation only (2026-10-25), not
   against a live run**; the tests use a fake `codex` on PATH.
+- **The `chatgpt` option** (a ChatGPT Plus or Pro plan instead of an API key). OpenAI's "Sign in with ChatGPT" offers
+  plan usage to open-source apps ("ChatGPT plan usage is available to all open-source partners and selected private
+  clients", developers.openai.com/siwc/quickstart, read 2026-10-25); each person approves hz by name and can limit it
+  in ChatGPT's settings, and a paid or remotely hosted app would need OpenAI's approval first. hz is open source and
+  runs on the person's machine, so `hz ai access login` (CLI only: it opens the browser and waits for the callback on
+  127.0.0.1) signs in through Pydantic AI's `openai-chatgpt` flow under the app name "Heinzelmännchen" and a stable
+  installation id (`<state_dir>/ai/host-id`). The credentials, a refresh token among them, are one keychain
+  credential (`ai.access/chatgpt-login`) that Pydantic AI reads and refreshes through it; `[ai.access]
+  chatgpt_model` names the model. hz does not use Pydantic AI's `openai-codex` provider, which signs in as the Codex
+  CLI with that CLI's stored credentials; a ChatGPT plan's coding agent is the Codex CLI itself, its own access
+  option and agent runner (next slice).
 - First slice: the protocol, `Adapters[P]`, the `claude-code`, `gateway` and `pydantic-ai` options with the
   `pydantic-ai-slim` dependency, `list`, `use`, `test`, doctor. Deferred: the turn engine itself (ADR 0050),
-  `[ai.roles]`, `[ai.models]`, `[ai.prices]`, gateway endpoints and tokens, and the web Settings section.
+  `[ai.roles]`, `[ai.models]`, `[ai.prices]`, gateway endpoints and tokens, and the web Settings section. Second
+  slice: usage recording and `hz ai usage`; the footer meter follows once status items carry meters.
+- **Model APIs through Pydantic AI** (the `pydantic-ai` option): Anthropic's and OpenAI's own APIs with a key
+  (`model = "anthropic:..."` or `"openai:..."`), and any OpenAI-compatible endpoint (`base_url`: Ollama, LM Studio,
+  vLLM, OpenRouter) with an optional key and the model name the endpoint knows. The key is the keychain credential
+  `ai.access/api-key` or the vendor's variable, and goes only over https or over http to this machine; listings
+  follow no redirect. The models an API offers are listed during the explicit live test (`GET <base>/models`) and
+  kept in `<state_dir>/ai/models.json`, so `status` and the picker stay offline. Endpoints use OpenAI's client
+  (`heinzel[openai]`).
 - Open: whether `ai.access` options should also offer the endpoint (`endpoint()`) as a third protocol method or a
   separate capability once Pydantic AI consumes it; the recommendation is a method returning `None` for options
   without one.

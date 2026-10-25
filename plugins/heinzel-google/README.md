@@ -1,7 +1,7 @@
 # heinzel-google
 
-Read Google Docs, Sheets, Drive, Calendar and Gmail, the `documents`, `calendar` and `mail` capabilities
-([ADR 0028](../../docs/adr/0028-integrations-are-capability-adapters.md)): a first-party
+Google Docs, Sheets, Drive, Calendar and Gmail: the `documents` (read), `calendar` and `mail` (read and write)
+capabilities ([ADR 0028](../../docs/adr/0028-integrations-are-capability-adapters.md)): a first-party
 [Heinzelmännchen](../../README.md) plugin. It is released with the core, at the same version, and not installed by
 default:
 
@@ -39,7 +39,7 @@ OAuth client as its README describes), then let setup do the rest:
 
 ```bash
 npm install -g @googleworkspace/cli
-hz setup google         # finds gws, signs it in read-only, binds documents, calendar and (if you say so) mail
+hz setup google         # finds gws, signs it in, binds documents, calendar and (if you say so) mail
 hz system doctor        # finds gws, checks its version and its stored sign-in, from files; Google isn't contacted
 ```
 
@@ -55,6 +55,14 @@ Mail is opt-in: setup asks, defaulting to no, and then signs in again with Gmail
 (`,https://www.googleapis.com/auth/gmail.readonly`), which lets the plugin read all of your mail; then
 `hz system config set capabilities.mail google`.
 
+Writes are opt-in too. Setup asks whether hz may change your calendar and your mail, defaulting to no; only then does
+the sign-in ask for `https://www.googleapis.com/auth/calendar.events` (create, move, cancel and answer events) and
+`https://www.googleapis.com/auth/gmail.modify` (keep drafts, send them, file conversations; it reads too, so it
+replaces `gmail.readonly`, and it can't delete mail for good). Heinzelmännchen writes only from publish operations
+that show you what they will do and run after you confirm; a chat's agent only proposes them
+([ADR 0059](../../docs/adr/0059-the-calendar-and-the-mail-write-through-hz-after-a-confirmation.md)). Without the
+scope, a write fails with the `gws auth login` that adds it.
+
 These are the narrowest read-only scopes for what the adapters do; `drive.metadata.readonly` lists and identifies files
 and never reads their contents (Google classes it as restricted, which matters only for published OAuth clients).
 Bindings go in your user configuration, never in a project `hz.toml`, which Heinzelmännchen ignores for them.
@@ -66,10 +74,10 @@ controls must not choose the program that reads your data), and `timeout`, the s
 
 ### Is it connected?
 
-Bound automatically while it is the only installed adapter of a capability, [ADR
-0055](../../docs/adr/0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md); `hz
-setup google` still asks, and declining mail there writes `mail = "none"`, so Gmail stays opt-in. `hz system connector
-list` (or Settings → Connectors in `hz ui`) shows whether gws has a sign-in, from its files alone; `hz system connector
+Bound automatically to documents and calendar while it is the only installed adapter of them, [ADR
+0055](../../docs/adr/0055-connectors-show-their-sign-in-test-live-on-demand-and-bind-themselves-when-alone.md); mail
+never is, so Gmail stays opt-in: `hz setup google` asks. `hz system connector
+list` shows whether gws has a sign-in, from its files alone; `hz system connector
 test google` asks Drive who is signed in (`gws drive about get`, 15 s at most), and only when you run it.
 
 ## Use
@@ -102,6 +110,16 @@ def notes(documents: Documents) -> Document:
 | `events(window)` | `calendar:read` | `calendar events list` on `primary`, `singleEvents`, `showDeleted`, paged by `pageToken` |
 | `messages(query, window)` | `mail:read` | `gmail users messages list` with Gmail's search, then `messages get` (metadata) for each |
 | `read(message)` | `mail:read` | `gmail users messages get` (full) |
+| `free_busy(people, window)` | `calendar:read` | `calendar freebusy query` for `primary` and each address |
+| `create_event(event)` | `calendar:write` | `calendar events insert` on `primary` with an id of hz's own (no duplicate on a retry), `sendUpdates` as the draft says, a Meet link when asked |
+| `update_event(event, change)` | `calendar:write` | `calendar events get`, then `patch` (only your events, or ones whose guests may change them) |
+| `cancel_event(event, notify)` | `calendar:write` | `calendar events get`, then `delete` (only your events; decline others') |
+| `respond(event, response)` | `calendar:write` | `calendar events get`, then `patch` of your own attendee entry |
+| `thread(thread)` | `mail:read` | `gmail users threads get` (full), without drafts, Spam and Trash |
+| `draft(draft)` | `mail:read` | `gmail users drafts get` (full) |
+| `create_draft(draft)` | `mail:write` | `gmail users drafts create` with a plain-text MIME message; a reply with `threadId`, `In-Reply-To` and `References` |
+| `send_draft(draft, seen)` | `mail:write` | `gmail users drafts get`, then `send` if its message is still the one you saw |
+| `relabel(thread, add, remove)` | `mail:write` | `gmail users threads modify` with label ids; not Spam, Trash, Drafts or Sent |
 
 - **Documents** are a Docs, Sheets or Drive link (`https://docs.google.com/document/d/<id>/...`,
   `.../spreadsheets/d/<id>/...`, `https://drive.google.com/file/d/<id>/...`, `.../open?id=<id>`) or a bare file id;
@@ -126,6 +144,10 @@ def notes(documents: Documents) -> Document:
   builder drops the addresses before anything reaches an agent's prompt. A message longer than 2 million characters,
   or with more than 500 MIME parts or 2 million characters of HTML, is refused, not cut; Spam and Trash are not
   read; reading one window's messages may take at most five minutes.
+- **Writes** change only what the person confirmed, through publish operations. Ids are checked before they reach
+  `gws`; a write that times out or fails without Google refusing it is not retried and says to look in Google first;
+  a rate-limited one is retried. A recurring series' own id is refused: one occurrence changes at a time. Drafts are built with
+  Python's `email` package from plain addresses and one-line subjects, so nothing can add a header.
 - **Text is data.** Every string returned passes `heinzel.clean_text` (no control, invisible or bidirectional
   characters).
 - **Bounds.** One `gws` run prints at most 10 MB, one call reads at most 100 pages or 25 MB, a Doc's text at most four

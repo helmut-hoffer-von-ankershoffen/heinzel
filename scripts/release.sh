@@ -3,8 +3,8 @@
 # update the version everywhere bump-my-version knows about, regenerate CHANGELOG.md (keeping the hand-written
 # introductions of earlier releases), and commit "chore(release): vX.Y.Z" on a new branch `release/vX.Y.Z`.
 #
-# Usage: [INTRO="prose"] bash scripts/release.sh [auto|patch|minor|major] [--open-pr]
-#   INTRO      the new release's introduction, written under its heading in CHANGELOG.md and the release notes;
+# Usage: INTRO="prose" bash scripts/release.sh [auto|patch|minor|major] [--open-pr]
+#   INTRO      required: the new release's introduction, written under its heading in CHANGELOG.md and the release notes;
 #              edit it in the release pull request like the rest.
 #   --open-pr  pushes the branch and opens the release pull request with gh. Merging it tags and publishes the
 #              release (workflow "Release tag"). Prints the tag on the last line.
@@ -12,10 +12,11 @@ set -euo pipefail
 
 bump="${1:-auto}"
 open_pr="${2:-}"
+die() { echo "error: $*" >&2; exit 1; }
+
+[[ "${INTRO:-}" =~ [^[:space:]] ]] || die 'INTRO is required: summarize what changed for users, e.g. make release INTRO="Clearer settings and improved search."'
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-
-die() { echo "error: $*" >&2; exit 1; }
 
 [[ "$bump" =~ ^(auto|patch|minor|major)$ ]] || die "bump must be auto, patch, minor or major, not '$bump'"
 [[ -z "$(git status --porcelain)" ]] || die "working tree is not clean"

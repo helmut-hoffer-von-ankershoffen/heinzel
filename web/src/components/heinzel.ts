@@ -76,7 +76,7 @@ export function parseAccessories(value: unknown): Accessory[] {
   return ACCESSORIES.filter((accessory) => given.includes(accessory));
 }
 
-export const VIEWS = ["full", "bust"] as const;
+export const VIEWS = ["full", "bust", "head"] as const;
 export type View = (typeof VIEWS)[number];
 
 /** The bust's square (x, y, side) on the canvas: the head, its cap and the shoulders, tight for each age's cap. */
@@ -113,6 +113,8 @@ export function viewBox(age: Age = "grown", view: View = "full", accessories: re
     return `0 ${y} 512 ${860 - y}`;
   }
   const [x, y, side] = BUST[age];
+  // The head: the bust without most of its shoulders, for the tiniest slots.
+  if (view === "head") return `${x + side * 0.12} ${y + side * 0.03} ${side * 0.76} ${side * 0.76}`;
   const reach = accessories.includes("umbrella") ? GRIP.canopyX + CANOPY.half + 10 : 0;
   const grow = Math.max(0, y - top, 2 * (reach - (x + side)));
   return `${x - grow / 2} ${y - grow} ${side + grow} ${side + grow}`;
@@ -128,6 +130,14 @@ export type HeinzelLook = {
   state?: HeinzelState;
   /** Accessories to layer on, data only; unknown names are ignored (parseAccessories). */
   accessories?: readonly Accessory[];
+  theme?: ThemeLook;
+};
+
+/** A theme dresses defaults and adds checked original SVG layers; personal look choices still win. */
+export type ThemeLook = {
+  palette?: Partial<Record<"hat" | "shirt" | "scarf", string>>;
+  decorations?: readonly "snow"[];
+  assets?: Partial<Record<`hat-${Exclude<Age, "baby">}` | `outfit-${Age}`, string>>;
 };
 
 type AgeLook = { tip: number | null; hair: string; brow: string; light: string; eye: number; beard: Beard };
@@ -160,7 +170,16 @@ export type Shape = (
   | { kind: "path"; d: string; fill: string; stroke?: string; width?: number }
   | { kind: "circle"; cx: number; cy: number; r: number; fill: string }
   | { kind: "group"; transform: string; children: Shape[] }
-) & { part?: "badge"; accessory?: Accessory };
+  | { kind: "image"; href: string; x: number; y: number; width: number; height: number }
+) & { part?: Part; accessory?: Accessory };
+
+/** Parts the avatar can move on their own (idle life): the state's badge, the eyes, the hat, the waving hand. */
+export type Part = "badge" | "eyes" | "hat" | "wave";
+
+/** The shapes tagged as one part, e.g. all of a cap's pieces, so they move together. */
+function tag(part: Part, shapes: Shape[]): Shape[] {
+  return shapes.map((shape) => ({ ...shape, part }));
+}
 
 const FACE = "#FFD45E";
 const EAR = "#F2B547";
@@ -187,6 +206,7 @@ function line(d: string, colour: string, width: number): Shape {
 
 /** A colour mixed with black (amount < 0) or white (amount > 0). */
 function mix(hex: string, amount: number): string {
+  if (hex.length === 4) hex = `#${[...hex.slice(1)].map((value) => value + value).join("")}`;
   const target = amount < 0 ? 0 : 255;
   const channels = [1, 3, 5].map((i) => {
     const value = Number.parseInt(hex.slice(i, i + 2), 16);
@@ -291,13 +311,13 @@ function group(transform: string, children: Shape[]): Shape {
 }
 
 /** A scarf wound round the neck, over the beard, with a striped tail hanging down the shirt. */
-function scarf(b: BuildLook): Shape {
+function scarf(b: BuildLook, colour = SCARF): Shape {
   const [sl, sr] = [256 - b.shoulder, 256 + b.shoulder];
   return layer("scarf", [
-    path(`M296 490 L330 494 L338 612 L302 616 Z`, mix(SCARF, -0.15)),
+    path(`M296 490 L330 494 L338 612 L302 616 Z`, mix(colour, -0.15)),
     line("M300 548 L335 551", SCARF_STRIPE, 9),
     line("M301 580 L336 583", SCARF_STRIPE, 9),
-    path(`M${sl + 6} 468 Q256 484 ${sr - 6} 468 L${sr - 2} 492 Q256 516 ${sl + 2} 492 Z`, SCARF),
+    path(`M${sl + 6} 468 Q256 484 ${sr - 6} 468 L${sr - 2} 492 Q256 516 ${sl + 2} 492 Z`, colour),
     line(`M${sl + 38} 478 Q${sl + 44} 494 ${sl + 40} 500`, SCARF_STRIPE, 8),
     line(`M${sr - 38} 478 Q${sr - 44} 494 ${sr - 40} 500`, SCARF_STRIPE, 8),
   ]);
@@ -369,7 +389,15 @@ function mouth(state: HeinzelState, bearded: boolean, light: string): Shape[] {
 }
 
 /** The head in the face's own 512 coordinates (centre 256,236, radius 158): ears, face, hair, beard, cap, features. */
-function head(age: Age, beard: Beard, hat: Hat, state: HeinzelState, glasses: boolean): Shape[] {
+function head(
+  age: Age,
+  beard: Beard,
+  hat: string,
+  state: HeinzelState,
+  glasses: boolean,
+  snow: boolean,
+  asset?: Shape,
+): Shape[] {
   const look = BY_AGE[age];
   const brow = age === "old" ? 14 : 10;
   return [
@@ -384,16 +412,30 @@ function head(age: Age, beard: Beard, hat: Hat, state: HeinzelState, glasses: bo
       look.hair,
     ),
     ...(beard === "none" ? [] : [beardShape(beard, look.hair)]),
-    ...(look.tip === null ? [] : cap(look.tip, HATS[hat])),
+    ...(look.tip === null
+      ? []
+      : tag("hat", [
+          ...cap(look.tip, hat),
+          ...(asset ? [asset] : []),
+          ...(snow
+            ? [
+                path(
+                  `M228 ${look.tip + 22} Q264 ${look.tip - 11} 302 ${look.tip + 3} L310 ${look.tip + 22} Q266 ${look.tip + 17} 234 ${look.tip + 38} Z`,
+                  WHITE,
+                ),
+              ]
+            : []),
+        ])),
     circle(160, 318, 24, CHEEK),
     circle(352, 318, 24, CHEEK),
     // Brows: soft and raised; worried when blocked.
     ...(state === "blocked"
       ? [line("M176 230 L224 214", look.brow, 11), line("M288 214 L336 230", look.brow, 11)]
       : [line("M178 232 Q202 216 226 230", look.brow, brow), line("M286 230 Q310 216 334 232", look.brow, brow)]),
-    ...eyes(state, look.eye),
+    ...tag("eyes", eyes(state, look.eye)),
     ...(glasses ? [sunglasses()] : []),
     ...mouth(state, beard !== "none", look.light),
+    ...(snow ? [circle(118, 140, 9, WHITE), circle(394, 105, 7, WHITE), circle(370, 360, 6, WHITE)] : []),
   ];
 }
 
@@ -414,7 +456,8 @@ function arm(shoulder: number, x: number, y: number, sleeve: string): Shape[] {
 function arms(state: HeinzelState, sleeve: string, build: BuildLook, holding: boolean): Shape[] {
   const [left, right] = [256 - build.shoulder, 256 + build.shoulder];
   const rightDown = holding ? arm(right, GRIP.x, GRIP.y, sleeve) : arm(right, 256 + build.belly + 12, 640, sleeve);
-  const down = [...arm(left, 256 - build.belly - 12, 640, sleeve), ...rightDown];
+  // The right hand down is the one that waves in idle life.
+  const down = [...arm(left, 256 - build.belly - 12, 640, sleeve), ...(holding ? rightDown : tag("wave", rightDown))];
   // The right hand holds the umbrella's pole, so it neither waves nor stays down; a working one carries the tray in
   // its left hand alone.
   switch (holding && state === "waiting" ? "idle" : state) {
@@ -471,25 +514,43 @@ function legs(sitting: boolean, hem: number): Shape[] {
   ];
 }
 
+/** Only owned, versioned theme-layer URLs can become image references, even from malformed cached data. */
+function assetLayer(theme: ThemeLook | undefined, slot: string, head = false): Shape | undefined {
+  const href = theme?.assets?.[slot as keyof NonNullable<ThemeLook["assets"]>];
+  if (
+    !href ||
+    !/^\/theme-assets\/[a-z](?:-?[a-z0-9])*\/heinzel-(?:hat-(?:young|grown|old)|outfit-(?:baby|young|grown|old))\.svg\?v=[a-f0-9]{16}$/.test(
+      href,
+    )
+  )
+    return;
+  return { kind: "image", href, x: 0, y: head ? -240 : 0, width: 512, height: head ? 840 : 860 };
+}
+
 /** The whole Heinzelmännchen on the 512 by 860 canvas, back to front; the top 512 square is its bust. */
 export function heinzelShapes({
   age = "grown",
   beard,
-  hat = "red",
-  shirt = "green",
+  hat,
+  shirt,
   build = "regular",
   state = "idle",
   accessories,
+  theme,
 }: HeinzelLook = {}): Shape[] {
-  const worn = parseAccessories(accessories);
+  const snow = theme?.decorations?.includes("snow") ?? false;
+  const worn = parseAccessories([...(accessories ?? []), ...(snow ? ["scarf"] : [])]);
   const holding = worn.includes("umbrella");
   const chin: Beard = age === "baby" ? "none" : (beard ?? BY_AGE[age].beard);
   const b = BY_BUILD[build];
-  const colour = SHIRTS[shirt];
+  const colour = shirt ? SHIRTS[shirt] : (theme?.palette?.shirt ?? SHIRTS.green);
+  const capColour = hat ? HATS[hat] : (theme?.palette?.hat ?? HATS.red);
   const [sl, sr] = [256 - b.shoulder, 256 + b.shoulder];
   const [bl, br, hl, hr] = [256 - b.belly, 256 + b.belly, 256 - b.hem, 256 + b.hem];
   const scale = 0.75;
   const bow = state === "done" ? 18 : 0;
+  const outfit = assetLayer(theme, `outfit-${age}`);
+  const hatAsset = assetLayer(theme, `hat-${age}`, true);
   return [
     ...legs(state === "sleeping", b.hem),
     path(
@@ -507,15 +568,18 @@ export function heinzelShapes({
       transform: `matrix(${+(scale * b.head).toFixed(4)} 0 0 ${scale} ${+(256 - 256 * scale * b.head).toFixed(2)} ${
         350 - 236 * scale + bow
       })`,
-      children: head(age, chin, hat, state, worn.includes("sunglasses")),
+      children: head(age, chin, capColour, state, worn.includes("sunglasses"), snow, hatAsset),
     },
-    ...(worn.includes("scarf") ? [scarf(b)] : []),
+    ...(outfit ? [group(`translate(256 0) scale(${b.shoulder / 108} 1) translate(-256 0)`, [outfit])] : []),
+    ...(worn.includes("scarf") ? [scarf(b, theme?.palette?.scarf)] : []),
     ...signs(age, state),
   ];
 }
 
 /** One shape as SVG markup, indented. */
 export function svgShape(shape: Shape, indent = "  "): string {
+  if (shape.kind === "image")
+    return `${indent}<image href="${shape.href}" x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}"/>`;
   if (shape.kind === "group")
     return [
       `${indent}<g transform="${shape.transform}">`,

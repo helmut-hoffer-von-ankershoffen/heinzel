@@ -1,5 +1,6 @@
 // One query per operation the screens read; TanStack Query caches them, so screens share what they fetched.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { splash, unreachableError } from "@/splash/store";
 import { api, unwrap } from "./client";
 
 export const keys = {
@@ -124,6 +125,31 @@ export const useSetTheme = () => {
   });
 };
 
+/** `hz ai access list`: every AI access option, its status and the one in use (ADR 0057). */
+export const useAiAccess = () =>
+  useQuery({ queryKey: ["ai", "access", "list"], queryFn: () => unwrap(api.GET("/ai/access/list")) });
+
+/** `hz ai access use <name>`: the one choice, like the theme; it binds the runner the option names too. */
+export const useSetAiAccess = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => unwrap(api.POST("/ai/access/use", { params: { query: { name } } })),
+    onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access", "list"] }),
+  });
+};
+
+/** `hz ai access test --name <name>`: one cheap live check, only when asked; it may cost a little. */
+export const useTestAiAccess = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => unwrap(api.POST("/ai/access/test", { params: { query: { name } } })),
+    onSettled: () => client.invalidateQueries({ queryKey: ["ai", "access", "list"] }),
+  });
+};
+/** `hz ai models`: the models and efforts of the AI access in use, for the chat's picker (ADR 0057). */
+export const useAiModels = () =>
+  useQuery({ queryKey: ["ai", "models"], queryFn: () => unwrap(api.GET("/ai/models")), staleTime: 5 * 60 * 1000 });
+
 /** `hz system notify list`: the latest notices, newest first as the store keeps them (ADR 0043). */
 export const useNotices = () =>
   useQuery({
@@ -213,8 +239,21 @@ export const useRestartServer = ({
 } = {}) =>
   useMutation({
     mutationFn: async () => {
-      await unwrap(api.POST("/restart"));
-      if (!(await waitForServer(interval))) throw new Error("hz ui didn't answer again; start it in a terminal: hz ui");
+      // Over the app from the moment it is asked, until the reload brings it back.
+      splash.send({ type: "restart", at: performance.now() });
+      try {
+        await unwrap(api.POST("/restart"));
+      } catch (error) {
+        // The connection dropped as the process replaced itself: it is restarting all the same.
+        if (!unreachableError(error)) {
+          splash.send({ type: "restart-refused" });
+          throw error;
+        }
+      }
+      if (!(await waitForServer(interval))) {
+        splash.send({ type: "restart-failed" });
+        throw new Error("hz ui didn't answer again; start it in a terminal: hz ui");
+      }
       reload();
     },
   });

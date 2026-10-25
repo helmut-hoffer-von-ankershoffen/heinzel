@@ -20,6 +20,7 @@ from heinzel import (
     LayerStack,
     ModuleRecord,
     Theme,
+    ThemeChoice,
     ThemeFonts,
     ThemeLet,
 )
@@ -118,7 +119,7 @@ def _logo(logos: ThemeLogoFiles | None) -> ThemeLogoView | None:
     return ThemeLogoView(light=light, dark=dark, mark=mark, alt=logos.logo.alt, height=logos.logo.height)
 
 
-class ThemeService(ThemeFonts):
+class ThemeService(ThemeFonts, ThemeChoice):
     """The themes of the web app (ADR 0044): the built-in one and every theme the installed plugins offer."""
 
     def __init__(self, kernel: Kernel, editor: ConfigEditor) -> None:
@@ -228,6 +229,8 @@ class ThemeService(ThemeFonts):
                     fonts=_fonts(offered),
                     logo=_logo(offered.logos),
                     variant=list(offered.theme.variant),
+                    heinzel=offered.theme.heinzel.model_copy(update={"assets": {}}) if offered.theme.heinzel else None,
+                    heinzel_assets=offered.let.avatar_urls() if offered.let else {},
                     shadows=offered.shadows,
                 )
                 for name, offered in available.themes.items()
@@ -236,6 +239,14 @@ class ThemeService(ThemeFonts):
             note=note,
             next=next_steps,
         )
+
+    def selected(self) -> str:
+        """The name of the theme in effect, after every fallback; what `system.sound` follows (ADR 0058).
+
+        Raises:
+            HeinzelError: If a configuration file is not valid TOML.
+        """
+        return self.listing().selected
 
     def font(self, theme: str, index: int) -> bytes | None:
         """The content of font `index` of the available theme `theme` (the one that wins its name), or None."""
@@ -250,10 +261,12 @@ class ThemeService(ThemeFonts):
     def logo(self, theme: str, name: str) -> bytes | None:
         """The content of logo `name` of the available theme `theme` (the one that wins its name), or None."""
         offered = self.available().themes.get(theme)
-        if offered is None or offered.logos is None:
+        if offered is None:
             return None
         try:
-            return offered.logos.content(name)
+            if name.startswith("heinzel-") and offered.let:
+                return offered.let.avatar(name.removeprefix("heinzel-"))
+            return offered.logos.content(name) if offered.logos else None
         except ValueError:
             return None
 

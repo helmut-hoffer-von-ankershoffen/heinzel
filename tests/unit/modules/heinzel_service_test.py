@@ -15,6 +15,7 @@ from heinzel import (
     AgentResult,
     Config,
     Event,
+    FreeBusy,
     HeinzelError,
     Issue,
     MailContent,
@@ -41,6 +42,31 @@ pytestmark = pytest.mark.unit
 
 EXAMPLE = Path(__file__).parents[2] / "fixtures" / "workflows" / "weekly-digest.prose.md"
 NOW = datetime(2026, 10, 26, 7, 0, tzinfo=UTC)
+
+
+@pytest.fixture
+def berlin(monkeypatch):
+    """Use Berlin's local clock, restoring the original process zone afterwards."""
+    with monkeypatch.context() as local:
+        local.setenv("TZ", "Europe/Berlin")
+        time.tzset()
+        yield
+    time.tzset()
+
+
+@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is Unix only")
+@pytest.mark.usefixtures("berlin")
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        (datetime(2026, 10, 24, 12, 0, tzinfo=UTC), "2026-10-26T09:00:00+01:00"),
+        (datetime(2026, 3, 28, 12, 0, tzinfo=UTC), "2026-03-30T09:00:00+02:00"),
+    ],
+)
+def test_next_run_uses_the_slots_offset_across_a_daylight_saving_change(make, now, expected):
+    slot = make(now=now)._next_run("0 9 * * MON")
+    assert slot is not None
+    assert slot.isoformat() == expected
 
 
 class Host:
@@ -1302,6 +1328,9 @@ class Agenda:
         self.windows.append(window)
         return []
 
+    def free_busy(self, people: str, window: Window) -> list[FreeBusy]:
+        return []
+
 
 AGENDA = """\
 ---
@@ -1404,23 +1433,3 @@ def test_doctor_names_settings_still_under_the_old_name(make, monkeypatch):
     assert "workflow.retention_days, HZ_WORKFLOW__MAX_USD" in check.detail
     assert "hz system config unset workflow.retention_days" in check.fix
     assert "rename HZ_WORKFLOW__MAX_USD to HZ_HEINZEL__MAX_USD" in check.fix
-
-
-@pytest.fixture
-def berlin(monkeypatch):
-    """The process's local time zone is Berlin's while the test runs."""
-    monkeypatch.setenv("TZ", "Europe/Berlin")
-    time.tzset()
-    yield
-    monkeypatch.delenv("TZ")
-    time.tzset()
-
-
-@pytest.mark.skipif(not hasattr(time, "tzset"), reason="time.tzset is Unix only")
-@pytest.mark.usefixtures("berlin")
-def test_the_next_run_after_a_daylight_saving_change_has_that_dates_offset(make):
-    # Saturday 24 October 2026 is summer time (+02:00); clocks go back on the 25th, so Monday is +01:00.
-    service = make(now=datetime(2026, 10, 24, 12, 0, tzinfo=UTC))
-    slot = service._next_run("0 9 * * MON")
-    assert slot is not None
-    assert slot.isoformat() == "2026-10-26T09:00:00+01:00"

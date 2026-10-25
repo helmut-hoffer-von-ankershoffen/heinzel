@@ -4,7 +4,7 @@ Every module and plugin depends on this package; its public API is `hz` and `hei
 change like a library release: an ADR for a new concept, unit tests for every branch.
 
 - `_module.py` — `Module` and its decorators (`operation`, `job`, `service`, `settings`, `info`, `health`,
-  `credential`, `provides`, `setup`, `playbook`, `layer`, `theme`; `requires=` on modules, operations and jobs;
+  `credential`, `provides`, `setup`, `playbook`, `layer`, `theme`, `soundscape`, `skill`; `requires=` on modules, operations and jobs;
   `optional=True` on a read-only operation that degrades without its own requirements).
 - `_protocols.py` — integration capability protocols (`CodeHost`, `Tracker`, `Documents`, `Chat`, `Meetings`,
   `Calendar`, `Mail`, `Directory`, `TeamGraph`; `MailQuery`, the mail query syntax) and their models; `_directory.py` —
@@ -19,9 +19,18 @@ change like a library release: an ADR for a new concept, unit tests for every br
   handles, modules get the read-only `CapabilityView` (ADR 0028); `Kernel.handle_for` gives the compiling module's
   jobs read handles only.
 - `_credentials.py` — `Credentials`, the only way to secrets (ADR 0030), and the environment backend.
+- `_session.py`, `_session_store.py`, `_session_io.py` — `SessionStore`, provider-independent checkpoint envelopes,
+  private turn bodies and the derived SQLite index (ADR 0049); a module owns the event vocabulary and projection.
 - `_lets.py` — let types, `Check`/`Status` and `CatchUp`. A new let kind needs a head, the kernel, a `system`
   submodule or the built-in module that owns the concept to consume it (`JobLet`: `system.daemon`; `PlaybookLet`:
-  `workflow`, ADR 0037; `ThemeLet`: `system.theme`, ADR 0044; `SignalLet`: `system.theme`, ADR 0060).
+  `workflow`, ADR 0037; `ThemeLet`: `system.theme`, ADR 0044; `SignalLet`: `system.theme`, ADR 0060; `SoundscapeLet`:
+  `system.sound`, ADR 0058; `StatusLet`, `ActionLet`, `WidgetLet`: `system.ui`, ADR 0056; `SkillLet`: `system.skill`,
+  ADR 0061).
+- `_contributions.py` — what a module adds to the web app as data (ADR 0056): `StatusItem`, the widget shapes
+  (`CardWidget`, `ListWidget`, `MetricWidget`, `ProgressWidget`, `GraphicWidget`), the effects (`Navigate`, `OpenUrl`, `RunOperation`,
+  `RunCommand`), `Tone`, `Icon`, `Slot`, the link grammar (`link_problem`) and the lets `module.status`,
+  `module.action` and `module.widget` declare, each a view over one of the module's read-only operations;
+  `_paths.py` — `operation_path`, the one path every head gives an operation.
 - `_themes.py` — `Theme`, `ThemeColours`, `ThemeFont`, `ThemeLogo` and `ThemeLet` (`module.theme`), the grammar every
   value passes before it becomes a CSS custom property, the checks of a theme's font files and SVG logos
   (`ThemeLogoFiles`), `ThemeFonts` (the web head serves fonts and logos through it, `system.theme` implements it),
@@ -29,6 +38,15 @@ change like a library release: an ADR for a new concept, unit tests for every br
   `ThemeVariant`, `ThemeBackdrop` and the contrast check of every variant (ADR 0060). `_theme_signals.py` — the
   closed signal vocabulary (`Daypart`, `Weather`), `ThemeSignals`, `SignalLet` (`@module.signals`, read by
   `system.theme`) and `daypart`.
+- `_soundscapes.py` — `Soundscape`, `SoundLayer`, `SoundEarcon`, `SoundStream` and `SoundscapeLet`
+  (`module.soundscape`), the checks of a soundscape's audio files, `STREAM_PROVIDERS` (the only hosts a stream may
+  come from), `SoundAssets` (the web head serves audio and widens its page's CSP through it, `system.sound` implements
+  it) and `ThemeChoice` (the theme in effect, implemented by `system.theme`): data plugins ship (ADR 0058);
+  `_signals.py` — `SIGNALS`, the names a soundscape layer can follow; `daypart` is `_theme_signals.py`'s.
+- `_skills.py` — `Skill`, `SkillFile` and `SkillLet` (`module.skill`), the checks of a skill's directory at import and
+  on every read (`read_skill`, `read_skill_file`, descriptor-relative opens), and the read-only `Skills` service with
+  `skill_tools` and `skill_instructions` for Pydantic AI turns: data plugins ship, consumed by `system.skill`
+  (ADR 0061).
 - `_playbooks.py` — `PlaybookLet` (`module.playbook`), `AssetType`, `DiscoveryHint`, `ContractTemplate` and the
   `PlaybookSetup` service: data plugins contribute, consumed by `workflow` (ADR 0037).
 - `_layers.py` — `LayerLet` (`module.layer`), the checked tree `Layers` (`Kernel.layers()`), the person's

@@ -60,6 +60,9 @@ def kernel(make_kernel, tmp_path, monkeypatch):
         "info": {"version": "1.1.0", "summary": "CRM notes.", "author": "Ada Example"},
         "releases": {"1.1.0": [{}]},
     }
+    # The real first-party catalog stays in use; community discovery has its own tests and never goes online here.
+    monkeypatch.setattr(PluginService, "_github_repositories", lambda *_args: [])
+    monkeypatch.setattr(PluginService, "_contrib_plugins", lambda *_args: [])
     kernel.runs = runs  # type: ignore[attr-defined] - for the assertions
     return kernel
 

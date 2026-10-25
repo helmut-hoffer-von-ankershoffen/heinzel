@@ -1,57 +1,39 @@
 // Settings as a dialog over the screen, as in Claude: search and sections on the left, one row per setting on the
 // right with its control. Every change is `hz system config set|unset` in the user's configuration.
-import {
-  Bot,
-  Building2,
-  Cpu,
-  FileCog,
-  FolderOpen,
-  type LucideIcon,
-  Monitor,
-  Moon,
-  Plug,
-  Puzzle,
-  Search,
-  Settings2,
-  Sun,
-  Users,
-  Workflow,
-  X,
-} from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+
+import { FolderOpen, Monitor, Moon, Sun, X } from "lucide-react";
+import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 import type { SchemaConfigReport, SchemaSettingInfo } from "@/api/client";
 import { useConfig, useExpert, useInfo, usePlugins, useRevealConfig, useSetExpert } from "@/api/queries";
+import { ContributionToggles } from "@/components/Contributions";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
-import { t } from "@/i18n";
+import { SearchField } from "@/components/ui/search-field";
+import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { NotificationSettings } from "@/notifications/NotificationSettings";
+import { SoundSettings } from "@/sound/SoundControls";
+import { AiAccessSetting } from "./AiAccessSetting";
 import { ConnectorsSection } from "./ConnectorsSection";
-import { PluginsSection, Provenance } from "./PluginsSection";
+import { FROM_CLAUDE, FromClaudeSection } from "./FromClaudeSection";
+import { ModuleHeader, PluginsSection } from "./PluginsSection";
 import { Row, Switch } from "./SettingControls";
 import type { JsonSchema } from "./settingSchema";
 import {
+  CLOCK_SETTINGS,
   CONNECTORS,
-  displayName,
   FILES,
   group,
+  type Heading,
+  type Page,
   PLUGINS,
+  pageOf,
   plainSummary,
-  type SettingsEntry,
+  resolvePage,
   settingsNav,
 } from "./settingsSections";
 import { ThemePreviews } from "./ThemePreviews";
 import { type Mode, useMode } from "./theme";
-
-const icons: Record<string, LucideIcon> = {
-  hz: Settings2,
-  system: Cpu,
-  org: Building2,
-  team: Users,
-  heinzel: Workflow,
-  capabilities: Plug,
-  runner: Bot,
-};
 
 type Props = {
   section: string | null;
@@ -65,7 +47,6 @@ export function SettingsDialog({ section, initialQuery, onSection, onClose }: Pr
   const [query, setQuery] = useState(initialQuery);
   const searchRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
-  useEffect(() => searchRef.current?.focus(), []);
   const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") onClose();
   };
@@ -122,26 +103,29 @@ type BodyProps = {
 function Body({ report, query, setQuery, searchRef, section, onSection }: BodyProps) {
   const plugins = usePlugins();
   const info = useInfo();
+  const expert = useExpert().data?.expert === true;
   // Deprecated settings are never shown: hz migrates them, and doctor names the fix when one is still set.
-  const settings = report.settings.filter(
-    (setting) => !(setting.json_schema as JsonSchema | null | undefined)?.deprecated,
-  );
+  const settings = report.settings.filter((setting) => {
+    const schema = setting.json_schema as JsonSchema | null | undefined;
+    return !schema?.deprecated && !schema?.["x-hidden"] && (expert || !schema?.["x-expert"]);
+  });
   const groups = [...new Set(settings.map((setting) => group(setting.section)))];
   const nav = settingsNav(groups, plugins.data ?? []);
   const connector = nav.connectors.find((entry) => entry.id === section || entry.groups.includes(section ?? ""));
-  const preference = nav.preferences.find((entry) => entry.id === section);
-  // A connector's own page is part of Connectors; a section nobody knows (yet: the plugin list may still load) is
-  // General's.
-  const current = connector
-    ? CONNECTORS
-    : preference || [FILES, PLUGINS, CONNECTORS].includes(section ?? "")
-      ? (section as string)
-      : (nav.preferences[0]?.id ?? FILES);
+  // A connector's own page is part of Connectors; a section nobody knows (yet: the plugin list may still load) is the
+  // first page's.
+  const current = connector ? CONNECTORS : (resolvePage(section, nav.pages) ?? "appearance");
+  const page = nav.pages.find((entry) => entry.id === current) as Page;
   const needle = query.trim().toLowerCase();
-  const titled = (entry: SettingsEntry) => entry.title || t("settings.general");
+  const text = (s: SchemaSettingInfo) =>
+    `${s.section}.${s.key} ${(s.json_schema as JsonSchema | null | undefined)?.title ?? ""} ${s.description}`.toLowerCase();
   const matching = needle
-    ? settings.filter((s) => `${s.section}.${s.key} ${s.description}`.toLowerCase().includes(needle))
-    : settings.filter((s) => group(s.section) === current);
+    ? settings.filter((s) => text(s).includes(needle))
+    : settings.filter((s) => pageOf(s.section, nav.pages)?.id === current);
+  // Pages found by their name or what is on them (the mode, the AI access, the sound), which aren't schema settings.
+  const pageHits = needle
+    ? nav.pages.filter((entry) => `${entry.title} ${entry.keywords ?? ""}`.toLowerCase().includes(needle))
+    : [];
   const item = (active: boolean) =>
     cn(
       "flex w-full items-center gap-3 rounded-lg px-2.5 py-1.5 text-left text-ui text-foreground/90 transition-colors hover:bg-accent/70 [&_svg]:size-(--icon) [&_svg]:shrink-0 [&_svg]:stroke-[1.75] [&_svg]:text-icon",
@@ -151,17 +135,26 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
     setQuery("");
     onSection(id);
   };
-  const entry = (id: string, label: string, Icon: LucideIcon) => (
+  const entry = (entry: Page) => (
     <button
-      key={id}
+      key={entry.id}
       type="button"
-      onClick={() => go(id)}
-      aria-current={current === id && !needle ? "page" : undefined}
-      className={item(current === id)}
+      onClick={() => go(entry.id)}
+      aria-current={current === entry.id && !needle ? "page" : undefined}
+      className={item(current === entry.id)}
     >
-      <Icon aria-hidden />
-      {label}
+      <entry.icon aria-hidden />
+      {entry.title}
     </button>
+  );
+  const heading = (id: Heading, label: MessageKey, first = false) => (
+    <>
+      <p className={cn("mb-1 px-2.5 text-ui-sm text-muted-foreground", !first && "mt-4")}>{t(label)}</p>
+      {nav.pages.filter((entry) => entry.heading === id).map(entry)}
+    </>
+  );
+  const header = (
+    <ModuleHeader title={page.title} plugin={page.plugin} version={info.data?.version} onOpen={() => go(PLUGINS)} />
   );
   return (
     <div className="flex min-h-0 flex-1">
@@ -169,33 +162,53 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
         aria-label={t("settings.title")}
         className="flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto p-3 max-sm:hidden"
       >
-        <label className="mb-3 flex items-center gap-2 rounded-lg bg-input px-2.5 py-1.5 text-icon focus-within:ring-1 focus-within:ring-ring">
-          <Search aria-hidden className="size-4 shrink-0" />
-          <span className="sr-only">{t("settings.filter")}</span>
-          <input
-            ref={searchRef}
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("search.open")}
-            className="w-full bg-transparent text-ui text-foreground outline-none placeholder:text-muted-foreground"
-          />
-        </label>
-        <p className="mb-1 px-2.5 text-ui-sm text-muted-foreground">{t("settings.preferences")}</p>
-        {nav.preferences.map((preference) => entry(preference.id, titled(preference), icons[preference.id] ?? Puzzle))}
-        <p className="mt-4 mb-1 px-2.5 text-ui-sm text-muted-foreground">{t("settings.customize")}</p>
-        {entry(CONNECTORS, t("connectors.title"), Plug)}
-        {entry(PLUGINS, t("plugins.title"), Puzzle)}
-        <p className="mt-4 mb-1 px-2.5 text-ui-sm text-muted-foreground">{t("settings.thisComputer")}</p>
-        {entry(FILES, t("settings.filesTitle"), FileCog)}
+        <SearchField
+          ref={searchRef}
+          label={t("settings.filter")}
+          quietFocus
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={t("search.open")}
+          className="mb-3"
+        />
+        {heading("preferences", "settings.preferences", true)}
+        {heading("customize", "settings.customize")}
+        {heading("organisation", "settings.organisation")}
+        {heading("computer", "settings.thisComputer")}
       </nav>
       <div className="min-w-0 flex-1 overflow-y-auto border-l border-border px-6 pt-5 pb-10">
         {needle ? (
-          <Sections settings={matching} heading={t("settings.results")} />
+          <>
+            {pageHits.length > 0 && (
+              <section aria-label={t("settings.pages")} className="mb-4">
+                <h3 className="mb-1 text-ui font-medium">{t("settings.pages")}</h3>
+                <ul className="flex flex-wrap gap-2">
+                  {pageHits.map((hit) => (
+                    <li key={hit.id}>
+                      <Button variant="outline" size="sm" onClick={() => go(hit.id)}>
+                        <hit.icon aria-hidden />
+                        {hit.title}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {(matching.length > 0 || pageHits.length === 0) && (
+              <Sections settings={matching} heading={t("settings.results")} />
+            )}
+          </>
         ) : current === PLUGINS ? (
           <PluginsSection />
         ) : current === FILES ? (
-          <Files report={report} />
+          <>
+            <Files report={report} />
+            <div className="mt-8">
+              <Sections settings={matching} heading={t("settings.folders")} />
+            </div>
+          </>
+        ) : current === FROM_CLAUDE ? (
+          <FromClaudeSection />
         ) : current === CONNECTORS ? (
           <ConnectorsSection
             connectors={nav.connectors}
@@ -206,27 +219,32 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
           />
         ) : (
           <>
-            {current === "hz" && (
+            {current === "appearance" && (
               <>
-                <h3 className="mb-1 text-ui font-medium">{t("settings.appearance")}</h3>
+                <ModuleHeader title={page.title} plugin={undefined} version={info.data?.version} onOpen={() => {}} />
                 <ModeRow />
                 <ThemePreviews />
                 <div className="mt-6">
-                  <NotificationSettings />
+                  <SoundSettings />
                 </div>
                 <div className="mt-6">
                   <ExpertRow />
                 </div>
               </>
             )}
-            <Sections
-              settings={matching}
-              heading={preference ? titled(preference) : displayName(current)}
-              summary={preference?.plugin?.summary ? plainSummary(preference.plugin.summary) : undefined}
-              provenance={
-                <Provenance plugin={preference?.plugin} version={info.data?.version} onOpen={() => go(PLUGINS)} />
-              }
-            />
+            {current === "ai" && <AiAccessSetting />}
+            {current === "notifications" && <NotificationSettings />}
+            {(matching.length > 0 || !["appearance", "ai", "notifications"].includes(current)) && (
+              <Sections
+                settings={matching}
+                heading={page.title}
+                header={
+                  current === "appearance" || current === "ai" || current === "notifications" ? undefined : header
+                }
+                summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
+              />
+            )}
+            {TOGGLES[current] && <ContributionToggles module={TOGGLES[current]} />}
           </>
         )}
       </div>
@@ -234,22 +252,25 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
   );
 }
 
+/** The module whose contributions a page can show in the app (`hz system ui show|hide`). */
+const TOGGLES: Record<string, string> = { [CLOCK_SETTINGS]: "clock", you: "org", daemon: "system" };
+
 function Sections({
   settings,
   heading,
   summary,
-  provenance,
+  header,
 }: {
   settings: SchemaSettingInfo[];
   heading: string;
   summary?: string;
-  provenance?: ReactNode;
+  /** The module's header line (name, kinds, provenance); without it, the heading alone. */
+  header?: ReactNode;
 }) {
   const sections = [...new Set(settings.map((setting) => setting.section))];
   return (
     <>
-      <h3 className="mb-2 text-ui font-medium">{heading}</h3>
-      {provenance}
+      {header ?? <h3 className="mb-2 text-ui font-medium">{heading}</h3>}
       {summary && <p className="-mt-1 mb-2 text-sm text-muted-foreground">{summary}</p>}
       {settings.length === 0 && <p className="text-sm text-muted-foreground">{t("settings.none")}</p>}
       {sections.map((section) => (

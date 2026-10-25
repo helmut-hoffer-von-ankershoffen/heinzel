@@ -149,3 +149,33 @@ def test_a_failing_check_is_a_down_check_without_the_exception_text(make_kernel)
     tested = service(make_kernel, module).test("notes")
     assert not tested.passed
     assert tested.checks[0].detail == "the checks failed (RuntimeError)"
+
+
+def test_a_live_check_that_raises_a_heinzel_error_shows_its_message(make_kernel):
+    module = Module("notes", "Reads Notes for tests.")
+    module.provides("documents", modes={"read"}, hosts=["notes.invalid"])(Notes)
+
+    @module.health(live=True)
+    def refused() -> list[Check]:
+        msg = "Notes refused the call; run `notes login`."
+        raise HeinzelError(msg)
+
+    tested = service(make_kernel, module).test("notes")
+    assert (tested.passed, tested.checks[0].status, tested.checks[0].detail) == (
+        False,
+        Status.DOWN,
+        "Notes refused the call; run `notes login`.",
+    )
+
+
+def test_a_connector_with_a_setup_step_and_no_sign_in_command_connects_through_setup(make_kernel):
+    module = Module("notes", "Reads Notes for tests.")
+    module.provides("documents", modes={"read"}, hosts=["notes.invalid"])(Notes)
+
+    @module.setup
+    def setup() -> None:
+        """Sign Notes in."""
+
+    [connector] = service(make_kernel, module).report().connectors
+    assert connector.connect == ["hz setup notes"]
+    assert not connector.testable

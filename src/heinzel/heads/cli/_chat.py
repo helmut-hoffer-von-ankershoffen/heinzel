@@ -17,7 +17,7 @@ from rich.text import Text
 
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
-from heinzel.kernel import HeinzelError, Kernel, OperationLet
+from heinzel.kernel import CurrentUser, HeinzelError, Kernel, OperationLet
 
 CHAT = "system.runner.chat"
 """The module whose operations `hz chat` is a view on."""
@@ -70,7 +70,8 @@ class ChatRepl:
             msg = f"The chat is not available: no module provides {CHAT} {name}."
             raise HeinzelError(msg)
         # The chat's operations return pydantic models (a session) or lists of them; as JSON, they are plain dicts.
-        return cast("Session", to_jsonable_python(self.kernel.invoke(operation, **kwargs)))
+        with self.kernel.resolve(CurrentUser).local("cli"):
+            return cast("Session", to_jsonable_python(self.kernel.invoke(operation, **kwargs)))
 
     def start(self, *, session: str | None, resume: bool, context: str | None, detail: str | None) -> Session:
         """The session to talk in: the one named, the most recent one, or a new one.
@@ -137,6 +138,8 @@ class ChatRepl:
             self._show(reply)
         cost, cap = reply.get("cost_usd"), reply.get("budget_usd")
         spent = f"${cost:.4f}" if cost is not None else "cost not reported"
+        if cost is not None and reply.get("billing") == "plan":  # API prices, but the subscription pays (ADR 0057)
+            spent = f"uses your plan · ≈ ${cost:.2f} at API prices"
         if cost is None and cap:
             spent += f", counted as ${cap:.2f}"
         self.err_console.print(

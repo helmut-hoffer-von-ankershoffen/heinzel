@@ -26,6 +26,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
+from heinzel.heads.cli import _playful
 from heinzel.heads.cli._journey import SetupState, answers_toml, load_answers
 from heinzel.heads.cli._render import TerminalSafe, message, terminal_safe
 from heinzel.heads.cli._update import print_notice
@@ -429,6 +430,8 @@ class SetupCommands:
                 self._notice()
             return
         prompter = self.prompter(plan, presets, as_json=as_json)
+        if not as_json and _playful.allowed(self.kernel.settings, self.console):
+            self.console.print(_playful.swarm())
         prompter.say(PRIVACY)
         pending = self.pending(plan, state)
         finished = [record.qualname for record, let in plan if (record, let) not in pending]
@@ -500,6 +503,8 @@ class SetupCommands:
         if as_json:
             typer.echo(json.dumps({"steps": [_json(result)], "doctor": None}, indent=2))
         else:
+            if result.outcome.value == "done" and _playful.allowed(self.kernel.settings, self.console):
+                self.console.print(_playful.glyph(), end=" ")
             self.console.print(Text(f"{result.module}: {result.outcome.value}"), highlight=False)
             self._notice()
         if code := exit_code([result]):

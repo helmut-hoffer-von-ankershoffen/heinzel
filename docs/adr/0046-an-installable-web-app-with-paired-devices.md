@@ -3,6 +3,7 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0039, 0043
+amended-by: 0058
 related: 0019, 0020, 0027, 0030
 ---
 
@@ -65,7 +66,7 @@ maintainer, 2026-10-24.
     machine shared with people you don't trust shouldn't pair a browser. The per-process token had no such window but
     made installing impossible.
 - **The app is installable.** `manifest.webmanifest` (Heinzelmännchen, `hz`, standalone, `#181818`, icons 192, 512 and
-  maskable 512 made from Heinzel Notifier's `heinzel-swarm.svg`, an apple-touch-icon), `favicon.svg` and `favicon.ico`.
+  maskable 512 made from Heinzel Notifier's `heinzel.svg` (one Heinzelmännchen on white; the swarm is the logo, not an icon), an apple-touch-icon), `favicon.svg` and `favicon.ico`.
   "Install app" uses `beforeinstallprompt` on Chrome and Edge; Safari gets the line "File > Add to Dock". The CSP adds
   `worker-src 'self'`; `sw.js` and the manifest are served with `Cache-Control: no-cache`.
 - **The service worker** (`sw.js`, same origin, scope `/`, no inline script): it caches the app's shell (the page,
@@ -107,3 +108,30 @@ maintainer, 2026-10-24.
   manifest and service worker, "Install app", notifications through the service worker and the native click opening
   the app.
 - Later: `hz ui` started at login by the daemon's unit, so the Dock icon always finds it.
+
+**Amendment 2026-10-24: a splash screen while hz starts.** Requested by the maintainer: the app shows a splash from
+the first paint until it is ready, in the person's last theme and mode, and the fix instead of a spinner when hz
+doesn't answer.
+
+- **What it shows.** The theme's branding (its logo through an `<img>`, or the app's own icon file, `/favicon.svg`, and
+  its name, so new artwork reaches the splash unchanged), hz's
+  version, one line for what is happening ("Starting…", "Connecting to hz…", "Signing you in…", "Restarting hz…",
+  "Reconnecting to hz…") in a `role="status"` region, and a progress bar (one element, `#splash-progress`, that an animation file can replace) which holds still for reduced motion. It stays
+  at least 300 ms and fades out in 200 ms once hz answered with the token accepted and the theme is applied. After 8 s
+  without an answer it shows what to do: hz ui isn't running, or it no longer accepts this page's token, with the
+  command. It comes back over the app on `POST /api/restart` and when hz stops answering, and leaves the person where
+  they were. The state machine is `web/src/splash/machine.ts`.
+- **Before React.** `web/index.html` holds the splash's markup, its critical CSS and one small inline script that reads
+  the mode (`hz.theme`) and a snapshot of the last theme (`hz.splash`: four colours, the font stack and the logo's URLs,
+  each checked against the grammar of ADR 0044 again, and the version) from `localStorage`, inside `try`, so a page
+  with storage disabled paints the default theme. The web app writes the snapshot whenever the theme changes.
+- **The CSP** allows that one script by its hash (`'sha256-…'` in `script-src`, `SPLASH_SCRIPT` in the web head), not by
+  `'unsafe-inline'`: every other inline script stays refused, and a changed script fails a test until the hash changes
+  with it. The splash's CSS is inline under the existing `style-src 'unsafe-inline'` (ADR 0045's reason, the terminal).
+- **The installed app.** The manifest's `background_color` and `theme_color` are the default theme's dark background,
+  the one colour a manifest can hold; the page's `theme-color` follows the mode and the last theme.
+- **Confirmation**: `web/src/splash/*.test.ts(x)` (the machine's phases and timings, the inline script with storage
+  disabled and with values that fail the grammar, reduced motion, the fix, axe), `tests/integration/web_security_test.py`
+  (the hash matches the script, no other inline script is allowed), `tests/integration/web_pwa_test.py` (the colours
+  agree with the default theme) and `tests/e2e/web_ui_test.py` (the splash with a slow API in light and dark, gone by
+  itself, and the fix when hz is gone).

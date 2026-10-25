@@ -57,7 +57,12 @@ def test_tool_environment(tmp_path):
     assert installation.tool_install_command("heinzel", ["a", "b"]) == [
         "uv", "tool", "install", "--force", "--python", PYTHON, "heinzel", "--with", "a", "--with", "b",
     ]  # fmt: skip
-    assert installation.upgrade_command() == ["uv", "tool", "upgrade", "heinzel"]
+    assert installation.tool_install_command("heinzel", ["a"], refresh=True) == [
+        "uv", "tool", "install", "--force", "--refresh", "--python", PYTHON, "heinzel", "--with", "a",
+    ]  # fmt: skip
+    assert [pin.requirement for pin in installation.plugin_pins()] == [
+        "heinzel-old @ git+https://github.com/org/heinzel-old"
+    ]
 
 
 def test_other_environments(tmp_path):

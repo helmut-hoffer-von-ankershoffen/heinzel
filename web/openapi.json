@@ -281,6 +281,393 @@
         "title": "AccessUse",
         "type": "object"
       },
+      "ActionEntry": {
+        "description": "An action: a labelled icon button with one effect and maybe a badge.",
+        "properties": {
+          "badge": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "maxLength": 4,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A count (0 shows none) or up to four characters.",
+            "title": "Badge"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a click does; none when it can't work (`problem`).",
+            "title": "Effect"
+          },
+          "icon": {
+            "description": "The icon the app shows.",
+            "enum": [
+              "activity",
+              "alarm-clock",
+              "bell",
+              "bot",
+              "calendar",
+              "calendar-clock",
+              "chart-line",
+              "circle-alert",
+              "circle-check",
+              "clock",
+              "cloud",
+              "cloud-sun",
+              "code",
+              "file-text",
+              "git-pull-request",
+              "globe",
+              "heart",
+              "inbox",
+              "info",
+              "link",
+              "list-checks",
+              "mail",
+              "message-square",
+              "play",
+              "rocket",
+              "star",
+              "terminal",
+              "timer",
+              "users",
+              "video",
+              "zap"
+            ],
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "description": "`<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "description": "Its accessible name and tooltip.",
+            "title": "Label",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Where it sits among its kind, 0 first; ties go by id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it shows nothing: its source failed, or the declaration can't work.",
+            "title": "Problem"
+          },
+          "refresh": {
+            "description": "How often to ask again, in seconds.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does: what the app filters by.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "plugin",
+          "order",
+          "refresh",
+          "slots",
+          "label",
+          "icon"
+        ],
+        "title": "ActionEntry",
+        "type": "object"
+      },
+      "ActionPreview": {
+        "description": "Service-produced text and recipients; the client never infers a target or recipient list.",
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The proposed replacement section text.",
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The original section text, when applicable.",
+            "title": "Before"
+          },
+          "diff": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The service-produced exact change for review.",
+            "title": "Diff"
+          },
+          "kind": {
+            "description": "The kind of proposed external change.",
+            "enum": [
+              "operation",
+              "document-section",
+              "email"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "recipient_snapshot_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The hash of that resolved recipient snapshot.",
+            "title": "Recipient Snapshot Hash"
+          },
+          "recipients": {
+            "description": "The exact recipient snapshot awaiting approval.",
+            "items": {
+              "$ref": "#/components/schemas/RecipientPreview"
+            },
+            "title": "Recipients",
+            "type": "array"
+          },
+          "revision": {
+            "description": "The immutable preview revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "sha256": {
+            "description": "The exact preview hash bound to a human decision.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "source_revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The source revision the draft was based on.",
+            "title": "Source Revision"
+          },
+          "target": {
+            "description": "The exact operation target.",
+            "title": "Target",
+            "type": "string"
+          },
+          "title": {
+            "description": "A short description of the change.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "revision",
+          "sha256",
+          "kind",
+          "title",
+          "target"
+        ],
+        "title": "ActionPreview",
+        "type": "object"
+      },
+      "ActionProposal": {
+        "description": "The exact stored call a human may authorize; no decision proof is returned in a snapshot.",
+        "properties": {
+          "argument_hash": {
+            "description": "The canonical argument hash bound to approval.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Argument Hash",
+            "type": "string"
+          },
+          "arguments": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The exact stored operation arguments.",
+            "title": "Arguments",
+            "type": "object"
+          },
+          "command": {
+            "description": "A readable equivalent command for review.",
+            "title": "Command",
+            "type": "string"
+          },
+          "contract_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The approved contract version, when present.",
+            "title": "Contract Version"
+          },
+          "grant_revision": {
+            "description": "The effective grant revision bound to this proposal.",
+            "minimum": 1.0,
+            "title": "Grant Revision",
+            "type": "integer"
+          },
+          "id": {
+            "description": "The stable stored action proposal id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The declared installed operation to invoke.",
+            "title": "Operation",
+            "type": "string"
+          },
+          "policy_revision": {
+            "description": "The effective policy revision bound to this proposal.",
+            "minimum": 1.0,
+            "title": "Policy Revision",
+            "type": "integer"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActionPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The exact server-produced change and recipient preview."
+          },
+          "status": {
+            "default": "pending",
+            "description": "The durable decision or execution state.",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed",
+              "declined",
+              "uncertain"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "turn_id": {
+            "description": "The turn that proposed this action.",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "turn_id",
+          "operation",
+          "argument_hash",
+          "grant_revision",
+          "policy_revision",
+          "command"
+        ],
+        "title": "ActionProposal",
+        "type": "object"
+      },
       "AdapterCandidate": {
         "description": "An adapter that can serve a capability, and the state of its connector.",
         "properties": {
@@ -453,6 +840,22 @@
       "AgentResult": {
         "description": "The outcome of one agent session, for the job's result and its receipt.",
         "properties": {
+          "billing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan",
+                  "api"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`plan` when the agent ran on a subscription (its cost is at API prices, covered by the plan), `api` when on an API key; none when the runner can't tell.",
+            "title": "Billing"
+          },
           "detail": {
             "default": "",
             "description": "Why the run did not complete; empty when it did.",
@@ -587,6 +990,67 @@
         "title": "AssetView",
         "type": "object"
       },
+      "AttachmentRef": {
+        "description": "One session's immutable private upload; no server path or arbitrary URL is exposed.",
+        "properties": {
+          "bytes": {
+            "description": "The retained content size in bytes.",
+            "minimum": 0.0,
+            "title": "Bytes",
+            "type": "integer"
+          },
+          "id": {
+            "description": "The opaque retained upload id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "mime": {
+            "description": "The validated media type.",
+            "maxLength": 100,
+            "title": "Mime",
+            "type": "string"
+          },
+          "name": {
+            "description": "The display filename; never a server path.",
+            "maxLength": 200,
+            "title": "Name",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The owning durable session id.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "The exact retained content hash.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "state": {
+            "default": "retained",
+            "description": "Whether private content remains available.",
+            "enum": [
+              "retained",
+              "expired"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "name",
+          "mime",
+          "bytes",
+          "sha256"
+        ],
+        "title": "AttachmentRef",
+        "type": "object"
+      },
       "AvailablePlugin": {
         "description": "A plugin one can install with `hz system plugin add`.",
         "properties": {
@@ -633,9 +1097,10 @@
             "type": "string"
           },
           "source": {
-            "description": "Where it was found: `first-party` (maintained with Heinzelmännchen) or `github` (a repository with the topic heinzel-plugin).",
+            "description": "Where it was found: `first-party` (maintained with Heinzelmännchen), `contrib` (the heinzel-contrib monorepo) or `github` (a repository with the topic heinzel-plugin).",
             "enum": [
               "first-party",
+              "contrib",
               "github"
             ],
             "title": "Source",
@@ -672,6 +1137,112 @@
           "installed"
         ],
         "title": "AvailablePlugin",
+        "type": "object"
+      },
+      "Avatar": {
+        "additionalProperties": false,
+        "description": "A Heinzelmännchen drawn in a widget, dressed by data only.",
+        "properties": {
+          "accessories": {
+            "description": "What it wears or carries: umbrella, sunglasses, scarf.",
+            "items": {
+              "enum": [
+                "umbrella",
+                "sunglasses",
+                "scarf"
+              ],
+              "type": "string"
+            },
+            "maxItems": 3,
+            "title": "Accessories",
+            "type": "array"
+          }
+        },
+        "title": "Avatar",
+        "type": "object"
+      },
+      "AvatarSlot": {
+        "enum": [
+          "hat-young",
+          "hat-grown",
+          "hat-old",
+          "outfit-baby",
+          "outfit-young",
+          "outfit-grown",
+          "outfit-old"
+        ],
+        "type": "string"
+      },
+      "BackendBinding": {
+        "description": "The effective choice pinned to a turn; changing it takes effect between turns.",
+        "properties": {
+          "backend": {
+            "description": "The selected installed AI backend.",
+            "title": "Backend",
+            "type": "string"
+          },
+          "capabilities": {
+            "description": "Capabilities the selected adapter has proved it supports.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The selected reasoning effort, when supported.",
+            "title": "Effort"
+          },
+          "mode": {
+            "description": "Whether the turn uses direct API, a CLI model bridge or a native CLI loop.",
+            "enum": [
+              "api",
+              "cli-model",
+              "native-cli"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The selected model, when explicitly configured.",
+            "title": "Model"
+          },
+          "revision": {
+            "default": 1,
+            "description": "The binding revision pinned to this turn.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backend",
+          "mode"
+        ],
+        "title": "BackendBinding",
         "type": "object"
       },
       "Candidate": {
@@ -987,6 +1558,83 @@
         "title": "CapabilityUse",
         "type": "object"
       },
+      "CardWidget": {
+        "additionalProperties": false,
+        "description": "A card: a title, a short body and up to three buttons.",
+        "properties": {
+          "actions": {
+            "description": "Up to three buttons.",
+            "items": {
+              "$ref": "#/components/schemas/WidgetAction"
+            },
+            "maxItems": 3,
+            "title": "Actions",
+            "type": "array"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "maxLength": 280,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Up to 280 characters under the title.",
+            "title": "Body"
+          },
+          "kind": {
+            "const": "card",
+            "default": "card",
+            "description": "A card.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
+          },
+          "title": {
+            "description": "Its title, one line.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "CardWidget",
+        "type": "object"
+      },
       "CatchUp": {
         "description": "What a job does about schedule slots it missed while the machine slept or was off.",
         "enum": [
@@ -1221,6 +1869,18 @@
       "ChatMessage": {
         "description": "One message of a chat.",
         "properties": {
+          "access": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The AI access in use when it answered, e.g. `claude-code`.",
+            "title": "Access"
+          },
           "actions": {
             "description": "Ids of the actions the agent proposed in it.",
             "items": {
@@ -1235,6 +1895,22 @@
             "title": "At",
             "type": "string"
           },
+          "billing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan",
+                  "api"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`plan`: on a subscription, so `cost_usd` is what it would cost at API prices, covered by the plan; `api`: billed per token; none when the runner can't tell.",
+            "title": "Billing"
+          },
           "budget_usd": {
             "anyOf": [
               {
@@ -1246,6 +1922,30 @@
             ],
             "description": "The cap the answer ran with; what it counts as against the session's cap when no cost is reported.",
             "title": "Budget Usd"
+          },
+          "cache_read_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Input tokens read from the prompt cache.",
+            "title": "Cache Read Tokens"
+          },
+          "cache_write_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Input tokens written to the prompt cache.",
+            "title": "Cache Write Tokens"
           },
           "cost_usd": {
             "anyOf": [
@@ -1265,11 +1965,78 @@
             "title": "Detail",
             "type": "string"
           },
+          "duration_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How long the answer took.",
+            "title": "Duration Seconds"
+          },
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effort it was asked for; none: the default.",
+            "title": "Effort"
+          },
           "fix": {
             "default": "",
             "description": "A command that fixes why it did not complete, if there is one.",
             "title": "Fix",
             "type": "string"
+          },
+          "input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens sent, without cache reads, if reported.",
+            "title": "Input Tokens"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model that answered, as the runner reported it.",
+            "title": "Model"
+          },
+          "output_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tokens produced, if reported.",
+            "title": "Output Tokens"
           },
           "role": {
             "description": "`user`, `assistant`, or `action`: what a confirmed or declined action did.",
@@ -1355,6 +2122,25 @@
             "title": "Created",
             "type": "string"
           },
+          "effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effort this chat asks for; none: the default.",
+            "title": "Effort"
+          },
           "id": {
             "description": "The session's id, for `hz chat --session` and the web app.",
             "pattern": "^[a-f0-9]{16}$",
@@ -1368,6 +2154,18 @@
             },
             "title": "Messages",
             "type": "array"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The model this chat asks for; none: the runner's default.",
+            "title": "Model"
           },
           "title": {
             "description": "Its first message, shortened, or its context.",
@@ -1403,7 +2201,7 @@
                 "type": "null"
               }
             ],
-            "description": "What it was opened about; a Heinzelmännchen's conversation is the one about its contract."
+            "description": "What this session was opened about, if anything."
           },
           "id": {
             "description": "The session's id.",
@@ -1525,6 +2323,96 @@
           "diagnostics"
         ],
         "title": "CheckReport",
+        "type": "object"
+      },
+      "ClaudeScan": {
+        "description": "`hz system claude list`: what Claude has configured on this computer. Nothing here is switched on.",
+        "properties": {
+          "connectors": {
+            "description": "claude.ai connectors you have connected: reachable only through Claude Code, so only counted.",
+            "title": "Connectors",
+            "type": "integer"
+          },
+          "next": {
+            "description": "What to run next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "servers": {
+            "description": "MCP servers, by source then name.",
+            "items": {
+              "$ref": "#/components/schemas/FoundServer"
+            },
+            "title": "Servers",
+            "type": "array"
+          },
+          "skills": {
+            "description": "Skills, by source then name.",
+            "items": {
+              "$ref": "#/components/schemas/FoundSkill"
+            },
+            "title": "Skills",
+            "type": "array"
+          },
+          "skipped": {
+            "description": "Files and directories left alone, each with its reason.",
+            "items": {
+              "$ref": "#/components/schemas/Skipped"
+            },
+            "title": "Skipped",
+            "type": "array"
+          }
+        },
+        "required": [
+          "servers",
+          "skills",
+          "connectors",
+          "skipped",
+          "next"
+        ],
+        "title": "ClaudeScan",
+        "type": "object"
+      },
+      "ClaudeSummary": {
+        "description": "`hz system claude summary`: counts only, no names (names can reveal employers and customers).",
+        "properties": {
+          "connectors": {
+            "description": "claude.ai connectors you have connected.",
+            "title": "Connectors",
+            "type": "integer"
+          },
+          "servers": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "MCP servers found per source.",
+            "title": "Servers",
+            "type": "object"
+          },
+          "skills": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Skills found per source.",
+            "title": "Skills",
+            "type": "object"
+          },
+          "skipped": {
+            "description": "Files and directories left alone.",
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "servers",
+          "skills",
+          "connectors",
+          "skipped"
+        ],
+        "title": "ClaudeSummary",
         "type": "object"
       },
       "CompiledContract": {
@@ -2252,6 +3140,177 @@
         "title": "ContractGraph",
         "type": "object"
       },
+      "ContractVersion": {
+        "description": "A versioned contract artifact; only an explicit approval can activate its schedule.",
+        "properties": {
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When this exact version was approved, if ever.",
+            "title": "Approved At"
+          },
+          "created_at": {
+            "description": "When this version was proposed.",
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "description": "The stable contract artifact id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "parent_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The approved version this amendment follows.",
+            "title": "Parent Version"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The recorded reason for the amendment or decision.",
+            "title": "Reason"
+          },
+          "sha256": {
+            "description": "The exact artifact hash.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "status": {
+            "default": "proposed",
+            "description": "The proposal or approval state of this version.",
+            "enum": [
+              "proposed",
+              "approved",
+              "superseded",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "description": "The versioned OpenProse contract text.",
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "description": "The human-readable responsibility title.",
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "description": "The immutable contract version.",
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "sha256",
+          "title",
+          "text",
+          "created_at"
+        ],
+        "title": "ContractVersion",
+        "type": "object"
+      },
+      "ContributionInfo": {
+        "description": "A contribution as Settings lists it: where it may show and whether it does, without running it.",
+        "properties": {
+          "defaults": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot and whether it shows there unless the person decides.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Defaults",
+            "type": "object"
+          },
+          "id": {
+            "description": "`<module>:<name>`, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "description": "A status item, a header action or a widget.",
+            "enum": [
+              "status",
+              "action",
+              "widget"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does now.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          },
+          "title": {
+            "description": "What people know it by: the action's label, or its name in words.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "kind",
+          "title",
+          "slots",
+          "defaults"
+        ],
+        "title": "ContributionInfo",
+        "type": "object"
+      },
       "CredentialInfo": {
         "description": "A declared credential and whether it has a value; never the value itself.",
         "properties": {
@@ -2370,6 +3429,24 @@
             "description": "The platform's service manager: darwin (launchd) or linux (systemd).",
             "title": "Platform",
             "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The hz version the daemon was started with (installed or last restarted); none if it isn't installed or was installed by an older hz.",
+            "title": "Version"
+          },
+          "version_mismatch": {
+            "default": false,
+            "description": "Whether `version` differs from the hz that answers: after `hz system update` the daemon should be restarted (`hz system daemon restart`).",
+            "title": "Version Mismatch",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2438,6 +3515,36 @@
         ],
         "title": "Delivery",
         "type": "string"
+      },
+      "DetailLine": {
+        "additionalProperties": false,
+        "description": "A line of an item's detail, shown on hover or focus.",
+        "properties": {
+          "text": {
+            "description": "One line, e.g. `New York 08:00, at work`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "`ok` shows it as good, `warn` and `bad` as needing attention.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "DetailLine",
+        "type": "object"
       },
       "Diagnostic": {
         "description": "A problem in a contract file, with where it is and what to do.",
@@ -2689,6 +3796,52 @@
         "title": "EdgeMetadata",
         "type": "object"
       },
+      "EffortChoice": {
+        "description": "An effort the AI access in use can be asked for.",
+        "properties": {
+          "name": {
+            "description": "What `hz chat send --effort` takes, e.g. `medium`.",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "recommended": {
+            "description": "Whether it is the one to pick when unsure.",
+            "title": "Recommended",
+            "type": "boolean"
+          },
+          "title": {
+            "description": "What the picker shows, e.g. `Extra`.",
+            "title": "Title",
+            "type": "string"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What it costs beyond the others, e.g. `≈3.5x or more usage`.",
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "recommended"
+        ],
+        "title": "EffortChoice",
+        "type": "object"
+      },
       "Event": {
         "description": "One occurrence of an entry in a calendar; a recurring entry is expanded into its occurrences.",
         "properties": {
@@ -2741,6 +3894,24 @@
             "title": "Id",
             "type": "string"
           },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it takes place, in the event's words; none if unset.",
+            "title": "Location"
+          },
+          "organized_by_user": {
+            "default": false,
+            "description": "Whether the user organizes it, and so may move or cancel it for everyone.",
+            "title": "Organized By User",
+            "type": "boolean"
+          },
           "organizer": {
             "anyOf": [
               {
@@ -2751,6 +3922,24 @@
               }
             ],
             "description": "Who organizes it; none if the vendor doesn't say."
+          },
+          "response": {
+            "anyOf": [
+              {
+                "enum": [
+                  "accepted",
+                  "declined",
+                  "tentative",
+                  "pending"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The user's own answer to the invitation: one of `RESPONSES`, or `pending` while unanswered; none when the user is not among the attendees.",
+            "title": "Response"
           },
           "start": {
             "description": "When it starts; midnight in the calendar's zone for an all-day event.",
@@ -2889,6 +4078,233 @@
           "state"
         ],
         "title": "Filters",
+        "type": "object"
+      },
+      "FoundServer": {
+        "description": "An MCP server entry found in a Claude client's configuration.",
+        "properties": {
+          "arguments": {
+            "description": "How many arguments the command takes; their text may hold secrets, so unshown.",
+            "title": "Arguments",
+            "type": "integer"
+          },
+          "auth": {
+            "description": "How it authenticates: no secret, environment variables, a header, a token in its URL, the keychain of Claude Desktop, or (an http server without any) none or a login Claude Code keeps.",
+            "enum": [
+              "none",
+              "env",
+              "header",
+              "url",
+              "keychain",
+              "none-or-oauth"
+            ],
+            "title": "Auth",
+            "type": "string"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The program a stdio server starts, without its path or arguments.",
+            "title": "Command"
+          },
+          "env_keys": {
+            "description": "Names of the environment variables it is given; never their values.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Env Keys",
+            "type": "array"
+          },
+          "file": {
+            "description": "The configuration file it was read from, with your home directory as `~`.",
+            "title": "File",
+            "type": "string"
+          },
+          "fingerprint": {
+            "description": "A hash of its shape (transport, program, argument count, host, variable and header names): no secret and no argument text goes into it, so a changed argument is not noticed yet.",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "header_keys": {
+            "description": "Names of the headers it sends; never their values.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Header Keys",
+            "type": "array"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The scheme and host of an http server; never the path, query or user info.",
+            "title": "Host"
+          },
+          "id": {
+            "description": "`<source>[:<origin>]:<name>`, stable while the entry keeps its place.",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "description": "The name the entry has in its configuration.",
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project directory or plugin it belongs to; none for user-wide ones.",
+            "title": "Origin"
+          },
+          "source": {
+            "description": "Which Claude configuration it was found in.",
+            "enum": [
+              "desktop",
+              "desktop-extension",
+              "code-user",
+              "code-local",
+              "code-project",
+              "code-plugin"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "description": "`self` is Heinzelmännchen's own server, which is never offered back to itself.",
+            "enum": [
+              "found",
+              "self"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "transport": {
+            "description": "How it is reached: a local process (stdio) or a URL (http, sse).",
+            "enum": [
+              "stdio",
+              "http",
+              "sse",
+              "unknown"
+            ],
+            "title": "Transport",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "source",
+          "origin",
+          "transport",
+          "command",
+          "arguments",
+          "host",
+          "auth",
+          "env_keys",
+          "header_keys",
+          "status",
+          "file",
+          "fingerprint"
+        ],
+        "title": "FoundServer",
+        "type": "object"
+      },
+      "FoundSkill": {
+        "description": "A skill directory (`SKILL.md` and what sits beside it) found in a Claude client's skill locations.",
+        "properties": {
+          "description": {
+            "description": "Its description, cut and cleaned; third-party text, never an instruction.",
+            "title": "Description",
+            "type": "string"
+          },
+          "files": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "Bundled files by kind (scripts, references, resources, assets, templates); never run or read.",
+            "title": "Files",
+            "type": "object"
+          },
+          "fingerprint": {
+            "description": "A hash of SKILL.md and the names and sizes of its bundled files.",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "frontmatter_keys": {
+            "description": "The keys its frontmatter sets, e.g. `allowed-tools`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Frontmatter Keys",
+            "type": "array"
+          },
+          "id": {
+            "description": "`<source>[:<origin>]:<name>`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "description": "The skill's name from its frontmatter, else its directory's name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project directory or plugin it belongs to; none for yours.",
+            "title": "Origin"
+          },
+          "path": {
+            "description": "The skill's directory, with your home directory as `~`.",
+            "title": "Path",
+            "type": "string"
+          },
+          "source": {
+            "description": "Where it was found: your skills, a project's or an enabled plugin's.",
+            "enum": [
+              "code-user",
+              "code-project",
+              "code-plugin"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "source",
+          "origin",
+          "frontmatter_keys",
+          "files",
+          "path",
+          "fingerprint"
+        ],
+        "title": "FoundSkill",
         "type": "object"
       },
       "Graph": {
@@ -3080,6 +4496,138 @@
         "title": "GraphNode",
         "type": "object"
       },
+      "GraphicWidget": {
+        "additionalProperties": false,
+        "description": "A big value with a picture: an icon or a Heinzelmännchen, and a line under it.",
+        "properties": {
+          "avatar": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Avatar"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A Heinzelmännchen beside the value; wins over `icon`."
+          },
+          "caption": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A line under the value, e.g. `Light traffic`.",
+            "title": "Caption"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "activity",
+                  "alarm-clock",
+                  "bell",
+                  "bot",
+                  "calendar",
+                  "calendar-clock",
+                  "chart-line",
+                  "circle-alert",
+                  "circle-check",
+                  "clock",
+                  "cloud",
+                  "cloud-sun",
+                  "code",
+                  "file-text",
+                  "git-pull-request",
+                  "globe",
+                  "heart",
+                  "inbox",
+                  "info",
+                  "link",
+                  "list-checks",
+                  "mail",
+                  "message-square",
+                  "play",
+                  "rocket",
+                  "star",
+                  "terminal",
+                  "timer",
+                  "users",
+                  "video",
+                  "zap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An icon beside the value.",
+            "title": "Icon"
+          },
+          "kind": {
+            "const": "graphic",
+            "default": "graphic",
+            "description": "A graphic.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "description": "What it shows, e.g. `Commute home`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "value": {
+            "description": "The big figure as shown, up to 16 characters, e.g. `12 min`.",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "GraphicWidget",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -3117,6 +4665,112 @@
           "checks"
         ],
         "title": "HealthReport",
+        "type": "object"
+      },
+      "HeinzelAppearance": {
+        "additionalProperties": false,
+        "description": "Personal appearance on the renderer's closed vocabulary; state and theme are application-owned.",
+        "properties": {
+          "accessories": {
+            "description": "Personal decorations from the supported closed vocabulary.",
+            "items": {
+              "enum": [
+                "umbrella",
+                "sunglasses",
+                "scarf"
+              ],
+              "type": "string"
+            },
+            "title": "Accessories",
+            "type": "array"
+          },
+          "age": {
+            "default": "grown",
+            "description": "The chosen age of this personal character.",
+            "enum": [
+              "baby",
+              "young",
+              "grown",
+              "old"
+            ],
+            "title": "Age",
+            "type": "string"
+          },
+          "beard": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "short",
+                  "medium",
+                  "long"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The explicit beard style; null inherits the age default.",
+            "title": "Beard"
+          },
+          "build": {
+            "default": "regular",
+            "description": "The chosen body shape.",
+            "enum": [
+              "slim",
+              "regular",
+              "round"
+            ],
+            "title": "Build",
+            "type": "string"
+          },
+          "hat": {
+            "anyOf": [
+              {
+                "enum": [
+                  "red",
+                  "rust",
+                  "ochre",
+                  "green",
+                  "teal",
+                  "blue",
+                  "purple",
+                  "slate"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The personal hat colour; null inherits the installed theme.",
+            "title": "Hat"
+          },
+          "shirt": {
+            "anyOf": [
+              {
+                "enum": [
+                  "green",
+                  "blue",
+                  "purple",
+                  "red-brown",
+                  "ochre",
+                  "teal",
+                  "slate",
+                  "rose"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The personal shirt colour; null inherits the installed theme.",
+            "title": "Shirt"
+          }
+        },
+        "title": "HeinzelAppearance",
         "type": "object"
       },
       "HeinzelList": {
@@ -3743,6 +5397,207 @@
         "title": "LayerView",
         "type": "object"
       },
+      "ListEntry": {
+        "additionalProperties": false,
+        "description": "A line of a list widget.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A second, quieter line.",
+            "title": "Detail"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a click does.",
+            "title": "Effect"
+          },
+          "text": {
+            "description": "The line, e.g. `Review the Acme roadmap`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "ListEntry",
+        "type": "object"
+      },
+      "ListWidget": {
+        "additionalProperties": false,
+        "description": "A titled list of up to eight lines.",
+        "properties": {
+          "items": {
+            "description": "Up to eight lines.",
+            "items": {
+              "$ref": "#/components/schemas/ListEntry"
+            },
+            "maxItems": 8,
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "const": "list",
+            "default": "list",
+            "description": "A list.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
+          },
+          "title": {
+            "description": "Its title, one line.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "items"
+        ],
+        "title": "ListWidget",
+        "type": "object"
+      },
+      "LiveClock": {
+        "additionalProperties": false,
+        "description": "The time now in a zone, ticking in the app.",
+        "properties": {
+          "kind": {
+            "const": "clock",
+            "default": "clock",
+            "description": "The time now in `zone`.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "zone": {
+            "description": "An IANA time zone, e.g. Europe/Berlin.",
+            "title": "Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "zone"
+        ],
+        "title": "LiveClock",
+        "type": "object"
+      },
+      "LiveTime": {
+        "additionalProperties": false,
+        "description": "A moment, shown as a local time in the person's locale.",
+        "properties": {
+          "at": {
+            "description": "The moment, with its offset.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "const": "time",
+            "default": "time",
+            "description": "`at` as a local time.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "title": "LiveTime",
+        "type": "object"
+      },
+      "LiveUntil": {
+        "additionalProperties": false,
+        "description": "A moment, shown relative to now: \"in 12 min\", \"now\", or its time when it isn't today.",
+        "properties": {
+          "at": {
+            "description": "The moment, with its offset.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "kind": {
+            "const": "until",
+            "default": "until",
+            "description": "`at` relative to now.",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "title": "LiveUntil",
+        "type": "object"
+      },
       "LogLine": {
         "description": "One line of the daemon's JSON-lines log.",
         "properties": {
@@ -3966,6 +5821,231 @@
         "title": "MemberView",
         "type": "object"
       },
+      "MessageAccepted": {
+        "description": "The inbox acknowledgement; it reports durable acceptance, not completed model work.",
+        "properties": {
+          "disposition": {
+            "description": "Acceptance or dispatch state; queued does not mean a completed answer.",
+            "enum": [
+              "started",
+              "queued",
+              "steered"
+            ],
+            "title": "Disposition",
+            "type": "string"
+          },
+          "inbox_position": {
+            "description": "The committed control-journal position of the accepted message.",
+            "minimum": 1.0,
+            "title": "Inbox Position",
+            "type": "integer"
+          },
+          "request_id": {
+            "description": "The exact accepted client request id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable conversation that owns the inbox entry.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The assigned turn id, when work has started.",
+            "title": "Turn Id"
+          }
+        },
+        "required": [
+          "request_id",
+          "session_id",
+          "disposition",
+          "inbox_position"
+        ],
+        "title": "MessageAccepted",
+        "type": "object"
+      },
+      "MetricWidget": {
+        "additionalProperties": false,
+        "description": "One number with a label, and how it moved.",
+        "properties": {
+          "delta": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How it moved, as shown, e.g. `+3 this week`.",
+            "title": "Delta"
+          },
+          "kind": {
+            "const": "metric",
+            "default": "metric",
+            "description": "A metric.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "description": "What is measured, e.g. `Open reviews`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "value": {
+            "description": "The figure as shown, up to 16 characters, e.g. `12` or `2/3`.",
+            "maxLength": 16,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "MetricWidget",
+        "type": "object"
+      },
+      "ModelChoice": {
+        "description": "A model the AI access in use offers.",
+        "properties": {
+          "name": {
+            "description": "What `hz chat send --model` takes, e.g. `sonnet`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "description": "What the picker shows, e.g. `Sonnet`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title"
+        ],
+        "title": "ModelChoice",
+        "type": "object"
+      },
+      "ModelList": {
+        "description": "The models and efforts of the AI access in use, for the chat's picker.",
+        "properties": {
+          "access": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The AI access in use, e.g. `claude-code`; none when none is.",
+            "title": "Access"
+          },
+          "billing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan",
+                  "api"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`plan` when it uses a subscription, `api` when billed per token.",
+            "title": "Billing"
+          },
+          "efforts": {
+            "description": "The efforts it takes, low to max; empty when it takes none.",
+            "items": {
+              "$ref": "#/components/schemas/EffortChoice"
+            },
+            "title": "Efforts",
+            "type": "array"
+          },
+          "models": {
+            "description": "Its models, current ones first; empty when it names none.",
+            "items": {
+              "$ref": "#/components/schemas/ModelChoice"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the list is empty or short.",
+            "title": "Note"
+          },
+          "title": {
+            "description": "Its title, e.g. `Claude Code`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access",
+          "title",
+          "billing",
+          "models",
+          "efforts"
+        ],
+        "title": "ModelList",
+        "type": "object"
+      },
       "ModuleInfo": {
         "description": "A registered module.",
         "properties": {
@@ -4028,6 +6108,211 @@
           "lets"
         ],
         "title": "ModuleInfo",
+        "type": "object"
+      },
+      "NavEntry": {
+        "description": "Checked navigation metadata from one active provider, without running an operation.",
+        "properties": {
+          "declared": {
+            "description": "True for an explicit NavLet; false for generic legacy Settings metadata.",
+            "title": "Declared",
+            "type": "boolean"
+          },
+          "icon": {
+            "description": "The provider's checked semantic icon.",
+            "enum": [
+              "activity",
+              "alarm-clock",
+              "bell",
+              "bot",
+              "calendar",
+              "calendar-clock",
+              "chart-line",
+              "circle-alert",
+              "circle-check",
+              "clock",
+              "cloud",
+              "cloud-sun",
+              "code",
+              "file-text",
+              "git-pull-request",
+              "globe",
+              "heart",
+              "inbox",
+              "info",
+              "link",
+              "list-checks",
+              "mail",
+              "message-square",
+              "play",
+              "rocket",
+              "star",
+              "terminal",
+              "timer",
+              "users",
+              "video",
+              "zap"
+            ],
+            "title": "Icon",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable `<qualified-module>:<name>` identity; legacy Settings use reserved `:@settings`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified module that declared this entry.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Display order; ties are sorted by stable id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Its distribution, or none for a built-in provider.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why this declaration has no executable target.",
+            "title": "Problem"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NavSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Owned Settings prefixes and their group."
+          },
+          "sidebar": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The canonical sidebar effect; no new route is registered.",
+            "title": "Sidebar"
+          },
+          "title": {
+            "description": "The provider's checked display title.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "declared",
+          "plugin",
+          "title",
+          "icon",
+          "order"
+        ],
+        "title": "NavEntry",
+        "type": "object"
+      },
+      "NavSettings": {
+        "additionalProperties": false,
+        "description": "The module-owned Settings sections a navigation entry groups under an existing heading.",
+        "properties": {
+          "group": {
+            "default": "preferences",
+            "description": "The existing Settings heading under which the entry appears.",
+            "enum": [
+              "preferences",
+              "customize",
+              "organisation",
+              "computer"
+            ],
+            "title": "Group",
+            "type": "string"
+          },
+          "sections": {
+            "description": "Qualified module prefixes owned by this provider.",
+            "items": {
+              "pattern": "^[a-z](?:-?[a-z0-9])*(?:\\.[a-z](?:-?[a-z0-9])*)*$",
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Sections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sections"
+        ],
+        "title": "NavSettings",
+        "type": "object"
+      },
+      "Navigate": {
+        "additionalProperties": false,
+        "description": "Open a screen of the app.",
+        "properties": {
+          "kind": {
+            "const": "navigate",
+            "default": "navigate",
+            "description": "Open a screen of the app.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "description": "An in-app path, e.g. `/doctor`.",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "Navigate",
         "type": "object"
       },
       "Node": {
@@ -4338,6 +6623,29 @@
         "title": "NoticeList",
         "type": "object"
       },
+      "OpenUrl": {
+        "additionalProperties": false,
+        "description": "Open an https link in a new tab.",
+        "properties": {
+          "kind": {
+            "const": "open",
+            "default": "open",
+            "description": "Open an https link in a new tab.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "url": {
+            "description": "An https link without user information.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "OpenUrl",
+        "type": "object"
+      },
       "Opened": {
         "description": "Whether the system's notification settings were opened.",
         "properties": {
@@ -4388,6 +6696,88 @@
           "audience"
         ],
         "title": "OperationAudience",
+        "type": "object"
+      },
+      "OperationCall": {
+        "additionalProperties": false,
+        "description": "How the app runs an `operation` effect, built by `system.ui` from the operation itself, never by a plugin.",
+        "properties": {
+          "body": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Validated flat JSON arguments for a private mutation; never a query fallback.",
+            "title": "Body"
+          },
+          "command": {
+            "description": "The same call as a person reads it, e.g. `hz clock`.",
+            "title": "Command",
+            "type": "string"
+          },
+          "method": {
+            "description": "`GET` for a read-only operation, `POST` for one that writes.",
+            "enum": [
+              "GET",
+              "POST"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "description": "The operation's path under `/api`, e.g. `/clock`.",
+            "title": "Path",
+            "type": "string"
+          },
+          "query": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "maxLength": 280,
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Validated query arguments; empty for private mutations.",
+            "title": "Query",
+            "type": "object"
+          },
+          "read_only": {
+            "description": "Whether it only reads; the app asks before running one that doesn't.",
+            "title": "Read Only",
+            "type": "boolean"
+          },
+          "summary": {
+            "description": "What the operation does: the first line of its docstring.",
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "method",
+          "path",
+          "query",
+          "command",
+          "summary",
+          "read_only"
+        ],
+        "title": "OperationCall",
         "type": "object"
       },
       "Participant": {
@@ -5050,6 +7440,84 @@
         "title": "PluginSearch",
         "type": "object"
       },
+      "PluginUpdate": {
+        "description": "What `hz system update` did to one installed plugin.",
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Version installed now; none if the plugin is no longer installed.",
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Version installed before; none if it couldn't be told.",
+            "title": "Before"
+          },
+          "disabled": {
+            "default": false,
+            "description": "Whether the plugin does not work with the new hz at all and was taken out of the installation: it is not loaded until a release that allows the new hz is added (`next`).",
+            "title": "Disabled",
+            "type": "boolean"
+          },
+          "distribution": {
+            "description": "Distribution name, e.g. heinzel-clock.",
+            "title": "Distribution",
+            "type": "string"
+          },
+          "next": {
+            "description": "Commands that bring a failed plugin back.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it failed, and what became of it.",
+            "title": "Reason"
+          },
+          "status": {
+            "description": "`upgraded` (a newer version or commit is installed), `unchanged` (it is as new as its install spec allows) or `failed` (it couldn't be moved to the new hz; see `reason`).",
+            "enum": [
+              "upgraded",
+              "unchanged",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "distribution",
+          "status",
+          "before",
+          "after"
+        ],
+        "title": "PluginUpdate",
+        "type": "object"
+      },
       "Profile": {
         "description": "Your profile as hz knows it, and what is still missing.",
         "properties": {
@@ -5188,6 +7656,74 @@
         "title": "Profile",
         "type": "object"
       },
+      "ProgressWidget": {
+        "additionalProperties": false,
+        "description": "How much of something is done.",
+        "properties": {
+          "done": {
+            "description": "How many are done, at most `total`.",
+            "minimum": 0.0,
+            "title": "Done",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "progress",
+            "default": "progress",
+            "description": "Progress.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "label": {
+            "description": "What is done, e.g. `Release checklist`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "medium",
+                  "wide"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Room in the Today grid; each kind has a default.",
+            "title": "Size"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "total": {
+            "description": "How many there are.",
+            "minimum": 1.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "done",
+          "total"
+        ],
+        "title": "ProgressWidget",
+        "type": "object"
+      },
       "PublishStatus": {
         "description": "A publish operation a contract names, and whether an installed module provides it.",
         "properties": {
@@ -5219,6 +7755,102 @@
           "note"
         ],
         "title": "PublishStatus",
+        "type": "object"
+      },
+      "Question": {
+        "description": "An answerable, stored question; answering it grants no new permission.",
+        "properties": {
+          "answer_schema": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "The validated answer shape, when constrained.",
+            "title": "Answer Schema",
+            "type": "object"
+          },
+          "choices": {
+            "description": "Suggested explicit answer choices.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "id": {
+            "description": "The stable question id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "prompt": {
+            "description": "The question shown to the user.",
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "revision": {
+            "default": 1,
+            "description": "The exact question revision an answer must reference.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "status": {
+            "default": "waiting",
+            "description": "Whether the question is still waiting, answered or cancelled.",
+            "enum": [
+              "waiting",
+              "answered",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "turn_id": {
+            "description": "The turn that is waiting for this answer.",
+            "title": "Turn Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "turn_id",
+          "prompt"
+        ],
+        "title": "Question",
+        "type": "object"
+      },
+      "RecipientPreview": {
+        "description": "A resolved recipient in the exact snapshot awaiting human review.",
+        "properties": {
+          "address": {
+            "description": "The exact destination address awaiting approval.",
+            "title": "Address",
+            "type": "string"
+          },
+          "name": {
+            "description": "The recipient display name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "principal_id": {
+            "description": "The resolved recipient identity.",
+            "title": "Principal Id",
+            "type": "string"
+          },
+          "role": {
+            "description": "The resolved role used to select this recipient.",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "principal_id",
+          "name",
+          "address",
+          "role"
+        ],
+        "title": "RecipientPreview",
         "type": "object"
       },
       "RecommendationView": {
@@ -5260,6 +7892,45 @@
           "command"
         ],
         "title": "RecommendationView",
+        "type": "object"
+      },
+      "ReferenceBlock": {
+        "description": "A question, proposal or attachment whose state is held by the application service.",
+        "properties": {
+          "fallback": {
+            "description": "Plain-text explanation of the referenced object.",
+            "minLength": 1,
+            "title": "Fallback",
+            "type": "string"
+          },
+          "id": {
+            "description": "The stable block id within its message.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "description": "Whether this block references a question, proposal or attachment.",
+            "enum": [
+              "question",
+              "proposal",
+              "attachment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "ref": {
+            "description": "The application-owned object id.",
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "ref",
+          "fallback"
+        ],
+        "title": "ReferenceBlock",
         "type": "object"
       },
       "ReleaseCheck": {
@@ -5372,6 +8043,57 @@
         "title": "ReleaseNotes",
         "type": "object"
       },
+      "RendererBlock": {
+        "description": "Validated data for an installed renderer; executable markup is never a message block.",
+        "properties": {
+          "data": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "Validated renderer data without executable markup.",
+            "title": "Data",
+            "type": "object"
+          },
+          "fallback": {
+            "description": "Plain-text content for heads without this renderer.",
+            "minLength": 1,
+            "title": "Fallback",
+            "type": "string"
+          },
+          "id": {
+            "description": "The stable block id within its message.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "renderer",
+            "default": "renderer",
+            "description": "A block for an installed data renderer.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "manifest_sha256": {
+            "description": "The exact renderer manifest fingerprint.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Manifest Sha256",
+            "type": "string"
+          },
+          "renderer": {
+            "description": "The installed renderer identifier.",
+            "title": "Renderer",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "renderer",
+          "manifest_sha256",
+          "data",
+          "fallback"
+        ],
+        "title": "RendererBlock",
+        "type": "object"
+      },
       "RequirementStatus": {
         "description": "A capability a contract requires, and whether configuration serves it.",
         "properties": {
@@ -5444,6 +8166,69 @@
           "message"
         ],
         "title": "Restart",
+        "type": "object"
+      },
+      "Restarted": {
+        "description": "What `restart` did.",
+        "properties": {
+          "interval_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Minutes between ticks, as installed; none if not installed.",
+            "title": "Interval Minutes"
+          },
+          "restarted": {
+            "description": "Whether the daemon was reloaded; false if it isn't installed.",
+            "title": "Restarted",
+            "type": "boolean"
+          },
+          "version": {
+            "description": "The hz version the daemon runs with now.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "restarted",
+          "version",
+          "interval_minutes"
+        ],
+        "title": "Restarted",
+        "type": "object"
+      },
+      "RunCommand": {
+        "additionalProperties": false,
+        "description": "Open the terminal with an `hz` command.",
+        "properties": {
+          "command": {
+            "description": "e.g. `hz clock`.",
+            "title": "Command",
+            "type": "string"
+          },
+          "kind": {
+            "const": "command",
+            "default": "command",
+            "description": "Open the terminal with an `hz` command.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "runs": {
+            "default": false,
+            "description": "Filled in by `system.ui`: whether it names a read-only operation, so the terminal may press Enter; otherwise the person does.",
+            "title": "Runs",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "title": "RunCommand",
         "type": "object"
       },
       "RunMeasure": {
@@ -5530,6 +8315,502 @@
         "title": "RunMeasure",
         "type": "object"
       },
+      "RunOperation": {
+        "additionalProperties": false,
+        "description": "Run an operation of the contributing module with fixed arguments; one that writes only after confirmation.",
+        "properties": {
+          "arguments": {
+            "description": "Fixed JSON arguments by parameter name; structured values require a private mutation.",
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[a-z_][a-z0-9_]*$": {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            },
+            "title": "Arguments",
+            "type": "object"
+          },
+          "call": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationCall"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Filled in by `system.ui`; whatever a plugin sets here is replaced."
+          },
+          "kind": {
+            "const": "operation",
+            "default": "operation",
+            "description": "Run an operation of the module.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation": {
+            "description": "The operation's name in its module, e.g. `sync`.",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "RunOperation",
+        "type": "object"
+      },
+      "SessionCosts": {
+        "description": "The same visible budget for every head and backend, with plan estimates labelled separately.",
+        "properties": {
+          "message_max_usd": {
+            "description": "The current allowed cap for the next model turn.",
+            "minimum": 0.0,
+            "title": "Message Max Usd",
+            "type": "number"
+          },
+          "session_max_usd": {
+            "description": "The current policy cap for the whole conversation.",
+            "exclusiveMinimum": 0.0,
+            "title": "Session Max Usd",
+            "type": "number"
+          },
+          "spent_usd": {
+            "default": 0,
+            "description": "Accounted usage in US dollars across this conversation.",
+            "minimum": 0.0,
+            "title": "Spent Usd",
+            "type": "number"
+          },
+          "unknown_turns": {
+            "default": 0,
+            "description": "Turns whose actual spend requires reconciliation.",
+            "minimum": 0.0,
+            "title": "Unknown Turns",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_max_usd",
+          "message_max_usd"
+        ],
+        "title": "SessionCosts",
+        "type": "object"
+      },
+      "SessionList": {
+        "description": "The personal conversations visible to this installation's current identity.",
+        "properties": {
+          "sessions": {
+            "description": "Personal conversations visible to the authenticated owner, newest first.",
+            "items": {
+              "$ref": "#/components/schemas/SessionSummary"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "title": "SessionList",
+        "type": "object"
+      },
+      "SessionMessage": {
+        "description": "A visible message or an explicit gap where private body content expired.",
+        "properties": {
+          "at": {
+            "description": "When the message was durably recorded.",
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "attachment_ids": {
+            "description": "Retained uploads attached to this message.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Attachment Ids",
+            "type": "array"
+          },
+          "backend_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackendBinding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The exact backend choice used for this turn."
+          },
+          "billing": {
+            "anyOf": [
+              {
+                "enum": [
+                  "plan",
+                  "api"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether usage came from a subscription plan or direct API billing.",
+            "title": "Billing"
+          },
+          "blocks": {
+            "description": "Validated rich blocks with portable text fallbacks.",
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "attachment": "#/components/schemas/ReferenceBlock",
+                  "proposal": "#/components/schemas/ReferenceBlock",
+                  "question": "#/components/schemas/ReferenceBlock",
+                  "renderer": "#/components/schemas/RendererBlock",
+                  "text": "#/components/schemas/TextBlock"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/TextBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/RendererBlock"
+                },
+                {
+                  "$ref": "#/components/schemas/ReferenceBlock"
+                }
+              ]
+            },
+            "title": "Blocks",
+            "type": "array"
+          },
+          "cost_usd": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reported or priced cost in US dollars; absent when unknown.",
+            "title": "Cost Usd"
+          },
+          "id": {
+            "description": "The stable message id; accepted user messages retain their request id.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "role": {
+            "description": "Who produced this visible message.",
+            "enum": [
+              "user",
+              "assistant",
+              "tool",
+              "system"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "seq": {
+            "description": "The authoritative control-journal position; gaps are permitted.",
+            "minimum": 1.0,
+            "title": "Seq",
+            "type": "integer"
+          },
+          "status": {
+            "default": "completed",
+            "description": "The persisted state of this message or its expired body.",
+            "enum": [
+              "pending",
+              "completed",
+              "failed",
+              "interrupted",
+              "expired",
+              "timeout",
+              "budget"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "default": "",
+            "description": "The portable plain-text content.",
+            "title": "Text",
+            "type": "string"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The owning turn id, when one has been assigned.",
+            "title": "Turn Id"
+          }
+        },
+        "required": [
+          "id",
+          "seq",
+          "role",
+          "at"
+        ],
+        "title": "SessionMessage",
+        "type": "object"
+      },
+      "SessionSnapshot": {
+        "description": "Current metadata plus one message page; a fresh Heinzel can chat before it has an approved contract.",
+        "properties": {
+          "appearance": {
+            "$ref": "#/components/schemas/HeinzelAppearance",
+            "description": "The persisted personal character overrides."
+          },
+          "attachments": {
+            "description": "Retained uploads owned by this conversation.",
+            "items": {
+              "$ref": "#/components/schemas/AttachmentRef"
+            },
+            "title": "Attachments",
+            "type": "array"
+          },
+          "backend_binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackendBinding"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effective backend choice for the next safe turn boundary."
+          },
+          "contract_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The currently approved contract version, if any.",
+            "title": "Contract Version"
+          },
+          "contracts": {
+            "description": "The versioned contract history visible to this owner.",
+            "items": {
+              "$ref": "#/components/schemas/ContractVersion"
+            },
+            "title": "Contracts",
+            "type": "array"
+          },
+          "costs": {
+            "$ref": "#/components/schemas/SessionCosts",
+            "description": "The shared usage accounting and current policy limits."
+          },
+          "has_more": {
+            "default": false,
+            "description": "Whether another message page remains.",
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "heinzel_id": {
+            "description": "The same stable identity as session_id.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Heinzel Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "heinzel",
+            "default": "heinzel",
+            "description": "The durable conversation kind.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_seq": {
+            "default": 0,
+            "description": "The latest acknowledged control-journal sequence.",
+            "minimum": 0.0,
+            "title": "Last Seq",
+            "type": "integer"
+          },
+          "messages": {
+            "description": "One ordered page of visible messages.",
+            "items": {
+              "$ref": "#/components/schemas/SessionMessage"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "name": {
+            "description": "The persisted personal display name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "next_after_seq": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The last returned control sequence when another page remains.",
+            "title": "Next After Seq"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opaque cursor for the next message page; absent at the end.",
+            "title": "Next Cursor"
+          },
+          "pending_actions": {
+            "description": "Stored actions awaiting a decision or reconciliation.",
+            "items": {
+              "$ref": "#/components/schemas/ActionProposal"
+            },
+            "title": "Pending Actions",
+            "type": "array"
+          },
+          "profile_revision": {
+            "default": 1,
+            "description": "The exact name and appearance revision for optimistic updates.",
+            "minimum": 1.0,
+            "title": "Profile Revision",
+            "type": "integer"
+          },
+          "questions": {
+            "description": "Stored questions and their exact answer revisions.",
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "schedule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WakeScheduleView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The authoritative schedule and effective eligibility, when available."
+          },
+          "session_id": {
+            "description": "The stable hz-owned conversation identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "state": {
+            "default": "proposed",
+            "description": "The authoritative projected lifecycle state.",
+            "enum": [
+              "proposed",
+              "asleep",
+              "awake",
+              "waiting",
+              "paused",
+              "retired"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "heinzel_id",
+          "name",
+          "costs"
+        ],
+        "title": "SessionSnapshot",
+        "type": "object"
+      },
+      "SessionSummary": {
+        "description": "Picker metadata, including proposed chats with no approved contract.",
+        "properties": {
+          "appearance": {
+            "$ref": "#/components/schemas/HeinzelAppearance",
+            "description": "The persisted character overrides for the session picker."
+          },
+          "contract_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The approved contract version, when one exists.",
+            "title": "Contract Version"
+          },
+          "last_seq": {
+            "description": "The latest acknowledged control-journal sequence.",
+            "minimum": 0.0,
+            "title": "Last Seq",
+            "type": "integer"
+          },
+          "name": {
+            "description": "The persisted personal display name.",
+            "title": "Name",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal conversation identity.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "state": {
+            "description": "The authoritative projected lifecycle state.",
+            "enum": [
+              "proposed",
+              "asleep",
+              "awake",
+              "waiting",
+              "paused",
+              "retired"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "updated_at": {
+            "description": "When the latest acknowledged control was recorded.",
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "name",
+          "state",
+          "last_seq",
+          "updated_at"
+        ],
+        "title": "SessionSummary",
+        "type": "object"
+      },
       "SettingInfo": {
         "description": "One effective setting.",
         "properties": {
@@ -5538,7 +8819,7 @@
             "title": "Default"
           },
           "description": {
-            "description": "What the setting controls.",
+            "description": "What the setting controls, in plain words.",
             "title": "Description",
             "type": "string"
           },
@@ -5570,6 +8851,18 @@
             "title": "Section",
             "type": "string"
           },
+          "section_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What Settings calls the setting's section: its settings model's section_title; none without one.",
+            "title": "Section Title"
+          },
           "source": {
             "default": "default",
             "description": "Where the value in effect comes from: `default`, a file's scope (`site`, `user`, `project`, `explicit`) or `env`.",
@@ -5589,6 +8882,46 @@
           "description"
         ],
         "title": "SettingInfo",
+        "type": "object"
+      },
+      "SettingRevealed": {
+        "description": "What `hz system config reveal-setting` did.",
+        "properties": {
+          "key": {
+            "description": "The setting, as section.key.",
+            "title": "Key",
+            "type": "string"
+          },
+          "message": {
+            "description": "What happened, or why nothing did, with the path.",
+            "title": "Message",
+            "type": "string"
+          },
+          "opened": {
+            "description": "Whether the file manager was opened.",
+            "title": "Opened",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "The file or folder it names.",
+            "format": "path",
+            "title": "Path",
+            "type": "string"
+          },
+          "supported": {
+            "description": "Whether this machine has a file manager hz can open.",
+            "title": "Supported",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "path",
+          "supported",
+          "opened",
+          "message"
+        ],
+        "title": "SettingRevealed",
         "type": "object"
       },
       "Skill": {
@@ -5617,6 +8950,583 @@
           "path"
         ],
         "title": "Skill",
+        "type": "object"
+      },
+      "SkillDetail": {
+        "description": "One skill with its body, as `hz system skill show` prints it.",
+        "properties": {
+          "body": {
+            "description": "Its body, cleaned, without the frontmatter.",
+            "title": "Body",
+            "type": "string"
+          },
+          "skill": {
+            "$ref": "#/components/schemas/SkillView",
+            "description": "The skill."
+          }
+        },
+        "required": [
+          "skill",
+          "body"
+        ],
+        "title": "SkillDetail",
+        "type": "object"
+      },
+      "SkillList": {
+        "description": "Every skill in effect, the names nobody decided between, and personal skills that failed their checks.",
+        "properties": {
+          "conflicts": {
+            "description": "Names left out: an org and the site both.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "next": {
+            "description": "Commands worth running next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "problems": {
+            "description": "Your skills that failed a check, and why.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "skills": {
+            "description": "The skills in effect, by name.",
+            "items": {
+              "$ref": "#/components/schemas/SkillView"
+            },
+            "title": "Skills",
+            "type": "array"
+          }
+        },
+        "required": [
+          "skills"
+        ],
+        "title": "SkillList",
+        "type": "object"
+      },
+      "SkillView": {
+        "description": "A skill in effect: what it is, where it comes from, and what it hides.",
+        "properties": {
+          "chat": {
+            "default": false,
+            "description": "Whether the chat may use it (`[system.skill] chat`).",
+            "title": "Chat",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "When to use it, in one line.",
+            "title": "Description",
+            "type": "string"
+          },
+          "exported": {
+            "description": "Directories it is exported to, from `hz system skill export`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Exported",
+            "type": "array"
+          },
+          "files": {
+            "description": "Paths of the files beside its SKILL.md.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "fingerprint": {
+            "description": "SHA-256 over its files.",
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "hints": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Frontmatter hints such as `allowed-tools`, never applied.",
+            "title": "Hints",
+            "type": "object"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The module offering it; none for a personal skill.",
+            "title": "Module"
+          },
+          "name": {
+            "description": "The skill's name, e.g. `review-pull-request`.",
+            "title": "Name",
+            "type": "string"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin's distribution; none for the core and yours.",
+            "title": "Plugin"
+          },
+          "scripts": {
+            "default": 0,
+            "description": "How many of them are scripts, which hz never runs.",
+            "title": "Scripts",
+            "type": "integer"
+          },
+          "shadows": {
+            "description": "Modules (or `personal`) whose skill of the same name this one hides.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Shadows",
+            "type": "array"
+          },
+          "source": {
+            "description": "`core`, `plugin`, `layer` or `personal`.",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "source",
+          "fingerprint"
+        ],
+        "title": "SkillView",
+        "type": "object"
+      },
+      "Skipped": {
+        "description": "A file or directory the scan left alone, and why.",
+        "properties": {
+          "path": {
+            "description": "What was skipped, with your home directory as `~`.",
+            "title": "Path",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why: unreadable, not valid JSON, too large, or a link leaving its directory.",
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ],
+        "title": "Skipped",
+        "type": "object"
+      },
+      "SoundEarconView": {
+        "description": "A short sound for notices of one kind.",
+        "properties": {
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who made it, to show beside it; set for CC-BY.",
+            "title": "Attribution"
+          },
+          "kind": {
+            "description": "The notice kind it plays for, e.g. `draft` or `failed`.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "licence": {
+            "description": "Its licence, an SPDX identifier, e.g. `CC0-1.0`.",
+            "title": "Licence",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it comes from, an https URL.",
+            "title": "Source"
+          },
+          "url": {
+            "description": "Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "licence",
+          "attribution",
+          "source",
+          "kind"
+        ],
+        "title": "SoundEarconView",
+        "type": "object"
+      },
+      "SoundLayerView": {
+        "description": "One layer of a layered soundscape: a looped file whose gain follows a signal.",
+        "properties": {
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who made it, to show beside it; set for CC-BY.",
+            "title": "Attribution"
+          },
+          "curve": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Points `[x, y]` for a weather signal, gains by part of the day for `daypart`; none for `none`.",
+            "title": "Curve"
+          },
+          "gain": {
+            "description": "Its loudness, 0 to 1, before the curve.",
+            "title": "Gain",
+            "type": "number"
+          },
+          "licence": {
+            "description": "Its licence, an SPDX identifier, e.g. `CC0-1.0`.",
+            "title": "Licence",
+            "type": "string"
+          },
+          "signal": {
+            "description": "The signal its gain follows: `none`, `daypart`, `weather.rain`, `weather.wind`.",
+            "title": "Signal",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where it comes from, an https URL.",
+            "title": "Source"
+          },
+          "url": {
+            "description": "Where the web head serves it, e.g. `/sound-assets/rain/layer-0.ogg?v=1a2b3c4d`.",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "licence",
+          "attribution",
+          "source",
+          "gain",
+          "signal",
+          "curve"
+        ],
+        "title": "SoundLayerView",
+        "type": "object"
+      },
+      "SoundList": {
+        "description": "Every available soundscape, which one is configured and which is in effect, and how it plays.",
+        "properties": {
+          "conflicts": {
+            "description": "Names an org and the site both offer with nothing more specific deciding; left out until one is.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Conflicts",
+            "type": "array"
+          },
+          "duck_while_typing": {
+            "description": "Whether sound plays softer while you type in the chat.",
+            "title": "Duck While Typing",
+            "type": "boolean"
+          },
+          "effective": {
+            "description": "The name of the soundscape in effect: `selected`, or the theme's own.",
+            "title": "Effective",
+            "type": "string"
+          },
+          "follow_theme": {
+            "description": "Whether the soundscape that goes with the theme in effect plays instead.",
+            "title": "Follow Theme",
+            "type": "boolean"
+          },
+          "mute_in_meetings": {
+            "description": "Whether sound mutes during a meeting in your calendar.",
+            "title": "Mute In Meetings",
+            "type": "boolean"
+          },
+          "next": {
+            "description": "What to run next.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Next",
+            "type": "array"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the soundscape in effect isn't the one configured.",
+            "title": "Note"
+          },
+          "selected": {
+            "description": "The name of the soundscape configured, after fallbacks; `off` for none.",
+            "title": "Selected",
+            "type": "string"
+          },
+          "signals": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "description": "The signals layers follow, now: `daypart` always, `weather.*` once a plugin publishes them.",
+            "title": "Signals",
+            "type": "object"
+          },
+          "soundscapes": {
+            "description": "`off` first, then the core's and the plugins' soundscapes.",
+            "items": {
+              "$ref": "#/components/schemas/SoundscapeView"
+            },
+            "title": "Soundscapes",
+            "type": "array"
+          },
+          "volume": {
+            "description": "How loud, 0 to 100.",
+            "title": "Volume",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "selected",
+          "effective",
+          "soundscapes",
+          "signals",
+          "volume",
+          "follow_theme",
+          "mute_in_meetings",
+          "duck_while_typing"
+        ],
+        "title": "SoundList",
+        "type": "object"
+      },
+      "SoundStreamView": {
+        "description": "A stream in the official player of an allowed host.",
+        "properties": {
+          "embed_url": {
+            "description": "The player to frame after Play, e.g. `https://www.youtube-nocookie.com/embed/...`.",
+            "title": "Embed Url",
+            "type": "string"
+          },
+          "frame_origin": {
+            "description": "The origin the page's CSP admits as a frame while it is in effect.",
+            "title": "Frame Origin",
+            "type": "string"
+          },
+          "provider": {
+            "description": "The host, e.g. `youtube`.",
+            "title": "Provider",
+            "type": "string"
+          },
+          "video": {
+            "description": "The video's id, e.g. `tRsQsTMvPNg`.",
+            "title": "Video",
+            "type": "string"
+          },
+          "watch_url": {
+            "description": "Where the video is on the host itself, to open it there instead.",
+            "title": "Watch Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "video",
+          "embed_url",
+          "frame_origin",
+          "watch_url"
+        ],
+        "title": "SoundStreamView",
+        "type": "object"
+      },
+      "SoundscapeView": {
+        "description": "One available soundscape, ready for the web app to play.",
+        "properties": {
+          "earcons": {
+            "description": "Short sounds for notices, by kind.",
+            "items": {
+              "$ref": "#/components/schemas/SoundEarconView"
+            },
+            "title": "Earcons",
+            "type": "array"
+          },
+          "effective": {
+            "description": "Whether it is the one in effect (follow my theme may pick another).",
+            "title": "Effective",
+            "type": "boolean"
+          },
+          "fade_seconds": {
+            "default": 4,
+            "description": "How long a change fades, in seconds.",
+            "title": "Fade Seconds",
+            "type": "integer"
+          },
+          "kind": {
+            "description": "`off`, `layers` (files mixed live) or `stream`.",
+            "enum": [
+              "off",
+              "layers",
+              "stream"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "layers": {
+            "description": "The layers to mix.",
+            "items": {
+              "$ref": "#/components/schemas/SoundLayerView"
+            },
+            "title": "Layers",
+            "type": "array"
+          },
+          "module": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The qualified name of the module offering it; none for `off`.",
+            "title": "Module"
+          },
+          "name": {
+            "description": "What `hz system sound use` takes, e.g. `claude-fm`; `off` is no sound.",
+            "title": "Name",
+            "type": "string"
+          },
+          "pairs_with": {
+            "description": "Themes it goes with.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Pairs With",
+            "type": "array"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, `heinzel` for the core's own; none for `off`.",
+            "title": "Plugin"
+          },
+          "selected": {
+            "description": "Whether it is the one configured.",
+            "title": "Selected",
+            "type": "boolean"
+          },
+          "shadows": {
+            "description": "Modules that offer a soundscape of the same name, hidden by this one (layer order decides).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Shadows",
+            "type": "array"
+          },
+          "stream": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SoundStreamView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The stream; none unless the kind is `stream`."
+          },
+          "title": {
+            "description": "What people pick it by, e.g. `Claude FM`.",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "module",
+          "plugin",
+          "selected",
+          "effective"
+        ],
+        "title": "SoundscapeView",
         "type": "object"
       },
       "StackView": {
@@ -5716,6 +9626,249 @@
         ],
         "title": "Status",
         "type": "string"
+      },
+      "StatusEntry": {
+        "description": "A status item, or the problem that keeps it from showing.",
+        "properties": {
+          "id": {
+            "description": "`<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusItem"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What to show; none when there is nothing to show."
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Where it sits among its kind, 0 first; ties go by id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it shows nothing: its source failed, or the declaration can't work.",
+            "title": "Problem"
+          },
+          "refresh": {
+            "description": "How often to ask again, in seconds.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does: what the app filters by.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "plugin",
+          "order",
+          "refresh",
+          "slots"
+        ],
+        "title": "StatusEntry",
+        "type": "object"
+      },
+      "StatusItem": {
+        "additionalProperties": false,
+        "description": "A short item of the status bar: text, an optional live time after it, detail on hover, a click.",
+        "properties": {
+          "actions": {
+            "description": "Up to four buttons shown with the detail, e.g. Install and Logs.",
+            "items": {
+              "$ref": "#/components/schemas/WidgetAction"
+            },
+            "maxItems": 4,
+            "title": "Actions",
+            "type": "array"
+          },
+          "detail": {
+            "description": "Up to eight lines shown on hover.",
+            "items": {
+              "$ref": "#/components/schemas/DetailLine"
+            },
+            "maxItems": 8,
+            "title": "Detail",
+            "type": "array"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "command": "#/components/schemas/RunCommand",
+                    "navigate": "#/components/schemas/Navigate",
+                    "open": "#/components/schemas/OpenUrl",
+                    "operation": "#/components/schemas/RunOperation"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Navigate"
+                  },
+                  {
+                    "$ref": "#/components/schemas/OpenUrl"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunOperation"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RunCommand"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a click does.",
+            "title": "Effect"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "activity",
+                  "alarm-clock",
+                  "bell",
+                  "bot",
+                  "calendar",
+                  "calendar-clock",
+                  "chart-line",
+                  "circle-alert",
+                  "circle-check",
+                  "clock",
+                  "cloud",
+                  "cloud-sun",
+                  "code",
+                  "file-text",
+                  "git-pull-request",
+                  "globe",
+                  "heart",
+                  "inbox",
+                  "info",
+                  "link",
+                  "list-checks",
+                  "mail",
+                  "message-square",
+                  "play",
+                  "rocket",
+                  "star",
+                  "terminal",
+                  "timer",
+                  "users",
+                  "video",
+                  "zap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An icon before the text.",
+            "title": "Icon"
+          },
+          "live": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "clock": "#/components/schemas/LiveClock",
+                    "time": "#/components/schemas/LiveTime",
+                    "until": "#/components/schemas/LiveUntil"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/LiveClock"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LiveTime"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LiveUntil"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A time the app renders after `text` and keeps current.",
+            "title": "Live"
+          },
+          "text": {
+            "description": "What it says, one line, e.g. `Standup until`.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "tone": {
+            "default": "neutral",
+            "description": "How it reads: neutral, ok, warn or bad.",
+            "enum": [
+              "neutral",
+              "ok",
+              "warn",
+              "bad"
+            ],
+            "title": "Tone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "StatusItem",
+        "type": "object"
       },
       "Step": {
         "description": "Something to do next: a command that works, and why.",
@@ -6014,6 +10167,34 @@
         "title": "Tested",
         "type": "object"
       },
+      "TextBlock": {
+        "description": "A portable text answer, also the fallback for heads without rich rendering.",
+        "properties": {
+          "id": {
+            "description": "The stable block id within its message.",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "text",
+            "default": "text",
+            "description": "A portable plain-text block.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "text": {
+            "description": "The plain text to render.",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "TextBlock",
+        "type": "object"
+      },
       "ThemeBackdrop": {
         "additionalProperties": false,
         "description": "A gradient behind the main area (`[light.backdrop]`), of hex colours and the theme's own colour tokens.\n\nThe web app builds the CSS from these typed parts: a kind, an angle in degrees and two to four stops, each a hex\ncolour or a token name it turns into `var(--color-<token>)`; no other text reaches CSS, and no `url()` exists.",
@@ -6253,6 +10434,57 @@
           "style"
         ],
         "title": "ThemeFontView",
+        "type": "object"
+      },
+      "ThemeHeinzel": {
+        "additionalProperties": false,
+        "description": "Checked colours and decorations for the core drawing; personal look choices stay in charge.",
+        "properties": {
+          "assets": {
+            "additionalProperties": {
+              "maxLength": 200,
+              "pattern": "^(?:[A-Za-z0-9_][A-Za-z0-9._-]*/){0,7}[A-Za-z0-9_][A-Za-z0-9._-]*\\.svg$",
+              "type": "string"
+            },
+            "description": "Optional original SVG hat/outfit layers per age, relative to the theme file (ADR 0073).",
+            "maxProperties": 7,
+            "propertyNames": {
+              "$ref": "#/components/schemas/AvatarSlot"
+            },
+            "title": "Assets",
+            "type": "object"
+          },
+          "decorations": {
+            "default": [],
+            "description": "Optional decoration of every core avatar; snow adds a cap patch and scarf.",
+            "items": {
+              "const": "snow",
+              "type": "string"
+            },
+            "maxItems": 1,
+            "title": "Decorations",
+            "type": "array"
+          },
+          "palette": {
+            "additionalProperties": {
+              "description": "A hex colour, `#rgb` or `#rrggbb`.",
+              "pattern": "^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$",
+              "type": "string"
+            },
+            "description": "Colours for default hat, shirt and scarf parts.",
+            "maxProperties": 3,
+            "propertyNames": {
+              "enum": [
+                "hat",
+                "shirt",
+                "scarf"
+              ]
+            },
+            "title": "Palette",
+            "type": "object"
+          }
+        },
+        "title": "ThemeHeinzel",
         "type": "object"
       },
       "ThemeList": {
@@ -6822,6 +11054,25 @@
             "title": "Heading Weight",
             "type": "integer"
           },
+          "heinzel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThemeHeinzel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Core avatar colours and decorations."
+          },
+          "heinzel_assets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Available checked avatar layers as versioned same-origin URLs.",
+            "title": "Heinzel Assets",
+            "type": "object"
+          },
           "icon_size": {
             "description": "The size of icons (`--icon-size`), e.g. `18px`.",
             "title": "Icon Size",
@@ -7192,6 +11443,14 @@
             "description": "The release tag, branch, commit, path, URL or version specifier the installation is pinned to now; none if it follows a git repository's default branch or the package index without a specifier.",
             "title": "Pinned To"
           },
+          "plugins": {
+            "description": "What happened to each installed plugin: upgraded together with hz, unchanged or failed. A plugin that doesn't allow the new hz never blocks it.",
+            "items": {
+              "$ref": "#/components/schemas/PluginUpdate"
+            },
+            "title": "Plugins",
+            "type": "array"
+          },
           "updated": {
             "description": "Whether Heinzelmännchen was reinstalled.",
             "title": "Updated",
@@ -7208,6 +11467,187 @@
           "next"
         ],
         "title": "UpdateResult",
+        "type": "object"
+      },
+      "UsageReport": {
+        "description": "Today's and this week's tokens and cost, and one period broken down by access, model, Heinzelmännchen, cause.",
+        "properties": {
+          "breakdowns": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/UsageRow"
+              },
+              "type": "array"
+            },
+            "description": "The period's rows by access, model, Heinzelmännchen and cause, most tokens first.",
+            "propertyNames": {
+              "enum": [
+                "access",
+                "model",
+                "heinzel",
+                "cause"
+              ]
+            },
+            "title": "Breakdowns",
+            "type": "object"
+          },
+          "budget_usd": {
+            "description": "`[ai] daily_budget_usd`, what today's meter fills against.",
+            "title": "Budget Usd",
+            "type": "number"
+          },
+          "by": {
+            "description": "The breakdown the CLI shows; all four are in `breakdowns`.",
+            "enum": [
+              "access",
+              "model",
+              "heinzel",
+              "cause"
+            ],
+            "title": "By",
+            "type": "string"
+          },
+          "label": {
+            "description": "A short label for a status item, e.g. `182k tok`.",
+            "title": "Label",
+            "type": "string"
+          },
+          "level": {
+            "description": "Today's cost against the daily budget, 0 to 1 (capped), for a meter.",
+            "title": "Level",
+            "type": "number"
+          },
+          "period": {
+            "description": "The period the breakdowns cover: `today` or `week` (the last seven days).",
+            "enum": [
+              "today",
+              "week"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "today": {
+            "$ref": "#/components/schemas/UsageTotal",
+            "description": "Since local midnight."
+          },
+          "tone": {
+            "description": "`ok` below 75% of the budget, `warn` to 100%, `over`.",
+            "enum": [
+              "ok",
+              "warn",
+              "over"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "week": {
+            "$ref": "#/components/schemas/UsageTotal",
+            "description": "The last seven days."
+          }
+        },
+        "required": [
+          "period",
+          "by",
+          "today",
+          "week",
+          "budget_usd",
+          "level",
+          "tone",
+          "label",
+          "breakdowns"
+        ],
+        "title": "UsageReport",
+        "type": "object"
+      },
+      "UsageRow": {
+        "description": "What one access option, model, Heinzelmännchen or cause spent in the period.",
+        "properties": {
+          "cost_usd": {
+            "description": "What the runs that report a cost cost, in US dollars.",
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "input_tokens": {
+            "description": "Tokens sent, without cache reads.",
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "key": {
+            "description": "The access option, model, Heinzelmännchen or cause; `unknown` when not reported.",
+            "title": "Key",
+            "type": "string"
+          },
+          "output_tokens": {
+            "description": "Tokens produced.",
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "runs": {
+            "description": "Runs counted.",
+            "title": "Runs",
+            "type": "integer"
+          },
+          "tokens": {
+            "description": "Every token moved, cache reads and writes included.",
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "unpriced": {
+            "description": "Runs that reported no cost, so the cost is at least `cost_usd`.",
+            "title": "Unpriced",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "runs",
+          "tokens",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd",
+          "unpriced"
+        ],
+        "title": "UsageRow",
+        "type": "object"
+      },
+      "UsageTotal": {
+        "description": "What a period spent in all.",
+        "properties": {
+          "cost_usd": {
+            "description": "What the priced runs cost, in US dollars.",
+            "title": "Cost Usd",
+            "type": "number"
+          },
+          "runs": {
+            "description": "Runs counted.",
+            "title": "Runs",
+            "type": "integer"
+          },
+          "since": {
+            "description": "The start of the period, in UTC: local midnight today, or seven days ago.",
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "tokens": {
+            "description": "Every token moved.",
+            "title": "Tokens",
+            "type": "integer"
+          },
+          "unpriced": {
+            "description": "Runs that reported no cost.",
+            "title": "Unpriced",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "since",
+          "runs",
+          "tokens",
+          "cost_usd",
+          "unpriced"
+        ],
+        "title": "UsageTotal",
         "type": "object"
       },
       "ValidationError": {
@@ -7281,6 +11721,124 @@
         "title": "Waiting",
         "type": "object"
       },
+      "WakeScheduleView": {
+        "additionalProperties": false,
+        "description": "An authoritative schedule preview or active contract; the browser never runs its own wake timer.",
+        "properties": {
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the daemon or effective authority currently prevents a wake.",
+            "title": "Blocked Reason"
+          },
+          "contract_version": {
+            "description": "The exact contract version behind this schedule.",
+            "minimum": 1.0,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "cron": {
+            "description": "The approved or proposed cron expression.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Cron",
+            "type": "string"
+          },
+          "last_run": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The last recorded scheduled run, when one exists.",
+            "title": "Last Run"
+          },
+          "next_wake": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The effective next eligible wake, when known.",
+            "title": "Next Wake"
+          },
+          "notification_status": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The recorded notification policy or delivery summary.",
+            "title": "Notification Status"
+          },
+          "preview_hash": {
+            "description": "The exact preview hash for activation or control review.",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Preview Hash",
+            "type": "string"
+          },
+          "revision": {
+            "description": "The immutable control or proposal revision.",
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "status": {
+            "description": "Whether this schedule is proposed, active or paused.",
+            "enum": [
+              "proposed",
+              "active",
+              "paused"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "description": "The authoritative responsibility and schedule summary.",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "timezone": {
+            "description": "The IANA time zone used for schedule interpretation.",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary",
+          "cron",
+          "timezone",
+          "status",
+          "contract_version",
+          "revision",
+          "preview_hash"
+        ],
+        "title": "WakeScheduleView",
+        "type": "object"
+      },
       "Week": {
         "additionalProperties": false,
         "description": "Promises due in one ISO week, by how they ended: the team's flow, never anyone's performance.",
@@ -7320,12 +11878,347 @@
         ],
         "title": "Week",
         "type": "object"
+      },
+      "WidgetAction": {
+        "additionalProperties": false,
+        "description": "A button of a widget.",
+        "properties": {
+          "effect": {
+            "description": "What a click does.",
+            "discriminator": {
+              "mapping": {
+                "command": "#/components/schemas/RunCommand",
+                "navigate": "#/components/schemas/Navigate",
+                "open": "#/components/schemas/OpenUrl",
+                "operation": "#/components/schemas/RunOperation"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Navigate"
+              },
+              {
+                "$ref": "#/components/schemas/OpenUrl"
+              },
+              {
+                "$ref": "#/components/schemas/RunOperation"
+              },
+              {
+                "$ref": "#/components/schemas/RunCommand"
+              }
+            ],
+            "title": "Effect"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "activity",
+                  "alarm-clock",
+                  "bell",
+                  "bot",
+                  "calendar",
+                  "calendar-clock",
+                  "chart-line",
+                  "circle-alert",
+                  "circle-check",
+                  "clock",
+                  "cloud",
+                  "cloud-sun",
+                  "code",
+                  "file-text",
+                  "git-pull-request",
+                  "globe",
+                  "heart",
+                  "inbox",
+                  "info",
+                  "link",
+                  "list-checks",
+                  "mail",
+                  "message-square",
+                  "play",
+                  "rocket",
+                  "star",
+                  "terminal",
+                  "timer",
+                  "users",
+                  "video",
+                  "zap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An icon before the label.",
+            "title": "Icon"
+          },
+          "label": {
+            "description": "What the button says.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "effect"
+        ],
+        "title": "WidgetAction",
+        "type": "object"
+      },
+      "WidgetEntry": {
+        "description": "A widget, or the problem that keeps it from showing.",
+        "properties": {
+          "id": {
+            "description": "`<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.",
+            "title": "Id",
+            "type": "string"
+          },
+          "module": {
+            "description": "The qualified name of the contributing module, e.g. `clock`.",
+            "title": "Module",
+            "type": "string"
+          },
+          "order": {
+            "description": "Where it sits among its kind, 0 first; ties go by id.",
+            "title": "Order",
+            "type": "integer"
+          },
+          "plugin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The plugin it comes with, e.g. `heinzel-clock`; none for a built-in.",
+            "title": "Plugin"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why it shows nothing: its source failed, or the declaration can't work.",
+            "title": "Problem"
+          },
+          "refresh": {
+            "description": "How often to ask again, in seconds.",
+            "title": "Refresh",
+            "type": "integer"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Each slot it may show in, and whether it does: what the app filters by.",
+            "propertyNames": {
+              "enum": [
+                "footer",
+                "sidebar",
+                "header",
+                "today"
+              ]
+            },
+            "title": "Slots",
+            "type": "object"
+          },
+          "widget": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "card": "#/components/schemas/CardWidget",
+                    "graphic": "#/components/schemas/GraphicWidget",
+                    "list": "#/components/schemas/ListWidget",
+                    "metric": "#/components/schemas/MetricWidget",
+                    "progress": "#/components/schemas/ProgressWidget"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/CardWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ListWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ProgressWidget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/GraphicWidget"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What to show; none when there is nothing to show.",
+            "title": "Widget"
+          }
+        },
+        "required": [
+          "id",
+          "module",
+          "plugin",
+          "order",
+          "refresh",
+          "slots"
+        ],
+        "title": "WidgetEntry",
+        "type": "object"
+      },
+      "heinzel_chat_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "description": "Your message to this Heinzel, retained privately.",
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "when_busy": {
+            "default": "follow_up",
+            "description": "Queue a follow-up or request steering at the next safe boundary.",
+            "enum": [
+              "follow_up",
+              "steer"
+            ],
+            "title": "When Busy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "message"
+        ],
+        "title": "heinzel_chat_Input",
+        "type": "object"
+      },
+      "heinzel_new_chat_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeinzelAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The complete personal appearance overrides; null leaves the current look unchanged."
+          },
+          "name": {
+            "default": "New Heinzel",
+            "description": "Your personal display name for this Heinzel.",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id"
+        ],
+        "title": "heinzel_new_chat_Input",
+        "type": "object"
+      },
+      "heinzel_profile_Input": {
+        "additionalProperties": false,
+        "properties": {
+          "appearance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HeinzelAppearance"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The complete personal appearance overrides; null leaves the current look unchanged."
+          },
+          "expected_revision": {
+            "description": "The exact profile_revision you last read.",
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The new personal display name; null leaves it unchanged.",
+            "title": "Name"
+          },
+          "request_id": {
+            "description": "A stable client request id; reuse it only for an exact retry.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The stable personal session id returned by new-chat or sessions.",
+            "pattern": "^hz-[0-9A-HJKMNP-TV-Z]{26}$",
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "expected_revision"
+        ],
+        "title": "heinzel_profile_Input",
+        "type": "object"
       }
     }
   },
   "info": {
-    "description": "Open-source helpers that keep product teams running. Every endpoint is also a `hz` command.",
-    "title": "🧝 Heinzelmännchen"
+    "description": "Helpers accelerating product teams. Every endpoint is also a `hz` command.",
+    "title": "Heinzelmännchen"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -7448,6 +12341,96 @@
         ]
       }
     },
+    "/ai/models": {
+      "get": {
+        "description": "List the models and efforts of the AI access in use, for the chat's model and effort picker.",
+        "operationId": "ai_models",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the models and efforts of the AI access in use, for the chat's model and effort picker.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/ai/usage": {
+      "get": {
+        "description": "Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.",
+        "operationId": "ai_usage",
+        "parameters": [
+          {
+            "description": "`today` (since local midnight) or `week` (the last seven days).",
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "today",
+              "description": "`today` (since local midnight) or `week` (the last seven days).",
+              "enum": [
+                "today",
+                "week"
+              ],
+              "title": "Period",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Break down by `access`, `model`, `heinzel` or `cause`.",
+            "in": "query",
+            "name": "by",
+            "required": false,
+            "schema": {
+              "default": "model",
+              "description": "Break down by `access`, `model`, `heinzel` or `cause`.",
+              "enum": [
+                "access",
+                "model",
+                "heinzel",
+                "cause"
+              ],
+              "title": "By",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the tokens and cost of AI runs today and this week, by access, model, Heinzelmännchen or cause.",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/graph": {
       "get": {
         "description": "Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.",
@@ -7559,6 +12542,48 @@
         "summary": "Show your team's promises: who keeps which artifact, how each promise stands, where the flow waits.",
         "tags": [
           "graph"
+        ]
+      }
+    },
+    "/heinzel/chat": {
+      "post": {
+        "description": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
+        "operationId": "heinzel_chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_chat_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageAccepted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Durably queue a message for this Heinzel; acceptance is distinct from a completed model answer.",
+        "tags": [
+          "heinzel"
         ]
       }
     },
@@ -7817,6 +12842,48 @@
         ]
       }
     },
+    "/heinzel/new-chat": {
+      "post": {
+        "description": "Create a durable personal Heinzel with an idempotent request, name and look.",
+        "operationId": "heinzel_new_chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_new_chat_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create a durable personal Heinzel with an idempotent request, name and look.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
     "/heinzel/playbooks": {
       "get": {
         "description": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
@@ -7834,6 +12901,143 @@
           }
         },
         "summary": "List the playbooks plugins contribute: asset types, template contracts and recommended settings.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/profile": {
+      "post": {
+        "description": "Save this Heinzel's name or look against the exact profile revision you saw.",
+        "operationId": "heinzel_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/heinzel_profile_Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save this Heinzel's name or look against the exact profile revision you saw.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/session": {
+      "get": {
+        "description": "Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.",
+        "operationId": "heinzel_session",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The opaque next_cursor from this session's previous page.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The opaque next_cursor from this session's previous page.",
+              "title": "Cursor"
+            }
+          },
+          {
+            "description": "The most messages returned in this page.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "description": "The most messages returned in this page.",
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionSnapshot"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open one durable Heinzel and an ordered page of its accepted messages, even during an active turn.",
+        "tags": [
+          "heinzel"
+        ]
+      }
+    },
+    "/heinzel/sessions": {
+      "get": {
+        "description": "List your durable personal Heinzels, including new conversations without an approved contract.",
+        "operationId": "heinzel_sessions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List your durable personal Heinzels, including new conversations without an approved contract.",
         "tags": [
           "heinzel"
         ]
@@ -8107,6 +13311,50 @@
         ]
       }
     },
+    "/system/claude/list": {
+      "get": {
+        "description": "List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.",
+        "operationId": "system_claude_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeScan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the MCP servers and skills Claude Code and Claude Desktop have; nothing is switched on.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/claude/summary": {
+      "get": {
+        "description": "Count the MCP servers and skills found in Claude's configuration per source, without their names.",
+        "operationId": "system_claude_summary",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaudeSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Count the MCP servers and skills found in Claude's configuration per source, without their names.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/config/get": {
       "get": {
         "description": "Show one setting in effect, with its environment variable.",
@@ -8264,6 +13512,51 @@
           }
         },
         "summary": "Show a configuration file in Finder, Explorer or your desktop's file manager; nothing is created.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/config/reveal-setting": {
+      "post": {
+        "description": "Show the file or folder a path setting names, such as hz.log_dir, in your file manager.\n\nA folder opens; a file is selected, never opened. On Linux without a desktop session nothing opens and the\nmessage names the path.",
+        "operationId": "system_config_reveal_setting",
+        "parameters": [
+          {
+            "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+            "in": "query",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "description": "Setting as section.key, e.g. hz.log_level or example.greeting.",
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingRevealed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show the file or folder a path setting names, such as hz.log_dir, in your file manager.",
         "tags": [
           "system"
         ]
@@ -8614,6 +13907,28 @@
           }
         },
         "summary": "Pause the daemon: ticks run no job until resumed.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/daemon/restart": {
+      "post": {
+        "description": "Restart the daemon so it runs with the installed hz.",
+        "operationId": "system_daemon_restart",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Restarted"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Restart the daemon so it runs with the installed hz.",
         "tags": [
           "system"
         ]
@@ -9746,6 +15061,50 @@
               "description": "Most this answer may cost in US dollars, within the per-message and session caps.",
               "title": "Budget Usd"
             }
+          },
+          {
+            "description": "The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default.",
+            "in": "query",
+            "name": "model",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The model this chat uses from now on, one `hz ai models` lists, e.g. `sonnet`; empty goes back to the default.",
+              "title": "Model"
+            }
+          },
+          {
+            "description": "The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default.",
+            "in": "query",
+            "name": "effort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "",
+                    "low",
+                    "medium",
+                    "high",
+                    "xhigh",
+                    "max"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The effort this chat uses from now on: low, medium, high, xhigh or max; empty: the default.",
+              "title": "Effort"
+            }
           }
         ],
         "responses": {
@@ -9816,6 +15175,140 @@
           }
         },
         "summary": "Show a chat session: its context, messages, actions and costs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/skill/list": {
+      "get": {
+        "description": "List the skills in effect: which module offers each, what it hides, and where it is exported.",
+        "operationId": "system_skill_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the skills in effect: which module offers each, what it hides, and where it is exported.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/skill/show": {
+      "get": {
+        "description": "Show a skill: where it comes from, its files and hints, and its body.",
+        "operationId": "system_skill_show",
+        "parameters": [
+          {
+            "description": "The skill, one `hz system skill list` shows, e.g. `explain-heinzel`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The skill, one `hz system skill list` shows, e.g. `explain-heinzel`.",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a skill: where it comes from, its files and hints, and its body.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/sound/list": {
+      "get": {
+        "description": "List the soundscapes of the web app, where each comes from, which one is picked and which plays.",
+        "operationId": "system_sound_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List the soundscapes of the web app, where each comes from, which one is picked and which plays.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/sound/use": {
+      "post": {
+        "description": "Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.",
+        "operationId": "system_sound_use",
+        "parameters": [
+          {
+            "description": "The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.",
+            "in": "query",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "description": "The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.",
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoundList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.",
         "tags": [
           "system"
         ]
@@ -9910,9 +15403,363 @@
         ]
       }
     },
+    "/system/ui/actions": {
+      "get": {
+        "description": "List the buttons modules add to the web app's header, with what each does and its badge.\n\nRaises:\n    HeinzelError: If `item` names no action.",
+        "operationId": "system_ui_actions",
+        "parameters": [
+          {
+            "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ActionEntry"
+                  },
+                  "title": "Response System Ui Actions",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the buttons modules add to the web app's header, with what each does and its badge.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/hide": {
+      "post": {
+        "description": "Hide a contribution from a slot of the web app, such as the clock from the footer.\n\nRaises:\n    HeinzelError: If no contribution has that id, or it can't show in that slot.",
+        "operationId": "system_ui_hide",
+        "parameters": [
+          {
+            "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": true,
+            "schema": {
+              "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+            "in": "query",
+            "name": "slot",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+              "title": "Slot"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContributionInfo"
+                  },
+                  "title": "Response System Ui Hide",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Hide a contribution from a slot of the web app, such as the clock from the footer.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/list": {
+      "get": {
+        "description": "List every contribution to the web app, where it may show and whether it does; nothing runs.",
+        "operationId": "system_ui_list",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContributionInfo"
+                  },
+                  "title": "Response System Ui List",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List every contribution to the web app, where it may show and whether it does; nothing runs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/navigation": {
+      "get": {
+        "description": "List active providers' navigation and owned Settings metadata without running their operations.",
+        "operationId": "system_ui_navigation",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NavEntry"
+                  },
+                  "title": "Response System Ui Navigation",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List active providers' navigation and owned Settings metadata without running their operations.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/show": {
+      "post": {
+        "description": "Show a contribution in a slot of the web app, such as the clock in the sidebar.\n\nRaises:\n    HeinzelError: If no contribution has that id, or it can't show in that slot.",
+        "operationId": "system_ui_show",
+        "parameters": [
+          {
+            "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": true,
+            "schema": {
+              "description": "The contribution, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+            "in": "query",
+            "name": "slot",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where: `footer`, `sidebar`, `header` or `today`; needed when it may show in several.",
+              "title": "Slot"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ContributionInfo"
+                  },
+                  "title": "Response System Ui Show",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Show a contribution in a slot of the web app, such as the clock in the sidebar.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/status": {
+      "get": {
+        "description": "List the status items modules add to the web app's status bar, with what each shows now.\n\nRaises:\n    HeinzelError: If `item` names no status item.",
+        "operationId": "system_ui_status",
+        "parameters": [
+          {
+            "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StatusEntry"
+                  },
+                  "title": "Response System Ui Status",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the status items modules add to the web app's status bar, with what each shows now.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/ui/widgets": {
+      "get": {
+        "description": "List the widgets modules add to the web app's Today screen, with what each shows now.\n\nRaises:\n    HeinzelError: If `item` names no widget.",
+        "operationId": "system_ui_widgets",
+        "parameters": [
+          {
+            "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+            "in": "query",
+            "name": "item",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only this one, by id (`<module>:<name>`), e.g. `clock:primary-zone`.",
+              "title": "Item"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WidgetEntry"
+                  },
+                  "title": "Response System Ui Widgets",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List the widgets modules add to the web app's Today screen, with what each shows now.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/update": {
       "post": {
-        "description": "Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.\n\nInstalled from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases\nonly if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`\nmakes. With `--channel main` (or the setting\n`update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,\nit changes nothing and says which `--source` moves it. It never moves or suggests a release older than the\ninstalled version.\nFollowing a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new\nversion, the error names it and the previous version stays installed.\n\nRaises:\n    HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.",
+        "description": "Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.\n\nInstalled from a release tag (`@vX.Y.Z`), it moves to the tag of the highest release in SemVer order (pre-releases\nonly if a pre-release is installed): one unauthenticated GET to the GitHub releases API, as `hz system release`\nmakes. With `--channel main` (or the setting\n`update_channel`) it updates to the newest commit of `main`. Pinned to another branch, a commit or a local source,\nit changes nothing and says which `--source` moves it. It never moves or suggests a release older than the\ninstalled version.\n\nPlugins are updated in the same run, each from the install spec it was added with (a git spec pinned to `@main`\ngets its newest commit). A plugin that doesn't allow the new hz never blocks it: it is kept at its version if that\nstill works, else taken out with the command that brings it back. The result reports each plugin.\nFollowing a repository's default branch or the package index, uv upgrades it. If a plugin doesn't allow the new\nversion, the error names it and the previous version stays installed.\n\nRaises:\n    HeinzelError: If Heinzelmännchen wasn't installed with `uv tool install`, or the update fails.",
         "operationId": "system_update",
         "parameters": [
           {
@@ -9978,7 +15825,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Update Heinzelmännchen, keeping plugins; see what it brings with `hz system changelog --newer`.",
+        "summary": "Update Heinzelmännchen and its plugins; see what it brings with `hz system changelog --newer`.",
         "tags": [
           "system"
         ]

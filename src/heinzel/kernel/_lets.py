@@ -120,6 +120,8 @@ class OperationLet(Let):
     func: Callable[..., Any]
     summary: str
     read_only: bool = True
+    private: bool = False
+    """Requires a trusted call identity; excluded from unauthenticated network heads (ADR 0068)."""
     render: Callable[[Any], RenderableType] | None = None
     """Presentation hint for human-facing heads. Machine-facing heads always use the JSON form of the result."""
     exit_code: Callable[[Any], int] | None = None

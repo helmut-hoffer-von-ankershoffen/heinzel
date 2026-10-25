@@ -8,14 +8,16 @@ from types import UnionType
 from typing import Annotated, Any, get_args, get_origin
 
 import typer
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from pydantic.fields import FieldInfo
 from rich.console import Console
 from rich.text import Text
 
+from heinzel.heads.cli import _playful
 from heinzel.heads.cli._progress import ConsoleProgress
 from heinzel.heads.cli._render import TerminalSafe, message, show, to_json
 from heinzel.heads.cli._setup import ConsolePrompter, has_terminal
-from heinzel.kernel import HeinzelError, Kernel, OperationLet, Prompter
+from heinzel.kernel import CurrentUser, HeinzelError, Kernel, OperationLet, Prompter
 
 FORMAT_PARAMETER = "output_format"
 JSON_PARAMETER = "json_output"
@@ -77,8 +79,11 @@ def command(  # noqa: PLR0913 - the head's collaborators, plus the optional prol
         # On a terminal, and not for scripts (--json), operations that ask (a plugin's preview) may ask.
         kernel.bind(Prompter, ConsolePrompter(console) if has_terminal() and not as_json else Prompter())
         try:
-            result = kernel.invoke(operation, **kwargs)
+            with kernel.resolve(CurrentUser).local("cli"):
+                result = kernel.invoke(operation, **kwargs)
         except HeinzelError as exc:
+            if not as_json and _playful.allowed(kernel.settings, err_console):
+                err_console.print(_playful.glyph(), end=" ")
             err_console.print(message("Error:", str(exc)), highlight=False, soft_wrap=True)
             raise typer.Exit(code=1) from exc
         except OSError as exc:
@@ -136,10 +141,11 @@ def _cli_parameter(parameter: inspect.Parameter) -> inspect.Parameter:
     if get_origin(annotation) is Annotated:
         annotation, *metadata = get_args(annotation)
         description = next((m.description for m in metadata if isinstance(m, FieldInfo)), None)
+    parser = _json_parser(annotation) if _structured(annotation) else None
     info = (
-        typer.Argument(help=description, metavar=_metavar(annotation))
+        typer.Argument(help=description, metavar=_metavar(annotation), parser=parser)
         if parameter.default is inspect.Parameter.empty
-        else typer.Option(help=description, metavar=_metavar(annotation))
+        else typer.Option(help=description, metavar=_metavar(annotation), parser=parser)
     )
     return parameter.replace(annotation=Annotated[_as_text(annotation), info], kind=inspect.Parameter.KEYWORD_ONLY)
 
@@ -147,8 +153,34 @@ def _cli_parameter(parameter: inspect.Parameter) -> inspect.Parameter:
 TEMPORAL = (datetime, date, time)
 
 
+def _structured(annotation: Any) -> bool:  # noqa: ANN401 - any public operation annotation
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        return True
+    origin = get_origin(annotation)
+    if origin is dict:
+        return True
+    if origin is UnionType or origin is list:
+        return any(_structured(part) for part in get_args(annotation))
+    return False
+
+
+def _json_parser(annotation: Any) -> Callable[[str], Any]:  # noqa: ANN401 - returns the operation's validated model
+    adapter = TypeAdapter[Any](annotation)
+
+    def parse(value: str) -> Any:  # noqa: ANN401 - generic public parameter model
+        try:
+            return adapter.validate_json(value)
+        except ValidationError:
+            msg = "Expected JSON matching this operation's parameter schema"
+            raise typer.BadParameter(msg) from None
+
+    return parse
+
+
 def _as_text(annotation: Any) -> Any:  # noqa: ANN401 - any annotation
-    """Dates and times reach the kernel as text, where pydantic parses ISO 8601 (with `Z`) like every other head."""
+    """Temporal text and structured JSON use the same Pydantic types as the API and MCP heads."""
+    if _structured(annotation):
+        return str | None if type(None) in get_args(annotation) else str
     if _temporal(annotation):
         return str
     if isinstance(annotation, UnionType) and any(map(_temporal, get_args(annotation))):
@@ -162,6 +194,8 @@ def _temporal(annotation: object) -> bool:
 
 def _metavar(annotation: Any) -> str | None:  # noqa: ANN401 - any annotation
     """`ISO-8601` for dates and times; Typer's default otherwise."""
+    if _structured(annotation):
+        return "JSON"
     if _as_text(annotation) is not annotation:
         return "ISO-8601"
     return None

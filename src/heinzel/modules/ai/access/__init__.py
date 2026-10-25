@@ -12,7 +12,10 @@ from rich.console import Group, RenderableType
 from rich.table import Table
 from rich.text import Text
 
-from heinzel import Check, Module
+from heinzel import AccessStatus, Check, Module, Progress
+from heinzel.modules.ai.access._chatgpt import CHATGPT_LOGIN, ChatGptAccess
+from heinzel.modules.ai.access._chatgpt import HOSTS as CHATGPT_HOSTS
+from heinzel.modules.ai.access._chatgpt import NAME as CHATGPT
 from heinzel.modules.ai.access._gateway import NAME as GATEWAY
 from heinzel.modules.ai.access._gateway import GatewayAccess, configured_hosts
 from heinzel.modules.ai.access._models import (
@@ -37,6 +40,9 @@ module.service(AccessService)
 module.provides("ai-access", modes={"read"}, hosts=configured_hosts, name=GATEWAY)(GatewayAccess)
 module.add(API_KEY)
 module.provides("ai-access", modes={"read"}, hosts=model_hosts, name=PYDANTIC_AI)(PydanticAiAccess)
+module.add(CHATGPT_LOGIN)
+module.provides("ai-access", modes={"read"}, hosts=CHATGPT_HOSTS, name=CHATGPT)(ChatGptAccess)
+module.service(ChatGptAccess)  # `hz ai access login` signs in through it
 
 STYLES = {"signed in": "green", "tested": "green", "not signed in": "yellow", "test failed": "red", "error": "red"}
 
@@ -124,6 +130,17 @@ def live_check(
     Claude Code answers one line within $0.05; the gateway runs its configured test command.
     """
     return service.test(name)
+
+
+# Opens a browser and waits for its callback on 127.0.0.1: a person's own act, in a terminal (ADR 0057).
+@module.operation(read_only=False, heads={"cli"})
+def login(access: ChatGptAccess, progress: Progress) -> AccessStatus:
+    """Sign in to ChatGPT in your browser, so the `chatgpt` option uses your plan instead of an API key.
+
+    Raises:
+        HeinzelError: If OpenAI's client is missing, or the sign-in fails, is declined or takes too long.
+    """
+    return access.login(progress)
 
 
 @module.health

@@ -1,14 +1,13 @@
 // The app's one chat (`hz chat`, ADR 0045, 0039), beside or below every screen, Home included: opened about the screen
 // it was started on. The session lives in hz, so it survives a reload and `hz chat --continue` picks it up in a
 // terminal. `?chat=<session>` opens a session (a notification's link); `?chat-context=<kind:ref>` opens one about it.
-// The header's switcher picks one of your Heinzelmännchen, Ask hz or an earlier question; + starts a new
-// Heinzelmännchen.
+// The header's switcher picks another session, the Workshop or a new chat.
 import { PanelRightClose, Plus } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router";
 import { useSharedChat } from "@/chat/ChatContext";
 import { Composer, Conversation, Costs } from "@/chat/Conversation";
-import { NEW_HEINZEL, SessionSwitcher } from "@/chat/SessionSwitcher";
+import { SessionSwitcher } from "@/chat/SessionSwitcher";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 
@@ -27,21 +26,11 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
     if (box && box.scrollHeight - box.scrollTop - box.clientHeight > 120) return;
     end.current?.scrollIntoView?.({ block: "end" });
   }, [count, chat.live?.text]);
-  // A new Heinzelmännchen starts as a conversation: the agent asks what it keeps true, then proposes its contract.
-  // One that hasn't started yet is reused, and a second click while one opens does nothing.
-  const starting = useRef(false);
-  const about = chat.session?.context;
-  const unstarted = about?.kind === "text" && about.ref === NEW_HEINZEL.slice(5) && !chat.session?.messages?.length;
+  // An empty chat is already a new one: the button then just puts you in its composer.
+  const empty = !chat.session?.messages?.length && !chat.live;
   const fresh = () => {
-    if (unstarted) return focus();
-    if (starting.current) return;
-    starting.current = true;
-    void chat
-      .openAbout(NEW_HEINZEL)
-      .then(focus)
-      .finally(() => {
-        starting.current = false;
-      });
+    if (!empty) chat.fresh();
+    focus();
   };
   return (
     <div className="flex h-full flex-col">
@@ -54,7 +43,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
           className="text-icon"
           onClick={fresh}
           aria-label={t("chat.new")}
-          title={t("chat.newHelp")}
+          title={empty ? t("chat.isNew") : t("chat.new")}
         >
           <Plus aria-hidden />
         </Button>
