@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_021a42dc27593145__yaml_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.2">coverage.py v7.16.2</a>,
-            created at 2026-10-25 01:23 +0000
+            created at 2026-10-25 01:28 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -700,7 +700,7 @@
     <p class="run"><span class="n"><a id="t616" href="#t616">616</a></span><span class="t">        <span class="key">return</span> <span class="nam">_parsed</span><span class="op">(</span><span class="nam">Manifest</span><span class="op">,</span> <span class="nam">checkout</span><span class="op">,</span> <span class="nam">MANIFEST</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t617" href="#t617">617</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t618" href="#t618">618</a></span><span class="t">    <span class="key">def</span> <span class="nam">adopt</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">path</span><span class="op">:</span> <span class="nam">Path</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">Adopted</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t619" href="#t619">619</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Record an existing checkout as your team repository, replacing the deprecated `workflow.team_repository`.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t619" href="#t619">619</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Record an existing checkout as your team repository, replacing the deprecated `heinzel.team_repository`.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t620" href="#t620">620</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t621" href="#t621">621</a></span><span class="t"><span class="str">        Raises:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t622" href="#t622">622</a></span><span class="t"><span class="str">            HeinzelError: If another team is configured, `path` isn&#x27;t a Git checkout, or its `origin` isn&#x27;t a URL hz</span>&nbsp;</span><span class="r"></span></p>
@@ -723,11 +723,11 @@
     <p class="run"><span class="n"><a id="t639" href="#t639">639</a></span><span class="t">            <span class="nam">written</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="str">&quot;set team.repository&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t640" href="#t640">640</a></span><span class="t">        <span class="nam">adopted</span> <span class="op">=</span> <span class="nam">Adopted</span><span class="op">(</span><span class="nam">repository</span><span class="op">=</span><span class="nam">origin</span><span class="op">,</span> <span class="nam">checkout</span><span class="op">=</span><span class="nam">checkout</span><span class="op">,</span> <span class="nam">written</span><span class="op">=</span><span class="nam">written</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t641" href="#t641">641</a></span><span class="t">        <span class="key">try</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t642" href="#t642">642</a></span><span class="t">            <span class="nam">self</span><span class="op">.</span><span class="nam">_editor</span><span class="op">.</span><span class="nam">unset</span><span class="op">(</span><span class="str">&quot;workflow.team_repository&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t643" href="#t643">643</a></span><span class="t">            <span class="nam">adopted</span><span class="op">.</span><span class="nam">written</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="str">&quot;removed workflow.team_repository&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t642" href="#t642">642</a></span><span class="t">            <span class="nam">self</span><span class="op">.</span><span class="nam">_editor</span><span class="op">.</span><span class="nam">unset</span><span class="op">(</span><span class="str">&quot;heinzel.team_repository&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t643" href="#t643">643</a></span><span class="t">            <span class="nam">adopted</span><span class="op">.</span><span class="nam">written</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="str">&quot;removed heinzel.team_repository&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t644" href="#t644">644</a></span><span class="t">        <span class="key">except</span> <span class="nam">HeinzelError</span><span class="op">:</span>  <span class="com"># not in the user file; another file or a variable may still set it</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t645" href="#t645">645</a></span><span class="t">            <span class="nam">adopted</span><span class="op">.</span><span class="nam">next</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t646" href="#t646">646</a></span><span class="t">                <span class="str">&quot;If a site file or HZ_WORKFLOW__TEAM_REPOSITORY still sets workflow.team_repository, remove it there&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t646" href="#t646">646</a></span><span class="t">                <span class="str">&quot;If a site file or HZ_HEINZEL__TEAM_REPOSITORY still sets heinzel.team_repository, remove it there&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t647" href="#t647">647</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t648" href="#t648">648</a></span><span class="t">        <span class="key">if</span> <span class="key">not</span> <span class="nam">_exists</span><span class="op">(</span><span class="nam">checkout</span><span class="op">,</span> <span class="nam">MANIFEST</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t649" href="#t649">649</a></span><span class="t">            <span class="nam">adopted</span><span class="op">.</span><span class="nam">next</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
@@ -1092,7 +1092,7 @@
             <a class="nav" href="z_021a42dc27593145__yaml_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.2">coverage.py v7.16.2</a>,
-            created at 2026-10-25 01:23 +0000
+            created at 2026-10-25 01:28 +0000
         </p>
     </div>
 </footer>

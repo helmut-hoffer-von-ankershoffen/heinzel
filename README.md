@@ -4,21 +4,21 @@
 
 | Name                                                          |    Stmts |     Miss |   Branch |   BrPart |   Cover |   Missing |
 |-------------------------------------------------------------- | -------: | -------: | -------: | -------: | ------: | --------: |
-| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        1 |       30 |        2 |     98% |79-\>81, 226 |
+| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        0 |       30 |        1 |     99% |   79-\>81 |
 | plugins/heinzel-atlassian/src/heinzel\_atlassian/\_storage.py |      291 |        1 |      150 |        5 |     99% |245, 252-\>exit, 258-\>exit, 262-\>exit, 312-\>exit |
 | plugins/heinzel-github/src/heinzel\_github/\_client.py        |      114 |        2 |       32 |        1 |     98% |   104-105 |
 | src/heinzel/heads/\_stream.py                                 |       56 |        6 |        4 |        0 |     87% | 42-46, 55 |
-| src/heinzel/heads/cli/\_\_init\_\_.py                         |      211 |        4 |       46 |        6 |     96% |137-\>145, 142-\>144, 145-\>155, 165-168, 173-\>exit, 229-\>221, 365-\>367 |
+| src/heinzel/heads/cli/\_\_init\_\_.py                         |      239 |        4 |       58 |        6 |     97% |137-\>145, 142-\>144, 145-\>155, 166-169, 174-\>exit, 230-\>222, 411-\>413 |
 | src/heinzel/heads/cli/\_chat.py                               |      142 |       13 |       38 |        5 |     90% |28-29, 70-71, 82, 106, 127-130, 152-\>exit, 164-\>exit, 183-185 |
 | src/heinzel/heads/cli/\_command.py                            |       80 |        2 |       20 |        2 |     96% |   89, 153 |
 | src/heinzel/heads/cli/\_join.py                               |      141 |        0 |       32 |        1 |     99% | 211-\>216 |
 | src/heinzel/heads/cli/\_serve.py                              |       84 |        4 |       24 |        3 |     94% |72-\>74, 82-84, 100-\>exit, 185-186 |
 | src/heinzel/heads/cli/\_setup.py                              |      314 |        4 |       92 |        4 |     98% |274, 341, 426, 478-\>487, 501 |
-| src/heinzel/heads/mcp/\_\_init\_\_.py                         |       71 |        2 |       12 |        2 |     95% |  122, 152 |
+| src/heinzel/heads/mcp/\_\_init\_\_.py                         |       79 |        2 |       16 |        2 |     96% |  138, 168 |
 | src/heinzel/heads/web/\_\_init\_\_.py                         |      207 |       15 |       46 |        3 |     93% |309-311, 353, 363-\>367, 371-373, 381-\>exit, 401-402, 405-410 |
 | src/heinzel/heads/web/\_devices.py                            |      100 |        2 |       12 |        0 |     98% |   125-126 |
 | src/heinzel/heads/web/\_stream.py                             |       46 |        5 |       14 |        4 |     82% |36, 66-\>65, 70-\>73, 75-78 |
-| src/heinzel/heads/web/\_terminal.py                           |      190 |       14 |       36 |        9 |     90% |33-\>38, 74, 85-\>89, 119-120, 136-137, 139, 178, 206-\>199, 212-\>exit, 218-221, 225-\>exit, 283-284, 286 |
+| src/heinzel/heads/web/\_terminal.py                           |      190 |       14 |       36 |        8 |     90% |33-\>38, 74, 85-\>89, 119-120, 136-137, 139, 178, 206-\>199, 212-\>exit, 218-221, 283-284, 286 |
 | src/heinzel/kernel/\_bindings.py                              |      324 |        6 |       74 |        1 |     98% |144-146, 530-532 |
 | src/heinzel/kernel/\_discovery.py                             |       66 |        2 |       16 |        0 |     98% |     60-61 |
 | src/heinzel/kernel/\_duration.py                              |       52 |        1 |       18 |        1 |     97% |        76 |
@@ -34,19 +34,24 @@
 | src/heinzel/modules/graph/\_build.py                          |      268 |        2 |      122 |        3 |     99% |168, 432, 434-\>427 |
 | src/heinzel/modules/graph/\_render.py                         |       28 |       23 |        8 |        0 |     14% |     15-37 |
 | src/heinzel/modules/graph/\_schedule.py                       |       50 |        1 |       14 |        3 |     94% |39-\>45, 66-\>62, 76 |
+| src/heinzel/modules/heinzel/\_\_init\_\_.py                   |       86 |        2 |        8 |        1 |     97% |   156-157 |
+| src/heinzel/modules/heinzel/\_contracts.py                    |      342 |        2 |      132 |        1 |     99% |   464-465 |
+| src/heinzel/modules/heinzel/\_models.py                       |      403 |        2 |       74 |        2 |     99% |88, 108, 515-\>513 |
+| src/heinzel/modules/heinzel/\_render.py                       |      216 |       16 |      104 |       11 |     90% |42, 103, 121, 164-\>166, 169, 170-\>172, 202-208, 234, 268, 289-299, 357 |
+| src/heinzel/modules/heinzel/\_retention.py                    |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
+| src/heinzel/modules/heinzel/\_service.py                      |      755 |       18 |      246 |        7 |     98% |343, 431-432, 537-538, 578, 592-\>exit, 603-604, 1031-1032, 1048-1050, 1277-1278, 1310-1311, 1506 |
 | src/heinzel/modules/org/\_sync.py                             |      180 |        0 |       54 |        1 |     99% |143-\>exit |
 | src/heinzel/modules/system/\_render.py                        |       52 |        0 |       20 |        1 |     99% |   35-\>37 |
 | src/heinzel/modules/system/\_update.py                        |      163 |        8 |       46 |        3 |     95% |93, 104-106, 173-\>185, 183-\>185, 274-275, 295-296 |
 | src/heinzel/modules/system/agent/\_\_init\_\_.py              |       16 |        2 |        0 |        0 |     88% |    15, 27 |
 | src/heinzel/modules/system/agent/\_service.py                 |       62 |        1 |       26 |        1 |     98% |        36 |
 | src/heinzel/modules/system/changelog/\_\_init\_\_.py          |       73 |        3 |       18 |        2 |     95% |106, 111-112 |
-| src/heinzel/modules/system/config/\_\_init\_\_.py             |       31 |        1 |        0 |        0 |     97% |        64 |
 | src/heinzel/modules/system/config/\_render.py                 |       18 |        1 |        8 |        1 |     92% |        18 |
 | src/heinzel/modules/system/connector/\_render.py              |       46 |       36 |       22 |        0 |     15% |20-35, 39-44, 49-55, 60-67 |
 | src/heinzel/modules/system/connector/\_service.py             |       89 |        1 |       22 |        2 |     97% |82-\>81, 126 |
 | src/heinzel/modules/system/daemon/\_render.py                 |       47 |        1 |       22 |        1 |     97% |        30 |
 | src/heinzel/modules/system/daemon/\_schedule.py               |       65 |        3 |       20 |        1 |     95% |43-44, 102 |
-| src/heinzel/modules/system/daemon/\_service.py                |      338 |        1 |      104 |        0 |     99% |        99 |
+| src/heinzel/modules/system/daemon/\_service.py                |      346 |        1 |      106 |        0 |     99% |        99 |
 | src/heinzel/modules/system/directory/\_guess.py               |       82 |        0 |       24 |        1 |     99% |  98-\>104 |
 | src/heinzel/modules/system/notify/\_\_init\_\_.py             |       34 |        2 |        0 |        0 |     94% |  102, 109 |
 | src/heinzel/modules/system/notify/\_channels.py               |       48 |        5 |       26 |        3 |     86% |45, 52, 68-70 |
@@ -79,15 +84,9 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| src/heinzel/modules/workflow/\_\_init\_\_.py                  |       86 |        2 |        8 |        1 |     97% |   132-133 |
-| src/heinzel/modules/workflow/\_contracts.py                   |      342 |        2 |      132 |        1 |     99% |   464-465 |
-| src/heinzel/modules/workflow/\_models.py                      |      394 |        2 |       74 |        2 |     99% |88, 108, 515-\>513 |
-| src/heinzel/modules/workflow/\_render.py                      |      213 |       15 |      104 |       10 |     90% |98, 116, 159-\>161, 164, 165-\>167, 197-203, 229, 263, 284-294, 352 |
-| src/heinzel/modules/workflow/\_retention.py                   |      102 |        0 |       26 |        3 |     98% |84-\>78, 149-\>150, 149-\>exit |
-| src/heinzel/modules/workflow/\_service.py                     |      718 |       17 |      236 |        6 |     98% |338, 426-427, 532-533, 573, 587-\>exit, 598-599, 960-961, 977-979, 1206-1207, 1239-1240 |
-| **TOTAL**                                                     | **19988** |  **429** | **5016** |  **180** | **97%** |           |
+| **TOTAL**                                                     | **20114** |  **429** | **5056** |  **180** | **97%** |           |
 
-130 files skipped due to complete coverage.
+131 files skipped due to complete coverage.
 
 
 ## Setup coverage badge
