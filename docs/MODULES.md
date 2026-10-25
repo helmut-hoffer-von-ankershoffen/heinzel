@@ -35,6 +35,7 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
+| [`system.skill`](#systemskill) | List the skills plugins ship for AI, and hand chosen ones to Claude Code. |
 | [`system.sound`](#systemsound) | Pick the web app's soundscape: off, Claude FM or one a plugin offers. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
@@ -400,6 +401,21 @@ Chat with the agent runner about where you are; it acts through hz once you conf
 | Delete a chat session and everything it holds; returns the sessions left. | `hz chat remove` | — | — | `POST /api/system/runner/chat/remove` | yes | expert |
 
 Settings: [`[system.runner.chat]`](CONFIGURATION.md#systemrunnerchat).
+
+## `system.skill`
+
+List the skills plugins ship for AI, and hand chosen ones to Claude Code.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| List the skills in effect: which module offers each, what it hides, and where it is exported. | `hz system skill list` | — | — | `GET /api/system/skill/list` |  | expert |
+| Show a skill: where it comes from, its files and hints, and its body. | `hz system skill show` | — | — | `GET /api/system/skill/show` |  | expert |
+| Export the skills you name for Claude Code, as `heinzel-<name>` in each export directory. | `hz system skill export` | — | — | — | yes | expert |
+| Remove skills hz exported for Claude Code; directories hz didn't write are left alone. | `hz system skill unexport` | — | — | — | yes | expert |
+
+Settings: [`[system.skill]`](CONFIGURATION.md#systemskill).
+
+Health checks: reported by `hz system doctor`.
 
 ## `system.sound`
 

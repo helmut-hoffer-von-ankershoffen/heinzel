@@ -584,6 +584,7 @@ def test_commands_are_sorted(app):
         "release",
         "runner",
         "serve",
+        "skill",
         "sound",
         "theme",
         "ui",

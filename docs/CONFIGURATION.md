@@ -209,6 +209,14 @@ Plugins add their own tables.
 | `keep_sessions` | `HZ_SYSTEM_RUNNER_CHAT__KEEP_SESSIONS` | `50` | How many chats are kept at most; the oldest beyond that are removed. |
 | `tools` | `HZ_SYSTEM_RUNNER_CHAT__TOOLS` | `'everyday'` | Which operations the chat's agent can use: the everyday ones, or all of them. Every tool is sent with every message, so fewer make each message cheaper. Choices: everyday, all. Never read from a project's hz.toml. |
 
+## `[system.skill]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `chat` | `HZ_SYSTEM_SKILL__CHAT` | `None` | Skills the chat may load, by name, e.g. `["explain-heinzel"]`; none means the core's skills. Never read from a project's hz.toml. |
+| `personal_dir` | `HZ_SYSTEM_SKILL__PERSONAL_DIR` | `None` | A directory of your own skills, each a directory with a SKILL.md; they win over every plugin's. Defaults to `skills` in your hz configuration directory. Never read from a project's hz.toml. |
+| `export_dirs` | `HZ_SYSTEM_SKILL__EXPORT_DIRS` | platform-specific | Directories `hz system skill export` writes chosen skills into, one per coding agent, as `heinzel-<name>`. Never read from a project's hz.toml. |
+
 ## `[system.sound]`
 
 | Key | Environment variable | Default | Description |

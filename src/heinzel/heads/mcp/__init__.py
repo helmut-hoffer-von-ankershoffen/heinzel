@@ -24,6 +24,7 @@ from pydantic_core import to_jsonable_python
 
 from heinzel import __version__
 from heinzel.heads._exposure import MCP_HTTP, Exposed, exposed
+from heinzel.heads.mcp._skills import add_skills
 from heinzel.kernel import ActionGate, HeinzelError, Kernel, ProposedCall, boot, redact_emails
 
 HEAD = "mcp"
@@ -56,7 +57,7 @@ def build(
     sent with every message, so 24 tools instead of 75 halve what a short message costs (ADR 0057).
 
     Over streamable HTTP, which has no authentication, the operations restricted to stdio (`mcp-stdio` in their
-    `heads`, such as installing plugins) are left out.
+    `heads`, such as installing plugins) are left out. Over stdio, outside a chat, skills are prompts and resources.
     """
     server = MCPServer(
         name="heinzel",
@@ -91,6 +92,8 @@ def build(
                 f"{item.operation.summary}",
                 annotations=annotations,
             )
+    if transport == "stdio" and chat is None:  # skills may be internal: only for a client that started hz as you
+        add_skills(server, kernel)
     return server
 
 

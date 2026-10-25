@@ -164,6 +164,28 @@ from heinzel.kernel._protocols import (
 from heinzel.kernel._release import ReleaseCache, ReleaseSource
 from heinzel.kernel._settings import Settings
 from heinzel.kernel._signals import SIGNALS, Signal
+from heinzel.kernel._skills import (
+    MAX_LOAD as MAX_SKILL_LOAD,
+)
+from heinzel.kernel._skills import (
+    LoadedSkill,
+    Skill,
+    SkillEntry,
+    SkillFile,
+    SkillLet,
+    Skills,
+    SkillSource,
+    read_skill,
+    read_skill_file,
+    skill_frame,
+    skill_instructions,
+    skill_text,
+    skill_tools,
+    skills_in,
+)
+from heinzel.kernel._skills import (
+    name_problem as skill_name_problem,
+)
 from heinzel.kernel._soundscapes import (
     SOUND_CSP,
     SOUND_ROUTE,
@@ -223,6 +245,7 @@ __all__ = [
     "KERNEL_SECTION",
     "LOGO_CSP",
     "LOGO_ROUTE",
+    "MAX_SKILL_LOAD",
     "MAX_WINDOW",
     "MODES",
     "NO_ADAPTER",
@@ -310,6 +333,7 @@ __all__ = [
     "LiveClock",
     "LiveTime",
     "LiveUntil",
+    "LoadedSkill",
     "Login",
     "Mail",
     "MailContent",
@@ -370,6 +394,12 @@ __all__ = [
     "SetupPhase",
     "Signal",
     "SignalLet",
+    "Skill",
+    "SkillEntry",
+    "SkillFile",
+    "SkillLet",
+    "SkillSource",
+    "Skills",
     "Slot",
     "SoundAssets",
     "SoundEarcon",
@@ -434,10 +464,18 @@ __all__ = [
     "parse_window",
     "plain_addresses",
     "public_parameters",
+    "read_skill",
+    "read_skill_file",
     "record_usage",
     "redact_emails",
     "requirement_from_receipt",
     "schedule_problem",
+    "skill_frame",
+    "skill_instructions",
+    "skill_name_problem",
+    "skill_text",
+    "skill_tools",
+    "skills_in",
     "subprocess_environment",
     "toml_value",
     "user_config_dir",

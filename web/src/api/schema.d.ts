@@ -1363,6 +1363,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/skill/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the skills in effect: which module offers each, what it hides, and where it is exported.
+         * @description List the skills in effect: which module offers each, what it hides, and where it is exported.
+         */
+        get: operations["system_skill_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/skill/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a skill: where it comes from, its files and hints, and its body.
+         * @description Show a skill: where it comes from, its files and hints, and its body.
+         */
+        get: operations["system_skill_show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/sound/list": {
         parameters: {
             query?: never;
@@ -5849,6 +5889,115 @@ export interface components {
             path: string;
         };
         /**
+         * SkillDetail
+         * @description One skill with its body, as `hz system skill show` prints it.
+         */
+        SkillDetail: {
+            /**
+             * Body
+             * @description Its body, cleaned, without the frontmatter.
+             */
+            body: string;
+            /** @description The skill. */
+            skill: components["schemas"]["SkillView"];
+        };
+        /**
+         * SkillList
+         * @description Every skill in effect, the names nobody decided between, and personal skills that failed their checks.
+         */
+        SkillList: {
+            /**
+             * Conflicts
+             * @description Names left out: an org and the site both.
+             */
+            conflicts?: string[];
+            /**
+             * Next
+             * @description Commands worth running next.
+             */
+            next?: string[];
+            /**
+             * Problems
+             * @description Your skills that failed a check, and why.
+             */
+            problems?: string[];
+            /**
+             * Skills
+             * @description The skills in effect, by name.
+             */
+            skills: components["schemas"]["SkillView"][];
+        };
+        /**
+         * SkillView
+         * @description A skill in effect: what it is, where it comes from, and what it hides.
+         */
+        SkillView: {
+            /**
+             * Chat
+             * @description Whether the chat may use it (`[system.skill] chat`).
+             * @default false
+             */
+            chat: boolean;
+            /**
+             * Description
+             * @description When to use it, in one line.
+             */
+            description: string;
+            /**
+             * Exported
+             * @description Directories it is exported to, from `hz system skill export`.
+             */
+            exported?: string[];
+            /**
+             * Files
+             * @description Paths of the files beside its SKILL.md.
+             */
+            files?: string[];
+            /**
+             * Fingerprint
+             * @description SHA-256 over its files.
+             */
+            fingerprint: string;
+            /**
+             * Hints
+             * @description Frontmatter hints such as `allowed-tools`, never applied.
+             */
+            hints?: {
+                [key: string]: string;
+            };
+            /**
+             * Module
+             * @description The module offering it; none for a personal skill.
+             */
+            module?: string | null;
+            /**
+             * Name
+             * @description The skill's name, e.g. `review-pull-request`.
+             */
+            name: string;
+            /**
+             * Plugin
+             * @description The plugin's distribution; none for the core and yours.
+             */
+            plugin?: string | null;
+            /**
+             * Scripts
+             * @description How many of them are scripts, which hz never runs.
+             * @default 0
+             */
+            scripts: number;
+            /**
+             * Shadows
+             * @description Modules (or `personal`) whose skill of the same name this one hides.
+             */
+            shadows?: string[];
+            /**
+             * Source
+             * @description `core`, `plugin`, `layer` or `personal`.
+             */
+            source: string;
+        };
+        /**
          * Skipped
          * @description A file or directory the scan left alone, and why.
          */
@@ -7463,6 +7612,9 @@ export type SchemaRunOperation = components['schemas']['RunOperation'];
 export type SchemaSettingInfo = components['schemas']['SettingInfo'];
 export type SchemaSettingRevealed = components['schemas']['SettingRevealed'];
 export type SchemaSkill = components['schemas']['Skill'];
+export type SchemaSkillDetail = components['schemas']['SkillDetail'];
+export type SchemaSkillList = components['schemas']['SkillList'];
+export type SchemaSkillView = components['schemas']['SkillView'];
 export type SchemaSkipped = components['schemas']['Skipped'];
 export type SchemaSoundEarconView = components['schemas']['SoundEarconView'];
 export type SchemaSoundLayerView = components['schemas']['SoundLayerView'];
@@ -9266,6 +9418,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatSession"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_skill_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillList"];
+                };
+            };
+        };
+    };
+    system_skill_show: {
+        parameters: {
+            query: {
+                /** @description The skill, one `hz system skill list` shows, e.g. `explain-heinzel`. */
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
                 };
             };
             /** @description Validation Error */
