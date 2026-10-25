@@ -4,7 +4,7 @@
 
 | Name                                                          |    Stmts |     Miss |   Branch |   BrPart |   Cover |   Missing |
 |-------------------------------------------------------------- | -------: | -------: | -------: | -------: | ------: | --------: |
-| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        0 |       30 |        1 |     99% |   79-\>81 |
+| plugins/heinzel-atlassian/src/heinzel\_atlassian/\_acli.py    |      118 |        1 |       30 |        2 |     98% |79-\>81, 226 |
 | plugins/heinzel-atlassian/src/heinzel\_atlassian/\_storage.py |      291 |        1 |      150 |        5 |     99% |245, 252-\>exit, 258-\>exit, 262-\>exit, 312-\>exit |
 | plugins/heinzel-github/src/heinzel\_github/\_client.py        |      114 |        2 |       32 |        1 |     98% |   104-105 |
 | plugins/heinzel-google/src/heinzel\_google/\_mail.py          |      422 |        0 |      144 |        1 |     99% | 485-\>487 |
@@ -20,7 +20,7 @@
 | src/heinzel/heads/web/\_devices.py                            |      100 |        2 |       12 |        0 |     98% |   125-126 |
 | src/heinzel/heads/web/\_shutdown.py                           |       83 |        3 |       14 |        1 |     96% |112, 141-142 |
 | src/heinzel/heads/web/\_stream.py                             |       51 |        3 |       16 |        3 |     91% |48, 85-\>84, 95-96 |
-| src/heinzel/heads/web/\_terminal.py                           |      204 |       14 |       36 |        8 |     91% |35-\>40, 80, 91-\>95, 137-138, 156-157, 159, 207, 235-\>228, 241-\>exit, 247-250, 312-313, 315 |
+| src/heinzel/heads/web/\_terminal.py                           |      204 |       12 |       36 |        8 |     92% |35-\>40, 80, 91-\>95, 137-138, 156-157, 159, 207, 235-\>228, 241-\>exit, 249-250, 312-313, 315 |
 | src/heinzel/kernel/\_ai.py                                    |       69 |        1 |        6 |        1 |     97% |        95 |
 | src/heinzel/kernel/\_bindings.py                              |      326 |        6 |       74 |        1 |     98% |171-173, 559-561 |
 | src/heinzel/kernel/\_contributions.py                         |      342 |        7 |       72 |        3 |     97% |163, 200-202, 470, 604-605 |
@@ -112,7 +112,7 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| **TOTAL**                                                     | **26116** |  **613** | **6470** |  **264** | **97%** |           |
+| **TOTAL**                                                     | **26116** |  **612** | **6470** |  **265** | **97%** |           |
 
 146 files skipped due to complete coverage.
 
