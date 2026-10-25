@@ -100,11 +100,31 @@ export async function verifyLayers(page, shots, screenshot) {
         { timeout: 5000 },
       );
     } catch {
-      const geometry = await pane.evaluate((element) => ({
-        pane: element.getBoundingClientRect().toJSON(),
-        viewport: { width: innerWidth, height: innerHeight },
-        scroll: { x: scrollX, y: scrollY },
-      }));
+      const geometry = await pane.evaluate((element) => {
+        const ancestors = [];
+        let parent = element.parentElement;
+        while (parent && ancestors.length < 8) {
+          const style = getComputedStyle(parent);
+          ancestors.push({
+            tag: parent.tagName,
+            classes: parent.className,
+            rect: parent.getBoundingClientRect().toJSON(),
+            scrollTop: parent.scrollTop,
+            scrollHeight: parent.scrollHeight,
+            clientHeight: parent.clientHeight,
+            overflow: style.overflow,
+            display: style.display,
+            height: style.height,
+          });
+          parent = parent.parentElement;
+        }
+        return {
+          pane: element.getBoundingClientRect().toJSON(),
+          ancestors,
+          viewport: { width: innerWidth, height: innerHeight },
+          scroll: { x: scrollX, y: scrollY },
+        };
+      });
       throw new Error(`${name}: pane must fit the viewport before overlap is tested: ${JSON.stringify(geometry)}`);
     }
     // Measure, reposition and hit-test in one browser evaluation. Changing a docked card's width would resize its
@@ -183,6 +203,25 @@ export async function verifyLayers(page, shots, screenshot) {
     await page.mouse.move(0, 0);
     await park();
   }
+  // CI found the account anchor near the upper edge. A popup must flip/clamp rather than assume room above it;
+  // also exercise a genuinely short viewport, keeping the same playing iframe under the menu.
+  const accountTrigger = aside.locator('button[aria-haspopup="menu"]');
+  const previousStyle = await accountTrigger.evaluate((element) => element.parentElement.style.cssText);
+  for (const height of [900, 360]) {
+    await page.setViewportSize({ width: 1440, height });
+    await accountTrigger.evaluate((element) =>
+      Object.assign(element.parentElement.style, { position: "fixed", top: "80px", left: "8px", width: "240px" }),
+    );
+    await park();
+    await accountTrigger.click();
+    await front(`account-upper-anchor-${height}`, page.getByRole("menu"));
+    await page.keyboard.press("Escape");
+  }
+  await accountTrigger.evaluate((element, original) => {
+    element.parentElement.style.cssText = original;
+  }, previousStyle);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await park();
   await page.getByRole("button", { name: "Dock the player in the sidebar" }).click();
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await page.waitForFunction(

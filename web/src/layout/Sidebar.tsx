@@ -20,7 +20,8 @@ import {
   Sun,
   UserRound,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { NavLink } from "react-router";
 import { useContracts, useExpert, useProfile, useSetExpert } from "@/api/queries";
 import { StatusItems } from "@/components/Contributions";
@@ -28,7 +29,7 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { InstallApp } from "@/pwa/InstallApp";
-import { registerSlot } from "@/sound/dock";
+import { placePopover, registerSlot } from "@/sound/dock";
 import { SoundButton } from "@/sound/SoundControls";
 import { Branding } from "./Branding";
 import { BellButton } from "./NotificationCenter";
@@ -271,12 +272,53 @@ function Footer({ compact = false }: { compact?: boolean }) {
   const role = me?.role ? (ROLE_SHORT[me.role] ?? me.role.replaceAll("-", " ")) : undefined;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open) {
+      setAt(null);
+      return;
+    }
+    const anchor = trigger.current,
+      pane = menu.current;
+    if (!anchor || !pane) return;
+    const place = () => {
+      const box = pane.getBoundingClientRect();
+      const maxHeight = Math.max(1, window.innerHeight - 16);
+      setAt({
+        ...placePopover(
+          anchor.getBoundingClientRect(),
+          { width: box.width, height: Math.min(box.height, maxHeight) },
+          compact ? "right" : "above",
+        ),
+        maxHeight,
+      });
+    };
+    place();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    observer?.observe(pane);
+    observer?.observe(anchor);
+    if (ref.current?.parentElement) observer?.observe(ref.current.parentElement);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, compact]);
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+      if (!ref.current?.contains(event.target as Node) && !menu.current?.contains(event.target as Node)) setOpen(false);
     };
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        trigger.current?.focus();
+      }
+    };
     window.addEventListener("mousedown", close);
     window.addEventListener("keydown", onKey);
     return () => {
@@ -295,46 +337,48 @@ function Footer({ compact = false }: { compact?: boolean }) {
         compact ? "w-full flex-col gap-1 py-2" : "-mx-2 mt-2 h-[60px] px-2",
       )}
     >
-      {open && (
-        <div
-          role="menu"
-          className={cn(
-            "absolute z-(--layer-popover) max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl",
-            compact ? "bottom-0 left-full ml-2 w-64" : "right-2 bottom-full left-2 mb-1.5",
-          )}
-        >
-          {me?.email && <p className="truncate px-2.5 pt-1 pb-1.5 text-ui-sm text-muted-foreground">{me.email}</p>}
-          <MenuLink to="?settings=" icon={Settings} onSelect={close} shortcut="⌘,">
-            {t("nav.settings")}
-          </MenuLink>
-          <MenuLink to="/profile" icon={UserRound} onSelect={close}>
-            {t("nav.profile")}
-          </MenuLink>
-          <MenuLink to="?onboarding=" icon={Sparkles} onSelect={close}>
-            {t("account.setup")}
-          </MenuLink>
-          <MenuLink to="/doctor" icon={Stethoscope} onSelect={close}>
-            {t("account.doctor")}
-          </MenuLink>
-          <ExpertItem />
-          <MenuLink to="?panel=help" icon={CircleHelp} onSelect={close}>
-            {t("account.help")}
-          </MenuLink>
-          <div className="px-1 py-0.5">
-            <InstallApp compact />
-          </div>
-          <hr className="mx-2 my-1 border-border" />
-          <MenuLink to="?panel=changelog" icon={FileClock} onSelect={close}>
-            {t("account.changelog")}
-          </MenuLink>
-          <MenuLink href={`${REPO}#readme`} icon={Info} onSelect={close}>
-            {t("account.learn")}
-          </MenuLink>
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={menu}
+            role="menu"
+            style={at ?? { left: 0, top: 0, visibility: "hidden" }}
+            className="fixed z-(--layer-popover) w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl"
+          >
+            {me?.email && <p className="truncate px-2.5 pt-1 pb-1.5 text-ui-sm text-muted-foreground">{me.email}</p>}
+            <MenuLink to="?settings=" icon={Settings} onSelect={close} shortcut="⌘,">
+              {t("nav.settings")}
+            </MenuLink>
+            <MenuLink to="/profile" icon={UserRound} onSelect={close}>
+              {t("nav.profile")}
+            </MenuLink>
+            <MenuLink to="?onboarding=" icon={Sparkles} onSelect={close}>
+              {t("account.setup")}
+            </MenuLink>
+            <MenuLink to="/doctor" icon={Stethoscope} onSelect={close}>
+              {t("account.doctor")}
+            </MenuLink>
+            <ExpertItem />
+            <MenuLink to="?panel=help" icon={CircleHelp} onSelect={close}>
+              {t("account.help")}
+            </MenuLink>
+            <div className="px-1 py-0.5">
+              <InstallApp compact />
+            </div>
+            <hr className="mx-2 my-1 border-border" />
+            <MenuLink to="?panel=changelog" icon={FileClock} onSelect={close}>
+              {t("account.changelog")}
+            </MenuLink>
+            <MenuLink href={`${REPO}#readme`} icon={Info} onSelect={close}>
+              {t("account.learn")}
+            </MenuLink>
+          </div>,
+          document.body,
+        )}
       {compact && <SoundButton compact />}
       {compact && <ThemeButton compact />}
       <button
+        ref={trigger}
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-haspopup="menu"
