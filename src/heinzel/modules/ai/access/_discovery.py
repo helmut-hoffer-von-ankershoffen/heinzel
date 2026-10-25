@@ -41,7 +41,10 @@ def is_local(url: str) -> bool:
     if host == "localhost" or host.endswith(".localhost"):
         return True
     with contextlib.suppress(ValueError):
-        return ipaddress.ip_address(host).is_loopback
+        address = ipaddress.ip_address(host)
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+            return address.ipv4_mapped.is_loopback
+        return address.is_loopback
     return False
 
 

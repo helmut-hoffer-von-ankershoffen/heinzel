@@ -48,7 +48,7 @@ def test_the_manifest_makes_an_installable_standalone_app():
     manifest = json.loads((PUBLIC / "manifest.webmanifest").read_text(encoding="utf-8"))
     assert (manifest["name"], manifest["short_name"], manifest["display"]) == ("Heinzelmännchen", "hz", "standalone")
     assert manifest["start_url"] == "/"
-    assert manifest["theme_color"] == manifest["background_color"] == "#181818"
+    assert manifest["theme_color"] == manifest["background_color"] == "#ffffff"
     sizes = {(icon["sizes"], icon["purpose"]) for icon in manifest["icons"]}
     assert {("192x192", "any"), ("512x512", "any"), ("512x512", "maskable")} <= sizes
     for icon in manifest["icons"]:
@@ -57,11 +57,10 @@ def test_the_manifest_makes_an_installable_standalone_app():
     assert (PUBLIC / "favicon.ico").is_file()
 
 
-def test_the_launch_splash_of_the_os_and_the_apps_own_agree_with_the_default_theme():
-    # One colour for the installed app's launch screen (a manifest has no modes): the default theme's dark background,
-    # the app's look before this change. The page's own splash and theme-color follow the mode and the last theme.
+def test_the_os_launch_is_white_and_the_page_splash_follows_the_theme():
+    # The installed app opens on the white icon background; the page splash follows the chosen mode.
     manifest = json.loads((PUBLIC / "manifest.webmanifest").read_text(encoding="utf-8"))
-    assert manifest["background_color"] == manifest["theme_color"] == DEFAULT_THEME.dark.background
+    assert manifest["background_color"] == manifest["theme_color"] == "#ffffff"
     page = (PUBLIC.parent / "index.html").read_text(encoding="utf-8")
     metas = dict(
         re.findall(r'<meta name="theme-color" content="(#[0-9a-f]+)" media="\(prefers-color-scheme: (\w+)\)"', page)

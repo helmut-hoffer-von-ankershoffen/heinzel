@@ -14,8 +14,9 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture(autouse=True)
-def _fresh_styles():
+def _fresh_styles(monkeypatch: pytest.MonkeyPatch):
     """rich keeps the ANSI codes of a style it combined in the first colour depth it rendered in; start without."""
+    monkeypatch.setenv("TERM", "xterm-256color")
     Style._add.cache_clear()
 
 
