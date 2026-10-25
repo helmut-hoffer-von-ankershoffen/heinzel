@@ -220,7 +220,7 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
           aria-modal="true"
           aria-labelledby="contrib-confirm"
           onKeyDown={(event) => event.key === "Escape" && setPending(null)}
-          className="fixed inset-x-0 bottom-20 z-50 mx-auto w-[min(28rem,calc(100%-2rem))] rounded-xl border border-border bg-popover p-4 text-sm shadow-xl"
+          className="fixed inset-x-0 bottom-20 z-(--layer-modal) mx-auto w-[min(28rem,calc(100%-2rem))] rounded-xl border border-border bg-popover p-4 text-sm shadow-xl"
         >
           <p id="contrib-confirm" className="font-medium">
             {pending.summary}
@@ -386,7 +386,7 @@ function SidebarStatusItem({
           id={detailId}
           role="tooltip"
           className={cn(
-            "absolute z-40 w-72 rounded-xl border border-border bg-popover p-1.5 text-sm text-foreground shadow-xl",
+            "absolute z-(--layer-popover) w-72 rounded-xl border border-border bg-popover p-1.5 text-sm text-foreground shadow-xl",
             compact ? "bottom-full left-0 mb-2" : "right-0 bottom-full mb-2",
           )}
         >

@@ -1,7 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { doctor, expert, noTeam, shell } from "@/test/fixtures";
+import { doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
 const answers = {
@@ -83,5 +83,20 @@ describe("Shell", () => {
     expect(screen.getByRole("complementary", { name: "Chat" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
     expect(screen.getByRole("button", { name: "Expand navigation" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("keeps the real user's initial as the last compact account control", async () => {
+    mockApi({ ...answers, "/api/org/show": { ...profile, name: "Ada Example", handle: "ada" } });
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
+    const account = await screen.findByRole("button", { name: "Ada Example" });
+    expect(account).toHaveTextContent("A");
+    expect(account).toHaveAttribute("title", "Ada Example · engineering manager");
+    expect(account.nextElementSibling).toBeNull();
+    expect(within(account.parentElement as HTMLElement).getByRole("button", { name: "Sound options" })).toBeVisible();
+    account.focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("menuitem", { name: "Profile" })).toBeVisible();
   });
 });
