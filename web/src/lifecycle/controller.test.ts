@@ -90,6 +90,19 @@ describe("verified restart and apply", () => {
     expect(transport.restart).toHaveBeenCalledOnce();
   });
 
+  it("retries a fetch aborted by the retiring server while observing its replacement", async () => {
+    const transport = server();
+    transport.read
+      .mockResolvedValueOnce(before)
+      .mockRejectedValueOnce(new DOMException("The operation was aborted", "AbortError"));
+    const result = restartAndApply({ confirmed: true, version: after.version }, { transport, interval: 10 });
+    await vi.runAllTimersAsync();
+    await expect(result).resolves.toEqual(after);
+    expect(transport.read).toHaveBeenCalledTimes(4);
+    expect(transport.verify).toHaveBeenCalledOnce();
+    expect(transport.restart).toHaveBeenCalledOnce();
+  });
+
   it("observes after a dropped acknowledgement without replaying a mutation", async () => {
     const transport = server();
     transport.restart.mockRejectedValue(new TypeError("Connection closed"));

@@ -90,7 +90,7 @@ async function bounded<T>(run: (signal: AbortSignal) => Promise<T>, signal: Abor
 function transient(error: unknown): boolean {
   return (
     error instanceof TypeError ||
-    (error instanceof DOMException && error.name === "TimeoutError") ||
+    (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) ||
     (error instanceof ApiError && error.status >= 500)
   );
 }
