@@ -322,7 +322,9 @@ describe("The time zones editor (a list of tables by its schema)", () => {
       within(zones).getByRole("button", { name: /^Name \(Berlin\): Berlin · Europe\/Berlin/ }),
     ).toBeInTheDocument();
     // A plain name is a zone with the default hours.
-    expect(within(zones).getByRole("combobox", { name: "Hours (New York) from" })).toHaveValue("9");
+    const from = within(zones).getByRole("combobox", { name: "Hours (New York) from" });
+    expect(from).toHaveValue("9");
+    expect(from.parentElement).toHaveClass("gap-3");
     await expectAccessible(container);
 
     await user.selectOptions(within(zones).getByRole("combobox", { name: "Hours (Berlin) to" }), "17");
