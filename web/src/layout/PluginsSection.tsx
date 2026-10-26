@@ -73,7 +73,7 @@ function knownRepository(sourceUrl: string | null | undefined): string | null {
 }
 
 /** The head of a module's page, the same everywhere: its name with the kinds of what it adds on the left, and on
- *  the right, on the same line, where it comes from (First-party, Contrib, Private) and its version. */
+ *  the right, on the same line, where it comes from (First-Party, Community, Private) and its version. */
 export function ModuleHeader({
   title,
   plugin,
