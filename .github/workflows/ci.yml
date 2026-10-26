@@ -20,8 +20,8 @@ env:
   FORCE_COLOR: "1"
 
 # GitHub-hosted macOS runners are the scarce resource, so a pull request runs macOS on the newest Python only, one
-# `make setup` and the notifier app when its sources change. Everything else (every Python and platform, end-to-end on
-# macOS, Intel) runs on push to main, the daily schedule and dispatch, which includes the release pull request.
+# `make setup` and the notifier app when its sources change. The mounted Tailscale E2E also runs on macOS when its
+# fixture or lifecycle code changes. Everything else (every Python and platform, Intel) runs off pull requests.
 jobs:
   changes:
     name: Changed paths
@@ -29,6 +29,7 @@ jobs:
     timeout-minutes: 3
     outputs:
       notifier: ${{ steps.paths.outputs.notifier }}
+      mounted_tailscale: ${{ steps.paths.outputs.mounted_tailscale }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,6 +47,12 @@ jobs:
             echo "notifier=true" >> "$GITHUB_OUTPUT"
           else
             echo "notifier=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$EVENT" != pull_request ] \
+            || grep -qE '^(tests/e2e/web_tailscale_test\.py$|tests/fixtures/tailscale_web\.py$|web/e2e/tailscale\.mjs$|src/heinzel/heads/web/|plugins/heinzel-tailscale/)' <<< "$changed"; then
+            echo "mounted_tailscale=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mounted_tailscale=false" >> "$GITHUB_OUTPUT"
           fi
 
   dependency-review:
@@ -240,12 +247,13 @@ jobs:
 
   e2e:
     name: End-to-end (${{ matrix.os }})
+    needs: changes
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
+        os: ${{ fromJSON(github.event_name == 'pull_request' && needs.changes.outputs.mounted_tailscale != 'true' && '["ubuntu-latest"]' || '["ubuntu-latest","macos-latest"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
