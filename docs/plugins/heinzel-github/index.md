@@ -7,7 +7,7 @@ Read pull requests and issues from GitHub: the code-host and tracker capabilitie
 | | |
 | --- | --- |
 | Kind | **connector** |
-| Version | `0.7.13` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.14` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-github> |
 | Licence | MIT |
 | Install | `hz system plugin add github --confirm` |
