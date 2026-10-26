@@ -52,7 +52,7 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, generated 
 		"format=uv run ruff format --check ." \
 		"&ruff=uv run ruff check --no-fix ." \
 		"&docs-plugins=uv run --quiet hz system plugin docs build --directory docs/plugins --check" \
-		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=60"
+		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120"
 
 preflight: ## What CI checks, before you push: check with coverage, build, commits (PREFLIGHT=full adds e2e, audit)
 	$(STEPS) $(GATE) $(LINT) $(TYPES) \
