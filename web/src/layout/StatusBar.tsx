@@ -349,9 +349,23 @@ function until(start: Date, now: Date): string {
 
 const RELEASES = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag";
 
+/** Keep the version pane focused on the installed release rather than repeating the full history. */
+function installedReleaseNotes(changelog: string, version: string): string | null {
+  const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const heading = new RegExp(`^##\\s+\\[?${escaped}\\]?(?:\\s|\\(|$).*?$`, "m");
+  const match = heading.exec(changelog);
+  if (!match) return null;
+  const start = match.index + match[0].length;
+  const next = /^##\s+/gm;
+  next.lastIndex = start;
+  const end = next.exec(changelog)?.index ?? changelog.length;
+  return changelog.slice(start, end).trim() || null;
+}
+
 /** The installed version, its concise branding and the release link. */
 function ReleaseNotes({ version }: { version: string }) {
   const changelog = useChangelog(false);
+  const notes = typeof changelog.data === "string" ? installedReleaseNotes(changelog.data, version) : null;
   return (
     <div className="px-1.5 pb-1">
       <section aria-label={t("status.about")} className="mb-2 flex items-center gap-2 border-b border-border pb-2">
@@ -373,9 +387,9 @@ function ReleaseNotes({ version }: { version: string }) {
           <span className="sr-only">{t("status.release")}</span>
         </a>
       </section>
-      {typeof changelog.data === "string" && (
+      {notes && (
         <div className="max-h-64 overflow-y-auto pr-1 text-xs">
-          <Prose>{changelog.data}</Prose>
+          <Prose>{notes}</Prose>
         </div>
       )}
     </div>
