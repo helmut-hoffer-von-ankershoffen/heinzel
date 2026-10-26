@@ -96,6 +96,8 @@ jobs:
         run: tar -xzf notifier.tar.gz -C src/heinzel/modules/system/notify/macos && rm notifier.tar.gz
       - name: Build the complete core wheel and source distribution
         run: uv build --package heinzel --out-dir dist
+      - name: Remove uv's generated build helper
+        run: rm dist/.gitignore
       - name: Verify artifact identity, payloads and digests
         env:
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}

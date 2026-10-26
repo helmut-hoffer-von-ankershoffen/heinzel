@@ -129,6 +129,22 @@ def workflow():
     return yaml.safe_load((ROOT / ".github/workflows/pypi.yml").read_text())
 
 
+def test_uv_build_helper_is_removed_before_strict_artifact_verification(artifacts):
+    dist = artifacts()
+    (dist / ".gitignore").write_text("*", encoding="utf-8")
+    steps = workflow()["jobs"]["build"]["steps"]
+    build = next(
+        index for index, step in enumerate(steps) if step.get("run") == "uv build --package heinzel --out-dir dist"
+    )
+    cleanup = next(index for index, step in enumerate(steps) if step.get("run") == "rm dist/.gitignore")
+    verify = next(index for index, step in enumerate(steps) if "pypi_release.py artifacts" in step.get("run", ""))
+
+    assert build < cleanup < verify
+    (dist / ".gitignore").unlink()
+    manifest = release.verify_artifacts(dist, "v1.2.3", COMMIT)
+    assert set(manifest["files"]) == {f"heinzel-{VERSION}-py3-none-any.whl", f"heinzel-{VERSION}.tar.gz"}
+
+
 def test_oidc_authority_is_isolated_from_all_build_and_checkout_steps():
     spec = workflow()
     assert spec["permissions"] == {}
