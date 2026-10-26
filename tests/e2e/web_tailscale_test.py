@@ -65,7 +65,13 @@ def test_mounted_sharing_restarts_verifies_copies_and_disables_without_os_change
             timeout=180,
         )
         session = parse_qs(urlsplit(url).fragment)["token"][0]
-        assert driven.returncode == 0, driven.stderr.replace(session, "<redacted-session>")
+        if driven.returncode:
+            assert server.stderr is not None
+            backend_stderr = server.stderr.read()
+            diagnostics = driven.stderr.replace(session, "<redacted-session>")
+            if backend_stderr:
+                diagnostics += f"\n--- fixture backend stderr ---\n{backend_stderr}"
+            pytest.fail(diagnostics)
         result = json.loads(driven.stdout.strip().splitlines()[-1])
     finally:
         server.terminate()
