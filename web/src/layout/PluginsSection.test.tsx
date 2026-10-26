@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { expectAccessible } from "@/test/render";
-import { PluginsSection, sourceLabel } from "./PluginsSection";
+import { ModuleHeader, PluginsSection, sourceLabel } from "./PluginsSection";
 
 const PINNED = `heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@${"b".repeat(40)}`;
 
@@ -13,7 +13,7 @@ const installed = {
   modules: ["clock"],
   name: "clock",
   summary: "What time it is for everyone on the team.",
-  source_kind: "git",
+  source_kind: "git" as const,
   source_url: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/v0.3.0/plugins/heinzel-clock",
   revision: "abc",
   homepage: null,
@@ -42,8 +42,22 @@ const candidate = {
 };
 
 describe("plugin source labels", () => {
+  it.each([
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-clock", null, "First-party"],
+    ["https://github.com/HELMUT-HOFFER-VON-ANKERSHOFFEN/HEINZEL.git", null, "First-party"],
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib", null, "Community"],
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-fork", true, "Private"],
+    ["https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme", false, "Custom"],
+    ["https://github.com/another-owner/heinzel", false, "Custom"],
+    ["https://github.com.evil.example/helmut-hoffer-von-ankershoffen/heinzel", false, "Custom"],
+    ["https://github.com:8443/helmut-hoffer-von-ankershoffen/heinzel", null, "source not reported yet"],
+    [null, null, "source not reported yet"],
+  ])("uses repository identity despite a stale legacy first-party flag: %s", (url, visibility, expected) => {
+    expect(sourceLabel({ ...installed, source_url: url }, visibility)).toBe(expected);
+  });
+
   it("labels the actual installed repository instead of a catalog match", () => {
-    const plugin = { first_party: false } as never;
+    const plugin = {};
     expect(sourceLabel(plugin, true, "https://github.com/acme-example/private-fork")).toBe("Private");
     expect(sourceLabel(plugin, false, "https://github.com/acme-example/public-plugin")).toBe("Custom");
     expect(
@@ -56,11 +70,28 @@ describe("plugin source labels", () => {
   });
 
   it("does not infer community provenance from an unknown or missing source", () => {
-    const plugin = { first_party: false } as never;
+    const plugin = {};
     expect(sourceLabel(plugin, null, null)).toBe("source not reported yet");
     expect(sourceLabel(plugin, null, "https://github.com/acme-example/heinzel-contrib")).toBe(
       "source not reported yet",
     );
+  });
+
+  it("uses the repository in a Settings header even when legacy metadata calls the plugin first-party", () => {
+    render(
+      <ModuleHeader
+        title="Conditions"
+        plugin={{
+          ...installed,
+          source_url:
+            "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-clock",
+        }}
+        version="0.3.0"
+        onOpen={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Community" })).toBeInTheDocument();
+    expect(screen.queryByText("First-party")).not.toBeInTheDocument();
   });
 });
 
@@ -196,7 +227,13 @@ describe("PluginsSection", () => {
       community,
       install_spec,
       url: `https://example.org/${name}`,
-      repository_url: `https://github.com/acme-example/heinzel-${name}`,
+      repository_url:
+        source === "contrib"
+          ? `https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-${name}`
+          : !community
+            ? `https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-${name}`
+            : `https://github.com/acme-example/heinzel-${name}`,
+      private_repository: false,
       stars: null,
       installed: false,
     });
@@ -205,7 +242,17 @@ describe("PluginsSection", () => {
       if (url.pathname === "/api/system/plugin/search") {
         return {
           body: {
-            plugins: [entry("zoom", false, "zoom"), entry("crm", true, git), entry("weather", true, "w", "contrib")],
+            plugins: [
+              entry("zoom", false, "zoom"),
+              entry("crm", true, git),
+              entry("weather", true, "w", "contrib"),
+              {
+                ...entry("reference", false, "reference"),
+                repository_url: "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-acme",
+              },
+              { ...entry("private-tools", true, "private"), private_repository: true },
+              { ...entry("unknown", true, "unknown"), private_repository: null },
+            ],
             warnings: [],
           },
         };
@@ -233,6 +280,10 @@ describe("PluginsSection", () => {
     expect(labels.some((text) => text?.includes("Community"))).toBe(true);
     expect(labels.some((text) => text?.includes("Custom"))).toBe(true);
     expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
+    const row = (name: string) => screen.getByText(name, { exact: true }).closest("li") as HTMLElement;
+    expect(within(row("Reference")).getByText("Custom")).toBeInTheDocument();
+    expect(within(row("Private tools")).getByText("Private")).toBeInTheDocument();
+    expect(within(row("Unknown")).getByText("source not reported yet")).toBeInTheDocument();
     const adds = () =>
       calls.filter((request) => {
         const path = new URL(request.url).pathname;
