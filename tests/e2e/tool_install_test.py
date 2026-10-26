@@ -141,6 +141,9 @@ def sandbox(tmp_path) -> Sandbox:
     return Sandbox(tmp_path)
 
 
+@pytest.mark.timeout(
+    240
+)  # Several isolated uv installs, upgrades and removals; hosted macOS can exceed the 120 s default.
 def test_direct_lifecycle(sandbox, wheel):
     sandbox.run("uv", "tool", "install", wheel)
     assert sandbox.hz("--version").startswith("hz ")
