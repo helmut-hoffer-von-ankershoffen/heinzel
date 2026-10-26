@@ -105,16 +105,16 @@ try {
     return label;
   };
   assert.equal(await track.evaluate((element) => getComputedStyle(element).animationPlayState), "running");
-  const beforeHover = await tickerTime();
   await ticker.hover();
   assert.equal(await track.evaluate((element) => getComputedStyle(element).animationPlayState), "paused");
+  const duringHoverBeforeTick = await tickerTime();
   await page.waitForFunction(
     (previous) => document.querySelector('[data-testid="zone-ticker"]')?.getAttribute("aria-label") !== previous,
-    beforeHover,
+    duringHoverBeforeTick,
     { timeout: 4_000 },
   );
   const afterHover = await tickerTime();
-  assert.notEqual(afterHover, beforeHover, "the clock continues ticking while hover pauses the strip");
+  assert.notEqual(afterHover, duringHoverBeforeTick, "the clock continues ticking while hover pauses the strip");
   await page.mouse.move(0, 0);
   assert.equal(await track.evaluate((element) => getComputedStyle(element).animationPlayState), "running");
 
