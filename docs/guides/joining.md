@@ -16,14 +16,14 @@ signed in (`brew install gh`, then `gh auth login`) and, for drafting, the
 as posted:
 
 ```bash
-uvx --from git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel heinzel join https://github.com/acme-example/hz-team-checkout.git
+uvx --from heinzel heinzel join https://github.com/acme-example/hz-team-checkout.git
 ```
 
 It runs hz without installing it; the line as posted is pinned to a release (`heinzel@vX.Y.Z`). To keep hz, install
 it once and use `hz` from then on:
 
 ```bash
-uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel
+uv tool install heinzel
 hz join https://github.com/acme-example/hz-team-checkout.git
 ```
 
@@ -54,7 +54,7 @@ The roster lists you as theo-example (engineer).
 Make checkout your team? [Y/n]: y
 
 What happens next
-  keep hz             uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel
+  keep hz             uv tool install heinzel
   what is missing     hz setup, any time
   invite the next one post the same line: uvx --from ... heinzel join https://github.com/acme-example/hz-team-checkout.git
 ```
