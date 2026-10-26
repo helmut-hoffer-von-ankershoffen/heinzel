@@ -1180,6 +1180,18 @@
             "title": "Name",
             "type": "string"
           },
+          "private_repository": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the catalog repository is private; none when visibility was not reported.",
+            "title": "Private Repository"
+          },
           "repository_url": {
             "anyOf": [
               {
@@ -1198,7 +1210,7 @@
             "type": "string"
           },
           "source": {
-            "description": "Where it was found: `first-party` (maintained with Heinzelmännchen), `contrib` (the heinzel-contrib monorepo) or `github` (a repository with the topic heinzel-plugin).",
+            "description": "Its catalog route: `first-party` (core and named reference plugins), `contrib` (the heinzel-contrib monorepo) or `github` (a repository with the topic heinzel-plugin).",
             "enum": [
               "first-party",
               "contrib",
@@ -7707,7 +7719,7 @@
             "title": "Distribution"
           },
           "first_party": {
-            "description": "Whether it is maintained and released with Heinzelmännchen.",
+            "description": "Whether confirmation uses a named core/reference install route; repository provenance is determined separately from url and private.",
             "title": "First Party",
             "type": "boolean"
           },

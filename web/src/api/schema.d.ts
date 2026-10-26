@@ -2656,6 +2656,11 @@ export interface components {
              */
             name: string;
             /**
+             * Private Repository
+             * @description Whether the catalog repository is private; none when visibility was not reported.
+             */
+            private_repository?: boolean | null;
+            /**
              * Repository Url
              * @description The repository `install_spec` installs from, as a browser opens it (`/tree/<ref>/<dir>` for a subdirectory); none when it names no https repository.
              */
@@ -2667,7 +2672,7 @@ export interface components {
             short_name: string;
             /**
              * Source
-             * @description Where it was found: `first-party` (maintained with Heinzelmännchen), `contrib` (the heinzel-contrib monorepo) or `github` (a repository with the topic heinzel-plugin).
+             * @description Its catalog route: `first-party` (core and named reference plugins), `contrib` (the heinzel-contrib monorepo) or `github` (a repository with the topic heinzel-plugin).
              * @enum {string}
              */
             source: "first-party" | "contrib" | "github";
@@ -6420,7 +6425,7 @@ export interface components {
             distribution: string | null;
             /**
              * First Party
-             * @description Whether it is maintained and released with Heinzelmännchen.
+             * @description Whether confirmation uses a named core/reference install route; repository provenance is determined separately from url and private.
              */
             first_party: boolean;
             /**

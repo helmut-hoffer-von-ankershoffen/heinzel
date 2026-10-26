@@ -46,6 +46,12 @@ are absent. An invalid declaration has a diagnostic and no executable target. Ex
 generic Settings compatibility entry, so the app needs no plugin-name map. [ADR 0072](adr/0072-plugins-declare-navigation-and-settings-as-data.md)
 records the ownership rules. Declare the core range that supplies this additive API when publishing a plugin.
 
+Repository badges describe the installed source: the core repository is **First-party**, the contrib repository is
+**Community**, and other repositories are **Custom** when public or **Private** when private. Package names and
+catalog routes do not establish provenance. When visibility was not reported, the app says so rather than guessing;
+repository visibility is recorded during installation or returned by the catalog, without a network request for each
+badge. Named reference-plugin install routes remain available independently of these labels.
+
 ## Python, CLI, MCP and REST
 
 | Surface | Status | Declaration and limits |
