@@ -299,16 +299,16 @@ the content they read.
 
 ## 9. Invite the team: one line in chat
 
-Post one line in the team's channel, the same for everyone; `hz join` prints it for the next person. It runs this
-release of hz without installing it, says what hz keeps about the person, finds out who they are from their `gh` and
-`gws` logins, joins the team and sets up what is still missing:
+Post one line in the team's channel, the same for everyone. The PyPI command below runs hz without installing it,
+says what hz keeps about the person, finds out who they are from their `gh` and `gws` logins, joins the team and sets
+up what is still missing:
 
 ```bash
 uvx --from heinzel heinzel join https://github.com/acme-example/hz-team-checkout.git
 ```
 
-The line `hz join` prints is pinned to your release (`heinzel@vX.Y.Z`); this is its shape. Whoever can read the
-repository can join; whoever can't gets the code host's answer. There are no invite tokens and no server. Everything
+The invite printed by `hz join` currently uses the Git repository at your release tag (`@vX.Y.Z`). Whoever can read
+the repository can join; whoever can't gets the code host's answer. There are no invite tokens and no server. Everything
 they need is in [Join your team](joining.md). A teammate with `hz` installed runs `hz join <url>` instead;
 `hz team join <url>`, the line `hz team new` printed, is the lower-level step that only clones and matches the roster.
 
