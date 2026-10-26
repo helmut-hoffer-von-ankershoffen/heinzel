@@ -97,7 +97,7 @@ jobs:
       - name: Build the complete core wheel and source distribution
         run: uv build --package heinzel --out-dir dist
       - name: Remove uv's generated build helper
-        run: rm dist/.gitignore
+        run: make pypi-clean-build-marker
       - name: Verify artifact identity, payloads and digests
         env:
           SOURCE_COMMIT: ${{ steps.source.outputs.commit }}

@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 import stat
+import subprocess
 import tarfile
 import zipfile
 from pathlib import Path
@@ -136,11 +137,18 @@ def test_uv_build_helper_is_removed_before_strict_artifact_verification(artifact
     build = next(
         index for index, step in enumerate(steps) if step.get("run") == "uv build --package heinzel --out-dir dist"
     )
-    cleanup = next(index for index, step in enumerate(steps) if step.get("run") == "rm dist/.gitignore")
+    cleanup = next(index for index, step in enumerate(steps) if step.get("run") == "make pypi-clean-build-marker")
     verify = next(index for index, step in enumerate(steps) if "pypi_release.py artifacts" in step.get("run", ""))
 
     assert build < cleanup < verify
-    (dist / ".gitignore").unlink()
+    subprocess.run(
+        ["make", "pypi-clean-build-marker", f"PYPI_DIST={dist}"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert not (dist / ".gitignore").exists()
     manifest = release.verify_artifacts(dist, "v1.2.3", COMMIT)
     assert set(manifest["files"]) == {f"heinzel-{VERSION}-py3-none-any.whl", f"heinzel-{VERSION}.tar.gz"}
 
