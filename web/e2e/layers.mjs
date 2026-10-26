@@ -113,8 +113,7 @@ export async function verifyLayers(page, shots, screenshot) {
             previous && Object.keys(current).every((name) => Math.abs(current[name] - previous.rect[name]) < 0.5);
           const since = inside && same ? previous.since : performance.now();
           window[key] = { rect: current, since };
-          // Content such as release notes can arrive after the pane opens. Wait for its final height and
-          // repositioning, not the brief frame in which the loading pane happens to fit above the footer.
+          // Wait for final positioning after content has settled, not a transient frame above the footer.
           return inside && performance.now() - since >= 150;
         },
         await pane.elementHandle(),
@@ -214,13 +213,23 @@ export async function verifyLayers(page, shots, screenshot) {
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);
     await park();
-    const changelog =
+    const changelogResponse =
       mode === "docked"
-        ? page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/system/changelog"))
+        ? page.waitForResponse((response) => {
+            const url = new URL(response.url());
+            return (
+              url.pathname === "/api/system/changelog" &&
+              url.searchParams.get("newer") === "false" &&
+              response.request().method() === "GET"
+            );
+          })
         : Promise.resolve();
     await page.getByRole("contentinfo").locator("button").first().click();
-    await changelog;
-    await front(`${mode}-version`, page.getByRole("region", { name: /^v\d/ }));
+    const versionPane = page.getByRole("region", { name: /^v\d/ });
+    const response = await changelogResponse;
+    await response?.finished();
+    await versionPane.locator('[aria-busy="false"]').waitFor();
+    await front(`${mode}-version`, versionPane);
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);
     await park();
