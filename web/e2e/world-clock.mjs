@@ -24,6 +24,22 @@ await page.route("**/api/clock", (route) =>
     ],
   }),
 );
+await page.route("**/api/system/ui/status", (route) =>
+  route.fulfill({
+    json: [
+      {
+        id: "clock:primary-zone",
+        module: "clock",
+        plugin: "heinzel-clock",
+        order: 900,
+        refresh: 60,
+        problem: null,
+        slots: { sidebar: true },
+        item: { text: "Berlin", tone: "neutral", icon: "clock" },
+      },
+    ],
+  }),
+);
 await page.addInitScript(() =>
   localStorage.setItem("hz.onboarding", JSON.stringify({ step: "you", visited: [], closed: true })),
 );
@@ -78,8 +94,52 @@ try {
   await page.waitForTimeout(100);
   const after = await canvas.screenshot();
   assert.notDeepEqual(after, before, "rotation control changes the rendered globe");
+
+  // The sidebar ticker keeps its clock live while its animated strip pauses for reading.
+  const ticker = page.getByTestId("zone-ticker");
+  await ticker.waitFor();
+  const track = ticker.locator(".hz-zone-track");
+  const tickerTime = async () => {
+    const label = await ticker.getAttribute("aria-label");
+    assert.match(label ?? "", /Berlin \d{2}:\d{2}:\d{2}/);
+    return label;
+  };
+  assert.equal(await track.evaluate((element) => getComputedStyle(element).animationPlayState), "running");
+  const beforeHover = await tickerTime();
+  await ticker.hover();
+  assert.equal(await track.evaluate((element) => getComputedStyle(element).animationPlayState), "paused");
+  await page.waitForFunction(
+    (previous) => document.querySelector('[data-testid="zone-ticker"]')?.getAttribute("aria-label") !== previous,
+    beforeHover,
+    { timeout: 4_000 },
+  );
+  const afterHover = await tickerTime();
+  assert.notEqual(afterHover, beforeHover, "the clock continues ticking while hover pauses the strip");
+  await page.mouse.move(0, 0);
+  assert.equal(await track.evaluate((element) => getComputedStyle(element).animationPlayState), "running");
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.equal(await track.evaluate((element) => getComputedStyle(element).animationName), "none");
+  const beforeReducedMotion = await tickerTime();
+  await page.waitForFunction(
+    (previous) => document.querySelector('[data-testid="zone-ticker"]')?.getAttribute("aria-label") !== previous,
+    beforeReducedMotion,
+    { timeout: 4_000 },
+  );
+  assert.notEqual(await tickerTime(), beforeReducedMotion, "reduced motion stops scrolling, not the live clock");
   assert.deepEqual(errors, [], `browser errors: ${errors.join("; ")}`);
-  console.log(JSON.stringify({ panel: true, paintedGlobe: true, markerHover: true, rotation: true, errors }));
+  console.log(
+    JSON.stringify({
+      panel: true,
+      paintedGlobe: true,
+      markerHover: true,
+      rotation: true,
+      tickerTicks: true,
+      hoverPausesScroll: true,
+      reducedMotionTicks: true,
+      errors,
+    }),
+  );
 } finally {
   await browser.close();
 }
