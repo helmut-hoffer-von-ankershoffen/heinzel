@@ -16,6 +16,22 @@ ORIGIN = "https://workstation.tail-example.ts.net"
 OTHER = {"svc:other": {"TCP": {"3000": {"TCPForward": "127.0.0.1:3000"}}}}
 
 
+def stop_server(server: subprocess.Popen[str]) -> str:
+    """Stop the fixture before reading its stderr, so a failure cannot block waiting for EOF."""
+    server.terminate()
+    try:
+        server.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        server.kill()
+        server.wait(timeout=30)
+    stderr = server.stderr.read() if server.stderr is not None else ""
+    if server.stdout is not None:
+        server.stdout.close()
+    if server.stderr is not None:
+        server.stderr.close()
+    return stderr
+
+
 @pytest.mark.timeout(300)
 def test_mounted_sharing_restarts_verifies_copies_and_disables_without_os_changes(tmp_path):
     environment = {key: value for key, value in os.environ.items() if key in {"PATH", "LANG", "LC_ALL", "TMPDIR"}}
@@ -50,6 +66,10 @@ def test_mounted_sharing_restarts_verifies_copies_and_disables_without_os_change
         stderr=subprocess.PIPE,
         text=True,
     )
+    session = ""
+    driven = None
+    result = None
+    backend_stderr = ""
     try:
         assert server.stdout is not None
         url = json.loads(server.stdout.readline())["url"]
@@ -65,15 +85,18 @@ def test_mounted_sharing_restarts_verifies_copies_and_disables_without_os_change
             timeout=180,
         )
         session = parse_qs(urlsplit(url).fragment)["token"][0]
-        assert driven.returncode == 0, driven.stderr.replace(session, "<redacted-session>")
-        result = json.loads(driven.stdout.strip().splitlines()[-1])
+        if driven.returncode == 0:
+            result = json.loads(driven.stdout.strip().splitlines()[-1])
     finally:
-        server.terminate()
-        server.wait(30)
-        if server.stdout is not None:
-            server.stdout.close()
-        if server.stderr is not None:
-            server.stderr.close()
+        backend_stderr = stop_server(server)
+    assert driven is not None
+    if driven.returncode:
+        diagnostics = driven.stderr.replace(session, "<redacted-session>")
+        backend_stderr = backend_stderr.replace(session, "<redacted-session>")
+        if backend_stderr:
+            diagnostics += f"\n--- fixture backend stderr ---\n{backend_stderr}"
+        pytest.fail(diagnostics)
+    assert result is not None
     assert result["replacements"] == 2
     assert result["mutations"] == {"enable": 1, "disable": 1, "restart": 2}
     assert result["copied"] == ORIGIN

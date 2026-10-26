@@ -52,7 +52,7 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `gateway_title` | `HZ_AI_ACCESS__GATEWAY_TITLE` | `'Company AI gateway'` | What people pick your company's AI gateway by. Example: "Example AI". Never read from a project's hz.toml. |
-| `gateway_summary` | `HZ_AI_ACCESS__GATEWAY_SUMMARY` | `"Your company's AI gateway CLI, set up in [ai.access]."` | One sentence on how the gateway reaches AI. Never read from a project's hz.toml. |
+| `gateway_summary` | `HZ_AI_ACCESS__GATEWAY_SUMMARY` | `"Your company's AI gateway CLI, set up in AI access settings."` | One sentence on how the gateway reaches AI. Never read from a project's hz.toml. |
 | `gateway_status_command` | `HZ_AI_ACCESS__GATEWAY_STATUS_COMMAND` | platform-specific | The command, one argument per item, that says whether you are signed in without calling a model: exit code 0 when signed in, optionally with a JSON object on its output naming signed_in, models and detail. The gateway isn't set up until this is. Example: ["example", "ai", "status", "--json"]. Never read from a project's hz.toml. |
 | `gateway_test_command` | `HZ_AI_ACCESS__GATEWAY_TEST_COMMAND` | platform-specific | One cheap live call, one argument per item, run only when you test the gateway: exit code 0 when it answered, optionally with a JSON object naming ok, detail, model and cost_usd. Example: ["example", "ai", "ping"]. Never read from a project's hz.toml. |
 | `gateway_sign_in` | `HZ_AI_ACCESS__GATEWAY_SIGN_IN` | `''` | The command that signs you in, shown as the fix when you aren't. Example: "example login". Never read from a project's hz.toml. |

@@ -309,13 +309,18 @@ function Sections({
       {summary && <p className="-mt-1 mb-2 text-sm text-muted-foreground">{summary}</p>}
       {settings.length === 0 && <p className="text-sm text-muted-foreground">{t("settings.none")}</p>}
       {sections.map((section) => {
-        const title =
-          settings.find((setting) => setting.section === section)?.section_title ||
-          inWords(section.split(".").at(-1) ?? section);
+        const sectionTitle = settings.find((setting) => setting.section === section)?.section_title;
+        const marker = sectionTitle === `[${section}]` ? sectionTitle : undefined;
+        const title = marker || !sectionTitle ? inWords(section.split(".").at(-1) ?? section) : sectionTitle;
         return (
           <section key={section} aria-label={title} className="mt-4">
             {(sections.length > 1 || title !== heading) && (
               <h4 className="mb-1 text-ui-sm text-muted-foreground">{title}</h4>
+            )}
+            {marker && (
+              <p className="mb-1 text-xs text-muted-foreground">
+                Configuration section: <code>{marker}</code>
+              </p>
             )}
             <ul>
               {settings
