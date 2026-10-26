@@ -7,6 +7,7 @@
 | `prepare-release.yml` | dispatch (`make release`) | opens the release PR `chore(release): vX.Y.Z`, dispatches CI on it (token-made PRs trigger none; the dispatched run reports `CI OK`) and enables squash auto-merge |
 | `release-tag.yml` | push to `main` of a release commit | tags it and calls `publish.yml` |
 | `publish.yml` | tags `v*`, called | builds, attests provenance, creates the GitHub release |
+| `pypi.yml` | manual dispatch on a final version tag | validates a published core GitHub release, builds without OIDC, verifies artifacts, then uploads only core with trusted publishing in environment `pypi` |
 | `codeql.yml`, `scorecard.yml` | `main`, PRs, weekly | code scanning and supply-chain checks |
 | `fuzz.yml` | PRs touching the contract parser, weekly, dispatch | fuzzes the workflow contract parser with atheris (`make fuzz`, core only) |
 | `claude-review.yml` | PRs, opt-in (`vars.CLAUDE_REVIEW`) | reviewer agents comment GO / NO-GO |

@@ -55,6 +55,7 @@ function change(action: string, done: boolean, extra: Record<string, unknown> = 
 }
 
 type Answer = (url: URL, request: Request) => { status?: number; body: unknown } | undefined;
+let lifecycleReads = 0;
 
 /** Answer the API by path and query, recording every request. */
 function serve(answer: Answer) {
@@ -74,12 +75,17 @@ function serve(answer: Answer) {
 
 function base(url: URL): { status?: number; body: unknown } | undefined {
   switch (url.pathname) {
+    case "/api/lifecycle":
+      lifecycleReads += 1;
+      return { body: { instance: lifecycleReads === 1 ? "old" : "new", version: "0.3.0", restartable: true } };
+    case "/api/lifecycle/verify":
+      return { body: { instance: "new", version: "0.3.0", matches: true, mismatched: [] } };
     case "/api/system/plugin/list":
       return { body: [installed] };
     case "/api/system/plugin/search":
       return { body: { plugins: [], warnings: [] } };
     case "/api/restart":
-      return { status: 202, body: { restarting: true, message: "Restarting" } };
+      return { status: 202, body: { restarting: true, instance: "old", message: "Restarting" } };
     case "/api/system/info":
       return { body: { version: "0.3.0" } };
     default:
@@ -96,7 +102,10 @@ function show(props: Parameters<typeof PluginsSection>[0] = {}) {
   );
 }
 
-beforeEach(() => sessionStorage.clear());
+beforeEach(() => {
+  sessionStorage.clear();
+  lifecycleReads = 0;
+});
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
@@ -116,24 +125,25 @@ describe("PluginsSection", () => {
     await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
     await user.click(screen.getByRole("button", { name: "Install" }));
 
-    const dialog = await screen.findByRole("alertdialog");
+    const preview = await screen.findByRole("group", { name: /Install this plugin/ });
     const adds = () => calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/add");
     expect(adds()).toHaveLength(1);
     expect(new URL(adds()[0]?.url ?? "").searchParams.get("spec")).toBe(candidate.spec);
     expect(new URL(adds()[0]?.url ?? "").searchParams.get("confirm")).toBeNull();
     for (const text of ["heinzel-crm", "1.2.0", "acme-example (Ada Example)", PINNED, candidate.warnings[0] ?? ""]) {
-      expect(within(dialog).getByText(text)).toBeInTheDocument();
+      expect(within(preview).getByText(text)).toBeInTheDocument();
     }
-    expect(within(dialog).getByText(/private repository/)).toBeInTheDocument();
+    expect(within(preview).getByText(/private repository/)).toBeInTheDocument();
     expect(
-      within(dialog).getByRole("link", {
+      within(preview).getByRole("link", {
         name: "github.com/acme-example/heinzel-crm",
       }),
     ).toHaveAttribute("href", candidate.url);
     await expectAccessible(container);
 
-    await user.click(within(dialog).getByRole("button", { name: "Install" }));
-    expect(await screen.findByText("Installed heinzel-crm, reloading…")).toBeInTheDocument();
+    expect(adds()).toHaveLength(1);
+    await user.click(within(preview).getByRole("button", { name: "Restart and apply" }));
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
     expect(calls.some((request) => new URL(request.url).pathname === "/api/restart")).toBe(true);
     const confirmed = new URL(adds()[1]?.url ?? "");
@@ -197,20 +207,18 @@ describe("PluginsSection", () => {
     await user.click(installs[0] as HTMLElement);
     expect(spec(0)).toBe("zoom");
     await user.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", {
-        name: "Install",
-      }),
+      within(await screen.findByRole("group", { name: /Install/ })).getByRole("button", { name: "Restart and apply" }),
     );
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
     await waitFor(() => expect(adds()).toHaveLength(2));
     expect(spec(1)).toBe("zoom");
 
     await user.click((await screen.findAllByRole("button", { name: "Install" }))[1] as HTMLElement);
     expect(spec(2)).toBe(git);
     await user.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", {
-        name: "Install",
-      }),
+      within(await screen.findByRole("group", { name: /Install/ })).getByRole("button", { name: "Restart and apply" }),
     );
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
     await waitFor(() => expect(adds()).toHaveLength(4));
     expect(spec(3)).toBe(PINNED);
   });
@@ -236,21 +244,16 @@ describe("PluginsSection", () => {
     expect(calls.filter((request) => new URL(request.url).searchParams.get("confirm"))).toHaveLength(0);
   });
 
-  it("disables an installed plugin after asking, then restarts hz ui and reloads once it answers", async () => {
+  it("uses the shared confirmation before disabling and restarts through verified lifecycle", async () => {
     let restarted = false;
-    let infoAsked = 0;
     const calls = serve((url) => {
       if (url.pathname === "/api/system/plugin/disable") return { body: change("disable", true) };
       if (url.pathname === "/api/restart") {
         restarted = true;
         return {
           status: 202,
-          body: { restarting: true, message: "Restarting" },
+          body: { restarting: true, instance: "old", message: "Restarting" },
         };
-      }
-      if (url.pathname === "/api/system/info") {
-        infoAsked += 1;
-        return infoAsked < 2 ? { status: 503, body: { error: "starting" } } : { body: { version: "0.3.0" } };
       }
       return base(url);
     });
@@ -262,29 +265,17 @@ describe("PluginsSection", () => {
         name: "Disable heinzel-clock",
       }),
     );
-    const dialog = screen.getByRole("alertdialog");
-    expect(dialog).toHaveTextContent("Disable heinzel-clock?");
-    await user.click(within(dialog).getByRole("button", { name: "Disable" }));
+    await user.click(
+      within(screen.getByRole("group", { name: /Disable/ })).getByRole("button", { name: "Restart and apply" }),
+    );
+    const dialog = await screen.findByRole("alertdialog", { name: "Restart and apply Plugins" });
+    expect(dialog).toHaveTextContent("Disable: heinzel-clock");
+    await user.click(within(dialog).getByRole("button", { name: "Restart and apply Plugins" }));
     const disabled = calls.find((request) => new URL(request.url).pathname === "/api/system/plugin/disable");
     expect(new URL(disabled?.url ?? "").searchParams.get("distribution")).toBe("heinzel-clock");
 
-    expect(await screen.findByText("Disabled heinzel-clock, reloading…")).toBeInTheDocument();
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
     expect(restarted).toBe(true);
-    expect(infoAsked).toBe(2);
-  });
-
-  it("offers a restart button when hz does not come back by itself", async () => {
-    serve((url) => {
-      if (url.pathname === "/api/system/plugin/disable") return { body: change("disable", true) };
-      if (url.pathname === "/api/restart") return { status: 500, body: { error: "no" } };
-      return base(url);
-    });
-    const user = userEvent.setup();
-    show({ reload: vi.fn(), restartInterval: 1 });
-    await user.click(await screen.findByRole("button", { name: "Disable heinzel-clock" }));
-    await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Disable" }));
-    expect(await screen.findByRole("button", { name: "Restart hz ui" })).toBeInTheDocument();
   });
 
   it("offers Enable for a disabled plugin and links its source", async () => {

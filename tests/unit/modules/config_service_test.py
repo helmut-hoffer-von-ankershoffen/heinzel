@@ -159,7 +159,7 @@ def test_write_drops_none_and_refuses_it_alone(kernel, tmp_path, monkeypatch):
         service.write("example.nickname", None)
     path = service.write("example.zones", ["Europe/Berlin", None])
     assert tomllib.loads(path.read_text(encoding="utf-8")) == {"example": {"zones": ["Europe/Berlin"]}}
-    assert [p.name for p in tmp_path.iterdir()] == ["config.toml"]  # replaced whole, no temporary file left
+    assert sorted(p.name for p in tmp_path.iterdir()) == [".config.toml.lock", "config.toml"]  # no temporary left
 
 
 def test_writes_through_a_symlinked_file_keeping_link_and_mode(kernel, tmp_path, monkeypatch):
@@ -188,5 +188,5 @@ def test_a_failed_write_leaves_the_file_and_no_temporary(kernel, tmp_path, monke
     monkeypatch.setattr("pathlib.Path.replace", refuse)
     with pytest.raises(OSError, match="disk full"):
         service.set("example.greeting", "Servus")
-    assert [p.name for p in tmp_path.iterdir()] == ["config.toml"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == [".config.toml.lock", "config.toml"]
     assert "Moin" in (tmp_path / "config.toml").read_text(encoding="utf-8")

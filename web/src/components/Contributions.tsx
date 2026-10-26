@@ -14,6 +14,11 @@ import {
   CircleCheck,
   Clock,
   Cloud,
+  CloudDrizzle,
+  CloudFog,
+  CloudLightning,
+  CloudRain,
+  CloudSnow,
   CloudSun,
   Code,
   FileText,
@@ -30,10 +35,12 @@ import {
   Play,
   Rocket,
   Star,
+  Sun,
   Terminal,
   Timer,
   Users,
   Video,
+  Wind,
   X,
   Zap,
 } from "lucide-react";
@@ -52,7 +59,9 @@ import {
   unwrap,
 } from "@/api/client";
 import { token } from "@/api/token";
+import { ContributionToggle } from "@/components/ContributionToggle";
 import { FooterItem, stateOf } from "@/components/FooterItem";
+import { FooterPart } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { HeinzelFace } from "@/components/HeinzelFace";
 import { Button } from "@/components/ui/button";
@@ -60,6 +69,7 @@ import { type MessageKey, t } from "@/i18n";
 import { runInTerminal, runsAsIs, typeInTerminal } from "@/lib/terminal";
 import { cn } from "@/lib/utils";
 import { zoneClock, zoneTime } from "@/lib/zoneTime";
+import { restartAndApply } from "@/lifecycle/controller";
 
 export type Icon = NonNullable<SchemaStatusItem["icon"]>;
 export type Effect = NonNullable<SchemaStatusItem["effect"]>;
@@ -81,6 +91,11 @@ export const ICONS: Record<Icon, LucideIcon> = {
   "circle-check": CircleCheck,
   clock: Clock,
   cloud: Cloud,
+  "cloud-drizzle": CloudDrizzle,
+  "cloud-fog": CloudFog,
+  "cloud-lightning": CloudLightning,
+  "cloud-rain": CloudRain,
+  "cloud-snow": CloudSnow,
   "cloud-sun": CloudSun,
   code: Code,
   "file-text": FileText,
@@ -96,10 +111,12 @@ export const ICONS: Record<Icon, LucideIcon> = {
   play: Play,
   rocket: Rocket,
   star: Star,
+  sun: Sun,
   terminal: Terminal,
   timer: Timer,
   users: Users,
   video: Video,
+  wind: Wind,
   zap: Zap,
 };
 
@@ -189,9 +206,14 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
   const [outcome, setOutcome] = useState<string | null>(null);
   const call = async (operation: SchemaOperationCall) => {
     const url = new URL(`/api${operation.path}`, window.location.origin);
-    for (const [key, value] of Object.entries(operation.query)) url.searchParams.set(key, String(value));
+    const json = operation.body !== null && operation.body !== undefined;
+    if (!json) for (const [key, value] of Object.entries(operation.query)) url.searchParams.set(key, String(value));
     const response = await fetch(
-      new Request(url, { method: operation.method, headers: { Authorization: `Bearer ${token() ?? ""}` } }),
+      new Request(url, {
+        method: operation.method,
+        headers: { Authorization: `Bearer ${token() ?? ""}`, ...(json ? { "Content-Type": "application/json" } : {}) },
+        ...(json ? { body: JSON.stringify(operation.body) } : {}),
+      }),
     );
     setOutcome(
       response.ok
@@ -283,6 +305,7 @@ function FooterStatus({
   const effect = item.effect;
   return (
     <FooterItem label={label} state={stateOf(item.tone)} icon={item.icon ? ICONS[item.icon] : Info}>
+      {item.toggle && <StatusControl entry={current} />}
       <ul>
         {(item.detail ?? []).map((line) => (
           <li key={line.text} className="flex items-center gap-2 rounded-lg px-2.5 py-1.5">
@@ -307,6 +330,52 @@ function FooterStatus({
         </div>
       )}
     </FooterItem>
+  );
+}
+
+function StatusControl({ entry }: { entry: SchemaStatusEntry }) {
+  const client = useQueryClient();
+  const current = useEntry("status", entry, 0);
+  const control = current.item?.toggle;
+  if (!control) return null;
+  return (
+    <ContributionToggle
+      control={control}
+      refresh={async (signal) => {
+        const entries = await unwrap(api.GET("/system/ui/status", { params: { query: { item: entry.id } }, signal }));
+        const fresh = entries.find((candidate) => candidate.id === entry.id);
+        if (fresh) {
+          client.setQueryData(["ui", "status", entry.id], fresh);
+          client.setQueryData<SchemaStatusEntry[]>(["ui", "status"], (previous) =>
+            previous?.map((candidate) => (candidate.id === entry.id ? fresh : candidate)),
+          );
+        }
+        return fresh?.item?.toggle ?? null;
+      }}
+      applySettings={async (expected, signal) => {
+        const settings = Object.entries(expected).map(([name, value]) => {
+          const split = name.lastIndexOf(".");
+          if (split <= 0) throw new Error(t("contrib.toggle.unavailable"));
+          return { section: name.slice(0, split), key: name.slice(split + 1), value };
+        });
+        await restartAndApply({ confirmed: true, settings }, { signal });
+        await client.invalidateQueries({ queryKey: ["ui"] });
+      }}
+    />
+  );
+}
+
+/** Operational switches are independent of placement preferences and remain available when the footer is hidden. */
+export function ContributionControls({ module }: { module: string }) {
+  const query = useQuery({ queryKey: ["ui", "status"], queryFn: () => fetchers.status(), retry: false });
+  return (
+    <>
+      {(query.data ?? [])
+        .filter((entry) => entry.module === module && entry.item?.toggle)
+        .map((entry) => (
+          <StatusControl key={entry.id} entry={entry} />
+        ))}
+    </>
   );
 }
 
@@ -448,12 +517,14 @@ export function StatusItems({
   className,
   except = [],
   stacked = false,
+  measured = false,
 }: {
   slot: "footer" | "sidebar";
   className?: string;
   except?: string[];
   /** One under the other, as in the sidebar, for the footer's overflow. */
   stacked?: boolean;
+  measured?: boolean;
 }) {
   const all = useEntries("status", slot);
   const updatedAt = all.updatedAt;
@@ -463,12 +534,19 @@ export function StatusItems({
   const compact = slot === "sidebar" || stacked;
   return (
     <div
-      className={cn(compact ? "flex flex-col gap-0.5 px-2 text-ui-sm" : "flex min-w-0 items-center gap-3", className)}
+      className={cn(
+        measured ? "contents" : compact ? "flex flex-col gap-0.5 px-2 text-ui-sm" : "flex min-w-0 items-center gap-3",
+        className,
+      )}
       data-slot={slot}
     >
       {entries.map((entry) =>
         compact ? (
           <SidebarStatusItem key={entry.id} entry={entry} updatedAt={updatedAt} run={run} compact />
+        ) : measured ? (
+          <FooterPart key={entry.id} id={entry.id} label={entry.item?.text} priority={40}>
+            <FooterStatus entry={entry} updatedAt={updatedAt} run={run} />
+          </FooterPart>
         ) : (
           <FooterStatus key={entry.id} entry={entry} updatedAt={updatedAt} run={run} />
         ),
@@ -550,7 +628,10 @@ function WidgetBody({ widget, run }: { widget: Widget; run: (effect: Effect) => 
     case "card":
       return (
         <>
-          <h3 className="font-semibold">{widget.title}</h3>
+          <h3 className="flex items-center gap-2 font-semibold">
+            <IconOf icon={widget.icon} />
+            {widget.title}
+          </h3>
           {widget.body && (
             <p className="line-clamp-3 text-xs whitespace-pre-line text-muted-foreground">{widget.body}</p>
           )}

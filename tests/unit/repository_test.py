@@ -106,7 +106,9 @@ def test_first_party_plugins_are_released_tested_and_fenced_with_the_core(packag
     version = root["project"]["version"]
     assert project["name"] == distribution
     assert project["version"] == version
-    assert project["dependencies"] == [f"heinzel>={version}"]
+    # Conditional Serve writes need HTTP If-Match, which the vendor CLI does not expose (ADR 0084).
+    transport = ["httpx>=0.28"] if distribution == "heinzel-tailscale" else []
+    assert project["dependencies"] == [f"heinzel>={version}", *transport]
     repository = root["project"]["urls"]["Source"]
     assert project["urls"]["Source"] == f"{repository}/tree/main/plugins/{distribution}", "`hz --version` links it"
     assert project["urls"]["Issues"] == root["project"]["urls"]["Issues"]

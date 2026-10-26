@@ -367,6 +367,7 @@ def test_plugin_search_lists_first_party_and_community_plugins(app, monkeypatch)
         ("heinzel-clock", "first-party", False, "clock"),
         ("heinzel-github", "first-party", False, "github"),
         ("heinzel-google", "first-party", False, "google"),
+        ("heinzel-tailscale", "first-party", False, "tailscale"),
         ("heinzel-zoom", "first-party", False, "zoom"),
         ("heinzel-crm", "github", True, "git+https://github.com/someone/heinzel-crm"),
     ]
@@ -394,6 +395,7 @@ def test_plugin_search_offline_shows_first_party_plugins_and_a_warning(app, monk
         "heinzel-clock",
         "heinzel-github",
         "heinzel-google",
+        "heinzel-tailscale",
         "heinzel-zoom",
     ]
     assert found["warnings"] == [
@@ -586,6 +588,7 @@ def test_commands_are_sorted(app):
         "notify",
         "plugin",
         "release",
+        "resource",
         "runner",
         "serve",
         "skill",

@@ -34,7 +34,7 @@ export function ChatPanel({ onCollapse }: { onCollapse: () => void }) {
   };
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 pr-2 pl-3">
+      <div className="flex h-12 shrink-0 items-center gap-1 border-b-[0.5px] border-foreground/20 px-3">
         <h2 className="sr-only">{t("chat.title")}</h2>
         <SessionSwitcher chat={chat} onNew={fresh} />
         <Button

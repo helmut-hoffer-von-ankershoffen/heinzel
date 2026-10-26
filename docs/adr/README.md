@@ -176,3 +176,8 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 | [0073](0073-themes-supply-safe-avatar-layers.md) | Themes supply safe SVG layers for personal avatars | proposed | 2026-10-25 |
 | [0081](0081-state-repositories-one-writer-per-branch-the-daemon-pushes.md) | State repositories: one writer per branch, append-only segments, the daemon pushes | proposed | 2026-10-25 |
 | [0080](0080-one-invite-line-and-a-reviewed-first-win.md) | One invite line and a reviewed first win | proposed | 2026-10-25 |
+| [0084](0084-explicit-https-origins-for-private-web-sharing.md) | Private web sharing admits exact HTTPS origins and keeps device authentication | proposed | 2026-10-25 |
+| [0074](0074-machine-resource-meters-use-bounded-local-sampling.md) | Machine resource meters use bounded local sampling | proposed | 2026-10-25 |
+| [0083](0083-restart-and-apply-verifies-the-replacement-server.md) | Restart and apply verifies the replacement server | proposed | 2026-10-25 |
+| [0079](0079-core-pypi-trusted-publishing-is-isolated-from-builds.md) | Core PyPI trusted publishing is isolated from builds | proposed | 2026-10-25 |
+| [0085](0085-web-updates-verify-the-reloaded-frontend.md) | Web updates verify the reloaded frontend | proposed | 2026-10-26 |

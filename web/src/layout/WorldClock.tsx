@@ -1,10 +1,11 @@
 import createGlobe from "cobe";
 import { ChevronLeft, ChevronRight, Globe, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
+import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { initialPhi, nightPath, sunLocation, zoneLocation } from "@/lib/worldClock";
+import { workingHours } from "@/lib/workingHours";
+import { initialPhi, markerPosition, nightPath, sunLocation, zoneLocation } from "@/lib/worldClock";
 import { WORLD_LAND } from "@/lib/worldLand";
 import { zoneClock } from "@/lib/zoneTime";
 import { city, knownZone, useZones } from "./StatusBar";
@@ -16,6 +17,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
   const [phi, setPhi] = useState(0);
   const [reduced, setReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [failed, setFailed] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const drag = useRef<number | null>(null);
   const globeRef = useRef<ReturnType<typeof createGlobe> | null>(null);
@@ -28,7 +30,11 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
   camera.current = phi;
   useEffect(() => {
     const timer = setInterval(() => {
-      if (document.visibilityState !== "hidden") setNow(new Date());
+      if (document.visibilityState !== "hidden") {
+        setNow(new Date());
+        // COBE's embedded map texture loads asynchronously without repainting the initial empty frame.
+        globeRef.current?.update({ phi: camera.current });
+      }
     }, 1000);
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setReduced(media.matches);
@@ -55,6 +61,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
     canvas.addEventListener("webglcontextlost", lose);
     let globe: ReturnType<typeof createGlobe> | undefined;
     let observer: ResizeObserver | undefined;
+    let frame: number | undefined;
     try {
       // Feature detection stays local; browsers without a context get the static map.
       if (!canvas.getContext("webgl2") && !canvas.getContext("webgl")) {
@@ -87,6 +94,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
           ),
         });
         globeRef.current = globe;
+        frame = requestAnimationFrame(() => globe?.update({ phi: camera.current }));
         observer = new ResizeObserver(() => {
           const width = Math.max(240, element.clientWidth);
           globe?.update({ width, height: width });
@@ -97,6 +105,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
       setFailed(true);
     }
     return () => {
+      if (frame !== undefined) cancelAnimationFrame(frame);
       observer?.disconnect();
       globe?.destroy();
       globeRef.current = null;
@@ -110,6 +119,10 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
   }, [phi]);
   const flat = reduced || failed;
   const sun = sunLocation(now);
+  const markers = points.flatMap((point) =>
+    point.location ? [{ zone: point.zone, ...markerPosition(point.location, phi, theta) }] : [],
+  );
+  const hover = markers.find((point) => point.zone === hovered && point.visible);
   return (
     <section className="flex h-full flex-col" aria-label={t("worldClock.title")}>
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
@@ -126,9 +139,9 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
           </p>
         ) : (
           <>
-            <div className="relative aspect-square w-full" aria-hidden>
-              {!flat && <div ref={host} className="absolute inset-0" />}
-              <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full">
+            <div className="relative aspect-square w-full" title={t("worldClock.explanation")}>
+              {!flat && <div aria-hidden ref={host} className="absolute inset-0" />}
+              <svg aria-hidden viewBox="0 0 100 100" className="absolute inset-0 h-full w-full">
                 <title>{flat ? t("worldClock.map") : t("worldClock.daylight")}</title>
                 <defs>
                   <clipPath id={clip}>
@@ -174,7 +187,19 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
                     event.currentTarget.setPointerCapture(event.pointerId);
                   }}
                   onPointerMove={(event) => {
-                    if (drag.current === null) return;
+                    if (drag.current === null) {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      const x = ((event.clientX - rect.left) / rect.width) * 100;
+                      const y = ((event.clientY - rect.top) / rect.height) * 100;
+                      const threshold = ((12 / rect.width) * 100) ** 2;
+                      const nearest = markers
+                        .filter((point) => point.visible)
+                        .map((point) => ({ ...point, distance: (point.x - x) ** 2 + (point.y - y) ** 2 }))
+                        .sort((a, b) => a.distance - b.distance)[0];
+                      setHovered(nearest && nearest.distance <= threshold ? nearest.zone : null);
+                      return;
+                    }
+                    setHovered(null);
                     const shift = event.clientX - drag.current;
                     drag.current = event.clientX;
                     setPhi((value) => value + shift / 160);
@@ -185,71 +210,111 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
                   onPointerCancel={() => {
                     drag.current = null;
                   }}
+                  onPointerLeave={() => setHovered(null)}
                 />
               )}
+              {!flat &&
+                markers
+                  .filter((point) => point.visible)
+                  .map((point) => (
+                    <button
+                      key={point.zone}
+                      type="button"
+                      aria-label={`${city(point.zone)} · ${point.zone}`}
+                      aria-describedby={hovered === point.zone ? `world-clock-marker-${point.zone}` : undefined}
+                      className="absolute z-10 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full focus-visible:outline-2 focus-visible:outline-offset-2"
+                      style={{ left: `${point.x}%`, top: `${point.y}%` }}
+                      onPointerEnter={() => setHovered(point.zone)}
+                      onPointerMove={(event) => {
+                        event.stopPropagation();
+                        setHovered(point.zone);
+                      }}
+                      onFocus={() => setHovered(point.zone)}
+                      onBlur={() => setHovered(null)}
+                    />
+                  ))}
+              {!flat && (
+                <div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t("worldClock.left")}
+                    title={t("worldClock.left")}
+                    className="absolute top-1/2 left-0 -translate-y-1/2"
+                    onClick={() => setPhi((value) => value - Math.PI / 6)}
+                  >
+                    <ChevronLeft aria-hidden />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t("worldClock.right")}
+                    title={t("worldClock.right")}
+                    className="absolute top-1/2 right-0 -translate-y-1/2"
+                    onClick={() => setPhi((value) => value + Math.PI / 6)}
+                  >
+                    <ChevronRight aria-hidden />
+                  </Button>
+                </div>
+              )}
+              {hover && (
+                <div
+                  id={`world-clock-marker-${hover.zone}`}
+                  role="tooltip"
+                  className="pointer-events-none absolute z-(--layer-popover) -translate-x-1/2 -translate-y-full rounded-md border border-border bg-popover px-2 py-1 text-xs shadow-sm"
+                  style={{ left: `${hover.x}%`, top: `${hover.y}%` }}
+                >
+                  {city(hover.zone)} · {hover.zone}
+                  <span className="block text-muted-foreground">{t("worldClock.representative")}</span>
+                </div>
+              )}
             </div>
-            {!flat && (
-              <div className="flex justify-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label={t("worldClock.left")}
-                  onClick={() => setPhi((value) => value - Math.PI / 6)}
-                >
-                  <ChevronLeft aria-hidden />
-                  {t("worldClock.leftLabel")}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  aria-label={t("worldClock.right")}
-                  onClick={() => setPhi((value) => value + Math.PI / 6)}
-                >
-                  {t("worldClock.rightLabel")}
-                  <ChevronRight aria-hidden />
-                </Button>
-              </div>
-            )}
-            <p className="my-3 text-xs text-muted-foreground">
+            <p className="sr-only">
               {flat ? t("worldClock.static") : t("worldClock.drag")}
               {t("worldClock.explanation")}
             </p>
+            <div className="flex justify-end">
+              <SettingsShortcut section="clock" label={t("status.editZones")} />
+            </div>
             <ul className="divide-y divide-border">
-              {times.map((zone, index) => (
-                <li key={zone.zone} className="flex items-center gap-3 py-3">
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 rounded-md text-left hover:underline focus-visible:outline-2"
-                    disabled={!zoneLocation(zone.zone)}
-                    onClick={() => {
-                      const point = zoneLocation(zone.zone);
-                      if (point) setPhi(initialPhi(point));
-                    }}
-                  >
-                    <span className="block font-medium">
-                      {city(zone.zone)}
-                      {index === 0 ? t("worldClock.yours") : ""}
-                    </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {zone.zone}
-                      {!zoneLocation(zone.zone) ? t("worldClock.unmapped") : ""}
-                    </span>
-                  </button>
-                  {knownZone(zone.zone) ? (
-                    <time dateTime={now.toISOString()} className="font-mono tabular-nums">
-                      {zoneClock(now, zone.zone)}
-                    </time>
-                  ) : (
-                    <span className="max-w-28 text-xs text-muted-foreground">{t("worldClock.unavailable")}</span>
-                  )}
-                </li>
-              ))}
+              {times.map((zone, index) => {
+                const work = workingHours(zone, now);
+                return (
+                  <li key={zone.zone} className="flex items-center gap-3 py-3">
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 rounded-md text-left hover:underline focus-visible:outline-2"
+                      disabled={!zoneLocation(zone.zone)}
+                      onClick={() => {
+                        const point = zoneLocation(zone.zone);
+                        if (point) setPhi(initialPhi(point));
+                      }}
+                    >
+                      <span className="block font-medium">
+                        {city(zone.zone)}
+                        {index === 0 ? t("worldClock.yours") : ""}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {zone.zone}
+                        {!zoneLocation(zone.zone) ? t("worldClock.unmapped") : ""}
+                      </span>
+                      <span title={work.detail} className="mt-1 block text-xs text-muted-foreground">
+                        {work.summary}
+                      </span>
+                    </button>
+                    {knownZone(zone.zone) ? (
+                      <time dateTime={now.toISOString()} className="font-mono tabular-nums">
+                        {zoneClock(now, zone.zone)}
+                      </time>
+                    ) : (
+                      <span className="max-w-28 text-xs text-muted-foreground">{t("worldClock.unavailable")}</span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </>
         )}
-        <Link to="?settings=clock" className="mt-4 inline-block text-sm underline">
-          {t("worldClock.choose")}
-        </Link>
       </div>
     </section>
   );

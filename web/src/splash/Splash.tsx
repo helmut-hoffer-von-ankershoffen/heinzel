@@ -6,6 +6,8 @@ import { Check, Copy } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { api } from "@/api/client";
+import { usePlayful } from "@/api/queries";
+import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Button } from "@/components/ui/button";
 import { type MessageKey, t } from "@/i18n";
 import { Branding } from "@/layout/Branding";
@@ -93,11 +95,67 @@ function Fix({ problem }: { problem: Problem }) {
       : (["splash.unreachableTitle", "splash.unreachable", "splash.unreachableCommand"] as const);
   return (
     <div role="alert" className="flex max-w-md flex-col items-center gap-3 text-sm">
+      {problem === "unreachable" && <SleepingUnderTree />}
       <h1 className="text-lg font-semibold text-foreground">{t(title)}</h1>
       <p className="text-muted-foreground">{t(text, { command: START })}</p>
       <p className="text-muted-foreground">{t(lead, { command: START })}</p>
       <Command command={START} />
       {problem === "unreachable" && <p className="text-xs text-muted-foreground">{t("splash.retrying")}</p>}
+    </div>
+  );
+}
+
+/** The server is taking a nap; keep the existing recovery steps visible below the illustration. */
+function SleepingUnderTree() {
+  const playful = usePlayful();
+  if (!playful) return null;
+  return (
+    <div aria-hidden="true" data-testid="offline-scene" className="relative flex h-24 w-44 items-end justify-center">
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 176 96"
+        className="absolute inset-0 size-full text-emerald-700/70 dark:text-emerald-300/70"
+      >
+        <path
+          d="M83 14v74M83 30c-19-22-45-16-51 1 15-4 28 2 38 12M83 26c14-22 39-22 48-5-15-1-28 6-39 17"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="5"
+          strokeLinecap="round"
+        />
+        <path
+          d="M83 84c-18-8-39-5-54 2m54-2c23-8 46-4 64 2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+        <path d="M66 86h48" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+      </svg>
+      <HeinzelAvatar state="sleeping" age="young" shirt="teal" className="relative z-10 h-[4.5rem] w-11" />
+    </div>
+  );
+}
+
+/** A tiny search scene shown while the splash checks whether hz has returned. */
+function SearchingScene() {
+  const playful = usePlayful();
+  if (!playful) return null;
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="connection-scene"
+      className="relative flex h-20 w-20 items-center justify-center"
+    >
+      <HeinzelAvatar state="thinking" age="young" shirt="teal" className="h-16 w-10" />
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 40 40"
+        className="splash-search-glass absolute right-0 top-3 size-8 text-primary"
+      >
+        <circle cx="16" cy="16" r="10" fill="none" stroke="currentColor" strokeWidth="3" />
+        <path d="m23 23 11 11" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+      </svg>
     </div>
   );
 }
@@ -164,6 +222,7 @@ export function Splash({ store = splash, probe = probeServer, now = clock }: Pro
   const client = useQueryClient();
   const theme = useSelectedTheme();
   const dark = useDark();
+  const connecting = state.phase === "connecting" || state.phase === "reconnecting";
   useSplashElement(state, now);
   const asking = polling(state);
   const waits = waiting(state);
@@ -265,6 +324,7 @@ export function Splash({ store = splash, probe = probeServer, now = clock }: Pro
     <>
       {brand && createPortal(<Branding theme={theme} dark={dark} />, brand)}
       {problem && state.phase === "error" && state.problem && createPortal(<Fix problem={state.problem} />, problem)}
+      {connecting && byId("splash-art") && createPortal(<SearchingScene />, byId("splash-art") as HTMLElement)}
     </>
   );
 }

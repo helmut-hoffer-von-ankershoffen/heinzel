@@ -149,13 +149,14 @@ describe("ChatPanel, mid-answer", () => {
     const user = userEvent.setup();
     renderAt("/doctor");
     await user.type(screen.getByLabelText("Your message"), "How healthy?{Enter}");
-    const live = await screen.findByRole("status");
-    expect(await within(live).findByText("Two checks")).toBeInTheDocument();
+    const text = await screen.findByText("Two checks");
+    const live = text.closest<HTMLElement>('[role="status"]');
+    if (!live) throw new Error("The streaming status region should contain the partial answer");
     expect(within(live).getByText("Calling: system_doctor")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     release();
     expect(await screen.findByText("I proposed setting your role to lead.")).toBeInTheDocument();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText("Calling: system_doctor")).not.toBeInTheDocument();
   });
 
   it("resumes the session a link names", async () => {

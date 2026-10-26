@@ -414,7 +414,7 @@ def _banner(kernel: Kernel) -> None:
     if "--json" in sys.argv or "json" in sys.argv:
         return  # the flag is parsed later; a script asking for JSON gets no art
     if _playful.allowed(kernel.settings, console):
-        lines = ["Heinzelmännchen", TAGLINE]
+        lines = ["Heinzelmännchen", f"{TAGLINE},", "like the little elves from Cologne"]
         console.print(_playful.banner(lines), end="")
 
 

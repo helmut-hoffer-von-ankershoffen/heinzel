@@ -26,6 +26,7 @@ from heinzel.kernel._config import (
     Config,
     ConfigEditor,
     ConfigFile,
+    ConfigListChange,
     ModuleSettings,
     env_prefix,
     toml_value,
@@ -60,6 +61,7 @@ from heinzel.kernel._contributions import (
     Slot,
     StatusItem,
     StatusLet,
+    ToggleControl,
     Tone,
     Widget,
     WidgetAction,
@@ -127,6 +129,7 @@ from heinzel.kernel._lets import (
     Status,
     schedule_problem,
 )
+from heinzel.kernel._local_web import LocalWebRuntime
 from heinzel.kernel._module import Module
 from heinzel.kernel._notifications import Delivery, Notice, NoticeKind, Notifications
 from heinzel.kernel._org import OrgContext, Recommendation, RecommendationKind, TeamPromise, TeamPromises
@@ -307,6 +310,7 @@ __all__ = [
     "Config",
     "ConfigEditor",
     "ConfigFile",
+    "ConfigListChange",
     "ConfirmedLines",
     "ContractTemplate",
     "ContributionLet",
@@ -363,6 +367,7 @@ __all__ = [
     "LiveTime",
     "LiveUntil",
     "LoadedSkill",
+    "LocalWebRuntime",
     "Login",
     "Mail",
     "MailContent",
@@ -471,6 +476,7 @@ __all__ = [
     "ThemeSignals",
     "ThemeVariant",
     "TimeSpan",
+    "ToggleControl",
     "TokenUsage",
     "Tone",
     "ToolProfile",

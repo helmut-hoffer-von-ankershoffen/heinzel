@@ -30,6 +30,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 * `report`: Telemetry: log what a Heinzelmännchen did,...
 * `setup`: Set up what is still missing, wizard...
 * `system`: Inspect, configure, diagnose and update...
+* `tailscale`: (expert) Private web sharing through...
 * `team`: Your team&#x27;s repository: create one (`hz...
 * `ui`: Open the web app in your browser, served...
 * `zoom`: (expert) Read meetings from Zoom&#x27;s...
@@ -1193,6 +1194,7 @@ $ hz system [OPTIONS] COMMAND [ARGS]...
 * `notify`: (expert) Pop up what deserves your...
 * `plugin`: (expert) Find, add, remove, enable,...
 * `release`: (expert) Ask where Heinzelmännchen was...
+* `resource`: Show machine CPU/memory usage, one-minute...
 * `runner`: Run bounded agent sessions with Claude...
 * `serve`: (expert) Serve every operation to coding...
 * `skill`: (expert) List the skills plugins ship for...
@@ -2379,6 +2381,22 @@ $ hz system release [OPTIONS]
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz system resource`
+
+Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second.
+
+**Usage**:
+
+```console
+$ hz system resource [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz system runner`
 
 Run bounded agent sessions with Claude Code or a configured command.
@@ -2590,7 +2608,7 @@ $ hz system skill unexport [OPTIONS]
 
 ### `hz system sound`
 
-(expert) Pick the web app&#x27;s soundscape: off, Claude FM or one a plugin offers.
+(expert) Pick the web app&#x27;s soundscape: off, a built-in one or one a plugin offers.
 
 **Usage**:
 
@@ -2625,7 +2643,7 @@ $ hz system sound list [OPTIONS]
 
 #### `hz system sound use`
 
-(expert) Pick the web app&#x27;s soundscape, `off` for none: sets `system.sound.name` in your user file.
+(expert) Pick the web app&#x27;s soundscape, `off` for none; turns off theme following and saves your choice.
 
 **Usage**:
 
@@ -2946,6 +2964,74 @@ $ hz system update [OPTIONS]
 
 * `--source <str>`: Install from here instead, e.g. git+https://github.com/org/heinzel@v1.2.0 or a wheel.
 * `--channel <release|main>`: Follow `release` (the default, setting `update_channel`): the newest release, also from `main` once a release is as new as it; or `main`: its newest commit.
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+## `hz tailscale`
+
+(expert) Private web sharing through Tailscale Serve.
+
+**Usage**:
+
+```console
+$ hz tailscale [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `disable`: (expert) Stop only hz&#x27;s private Serve...
+* `enable`: (expert) Share hz privately over...
+* `status`: (expert) Show private sharing readiness...
+
+### `hz tailscale disable`
+
+(expert) Stop only hz&#x27;s private Serve mapping and remove only the origin permission this plugin added.
+
+**Usage**:
+
+```console
+$ hz tailscale disable [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz tailscale enable`
+
+(expert) Share hz privately over Tailscale, preserving existing services and requiring authenticated readiness.
+
+**Usage**:
+
+```console
+$ hz tailscale enable [OPTIONS]
+```
+
+**Options**:
+
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz tailscale status`
+
+(expert) Show private sharing readiness without changing Tailscale or configuration.
+
+**Usage**:
+
+```console
+$ hz tailscale status [OPTIONS]
+```
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

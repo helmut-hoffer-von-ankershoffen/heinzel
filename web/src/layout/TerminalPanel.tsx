@@ -71,7 +71,7 @@ export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
   };
   return (
     <section aria-label={t("terminal.title")} className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-10 shrink-0 items-center gap-1 pr-2 pl-2">
+      <div className="flex h-10 shrink-0 items-center gap-1 px-3">
         <div
           role="tablist"
           aria-label={t("terminal.tabs")}
@@ -260,7 +260,7 @@ function TerminalView({ active, full, options }: { active: boolean; full: boolea
           </Button>
         </div>
       )}
-      <div ref={host} className="min-h-0 flex-1 pr-1 pb-1 pl-3" />
+      <div ref={host} className="min-h-0 flex-1 px-3 pb-1" />
     </div>
   );
 }

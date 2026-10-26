@@ -1,12 +1,17 @@
 """Service of the config submodule."""
 
+import fcntl
 import os
 import shlex
 import shutil
+import stat
 import sys
+import tempfile
 import tomllib
+from collections.abc import Generator, Iterable
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypeGuard, cast
 
 import tomlkit
 from pydantic import ValidationError
@@ -14,7 +19,7 @@ from pydantic.fields import FieldInfo
 from pydantic_core import to_jsonable_python
 from tomlkit.exceptions import ParseError
 
-from heinzel import Config, ConfigEditor, CurrentUser, HeinzelError, Kernel, ModuleSettings
+from heinzel import Config, ConfigEditor, ConfigListChange, CurrentUser, HeinzelError, Kernel, ModuleSettings
 from heinzel.kernel import FILENAME, PROJECT_FILENAME, ConfigFile, env_prefix, toml_value, user_config_dir
 from heinzel.modules.system.config._models import (
     ConfigFileInfo,
@@ -189,6 +194,56 @@ class ConfigService(ConfigEditor):
         return self.write(key, _parse_value(value), scope)
 
     def write(self, key: str, value: object, scope: Scope = "user") -> Path:
+        """Validate and write one setting while serializing normal writers of the same configuration file.
+
+        Raises:
+            HeinzelError: If the key/value is invalid or the configuration lock is unsafe.
+        """
+        with _serialized(self._scope_file(scope)):
+            return self._write(key, value, scope)
+
+    def change_list(
+        self,
+        key: str,
+        *,
+        add: tuple[str, ...] = (),
+        remove: tuple[str, ...] = (),
+        scope: Scope = "user",
+    ) -> ConfigListChange:
+        """Merge string entries under the same lock as ordinary settings writes, preserving other entries.
+
+        Raises:
+            HeinzelError: If the setting is not a writable string collection or a higher-priority source controls it.
+        """
+        with _serialized(self._scope_file(scope)):
+            section, name, model = self._locate(key)
+            self._require(model.model_fields[name], write=True)
+            config = self._kernel.config.reread()
+            source = self._source(config, section, name, model.ignored_in_project)
+            if source in {"env", "explicit"} or (scope == "user" and source == "project"):
+                msg = (
+                    f"{key} is controlled by {source}; inspect it with `hz system config get {key}` before changing it."
+                )
+                raise HeinzelError(msg)
+            current = getattr(config.settings(model, section), name)
+            if not _string_collection(current):
+                msg = f"{key} is not a plain list of strings; use `hz system config set {key}` with its declared value."
+                raise HeinzelError(msg)
+            stored = _table(_load(self._scope_file(scope)), section).unwrap().get(name, [])
+            if not _string_collection(stored) or not isinstance(stored, list):
+                msg = f"{key} is not stored as a plain list of strings; inspect `hz system config get {key}`."
+                raise HeinzelError(msg)
+            ordered = sorted(current) if isinstance(current, set | frozenset) else list(current)
+            ordered = [*stored, *ordered]
+            changed = list(dict.fromkeys(value for value in [*ordered, *add] if value not in remove))
+            self._write(key, changed, scope)
+            return ConfigListChange(
+                values=tuple(changed),
+                added=frozenset(changed) - frozenset(ordered),
+                removed=frozenset(ordered) - frozenset(changed),
+            )
+
+    def _write(self, key: str, value: object, scope: Scope = "user") -> Path:
         """Validate a value (JSON-compatible, or a pydantic model) for the setting `key` and write it to the file.
 
         What setup steps call through `ConfigEditor` (ADR 0032); `set` parses text and calls this.
@@ -215,6 +270,15 @@ class ConfigService(ConfigEditor):
         return path
 
     def unset(self, key: str, scope: Scope = "user") -> Path:
+        """Remove one setting under the shared configuration lock.
+
+        Raises:
+            HeinzelError: If the key is unknown, absent or its configuration lock is unsafe.
+        """
+        with _serialized(self._scope_file(scope)):
+            return self._unset(key, scope)
+
+    def _unset(self, key: str, scope: Scope = "user") -> Path:
         """Remove the setting `key` from the user or project configuration file; its default applies again.
 
         Raises:
@@ -305,6 +369,53 @@ class ConfigService(ConfigEditor):
         return ConfigFileInfo(scope=file.scope, path=file.path, exists=file.exists)
 
 
+def _string_collection(value: object) -> TypeGuard[list[str] | tuple[str, ...] | set[str] | frozenset[str]]:
+    return isinstance(value, list | tuple | set | frozenset) and all(
+        isinstance(item, str) for item in cast("Iterable[object]", value)
+    )
+
+
+@contextmanager
+def _serialized(path: Path) -> Generator[None]:
+    """Serialize writers of the resolved configuration target, retaining dotfile-manager symlink behavior.
+
+    Yields:
+        Nothing while this process owns the file's private advisory lock.
+
+    Raises:
+        HeinzelError: If the lock cannot be opened as one regular owner-only file.
+    """
+    target = path.resolve()
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor = -1
+    try:
+        try:
+            descriptor = os.open(
+                target.with_name(f".{target.name}.lock"),
+                os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
+                0o600,
+            )
+            info = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_nlink != 1
+                or info.st_uid != os.getuid()
+                or info.st_mode & 0o077
+            ):
+                msg = (
+                    "The configuration lock is not a private regular file; inspect its permissions before trying again."
+                )
+                raise HeinzelError(msg)
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+        except OSError as error:
+            msg = "The configuration could not be locked safely; inspect its directory and try again."
+            raise HeinzelError(msg) from error
+        yield
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def _fresh(config: Config, section: str, booted: ModuleSettings) -> ModuleSettings:
     """`section`'s settings as the files say now; as booted when a file now holds a value they don't accept."""
     try:
@@ -336,12 +447,16 @@ def _save(path: Path, document: tomlkit.TOMLDocument) -> None:
     A symlinked file (dotfile managers) is written where the link points, keeping the link and the file's mode.
     """
     target = path.resolve()
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(f".{target.name}.tmp")
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
+    temporary = Path(name)
     try:
-        temporary.write_text(tomlkit.dumps(document), encoding="utf-8")
-        if target.exists():
-            shutil.copymode(target, temporary)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            if target.exists():
+                os.fchmod(output.fileno(), stat.S_IMODE(target.stat().st_mode))
+            output.write(tomlkit.dumps(document))
+            output.flush()
+            os.fsync(output.fileno())
         temporary.replace(target)
     except BaseException:
         temporary.unlink(missing_ok=True)

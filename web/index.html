@@ -71,6 +71,14 @@
         font-size: 14px;
         color: var(--splash-muted-foreground);
       }
+      #splash-art:empty {
+        display: none;
+      }
+      #splash-art {
+        display: flex;
+        justify-content: center;
+        min-height: 0;
+      }
       .splash-bar {
         width: 120px;
         height: 3px;
@@ -122,6 +130,7 @@
       <!-- The app's own icon file, the one the favicon shows: new artwork reaches the splash too. -->
       <div id="splash-brand"><img src="/favicon.svg?v=bbe58f3f9911" alt="" width="28" height="28" /><span>Heinzelmännchen</span></div>
       <p id="splash-line" role="status" aria-live="polite">Starting…</p>
+      <div id="splash-art" aria-hidden="true"></div>
       <!-- The progress: one element, so an animation file can replace it (<img id="splash-progress" src="…" alt="" />). -->
       <div id="splash-progress" class="splash-bar" aria-hidden="true"></div>
       <div id="splash-problem"></div>

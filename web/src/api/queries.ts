@@ -46,6 +46,14 @@ export const useDiscover = (enabled: boolean) =>
   useQuery({ queryKey: keys.discover, queryFn: () => unwrap(api.GET("/heinzel/discover")), enabled });
 export const useJobs = () => useQuery({ queryKey: keys.jobs, queryFn: () => unwrap(api.GET("/system/daemon/jobs")) });
 
+/** Installed providers own their settings and sidebar entries; an absent provider contributes no navigation. */
+export const useNavigation = () =>
+  useQuery({
+    queryKey: ["ui", "navigation"],
+    queryFn: () => unwrap(api.GET("/system/ui/navigation")),
+    refetchOnWindowFocus: true,
+  });
+
 /** Expert mode and every operation's audience: which screens the navigation lists (ADR 0041). */
 export const useExpert = () => useQuery({ queryKey: keys.expert, queryFn: () => unwrap(api.GET("/system/expert")) });
 /** `hz system expert on` or `off`, the operations the CLI runs; the answer is the mode in effect. */
@@ -211,7 +219,10 @@ export const useChangePlugin = () => {
       }
       return unwrap(api.POST("/system/plugin/disable", { params: { query: { distribution: variables.disable } } }));
     },
-    onSettled: () => client.invalidateQueries({ queryKey: ["system", "plugin"] }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: ["system", "plugin"] });
+      void client.invalidateQueries({ queryKey: ["ui"] });
+    },
   });
 };
 

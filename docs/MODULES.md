@@ -34,13 +34,15 @@ mode (`hz system expert on`); every one runs either way, and MCP and REST list t
 | [`system.notify`](#systemnotify) | Pop up what deserves your attention: in the web app while it is open, else natively. |
 | [`system.plugin`](#systemplugin) | Find, add, remove, enable, disable, list and scaffold plugins. |
 | [`system.plugin.docs`](#systemplugindocs) | Document installed plugins: what each brings, as a model and as Markdown pages. |
+| [`system.resource`](#systemresource) | Show this computer's CPU, memory and load. |
 | [`system.runner`](#systemrunner) | Run bounded agent sessions with Claude Code or a configured command. |
 | [`system.runner.chat`](#systemrunnerchat) | Chat with the agent runner about where you are; it acts through hz once you confirm. |
 | [`system.skill`](#systemskill) | List the skills plugins ship for AI, and hand chosen ones to Claude Code. |
-| [`system.sound`](#systemsound) | Pick the web app's soundscape: off, Claude FM or one a plugin offers. |
+| [`system.sound`](#systemsound) | Pick the web app's soundscape: off, a built-in one or one a plugin offers. |
 | [`system.state`](#systemstate) | Note how hz is used on this machine and push it to your own state repository. |
 | [`system.theme`](#systemtheme) | Pick how the web app looks: the built-in theme or one a plugin offers. |
 | [`system.ui`](#systemui) | List what modules add to the web app: status items, header actions and Today widgets. |
+| [`tailscale`](#tailscale) | Private web sharing through Tailscale Serve. |
 | [`team`](#team) | Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it. |
 | [`zoom`](#zoom) | Read meetings from Zoom's meeting-summary emails: the meetings capability. |
 
@@ -391,6 +393,14 @@ Document installed plugins: what each brings, as a model and as Markdown pages.
 | Show what each installed plugin brings; `--json` is the full model its page is built from. | `hz system plugin docs show` | `system_plugin_docs_show` | — | `GET /api/system/plugin/docs/show` |  | expert |
 | Write a Markdown page per installed plugin, with theme swatches and its recordings when they exist. | `hz system plugin docs build` | `system_plugin_docs_build` | — | — | yes | expert |
 
+## `system.resource`
+
+Show this computer's CPU, memory and load.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second. | `hz system resource` | `system_resource` | `GET /system/resource` | `GET /api/system/resource` |  |  |
+
 ## `system.runner`
 
 Run bounded agent sessions with Claude Code or a configured command.
@@ -436,12 +446,12 @@ Health checks: reported by `hz system doctor`.
 
 ## `system.sound`
 
-Pick the web app's soundscape: off, Claude FM or one a plugin offers.
+Pick the web app's soundscape: off, a built-in one or one a plugin offers.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
 | List the soundscapes of the web app, where each comes from, which one is picked and which plays. | `hz system sound list` | `system_sound_list` | `GET /system/sound/list` | `GET /api/system/sound/list` |  | expert |
-| Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file. | `hz system sound use` | `system_sound_use` | — | `POST /api/system/sound/use` | yes | expert |
+| Pick the web app's soundscape, `off` for none; turns off theme following and saves your choice. | `hz system sound use` | `system_sound_use` | — | `POST /api/system/sound/use` | yes | expert |
 
 Settings: [`[system.sound]`](CONFIGURATION.md#systemsound).
 
@@ -488,6 +498,20 @@ List what modules add to the web app: status items, header actions and Today wid
 Settings: [`[system.ui]`](CONFIGURATION.md#systemui).
 
 Health checks: reported by `hz system doctor`.
+
+## `tailscale`
+
+Private web sharing through Tailscale Serve.
+
+First-party plugin `heinzel-tailscale`: `hz system plugin add tailscale --confirm`.
+
+| Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
+| --- | --- | --- | --- | --- | --- | --- |
+| Show private sharing readiness without changing Tailscale or configuration. | `hz tailscale status` | `tailscale_status` | — | `GET /api/tailscale/status` |  | expert |
+| Share hz privately over Tailscale, preserving existing services and requiring authenticated readiness. | `hz tailscale enable` | `tailscale_enable` | — | `POST /api/tailscale/enable` | yes | expert |
+| Stop only hz's private Serve mapping and remove only the origin permission this plugin added. | `hz tailscale disable` | `tailscale_disable` | — | `POST /api/tailscale/disable` | yes | expert |
+
+Settings: [`[tailscale]`](CONFIGURATION.md#tailscale).
 
 ## `team`
 

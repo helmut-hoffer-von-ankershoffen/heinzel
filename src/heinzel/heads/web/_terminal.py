@@ -95,11 +95,12 @@ def environment() -> dict[str, str]:
     return env | COLOURS
 
 
-def add_route(
+def add_route(  # noqa: PLR0913 - the app plus explicit terminal authentication, origin and shutdown policy
     app: FastAPI,
     *,
     token: str,
     port: int | None,
+    allowed_origins: frozenset[str] = frozenset(),
     accept: Callable[[str], object],
     stopping: Stopping | None = None,
 ) -> None:
@@ -107,14 +108,17 @@ def add_route(
 
     @app.websocket("/api/terminal")
     async def terminal(websocket: WebSocket) -> None:
-        await session(websocket, token=token, port=port, accept=accept, stopping=stopping)
+        await session(
+            websocket, token=token, port=port, allowed_origins=allowed_origins, accept=accept, stopping=stopping
+        )
 
 
-async def session(
+async def session(  # noqa: PLR0913 - the socket plus explicit terminal authentication, origin and shutdown policy
     websocket: WebSocket,
     *,
     token: str,
     port: int | None,
+    allowed_origins: frozenset[str] = frozenset(),
     accept: Callable[[str], object] | None = None,
     stopping: Stopping | None = None,
 ) -> None:
@@ -125,7 +129,13 @@ async def session(
     """
     headers = websocket.headers
     origin = headers.get("origin")
-    problem = api.refusal(headers.get("host", ""), origin, api.LOOPBACK, port, headers.get("sec-fetch-site"))
+    problem = api.request_refusal(
+        headers,
+        api.LOOPBACK,
+        port,
+        allowed_origins=allowed_origins,
+        host_help=api.WEB_HOST_HELP,
+    )
     if problem or origin is None:
         await websocket.close(code=POLICY_VIOLATION, reason="Refused: open the terminal from the hz ui app.")
         return

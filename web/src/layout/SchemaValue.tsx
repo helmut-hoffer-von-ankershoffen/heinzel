@@ -1,11 +1,12 @@
 // The editors a setting's schema picks (settingSchema.ts): each takes the value and hands back the next one, which
 // the setting's row saves at once.
 import { ArrowDown, ArrowUp, MapPin, Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { useCapabilities, useInfo } from "@/api/queries";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { asRow, type Control, controlFor, initial, type JsonSchema, ownZone, TIMEZONE } from "./settingSchema";
+import { asRow, type Control, controlFor, initial, type JsonSchema, ownZone, TIMEZONE, unwrap } from "./settingSchema";
 import { cityOf, TimeZonePicker } from "./TimeZonePicker";
 
 const field =
@@ -26,9 +27,28 @@ type Props = {
 };
 
 export function SchemaValue({ id, label, schema, control = controlFor(schema), value, disabled, onChange }: Props) {
-  // Hours of a day (0–24) read as times.
-  const hours = /hour/i.test(label);
+  const metadata = unwrap(schema) ?? schema;
+  const hours = metadata["x-unit"] === "hour-of-day";
   switch (control.kind) {
+    case "duration":
+      return <DurationValue {...{ id, label, value, disabled, onChange }} />;
+    case "path":
+      return (
+        <Draft
+          id={id}
+          label={id ? undefined : label}
+          value={typeof value === "string" ? value : ""}
+          disabled={disabled}
+          onCommit={onChange}
+          className={cn(field, "w-60 max-md:w-40")}
+        />
+      );
+    case "installed":
+      return control.source === "adapters" ? (
+        <AdapterChoices {...{ id, label, schema, control, value, disabled, onChange }} />
+      ) : (
+        <ModuleChoices {...{ id, label, schema, control, value, disabled, onChange }} />
+      );
     case "choice":
       return (
         <select
@@ -45,7 +65,7 @@ export function SchemaValue({ id, label, schema, control = controlFor(schema), v
           {(value === undefined || value === null) && <option value="">{t("settings.notSet")}</option>}
           {control.options.map((option) => (
             <option key={String(option)} value={String(option)}>
-              {shown(option, hours)}
+              {metadata["x-labels"]?.[String(option)] ?? shown(option, hours)}
             </option>
           ))}
         </select>
@@ -372,6 +392,177 @@ function Table({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+type InstalledProps = Props & { control: Extract<Control, { kind: "installed" }> };
+type InstalledOption = { value: string; label: string };
+
+function AdapterChoices(props: InstalledProps) {
+  const query = useCapabilities();
+  const options = (query.data?.adapters ?? [])
+    .filter((adapter) => adapter.capability === props.control.capability)
+    .map((adapter) => ({ value: adapter.adapter, label: `${adapter.adapter} · ${adapter.distribution}` }));
+  if (props.control.none !== undefined) options.unshift({ value: props.control.none, label: "None" });
+  return <InstalledChoices {...props} options={options} pending={!query.data} error={query.error?.message} />;
+}
+
+function ModuleChoices(props: InstalledProps) {
+  const query = useInfo();
+  const options = (query.data?.modules ?? []).map((module) => ({ value: module.qualname, label: module.qualname }));
+  return <InstalledChoices {...props} options={options} pending={!query.data} error={query.error?.message} />;
+}
+
+/** Keep saved choices visible when their provider is absent; fetching options must never replace a value. */
+function InstalledChoices({
+  id,
+  label,
+  schema,
+  control,
+  value,
+  disabled,
+  onChange,
+  options,
+  pending,
+  error,
+}: InstalledProps & {
+  options: InstalledOption[];
+  pending: boolean;
+  error?: string;
+}) {
+  const selected = Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
+  const available = new Set(options.map((option) => option.value));
+  const choices = [
+    ...options,
+    ...selected.filter((item) => !available.has(item)).map((item) => ({ value: item, label: `${item} (unavailable)` })),
+  ];
+  const labels = unwrap(schema)?.["x-labels"];
+  return (
+    <div className="min-w-0">
+      {control.multiple ? (
+        <div className="flex flex-wrap gap-3">
+          {choices.map((option) => (
+            <label key={option.value} className="flex items-center gap-1.5 text-sm">
+              <input
+                type="checkbox"
+                checked={selected.includes(option.value)}
+                disabled={disabled || pending}
+                onChange={(event) =>
+                  onChange(
+                    event.target.checked
+                      ? [...selected, option.value]
+                      : selected.filter((item) => item !== option.value),
+                  )
+                }
+              />
+              {labels?.[option.value] ?? option.label}
+            </label>
+          ))}
+        </div>
+      ) : (
+        <select
+          id={id}
+          aria-label={id ? undefined : label}
+          value={selected[0] ?? ""}
+          disabled={disabled || pending}
+          onChange={(event) => onChange(event.target.value)}
+          className={field}
+        >
+          {selected.length === 0 && (
+            <option value="" disabled>
+              {t("settings.notSet")}
+            </option>
+          )}
+          {choices.map((option) => (
+            <option key={option.value} value={option.value}>
+              {labels?.[option.value] ?? option.label}
+            </option>
+          ))}
+        </select>
+      )}
+      {error && (
+        <p role="alert" className="text-xs text-bad">
+          {error}
+        </p>
+      )}
+      {pending && !error && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Loading choices…
+        </p>
+      )}
+    </div>
+  );
+}
+
+// The custom duration format uses kernel/_duration.py's DURATION_PATTERN. Keep its integer text and unit;
+// final validation (including timedelta overflow) belongs to the setting's server-side validator.
+const durationPattern = /^([1-9][0-9]*)([smhd])$/;
+const durationUnits = { s: "seconds", m: "minutes", h: "hours", d: "days" } as const;
+
+function DurationValue({ id, label, value, disabled, onChange }: Omit<Props, "schema">) {
+  const parts = typeof value === "string" ? durationPattern.exec(value) : null;
+  const [amount, setAmount] = useState(parts?.[1] ?? "");
+  const [unit, setUnit] = useState(parts?.[2] ?? "m");
+  const [invalid, setInvalid] = useState(false);
+  const errorId = useId();
+  useEffect(() => {
+    setAmount(parts?.[1] ?? "");
+    setUnit(parts?.[2] ?? "m");
+    setInvalid(false);
+  }, [parts?.[1], parts?.[2]]);
+  const commit = (nextUnit = unit) => {
+    const next = `${amount}${nextUnit}`;
+    const valid = durationPattern.test(next);
+    setInvalid(!valid);
+    if (valid && next !== value) onChange(next);
+  };
+  return (
+    <div>
+      <span className="flex items-center gap-1">
+        <input
+          id={id}
+          aria-label={`${label} amount`}
+          aria-invalid={invalid}
+          aria-describedby={invalid ? errorId : undefined}
+          value={amount}
+          inputMode="numeric"
+          pattern="[1-9][0-9]*"
+          disabled={disabled}
+          onChange={(event) => setAmount(event.target.value)}
+          onBlur={() => commit()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              setAmount(parts?.[1] ?? "");
+              setInvalid(false);
+            }
+          }}
+          className={cn(field, "w-20 text-right")}
+        />
+        <select
+          aria-label={`${label} unit`}
+          value={unit}
+          disabled={disabled}
+          onChange={(event) => {
+            setUnit(event.target.value);
+            commit(event.target.value);
+          }}
+          className={field}
+        >
+          {Object.entries(durationUnits).map(([key, title]) => (
+            <option key={key} value={key}>
+              {title}
+            </option>
+          ))}
+        </select>
+      </span>
+      {invalid && (
+        <p id={errorId} role="alert" className="text-xs text-bad">
+          Enter a positive whole number.
+        </p>
+      )}
     </div>
   );
 }

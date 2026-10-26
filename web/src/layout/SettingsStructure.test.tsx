@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { SchemaConfigReport, SchemaPluginInfo } from "@/api/client";
+import type { SchemaConfigReport, SchemaNavEntry, SchemaPluginInfo } from "@/api/client";
 import { config, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { toToml } from "./settingSchema";
@@ -39,6 +39,17 @@ const clock = plugin({
   summary: "World Clock: what time it is for everyone on the team.",
   kinds: ["capability"],
 });
+const clockNav: SchemaNavEntry = {
+  id: "clock:main",
+  module: "clock",
+  plugin: "heinzel-clock",
+  title: "World Clock",
+  icon: "globe",
+  declared: true,
+  order: 900,
+  settings: { group: "preferences", sections: ["clock"] },
+  sidebar: null,
+};
 
 const zonesSchema = {
   type: "array",
@@ -117,6 +128,7 @@ const answers = {
   ...shell,
   "/api/system/config/show": report,
   "/api/system/plugin/list": [github, clock],
+  "/api/system/ui/navigation": [clockNav],
   "/api/system/capability/list": {
     capabilities: [{ name: "tracker", summary: "Issues", modes: ["read"], bound: "github" }],
     adapters: [],
@@ -131,6 +143,27 @@ const answers = {
     message: "Opened",
   },
 };
+
+/** A restartable server so these tests cover the real confirmation and verification flow. */
+const answersWithRestart = (restartable = true) => {
+  let instance = "settings-before";
+  return {
+    ...answers,
+    "/api/lifecycle": () => ({ instance, version: "0.7.4", restartable }),
+    "/api/restart": () => {
+      const retiring = instance;
+      instance = `${instance}-next`;
+      return { restarting: true, instance: retiring };
+    },
+    "/api/lifecycle/verify": () => ({ instance, version: "0.7.4", matches: true, mismatched: [] }),
+  };
+};
+
+async function confirmSettingsApply(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: "Restart and apply" }));
+  const dialog = await screen.findByRole("alertdialog", { name: "Restart and apply Settings" });
+  await user.click(within(dialog).getByRole("button", { name: "Restart and apply Settings" }));
+}
 
 /** The `value` of the last `config set`. */
 const lastSet = (calls: Request[]) =>
@@ -165,7 +198,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const names = within(nav)
       .getAllByRole("button")
       .map((button) => button.textContent);
-    expect(names.slice(0, 3)).toEqual(["Appearance", "World Clock", "Notifications"]);
+    expect(names.slice(0, 3)).toEqual(["Appearance", "Notifications", "World Clock"]);
     // Every entry has its own icon, never a shared generic one, and AI is only under Customize.
     expect(names.filter((name) => name === "AI")).toHaveLength(1);
     expect(within(nav).queryByRole("button", { name: "General" })).not.toBeInTheDocument();
@@ -268,7 +301,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
 
 describe("The time zones editor (a list of tables by its schema)", () => {
   it("shows each zone as a row, adds the browser's zone with 9–18, changes hours and removes a row", async () => {
-    const { calls } = mockApi(answers);
+    const { calls } = mockApi(answersWithRestart());
     const user = userEvent.setup();
     const { container } = renderAt("/doctor?settings=clock");
     const zones = await screen.findByRole("group", { name: "Zones" });
@@ -280,15 +313,21 @@ describe("The time zones editor (a list of tables by its schema)", () => {
     await expectAccessible(container);
 
     await user.selectOptions(within(zones).getByRole("combobox", { name: "Hours (Berlin) to" }), "17");
+    expect(calls.some((call) => call.url.includes("/system/config/set"))).toBe(false);
+    await confirmSettingsApply(user);
     await waitFor(() =>
       expect(lastSet(calls)).toBe('[{ name = "Europe/Berlin", hours = [9, 17] }, { name = "America/New_York" }]'),
     );
 
     await user.click(within(zones).getByRole("button", { name: "Remove New York" }));
+    expect(lastSet(calls)).toBe('[{ name = "Europe/Berlin", hours = [9, 17] }, { name = "America/New_York" }]');
+    await confirmSettingsApply(user);
     await waitFor(() => expect(lastSet(calls)).toBe('[{ name = "Europe/Berlin", hours = [9, 18] }]'));
 
     await user.click(within(zones).getByRole("button", { name: "Add to Zones" }));
     const own = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    expect(lastSet(calls)).toBe('[{ name = "Europe/Berlin", hours = [9, 18] }]');
+    await confirmSettingsApply(user);
     await waitFor(() => expect(lastSet(calls)).toContain(`{ name = "${own}", hours = [9, 18] }`));
   });
 
@@ -303,7 +342,7 @@ describe("The time zones editor (a list of tables by its schema)", () => {
   });
 
   it("marks the first zone as yours, reorders rows, and puts your own zone on top", async () => {
-    const { calls } = mockApi(answers);
+    const { calls } = mockApi(answersWithRestart());
     const user = userEvent.setup();
     renderAt("/doctor?settings=clock");
     const zones = await screen.findByRole("group", { name: "Zones" });
@@ -313,6 +352,8 @@ describe("The time zones editor (a list of tables by its schema)", () => {
     expect(within(zones).getByRole("button", { name: "Move Berlin up" })).toBeDisabled();
     expect(within(zones).getByRole("button", { name: "Move New York down" })).toBeDisabled();
     await user.click(within(zones).getByRole("button", { name: "Move New York up" }));
+    expect(calls.some((call) => call.url.includes("/system/config/set"))).toBe(false);
+    await confirmSettingsApply(user);
     await waitFor(() =>
       expect(lastSet(calls)).toBe('[{ name = "America/New_York" }, { name = "Europe/Berlin", hours = [9, 18] }]'),
     );
@@ -324,36 +365,61 @@ describe("The time zones editor (a list of tables by its schema)", () => {
     const zones = report.settings.map((setting) =>
       setting.key === "zones" ? { ...setting, value: [{ name: other, hours: [9, 18] }] } : setting,
     );
-    const { calls } = mockApi({ ...answers, "/api/system/config/show": { ...report, settings: zones } });
+    const { calls } = mockApi({ ...answersWithRestart(), "/api/system/config/show": { ...report, settings: zones } });
     const user = userEvent.setup();
     renderAt("/doctor?settings=clock");
     await user.click(await screen.findByRole("button", { name: /^Use my time zone/ }));
+    expect(calls.some((call) => call.url.includes("/system/config/set"))).toBe(false);
+    await confirmSettingsApply(user);
     await waitFor(() =>
       expect(lastSet(calls)).toBe(`[{ name = "${own}", hours = [9, 18] }, { name = "${other}", hours = [9, 18] }]`),
     );
   });
 
   it("picks a time zone by searching", async () => {
-    const { calls } = mockApi(answers);
+    const { calls } = mockApi(answersWithRestart());
     const user = userEvent.setup();
     renderAt("/doctor?settings=clock");
     const zones = await screen.findByRole("group", { name: "Zones" });
     await user.click(within(zones).getByRole("button", { name: /^Name \(Berlin\)/ }));
     await user.type(screen.getByRole("combobox", { name: "Search time zones" }), "tokyo");
     await user.click(screen.getByRole("option", { name: /Tokyo/ }));
+    expect(calls.some((call) => call.url.includes("/system/config/set"))).toBe(false);
+    await confirmSettingsApply(user);
     await waitFor(() => expect(lastSet(calls)).toContain('name = "Asia/Tokyo", hours = [9, 18]'));
   });
 
   it("shows the server's error when a change is refused", async () => {
-    mockApi({
-      ...answers,
+    const { calls } = mockApi({
+      ...answersWithRestart(),
       "/api/system/config/set": { status: 400, body: { error: "Invalid value for clock.zones: end before start" } },
     });
     const user = userEvent.setup();
     renderAt("/doctor?settings=clock");
     const zones = await screen.findByRole("group", { name: "Zones" });
     await user.selectOptions(within(zones).getByRole("combobox", { name: "Hours (Berlin) to" }), "3");
-    expect(await screen.findByText(/end before start/)).toHaveAttribute("role", "alert");
+    expect(await screen.findByRole("button", { name: "Restart and apply" })).toBeInTheDocument();
+    expect(calls.some((call) => call.url.includes("/system/config/set"))).toBe(false);
+    await confirmSettingsApply(user);
+    await waitFor(() =>
+      expect(screen.getAllByRole("alert").some((alert) => alert.textContent?.includes("end before start"))).toBe(true),
+    );
+  });
+
+  it("saves a confirmed change for the next launch when the server cannot restart itself", async () => {
+    const { calls } = mockApi(answersWithRestart(false));
+    const user = userEvent.setup();
+    renderAt("/doctor?settings=clock");
+    const zones = await screen.findByRole("group", { name: "Zones" });
+    await user.selectOptions(within(zones).getByRole("combobox", { name: "Hours (Berlin) to" }), "17");
+    expect(calls.some((call) => call.url.includes("/system/config/set"))).toBe(false);
+
+    await confirmSettingsApply(user);
+
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/system/config/set"))).toBe(true));
+    expect(await screen.findByText("Saved. Restart `hz ui` to apply this setting.")).toHaveAttribute("role", "status");
+    expect(lastSet(calls)).toBe('[{ name = "Europe/Berlin", hours = [9, 17] }, { name = "America/New_York" }]');
+    expect(calls.some((call) => call.url.endsWith("/api/restart"))).toBe(false);
   });
 });
 
@@ -389,7 +455,7 @@ describe("Installed plugins by kind", () => {
 describe("Where settings live", () => {
   it("keeps the capitals of acronyms in module and setting names", () => {
     expect(displayName("ai")).toBe("AI");
-    expect(displayName("clock", "World Clock: what time it is.")).toBe("World Clock");
+    expect(displayName("clock", "World Clock: what time it is.")).toBe("Clock");
     expect(displayName("mcp")).toBe("MCP");
     expect(displayName("cli")).toBe("CLI");
     expect(displayName("github")).toBe("GitHub");
@@ -406,12 +472,28 @@ describe("Where settings live", () => {
   });
 
   it("puts every module with settings under Preferences, General first, and connectors apart", () => {
-    const nav = settingsNav(["hz", "org", "github", "clock", "capabilities", "acme"], [github, clock]);
+    const nav = settingsNav(
+      ["hz", "org", "github", "clock", "capabilities", "acme"],
+      [github, clock],
+      [
+        clockNav,
+        {
+          id: "acme:@settings",
+          module: "acme",
+          plugin: "heinzel-acme",
+          title: "Acme",
+          icon: "code",
+          declared: false,
+          order: 1000,
+          settings: { group: "preferences", sections: ["acme"] },
+        },
+      ],
+    );
     const ids = nav.pages.map((entry) => entry.id);
-    expect(ids.slice(0, 3)).toEqual(["appearance", "clock", "notifications"]);
-    expect(ids).toContain("acme");
+    expect(ids.slice(0, 2)).toEqual(["appearance", "notifications"]);
+    expect(ids).toContain("acme:@settings");
     expect(ids).not.toContain("github");
-    expect(nav.pages.find((entry) => entry.id === "clock")?.plugin).toBe(clock);
+    expect(nav.pages.find((entry) => entry.id === "clock:main")?.plugin).toBe(clock);
     // Each setting section has exactly one page.
     for (const [section, page] of [
       ["system.runner.chat", "ai"],

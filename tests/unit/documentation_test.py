@@ -100,6 +100,12 @@ def test_every_page_shows_the_same_linked_badges_at_most_ten():
     assert "badge" not in (REPO / "LICENSE").read_text(encoding="utf-8")
 
 
+def test_only_core_advertises_the_pypi_release_channel():
+    block = badge_block(REPO / "README.md")
+    assert "[![PyPI](https://img.shields.io/pypi/v/heinzel)](https://pypi.org/project/heinzel/)" in block
+    assert "[![Release]" not in block
+
+
 def test_python_badge_lists_the_versions_pyproject_declares():
     classifiers = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]["classifiers"]
     versions = [c.rsplit(" :: ", 1)[1] for c in classifiers if c.startswith("Programming Language :: Python :: 3.")]
@@ -111,10 +117,15 @@ def test_python_badge_lists_the_versions_pyproject_declares():
 def test_plugins_show_the_same_badges_for_their_own_repository(page):
     # The OpenSSF Best Practices badge is this repository's registration; a plugin registers on its own.
     ours = "".join(
-        line for line in badge_block(REPO / "README.md").splitlines(keepends=True) if "bestpractices.dev" not in line
+        line
+        for line in badge_block(REPO / "README.md").splitlines(keepends=True)
+        if "bestpractices.dev" not in line and "img.shields.io/pypi/" not in line
     ).replace("helmut-hoffer-von-ankershoffen/heinzel", "OWNER/REPO")
     theirs = badge_block(REPO / "template" / page).replace("[[ github_owner ]]/[[ project_name ]]", "OWNER/REPO")
-    assert theirs == ours
+    release = "[![Release](https://img.shields.io/github/v/release/OWNER/REPO?sort=semver)](https://github.com/OWNER/REPO/releases)\n"
+    assert release in theirs
+    assert "pypi.org/project/" not in theirs
+    assert theirs.replace(release, "") == ours
 
 
 def test_every_document_in_docs_is_listed_in_the_index():

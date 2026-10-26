@@ -1,5 +1,6 @@
 ---
 status: proposed
+amended-by: 0083
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0006, 0039

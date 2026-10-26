@@ -2,20 +2,36 @@
 // one, and a clock, on the right, then what modules add (ADR 0056). The meeting comes from `hz org agenda` (the bound calendar), refreshed each minute.
 
 import { useQuery } from "@tanstack/react-query";
-import { Calendar, CalendarClock, Ellipsis, Video } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { Calendar, CalendarClock, Video } from "lucide-react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
 import { FooterItem } from "@/components/FooterItem";
+import {
+  FOOTER_CREDIT,
+  FOOTER_RELOCATED,
+  FooterCredit,
+  FooterLayout,
+  FooterMore,
+  FooterPart,
+  useFooterVisibility,
+} from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Prose } from "@/components/Prose";
+import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { t } from "@/i18n";
-import { useWidth } from "@/lib/useWidth";
 import { cn } from "@/lib/utils";
-import { zoneClock, zoneHour, zoneTime } from "@/lib/zoneTime";
+import { workingHours } from "@/lib/workingHours";
+import { zoneClock, zoneTime } from "@/lib/zoneTime";
+import { placePopover } from "@/sound/dock";
+import { DurableHeinzelStatus } from "./DurableHeinzelStatus";
+import { HealthStatus } from "./HealthStatus";
+import { ResourceStatus } from "./ResourceStatus";
 import { CLOCK_SETTINGS, CONNECTORS } from "./settingsSections";
+import { UpdateStatus } from "./UpdateStatus";
 
 type Meeting = { title: string; start: string; end: string; conference_url?: string | null };
 type Agenda = { current: Meeting | null; next: Meeting | null; problem: string | null; fix: string | null };
@@ -43,7 +59,7 @@ export function useZones() {
   // Only with the clock plugin: without it there is no /api/clock to ask, and asking would log a 404.
   const info = useInfo();
   const enabled = Boolean(info.data?.modules.some((module) => module.qualname === "clock"));
-  return useQuery({
+  const query = useQuery({
     enabled,
     queryKey: ["clock"],
     queryFn: async (): Promise<ZoneTime[] | null> => {
@@ -56,6 +72,8 @@ export function useZones() {
     refetchInterval: 60_000,
     retry: false,
   });
+  // A removed or disabled plugin must not leave cached zones visible in native placements.
+  return { ...query, data: enabled ? query.data : null };
 }
 
 type Parts = { weekday: number; hour: number; minute: number; day: string; offset: number };
@@ -83,26 +101,6 @@ function partsIn(zone: string, now: Date): Parts {
     day: parts.weekday ?? "",
     offset: Math.round((local.getTime() - here.getTime()) / 60_000),
   };
-}
-
-/** Whether they're reachable now, and if not, when they're back: what the hover answers. */
-function availability(zone: ZoneTime, at: Parts): string {
-  const [start, end] = zone.hours;
-  const from = zoneHour(start, zone.zone);
-  const weekend = at.weekday === 0 || at.weekday === 6;
-  const minutes = at.hour * 60 + at.minute;
-  if (weekend) return t("status.weekend", { from });
-  if (minutes < start * 60) {
-    const left = start * 60 - minutes;
-    return left <= 120
-      ? t("status.startsIn", {
-          from,
-          minutes: left < 60 ? `${left} min` : `${Math.floor(left / 60)} h ${left % 60} min`,
-        })
-      : t("status.starts", { from });
-  }
-  if (minutes < end * 60) return t("status.workingUntil", { until: zoneHour(end, zone.zone) });
-  return at.weekday === 5 ? t("status.backMonday", { from }) : t("status.backTomorrow", { from });
 }
 
 const offsetText = (minutes: number) => {
@@ -137,10 +135,54 @@ function Clock({ now }: { now: Date }) {
   const timer = useRef<number | undefined>(undefined);
   const wrapper = useRef<HTMLSpanElement>(null);
   const panelId = useId();
-  const open = hovered || focused || pinned;
+  const pane = useRef<HTMLDivElement>(null);
+  const visible = useFooterVisibility();
+  const returningFocus = useRef(false);
+  const [placement, setPlacement] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
+  const open = visible && (hovered || focused || pinned);
+  useEffect(() => {
+    if (!visible) {
+      setHovered(false);
+      setFocused(false);
+      setPinned(false);
+    }
+  }, [visible]);
+  useLayoutEffect(() => {
+    if (!open || !pane.current || !wrapper.current) return;
+    const popup = pane.current;
+    const position = () => {
+      if (!wrapper.current) return;
+      const box = popup.getBoundingClientRect();
+      const maxHeight = Math.max(1, window.innerHeight - 16);
+      const next = {
+        ...placePopover(
+          wrapper.current.getBoundingClientRect(),
+          { width: box.width, height: Math.min(box.height, maxHeight) },
+          "above",
+        ),
+        maxHeight,
+      };
+      setPlacement((old) =>
+        old?.left === next.left && old.top === next.top && old.maxHeight === next.maxHeight ? old : next,
+      );
+    };
+    position();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(position);
+    observer?.observe(popup);
+    observer?.observe(wrapper.current);
+    window.addEventListener("resize", position);
+    window.addEventListener(FOOTER_RELOCATED, position);
+    window.addEventListener("scroll", position, true);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", position);
+      window.removeEventListener(FOOTER_RELOCATED, position);
+      window.removeEventListener("scroll", position, true);
+    };
+  }, [open]);
   // The first zone is yours (`clock.zones` is ordered): the clock shows its time and the panel lists it first, with
-  // the others after it. Zones this browser doesn't know are left out rather than breaking the bar.
-  const known = (zones.data ?? []).filter((zone) => knownZone(zone.zone));
+  // the others after it. Unknown browser zones keep their place and show an explicit unavailable value.
+  const known = zones.data ?? [];
   const primary = known[0]?.zone;
   useEffect(() => () => window.clearTimeout(timer.current), []);
   const enter = () => {
@@ -160,7 +202,8 @@ function Clock({ now }: { now: Date }) {
   useEffect(() => {
     if (!pinned) return;
     const outside = (event: MouseEvent) => {
-      if (!wrapper.current?.contains(event.target as Node)) setPinned(false);
+      if (!wrapper.current?.contains(event.target as Node) && !pane.current?.contains(event.target as Node))
+        setPinned(false);
     };
     window.addEventListener("mousedown", outside);
     return () => window.removeEventListener("mousedown", outside);
@@ -172,9 +215,15 @@ function Clock({ now }: { now: Date }) {
       className="relative shrink-0"
       onMouseEnter={enter}
       onMouseLeave={leave}
-      onFocus={() => setFocused(true)}
+      onFocus={() => {
+        if (!returningFocus.current) setFocused(true);
+      }}
       onBlur={(event) => {
-        if (!wrapper.current?.contains(event.relatedTarget as Node | null)) setFocused(false);
+        if (
+          !wrapper.current?.contains(event.relatedTarget as Node | null) &&
+          !pane.current?.contains(event.relatedTarget as Node | null)
+        )
+          setFocused(false);
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape" && open) {
@@ -191,69 +240,97 @@ function Clock({ now }: { now: Date }) {
         aria-describedby={`${panelId}-hint`}
         className="rounded px-1 font-mono text-foreground/80 tabular-nums hover:bg-accent/60"
       >
-        <time dateTime={now.toISOString()}>{zoneClock(now, primary)}</time>
+        <time dateTime={now.toISOString()}>{primary && !knownZone(primary) ? "--:--" : zoneClock(now, primary)}</time>
         <span id={`${panelId}-hint`} className="sr-only">
           {t("status.zones")}
         </span>
       </button>
-      {open && (
-        // The spacing is padding inside this transparent box, so the pointer never leaves it on the way up.
-        <div id={panelId} className="absolute right-0 bottom-full z-(--layer-popover) pb-2">
-          <section
-            aria-label={t("status.zones")}
-            className="w-80 rounded-xl border border-border bg-popover p-1.5 text-sm shadow-xl"
+      {open &&
+        createPortal(
+          // biome-ignore lint/a11y/noStaticElementInteractions: hover and focus retain the pane opened by the clock button
+          <div
+            ref={pane}
+            id={panelId}
+            className="fixed z-(--layer-popover) overflow-y-auto"
+            style={placement ?? { left: 0, top: 0, visibility: "hidden" }}
+            onMouseEnter={enter}
+            onMouseLeave={leave}
+            onFocus={() => setFocused(true)}
+            onBlur={(event) => {
+              if (
+                !pane.current?.contains(event.relatedTarget as Node | null) &&
+                !wrapper.current?.contains(event.relatedTarget as Node | null)
+              )
+                setFocused(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.stopPropagation();
+                close();
+                returningFocus.current = true;
+                wrapper.current?.querySelector("button")?.focus();
+                returningFocus.current = false;
+              }
+            }}
           >
-            {known.length > 0 ? (
-              // Yours first, then the others in the order of `clock.zones`; every time on the 24-hour clock.
-              <ul>
-                {known.map((zone, index) => {
-                  const at = partsIn(zone.zone, now);
-                  const sameDay = at.weekday === now.getDay();
-                  return (
-                    <li key={zone.zone} className="flex items-center gap-3 rounded-lg px-2.5 py-2">
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "size-2 shrink-0 rounded-full",
-                          zone.working ? "bg-ok" : "bg-muted-foreground/40",
-                        )}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-baseline gap-2">
-                          <span className="truncate text-foreground">{city(zone.zone)}</span>
-                          {index === 0 ? (
-                            <span className="rounded-md border border-primary/40 px-1.5 text-[11px] text-primary">
-                              {t("settings.primary")}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">{offsetText(at.offset)}</span>
-                          )}
-                        </span>
-                        <span className={cn("block text-xs", zone.working ? "text-ok" : "text-muted-foreground")}>
-                          {availability(zone, at)}
-                        </span>
-                      </span>
-                      <span className="shrink-0 font-mono text-foreground tabular-nums">
-                        {sameDay ? "" : `${at.day} `}
-                        {zoneTime(now, zone.zone)}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="px-2.5 py-1.5 text-muted-foreground">{t("status.noZones")}</p>
-            )}
-            <Link
-              to={`?settings=${CLOCK_SETTINGS}`}
-              onClick={close}
-              className="mt-1 block rounded-lg border-t border-border px-2.5 pt-2 pb-1 text-xs text-muted-foreground hover:text-foreground"
+            <section
+              aria-label={t("status.zones")}
+              className="w-80 rounded-xl border border-border bg-popover p-1.5 text-sm shadow-xl"
             >
-              {t("status.editZones")}
-            </Link>
-          </section>
-        </div>
-      )}
+              {known.length > 0 ? (
+                // Yours first, then the others in the order of `clock.zones`; every time on the 24-hour clock.
+                <ul>
+                  {known.map((zone, index) => {
+                    const at = knownZone(zone.zone) ? partsIn(zone.zone, now) : null;
+                    const sameDay = !at || at.weekday === now.getDay();
+                    const work = workingHours(zone, now);
+                    return (
+                      <li key={zone.zone} className="flex items-center gap-3 rounded-lg px-2.5 py-2">
+                        <span
+                          aria-hidden
+                          className={cn(
+                            "size-2 shrink-0 rounded-full",
+                            work.working ? "bg-ok" : "bg-muted-foreground/40",
+                          )}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-baseline gap-2">
+                            <span className="truncate text-foreground">{city(zone.zone)}</span>
+                            {index === 0 ? (
+                              <span className="rounded-md border border-primary/40 px-1.5 text-[11px] text-primary">
+                                {t("settings.primary")}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">
+                                {at ? offsetText(at.offset) : zone.zone}
+                              </span>
+                            )}
+                          </span>
+                          <span
+                            title={work.detail}
+                            className={cn("block text-xs", work.working ? "text-ok" : "text-muted-foreground")}
+                          >
+                            {work.summary}
+                          </span>
+                        </span>
+                        <span className="shrink-0 font-mono text-foreground tabular-nums">
+                          {sameDay ? "" : `${at?.day} `}
+                          {at ? zoneTime(now, zone.zone) : t("worldClock.unavailable")}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="px-2.5 py-1.5 text-muted-foreground">{t("status.noZones")}</p>
+              )}
+              <div className="mt-1 flex justify-end border-t border-border pt-1">
+                <SettingsShortcut section={CLOCK_SETTINGS} label={t("status.editZones")} />
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )}
     </span>
   );
 }
@@ -278,55 +355,6 @@ function until(start: Date, now: Date): string {
   return t("status.inHours", { hours: Math.floor(minutes / 60), minutes: minutes % 60 });
 }
 
-/** How the footer shows its items for its width: everything, icons without text, or the lesser ones under "…". */
-export type FooterMode = "full" | "icons" | "overflow";
-const FULL_FROM = 900;
-const ICONS_FROM = 480;
-export const footerMode = (width: number): FooterMode =>
-  width >= FULL_FROM ? "full" : width >= ICONS_FROM ? "icons" : "overflow";
-
-/** The meeting now or next, or why there is none; one line that truncates, whole in its tooltip. */
-function MeetingLine({ now, wrap = false }: { now: Date; wrap?: boolean }) {
-  const agenda = useAgenda();
-  const meeting = useShown("org:meeting", "footer");
-  const current = agenda.data?.current;
-  const next = agenda.data?.next;
-  const line = (text: string) => (
-    <span className="truncate" title={text}>
-      {text}
-    </span>
-  );
-  return (
-    <span className={cn("flex min-w-0 items-center gap-1.5", wrap ? "w-full" : "shrink")}>
-      {!meeting ? null : current ? (
-        <>
-          <Video aria-hidden className="size-3.5 shrink-0 text-primary" />
-          {line(t("status.current", { title: current.title, end: time(new Date(current.end)) }))}
-          {current.conference_url && (
-            <a
-              href={current.conference_url}
-              target="_blank"
-              rel="noreferrer"
-              className="shrink-0 text-primary underline"
-            >
-              {t("status.join")}
-            </a>
-          )}
-        </>
-      ) : next ? (
-        <>
-          <CalendarClock aria-hidden className="size-3.5 shrink-0" />
-          {line(t("status.next", { title: next.title, when: until(new Date(next.start), now) }))}
-        </>
-      ) : agenda.data?.problem ? (
-        <span className="truncate" title={agenda.data.fix ?? t("status.noCalendar")}>
-          {t("status.noCalendar")}
-        </span>
-      ) : null}
-    </span>
-  );
-}
-
 const RELEASES = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag";
 
 /** What changed in the running release, from the changelog installed with it (so offline), as the version's pane. */
@@ -337,9 +365,11 @@ function ReleaseNotes({ version }: { version: string }) {
       <section aria-label={t("status.about")} className="mb-3 border-b border-border pb-3">
         <div className="flex items-center gap-3">
           <HeinzelAvatar label={t("app.name")} className="h-20 w-12" />
-          <p className="min-w-0 font-medium">{t("status.tagline")}</p>
+          <p className="min-w-0 font-medium">
+            <span className="block">{t("status.tagline")}</span>
+            <span className="block">{t("status.origin")}</span>
+          </p>
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">{t("status.origin")}</p>
         <p className="mt-2 text-xs text-muted-foreground">{t("status.built")}</p>
       </section>
       <p className="mb-1 text-xs text-muted-foreground">{t("status.whatChanged")}</p>
@@ -414,87 +444,42 @@ function MeetingItem({ now }: { now: Date }) {
   return null;
 }
 
-/** The "…" button of a narrow footer: what doesn't fit opens above it, stacked. */
-function Overflow({ now }: { now: Date }) {
-  const [open, setOpen] = useState(false);
-  const wrapper = useRef<HTMLSpanElement>(null);
-  const id = useId();
-  useEffect(() => {
-    if (!open) return;
-    const outside = (event: MouseEvent) => {
-      if (!wrapper.current?.contains(event.target as Node)) setOpen(false);
-    };
-    window.addEventListener("mousedown", outside);
-    return () => window.removeEventListener("mousedown", outside);
-  }, [open]);
-  return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: Escape closes what the button opens
-    <span
-      ref={wrapper}
-      className="relative shrink-0"
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && open) {
-          event.stopPropagation();
-          setOpen(false);
-        }
-      }}
-    >
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={id}
-        aria-label={t("status.more")}
-        title={t("status.more")}
-        onClick={() => setOpen((was) => !was)}
-        className="flex size-6 items-center justify-center rounded hover:bg-accent/60 hover:text-foreground"
-      >
-        <Ellipsis aria-hidden className="size-4" />
-      </button>
-      {open && (
-        <section
-          id={id}
-          aria-label={t("status.more")}
-          className="absolute right-0 bottom-full z-(--layer-popover) mb-2 flex w-72 max-w-[calc(100vw-2rem)] flex-col gap-1 rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
-        >
-          <StatusItems slot="footer" except={NATIVE_FOOTER} stacked />
-          <MeetingLine now={now} wrap />
-        </section>
-      )}
-    </span>
-  );
-}
-
 export function StatusBar() {
   const info = useInfo();
   const clock = useShown("clock:primary-zone", "footer");
   const now = useNow();
-  const footer = useRef<HTMLElement>(null);
-  const mode = footerMode(useWidth(footer));
   return (
-    <footer
-      ref={footer}
-      className="flex h-[60px] min-w-0 shrink-0 items-center gap-3 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground"
-    >
-      {/* The branding is the sidebar's; here only the version, which opens what changed. It never gives way. */}
-      {info.data && (
-        <FooterItem label={`v${info.data.version}`} state="off" text={`v${info.data.version}`} align="left">
-          <ReleaseNotes version={info.data.version} />
-        </FooterItem>
-      )}
-      <span aria-hidden className="ml-auto" />
-      {mode === "overflow" ? (
-        <Overflow now={now} />
-      ) : (
-        <>
-          <StatusItems slot="footer" except={NATIVE_FOOTER} />
-          <MeetingItem now={now} />
-        </>
-      )}
-      {clock && <Clock now={now} />}
-      <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-ui-sm" title={t("status.built")}>
-        <span aria-hidden>🐻</span>
-        <span className={mode === "full" ? undefined : "sr-only"}>{t("status.built")}</span>
-      </span>
-    </footer>
+    <FooterLayout className="h-[60px] shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
+      <FooterPart id="@version" pinned className="mr-auto">
+        {info.data && (
+          <FooterItem label={`v${info.data.version}`} state="off" text={`v${info.data.version}`} align="left">
+            <ReleaseNotes version={info.data.version} />
+          </FooterItem>
+        )}
+      </FooterPart>
+      <FooterPart id="@updates" pinned priority={100} label={t("updates.title")}>
+        <UpdateStatus />
+      </FooterPart>
+      <StatusItems slot="footer" except={NATIVE_FOOTER} measured />
+      <FooterPart id="@resources" priority={60} label={t("resource.title")}>
+        <ResourceStatus />
+      </FooterPart>
+      <FooterPart id="@heinzels" priority={70} label={t("nav.heinzelmaennchen")}>
+        <DurableHeinzelStatus />
+      </FooterPart>
+      <FooterPart id="@health" priority={90} label={t("health.title")}>
+        <HealthStatus />
+      </FooterPart>
+      <FooterPart id="@meeting" priority={30}>
+        <MeetingItem now={now} />
+      </FooterPart>
+      <FooterPart id="@clock" priority={40} label={t("status.zones")}>
+        {clock && <Clock now={now} />}
+      </FooterPart>
+      <FooterPart id={FOOTER_CREDIT}>
+        <FooterCredit>{t("status.built")}</FooterCredit>
+      </FooterPart>
+      <FooterMore />
+    </FooterLayout>
   );
 }

@@ -123,7 +123,7 @@ def _view(name: str, offered: Offered, choice: Choice) -> SoundscapeView:
 
 
 class SoundService(SoundAssets):
-    """The soundscapes of the web app (ADR 0058): no sound, the core's Claude FM and every one a plugin offers."""
+    """The soundscapes of the web app (ADR 0058): no sound, core soundscapes and every one a plugin offers."""
 
     def __init__(self, kernel: Kernel, editor: ConfigEditor) -> None:
         """Create the service; the kernel and the configuration editor are injected."""
@@ -251,7 +251,7 @@ class SoundService(SoundAssets):
         )
 
     def use(self, name: str) -> SoundList:
-        """Write `name` as the soundscape to the user configuration file, then list the soundscapes.
+        """Pick `name` for playback, turn off theme following, then list the soundscapes.
 
         Raises:
             HeinzelError: If no installed plugin offers a soundscape of that name, or the file can't be written.
@@ -264,6 +264,7 @@ class SoundService(SoundAssets):
             )
             raise HeinzelError(msg)
         self._editor.write(KEY, name, "user")
+        self._editor.write(f"{SECTION}.follow_theme", value=False, scope="user")
         return self.listing()
 
     def asset(self, soundscape: str, part: str, extension: str) -> tuple[bytes, str] | None:

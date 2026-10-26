@@ -41,6 +41,7 @@ from heinzel.kernel._lets import (
     SetupLet,
     settings_parameters,
 )
+from heinzel.kernel._local_web import LocalWebRuntime
 from heinzel.kernel._module import Module
 from heinzel.kernel._org import OrgContext
 from heinzel.kernel._playbooks import PlaybookLet
@@ -145,6 +146,7 @@ class Kernel:
             Settings: self.settings,
             Config: self.config,
             Progress: Progress(),
+            LocalWebRuntime: LocalWebRuntime(),
             Prompter: Prompter(),
         }
         self._factories: dict[type[Any], Callable[..., Any]] = {

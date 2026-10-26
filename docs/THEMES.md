@@ -7,11 +7,15 @@ use <name>` picks one. Every value passes a grammar at import, so a theme can't 
 
 Soundscapes work the same way ([ADR 0058](adr/0058-soundscapes-are-data-a-plugin-ships-chosen-like-a-theme.md)): a plugin
 offers its own with `module.soundscape(Path(__file__).parent / "soundscapes")`, and they appear in `hz system sound
-list` and the web app's picker beside Claude FM.
+list` and the web app's picker beside the built-in soundscapes.
 
 The sound options include volume, softer sound while typing and muting during meetings. A stream's mini-player
 starts in the sidebar; pop it out, drag it near the sidebar to dock it again, or move the floating player with its
 arrow-key button. Docking, undocking and collapsing the sidebar keep the stream playing.
+
+Choosing a soundscape manually turns off **Follow my theme**, so your choice takes effect. Press **Play** to start it.
+Turn **Follow my theme** on again to let your theme choose. Sound choices identify their supplying theme,
+plugin or built-in origin alongside playback and attribution details.
 
 ## Themes that follow the time of day and the weather
 

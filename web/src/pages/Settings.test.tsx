@@ -36,7 +36,8 @@ describe("Settings dialog", () => {
     renderAt("/?settings=hz");
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
     await user.type(await within(dialog).findByRole("searchbox"), "ask_max");
-    expect(await within(dialog).findByRole("heading", { name: "[system.runner]" })).toBeInTheDocument();
+    expect(await within(dialog).findByRole("heading", { name: "Runner" })).toBeInTheDocument();
+    expect(within(dialog).queryByText("[system.runner]")).not.toBeInTheDocument();
     expect(within(dialog).queryByLabelText("Log level")).not.toBeInTheDocument();
   });
 
@@ -44,6 +45,6 @@ describe("Settings dialog", () => {
     mockApi(shell);
     renderAt("/settings?q=ask_max_usd");
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    expect(await within(dialog).findByRole("heading", { name: "[system.runner]" })).toBeInTheDocument();
+    expect(await within(dialog).findByRole("heading", { name: "Runner" })).toBeInTheDocument();
   });
 });

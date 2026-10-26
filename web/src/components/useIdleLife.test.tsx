@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IDLE_MAX_MS, IDLE_MIN_MS, IDLE_MOVES, useIdleLife } from "./useIdleLife";
+import { IDLE_MAX_MS, IDLE_MIN_MS, IDLE_MOVES, nextIdleMove, useIdleLife } from "./useIdleLife";
 
 let reduced = false;
 const listeners = new Set<() => void>();
@@ -33,6 +33,11 @@ afterEach(() => {
 });
 
 describe("useIdleLife", () => {
+  it("does not choose the same move twice in a row when alternatives exist", () => {
+    expect(nextIdleMove(["blink", "tilt"], "blink", () => 0)).toBe("tilt");
+    expect(nextIdleMove(["blink"], "blink", () => 0)).toBe("blink");
+    expect(nextIdleMove([], null, () => 0)).toBeNull();
+  });
   it("plays a move 8 to 30 seconds in, then rests again", () => {
     const { result } = renderHook(() => useIdleLife(true));
     expect(result.current).toBeNull();

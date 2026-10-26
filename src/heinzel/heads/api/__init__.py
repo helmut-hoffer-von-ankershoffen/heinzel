@@ -30,6 +30,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer
 from pydantic import ConfigDict, create_model
 from pydantic.fields import FieldInfo
+from starlette.datastructures import Headers
 
 from heinzel import __version__
 from heinzel.heads._exposure import API_PRIVATE, Exposed, exposed
@@ -46,6 +47,11 @@ UNAUTHORIZED = 401
 DEFAULT_PORTS = frozenset({80, 443})
 LOOPBACK = frozenset({"localhost", "127.0.0.1", "[::1]"})
 """Hosts the REST head always answers; `[hz] api_allowed_hosts` adds others."""
+API_HOST_HELP = "If you serve on another interface, add its name to [hz] api_allowed_hosts in your user configuration."
+WEB_HOST_HELP = (
+    "For a private HTTPS proxy, add its exact HTTPS origin to [hz] ui_allowed_origins in your user configuration "
+    "and restart hz ui. api_allowed_hosts configures the REST head only."
+)
 
 
 def build(  # noqa: PLR0913 - the head, where it listens and its credential, all by keyword
@@ -53,6 +59,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
     *,
     port: int | None = None,
     allowed_hosts: Iterable[str] = (),
+    allowed_origins: frozenset[str] = frozenset(),
     head: str = HEAD,
     token: str | None = None,
     docs: bool = True,
@@ -67,6 +74,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
         kernel: The kernel whose operations become endpoints.
         port: The port it listens on; a request naming another port is refused. Any port when None.
         allowed_hosts: Host names to answer besides localhost, 127.0.0.1 and [::1].
+        allowed_origins: Exact canonical HTTPS reverse-proxy origins, supplied explicitly by the authenticated web head.
         head: Whose operations to expose: `api`, or `web` for the web head, which sets a `token` too.
         token: When set, every request must carry it as `Authorization: Bearer <token>`.
         docs: Serve the interactive docs at `/docs`; they load scripts from a CDN, which the web head's CSP forbids.
@@ -100,8 +108,12 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
     @app.middleware("http")
     async def local_only(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         headers = request.headers
-        if problem := refusal(
-            headers.get("host", ""), headers.get("origin"), hosts, port, headers.get("sec-fetch-site")
+        if problem := request_refusal(
+            headers,
+            hosts,
+            port,
+            allowed_origins=allowed_origins,
+            host_help=WEB_HOST_HELP if head == "web" else API_HOST_HELP,
         ):
             return JSONResponse(status_code=FORBIDDEN, content={"error": problem})
         identity: CallIdentity | None = None
@@ -186,27 +198,71 @@ def _authorized(request: Request, header: str, bearer: bytes, accept: Callable[[
     return False
 
 
-def refusal(
-    host: str, origin: str | None, hosts: frozenset[str], port: int | None, fetch_site: str | None = None
+def request_refusal(
+    headers: Headers,
+    hosts: frozenset[str],
+    port: int | None,
+    *,
+    allowed_origins: frozenset[str] = frozenset(),
+    host_help: str = API_HOST_HELP,
+) -> str | None:
+    """Apply one authority policy to HTTP and WebSocket headers, refusing ambiguous duplicate headers."""
+    if len(headers.getlist("host")) != 1 or any(
+        len(headers.getlist(name)) > 1 for name in ("origin", "sec-fetch-site")
+    ):
+        return "Refused: supply exactly one Host and at most one Origin and Sec-Fetch-Site header."
+    return refusal(
+        headers.get("host", ""),
+        headers.get("origin"),
+        hosts,
+        port,
+        headers.get("sec-fetch-site"),
+        allowed_origins=allowed_origins,
+        host_help=host_help,
+    )
+
+
+def refusal(  # noqa: PLR0913 - the caller headers and the explicit server authority policy
+    host: str,
+    origin: str | None,
+    hosts: frozenset[str],
+    port: int | None,
+    fetch_site: str | None = None,
+    *,
+    allowed_origins: frozenset[str] = frozenset(),
+    host_help: str = API_HOST_HELP,
 ) -> str | None:
     """Why a request is refused, or None: its Host must be an allowed name on our port, its Origin our own.
 
     Without an Origin, a browser's `Sec-Fetch-Site: cross-site` or `same-site` still marks a request another page
     made. On port 80 or 443 a Host without a port is the same port.
     """
-    name, given = _split(host)
-    default = port in DEFAULT_PORTS and given == ""
-    if name not in hosts or (port is not None and given != str(port) and not default):
-        where = f" on port {port}" if port is not None else ""
-        return (
-            f"Refused: this server answers requests to {', '.join(sorted(hosts))}{where}, not {host!r}. If you serve "
-            "on another interface, add its name to [hz] api_allowed_hosts in your user configuration."
-        )
-    if origin is not None and origin.strip().lower() not in {f"http://{host.lower()}", f"https://{host.lower()}"}:
-        return f"Refused: a request from another origin ({origin}) can't call operations; use the CLI or MCP."
-    if origin is None and (fetch_site or "").strip().lower() in {"cross-site", "same-site"}:
+    if any(char.isspace() or char in "\\/@?#," or char < " " or char == "\x7f" for char in host):
+        return "Refused: malformed Host authority."
+    if fetch_site is not None and fetch_site.strip().lower() not in {"none", "same-origin"}:
         return f"Refused: a request another site made (Sec-Fetch-Site: {fetch_site}) can't call operations."
+    external = next((value for value in allowed_origins if host.lower() in _authorities(value)), None)
+    if external is not None:
+        expected = {f"https://{name}" for name in _authorities(external)}
+    else:
+        name, given = _split(host)
+        default = port in DEFAULT_PORTS and given == ""
+        if name not in hosts or (port is not None and given != str(port) and not default):
+            where = f" on port {port}" if port is not None else ""
+            return (
+                f"Refused: this server answers requests to {', '.join(sorted(hosts))}{where}, not {host!r}. {host_help}"
+            )
+        expected = {f"http://{host.lower()}", f"https://{host.lower()}"}
+    if origin is not None and origin.lower() not in expected:
+        return f"Refused: a request from another origin ({origin}) can't call operations; use the CLI or MCP."
     return None
+
+
+def _authorities(origin: str) -> frozenset[str]:
+    """The configured HTTPS authority, including the equivalent explicit default port."""
+    authority = origin.removeprefix("https://")
+    _, port = _split(authority)
+    return frozenset({authority}) if port else frozenset({authority, f"{authority}:443"})
 
 
 def _split(host: str) -> tuple[str, str]:

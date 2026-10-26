@@ -85,7 +85,7 @@ const widgets = [
     id: "acme:wide",
     slots: { today: true },
     refresh: 300,
-    widget: { kind: "card", title: "Roadmap", body: "Three things", size: "wide" },
+    widget: { kind: "card", title: "Roadmap", body: "Three things", size: "wide", icon: "cloud-rain" },
   },
 ];
 
@@ -134,6 +134,52 @@ describe("Contributions", () => {
     expect(screen.queryByRole("button", { name: /Hidden/ })).not.toBeInTheDocument();
   });
 
+  it("forwards a private contribution's flat JSON body without putting nested or sensitive values in the URL", async () => {
+    const body = { name: "Personal draft", appearance: { hat: "blue", accessories: ["scarf"] } };
+    const { calls } = mockApi({
+      ...answers,
+      "/api/harbor/profile": {},
+      "/api/system/ui/status": [
+        {
+          ...entry,
+          id: "harbor:profile",
+          slots: { footer: true },
+          item: {
+            text: "Edit personal helper",
+            icon: "bot",
+            tone: "neutral",
+            effect: {
+              kind: "operation",
+              operation: "profile",
+              arguments: body,
+              call: {
+                method: "POST",
+                path: "/harbor/profile",
+                query: {},
+                body,
+                command: "hz harbor profile",
+                summary: "Save the helper.",
+                read_only: false,
+              },
+            },
+          },
+        },
+      ],
+    });
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.hover(await screen.findByRole("button", { name: /Edit personal helper/ }));
+    await user.click(await screen.findByRole("button", { name: "Run" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Save the helper." });
+    expect(calls.some((call) => new URL(call.url).pathname === "/api/harbor/profile")).toBe(false);
+    await user.click(within(dialog).getByRole("button", { name: "Run it" }));
+    await waitFor(() => expect(calls.some((call) => new URL(call.url).pathname === "/api/harbor/profile")).toBe(true));
+    const sent = calls.find((call) => new URL(call.url).pathname === "/api/harbor/profile");
+    expect(new URL(sent?.url ?? "http://x").search).toBe("");
+    expect(sent?.headers.get("Content-Type")).toBe("application/json");
+    expect(await sent?.json()).toEqual(body);
+  });
+
   it("puts widgets on Today, with Ask about it and dismiss", async () => {
     mockApi(answers);
     const user = userEvent.setup();
@@ -159,6 +205,8 @@ describe("Contributions", () => {
     expect(await sizeOf("2/3")).toBe("small");
     expect(await sizeOf("Roadmap")).toBe("wide");
     expect(await sizeOf("12 min")).toBe("medium");
+    const roadmap = (await screen.findByText("Roadmap")).closest("li") as HTMLElement;
+    expect(within(roadmap).getByRole("heading", { name: "Roadmap" }).querySelector("svg")).toBeInTheDocument();
   });
 
   it("draws a graphic widget: a big value beside a Heinzelmännchen dressed by data", async () => {
@@ -201,7 +249,7 @@ describe("Contribution toggles", () => {
 
 describe("Contribution data", () => {
   it("maps every icon and renders live values", () => {
-    expect(Object.keys(ICONS)).toHaveLength(31);
+    expect(Object.keys(ICONS)).toHaveLength(38);
     expect(ICONS["cloud-sun"]).toBeDefined();
     const now = new Date("2026-10-26T10:00:00Z");
     expect(liveText({ kind: "until", at: "2026-10-26T10:12:00Z" }, now)).toBe("in 12 min");

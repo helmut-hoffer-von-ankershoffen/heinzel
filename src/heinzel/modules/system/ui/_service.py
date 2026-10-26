@@ -5,7 +5,7 @@ import json
 import shlex
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 
@@ -436,7 +436,11 @@ class UiService:
     def _with_effects[T: BaseModel](self, record: ModuleRecord, value: T) -> tuple[T | None, str | None]:
         """`value` with every effect in it resolved; None and why when one can't work."""
         try:
-            return _map_effects(value, lambda effect: self.resolve(record, effect)), None
+            return _map_effects(
+                value,
+                lambda effect: self.resolve(record, effect),
+                sign_in_origins=self._kernel.settings.ui_allowed_origins,
+            ), None
         except Unusable as exc:
             return None, f"{record.qualname}: {exc}"
         except Exception as exc:  # noqa: BLE001 - isolation boundary, as in _viewed
@@ -455,12 +459,27 @@ class UiService:
         ).model_dump()
 
 
-def _map_effects[T: BaseModel](value: T, resolve: Callable[[Effect], Effect]) -> T:
+def _map_effects[T: BaseModel](
+    value: T,
+    resolve: Callable[[Effect], Effect],
+    *,
+    sign_in_origins: frozenset[str] = frozenset(),
+) -> T:
     """`value` with `resolve` applied to each effect it holds: a status item's, a card's actions', a list's lines'."""
     if isinstance(value, StatusItem):
         actions = [a.model_copy(update={"effect": resolve(a.effect)}) for a in value.actions]
         effect = resolve(value.effect) if value.effect else None
-        return value.model_copy(update={"effect": effect, "actions": actions})
+        toggle = value.toggle
+        if toggle is not None:
+            # resolve preserves RunOperation's shape and replaces its caller-forgeable call with the owning operation.
+            toggle = toggle.model_copy(
+                update={
+                    "enable": cast("RunOperation", resolve(toggle.enable)),
+                    "disable": cast("RunOperation", resolve(toggle.disable)),
+                    "sign_in_url": toggle.url if toggle.checked and toggle.url in sign_in_origins else None,
+                }
+            )
+        return value.model_copy(update={"effect": effect, "actions": actions, "toggle": toggle})
     if isinstance(value, CardWidget):
         actions = [a.model_copy(update={"effect": resolve(a.effect)}) for a in value.actions]
         return value.model_copy(update={"actions": actions})

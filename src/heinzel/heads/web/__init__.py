@@ -45,17 +45,19 @@ from pathlib import Path
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 
 from heinzel.heads import api
 from heinzel.heads._stream import StreamProgress
 from heinzel.heads.web import _terminal
 from heinzel.heads.web._devices import Devices
+from heinzel.heads.web._lifecycle import CANT_RESTART as CANT_RESTART
+from heinzel.heads.web._lifecycle import add_lifecycle
 from heinzel.heads.web._pairing import add_pairing
 from heinzel.heads.web._ports import wait_for_port
 from heinzel.heads.web._shutdown import GRACE_SECONDS, Stopping
 from heinzel.heads.web._shutdown import server as stopping_server
 from heinzel.heads.web._stream import add_stream
+from heinzel.heads.web._updates import add_updates
 from heinzel.kernel import (
     FONT_ROUTE,
     KERNEL_SECTION,
@@ -67,6 +69,7 @@ from heinzel.kernel import (
     Config,
     HeinzelError,
     Kernel,
+    LocalWebRuntime,
     Progress,
     Settings,
     SoundAssets,
@@ -113,17 +116,8 @@ RESUME = "HEINZEL_UI_RESUME"
 """How a restarting `hz ui` hands its listening socket and token to the process it becomes: `<fd>:<token>`. A
 variable of this process only, read and removed at start; never a setting, so no file can set it."""
 TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,}$")
-ACCEPTED = 202
-CANT_RESTART = "This server can't restart itself (it isn't `hz ui`, e.g. `make web-dev`); stop it and start it again."
 Execute = Callable[[str, list[str], dict[str, str]], object]
 """Replaces the process: `os.execve`, or a fake in tests."""
-
-
-class Restart(BaseModel):
-    """The answer to `POST /api/restart`: the server stops and starts again on the same port with the same token."""
-
-    restarting: bool = Field(description="Always true: poll any endpoint until it answers again.")
-    message: str = Field(description="What happens, for the person waiting.")
 
 
 NOT_BUILT = (
@@ -155,29 +149,17 @@ def api_app(
         restart: Restarts the server; None where it can't, and `/restart` answers 400.
         accept: Which other bearer token is accepted too (a paired device's), as `api.build` takes it.
     """
-    app = api.build(kernel, port=port, head=HEAD, token=token, docs=False, accept=accept)
-
-    def restart_server(response: Response) -> Restart:
-        if restart is None:
-            raise HeinzelError(CANT_RESTART)
-        restart()
-        response.status_code = ACCEPTED
-        return Restart(
-            restarting=True, message="Restarting hz ui to load what changed; it answers again in a few seconds."
-        )
-
-    app.add_api_route(
-        "/restart",
-        restart_server,
-        methods=["POST"],
-        summary="Restart hz ui to load changes a running server can't, such as an added plugin.",
-        description="The process runs `hz` again with the same port and token, so the page keeps working: poll an "
-        "endpoint until it answers. A server that isn't `hz ui` (`make web-dev`) answers 400.",
-        response_model=Restart,
-        status_code=ACCEPTED,
-        tags=["web"],
-        operation_id="web_restart",
+    app = api.build(
+        kernel,
+        port=port,
+        allowed_origins=kernel.settings.ui_allowed_origins,
+        head=HEAD,
+        token=token,
+        docs=False,
+        accept=accept,
     )
+
+    add_lifecycle(app, kernel, restart)
     return app
 
 
@@ -208,13 +190,18 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     if static is not None and not (static / "index.html").is_file():
         raise HeinzelError(NOT_BUILT)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    kernel.bind(LocalWebRuntime, LocalWebRuntime(port=port, loaded_origins=kernel.settings.ui_allowed_origins))
     kernel.bind(Progress, StreamProgress())  # operations' events reach the stream of the request that runs them
 
     @app.middleware("http")
     async def guarded(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         headers = request.headers
-        if problem := api.refusal(
-            headers.get("host", ""), headers.get("origin"), api.LOOPBACK, port, headers.get("sec-fetch-site")
+        if problem := api.request_refusal(
+            headers,
+            api.LOOPBACK,
+            port,
+            allowed_origins=kernel.settings.ui_allowed_origins,
+            host_help=api.WEB_HOST_HELP,
         ):
             response: Response = JSONResponse(status_code=api.FORBIDDEN, content={"error": problem})
         else:
@@ -225,7 +212,12 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     paired = devices or devices_for_user()
     stopping = stopping or Stopping()
     _terminal.add_route(
-        app, token=token, port=port, accept=paired.check, stopping=stopping
+        app,
+        token=token,
+        port=port,
+        allowed_origins=kernel.settings.ui_allowed_origins,
+        accept=paired.check,
+        stopping=stopping,
     )  # before the mount, which takes /api
 
     endpoints = api_app(
@@ -236,6 +228,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         accept=lambda presented: device.id if (device := paired.check(presented)) else None,
     )
     add_pairing(endpoints, paired)
+    add_updates(endpoints, kernel, static, restartable=restart is not None)
     add_stream(endpoints, kernel, stopping)  # behind the same middleware: Host, Origin and the token
     app.mount("/api", endpoints)
     add_fonts(app, kernel)

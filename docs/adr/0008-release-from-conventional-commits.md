@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
-amended-by: 0013
+amended-by: 0013, 0079
 ---
 
 # 0008: Releases are derived from conventional commits

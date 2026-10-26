@@ -1,110 +1,66 @@
-import { act, fireEvent, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
-const entry = { module: "clock", plugin: "heinzel-clock", order: 900, refresh: 60, problem: null };
-const zone = (name: string) => ({ zone: name, time: "x", hours: [9, 18], working: true });
-const answers = (zones: string[], sidebar = true) => ({
+const names = ["Europe/Berlin", "America/New_York", "Asia/Tokyo"];
+const answers = (zones = names, shown = true) => ({
   ...shell,
-  "/api/system/info": { version: "0.7.1", modules: [{ qualname: "clock" }] },
-  "/api/clock": zones.map(zone),
+  "/api/system/info": { version: "0.7.2", modules: [{ qualname: "clock" }] },
+  "/api/clock": zones.map((zone) => ({ zone, time: "unused", hours: [9, 18], working: true })),
   "/api/system/ui/status": [
     {
-      ...entry,
       id: "clock:primary-zone",
-      slots: { footer: true, sidebar },
-      item: { text: "Berlin", tone: "neutral", icon: "clock", live: { kind: "clock", zone: "Europe/Berlin" } },
+      module: "clock",
+      plugin: "heinzel-clock",
+      order: 900,
+      refresh: 60,
+      problem: null,
+      slots: { sidebar: shown },
+      item: { text: "Berlin", tone: "neutral", icon: "clock" },
     },
   ],
 });
-const THREE = ["Europe/Berlin", "America/New_York", "Asia/Tokyo"];
-
-function reducedMotion(reduce: boolean) {
-  window.matchMedia = ((query: string) => ({
-    matches: reduce && query.includes("reduce"),
-    media: query,
-    addEventListener() {},
-    removeEventListener() {},
-    addListener() {},
-    removeListener() {},
-    onchange: null,
-    dispatchEvent: () => false,
-  })) as typeof window.matchMedia;
-}
-
-const ticker = async () => (await screen.findByTestId("zone-ticker")) as HTMLElement;
-const shownText = (element: HTMLElement) => element.querySelector("span[aria-hidden]")?.textContent;
-
-describe("The sidebar's zone ticker", () => {
-  beforeEach(() => reducedMotion(false));
-  afterEach(() => vi.useRealTimers());
-
-  it("goes through every zone two at a time, primary first, on the 24-hour clock", async () => {
-    mockApi(answers(THREE));
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+afterEach(() => vi.useRealTimers());
+describe("one continuous zone ticker", () => {
+  it("keeps every zone primary first with 24-hour time and configured work status in one accessible label", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-19T10:00:00Z"));
+    mockApi(answers());
     const { container } = renderAt("/doctor");
-    const element = await ticker();
-    expect(shownText(element)).toMatch(/^Berlin \d{2}:\d{2} · New York \d{2}:\d{2}$/);
-    expect(element.textContent).not.toMatch(/[ap]m/i);
-    expect(element).toHaveAttribute("title", expect.stringMatching(/Berlin .* · New York .* · Tokyo \d{2}:\d{2}/));
-    await act(() => vi.advanceTimersByTimeAsync(4100));
-    expect(shownText(element)).toMatch(/^Tokyo \d{2}:\d{2}$/);
-    await act(() => vi.advanceTimersByTimeAsync(4000));
-    expect(shownText(element)).toMatch(/^Berlin /);
-    vi.useRealTimers();
+    const ticker = await screen.findByTestId("zone-ticker");
+    expect(ticker).toHaveAccessibleName(
+      /^World Clock: Berlin 12:00:00 · Working · 3h since start · 6h left · New York 06:00:00 · Starts in 3h .*Tokyo 19:00:00 · Starts in 14h/,
+    );
+    expect(ticker).toHaveAttribute("href", "/doctor?panel=world-clock");
+    expect(ticker.querySelector("svg")).toBeNull();
+    const track = ticker.querySelector("[aria-hidden]");
+    expect(track?.children).toHaveLength(2);
+    expect(track?.children[0]?.textContent).toBe(track?.children[1]?.textContent);
     await expectAccessible(container);
   });
-
-  it("rests while the pointer or focus is on it", async () => {
-    mockApi(answers(THREE));
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  it("preserves an unknown browser zone and its primary position", async () => {
+    mockApi(answers(["Unknown/Zone", ...names]));
     renderAt("/doctor");
-    const element = await ticker();
-    fireEvent.mouseEnter(element);
-    await act(() => vi.advanceTimersByTimeAsync(9000));
-    expect(shownText(element)).toMatch(/^Berlin /);
-    fireEvent.mouseLeave(element);
-    fireEvent.focus(element);
-    await act(() => vi.advanceTimersByTimeAsync(9000));
-    expect(shownText(element)).toMatch(/^Berlin /);
-    fireEvent.blur(element);
-    await act(() => vi.advanceTimersByTimeAsync(4100));
-    expect(shownText(element)).toMatch(/^Tokyo /);
+    expect(await screen.findByTestId("zone-ticker")).toHaveAccessibleName(
+      /^World Clock: Zone Time unavailable.*Berlin/,
+    );
   });
-
-  it("shows all zones at once, without motion, when reduced motion is asked for", async () => {
-    reducedMotion(true);
-    mockApi(answers(THREE));
-    const { container } = renderAt("/doctor");
-    const element = await ticker();
-    expect(shownText(element)).toMatch(/Berlin .* · New York .* · Tokyo \d{2}:\d{2}$/);
-    expect(element.querySelector("span[aria-hidden]")).not.toHaveClass("truncate");
-    await expectAccessible(container);
-  });
-
-  it("shows a single zone plainly", async () => {
-    mockApi(answers(["Europe/Berlin"]));
-    renderAt("/doctor");
-    const element = await ticker();
-    expect(shownText(element)).toMatch(/^Berlin \d{2}:\d{2}$/);
-    expect(element.querySelector("span[aria-hidden]")?.className).not.toMatch(/animate/);
-  });
-
-  it("is not there unless the clock item is turned on for the sidebar", async () => {
-    mockApi(answers(THREE, false));
+  it("is absent when its sidebar placement is off", async () => {
+    mockApi(answers(names, false));
     renderAt("/doctor");
     await screen.findByRole("navigation");
     expect(screen.queryByTestId("zone-ticker")).not.toBeInTheDocument();
   });
-});
-
-describe("World Clock naming", () => {
-  it("names the sidebar ticker and shows the globe", async () => {
-    mockApi(answers(["Europe/Berlin"]));
+  it("keeps ticking seconds while the strip is focused for reading", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    vi.setSystemTime(new Date("2026-10-19T10:00:00Z"));
+    mockApi(answers());
     renderAt("/doctor");
-    const element = await ticker();
-    expect(element).toHaveTextContent("World Clock: Berlin");
-    expect(element.querySelector("svg.lucide-globe")).not.toBeNull();
+    const ticker = await screen.findByTestId("zone-ticker");
+    ticker.focus();
+    expect(ticker).toHaveAccessibleName(/^World Clock: Berlin 12:00:00/);
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(ticker).toHaveAccessibleName(/^World Clock: Berlin 12:00:01/);
   });
 });

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { acmeTheme, themeList } from "@/test/fixtures";
+import { acmeTheme, config, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { GIVE_UP_MS, initial, reduce, type SplashEvent } from "./machine";
 import { type ProbeResult, Splash, SplashGone, START } from "./Splash";
@@ -41,7 +41,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   started = Date.now();
   document.body.innerHTML = `${markup}<div id="root"></div>`;
-  mockApi({ "/api/system/theme/list": themeList("acme") });
+  mockApi({ ...shell, "/api/system/theme/list": themeList("acme") });
 });
 
 afterEach(() => {
@@ -105,7 +105,11 @@ describe("the splash", () => {
     await passes(GIVE_UP_MS - 100);
     expect(screen.queryByRole("alert")).toBeNull();
     await passes(200);
+    await passes(0); // playful preference query settles before inspecting its optional illustration
     expect(screen.getByRole("alert")).toHaveTextContent("hz isn't answering");
+    expect(screen.getByTestId("offline-scene")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Start it in a terminal");
+    expect(screen.getByRole("alert")).toHaveTextContent("Trying again every few seconds");
     expect(screen.getByRole("button", { name: `Copy the command ${START}` })).toBeInTheDocument();
     expect(splash().dataset.state).toBe("error");
     answer = ok;
@@ -115,6 +119,46 @@ describe("the splash", () => {
     expect(store.get().phase).toBe("ready"); // it waited long enough: the theme follows when its list is read again
     await passes(500);
     expect(splash().hidden).toBe(true);
+  });
+
+  it("hides splash illustrations when playful art is disabled and keeps recovery words", async () => {
+    const quiet = {
+      ...shell,
+      "/api/system/config/show": {
+        ...config,
+        settings: [
+          ...config.settings,
+          {
+            section: "hz",
+            key: "playful",
+            value: false,
+            default: true,
+            source: "user",
+            env: "HZ_PLAYFUL",
+            description: "",
+          },
+        ],
+      },
+    };
+    mockApi(quiet);
+    let answer: (result: ProbeResult) => void = () => undefined;
+    mount(() => new Promise<ProbeResult>((resolve) => (answer = resolve)));
+    await passes(0);
+    expect(line()).toBe("Connecting to hz…");
+    expect(screen.queryByTestId("connection-scene")).toBeNull();
+    await act(async () => answer(gone));
+    await passes(GIVE_UP_MS + 100);
+    expect(screen.queryByTestId("offline-scene")).toBeNull();
+    expect(screen.getByRole("alert")).toHaveTextContent("hz isn't answering");
+    expect(screen.getByRole("button", { name: `Copy the command ${START}` })).toBeInTheDocument();
+  });
+
+  it("shows a Heinzelmännchen searching with a looking glass while connecting", async () => {
+    mockApi(shell);
+    mount(() => new Promise<ProbeResult>(() => undefined));
+    await passes(0);
+    expect(screen.getByTestId("connection-scene")).toBeInTheDocument();
+    expect(screen.getByTestId("connection-scene").querySelector("svg")).toBeInTheDocument();
   });
 
   it("doesn't give up before hz was asked, however long the page took to load", async () => {

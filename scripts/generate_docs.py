@@ -303,11 +303,11 @@ def python_versions() -> list[str]:
     return [c.removeprefix("Programming Language :: Python :: ") for c in classifiers if c.startswith(prefix)]
 
 
-def badges(owner: str, repository: str, best_practices: int | None = None) -> str:
+def badges(owner: str, repository: str, best_practices: int | None = None, pypi_project: str | None = None) -> str:
     """The badges of a repository, one per line: what it is checked with, how healthy it is, what it runs on.
 
-    `best_practices` is the repository's OpenSSF Best Practices project id; a plugin made from the template has none
-    until its maintainer registers it.
+    `best_practices` is this repository's OpenSSF registration; a new plugin has none. `pypi_project` selects the
+    registry version badge only for a registered project; unpublished plugins retain their GitHub release badge.
     """
     github = f"https://github.com/{owner}/{repository}"
     scorecard = f"github.com/{owner}/{repository}"
@@ -337,7 +337,11 @@ def badges(owner: str, repository: str, best_practices: int | None = None) -> st
             if best_practices
             else []
         ),
-        ("Release", f"{shield}/github/v/release/{owner}/{repository}?sort=semver", f"{github}/releases"),
+        (
+            ("PyPI", f"{shield}/pypi/v/{pypi_project}", f"https://pypi.org/project/{pypi_project}/")
+            if pypi_project
+            else ("Release", f"{shield}/github/v/release/{owner}/{repository}?sort=semver", f"{github}/releases")
+        ),
         ("Python", f"{shield}/badge/python-{versions}-blue", "pyproject.toml"),
         (
             "Types: mypy + pyright strict",
@@ -404,7 +408,7 @@ def main() -> int:
             TelemetryEntry, "urn:heinzel:telemetry-entry:1", "One entry of a Heinzelmännchen's telemetry log"
         ),
     }
-    ours = badges(OWNER, REPOSITORY, BEST_PRACTICES)
+    ours = badges(OWNER, REPOSITORY, BEST_PRACTICES, pypi_project="heinzel")
     for page in BADGE_PAGES:
         text = with_block((ROOT / page).read_text(encoding="utf-8"), BADGES_START, BADGES_END, ours)
         outputs[ROOT / page] = readme_with_module_list(text) if page == README.name else text

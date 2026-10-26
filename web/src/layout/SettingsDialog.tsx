@@ -4,8 +4,8 @@
 import { FolderOpen, Monitor, Moon, Sun, X } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 import type { SchemaConfigReport, SchemaSettingInfo } from "@/api/client";
-import { useConfig, useExpert, useInfo, usePlugins, useRevealConfig, useSetExpert } from "@/api/queries";
-import { ContributionToggles } from "@/components/Contributions";
+import { useConfig, useExpert, useInfo, useNavigation, usePlugins, useRevealConfig, useSetExpert } from "@/api/queries";
+import { ContributionControls, ContributionToggles } from "@/components/Contributions";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
@@ -20,11 +20,11 @@ import { ModuleHeader, PluginsSection } from "./PluginsSection";
 import { Row, Switch } from "./SettingControls";
 import type { JsonSchema } from "./settingSchema";
 import {
-  CLOCK_SETTINGS,
   CONNECTORS,
   FILES,
   group,
   type Heading,
+  inWords,
   type Page,
   PLUGINS,
   pageOf,
@@ -105,6 +105,7 @@ type BodyProps = {
 
 function Body({ report, query, setQuery, searchRef, section, onSection }: BodyProps) {
   const plugins = usePlugins();
+  const navigation = useNavigation();
   const info = useInfo();
   const expert = useExpert().data?.expert === true;
   // Deprecated settings are never shown: hz migrates them, and doctor names the fix when one is still set.
@@ -113,7 +114,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
     return !schema?.deprecated && !schema?.["x-hidden"] && (expert || !schema?.["x-expert"]);
   });
   const groups = [...new Set(settings.map((setting) => group(setting.section)))];
-  const nav = settingsNav(groups, plugins.data ?? []);
+  const nav = settingsNav(groups, plugins.data ?? [], navigation.data ?? []);
   const connector = nav.connectors.find((entry) => entry.id === section || entry.groups.includes(section ?? ""));
   // A connector's own page is part of Connectors; a section nobody knows (yet: the plugin list may still load) is the
   // first page's.
@@ -121,7 +122,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
   const page = nav.pages.find((entry) => entry.id === current) as Page;
   const needle = query.trim().toLowerCase();
   const text = (s: SchemaSettingInfo) =>
-    `${s.section}.${s.key} ${(s.json_schema as JsonSchema | null | undefined)?.title ?? ""} ${s.description}`.toLowerCase();
+    `${s.section}.${s.key} ${s.section_title ?? ""} ${(s.json_schema as JsonSchema | null | undefined)?.title ?? ""} ${s.description}`.toLowerCase();
   const matching = needle
     ? settings.filter((s) => text(s).includes(needle))
     : settings.filter((s) => pageOf(s.section, nav.pages)?.id === current);
@@ -157,14 +158,38 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
     </>
   );
   const header = (
-    <ModuleHeader title={page.title} plugin={page.plugin} version={info.data?.version} onOpen={() => go(PLUGINS)} />
+    <ModuleHeader
+      title={page.title}
+      plugin={page.plugin}
+      provider={page.provider}
+      version={info.data?.version}
+      onOpen={() => go(PLUGINS)}
+    />
   );
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex min-h-0 flex-1 max-sm:flex-col">
       <nav
         aria-label={t("settings.title")}
-        className="flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto p-3 max-sm:hidden"
+        className="flex w-60 shrink-0 flex-col gap-0.5 overflow-y-auto p-3 max-sm:w-full max-sm:overflow-visible max-sm:border-b max-sm:border-border"
       >
+        <label className="mb-2 flex flex-col gap-1 text-sm sm:hidden">
+          <span>{t("settings.page")}</span>
+          <select
+            value={current}
+            onChange={(event) => go(event.target.value)}
+            className="h-9 w-full rounded-lg border border-border bg-input px-2 text-ui"
+          >
+            {(["preferences", "customize", "organisation", "computer"] as const).flatMap((heading) =>
+              nav.pages
+                .filter((entry) => entry.heading === heading)
+                .map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.title}
+                  </option>
+                )),
+            )}
+          </select>
+        </label>
         <SearchField
           ref={searchRef}
           label={t("settings.filter")}
@@ -174,12 +199,14 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
           placeholder={t("search.open")}
           className="mb-3"
         />
-        {heading("preferences", "settings.preferences", true)}
-        {heading("customize", "settings.customize")}
-        {heading("organisation", "settings.organisation")}
-        {heading("computer", "settings.thisComputer")}
+        <div className="max-sm:hidden">
+          {heading("preferences", "settings.preferences", true)}
+          {heading("customize", "settings.customize")}
+          {heading("organisation", "settings.organisation")}
+          {heading("computer", "settings.thisComputer")}
+        </div>
       </nav>
-      <div className="min-w-0 flex-1 overflow-y-auto border-l border-border px-6 pt-5 pb-10">
+      <div className="min-w-0 flex-1 overflow-y-auto border-l border-border px-6 pt-5 pb-10 max-sm:border-l-0 max-sm:px-4">
         {needle ? (
           <>
             {pageHits.length > 0 && (
@@ -247,7 +274,12 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
                 summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
               />
             )}
-            {TOGGLES[current] && <ContributionToggles module={TOGGLES[current]} />}
+            {(page.module || TOGGLES[current]) && (
+              <>
+                <ContributionControls module={page.module ?? TOGGLES[current] ?? ""} />
+                <ContributionToggles module={page.module ?? TOGGLES[current] ?? ""} />
+              </>
+            )}
           </>
         )}
       </div>
@@ -256,7 +288,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
 }
 
 /** The module whose contributions a page can show in the app (`hz system ui show|hide`). */
-const TOGGLES: Record<string, string> = { [CLOCK_SETTINGS]: "clock", you: "org", daemon: "system" };
+const TOGGLES: Record<string, string> = { you: "org", daemon: "system" };
 
 function Sections({
   settings,
@@ -276,20 +308,25 @@ function Sections({
       {header ?? <h3 className="mb-2 text-ui font-medium">{heading}</h3>}
       {summary && <p className="-mt-1 mb-2 text-sm text-muted-foreground">{summary}</p>}
       {settings.length === 0 && <p className="text-sm text-muted-foreground">{t("settings.none")}</p>}
-      {sections.map((section) => (
-        <section key={section} aria-label={section} className="mt-4">
-          {sections.length > 1 || section.includes(".") ? (
-            <h4 className="mb-1 font-mono text-ui-sm text-muted-foreground">[{section}]</h4>
-          ) : null}
-          <ul>
-            {settings
-              .filter((setting) => setting.section === section)
-              .map((setting) => (
-                <Row key={setting.key} setting={setting} />
-              ))}
-          </ul>
-        </section>
-      ))}
+      {sections.map((section) => {
+        const title =
+          settings.find((setting) => setting.section === section)?.section_title ||
+          inWords(section.split(".").at(-1) ?? section);
+        return (
+          <section key={section} aria-label={title} className="mt-4">
+            {(sections.length > 1 || title !== heading) && (
+              <h4 className="mb-1 text-ui-sm text-muted-foreground">{title}</h4>
+            )}
+            <ul>
+              {settings
+                .filter((setting) => setting.section === section)
+                .map((setting) => (
+                  <Row key={setting.key} setting={setting} />
+                ))}
+            </ul>
+          </section>
+        );
+      })}
     </>
   );
 }

@@ -85,7 +85,7 @@ describe("The notification test", () => {
     const user = userEvent.setup();
     renderAt("/doctor?panel=notifications");
     await user.click(await screen.findByRole("button", { name: "Send a test notification" }));
-    expect(await screen.findByRole("status")).toHaveTextContent("A test notification popped up.");
+    expect(await screen.findByText("A test notification popped up.")).toBeInTheDocument();
   });
 
   it("shows why a test couldn't be recorded at all", async () => {

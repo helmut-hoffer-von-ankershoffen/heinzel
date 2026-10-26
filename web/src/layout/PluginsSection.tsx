@@ -4,7 +4,6 @@
 // that pinned requirement with `confirm=true` (ADR 0047). The app then restarts `hz ui` itself and reloads.
 import {
   BookOpen,
-  Check,
   ExternalLink,
   type LucideIcon,
   Package,
@@ -18,7 +17,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { SchemaPluginCandidate, SchemaPluginInfo } from "@/api/client";
 import {
   type PluginChangeRequest,
@@ -26,21 +25,21 @@ import {
   usePluginPreview,
   usePluginSearch,
   usePlugins,
-  useRestartServer,
 } from "@/api/queries";
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
 import { type MessageKey, t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { RestartAndApply } from "@/lifecycle/RestartAndApply";
 import { displayName } from "./settingsSections";
 
 type PluginKind = NonNullable<SchemaPluginInfo["kinds"]>[number];
 
-/** Where a plugin comes from, as its badge says: first-party, community (the catalog knows) or private. */
+/** The catalog may identify a community/private source; absence of that evidence means only "Plugin". */
 export function sourceLabel(plugin: SchemaPluginInfo, community?: boolean): string {
   if (plugin.first_party) return t("plugins.firstParty");
-  return community ? t("plugins.community") : t("plugins.private");
+  return community === undefined ? t("plugins.plugin") : community ? t("plugins.community") : t("plugins.private");
 }
 
 /** The head of a module's page, the same everywhere: its name with the kinds of what it adds on the left, and on
@@ -50,11 +49,13 @@ export function ModuleHeader({
   plugin,
   version,
   onOpen,
+  provider,
 }: {
   title: string;
   plugin: SchemaPluginInfo | undefined;
   version: string | undefined;
   onOpen: () => void;
+  provider?: string | null;
 }) {
   return (
     <div className="mb-3">
@@ -74,6 +75,8 @@ export function ModuleHeader({
               </button>
               <span className="text-xs tabular-nums">v{plugin.version}</span>
             </>
+          ) : provider ? (
+            <span title={provider}>{t("plugins.plugin")}</span>
           ) : (
             <>
               <a
@@ -160,12 +163,6 @@ type Pending =
   | { action: "add"; candidate: SchemaPluginCandidate }
   | { action: "remove" | "enable" | "disable"; name: string };
 
-/** The short success line shown while the server restarts: "Installed heinzel-weather, reloading…". */
-function doneMessage(pending: Pending): string {
-  const name = pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name;
-  return t(`plugins.done.${pending.action}`, { name });
-}
-
 function request(pending: Pending): PluginChangeRequest {
   switch (pending.action) {
     case "add":
@@ -222,10 +219,9 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
-  const [reloading, setReloading] = useState<string | null>(null);
+  const pluginRestartRequired = useRef(false);
   const preview = usePluginPreview();
   const change = useChangePlugin();
-  const restart = useRestartServer({ reload, interval: restartInterval });
   const tabClass = (active: boolean) =>
     cn(
       "rounded-lg px-3 py-1 text-sm transition-colors hover:bg-accent/70",
@@ -244,21 +240,14 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     preview.reset();
     setPending(value);
   };
-  const confirm = () => {
-    if (!pending) return;
-    const message = doneMessage(pending);
-    change.mutate(request(pending), {
-      onSuccess: (answer) => {
-        setPending(null);
-        setAdding(false);
-        setSpec("");
-        // The server loads plugins at start: restart it, and the page reloads once it answers again.
-        if (answer.restart_required) {
-          setReloading(message);
-          restart.mutate();
-        }
-      },
-    });
+  const confirm = async () => {
+    if (!pending) return false;
+    const answer = await change.mutateAsync(request(pending));
+    pluginRestartRequired.current = answer.restart_required;
+    setPending(null);
+    setAdding(false);
+    setSpec("");
+    return answer.restart_required;
   };
   const confirmText = () => {
     if (!pending) return "";
@@ -320,18 +309,6 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       <p className="-mt-2 mb-4 text-sm text-muted-foreground">
         {tab === "yours" ? t("plugins.yoursIntro") : t("plugins.discoverIntro")}
       </p>
-      {reloading && (
-        <div role="status" className="mb-4 flex items-center gap-3 rounded-xl border border-ok/50 p-3 text-sm">
-          <Check aria-hidden className="size-4 shrink-0 text-ok" />
-          <span className="flex-1">{restart.error ? t("plugins.restartNeeded") : reloading}</span>
-          {restart.error && <span className="text-xs text-bad">{restart.error.message}</span>}
-          {restart.error && (
-            <Button size="sm" onClick={() => restart.mutate()} disabled={restart.isPending}>
-              {restart.isPending ? t("plugins.restarting") : t("plugins.restart")}
-            </Button>
-          )}
-        </div>
-      )}
       {adding && (
         <form
           className="mb-4 flex flex-col gap-2 rounded-xl border border-border p-3"
@@ -363,24 +340,34 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
         </p>
       )}
       {pending && (
-        <div
-          role="alertdialog"
-          aria-label={t("plugins.confirmTitle")}
-          className="mb-4 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm"
-        >
-          <p className="font-medium">{confirmText()}</p>
+        <fieldset className="mb-4 rounded-xl border border-warn/50 bg-warn/5 p-3 text-sm">
+          <legend className="font-medium">{confirmText()}</legend>
           {pending.action === "add" && <CandidateDetails candidate={pending.candidate} />}
           <p className="mt-1 text-xs text-muted-foreground">{t("plugins.restartNote")}</p>
-          {change.error && <p className="mt-1 text-xs text-bad">{change.error.message}</p>}
-          <div className="mt-2 flex gap-2">
-            <Button size="sm" onClick={confirm} disabled={change.isPending}>
-              {change.isPending ? t("plugins.working") : actionText(pending.action)}
-            </Button>
+          {change.error && (
+            <p role="alert" className="mt-1 text-xs text-bad">
+              {change.error.message}
+            </p>
+          )}
+          <div className="mt-2">
+            <RestartAndApply
+              target={t("plugins.title")}
+              changes={[
+                `${actionText(pending.action)}: ${pending.action === "add" ? (pending.candidate.distribution ?? pending.candidate.spec) : pending.name}`,
+              ]}
+              preserve={confirm}
+              onApplied={() => {
+                if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
+              }}
+              options={{
+                ...(restartInterval ? { interval: restartInterval } : {}),
+              }}
+            />
             <Button size="sm" variant="ghost" onClick={() => setPending(null)} disabled={change.isPending}>
               {t("plugins.cancel")}
             </Button>
           </div>
-        </div>
+        </fieldset>
       )}
       {tab === "yours" ? <Yours query={query} onChange={ask} /> : null}
       {tab === "discover" ? <Discover query={query} onInstall={show} /> : null}

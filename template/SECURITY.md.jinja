@@ -58,7 +58,7 @@ Only the latest release receives security fixes while the project is on 0.x; upd
   Other network access happens when you install, update or add plugins (through uv), when you run
   `hz system release` (the same request) or `hz system plugin search` (the same kind, plus your GitHub token if
   you configured one), and when a plugin you installed calls a service.
-- **Sound in the web app is off until you press Play.** A stream soundscape (the built-in Claude FM, or a plugin's)
+- **Sound in the web app is off until you press Play.** A stream soundscape (the built-in CEO mode or Claude FM, or a plugin's)
   plays in its host's own player; the only host allowed is YouTube's privacy-enhanced `youtube-nocookie.com`, named
   in code, never by a plugin or a configuration file. Nothing of it loads before you press Play, and the page's CSP
   admits that one frame origin only while a stream is the soundscape in effect. Once you press Play, YouTube receives

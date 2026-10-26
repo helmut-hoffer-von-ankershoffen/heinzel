@@ -1,13 +1,19 @@
 """Kernel settings: the `[hz]` table of the configuration files and `HZ_*` environment variables."""
 
+import re
 from pathlib import Path
 from typing import Annotated, ClassVar, Literal
 
 import platformdirs
-from pydantic import Field, field_validator
+from pydantic import AnyHttpUrl, Field, field_validator
 from pydantic_settings import NoDecode, SettingsConfigDict
 
 from heinzel.kernel._config import APP_NAME, ModuleSettings
+
+ORIGIN_MAX_LENGTH = 512
+MAX_PORT = 65535
+MAX_HOST_LENGTH = 253
+_HOST_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 
 class Settings(ModuleSettings):
@@ -117,6 +123,15 @@ class Settings(ModuleSettings):
         "installed app keeps its address.",
         json_schema_extra={"x-expert": True},
     )
+    ui_allowed_origins: Annotated[frozenset[str], NoDecode] = Field(
+        default=frozenset(),
+        max_length=16,
+        title="Shared web app origins",
+        description="Exact HTTPS origins allowed by the authenticated web app behind a private reverse proxy, "
+        "such as https://workstation.example.ts.net. The listener stays on this computer. Restart and apply "
+        "after changing this user-only setting. In the environment, separate origins with commas.",
+        json_schema_extra={"x-expert": True, "x-private": True},
+    )
     api_allowed_hosts: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset(),
         title="Other host names for the API",
@@ -126,7 +141,9 @@ class Settings(ModuleSettings):
         json_schema_extra={"x-expert": True},
     )
 
-    ignored_in_project: ClassVar[frozenset[str]] = frozenset({"api_allowed_hosts", "expert", "ui_port", "update_check"})
+    ignored_in_project: ClassVar[frozenset[str]] = frozenset(
+        {"api_allowed_hosts", "expert", "ui_allowed_origins", "ui_port", "update_check"}
+    )
 
     @field_validator("disabled_modules", "api_allowed_hosts", mode="before")
     @classmethod
@@ -134,3 +151,50 @@ class Settings(ModuleSettings):
         if isinstance(value, str):
             return frozenset(name.strip() for name in value.split(",") if name.strip())
         return value
+
+    @field_validator("ui_allowed_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value: object) -> object:
+        if isinstance(value, str):
+            if any(char < " " or char == "\x7f" for char in value):
+                msg = "HTTPS origins cannot contain control characters"
+                raise ValueError(msg)
+            return frozenset(origin.strip() for origin in value.split(",") if origin.strip())
+        return value
+
+    @field_validator("ui_allowed_origins")
+    @classmethod
+    def _https_origins(cls, values: frozenset[str]) -> frozenset[str]:
+        canonical: set[str] = set()
+        for value in values:
+            if len(value) > ORIGIN_MAX_LENGTH or any(
+                char.isspace() or char in "\\%*" or char < " " or char == "\x7f" for char in value
+            ):
+                msg = "Use exact HTTPS origins without whitespace, controls, escapes or wildcards"
+                raise ValueError(msg)
+            url = AnyHttpUrl(value)
+            if (
+                url.scheme != "https"
+                or not _origin_host(url.host)
+                or url.username is not None
+                or url.password is not None
+                or url.path not in (None, "/")
+                or url.query is not None
+                or url.fragment is not None
+                or url.port is None
+                or not 1 <= url.port <= MAX_PORT
+            ):
+                msg = "Use an HTTPS origin with only a host and optional port, for example https://workstation.example"
+                raise ValueError(msg)
+            canonical.add(str(url).removesuffix("/"))
+        return frozenset(canonical)
+
+
+def _origin_host(host: str | None) -> bool:
+    """A parsed IPv6 literal or DNS host with nonempty valid labels."""
+    if host is None:
+        return False
+    if host.startswith("["):
+        return True  # AnyHttpUrl has already validated the IPv6 literal.
+    name = host.removesuffix(".")
+    return len(name) <= MAX_HOST_LENGTH and all(_HOST_LABEL.fullmatch(label) for label in name.split("."))

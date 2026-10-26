@@ -23,8 +23,8 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router";
-import { useContracts, useExpert, useProfile, useSetExpert } from "@/api/queries";
-import { StatusItems } from "@/components/Contributions";
+import { useContracts, useExpert, useNavigation, useProfile, useSetExpert } from "@/api/queries";
+import { ICONS, StatusItems, useEffectRunner } from "@/components/Contributions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -52,7 +52,7 @@ const topButton = ({ isActive }: { isActive: boolean }) =>
 
 const railLink = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "flex size-9 items-center justify-center rounded-lg text-icon transition-colors hover:bg-accent/70 [&_svg]:size-(--icon) [&_svg]:stroke-[1.75]",
+    "flex size-9 shrink-0 items-center justify-center rounded-lg text-icon transition-colors hover:bg-accent/70 [&_svg]:size-(--icon) [&_svg]:stroke-[1.75]",
     isActive && "bg-accent text-accent-foreground",
   );
 
@@ -163,6 +163,7 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
             </li>
           ))}
         </ul>
+        <ProviderNavigation />
       </nav>
       <ZoneTicker />
       <StatusItems slot="sidebar" className="pb-1" except={NATIVE_SIDEBAR} />
@@ -239,9 +240,64 @@ function Rail({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
             <item.icon aria-hidden />
           </NavLink>
         ))}
+        <ProviderNavigation compact />
       </nav>
       <Footer compact />
     </div>
+  );
+}
+
+/** Provider entries use the same checked effect runner as status/actions, with no plugin-name routing table. */
+function ProviderNavigation({ compact = false }: { compact?: boolean }) {
+  const navigation = useNavigation();
+  const { run, dialog } = useEffectRunner();
+  const entries = (navigation.data ?? []).filter((entry) => entry.sidebar && !entry.problem);
+  if (!entries.length) return null;
+  return (
+    <>
+      <ul className={cn("flex gap-0.5", compact ? "flex-col items-center" : "flex-col")}>
+        {entries.map((entry) => {
+          const Icon = ICONS[entry.icon];
+          const effect = entry.sidebar;
+          if (!effect) return null;
+          const content = (
+            <>
+              <Icon aria-hidden />
+              {!compact && entry.title}
+            </>
+          );
+          return (
+            <li key={entry.id}>
+              {effect.kind === "navigate" ? (
+                <NavLink
+                  to={effect.path}
+                  end
+                  className={compact ? railLink : link}
+                  title={entry.title}
+                  aria-label={compact ? entry.title : undefined}
+                >
+                  {content}
+                </NavLink>
+              ) : (
+                <button
+                  type="button"
+                  className={cn(
+                    compact ? railLink({ isActive: false }) : link({ isActive: false }),
+                    !compact && "w-full text-left",
+                  )}
+                  title={entry.title}
+                  aria-label={compact ? entry.title : undefined}
+                  onClick={() => run(effect)}
+                >
+                  {content}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {dialog}
+    </>
   );
 }
 

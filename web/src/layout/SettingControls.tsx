@@ -1,13 +1,15 @@
 // The control of one setting in Settings, chosen by its JSON Schema (`hz system config show`): a switch, a list of
 // choices, a number, a time zone picker, chips for a list of words, a table for a list of tables, or text. A change
 // is saved at once with `hz system config set` as TOML; the server's validation error shows under the setting.
+import { useMutation } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
-import type { SchemaSettingInfo } from "@/api/client";
-import { useSetSetting } from "@/api/queries";
+import { api, type SchemaSettingInfo, unwrap as unwrapResponse } from "@/api/client";
+import { useConfig, useSetSetting } from "@/api/queries";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { RestartAndApply } from "@/lifecycle/RestartAndApply";
 import { SchemaValue } from "./SchemaValue";
-import { controlFor, type JsonSchema, toToml } from "./settingSchema";
+import { controlFor, type JsonSchema, toToml, unwrap } from "./settingSchema";
 import { inWords } from "./settingsSections";
 
 const label = inWords;
@@ -47,67 +49,77 @@ function asConfig(value: unknown): string {
 
 export function Row({ setting }: { setting: SchemaSettingInfo }) {
   const save = useSetSetting();
+  const [staged, setStaged] = useState<unknown | undefined>(undefined);
+  const [editorVersion, setEditorVersion] = useState(0);
   const key = `${setting.section}.${setting.key}`;
   const fromEnv = setting.source === "env";
-  const ownValue = setting.source === "user" || setting.source === "project";
+  const ownValue = setting.source === "user";
   const value = setting.value ?? setting.default;
   const inputId = useId();
   const schema = (setting.json_schema ?? null) as JsonSchema | null;
+  const title = unwrap(schema ?? undefined)?.title ?? label(setting.key);
   const control = controlFor(schema);
+  const unit = unwrap(schema ?? undefined)?.["x-unit"];
+  const secret = control.kind === "secret";
   // Lists get the row's whole width, under the label; single values sit on its right.
-  const wide = control.kind === "table" || control.kind === "chips";
+  const wide =
+    control.kind === "table" || control.kind === "chips" || (control.kind === "installed" && control.multiple);
   const disabled = fromEnv || save.isPending;
-  const commit = (next: unknown) => save.mutate({ key, value: next === null ? null : toToml(next) });
-  const editor =
-    typeof value === "boolean" || control.kind === "switch" ? (
-      <Switch
-        id={inputId}
-        on={value === true}
-        disabled={disabled}
-        onToggle={() => save.mutate({ key, value: String(!value) })}
-      />
-    ) : schema && control.kind !== "text" ? (
-      <SchemaValue
-        id={wide ? undefined : inputId}
-        label={label(setting.key)}
-        schema={schema}
-        control={control}
-        value={value}
-        disabled={disabled}
-        onChange={commit}
-      />
-    ) : (
-      <TextValue
-        id={inputId}
-        value={setting.value === null || setting.value === undefined ? "" : asConfig(setting.value)}
-        placeholder={
-          setting.default === null || setting.default === undefined ? t("settings.notSet") : asConfig(setting.default)
-        }
-        numeric={typeof value === "number"}
-        disabled={disabled}
-        onCommit={(text) => save.mutate({ key, value: text === "" ? null : text })}
-      />
-    );
+  const commit = (next: unknown) => setStaged(next);
+  const editor = secret ? (
+    <SecretValue id={inputId} disabled={disabled} onCommit={commit} />
+  ) : typeof value === "boolean" || control.kind === "switch" ? (
+    <Switch id={inputId} on={value === true} disabled={disabled} onToggle={() => commit(!value)} />
+  ) : schema && control.kind !== "text" ? (
+    <SchemaValue
+      id={wide ? undefined : inputId}
+      label={title}
+      schema={schema}
+      control={control}
+      value={value}
+      disabled={disabled}
+      onChange={commit}
+    />
+  ) : (
+    <TextValue
+      key={editorVersion}
+      id={inputId}
+      value={setting.value === null || setting.value === undefined ? "" : asConfig(setting.value)}
+      placeholder={
+        setting.default === null || setting.default === undefined ? t("settings.notSet") : asConfig(setting.default)
+      }
+      numeric={typeof value === "number"}
+      disabled={disabled}
+      onCommit={(text) => commit(text === "" ? null : text)}
+    />
+  );
   const reset = ownValue && !fromEnv && (
     <button
       type="button"
-      onClick={() => save.mutate({ key, value: null })}
+      disabled={disabled}
+      title="Remove your user override"
+      onClick={() => commit(null)}
       className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
     >
       {t("settings.reset")}
     </button>
   );
+  const serializedStaged =
+    staged === null ? null : control.kind === "text" && typeof staged === "string" ? staged : toToml(staged);
+  const persistStaged = async () => {
+    await save.mutateAsync({ key, value: serializedStaged });
+  };
   return (
     <li className="border-b border-border/70 py-4 last:border-b-0">
-      <div className="flex items-start gap-6">
+      <div className="flex items-start gap-6 max-sm:flex-col max-sm:gap-2">
         <div className="min-w-0 flex-1">
           {wide ? (
             <p id={inputId} className="text-ui">
-              {label(setting.key)}
+              {title}
             </p>
           ) : (
             <label htmlFor={inputId} className="text-ui">
-              {label(setting.key)}
+              {title}
             </label>
           )}
           <p className="mt-0.5 text-sm text-muted-foreground">{setting.description}</p>
@@ -118,9 +130,11 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
             </p>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-2 pt-0.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 pt-0.5 max-sm:w-full">
           {reset}
           {!wide && editor}
+          {control.kind === "path" && <PathReveal settingKey={key} value={value} saving={save.isPending} />}
+          {unit && unit !== "hour-of-day" && <span className="text-sm text-muted-foreground">{unit}</span>}
         </div>
       </div>
       {wide && (
@@ -129,8 +143,63 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
           {editor}
         </div>
       )}
+      {staged !== undefined && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border p-3">
+          <RestartAndApply
+            target={t("settings.title")}
+            changes={[title]}
+            // Secret values are intentionally excluded: the backend never exposes them in its loaded-settings proof.
+            settings={
+              secret
+                ? []
+                : [
+                    {
+                      section: setting.section,
+                      key: setting.key,
+                      value: staged === null ? (setting.default ?? null) : normalizeSettingValue(staged, schema),
+                    },
+                  ]
+            }
+            preserve={async () => {
+              await save.mutateAsync({ key, value: serializedStaged });
+              return true;
+            }}
+            onUnsupported={persistStaged}
+            deferredMessage="Saved. Restart `hz ui` to apply this setting."
+            onApplied={() => {
+              setStaged(undefined);
+              setEditorVersion((version) => version + 1);
+            }}
+          />
+          <button
+            type="button"
+            disabled={save.isPending}
+            onClick={() => {
+              setStaged(undefined);
+              setEditorVersion((version) => version + 1);
+            }}
+            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            {t("lifecycle.cancel")}
+          </button>
+          {save.error && (
+            <span role="alert" className="text-xs text-bad">
+              {save.error.message}
+            </span>
+          )}
+        </div>
+      )}
     </li>
   );
+}
+
+function normalizeSettingValue(value: unknown, schema: JsonSchema | null): unknown {
+  const type = unwrap(schema ?? undefined)?.type;
+  if (typeof value === "string" && (type === "integer" || type === "number")) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : value;
+  }
+  return value;
 }
 
 type TextValueProps = {
@@ -170,5 +239,64 @@ function TextValue({ id, value, placeholder, numeric, disabled, onCommit }: Text
         numeric ? "w-24 text-right" : "w-60 max-md:w-40",
       )}
     />
+  );
+}
+
+/** A secret report contains a mask, never an editable replacement value. Save only an explicit new entry. */
+function SecretValue({ id, disabled, onCommit }: { id: string; disabled: boolean; onCommit: (text: string) => void }) {
+  const [text, setText] = useState("");
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (text) {
+          onCommit(text);
+          setText("");
+        }
+      }}
+      className="flex items-center gap-2"
+    >
+      <input
+        id={id}
+        type="password"
+        autoComplete="new-password"
+        value={text}
+        disabled={disabled}
+        placeholder="Enter a replacement"
+        onChange={(event) => setText(event.target.value)}
+        className="h-8 w-40 rounded-lg border border-border bg-input px-2 text-sm"
+      />
+      <button type="submit" disabled={disabled || !text} className="rounded-md px-2 py-1 text-xs disabled:opacity-50">
+        Save
+      </button>
+    </form>
+  );
+}
+
+/** Only the private web operation may open the server machine's file manager, after an explicit click. */
+function PathReveal({ settingKey, value, saving }: { settingKey: string; value: unknown; saving: boolean }) {
+  const config = useConfig();
+  const reveal = useMutation({
+    mutationFn: () =>
+      unwrapResponse(api.POST("/system/config/reveal-setting", { params: { query: { key: settingKey } } })),
+  });
+  if (!config.data?.can_reveal || typeof value !== "string" || !value) return null;
+  return (
+    <span>
+      <button
+        type="button"
+        disabled={saving || reveal.isPending}
+        onClick={() => reveal.mutate()}
+        aria-label={`Show in ${config.data.file_manager}: ${settingKey}`}
+        className="rounded-md px-2 py-1 text-xs hover:bg-accent disabled:opacity-50"
+      >
+        Show in {config.data.file_manager}
+      </button>
+      {(reveal.data || reveal.error) && (
+        <span role={reveal.error ? "alert" : "status"} className="block text-xs text-muted-foreground">
+          {reveal.error?.message ?? reveal.data?.message}
+        </span>
+      )}
+    </span>
   );
 }
