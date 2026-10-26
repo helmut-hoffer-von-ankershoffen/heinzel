@@ -230,6 +230,7 @@ const en = {
   "sound.play": "Play {title}",
   "sound.pause": "Pause {title}",
   "sound.options": "Sound options",
+  "sound.optionsKeyboardHelp": "Press the down arrow to choose a soundscape.",
   "sound.volume": "Volume",
   "sound.followTheme": "Follow my theme",
   "sound.muteInMeetings": "Mute during meetings",

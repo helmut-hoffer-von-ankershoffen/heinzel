@@ -144,7 +144,9 @@ describe("Shell", () => {
     expect(account).toHaveTextContent("A");
     expect(account).toHaveAttribute("title", "Ada Example · engineering manager");
     expect(account.nextElementSibling).toBeNull();
-    expect(within(account.parentElement as HTMLElement).getByRole("button", { name: "Sound options" })).toBeVisible();
+    expect(
+      within(account.parentElement as HTMLElement).getByRole("button", { name: "Choose a soundscape" }),
+    ).toBeVisible();
     account.focus();
     await user.keyboard("{Enter}");
     expect(screen.getByRole("menuitem", { name: "Profile" })).toBeVisible();

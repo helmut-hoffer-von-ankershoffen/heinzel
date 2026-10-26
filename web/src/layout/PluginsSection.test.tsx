@@ -42,9 +42,25 @@ const candidate = {
 };
 
 describe("plugin source labels", () => {
-  it("uses recorded GitHub visibility for private and public custom repositories", () => {
-    expect(sourceLabel({ first_party: false } as never, "github", true)).toBe("Private");
-    expect(sourceLabel({ first_party: false } as never, "github", false)).toBe("Custom");
+  it("labels the actual installed repository instead of a catalog match", () => {
+    const plugin = { first_party: false } as never;
+    expect(sourceLabel(plugin, true, "https://github.com/acme-example/private-fork")).toBe("Private");
+    expect(sourceLabel(plugin, false, "https://github.com/acme-example/public-plugin")).toBe("Custom");
+    expect(
+      sourceLabel(
+        plugin,
+        true,
+        "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-weather",
+      ),
+    ).toBe("Community");
+  });
+
+  it("does not infer community provenance from an unknown or missing source", () => {
+    const plugin = { first_party: false } as never;
+    expect(sourceLabel(plugin, null, null)).toBe("source not reported yet");
+    expect(sourceLabel(plugin, null, "https://github.com/acme-example/heinzel-contrib")).toBe(
+      "source not reported yet",
+    );
   });
 });
 

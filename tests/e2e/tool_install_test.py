@@ -141,7 +141,10 @@ def sandbox(tmp_path) -> Sandbox:
     return Sandbox(tmp_path)
 
 
+@pytest.mark.timeout(300)
+@pytest.mark.long_running
 def test_direct_lifecycle(sandbox, wheel):
+    """A cold macOS run builds the wheel and exercises several isolated uv installs/upgrades."""
     sandbox.run("uv", "tool", "install", wheel)
     assert sandbox.hz("--version").startswith("hz ")
     info = json.loads(sandbox.hz("system", "info", "--json"))

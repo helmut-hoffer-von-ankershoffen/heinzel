@@ -237,6 +237,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
         </Popover>
       )}
       <button
+        ref={opener}
         type="button"
         onClick={() => {
           if (pressed.current) {
@@ -247,6 +248,11 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
           else toggle();
         }}
         onContextMenu={(event) => {
+          event.preventDefault();
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown") return;
           event.preventDefault();
           setOpen(true);
         }}
@@ -261,6 +267,10 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
         onPointerUp={() => clearTimeout(press.current)}
         onPointerLeave={() => clearTimeout(press.current)}
         aria-pressed={current ? sound.playing : undefined}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-keyshortcuts="ArrowDown"
+        aria-description={t("sound.optionsKeyboardHelp")}
         aria-label={label}
         title={label}
         className={cn(
@@ -269,16 +279,6 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
         )}
       >
         {!current ? <Volume aria-hidden /> : sound.playing ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}
-      </button>
-      <button
-        ref={opener}
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        className="sr-only"
-      >
-        {t("sound.options")}
       </button>
     </div>
   );

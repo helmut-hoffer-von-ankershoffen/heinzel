@@ -78,7 +78,7 @@ describe("the mini-player docked in the sidebar", () => {
     const precedes = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     expect(precedes(nav, dockSlot())).toBe(true);
     const account = dockSlot().nextElementSibling as HTMLElement;
-    expect(within(account).getAllByRole("button", { name: "Sound options" })).toHaveLength(1);
+    expect(within(account).getAllByRole("button", { name: /^Pause Claude FM$/ })).toHaveLength(1);
     expect(dockSlot().parentElement).toBe(account.parentElement);
   });
 
@@ -222,7 +222,11 @@ describe("the sound popover", () => {
   it("is in the body, above the player, with the controls and a way to Settings", async () => {
     const calls = api().calls;
     const { user } = await play();
-    await user.click((await screen.findAllByRole("button", { name: "Sound options" }))[0] as HTMLElement);
+    const speaker = (await screen.findAllByRole("button")).find(
+      (button) => button.getAttribute("aria-haspopup") === "dialog",
+    );
+    expect(speaker).toBeTruthy();
+    await user.pointer({ keys: "[MouseRight]", target: speaker });
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
     expect(dialog.parentElement).toBe(document.body);
     expect(dialog.className).toContain("z-(--layer-popover)");
@@ -251,7 +255,7 @@ describe("the sound popover", () => {
     const calls = api("off").calls;
     const user = userEvent.setup();
     renderAt("/");
-    await user.click((await screen.findAllByRole("button", { name: "Sound options" }))[0] as HTMLElement);
+    await user.click(await screen.findByRole("button", { name: "Choose a soundscape" }));
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
     await user.click(within(dialog).getByRole("radio", { name: /^Claude FM/ }));
     await waitFor(() => expect(calls.some((c) => c.url.includes("/system/sound/use?name=claude-fm"))).toBe(true));

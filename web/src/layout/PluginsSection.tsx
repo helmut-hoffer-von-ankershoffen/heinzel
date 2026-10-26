@@ -39,15 +39,30 @@ type PluginKind = NonNullable<SchemaPluginInfo["kinds"]>[number];
 /** Label the repository that supplied a plugin; unknown non-core sources are custom plugins by default. */
 export function sourceLabel(
   plugin: SchemaPluginInfo,
-  source?: "contrib" | "github",
   privateRepository?: boolean | null,
+  sourceUrl?: string | null,
 ): string {
   if (plugin.first_party) return t("plugins.firstParty");
-  if (source === "contrib") return t("plugins.community");
+  if (isCommunityRepository(sourceUrl)) return t("plugins.community");
   if (privateRepository === true) return t("plugins.private");
   if (privateRepository === false) return t("plugins.custom");
-  if (source === "github") return t("plugins.custom");
-  return t("plugins.custom");
+  return t("plugins.sourceUnknown");
+}
+
+/** Community provenance comes from the installed source repository, never a catalog match on package name. */
+function isCommunityRepository(sourceUrl: string | null | undefined): boolean {
+  if (!sourceUrl) return false;
+  try {
+    const source = new URL(sourceUrl);
+    const [owner, repository] = source.pathname.split("/").filter(Boolean);
+    return (
+      source.hostname.toLowerCase() === "github.com" &&
+      owner?.toLowerCase() === "helmut-hoffer-von-ankershoffen" &&
+      repository?.replace(/\.git$/i, "").toLowerCase() === "heinzel-contrib"
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** The head of a module's page, the same everywhere: its name with the kinds of what it adds on the left, and on
@@ -79,7 +94,7 @@ export function ModuleHeader({
                 className="rounded-md border border-border px-1.5 text-[11px] hover:bg-accent/60"
                 title={t("settings.openPlugin")}
               >
-                {sourceLabel(plugin, undefined, plugin.private_repository)}
+                {sourceLabel(plugin, plugin.private_repository, plugin.source_url ?? plugin.homepage)}
               </button>
               <span className="text-xs tabular-nums">v{plugin.version}</span>
             </>
@@ -423,14 +438,8 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
               <ul>
                 {shown.map((plugin) => {
                   const entry = known.get(plugin.distribution);
-                  const source = sourceLabel(
-                    plugin,
-                    entry?.source === "contrib" || entry?.source === "github" ? entry.source : undefined,
-                    // Catalog community entries are known public GitHub repositories; otherwise use install-time
-                    // visibility recorded by the backend.
-                    plugin.private_repository ?? (entry?.community ? false : undefined),
-                  );
-                  const url = plugin.source_url ?? (entry ? repositoryOfEntry(entry) : null);
+                  const url = plugin.source_url ?? plugin.homepage ?? null;
+                  const source = sourceLabel(plugin, plugin.private_repository, url);
                   const enabled = plugin.enabled ?? true;
                   return (
                     <li

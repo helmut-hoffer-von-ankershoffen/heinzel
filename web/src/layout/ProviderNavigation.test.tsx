@@ -90,7 +90,7 @@ describe("navigation declared by any installed provider", () => {
     expect(await within(dialog).findByLabelText("Weather location")).toHaveValue("Lisbon");
     expect(within(dialog).getByRole("region", { name: "Conditions service" })).toBeInTheDocument();
     expect(within(dialog).queryByText("Private", { exact: true })).not.toBeInTheDocument();
-    expect(within(dialog).getByText("Custom", { exact: true })).toBeInTheDocument();
+    expect(within(dialog).getAllByText("source not reported yet", { exact: true }).length).toBeGreaterThan(0);
     await user.click(within(dialog).getByRole("button", { name: "Close settings" }));
     const link = screen.getByRole("link", { name: "Local conditions" });
     expect(link).toHaveAttribute("href", "/doctor?panel=conditions");
@@ -131,10 +131,12 @@ describe("navigation declared by any installed provider", () => {
     expect(pageOf("system.daemon", nav.pages)?.id).toBe("daemon");
     expect(nav.pages.some((page) => page.id === fallback.id)).toBe(false);
     expect(pageOf("harbor", nav.pages)?.id).toBe(entry.id);
-    expect(sourceLabel(provider)).toBe("Custom");
-    expect(sourceLabel(provider, "contrib")).toBe("Community");
-    expect(sourceLabel(provider, "github")).toBe("Custom");
-    expect(sourceLabel(provider, undefined, true)).toBe("Private");
-    expect(sourceLabel(provider, undefined, false)).toBe("Custom");
+    expect(sourceLabel(provider)).toBe("source not reported yet");
+    expect(sourceLabel(provider, false, "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib")).toBe(
+      "Community",
+    );
+    expect(sourceLabel(provider, false, "https://github.com/acme-example/heinzel-harbor")).toBe("Custom");
+    expect(sourceLabel(provider, true, "https://github.com/acme-example/heinzel-harbor")).toBe("Private");
+    expect(sourceLabel(provider, false, "https://github.com/acme-example/heinzel-harbor")).toBe("Custom");
   });
 });

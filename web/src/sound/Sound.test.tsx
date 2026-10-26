@@ -158,7 +158,8 @@ describe("Sound", () => {
 
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Play Snow$/));
+    const snowSpeaker = await speaker(/^Play Snow$/);
+    await user.click(snowSpeaker);
     await waitFor(() =>
       expect(api.calls.some((call) => call.url.includes("/sound-assets/snow/layer-0.ogg"))).toBe(true),
     );
@@ -166,7 +167,7 @@ describe("Sound", () => {
     expect(contexts[0]?.sources).toHaveLength(1);
     expect(soundState()).toMatchObject({ playing: true, started: true });
 
-    await user.click(await speaker(/^Sound options$/));
+    await user.pointer({ keys: "[MouseRight]", target: snowSpeaker });
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
     expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "true");
     await user.click(within(dialog).getByRole("radio", { name: /^Rain/ }));
@@ -174,7 +175,7 @@ describe("Sound", () => {
     await waitFor(() => expect(soundState()).toMatchObject({ playing: false, started: false }));
     expect(contexts[0]?.close).toHaveBeenCalledOnce();
 
-    await user.click(await speaker(/^Sound options$/));
+    await user.pointer({ keys: "[MouseRight]", target: snowSpeaker });
     const choices = await screen.findByRole("dialog", { name: "Sound" });
     await waitFor(() =>
       expect(within(choices).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "false"),
@@ -207,13 +208,16 @@ describe("Sound", () => {
       });
       const user = userEvent.setup();
       renderAt("/");
-      await user.click(await screen.findByRole("button", { name: "Sound options" }));
+      await user.pointer({ keys: "[MouseRight]", target: await speaker(/^Play Rain$/) });
       const dialog = await screen.findByRole("dialog", { name: "Sound" });
       expect(within(dialog).getByRole("radio", { name: /^Rain/ })).toHaveAttribute("aria-checked", "true");
       await user.click(within(dialog).getByRole("radio", { name: name === "claude-fm" ? /^Claude FM/ : /^Rain/ }));
       await waitFor(() => expect(calls.some((call) => call.url.includes(`/system/sound/use?name=${name}`))).toBe(true));
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Sound" })).not.toBeInTheDocument());
-      await user.click(await speaker(/^Sound options$/));
+      await user.pointer({
+        keys: "[MouseRight]",
+        target: await speaker(name === "claude-fm" ? /^Play Claude FM$/ : /^Play Rain$/),
+      });
       const choices = await screen.findByRole("dialog", { name: "Sound" });
       await waitFor(() =>
         expect(within(choices).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute(
@@ -315,15 +319,15 @@ describe("Sound", () => {
     expect(soundState().playing).toBe(false);
   });
 
-  it("the chevron opens the popover from the keyboard, Escape closes it and gives focus back", async () => {
+  it("the visible speaker opens sound choices from the keyboard and restores focus on Escape", async () => {
     soundApi("claude-fm");
     const user = userEvent.setup();
     renderAt("/");
-    const chevron = (await screen.findAllByRole("button", { name: "Sound options" }))[0] as HTMLElement;
-    chevron.focus();
-    await user.keyboard("{Enter}");
+    const speakerButton = (await speaker(/^Play Claude FM$/)) as HTMLElement;
+    speakerButton.focus();
+    await user.keyboard("{ArrowDown}");
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
-    expect(chevron).toHaveAttribute("aria-expanded", "true");
+    expect(speakerButton).toHaveAttribute("aria-expanded", "true");
     expect(within(dialog).getByRole("slider", { name: "Volume" })).toHaveValue("50");
     expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "false");
     expect(within(dialog).getByRole("switch", { name: "Mute during meetings" })).toHaveAttribute(
@@ -332,7 +336,7 @@ describe("Sound", () => {
     );
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Sound" })).toBeNull();
-    expect(chevron).toHaveFocus();
+    expect(speakerButton).toHaveFocus();
   });
 
   it("a right-click on the speaker opens the popover too", async () => {
