@@ -270,7 +270,7 @@ function Clock({ now }: { now: Date }) {
               className="w-80 rounded-xl border border-border bg-popover p-1.5 text-sm shadow-xl"
             >
               {known.length > 0 ? (
-                // Yours first, then the others in the order of `clock.zones`; every time on the 24-hour clock.
+                // Primary first, then the others in the order of `clock.zones`; every time on the 24-hour clock.
                 <ul>
                   {known.map((zone, index) => {
                     const at = knownZone(zone.zone) ? partsIn(zone.zone, now) : null;
@@ -349,39 +349,35 @@ function until(start: Date, now: Date): string {
 
 const RELEASES = "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag";
 
-/** What changed in the running release, from the changelog installed with it (so offline), as the version's pane. */
+/** The installed version, its concise branding and the release link. */
 function ReleaseNotes({ version }: { version: string }) {
   const changelog = useChangelog(false);
   return (
     <div className="px-1.5 pb-1">
-      <section aria-label={t("status.about")} className="mb-3 border-b border-border pb-3">
-        <div className="flex items-center gap-3">
-          <HeinzelAvatar label={t("app.name")} className="h-20 w-12" />
-          <p className="min-w-0 font-medium">
-            <span className="block">{t("status.tagline")}</span>
-            <span className="block">{t("status.origin")}</span>
-          </p>
-        </div>
+      <section aria-label={t("status.about")} className="mb-2 flex items-center gap-2 border-b border-border pb-2">
+        <HeinzelAvatar label={t("app.name")} className="h-14 w-9 shrink-0" />
+        <p className="min-w-0 flex-1 text-xs leading-tight font-medium">
+          {t("status.tagline")} {t("status.origin")}
+        </p>
+        <a
+          href={`${RELEASES}/v${version}`}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={t("status.release")}
+          title={t("status.release")}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-accent"
+        >
+          <svg aria-hidden="true" viewBox="0 0 16 16" className="size-4 fill-current">
+            <path d="M8 .2a7.8 7.8 0 0 0-2.47 15.2c.39.07.53-.17.53-.38v-1.48c-2.17.47-2.63-.92-2.63-.92-.36-.9-.87-1.14-.87-1.14-.71-.49.06-.48.06-.48.78.06 1.19.8 1.19.8.7 1.2 1.83.85 2.28.65.07-.5.27-.85.5-1.04-1.73-.2-3.55-.87-3.55-3.87 0-.85.3-1.54.8-2.08-.08-.2-.35-.99.08-2.05 0 0 .65-.2 2.14.79a7.44 7.44 0 0 1 3.9 0c1.49-1 2.14-.79 2.14-.79.43 1.06.16 1.85.08 2.05.5.54.8 1.23.8 2.08 0 3.01-1.82 3.67-3.56 3.87.28.24.53.71.53 1.43v2.18c0 .21.14.45.54.38A7.8 7.8 0 0 0 8 .2Z" />
+          </svg>
+          <span className="sr-only">{t("status.release")}</span>
+        </a>
       </section>
-      <p className="mb-1 text-xs text-muted-foreground">{t("status.whatChanged")}</p>
       {typeof changelog.data === "string" && (
         <div className="max-h-64 overflow-y-auto pr-1 text-xs">
           <Prose>{changelog.data}</Prose>
         </div>
       )}
-      <div className="mt-2 flex flex-wrap gap-3 border-t border-border pt-2 text-xs">
-        <Link to="?panel=changelog" className="underline hover:text-foreground">
-          {t("status.fullChangelog")}
-        </Link>
-        <a
-          href={`${RELEASES}/v${version}`}
-          target="_blank"
-          rel="noreferrer"
-          className="underline hover:text-foreground"
-        >
-          {t("status.release")}
-        </a>
-      </div>
     </div>
   );
 }

@@ -69,6 +69,10 @@ class PluginInfo(BaseModel):
     first_party: bool = Field(
         default=False, description="Whether it is maintained and released with Heinzelmännchen (ADR 0017)."
     )
+    private_repository: bool | None = Field(
+        default=None,
+        description="Whether the GitHub repository is private, when its visibility was checked before installation.",
+    )
     enabled: bool = Field(
         default=True, description="Whether its modules are loaded; `hz system plugin disable` switches it off."
     )
@@ -179,3 +183,6 @@ class PluginEvent(BaseModel):
     source: Source | None = Field(description="Where it came from, for `add` and `develop`.")
     version: str | None = Field(description="The version installed or removed, when known.")
     publisher: str | None = Field(description="Who publishes it, as shown before confirming.")
+    private_repository: bool | None = Field(
+        default=None, description="Whether the GitHub repository was private when it was installed."
+    )

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { expectAccessible } from "@/test/render";
-import { PluginsSection } from "./PluginsSection";
+import { PluginsSection, sourceLabel } from "./PluginsSection";
 
 const PINNED = `heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@${"b".repeat(40)}`;
 
@@ -40,6 +40,13 @@ const candidate = {
   installed_version: null,
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
 };
+
+describe("plugin source labels", () => {
+  it("uses recorded GitHub visibility for private and public custom repositories", () => {
+    expect(sourceLabel({ first_party: false } as never, "github", true)).toBe("Private");
+    expect(sourceLabel({ first_party: false } as never, "github", false)).toBe("Custom");
+  });
+});
 
 function change(action: string, done: boolean, extra: Record<string, unknown> = {}) {
   return {
@@ -207,8 +214,8 @@ describe("PluginsSection", () => {
     show({ reload: vi.fn(), restartInterval: 1 });
     await user.click(screen.getByRole("tab", { name: "Discover" }));
     const labels = (await screen.findAllByRole("listitem")).map((row) => row.textContent);
-    expect(labels.some((text) => text?.includes("Contrib"))).toBe(true);
-    expect(labels.some((text) => text?.includes("Contrib"))).toBe(true);
+    expect(labels.some((text) => text?.includes("Community"))).toBe(true);
+    expect(labels.some((text) => text?.includes("Custom"))).toBe(true);
     expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
     const adds = () =>
       calls.filter((request) => {

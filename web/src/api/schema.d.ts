@@ -6548,6 +6548,11 @@ export interface components {
              */
             distribution: string | null;
             /**
+             * Private Repository
+             * @description Whether the GitHub repository was private when it was installed.
+             */
+            private_repository?: boolean | null;
+            /**
              * Publisher
              * @description Who publishes it, as shown before confirming.
              */
@@ -6630,6 +6635,11 @@ export interface components {
              * @description Modules that bring a playbook (ADR 0037); empty while it is disabled.
              */
             playbooks?: string[];
+            /**
+             * Private Repository
+             * @description Whether the GitHub repository is private, when its visibility was checked before installation.
+             */
+            private_repository?: boolean | null;
             /**
              * Revision
              * @description The git commit installed, for a git source.

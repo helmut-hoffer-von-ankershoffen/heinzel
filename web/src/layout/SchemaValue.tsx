@@ -60,7 +60,7 @@ export function SchemaValue({ id, label, schema, control = controlFor(schema), v
             const picked = control.options.find((option) => String(option) === event.target.value);
             onChange(picked);
           }}
-          className={field}
+          className={cn(field, "pr-8")}
         >
           {(value === undefined || value === null) && <option value="">{t("settings.notSet")}</option>}
           {control.options.map((option) => (
@@ -293,7 +293,7 @@ function Table({
           return (
             // A row's place is its identity (the order means something); its fields show what it holds now.
             // biome-ignore lint/suspicious/noArrayIndexKey: see above
-            <li key={index} className="flex flex-wrap items-center gap-2 rounded-lg border border-border/70 p-1.5">
+            <li key={index} className="flex flex-wrap items-center gap-3 rounded-lg border border-border/70 p-1.5">
               {control.columns.map(([key, schema]) => {
                 const inner = controlFor(schema);
                 return (
@@ -325,9 +325,9 @@ function Table({
               })}
               {zones && (
                 // Every row keeps the badge's column, so the first row's pickers are as wide as the others'.
-                <span className="flex w-16 shrink-0 justify-center">
+                <span className="flex w-20 shrink-0 justify-center">
                   {index === 0 && (
-                    <span className="rounded-md border border-primary/40 px-1.5 text-[11px] text-primary">
+                    <span className="rounded-md border border-primary/40 px-2 py-0.5 text-[11px] text-primary">
                       {t("settings.primary")}
                     </span>
                   )}

@@ -1,7 +1,7 @@
-import { act, screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import { doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
+import { config, doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 
 const answers = {
@@ -12,6 +12,33 @@ const answers = {
 };
 
 describe("Shell", () => {
+  it("keeps the audio visualizer off unless the System setting is enabled", async () => {
+    const first = mockApi({ ...answers, "/api/system/config/show": config });
+    const { unmount } = renderAt("/doctor");
+    await waitFor(() => expect(first.calls.some((request) => request.url.includes("/system/config/show"))).toBe(true));
+    expect(screen.queryByRole("region", { name: "Audio visualizer" })).not.toBeInTheDocument();
+    unmount();
+
+    const enabled = {
+      ...config,
+      settings: [
+        ...config.settings,
+        {
+          section: "system.ui",
+          key: "audio_visualizer",
+          value: true,
+          default: false,
+          source: "user" as const,
+          env: "HZ_SYSTEM_UI__AUDIO_VISUALIZER",
+          description: "Show the optional audio sharing visualizer.",
+        },
+      ],
+    };
+    mockApi({ ...answers, "/api/system/config/show": enabled });
+    renderAt("/doctor");
+    expect(await screen.findByRole("region", { name: "Audio visualizer" })).toBeInTheDocument();
+  });
+
   it("keeps one mounted footer and its focus when the side panel moves below and back", async () => {
     mockApi({ ...answers, "/api/system/info": { version: "0.7.12", modules: [] } });
     const initialWidth = window.innerWidth;

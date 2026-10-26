@@ -215,18 +215,17 @@ describe("generic provider toggle", () => {
   });
 });
 
-describe("separate URL and owner sign-in copy", () => {
-  it("copies a nonsecret URL separately and only attaches the session after its explicit copy gesture", async () => {
+describe("authenticated URL copy", () => {
+  it("copies a usable session link without rendering the credential", async () => {
     const user = userEvent.setup();
     const clipboard = vi.spyOn(navigator.clipboard, "writeText");
     const { container } = show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
     expect(clipboard).not.toHaveBeenCalled();
     expect(container.innerHTML).not.toContain("session-for-tests");
     await user.click(screen.getByRole("button", { name: "Copy URL" }));
-    expect(clipboard).toHaveBeenLastCalledWith(`${ORIGIN}/`);
-    await user.click(screen.getByRole("button", { name: "Copy sign-in link" }));
     expect(clipboard).toHaveBeenLastCalledWith(`${ORIGIN}/#token=session-for-tests`);
     expect(container.innerHTML).not.toContain("session-for-tests");
+    expect(screen.queryByRole("button", { name: "Copy sign-in link" })).not.toBeInTheDocument();
     const link = screen.getByRole("link", { name: "Open" });
     expect(link).toHaveAttribute("href", `${ORIGIN}/`);
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
@@ -260,7 +259,7 @@ describe("separate URL and owner sign-in copy", () => {
     const user = userEvent.setup();
     vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("session-for-tests"));
     const { container } = show(control({ checked: true, url: ORIGIN, sign_in_url: ORIGIN }));
-    await user.click(screen.getByRole("button", { name: "Copy sign-in link" }));
+    await user.click(screen.getByRole("button", { name: "Copy URL" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not copy the link.");
     expect(container.innerHTML).not.toContain("session-for-tests");
     expect(screen.getByRole("status")).not.toHaveTextContent("Copied");

@@ -128,7 +128,7 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
   return (
     <button
       type="button"
-      className="relative flex h-full min-h-6 w-6 shrink-0 items-stretch justify-center border-l border-border px-1 text-muted-foreground hover:text-foreground"
+      className="relative flex h-dvh min-h-6 w-6 shrink-0 items-stretch justify-center px-1 text-muted-foreground hover:text-foreground"
       aria-label={label}
       aria-pressed={Boolean(session)}
       aria-describedby="audio-visualizer-help"

@@ -170,6 +170,15 @@ class PluginService:
 
     def installed(self) -> list[PluginInfo]:
         """Every installed plugin, enabled or not, with where it came from and what it brings."""
+        visibility: dict[str, bool] = {}
+        for event in self.history():
+            if not event.distribution:
+                continue
+            distribution_name = canonicalize_name(event.distribution)
+            if event.action == "remove":
+                visibility.pop(distribution_name, None)
+            elif event.action in {"add", "develop"} and event.private_repository is not None:
+                visibility[distribution_name] = event.private_repository
         records: dict[str, list[ModuleRecord]] = {}
         enabled: dict[str, bool] = {}
         for record in self._kernel.modules:
@@ -178,16 +187,16 @@ class PluginService:
                 enabled[canonicalize_name(record.origin.distribution)] = True
         for record in self._kernel.blocked:
             if not record.origin.builtin:
-                name: str = canonicalize_name(record.origin.distribution)
-                records.setdefault(name, []).append(record)
-                enabled.setdefault(name, False)
+                distribution_name = canonicalize_name(record.origin.distribution)
+                records.setdefault(distribution_name, []).append(record)
+                enabled.setdefault(distribution_name, False)
         distributions = self._plugin_distributions()
         errors = self._errors_by_distribution()
         plugins: list[PluginInfo] = []
         # What the kernel loaded, blocked or failed to load; with `[hz] plugins_enabled` off, that is nothing.
-        for name in sorted(set(records) | set(errors)):
-            mine = sorted(records.get(name, []), key=lambda r: r.path)
-            dist = distributions.get(name)
+        for plugin_name in sorted(set(records) | set(errors)):
+            mine = sorted(records.get(plugin_name, []), key=lambda r: r.path)
+            dist = distributions.get(plugin_name)
             origin = mine[0].origin if mine else None
             homepage = origin.url if origin else None
             kind, url, revision = _source_of(dist, homepage)
@@ -203,19 +212,20 @@ class PluginService:
             )
             plugins.append(
                 PluginInfo(
-                    distribution=origin.distribution if origin else (dist.name if dist else name),
+                    distribution=origin.distribution if origin else (dist.name if dist else plugin_name),
                     # The metadata installed now: the kernel read its origin at start, before an upgrade replaced it.
                     version=dist.version if dist else (origin.version if origin else "unknown"),
                     modules=[r.qualname for r in mine],
-                    name=short_name(name),
+                    name=short_name(plugin_name),
                     summary=str(dist.metadata.get("Summary") or "") if dist else "",
                     source_kind=kind,
                     source_url=url,
                     revision=revision,
                     homepage=homepage,
-                    first_party=_is_first_party(name, kind, url),
-                    enabled=enabled.get(name, False) and self._kernel.settings.plugins_enabled,
-                    error=errors.get(name),
+                    first_party=_is_first_party(plugin_name, kind, url),
+                    private_repository=visibility.get(plugin_name),
+                    enabled=enabled.get(plugin_name, False) and self._kernel.settings.plugins_enabled,
+                    error=errors.get(plugin_name),
                     layers=[
                         PluginLayer(module=let.name, parent=let.parent, site=let.site)
                         for record in mine
@@ -357,6 +367,7 @@ class PluginService:
                 source=candidate.source,
                 version=candidate.version,
                 publisher=candidate.publisher,
+                private_repository=candidate.private,
             )
             return self._changed("add", candidate.distribution, candidate)
 
@@ -808,6 +819,7 @@ class PluginService:
         source: Source | None = None,
         version: str | None = None,
         publisher: str | None = None,
+        private_repository: bool | None = None,
     ) -> None:
         event = PluginEvent(
             at=datetime.now(UTC),
@@ -817,6 +829,7 @@ class PluginService:
             source=source,
             version=version,
             publisher=publisher,
+            private_repository=private_repository,
         )
         path = self._history_path()
         path.parent.mkdir(parents=True, exist_ok=True)

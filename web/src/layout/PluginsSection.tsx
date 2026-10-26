@@ -1,4 +1,4 @@
-// Settings → Plugins, as in a desktop chat app: "Yours" lists what's installed, "Discover" what can be (first-party
+// Settings → Plugins, as in a desktop chat app: "Installed" lists what's installed, "Discover" what can be (first-party
 // and community plugins), "Add" installs from a name or a git URL. Installing runs code, so it takes two steps: the
 // backend first answers what a spec would install (source, version, publisher, pinned), and only the confirm sends
 // that pinned requirement with `confirm=true` (ADR 0047). The app then restarts `hz ui` itself and reloads.
@@ -36,10 +36,18 @@ import { displayName } from "./settingsSections";
 
 type PluginKind = NonNullable<SchemaPluginInfo["kinds"]>[number];
 
-/** The catalog may identify a community/private source; absence of that evidence means only "Plugin". */
-export function sourceLabel(plugin: SchemaPluginInfo, community?: boolean): string {
+/** Label the repository that supplied a plugin; unknown non-core sources are custom plugins by default. */
+export function sourceLabel(
+  plugin: SchemaPluginInfo,
+  source?: "contrib" | "github",
+  privateRepository?: boolean | null,
+): string {
   if (plugin.first_party) return t("plugins.firstParty");
-  return community === undefined ? t("plugins.plugin") : community ? t("plugins.community") : t("plugins.private");
+  if (source === "contrib") return t("plugins.community");
+  if (privateRepository === true) return t("plugins.private");
+  if (privateRepository === false) return t("plugins.custom");
+  if (source === "github") return t("plugins.custom");
+  return t("plugins.custom");
 }
 
 /** The head of a module's page, the same everywhere: its name with the kinds of what it adds on the left, and on
@@ -71,7 +79,7 @@ export function ModuleHeader({
                 className="rounded-md border border-border px-1.5 text-[11px] hover:bg-accent/60"
                 title={t("settings.openPlugin")}
               >
-                {sourceLabel(plugin)}
+                {sourceLabel(plugin, undefined, plugin.private_repository)}
               </button>
               <span className="text-xs tabular-nums">v{plugin.version}</span>
             </>
@@ -185,9 +193,13 @@ function CandidateDetails({ candidate }: { candidate: SchemaPluginCandidate }) {
     [t("plugins.field.publisher"), candidate.publisher ?? t("plugins.unknown")],
     [
       t("plugins.field.source"),
-      `${candidate.first_party ? `${t("plugins.firstParty")}, ` : ""}${candidate.source}${
-        candidate.private ? `, ${t("plugins.privateRepository")}` : ""
-      }`,
+      candidate.first_party
+        ? `${t("plugins.firstParty")}, ${candidate.source}`
+        : candidate.private === true
+          ? `${t("plugins.private")}, ${t("plugins.privateRepository")}`
+          : candidate.private === false
+            ? t("plugins.custom")
+            : candidate.source,
     ],
   ];
   if (candidate.installed_version) rows.push([t("plugins.field.replaces"), candidate.installed_version]);
@@ -411,7 +423,13 @@ function Yours({ query, onChange }: { query: string; onChange: (pending: Pending
               <ul>
                 {shown.map((plugin) => {
                   const entry = known.get(plugin.distribution);
-                  const source = sourceLabel(plugin, entry?.community);
+                  const source = sourceLabel(
+                    plugin,
+                    entry?.source === "contrib" || entry?.source === "github" ? entry.source : undefined,
+                    // Catalog community entries are known public GitHub repositories; otherwise use install-time
+                    // visibility recorded by the backend.
+                    plugin.private_repository ?? (entry?.community ? false : undefined),
+                  );
                   const url = plugin.source_url ?? (entry ? repositoryOfEntry(entry) : null);
                   const enabled = plugin.enabled ?? true;
                   return (
@@ -595,11 +613,11 @@ function Discover({ query, onInstall }: { query: string; onInstall: (spec: strin
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
                   <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
-                    {plugin.source === "contrib"
-                      ? t("plugins.contrib")
-                      : plugin.community
+                    {plugin.source === "first-party"
+                      ? t("plugins.firstParty")
+                      : plugin.source === "contrib"
                         ? t("plugins.community")
-                        : t("plugins.firstParty")}
+                        : t("plugins.custom")}
                   </span>
                   <span aria-hidden className={VERSION} />
                 </span>
