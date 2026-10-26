@@ -70,7 +70,7 @@ You need [uv](https://docs.astral.sh/uv/) (`brew install uv`). Then:
 
 <!-- docs-test -->
 ```bash
-uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel
+uv tool install heinzel
 ```
 
 Pin a release with `@vX.Y.Z`; `hz system update` then moves to the latest release in place, keeping plugins
@@ -272,9 +272,9 @@ Joining a team is one line, the same for everyone, posted in its chat. It finds 
 `gws` logins, joins the team and sets up what is missing (`hz join` prints the line for the next person):
 
 ```bash
-uvx --from git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel heinzel join <team repository>
+uvx --from heinzel heinzel join <team repository>
 # from a coding agent, without a terminal:
-uvx --from git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel heinzel join <team repository> \
+uvx --from heinzel heinzel join <team repository> \
   --role engineer --yes --json
 ```
 
