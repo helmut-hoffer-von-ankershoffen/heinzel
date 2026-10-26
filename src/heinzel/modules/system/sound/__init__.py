@@ -2,8 +2,8 @@
 
 A soundscape is data a plugin offers with `module.soundscape(...)`: licensed audio files the web app mixes live, each
 layer following a signal such as the part of the day, or a stream in the official player of an allowed host. The core
-offers Claude FM, a stream on the official Claude YouTube channel. Sound is off until the person picks a soundscape and
-presses Play; `hz system sound use <name>` picks one, `off` is none.
+offers Claude FM and CEO mode, streams on YouTube. Sound is off until the person picks a soundscape and presses Play;
+`hz system sound use <name>` picks one, `off` is none.
 """
 
 from pathlib import Path
@@ -26,7 +26,7 @@ from heinzel.modules.system.sound._models import (
 )
 from heinzel.modules.system.sound._service import SoundService
 
-module = Module("sound", "Pick the web app's soundscape: off, Claude FM or one a plugin offers.")
+module = Module("sound", "Pick the web app's soundscape: off, a built-in one or one a plugin offers.")
 module.settings(SoundSettings)
 module.service(SoundService)
 module.service(SoundAssets, SoundService)  # the web head serves audio and sets its page's CSP through it (ADR 0058)
@@ -83,7 +83,7 @@ def use(
         str, Field(description="The soundscape to play, one `hz system sound list` shows, e.g. `claude-fm`, or `off`.")
     ],
 ) -> SoundList:
-    """Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file."""
+    """Pick the web app's soundscape, `off` for none; turns off theme following and saves your choice."""
     return service.use(name)
 
 

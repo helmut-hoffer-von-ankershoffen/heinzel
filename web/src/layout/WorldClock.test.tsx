@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -31,7 +31,10 @@ function show() {
   );
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 describe("World Clock", () => {
   it("shows every zone in order, marks yours, keeps UTC readable without a marker and uses 24 hours", async () => {
@@ -49,6 +52,14 @@ describe("World Clock", () => {
     expect(screen.getByText(/Static map/)).toBeInTheDocument();
     await expectAccessible(container);
   });
+  it("shows the shared next-work status after the autumn DST weekend despite stale server work flags", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-25T11:00:00Z"));
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    show();
+    const summary = await screen.findByText("Starts in 21h · 1d 19h since end");
+    expect(summary).toHaveAttribute("title", "Mon–Fri 09:00–18:00 · Starts Mon 09:00");
+  });
   it("keeps unknown browser zones in place without moving the primary label", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     mockApi({ ...answers, "/api/clock": [{ ...zones[0], zone: "Future/New_Zone" }, zones[1]] });
@@ -63,10 +74,12 @@ describe("World Clock", () => {
     expect(screen.getByText("Time unavailable in this browser")).toBeInTheDocument();
     expect(screen.queryByText("New York · Yours")).not.toBeInTheDocument();
   });
-  it("explains a missing clock plugin instead of loading forever", async () => {
+  it("explains a missing clock plugin without leaking previously cached zones", async () => {
+    const client = queryClient();
+    client.setQueryData(["clock"], zones);
     mockApi({ ...answers, "/api/system/info": { version: "0.7.1", modules: [] } });
     render(
-      <Providers client={queryClient()}>
+      <Providers client={client}>
         <MemoryRouter>
           <WorldClock onClose={vi.fn()} />
         </MemoryRouter>
@@ -74,6 +87,7 @@ describe("World Clock", () => {
     );
     expect(await screen.findByText("Add the clock plugin and choose your team's time zones.")).toBeInTheDocument();
     expect(screen.queryByText("Loading time zones…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Berlin · Yours")).not.toBeInTheDocument();
   });
   it("does not initialise WebGL under reduced motion", async () => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -99,6 +113,19 @@ describe("World Clock", () => {
     unmount();
     expect(destroy).toHaveBeenCalled();
   });
+  it("exposes projected markers as keyboard accessible tooltip triggers", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as WebGLRenderingContext);
+    create.mockReturnValue({ destroy, update });
+    show();
+    const marker = await screen.findByRole("button", { name: "Berlin · Europe/Berlin" });
+    await userEvent.hover(marker);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Berlin · Europe/Berlin");
+    marker.focus();
+    expect(marker).toHaveAttribute("aria-describedby", expect.stringContaining("world-clock-marker"));
+    update.mockClear();
+    await userEvent.click(screen.getByRole("button", { name: "Rotate globe right" }));
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ phi: expect.any(Number) }));
+  });
   it("falls back when the WebGL context is lost", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as WebGLRenderingContext);
     create.mockReturnValue({ destroy, update });
@@ -117,5 +144,15 @@ describe("World Clock", () => {
     expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Close World Clock" }));
     expect(screen.getByRole("complementary", { name: "Chat" })).toBeInTheDocument();
+  });
+  it("repaints the asynchronously decoded map on the clock tick without a pointer event", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as WebGLRenderingContext);
+    create.mockReturnValue({ destroy, update });
+    show();
+    await screen.findByText("Berlin · Yours");
+    update.mockClear();
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(update).toHaveBeenCalledWith({ phi: expect.any(Number) });
   });
 });

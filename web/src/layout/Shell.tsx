@@ -1,7 +1,9 @@
 // Navigation on the left, the screen in the middle, and one panel with the chat and the terminal (ADR 0039, 0045):
 // beside the screen when the window leaves it at least 30rem, below it otherwise; never both at once.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Outlet, useLocation, useSearchParams } from "react-router";
+import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { ChatProvider } from "@/chat/ChatContext";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { t } from "@/i18n";
@@ -105,6 +107,17 @@ function Layout() {
   const area = useRef<HTMLDivElement>(null);
   const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
   const beside = fitsBeside(useWidth(area), rem);
+  const besideFooter = useRef<HTMLDivElement>(null);
+  const belowFooter = useRef<HTMLDivElement>(null);
+  const [footerHost] = useState(() => document.createElement("div"));
+  useLayoutEffect(() => {
+    const target = beside ? besideFooter.current : belowFooter.current;
+    if (!target || footerHost.parentElement === target) return;
+    const focused = footerHost.contains(document.activeElement) ? (document.activeElement as HTMLElement) : null;
+    target.appendChild(footerHost);
+    focused?.focus({ preventScroll: true });
+  }, [beside, footerHost]);
+  useLayoutEffect(() => () => footerHost.remove(), [footerHost]);
   // Settings is a dialog over the screen, open while the URL has `?settings=<section>`, so links can point into it.
   const [params, setParams] = useSearchParams();
   const settings = params.get("settings");
@@ -193,7 +206,7 @@ function Layout() {
           >
             <Outlet />
           </main>
-          {beside && <StatusBar />}
+          <div ref={besideFooter} hidden={!beside} className="shrink-0" />
         </div>
         {(chatOpen || terminalOpen || clockOpen) && (
           // One panel: the chat on top, the terminal under it, each alone when the other is closed. Beside the screen
@@ -244,8 +257,13 @@ function Layout() {
             )}
           </div>
         )}
-        {!beside && <StatusBar />}
+        <div ref={belowFooter} hidden={beside} className="shrink-0" />
+        {/* One mounted footer: moving its host preserves controls when the side panel moves below. */}
+        {createPortal(<StatusBar />, footerHost)}
       </div>
+      <section aria-label="Audio visualizer" className="h-full w-7 shrink-0 border-l border-border">
+        <AudioVisualizer />
+      </section>
       {params.get("panel") === "notifications" && (
         <NotificationPanel
           navOpen={navOpen}

@@ -6,16 +6,18 @@ import { expect, vi } from "vitest";
 import { Providers, queryClient, routes } from "@/App";
 
 export type Answer = { status?: number; body: unknown };
+type AnswerSource = unknown | Answer | ((request: Request) => unknown | Answer | Promise<unknown | Answer>);
 
 /** Answer `fetch` by path (`/api/system/doctor`): a body for 200, or `{status, body}`; anything else is a 404. */
-export function mockApi(answers: Record<string, unknown | Answer>): { calls: Request[] } {
+export function mockApi(answers: Record<string, AnswerSource>): { calls: Request[] } {
   const calls: Request[] = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: Request) => {
       calls.push(input);
       const path = new URL(input.url).pathname;
-      const answer = answers[path];
+      let answer = answers[path];
+      if (typeof answer === "function") answer = await answer(input);
       if (answer === undefined) return Response.json({ error: `no answer for ${path}` }, { status: 404 });
       const { status, body } =
         answer && typeof answer === "object" && "body" in answer ? (answer as Answer) : { status: 200, body: answer };

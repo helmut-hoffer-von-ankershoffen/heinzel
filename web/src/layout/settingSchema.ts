@@ -22,6 +22,10 @@ export type JsonSchema = {
   title?: string;
   deprecated?: boolean;
   description?: string;
+  writeOnly?: boolean;
+  "x-labels"?: Record<string, string>;
+  "x-unit"?: string;
+  "x-options"?: { source: string; capability?: string; none?: string };
   "x-hidden"?: boolean;
   "x-expert"?: boolean;
 };
@@ -36,12 +40,24 @@ export function unwrap(schema: JsonSchema | undefined): JsonSchema | undefined {
   if (!schema || !branches) return schema;
   const real = branches.filter((branch) => branch.type !== "null");
   if (real.length !== 1) return schema;
-  return { ...real[0], description: schema.description ?? real[0]?.description, default: schema.default };
+  const branch = real[0];
+  if (!branch) return schema;
+  const annotations = Object.fromEntries(
+    Object.entries(schema).filter(
+      ([key]) =>
+        ["title", "description", "default", "format", "deprecated", "writeOnly"].includes(key) || key.startsWith("x-"),
+    ),
+  );
+  return { ...branch, ...annotations };
 }
 
 const typeOf = (schema: JsonSchema) => (Array.isArray(schema.type) ? undefined : schema.type);
 
 export type Control =
+  | { kind: "installed"; source: "adapters" | "modules"; capability?: string; none?: string; multiple: boolean }
+  | { kind: "secret" }
+  | { kind: "duration" }
+  | { kind: "path" }
   | { kind: "switch" }
   | { kind: "choice"; options: (string | number)[] }
   | { kind: "number"; integer: boolean; min?: number; max?: number }
@@ -65,10 +81,23 @@ export function controlFor(raw: JsonSchema | undefined | null): Control {
   const schema = unwrap(raw ?? undefined);
   if (!schema) return { kind: "text" };
   const type = typeOf(schema);
+  if (schema.writeOnly || schema.format === "password") return { kind: "secret" };
+  const options = schema["x-options"];
+  if (options?.source === "adapters" || options?.source === "modules") {
+    return {
+      kind: "installed",
+      source: options.source,
+      capability: options.capability,
+      none: options.none,
+      multiple: type === "array",
+    };
+  }
   if (schema.enum?.every((value) => typeof value === "string" || typeof value === "number")) {
     return { kind: "choice", options: schema.enum as (string | number)[] };
   }
   if (type === "boolean") return { kind: "switch" };
+  if (type === "string" && schema.format === "duration") return { kind: "duration" };
+  if (type === "string" && schema.format === "path") return { kind: "path" };
   if (type === "string" && schema.format === TIMEZONE) return { kind: "timezone" };
   if (type === "integer" || type === "number") {
     const options = steps(schema);
@@ -85,7 +114,8 @@ export function controlFor(raw: JsonSchema | undefined | null): Control {
     if (item && typeOf(item) === "object" && item.properties && Object.keys(item.properties).length) {
       return { kind: "table", item, columns: Object.entries(item.properties) };
     }
-    if (item && typeOf(item) === "string" && !item.format && !item.enum) return { kind: "chips" };
+    if (item && typeOf(item) === "string" && (!item.format || item.format === "path") && !item.enum)
+      return { kind: "chips" };
   }
   return { kind: "text" };
 }

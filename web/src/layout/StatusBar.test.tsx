@@ -1,9 +1,8 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { shell } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
-import { footerMode } from "./StatusBar";
 
 const answers = {
   ...shell,
@@ -65,59 +64,52 @@ describe("The status bar's clock", () => {
   });
 });
 
-describe("The footer on a narrow window", () => {
-  const entry = { module: "system", plugin: null, order: 1, refresh: 60, problem: null };
-  const footerAnswers = {
-    ...answers,
-    "/api/system/ui/status": [
-      {
-        ...entry,
-        id: "system:daemon",
-        slots: { footer: true },
-        item: { text: "Daemon running · next tick 20:45", tone: "ok", icon: "bot" },
-      },
-    ],
-    "/api/org/agenda": { current: null, next: null, problem: "no calendar", fix: null },
-    "/api/org/meeting": null,
-  };
-  const widthBefore = window.innerWidth;
-  afterEach(() => {
-    window.innerWidth = widthBefore;
-  });
-
-  it("picks what to show by width", () => {
-    expect([footerMode(375), footerMode(768), footerMode(1280)]).toEqual(["overflow", "icons", "full"]);
-  });
-
-  it("shows an item as an icon at every width above the narrow one, its text in a pane, and keeps the rest under … at 375", async () => {
-    mockApi(footerAnswers);
-    const footer = async () => (await screen.findByRole("contentinfo")) as HTMLElement;
-    for (const width of [1280, 768]) {
-      window.innerWidth = width;
-      const view = renderAt("/doctor");
-      const item = await within(await footer()).findByRole("button", {
-        name: /^Daemon running · next tick 20:45, OK$/,
-      });
-      expect(item.textContent).toBe("Daemon running · next tick 20:45, OK");
-      expect(within(item).getByText(/Daemon running/)).toHaveClass("sr-only");
-      const credit = within(await footer()).getByText("built with AI in Berlin");
-      if (width === 1280) expect(credit).not.toHaveClass("sr-only");
-      else expect(credit).toHaveClass("sr-only");
-      view.unmount();
-    }
-
-    window.innerWidth = 375;
-    const user = userEvent.setup();
-    const { container } = renderAt("/doctor");
-    const bar = await footer();
-    expect(await within(bar).findByText(/^v0\.4\.0$/)).toBeInTheDocument();
-    expect(within(bar).getByText("built with AI in Berlin")).toHaveClass("sr-only");
-    expect(await within(bar).findByRole("button", { name: /^\d{2}:\d{2}:\d{2}$|World Clock/ })).toBeInTheDocument();
-    expect(within(bar).queryByText("Daemon running · next tick 20:45")).not.toBeInTheDocument();
-    await user.click(within(bar).getByRole("button", { name: "More status items" }));
-    expect(await within(bar).findByText("Daemon running · next tick 20:45")).toBeInTheDocument();
-    expect(within(bar).getByText("No calendar connected")).toBeInTheDocument();
-    await expectAccessible(container);
+describe("Mounted footer measurements", () => {
+  afterEach(() => vi.restoreAllMocks());
+  it("keeps the mounted durable Heinzel control visible alongside resources and health at 375px", async () => {
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (this: Element) {
+      const id = this.getAttribute("data-footer-content");
+      const widths: Record<string, number> = {
+        "@version": 56,
+        "@resources": 120,
+        "@heinzels": 24,
+        "@health": 24,
+        "@clock": 80,
+        "@meeting": 24,
+        "@more": 24,
+      };
+      let width = this.tagName === "FOOTER" ? 375 : id ? (widths[id] ?? 24) : 0;
+      if (id === "@credit")
+        width =
+          this.querySelector<HTMLElement>("[data-footer-credit-text]")?.parentElement?.style.width === "0px" ? 0 : 150;
+      if (this.hasAttribute("data-footer-credit-text")) width = 150;
+      return new DOMRect(0, 0, width, 24);
+    });
+    mockApi({
+      ...answers,
+      "/api/system/ui/status": [
+        {
+          id: "system:daemon",
+          module: "system",
+          plugin: null,
+          order: 1,
+          refresh: 60,
+          problem: null,
+          slots: { footer: true },
+          item: { text: "Daemon running", tone: "ok", icon: "bot" },
+        },
+      ],
+      "/api/heinzel/sessions": { sessions: [] },
+    });
+    renderAt("/doctor");
+    const footer = await screen.findByRole("contentinfo");
+    expect(await within(footer).findByRole("button", { name: "Daemon running, OK" })).toBeInTheDocument();
+    expect(within(footer).getByRole("button", { name: /CPU Memory Load/ })).toBeInTheDocument();
+    expect(within(footer).getByRole("button", { name: /System health/ })).toBeInTheDocument();
+    expect(within(footer).getByRole("button", { name: "0 Heinzelmännchen, off" })).toBeInTheDocument();
+    expect(within(footer).queryByRole("button", { name: "More status items" })).not.toBeInTheDocument();
+    expect(footer.textContent).not.toContain("🐻");
+    expect(footer.querySelector('[data-footer-part="@version"]')).toBe(footer.firstElementChild);
   });
 });
 
@@ -227,8 +219,11 @@ describe("Footer items are icons with a state and a pane", () => {
     const pane = await screen.findByRole("region", { name: "v0.4.0" });
     const about = within(pane).getByRole("region", { name: "About Heinzelmännchen" });
     expect(within(about).getByRole("img", { name: "Heinzelmännchen" })).toBeInTheDocument();
-    expect(within(about).getByText("helpers accelerating product teams")).toBeInTheDocument();
-    expect(within(about).getByText("working in the background like the elves from Cologne.")).toBeInTheDocument();
+    const tagline = within(about).getByText("helpers accelerating product teams,");
+    const origin = within(about).getByText("like the little elves from Cologne");
+    expect(tagline.nextElementSibling).toBe(origin);
+    expect(tagline).toHaveClass("block");
+    expect(origin).toHaveClass("block");
     expect(within(about).getByText("built with AI in Berlin")).toBeInTheDocument();
     expect(await within(pane).findByText("Something new")).toBeInTheDocument();
     expect(within(pane).getByRole("link", { name: "Release notes on GitHub" })).toHaveAttribute(

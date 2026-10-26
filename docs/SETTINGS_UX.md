@@ -40,6 +40,30 @@ These are the rules a reviewer applies to every setting. The mechanical ones are
 11. **Errors say how to fix them, where they happen.** A value that doesn't validate is refused under the setting,
     with what would be accepted.
 12. **Search finds settings by what they are called and what they do**, not only by their key.
+13. **Installed providers own their navigation.** Read `system.ui.navigation` for the provider's title, checked
+    semantic icon, settings prefixes and sidebar effect. Uninstalled or disabled providers contribute no entry;
+    leftover configuration alone must not create one. A new plugin needs no core routing/name/icon table. Generic
+    legacy settings metadata stays on an existing host page when that page already owns the section. Each provider
+    page offers the placement switches for that declaring module.
+14. **Only claim provenance the application knows.** First-party and catalog-confirmed Contrib/private sources can
+    be named. When the catalog or plugin detail has not loaded, say "Plugin" and omit an unknown version rather than
+    showing the core version or inferring "Private".
+15. **Private actions use the shared JSON wire.** A contribution forwards its server-built flat parameter object as
+    a JSON request body, including validated nested values. Sensitive parameters never fall back to query strings.
+
+## Navigation acceptance checks
+
+- Without the clock provider installed, Settings has no World Clock entry. Old clock configuration does not create
+  a blank page.
+- An arbitrary installed provider can declare its own settings title/icon and a sidebar route. Full and collapsed
+  navigation use the same declaration; disabling/removing it removes both entries after the runtime refresh.
+- A provider's settings controls and all of its declared placements appear together. The app does not choose a
+  provider by a hardcoded display name.
+- Existing host settings remain in their conceptual groups when generic legacy metadata is returned.
+- At narrow widths, the same declared pages remain available in a labelled native page selector. Search stays
+  visible and reachable by keyboard; selecting a page clears the current search.
+- A private contribution mutation is confirmed first, then sends the same validated JSON shape as a direct private
+  operation. Its parameters do not appear in the URL.
 
 ## The schema keys Settings reads
 

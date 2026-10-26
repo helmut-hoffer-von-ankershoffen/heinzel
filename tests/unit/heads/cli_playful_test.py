@@ -6,6 +6,7 @@ from rich.console import Console
 from rich.style import Style
 
 from heinzel import Settings
+from heinzel.heads import cli
 from heinzel.heads.cli import _banner, _playful
 from heinzel.heads.cli._art_data import BUST, PALETTE, SWARM
 from heinzel.heads.cli._progress import ConsoleProgress
@@ -102,6 +103,19 @@ def test_banner_prints_nothing_without_a_terminal(capsys: pytest.CaptureFixture[
 
     _banner(Kernel())  # type: ignore[arg-type]
     assert not re.search("[▀▄█]", capsys.readouterr().out)
+
+
+def test_real_banner_uses_the_exact_two_line_tagline(make_kernel, monkeypatch: pytest.MonkeyPatch):
+    console = tty()
+    monkeypatch.setattr(cli, "console", console)
+    monkeypatch.setattr("sys.argv", ["hz"])
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    _banner(make_kernel())
+    lines = console.export_text().splitlines()
+    first = next(index for index, line in enumerate(lines) if "helpers accelerating" in line)
+    assert lines[first].endswith("helpers accelerating product teams,")
+    assert lines[first + 1].endswith("like the little elves from Cologne")
 
 
 def test_art_is_off_when_the_default_output_is_json():

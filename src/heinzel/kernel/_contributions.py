@@ -48,6 +48,11 @@ Icon = Literal[
     "circle-check",
     "clock",
     "cloud",
+    "cloud-drizzle",
+    "cloud-fog",
+    "cloud-lightning",
+    "cloud-rain",
+    "cloud-snow",
     "cloud-sun",
     "code",
     "file-text",
@@ -63,10 +68,12 @@ Icon = Literal[
     "play",
     "rocket",
     "star",
+    "sun",
     "terminal",
     "timer",
     "users",
     "video",
+    "wind",
     "zap",
 ]
 """The icons a contribution may name; the web app maps each to its own icon, and only these."""
@@ -373,6 +380,32 @@ class DetailLine(_Data):
     tone: Tone = Field(default="neutral", description="`ok` shows it as good, `warn` and `bad` as needing attention.")
 
 
+class ToggleControl(_Data):
+    """A provider-owned toggle whose deliberate change authorizes exactly one server-resolved operation."""
+
+    label: Text = Field(description="The action the person enables or disables.")
+    checked: StrictBool = Field(description="Actual verified state, never an optimistic requested value.")
+    requested: StrictBool | None = Field(
+        default=None, description="The requested state when it differs from verified readiness; never a success claim."
+    )
+    enable: RunOperation = Field(description="The declaring module's operation that enables the feature.")
+    disable: RunOperation = Field(description="The declaring module's operation that disables the feature.")
+    url: Link | None = Field(default=None, description="Optional nonsecret link shown alongside the toggle.")
+    apply_settings: dict[
+        Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$", max_length=200)], JsonArgument
+    ] = Field(
+        default_factory=dict,
+        max_length=16,
+        description="Loaded settings that must match after the existing restart/apply flow, keyed as section.key. "
+        "These are verification expectations, never permission to edit arbitrary settings.",
+    )
+    sign_in_url: Link | None = Field(
+        default=None,
+        description="Computed by the host only: a ready URL whose exact origin is explicitly allowed. "
+        "Copying a sign-in fragment still requires a separate owner gesture and a session credential.",
+    )
+
+
 class StatusItem(_Data):
     """A short item of the status bar: text, an optional live time after it, detail on hover, a click."""
 
@@ -384,6 +417,9 @@ class StatusItem(_Data):
         default_factory=list[DetailLine], max_length=MAX_DETAIL, description="Up to eight lines shown on hover."
     )
     effect: Effect | None = Field(default=None, description="What a click does.")
+    toggle: ToggleControl | None = Field(
+        default=None, description="Optional explicit service control inside its popover."
+    )
     actions: list[WidgetAction] = Field(
         default_factory=list[WidgetAction],
         max_length=MAX_ITEM_ACTIONS,
@@ -414,6 +450,7 @@ class CardWidget(_Data):
     title: Text = Field(description="Its title, one line.")
     body: Body | None = Field(default=None, description="Up to 280 characters under the title.")
     tone: Tone = Field(default="neutral", description="How it reads: neutral, ok, warn or bad.")
+    icon: Icon | None = Field(default=None, description="An icon beside the title.")
     actions: list[WidgetAction] = Field(
         default_factory=list[WidgetAction], max_length=MAX_ACTIONS, description="Up to three buttons."
     )

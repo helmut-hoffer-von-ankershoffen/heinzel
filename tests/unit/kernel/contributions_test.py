@@ -126,8 +126,9 @@ def test_text_is_cleaned_to_one_line_and_limited():
         StatusItem(text="x" * 81)
     with pytest.raises(ValidationError, match="at least 1"):
         StatusItem(text="\u200b")
-    card = CardWidget(title="Review", body="line one\n\n  line   two  ")
+    card = CardWidget(title="Review", body="line one\n\n  line   two  ", icon="cloud-rain")
     assert card.body == "line one\n\nline two"
+    assert card.icon == "cloud-rain"
 
 
 def test_unknown_keys_icons_and_tones_are_refused():

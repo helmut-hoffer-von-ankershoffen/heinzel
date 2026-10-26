@@ -1,5 +1,6 @@
 ---
 status: accepted
+amended-by: 0084
 date: 2026-10-24
 decision-makers: maintainer
 supersedes: 0033, 0034

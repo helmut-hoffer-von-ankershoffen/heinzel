@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { doctor, expert, noTeam, profile, shell } from "@/test/fixtures";
@@ -12,6 +12,29 @@ const answers = {
 };
 
 describe("Shell", () => {
+  it("keeps one mounted footer and its focus when the side panel moves below and back", async () => {
+    mockApi({ ...answers, "/api/system/info": { version: "0.7.12", modules: [] } });
+    const initialWidth = window.innerWidth;
+    try {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: 1440 });
+      renderAt("/doctor");
+      const version = await screen.findByRole("button", { name: /^v\d/ });
+      const footer = screen.getByRole("contentinfo");
+      version.focus();
+      for (const width of [640, 1440]) {
+        await act(() => {
+          Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+          window.dispatchEvent(new Event("resize"));
+        });
+        expect(screen.getByRole("contentinfo")).toBe(footer);
+        expect(screen.getByRole("button", { name: /^v\d/ })).toBe(version);
+        expect(version).toHaveFocus();
+      }
+    } finally {
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: initialWidth });
+    }
+  });
+
   it("has the three landmarks, a skip link and every section in the navigation tree in expert mode", async () => {
     mockApi({ ...answers, "/api/system/expert": expert });
     const { container } = renderAt("/doctor"); // Home is the chat itself, so it has no chat sidebar

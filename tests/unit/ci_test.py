@@ -38,6 +38,16 @@ NOT_MAKE = {  # workflow: {start of the step's command: why}
         "tar -xzf notifier.tar.gz": "unpacks Heinzel Notifier into the package before the wheel is built",
         "unzip -l ": "asserts that the released wheel ships Heinzel Notifier",
     },
+    "pypi.yml": {
+        '[[ "$TAG" =~': "binds publishing to the exact tag and main ancestry before build tooling",
+        "gh api ": "verifies the published GitHub release and exports its exact source commit",
+        "uv run --script scripts/check_confidentiality.py --require": "requires the configured release term list",
+        "tar -czf notifier.tar.gz": "preserves the notifier executable bits and signature across runners",
+        "tar -xzf notifier.tar.gz": "restores the notifier from the same validated tag",
+        "uv build --package heinzel": "builds only the registered core project, never unpublished workspace plugins",
+        "uv run --script scripts/pypi_release.py artifacts": "checks core metadata and complete packaged payloads",
+        "python3 - <<'PY'": "rechecks hashes without checking out or running project code in the OIDC job",
+    },
     "prepare-release.yml": {
         'if [[ ! "$INTRO"': "rejects blank dispatch input before checkout or release work",
         "git config user.name": "opens the release pull request as the bot and hands its tag to the next step",

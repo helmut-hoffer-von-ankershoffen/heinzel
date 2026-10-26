@@ -30,6 +30,7 @@ dependencies = [
     "packaging>=25.0",
     "platformdirs>=4.5",
     "pluggy>=1.6.0,<2",
+    "psutil==7.2.2",
     "pydantic>=2.12.0,<3",
     "pydantic-ai-slim==2.61.0",
     "pydantic-settings>=2.11.0,<3",
@@ -68,6 +69,7 @@ test = [
     "heinzel-clock>=0.7.12",
     "heinzel-github>=0.7.12",
     "heinzel-google>=0.7.12",
+    "heinzel-tailscale>=0.7.12",
     "heinzel-zoom>=0.7.12",
     "coverage>=7.12",
     "httpx>=0.28",
@@ -79,6 +81,7 @@ test = [
     "pytest>=9.0.3,<10",
     "pytest-timeout>=2.4.0,<3",
     "pytest-xdist>=3.8",
+    "types-psutil>=7.2.2.20260906",
 ]
 # Fuzzing the contract parser (`make fuzz`, weekly in CI); atheris has wheels for x86_64 Linux, Python 3.12 to 3.14.
 fuzz = ["atheris>=3.1; sys_platform == 'linux' and platform_machine == 'x86_64' and python_version < '3.15'"]
@@ -140,6 +143,7 @@ heinzel-atlassian = { workspace = true }
 heinzel-clock = { workspace = true }
 heinzel-github = { workspace = true }
 heinzel-google = { workspace = true }
+heinzel-tailscale = { workspace = true }
 heinzel-zoom = { workspace = true }
 
 [tool.ruff]
@@ -210,7 +214,7 @@ docstring-code-format = true
 
 [tool.mypy]
 strict = true
-mypy_path = ["src", "plugins/heinzel-atlassian/src", "plugins/heinzel-clock/src", "plugins/heinzel-github/src", "plugins/heinzel-google/src", "plugins/heinzel-zoom/src"]
+mypy_path = ["src", "plugins/heinzel-atlassian/src", "plugins/heinzel-clock/src", "plugins/heinzel-github/src", "plugins/heinzel-google/src", "plugins/heinzel-tailscale/src", "plugins/heinzel-zoom/src"]
 warn_unreachable = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 plugins = ["pydantic.mypy"]
@@ -246,7 +250,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
+source = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
 branch = true
 relative_files = true
 # make test runs the suite on xdist workers: subprocesses, measured through coverage's .pth hook into a data file each
@@ -363,6 +367,21 @@ search = "\"heinzel-atlassian>={current_version}\""
 replace = "\"heinzel-atlassian>={new_version}\""
 
 [[tool.bumpversion.files]]
+filename = "plugins/heinzel-tailscale/pyproject.toml"
+search = "name = \"heinzel-tailscale\"\nversion = \"{current_version}\""
+replace = "name = \"heinzel-tailscale\"\nversion = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "plugins/heinzel-tailscale/pyproject.toml"
+search = "\"heinzel>={current_version}\""
+replace = "\"heinzel>={new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = "\"heinzel-tailscale>={current_version}\""
+replace = "\"heinzel-tailscale>={new_version}\""
+
+[[tool.bumpversion.files]]
 filename = "agent-skills/.claude-plugin/plugin.json"
 search = "\"version\": \"{current_version}\""
 replace = "\"version\": \"{new_version}\""
@@ -446,13 +465,13 @@ intoto = "intoto" # in-toto attestations, as in provenance.intoto.jsonl
 extend-exclude = ["ATTRIBUTIONS.md", "site"] # third-party license texts, quoted as their authors wrote them; the built site
 
 [tool.importlinter]
-root_packages = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
+root_packages = ["heinzel", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
 include_external_packages = true # so contracts can forbid a head's toolkit
 
 [[tool.importlinter.contracts]]
 name = "Modules never import a head's toolkit: they return results, heads present them"
 type = "forbidden"
-source_modules = ["heinzel.modules", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
+source_modules = ["heinzel.modules", "heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
 forbidden_modules = ["typer", "fastapi", "mcp", "uvicorn"]
 
 [[tool.importlinter.contracts]]
@@ -498,6 +517,7 @@ modules = [
     "heinzel.modules.system.layer",
     "heinzel.modules.system.notify",
     "heinzel.modules.system.plugin",
+    "heinzel.modules.system.resource",
     "heinzel.modules.system.runner",
     "heinzel.modules.system.skill",
     "heinzel.modules.system.sound",
@@ -525,20 +545,20 @@ allow_indirect_imports = true # going through heinzel.kernel's public API is the
 [[tool.importlinter.contracts]]
 name = "First-party plugins use only the public API, like any plugin"
 type = "forbidden"
-source_modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
+source_modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
 forbidden_modules = ["heinzel.heads", "heinzel.modules", "heinzel.kernel._boot", "heinzel.kernel._kernel", "heinzel.kernel._module"]
 allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 name = "First-party plugins are independent of each other, like separate repositories"
 type = "independence"
-modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
+modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
 
 [[tool.importlinter.contracts]]
 name = "The core imports no plugin: first-party plugins are installed on request, never by default (ADR 0017, 0028)"
 type = "forbidden"
 source_modules = ["heinzel"]
-forbidden_modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_zoom"]
+forbidden_modules = ["heinzel_atlassian", "heinzel_clock", "heinzel_github", "heinzel_google", "heinzel_tailscale", "heinzel_zoom"]
 
 [[tool.importlinter.contracts]]
 name = "Heads only know what the kernel discovered"

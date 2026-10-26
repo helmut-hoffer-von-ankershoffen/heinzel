@@ -87,8 +87,21 @@ def test_sound_is_off_by_default_and_the_list_shows_off_the_core_streams_and_eac
     code, listed = hz(kernel("heinzel_sound_demo"), "system", "sound", "list")
     assert code == 0, listed
     assert (listed["selected"], listed["effective"]) == ("off", "off")
-    off, fm, focus, demo = listed["soundscapes"]
+    off, ceo, fm, focus, demo = listed["soundscapes"]
     assert (off["name"], off["kind"], off["selected"], off["effective"]) == ("off", "off", True, True)
+    assert (ceo["name"], ceo["title"], ceo["module"], ceo["plugin"]) == (
+        "ceo-mode",
+        "CEO mode",
+        "system.sound",
+        "heinzel",
+    )
+    assert ceo["stream"] == {
+        "provider": "youtube",
+        "video": "q770AP07Xqw",
+        "embed_url": "https://www.youtube-nocookie.com/embed/q770AP07Xqw",
+        "frame_origin": "https://www.youtube-nocookie.com",
+        "watch_url": "https://www.youtube.com/watch?v=q770AP07Xqw",
+    }
     assert (fm["name"], fm["title"], fm["module"], fm["plugin"]) == (
         "claude-fm",
         "Claude FM",
@@ -118,7 +131,7 @@ def test_sound_is_off_by_default_and_the_list_shows_off_the_core_streams_and_eac
     assert listed["signals"]["daypart"] in {"dawn", "morning", "day", "dusk", "evening", "night"}
     assert "weather.rain" not in listed["signals"]  # absent until a plugin publishes it
     assert (listed["volume"], listed["follow_theme"], listed["mute_in_meetings"]) == (50, False, True)
-    assert listed["next"] == ["hz system sound use claude-fm"]
+    assert listed["next"] == ["hz system sound use ceo-mode"]
 
 
 def test_sound_use_writes_the_user_setting_refuses_an_unknown_name_and_off_switches_it_off(kernel):
@@ -129,7 +142,9 @@ def test_sound_use_writes_the_user_setting_refuses_an_unknown_name_and_off_switc
     assert '[system.sound]\nname = "claude-fm"' in (user_config_dir() / "config.toml").read_text(encoding="utf-8")
     code, output = hz(hzk, "system", "sound", "use", "nope", json_output=False)
     assert code != 0
-    assert "No soundscape is called 'nope'; available: off, claude-fm, focus, demo" in " ".join(str(output).split())
+    assert "No soundscape is called 'nope'; available: off, ceo-mode, claude-fm, focus, demo" in " ".join(
+        str(output).split()
+    )
     assert hz(hzk, "system", "sound", "use", "off")[1]["effective"] == "off"
 
 
@@ -171,6 +186,17 @@ def test_follow_my_theme_plays_the_soundscape_that_pairs_with_the_theme_in_effec
     assert (listed["selected"], listed["effective"]) == ("claude-fm", "demo")
     assert "The theme 'acme' brings its own soundscape, 'demo'" in listed["note"]
     assert [s["name"] for s in listed["soundscapes"] if s["effective"]] == ["demo"]
+
+
+@pytest.mark.parametrize("name", ["claude-fm", "demo", "off"])
+def test_manual_soundscape_choice_turns_off_theme_following(kernel, name):
+    hzk = kernel()
+    configure('[system.theme]\nname = "acme"\n[system.sound]\nname = "claude-fm"\nfollow_theme = true\n')
+    assert hz(hzk, "system", "sound", "list")[1]["effective"] == "demo"
+    selected = hz(hzk, "system", "sound", "use", name)[1]
+    assert (selected["selected"], selected["effective"], selected["follow_theme"]) == (name, name, False)
+    reloaded = hz(kernel(), "system", "sound", "list")[1]
+    assert (reloaded["selected"], reloaded["effective"], reloaded["follow_theme"]) == (name, name, False)
 
 
 def test_of_several_soundscapes_paired_with_one_theme_in_one_layer_the_first_by_name_wins(kernel):
@@ -245,6 +271,7 @@ def test_the_cli_renders_the_soundscapes_with_the_one_in_effect_marked(kernel):
     assert "*  off" in str(output)
     lines = [" ".join(line.split()) for line in str(output).splitlines()]
     assert any("claude-fm Claude FM stream (youtube)" in line for line in lines)
+    assert any("ceo-mode CEO mode stream (youtube)" in line for line in lines)
     assert any("demo Demo hum 1 layer" in line for line in lines)
 
 

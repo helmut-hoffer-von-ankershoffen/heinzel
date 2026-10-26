@@ -252,6 +252,15 @@ def _merge(target: dict[str, Any], source: Mapping[str, Any]) -> None:
             target[key] = incoming if incoming is not None else value
 
 
+@dataclass(frozen=True, slots=True)
+class ConfigListChange:
+    """A string-list write and its actual membership changes, observed under one configuration lock."""
+
+    values: tuple[str, ...]
+    added: frozenset[str]
+    removed: frozenset[str]
+
+
 class ConfigEditor:
     """Changes configuration files the way `hz system config set` does; provided by `system.config` (ADR 0032).
 
@@ -264,6 +273,21 @@ class ConfigEditor:
 
         Raises:
             HeinzelError: If the key is unknown or the value is invalid for it.
+        """
+        raise NotImplementedError
+
+    def change_list(
+        self,
+        key: str,
+        *,
+        add: tuple[str, ...] = (),
+        remove: tuple[str, ...] = (),
+        scope: WritableScope = "user",
+    ) -> ConfigListChange:
+        """Atomically merge/remove entries and report actual insertions without claiming pre-existing values.
+
+        Raises:
+            HeinzelError: If the setting is not a writable string collection or a higher-priority source controls it.
         """
         raise NotImplementedError
 

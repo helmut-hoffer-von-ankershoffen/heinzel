@@ -5,6 +5,7 @@ import { type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useR
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
+import { useThemes } from "@/api/queries";
 import { t } from "@/i18n";
 import { Switch } from "@/layout/SettingControls";
 import { cn } from "@/lib/utils";
@@ -32,11 +33,30 @@ function detail(soundscape: SchemaSoundscapeView): string | null {
 /** Off, Claude FM and the plugins' soundscapes, the configured one checked, as a group of radios. */
 export function SoundChoices({ list, onPicked }: { list: SchemaSoundList; onPicked?: () => void }) {
   const choose = useSetSound();
+  const themes = useThemes().data?.themes ?? [];
   return (
     <div role="radiogroup" aria-label={t("sound.title")} className="flex flex-col gap-0.5">
       {list.soundscapes.map((soundscape) => {
-        const checked = soundscape.name === list.selected;
-        const about = detail(soundscape);
+        const checked = soundscape.name === list.effective;
+        const themeTitles = themes
+          .filter(
+            (theme) =>
+              theme.plugin === soundscape.plugin &&
+              theme.plugin !== null &&
+              soundscape.pairs_with?.includes(theme.name),
+          )
+          .map((theme) => theme.title);
+        const origin =
+          soundscape.kind === "off"
+            ? null
+            : soundscape.plugin === "heinzel"
+              ? t("sound.builtIn")
+              : themeTitles.length
+                ? t("sound.fromTheme", { theme: themeTitles.join(", ") })
+                : soundscape.plugin
+                  ? t("sound.fromPlugin", { plugin: soundscape.plugin })
+                  : null;
+        const about = [origin, detail(soundscape)].filter(Boolean).join(" · ");
         return (
           // biome-ignore lint/a11y/useSemanticElements: a list of choices, announced as the radios of its group
           <button
@@ -46,7 +66,7 @@ export function SoundChoices({ list, onPicked }: { list: SchemaSoundList; onPick
             aria-checked={checked}
             disabled={choose.isPending}
             onClick={() => {
-              if (!checked) choose.mutate(soundscape.name);
+              if (!checked || list.follow_theme) choose.mutate(soundscape.name);
               onPicked?.();
             }}
             className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-ui hover:bg-accent disabled:opacity-50"

@@ -2,14 +2,13 @@
 // SETTINGS_UX.md), not by the module that declares it. Preferences are how the app looks and tells you things;
 // Customize is the AI, the tools it connects to, plugins and skills; Organisation is you and your team; This computer
 // is the daemon, the files, what comes from Claude and updates. A module gets its own entry only where it adds a page
-// of its own (World Clock); a plugin module hz doesn't know gets one under Preferences.
+// of its own; installed providers declare their own pages and semantic icons.
 import {
   Bell,
-  BookOpen,
   Cpu,
   Download,
   FileCog,
-  Globe,
+  KeyRound,
   type LucideIcon,
   Palette,
   Plug,
@@ -21,7 +20,8 @@ import {
   Users,
   WandSparkles,
 } from "lucide-react";
-import type { SchemaPluginInfo } from "@/api/client";
+import type { SchemaNavEntry, SchemaPluginInfo } from "@/api/client";
+import { ICONS } from "@/components/Contributions";
 
 export const FILES = "files";
 export const FROM_CLAUDE_PAGE = "from-claude";
@@ -35,7 +35,7 @@ export const BINDINGS = "capabilities";
 /** `system.runner` → `system`: the left side lists modules; their sub-sections are headings on the right. */
 export const group = (section: string) => section.split(".")[0] ?? section;
 
-const BRANDS: Record<string, string> = { github: "GitHub", gitlab: "GitLab", hz: "hz", clock: "World Clock" };
+const BRANDS: Record<string, string> = { github: "GitHub", gitlab: "GitLab", hz: "hz" };
 /** Words written in capitals wherever they appear in a name: `ai access` → `AI access`, never `Ai access`. */
 const ACRONYMS: Record<string, string> = {
   ai: "AI",
@@ -87,6 +87,8 @@ export type Page = {
   /** Words that find the page by what is on it, besides its settings (search finds every setting, schema or not). */
   keywords?: string;
   plugin?: SchemaPluginInfo;
+  module?: string;
+  provider?: string | null;
 };
 
 export const PAGES: Page[] = [
@@ -97,14 +99,6 @@ export const PAGES: Page[] = [
     heading: "preferences",
     owns: ["system.theme", "system.sound"],
     keywords: "mode light dark system theme colours sound volume expert mode",
-  },
-  {
-    id: CLOCK_SETTINGS,
-    title: "World Clock",
-    icon: Globe,
-    heading: "preferences",
-    owns: ["clock"],
-    keywords: "time zones working hours",
   },
   {
     id: "notifications",
@@ -149,12 +143,20 @@ export const PAGES: Page[] = [
     keywords: "repository organisation",
   },
   {
+    id: "credentials",
+    title: "Credentials",
+    icon: KeyRound,
+    heading: "computer",
+    owns: ["system.credential"],
+    keywords: "credentials secrets keychain tokens",
+  },
+  {
     id: "daemon",
     title: "Daemon",
     icon: Server,
     heading: "computer",
-    owns: ["system.daemon", "system.credential"],
-    keywords: "background keychain",
+    owns: ["system.daemon"],
+    keywords: "background service",
   },
   {
     id: FILES,
@@ -213,29 +215,39 @@ export function resolvePage(id: string | null | undefined, pages: Page[]): strin
 }
 
 /** Sorts the setting groups into pages, Connectors by the plugin that provides each module. */
-export function settingsNav(groups: string[], plugins: SchemaPluginInfo[]): SettingsNav {
+export function settingsNav(
+  groups: string[],
+  plugins: SchemaPluginInfo[],
+  navigation: SchemaNavEntry[] = [],
+): SettingsNav {
   const owner = new Map<string, SchemaPluginInfo>();
   for (const plugin of plugins) for (const module of plugin.modules) owner.set(group(module), plugin);
   const connects = (plugin: SchemaPluginInfo | undefined) => (plugin?.capabilities ?? []).length > 0;
   const of = (plugin: SchemaPluginInfo) => groups.filter((name) => owner.get(name) === plugin);
   const byTitle = (a: SettingsEntry, b: SettingsEntry) => a.title.localeCompare(b.title);
-  const known = PAGES.some.bind(PAGES);
-  // A plugin module no page owns (a theme or anything new) gets its own entry under Preferences, with an icon by kind.
-  const extra: Page[] = groups
-    .filter((name) => name !== BINDINGS && !connects(owner.get(name)) && !known((page) => owns(page, name)))
-    .map((name) => {
-      const plugin = owner.get(name);
-      const icon = plugin?.kinds?.includes("theme") ? Palette : plugin?.kinds?.includes("playbook") ? BookOpen : Puzzle;
-      return {
-        id: name,
-        title: displayName(name, plugin?.summary),
-        icon,
-        heading: "preferences" as const,
-        owns: [],
+  const extra: Page[] = navigation.flatMap((entry) => {
+    if (!entry.settings || entry.problem) return [];
+    const plugin = plugins.find((item) => item.distribution === entry.plugin || item.name === entry.plugin);
+    if (plugin && (!plugin.enabled || plugin.error)) return [];
+    // Legacy provider metadata must not move host settings out of their existing conceptual pages.
+    if (
+      !entry.declared &&
+      (connects(plugin) || entry.settings.sections.every((section) => PAGES.some((page) => owns(page, section))))
+    )
+      return [];
+    return [
+      {
+        id: entry.id,
+        title: entry.title,
+        icon: ICONS[entry.icon],
+        heading: entry.settings.group,
+        owns: entry.settings.sections,
         plugin,
-      };
-    })
-    .sort(byTitle);
+        module: entry.module,
+        provider: entry.plugin,
+      },
+    ];
+  });
   const pages = [...PAGES, ...extra].map((page) => ({ ...page, plugin: page.plugin ?? pluginOfPage(page, owner) }));
   return {
     pages,
@@ -245,7 +257,7 @@ export function settingsNav(groups: string[], plugins: SchemaPluginInfo[]): Sett
         id: plugin.name,
         title: displayName(plugin.name, plugin.summary),
         plugin,
-        groups: of(plugin),
+        groups: of(plugin).filter((section) => !extra.some((page) => owns(page, section))),
       }))
       .sort(byTitle),
   };

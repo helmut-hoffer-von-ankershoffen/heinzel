@@ -6,7 +6,7 @@
 [![CodeQL](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml/badge.svg)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/helmut-hoffer-von-ankershoffen/heinzel/badge)](https://scorecard.dev/viewer/?uri=github.com/helmut-hoffer-von-ankershoffen/heinzel)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15863/badge)](https://www.bestpractices.dev/en/projects/15863/passing)
-[![Release](https://img.shields.io/github/v/release/helmut-hoffer-von-ankershoffen/heinzel?sort=semver)](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases)
+[![PyPI](https://img.shields.io/pypi/v/heinzel)](https://pypi.org/project/heinzel/)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14%20%7C%203.15-blue)](pyproject.toml)
 [![Types: mypy + pyright strict](https://img.shields.io/badge/types-mypy%20%2B%20pyright%20strict-blue)](docs/CODING_STANDARDS.md#python)
 [![Tooling: Ruff + uv](https://img.shields.io/badge/tooling-Ruff%20%2B%20uv-261230?logo=ruff&logoColor=d7ff64)](https://astral.sh)
@@ -194,13 +194,15 @@ rights; `hz system daemon pause` and `uninstall` stop them (see [SECURITY.md](SE
 - [`system.notify`](docs/MODULES.md#systemnotify) — Pop up what deserves your attention: in the web app while it is open, else natively.
 - [`system.plugin`](docs/MODULES.md#systemplugin) — Find, add, remove, enable, disable, list and scaffold plugins.
 - [`system.plugin.docs`](docs/MODULES.md#systemplugindocs) — Document installed plugins: what each brings, as a model and as Markdown pages.
+- [`system.resource`](docs/MODULES.md#systemresource) — Show this computer's CPU, memory and load.
 - [`system.runner`](docs/MODULES.md#systemrunner) — Run bounded agent sessions with Claude Code or a configured command.
 - [`system.runner.chat`](docs/MODULES.md#systemrunnerchat) — Chat with the agent runner about where you are; it acts through hz once you confirm.
 - [`system.skill`](docs/MODULES.md#systemskill) — List the skills plugins ship for AI, and hand chosen ones to Claude Code.
-- [`system.sound`](docs/MODULES.md#systemsound) — Pick the web app's soundscape: off, Claude FM or one a plugin offers.
+- [`system.sound`](docs/MODULES.md#systemsound) — Pick the web app's soundscape: off, a built-in one or one a plugin offers.
 - [`system.state`](docs/MODULES.md#systemstate) — Note how hz is used on this machine and push it to your own state repository.
 - [`system.theme`](docs/MODULES.md#systemtheme) — Pick how the web app looks: the built-in theme or one a plugin offers.
 - [`system.ui`](docs/MODULES.md#systemui) — List what modules add to the web app: status items, header actions and Today widgets.
+- [`tailscale`](docs/MODULES.md#tailscale) — Private web sharing through Tailscale Serve. *First-party plugin: `hz system plugin add tailscale --confirm`.*
 - [`team`](docs/MODULES.md#team) — Your team's repository: create one (`hz team new`), join one by its URL (`hz team join`), add people to it.
 - [`zoom`](docs/MODULES.md#zoom) — Read meetings from Zoom's meeting-summary emails: the meetings capability. *First-party plugin: `hz system plugin add zoom --confirm`.*
 <!-- modules:end -->

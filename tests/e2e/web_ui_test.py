@@ -158,6 +158,12 @@ def test_hz_ui_opens_the_app_and_it_shows_the_doctor_report(environment, tmp_pat
     assert splash["dark"] == {"line": "Connecting to hz…", "background": "rgb(24, 24, 24)", "gone": True}
     assert "hz isn't answering" in splash["error"]
     assert "hz ui" in splash["error"]
+    assert result["navigation"] == {
+        "providerSettings": True,
+        "compactSettings": True,
+        "privateJsonParity": True,
+        "removedProviderAbsent": True,
+    }
 
 
 @pytest.mark.timeout(600)
@@ -182,3 +188,116 @@ def test_theme_image_viewports_preserve_the_cap_hinge_in_actual_chromium(tmp_pat
     assert driven.returncode == 0, driven.stderr
     result = json.loads(driven.stdout.strip().splitlines()[-1])
     assert result == {"comparisons": 27, "reduced": True, "errors": []}
+
+
+@pytest.mark.timeout(600)
+def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(environment, tmp_path):
+    """Chromium mobile emulation checks responsive reachability; it is not a physical iPhone Safari test."""
+    env, _recorded = environment
+    if not web_build.current():
+        web_build.build()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", "chromium"],
+        cwd=REPO,
+        check=True,
+        timeout=600,
+        capture_output=True,
+    )
+    shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
+    ui = subprocess.Popen(
+        ["uv", "run", "hz", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+    )
+    try:
+        assert ui.stderr is not None
+        line = ""
+        for line in ui.stderr:
+            if "runs at" in line:
+                break
+        url = line.strip().rsplit(" ", 1)[-1]
+        assert url.startswith("http://127.0.0.1:")
+        assert "#token=" in url
+        driven = subprocess.run(
+            [*run, "exec", "node", "e2e/mobile-responsive.mjs", url, str(shots)],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=300,
+        )
+        assert driven.returncode == 0, driven.stderr
+        result = json.loads(driven.stdout.strip().splitlines()[-1])
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        if ui.stderr is not None:
+            ui.stderr.close()
+
+    assert result["evidence"] == "mobile/touch emulation; not physical iPhone Safari"
+    assert len(result["cases"]) == 4
+    assert {case["name"] for case in result["cases"]} == {
+        "narrow-portrait",
+        "wide-portrait",
+        "narrow-landscape",
+        "wide-landscape",
+    }
+
+
+@pytest.mark.timeout(600)
+def test_docked_media_stays_below_every_overlay_in_mounted_chromium(environment, tmp_path):
+    """A focused real-browser hit test of media against menus, status popovers and Settings."""
+    env, _recorded = environment
+    if not web_build.current():
+        web_build.build()
+    run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
+    subprocess.run(
+        [*run, "exec", "playwright-core", "install", "chromium"],
+        cwd=REPO,
+        check=True,
+        timeout=600,
+        capture_output=True,
+    )
+    shots = Path(os.environ.get("HZ_SCREENSHOTS", tmp_path / "screenshots"))
+    ui = subprocess.Popen(
+        ["uv", "run", "hz", "ui", "--port", "0"], cwd=REPO, env=env, stderr=subprocess.PIPE, text=True
+    )
+    try:
+        assert ui.stderr is not None
+        line = ""
+        for line in ui.stderr:
+            if "runs at" in line:
+                break
+        url = line.strip().rsplit(" ", 1)[-1]
+        assert url.startswith("http://127.0.0.1:")
+        assert "#token=" in url
+        driven = subprocess.run(
+            [*run, "exec", "node", "e2e/media-layers.mjs", url, str(shots)],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=180,
+        )
+        assert driven.returncode == 0, driven.stderr
+        result = json.loads(driven.stdout.strip().splitlines()[-1])
+    finally:
+        ui.terminate()
+        ui.wait(30)
+        if ui.stderr is not None:
+            ui.stderr.close()
+
+    assert len(result["panes"]) == 14
+    assert {
+        "docked-settings",
+        "docked-audio",
+        "docked-account",
+        "docked-clock",
+        "docked-daemon",
+        "docked-version",
+    } <= set(result["panes"])
+    assert result["sameFrame"] is True
+    assert result["playbackAdvanced"] is True
+    assert result["compactLayouts"][-2:] == [
+        {"width": 768, "bounded": True},
+        {"width": 390, "bounded": True},
+    ]

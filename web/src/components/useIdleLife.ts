@@ -20,6 +20,16 @@ export function motionAllowed(): boolean {
   return !reduced && document.visibilityState !== "hidden";
 }
 
+/** Pick a move without immediately repeating the previous one when another choice exists. */
+export function nextIdleMove(
+  moves: readonly IdleMove[],
+  previous: IdleMove | null,
+  random = Math.random,
+): IdleMove | null {
+  const choices = moves.length > 1 ? moves.filter((move) => move !== previous) : moves;
+  return choices[Math.floor(random() * choices.length)] ?? null;
+}
+
 /** The move being played, or null at rest. `moves` is what this view can show (a head has no hand to wave). */
 export function useIdleLife(enabled: boolean, moves: readonly IdleMove[] = IDLE_MOVES): IdleMove | null {
   const [move, setMove] = useState<IdleMove | null>(null);
@@ -27,6 +37,7 @@ export function useIdleLife(enabled: boolean, moves: readonly IdleMove[] = IDLE_
   useEffect(() => {
     if (!enabled) return;
     const choices = available.split(",") as IdleMove[];
+    let previous: IdleMove | null = null;
     let wait: ReturnType<typeof setTimeout> | undefined;
     let show: ReturnType<typeof setTimeout> | undefined;
     const stop = () => {
@@ -37,7 +48,8 @@ export function useIdleLife(enabled: boolean, moves: readonly IdleMove[] = IDLE_
     const schedule = () => {
       wait = setTimeout(
         () => {
-          setMove(choices[Math.floor(Math.random() * choices.length)] ?? null);
+          previous = nextIdleMove(choices, previous);
+          setMove(previous);
           show = setTimeout(() => setMove(null), IDLE_SHOW_MS);
           schedule();
         },

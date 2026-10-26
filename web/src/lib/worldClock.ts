@@ -67,3 +67,17 @@ export function nightPath(now: Date, phi: number, theta: number): string {
 }
 
 export const initialPhi = (point: Location) => -point[1] * RAD - Math.PI / 2;
+
+/** COBE's marker centre in percentages of its square canvas, with its default 0.05 elevation. */
+export function markerPosition(
+  location: Location,
+  phi: number,
+  theta: number,
+): { x: number; y: number; visible: boolean } {
+  const [x, y, z] = cameraPoint(worldPoint(location), phi, theta).map((value) => value * 0.85);
+  return {
+    x: 50 + (x ?? 0) * 50,
+    y: 50 - (y ?? 0) * 50,
+    visible: (z ?? 0) >= 0 || (x ?? 0) ** 2 + (y ?? 0) ** 2 >= 0.64,
+  };
+}

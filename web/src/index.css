@@ -205,6 +205,23 @@ body {
   }
 }
 
+/* The splash's looking glass searches gently while the server reconnects. */
+@media (prefers-reduced-motion: no-preference) {
+  .splash-search-glass {
+    transform-origin: 16px 16px;
+    animation: splash-search 2.8s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes splash-search {
+  from {
+    transform: rotate(-12deg) translate(-1px, 0);
+  }
+  to {
+    transform: rotate(12deg) translate(2px, -1px);
+  }
+}
+
 /* HeinzelAvatar's idle life (data-idle, set by useIdleLife; the scheduler also stays quiet under reduced motion): a
    blink, a hat tilt, a little wave, a glance, a tiny hop. Transforms on the existing parts, subtle by design. */
 @media (prefers-reduced-motion: no-preference) {
@@ -302,5 +319,34 @@ body {
   }
   40% {
     transform: translateY(-3px);
+  }
+}
+
+/* A complete repeated strip, never a wrapping pair of zones. Pause the whole strip while reading or focusing it. */
+.hz-zone-ticker {
+  overflow: hidden;
+  white-space: nowrap;
+}
+.hz-zone-track {
+  animation: hz-zone-scroll linear infinite;
+}
+.hz-zone-ticker:hover .hz-zone-track,
+.hz-zone-ticker:focus-within .hz-zone-track {
+  animation-play-state: paused;
+}
+@keyframes hz-zone-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hz-zone-ticker {
+    overflow-x: auto;
+  }
+  .hz-zone-track {
+    animation: none;
+  }
+  .hz-zone-copy {
+    display: none;
   }
 }

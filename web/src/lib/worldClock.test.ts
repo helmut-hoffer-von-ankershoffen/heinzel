@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { cameraPoint, initialPhi, nightPath, sunLocation, worldPoint, zoneLocation } from "./worldClock";
+import {
+  cameraPoint,
+  initialPhi,
+  markerPosition,
+  nightPath,
+  sunLocation,
+  worldPoint,
+  zoneLocation,
+} from "./worldClock";
 
 describe("World Clock geography", () => {
   it("finds configured IANA places and leaves non-geographic zones unmapped", () => {
@@ -22,5 +30,11 @@ describe("World Clock geography", () => {
     const now = new Date("2026-03-20T12:00:00Z");
     expect(nightPath(now, 0, 0)).not.toBe(nightPath(now, Math.PI, 0));
     expect(nightPath(now, 0, 0)).toContain("M");
+  });
+  it("projects the actual marker centre and refuses an occluded city on the back of the globe", () => {
+    const place: [number, number] = [52.5, 13.3667];
+    const phi = initialPhi(place);
+    expect(markerPosition(place, phi, 0.15)).toMatchObject({ x: expect.closeTo(50), visible: true });
+    expect(markerPosition(place, phi + Math.PI, 0.15).visible).toBe(false);
   });
 });

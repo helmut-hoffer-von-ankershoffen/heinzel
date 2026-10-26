@@ -46,3 +46,39 @@ def test_rejects_unknown_log_level(monkeypatch):
 def test_settings_are_immutable():
     with pytest.raises(ValidationError):
         load().log_level = "DEBUG"  # type: ignore[misc]
+
+
+def test_external_https_origins_are_canonical_and_user_only(monkeypatch):
+    monkeypatch.setenv("HZ_UI_ALLOWED_ORIGINS", "https://Workstation.Example:443/,https://workstation.example:9443")
+    settings = load()
+    assert settings.ui_allowed_origins == {"https://workstation.example", "https://workstation.example:9443"}
+    assert "ui_allowed_origins" in Settings.ignored_in_project
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://workstation.example",
+        "https://*.example",
+        "https://user:secret@workstation.example",
+        "https://workstation.example/path",
+        "https://workstation.example?query=1",
+        "https://workstation.example#part",
+        "https://workstation.example\\bad",
+        "https://workstation.example\n",
+        "https://workstation.example\x01",
+        "https://workstation.example:0",
+        "https://workstation.example:65536",
+        "https://",
+        "https://.",
+        "https://..",
+        "https://-bad.example",
+        "https://bad..example",
+        "null",
+        "https://workstation%2eexample",
+    ],
+)
+def test_external_https_origins_refuse_unsafe_or_non_origin_values(monkeypatch, origin):
+    monkeypatch.setenv("HZ_UI_ALLOWED_ORIGINS", origin)
+    with pytest.raises(ValidationError, match="ui_allowed_origins"):
+        load()

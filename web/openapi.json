@@ -349,6 +349,11 @@
               "circle-check",
               "clock",
               "cloud",
+              "cloud-drizzle",
+              "cloud-fog",
+              "cloud-lightning",
+              "cloud-rain",
+              "cloud-snow",
               "cloud-sun",
               "code",
               "file-text",
@@ -364,10 +369,12 @@
               "play",
               "rocket",
               "star",
+              "sun",
               "terminal",
               "timer",
               "users",
               "video",
+              "wind",
               "zap"
             ],
             "title": "Icon",
@@ -1678,6 +1685,58 @@
             ],
             "description": "Up to 280 characters under the title.",
             "title": "Body"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "activity",
+                  "alarm-clock",
+                  "bell",
+                  "bot",
+                  "calendar",
+                  "calendar-clock",
+                  "chart-line",
+                  "circle-alert",
+                  "circle-check",
+                  "clock",
+                  "cloud",
+                  "cloud-drizzle",
+                  "cloud-fog",
+                  "cloud-lightning",
+                  "cloud-rain",
+                  "cloud-snow",
+                  "cloud-sun",
+                  "code",
+                  "file-text",
+                  "git-pull-request",
+                  "globe",
+                  "heart",
+                  "inbox",
+                  "info",
+                  "link",
+                  "list-checks",
+                  "mail",
+                  "message-square",
+                  "play",
+                  "rocket",
+                  "star",
+                  "sun",
+                  "terminal",
+                  "timer",
+                  "users",
+                  "video",
+                  "wind",
+                  "zap"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "An icon beside the title.",
+            "title": "Icon"
           },
           "kind": {
             "const": "card",
@@ -4735,6 +4794,11 @@
                   "circle-check",
                   "clock",
                   "cloud",
+                  "cloud-drizzle",
+                  "cloud-fog",
+                  "cloud-lightning",
+                  "cloud-rain",
+                  "cloud-snow",
                   "cloud-sun",
                   "code",
                   "file-text",
@@ -4750,10 +4814,12 @@
                   "play",
                   "rocket",
                   "star",
+                  "sun",
                   "terminal",
                   "timer",
                   "users",
                   "video",
+                  "wind",
                   "zap"
                 ],
                 "type": "string"
@@ -5729,6 +5795,69 @@
         "title": "LetDoc",
         "type": "object"
       },
+      "Lifecycle": {
+        "description": "Facts about code actually loaded by this UI server, independent of the installation on disk.",
+        "properties": {
+          "instance": {
+            "description": "An opaque identifier generated for this server instance.",
+            "title": "Instance",
+            "type": "string"
+          },
+          "restartable": {
+            "description": "Whether this server can restart itself using the existing socket handoff.",
+            "title": "Restartable",
+            "type": "boolean"
+          },
+          "version": {
+            "description": "The hz code version loaded by this running server.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instance",
+          "version",
+          "restartable"
+        ],
+        "title": "Lifecycle",
+        "type": "object"
+      },
+      "LifecycleVerified": {
+        "description": "Whether this exact server loaded the requested code and configuration; no raw loaded values are exposed.",
+        "properties": {
+          "instance": {
+            "description": "The instance that answered this verification.",
+            "title": "Instance",
+            "type": "string"
+          },
+          "matches": {
+            "description": "Whether instance, version and every expected loaded setting agree.",
+            "title": "Matches",
+            "type": "boolean"
+          },
+          "mismatched": {
+            "description": "Names of unknown, duplicated or differently loaded settings.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Mismatched",
+            "type": "array"
+          },
+          "version": {
+            "description": "The code version loaded by the answering instance.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "instance",
+          "version",
+          "matches",
+          "mismatched"
+        ],
+        "title": "LifecycleVerified",
+        "type": "object"
+      },
       "ListEntry": {
         "additionalProperties": false,
         "description": "A line of a list widget.",
@@ -6545,6 +6674,11 @@
               "circle-check",
               "clock",
               "cloud",
+              "cloud-drizzle",
+              "cloud-fog",
+              "cloud-lightning",
+              "cloud-rain",
+              "cloud-snow",
               "cloud-sun",
               "code",
               "file-text",
@@ -6560,10 +6694,12 @@
               "play",
               "rocket",
               "star",
+              "sun",
               "terminal",
               "timer",
               "users",
               "video",
+              "wind",
               "zap"
             ],
             "title": "Icon",
@@ -9132,23 +9268,113 @@
         "title": "RequirementStatus",
         "type": "object"
       },
-      "Restart": {
-        "description": "The answer to `POST /api/restart`: the server stops and starts again on the same port with the same token.",
+      "Resources": {
+        "additionalProperties": false,
+        "description": "A machine sample; unavailable values remain null with an explanation.",
         "properties": {
+          "cpu_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Machine CPU usage, 0 to 100 percent.",
+            "title": "Cpu Percent"
+          },
+          "load_1m": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "One-minute load average; unavailable on unsupported platforms.",
+            "title": "Load 1M"
+          },
+          "logical_cores": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Detected logical core count; null when unavailable.",
+            "title": "Logical Cores"
+          },
+          "memory_percent": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Machine memory usage, 0 to 100 percent.",
+            "title": "Memory Percent"
+          },
+          "problems": {
+            "description": "Why any measurement could not be read.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          },
+          "sampled_at": {
+            "description": "When the measurements were collected, in UTC.",
+            "format": "date-time",
+            "title": "Sampled At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sampled_at",
+          "cpu_percent",
+          "memory_percent",
+          "load_1m",
+          "logical_cores",
+          "problems"
+        ],
+        "title": "Resources",
+        "type": "object"
+      },
+      "Restart": {
+        "description": "The retiring server's acknowledgement; a replacement instance must still be verified.",
+        "properties": {
+          "instance": {
+            "description": "The retiring server instance; an answer from it cannot prove a restart.",
+            "title": "Instance",
+            "type": "string"
+          },
           "message": {
             "description": "What happens, for the person waiting.",
             "title": "Message",
             "type": "string"
           },
           "restarting": {
-            "description": "Always true: poll any endpoint until it answers again.",
+            "description": "Always true: wait for a different /lifecycle instance.",
             "title": "Restarting",
             "type": "boolean"
           }
         },
         "required": [
           "restarting",
-          "message"
+          "message",
+          "instance"
         ],
         "title": "Restart",
         "type": "object"
@@ -11081,6 +11307,11 @@
                   "circle-check",
                   "clock",
                   "cloud",
+                  "cloud-drizzle",
+                  "cloud-fog",
+                  "cloud-lightning",
+                  "cloud-rain",
+                  "cloud-snow",
                   "cloud-sun",
                   "code",
                   "file-text",
@@ -11096,10 +11327,12 @@
                   "play",
                   "rocket",
                   "star",
+                  "sun",
                   "terminal",
                   "timer",
                   "users",
                   "video",
+                  "wind",
                   "zap"
                 ],
                 "type": "string"
@@ -11147,6 +11380,17 @@
             "minLength": 1,
             "title": "Text",
             "type": "string"
+          },
+          "toggle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToggleControl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional explicit service control inside its popover."
           },
           "tone": {
             "default": "neutral",
@@ -12922,6 +13166,90 @@
         "title": "ThemeWhen",
         "type": "object"
       },
+      "ToggleControl": {
+        "additionalProperties": false,
+        "description": "A provider-owned toggle whose deliberate change authorizes exactly one server-resolved operation.",
+        "properties": {
+          "apply_settings": {
+            "description": "Loaded settings that must match after the existing restart/apply flow, keyed as section.key. These are verification expectations, never permission to edit arbitrary settings.",
+            "maxProperties": 16,
+            "patternProperties": {
+              "^[a-z][a-z0-9_-]*(?:\\.[a-z][a-z0-9_-]*)+$": {
+                "$ref": "#/components/schemas/JsonValue"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 200
+            },
+            "title": "Apply Settings",
+            "type": "object"
+          },
+          "checked": {
+            "description": "Actual verified state, never an optimistic requested value.",
+            "title": "Checked",
+            "type": "boolean"
+          },
+          "disable": {
+            "$ref": "#/components/schemas/RunOperation",
+            "description": "The declaring module's operation that disables the feature."
+          },
+          "enable": {
+            "$ref": "#/components/schemas/RunOperation",
+            "description": "The declaring module's operation that enables the feature."
+          },
+          "label": {
+            "description": "The action the person enables or disables.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "requested": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The requested state when it differs from verified readiness; never a success claim.",
+            "title": "Requested"
+          },
+          "sign_in_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and a session credential.",
+            "title": "Sign In Url"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional nonsecret link shown alongside the toggle.",
+            "title": "Url"
+          }
+        },
+        "required": [
+          "label",
+          "checked",
+          "enable",
+          "disable"
+        ],
+        "title": "ToggleControl",
+        "type": "object"
+      },
       "Toggled": {
         "description": "The pause flag after `pause` or `resume`.",
         "properties": {
@@ -13606,6 +13934,11 @@
                   "circle-check",
                   "clock",
                   "cloud",
+                  "cloud-drizzle",
+                  "cloud-fog",
+                  "cloud-lightning",
+                  "cloud-rain",
+                  "cloud-snow",
                   "cloud-sun",
                   "code",
                   "file-text",
@@ -13621,10 +13954,12 @@
                   "play",
                   "rocket",
                   "star",
+                  "sun",
                   "terminal",
                   "timer",
                   "users",
                   "video",
+                  "wind",
                   "zap"
                 ],
                 "type": "string"
@@ -14781,6 +15116,108 @@
         ]
       }
     },
+    "/lifecycle": {
+      "get": {
+        "operationId": "web_lifecycle",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Lifecycle"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Read this UI server's instance, loaded version and restart capability.",
+        "tags": [
+          "web"
+        ]
+      }
+    },
+    "/lifecycle/verify": {
+      "post": {
+        "operationId": "web_lifecycle_verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "instance": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "settings": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "key": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "section": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "value": {}
+                      },
+                      "required": [
+                        "section",
+                        "key",
+                        "value"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 100,
+                    "type": "array"
+                  },
+                  "version": {
+                    "maxLength": 128,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "instance",
+                  "version",
+                  "settings"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleVerified"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "413": {
+            "description": "The streamed JSON body exceeds 64 KiB."
+          },
+          "422": {
+            "description": "The body does not contain bounded, finite JSON expectations."
+          }
+        },
+        "summary": "Verify expected settings against this instance's startup snapshot without exposing their values.",
+        "tags": [
+          "web"
+        ]
+      }
+    },
     "/org/agenda": {
       "get": {
         "description": "Show the meeting you are in now and your next one, from your calendar, or how to connect one.",
@@ -14827,7 +15264,7 @@
     },
     "/restart": {
       "post": {
-        "description": "The process runs `hz` again with the same port and token, so the page keeps working: poll an endpoint until it answers. A server that isn't `hz ui` (`make web-dev`) answers 400.",
+        "description": "The process runs `hz` again with the same port and token. Poll /lifecycle until its instance differs from the retiring instance in this reply, then verify the loaded version and target settings. A server that isn't `hz ui` (`make web-dev`) answers 400.",
         "operationId": "web_restart",
         "responses": {
           "202": {
@@ -16467,6 +16904,28 @@
         ]
       }
     },
+    "/system/resource": {
+      "get": {
+        "description": "Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second.",
+        "operationId": "system_resource",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resources"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/runner/ask": {
       "post": {
         "description": "Ask the bound agent runner, read-only and within a cost cap; this may cost money.\n\nRaises:\n    HeinzelError: If the prompt is blank, or the runner is misconfigured.",
@@ -17041,7 +17500,7 @@
     },
     "/system/sound/use": {
       "post": {
-        "description": "Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.",
+        "description": "Pick the web app's soundscape, `off` for none; turns off theme following and saves your choice.",
         "operationId": "system_sound_use",
         "parameters": [
           {
@@ -17078,7 +17537,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.",
+        "summary": "Pick the web app's soundscape, `off` for none; turns off theme following and saves your choice.",
         "tags": [
           "system"
         ]

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
 import { type FakeContext, fakeAudio } from "@/test/fakeAudio";
-import { shell } from "@/test/fixtures";
+import { acmeTheme, shell, themeList } from "@/test/fixtures";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { needsReload, page, rememberPageFrame, resetPageFrame } from "./queries";
 import { resetSound, soundState } from "./store";
@@ -97,6 +97,161 @@ afterEach(() => {
 const speaker = (name: RegExp) => screen.findByRole("button", { name });
 
 describe("Sound", () => {
+  it("switches from the followed theme sound to a manual contributor soundscape and plays its source", async () => {
+    const snow: SchemaSoundscapeView = {
+      ...rain,
+      name: "snow",
+      title: "Snow",
+      plugin: "heinzel-snow",
+      pairs_with: ["winter"],
+      layers: [
+        {
+          url: "/sound-assets/snow/layer-0.ogg?v=1",
+          licence: "CC-BY-4.0",
+          attribution: "Jo Example",
+          source: null,
+          gain: 1,
+          signal: "none",
+          curve: null,
+        },
+      ],
+    };
+    const soundscapes = [off, fm, rain, snow];
+    let manual = false;
+    const list = (): SchemaSoundList => ({
+      ...soundList(manual ? "rain" : "off", {
+        selected: manual ? "rain" : "off",
+        effective: manual ? "rain" : "snow",
+        follow_theme: !manual,
+      }),
+      soundscapes: soundscapes.map((s) => ({
+        ...s,
+        selected: s.name === (manual ? "rain" : "off"),
+        effective: s.name === (manual ? "rain" : "snow"),
+      })),
+    });
+    const api = mockApi({
+      ...shell,
+      get "/api/system/sound/list"() {
+        return list();
+      },
+      get "/api/system/sound/use"() {
+        manual = true;
+        return list();
+      },
+    });
+    const { Context, contexts } = fakeAudio();
+    vi.stubGlobal("AudioContext", Context);
+    const answer = globalThis.fetch;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL) => {
+        const url = input instanceof URL ? input : new URL(input.url);
+        if (url.pathname.startsWith("/sound-assets/")) {
+          api.calls.push(new Request(url));
+          return new Response(url.pathname);
+        }
+        return answer(input as Request);
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.click(await speaker(/^Play Snow$/));
+    await waitFor(() =>
+      expect(api.calls.some((call) => call.url.includes("/sound-assets/snow/layer-0.ogg"))).toBe(true),
+    );
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]?.sources).toHaveLength(1);
+    expect(soundState()).toMatchObject({ playing: true, started: true });
+
+    await user.click(await speaker(/^Sound options$/));
+    const dialog = await screen.findByRole("dialog", { name: "Sound" });
+    expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "true");
+    await user.click(within(dialog).getByRole("radio", { name: /^Rain/ }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "false"),
+    );
+    expect(within(dialog).getByRole("radio", { name: /^Rain/ })).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => expect(soundState()).toMatchObject({ playing: false, started: false }));
+    expect(contexts[0]?.close).toHaveBeenCalledOnce();
+
+    await user.click(await speaker(/^Play Rain$/));
+    await waitFor(() =>
+      expect(api.calls.some((call) => call.url.includes("/sound-assets/rain/layer-0.ogg"))).toBe(true),
+    );
+    expect(contexts).toHaveLength(2);
+    expect(contexts[1]?.sources).toHaveLength(1);
+    expect(soundState()).toMatchObject({ playing: true, started: true, problem: null });
+  });
+
+  it.each(["claude-fm", "rain"])(
+    "manual choice %s takes over from the theme, including reselecting its sound",
+    async (name) => {
+      let manual = false;
+      const { calls } = mockApi({
+        ...shell,
+        get "/api/system/sound/list"() {
+          return soundList(manual ? name : "claude-fm", { follow_theme: !manual, effective: manual ? name : "rain" });
+        },
+        get "/api/system/sound/use"() {
+          manual = true;
+          return soundList(name);
+        },
+      });
+      const user = userEvent.setup();
+      renderAt("/");
+      await user.click(await screen.findByRole("button", { name: "Sound options" }));
+      const dialog = await screen.findByRole("dialog", { name: "Sound" });
+      expect(within(dialog).getByRole("radio", { name: /^Rain/ })).toHaveAttribute("aria-checked", "true");
+      await user.click(within(dialog).getByRole("radio", { name: name === "claude-fm" ? /^Claude FM/ : /^Rain/ }));
+      await waitFor(() => expect(calls.some((call) => call.url.includes(`/system/sound/use?name=${name}`))).toBe(true));
+      await waitFor(() =>
+        expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute(
+          "aria-checked",
+          "false",
+        ),
+      );
+      expect(
+        within(dialog).getByRole("radio", { name: name === "claude-fm" ? /^Claude FM/ : /^Rain/ }),
+      ).toHaveAttribute("aria-checked", "true");
+    },
+  );
+
+  it("shows the owning theme or built-in provenance beside soundscape details", async () => {
+    mockApi({
+      ...shell,
+      "/api/system/sound/list": {
+        ...soundList("off"),
+        soundscapes: [off, fm, { ...rain, plugin: "heinzel-acme", pairs_with: ["acme"] }],
+      },
+      "/api/system/theme/list": themeList("acme", [acmeTheme]),
+    });
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.click(await speaker(/^Choose a soundscape$/));
+    const dialog = await screen.findByRole("dialog", { name: "Sound" });
+    expect(await within(dialog).findByText("Theme: Acme · Sounds by Jo Example")).toBeInTheDocument();
+    expect(within(dialog).getByText("Built-in · Plays from YouTube")).toBeInTheDocument();
+  });
+
+  it("does not attribute an unpaired soundscape to another theme from the same plugin", async () => {
+    mockApi({
+      ...shell,
+      "/api/system/sound/list": {
+        ...soundList("off"),
+        soundscapes: [off, { ...rain, plugin: "heinzel-acme", pairs_with: ["another"] }],
+      },
+      "/api/system/theme/list": themeList("acme", [acmeTheme]),
+    });
+    const user = userEvent.setup();
+    renderAt("/");
+    await user.click(await speaker(/^Choose a soundscape$/));
+    const dialog = await screen.findByRole("dialog", { name: "Sound" });
+    expect(await within(dialog).findByText("Plugin: heinzel-acme · Sounds by Jo Example")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Theme: Acme/)).not.toBeInTheDocument();
+  });
+
   it("loads nothing of the stream's host until Play, then its player with the frame attributes it needs", async () => {
     const { calls } = soundApi("claude-fm");
     const user = userEvent.setup();
@@ -133,7 +288,7 @@ describe("Sound", () => {
       within(group)
         .getAllByRole("radio")
         .map((radio) => radio.textContent),
-    ).toEqual(["Off", "Claude FMPlays from YouTube", "RainSounds by Jo Example"]);
+    ).toEqual(["Off", "Claude FMBuilt-in · Plays from YouTube", "RainPlugin: heinzel-rain · Sounds by Jo Example"]);
     expect(within(group).getByRole("radio", { name: /^Off/ })).toHaveAttribute("aria-checked", "true");
     expect(soundState().playing).toBe(false);
   });

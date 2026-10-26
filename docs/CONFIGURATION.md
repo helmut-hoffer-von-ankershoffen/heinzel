@@ -22,6 +22,7 @@ Plugins add their own tables.
 | `update_channel` | `HZ_UPDATE_CHANNEL` | `'release'` | What updating moves to: the newest release, or the newest commit of the main branch. An installation on main moves back to releases once one is as new as it. Choices: release, main. |
 | `disabled_modules` | `HZ_DISABLED_MODULES` | `frozenset()` | Modules Heinzelmännchen doesn't load, with their submodules. In the environment, separate them with commas. |
 | `ui_port` | `HZ_UI_PORT` | `8737` | The port the web app is served on, reachable from this computer only. It stays the same so an installed app keeps its address. Never read from a project's hz.toml. |
+| `ui_allowed_origins` | `HZ_UI_ALLOWED_ORIGINS` | `frozenset()` | Exact HTTPS origins allowed by the authenticated web app behind a private reverse proxy, such as https://workstation.example.ts.net. The listener stays on this computer. Restart and apply after changing this user-only setting. In the environment, separate origins with commas. Never read from a project's hz.toml. |
 | `api_allowed_hosts` | `HZ_API_ALLOWED_HOSTS` | `frozenset()` | Host names the REST API answers besides this computer's own, for when it listens on another network interface. Requests naming any other host are refused. In the environment, separate them with commas. Never read from a project's hz.toml. |
 
 ## `[capabilities]`
@@ -247,6 +248,13 @@ Plugins add their own tables.
 | Key | Environment variable | Default | Description |
 | --- | --- | --- | --- |
 | `contributions` | `HZ_SYSTEM_UI__CONTRIBUTIONS` | platform-specific | Which status items, actions and widgets show in which place of the app; anything you leave out keeps the place its module chose. Never read from a project's hz.toml. |
+
+## `[tailscale]`
+
+| Key | Environment variable | Default | Description |
+| --- | --- | --- | --- |
+| `https_port` | `HZ_TAILSCALE__HTTPS_PORT` | `443` | The private Tailscale HTTPS port. Existing services on it are preserved. Never read from a project's hz.toml. |
+| `intent` | `HZ_TAILSCALE__INTENT` | `None` | The last explicit sharing request and its owned mapping; status reads never execute it. Never read from a project's hz.toml. |
 
 ## `[team]`
 

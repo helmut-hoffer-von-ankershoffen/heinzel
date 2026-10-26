@@ -91,6 +91,8 @@ def repository_files() -> list[str]:
 
 SHARED = [".claude", ".github/workflows", "scripts"]
 CORE_ONLY = {  # path: why plugins don't get it
+    ".github/workflows/pypi.yml": "publishes only the registered core project with its trusted publisher (ADR 0079)",
+    "scripts/pypi_release.py": "verifies core-only PyPI identity and browser/notifier payloads (ADR 0079)",
     ".github/workflows/fuzz.yml": "fuzzes Heinzelmännchen's contract parser (fuzz/); plugins have no fuzz targets",
     ".claude/audit/evals.yaml": "cases from Heinzelmännchen's history; a plugin's self-audit skips self-improvement",
     ".claude/audit/ledger.jsonl": "Heinzelmännchen's own audit record; skill self-audit starts a plugin's empty",

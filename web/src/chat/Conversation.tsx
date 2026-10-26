@@ -1,7 +1,7 @@
 // What a chat shows wherever it is (Home, the right sidebar): the messages, the answer as it streams with the tools
 // it calls, every proposed action as a card that runs only on Confirm, the costs, and the composer.
 import { Check, Info, Send, X } from "lucide-react";
-import { type FormEvent, type RefObject, useEffect, useId, useState } from "react";
+import { type FormEvent, type RefObject, useId } from "react";
 import type { ModelChoice } from "@/api/chat";
 import type { SchemaChatAction, SchemaChatMessage } from "@/api/client";
 import { useConfig } from "@/api/queries";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { format, t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { typed } from "@/sound/store";
+import { useUpdateDraft } from "@/updates/draft";
 import { MessageInfo } from "./MessageInfo";
 import { ModelPicker } from "./ModelPicker";
 import type { Chat } from "./useChat";
@@ -192,13 +193,12 @@ export function Composer({
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   className?: string;
 }) {
-  const [message, setMessage] = useState("");
-  // The session's choice, until the person picks another; sent with the next message, which the session keeps.
-  const [picked, setPicked] = useState<ModelChoice | null>(null);
   const sessionId = chat.session?.id;
-  // Another conversation has its own choice: a pick made in one never goes with another's message.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the conversation changes, by its id
-  useEffect(() => setPicked(null), [sessionId]);
+  const { message, setMessage, picked, setPicked } = useUpdateDraft(
+    context,
+    sessionId ?? null,
+    chat.live != null || chat.deciding || chat.loading,
+  );
   const choice: ModelChoice = picked ?? { model: chat.session?.model ?? null, effort: chat.session?.effort ?? null };
   const inputId = useId();
   const submit = async (event: FormEvent) => {

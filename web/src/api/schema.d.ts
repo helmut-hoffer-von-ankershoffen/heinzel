@@ -348,6 +348,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/lifecycle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read this UI server's instance, loaded version and restart capability. */
+        get: operations["web_lifecycle"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/lifecycle/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify expected settings against this instance's startup snapshot without exposing their values. */
+        post: operations["web_lifecycle_verify"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org/agenda": {
         parameters: {
             query?: never;
@@ -399,7 +433,7 @@ export interface paths {
         put?: never;
         /**
          * Restart hz ui to load changes a running server can't, such as an added plugin.
-         * @description The process runs `hz` again with the same port and token, so the page keeps working: poll an endpoint until it answers. A server that isn't `hz ui` (`make web-dev`) answers 400.
+         * @description The process runs `hz` again with the same port and token. Poll /lifecycle until its instance differs from the retiring instance in this reply, then verify the loaded version and target settings. A server that isn't `hz ui` (`make web-dev`) answers 400.
          */
         post: operations["web_restart"];
         delete?: never;
@@ -1325,6 +1359,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/resource": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second.
+         * @description Show machine CPU/memory usage, one-minute load and logical cores; cache each sample for one second.
+         */
+        get: operations["system_resource"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/runner/ask": {
         parameters: {
             query?: never;
@@ -1576,8 +1630,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.
-         * @description Pick the web app's soundscape, `off` for none: sets `system.sound.name` in your user file.
+         * Pick the web app's soundscape, `off` for none; turns off theme following and saves your choice.
+         * @description Pick the web app's soundscape, `off` for none; turns off theme following and saves your choice.
          */
         post: operations["system_sound_use"];
         delete?: never;
@@ -2109,7 +2163,7 @@ export interface components {
              * @description The icon the app shows.
              * @enum {string}
              */
-            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap";
+            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap";
             /**
              * Id
              * @description `<module>:<name>`, what `--item` takes, e.g. `clock:primary-zone`.
@@ -2882,6 +2936,11 @@ export interface components {
              * @description Up to 280 characters under the title.
              */
             body?: string | null;
+            /**
+             * Icon
+             * @description An icon beside the title.
+             */
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
             /**
              * @description A card. (enum property replaced by openapi-typescript)
              * @enum {string}
@@ -4700,7 +4759,7 @@ export interface components {
              * Icon
              * @description An icon beside the value.
              */
-            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
             /**
              * @description A graphic. (enum property replaced by openapi-typescript)
              * @enum {string}
@@ -5264,6 +5323,53 @@ export interface components {
             summary: string;
         };
         /**
+         * Lifecycle
+         * @description Facts about code actually loaded by this UI server, independent of the installation on disk.
+         */
+        Lifecycle: {
+            /**
+             * Instance
+             * @description An opaque identifier generated for this server instance.
+             */
+            instance: string;
+            /**
+             * Restartable
+             * @description Whether this server can restart itself using the existing socket handoff.
+             */
+            restartable: boolean;
+            /**
+             * Version
+             * @description The hz code version loaded by this running server.
+             */
+            version: string;
+        };
+        /**
+         * LifecycleVerified
+         * @description Whether this exact server loaded the requested code and configuration; no raw loaded values are exposed.
+         */
+        LifecycleVerified: {
+            /**
+             * Instance
+             * @description The instance that answered this verification.
+             */
+            instance: string;
+            /**
+             * Matches
+             * @description Whether instance, version and every expected loaded setting agree.
+             */
+            matches: boolean;
+            /**
+             * Mismatched
+             * @description Names of unknown, duplicated or differently loaded settings.
+             */
+            mismatched: string[];
+            /**
+             * Version
+             * @description The code version loaded by the answering instance.
+             */
+            version: string;
+        };
+        /**
          * ListEntry
          * @description A line of a list widget.
          */
@@ -5732,7 +5838,7 @@ export interface components {
              * @description The provider's checked semantic icon.
              * @enum {string}
              */
-            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap";
+            icon: "activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap";
             /**
              * Id
              * @description Stable `<qualified-module>:<name>` identity; legacy Settings use reserved `:@settings`.
@@ -7205,10 +7311,52 @@ export interface components {
             requirement: string;
         };
         /**
+         * Resources
+         * @description A machine sample; unavailable values remain null with an explanation.
+         */
+        Resources: {
+            /**
+             * Cpu Percent
+             * @description Machine CPU usage, 0 to 100 percent.
+             */
+            cpu_percent: number | null;
+            /**
+             * Load 1M
+             * @description One-minute load average; unavailable on unsupported platforms.
+             */
+            load_1m: number | null;
+            /**
+             * Logical Cores
+             * @description Detected logical core count; null when unavailable.
+             */
+            logical_cores: number | null;
+            /**
+             * Memory Percent
+             * @description Machine memory usage, 0 to 100 percent.
+             */
+            memory_percent: number | null;
+            /**
+             * Problems
+             * @description Why any measurement could not be read.
+             */
+            problems: string[];
+            /**
+             * Sampled At
+             * Format: date-time
+             * @description When the measurements were collected, in UTC.
+             */
+            sampled_at: string;
+        };
+        /**
          * Restart
-         * @description The answer to `POST /api/restart`: the server stops and starts again on the same port with the same token.
+         * @description The retiring server's acknowledgement; a replacement instance must still be verified.
          */
         Restart: {
+            /**
+             * Instance
+             * @description The retiring server instance; an answer from it cannot prove a restart.
+             */
+            instance: string;
             /**
              * Message
              * @description What happens, for the person waiting.
@@ -7216,7 +7364,7 @@ export interface components {
             message: string;
             /**
              * Restarting
-             * @description Always true: poll any endpoint until it answers again.
+             * @description Always true: wait for a different /lifecycle instance.
              */
             restarting: boolean;
         };
@@ -8396,7 +8544,7 @@ export interface components {
              * Icon
              * @description An icon before the text.
              */
-            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
             /**
              * Live
              * @description A time the app renders after `text` and keeps current.
@@ -8407,6 +8555,8 @@ export interface components {
              * @description What it says, one line, e.g. `Standup until`.
              */
             text: string;
+            /** @description Optional explicit service control inside its popover. */
+            toggle?: components["schemas"]["ToggleControl"] | null;
             /**
              * Tone
              * @description How it reads: neutral, ok, warn or bad.
@@ -9417,6 +9567,48 @@ export interface components {
             weather: ("clear" | "clouds" | "rain" | "drizzle" | "thunder" | "snow" | "fog" | "wind" | "heat" | "cold")[];
         };
         /**
+         * ToggleControl
+         * @description A provider-owned toggle whose deliberate change authorizes exactly one server-resolved operation.
+         */
+        ToggleControl: {
+            /**
+             * Apply Settings
+             * @description Loaded settings that must match after the existing restart/apply flow, keyed as section.key. These are verification expectations, never permission to edit arbitrary settings.
+             */
+            apply_settings?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /**
+             * Checked
+             * @description Actual verified state, never an optimistic requested value.
+             */
+            checked: boolean;
+            /** @description The declaring module's operation that disables the feature. */
+            disable: components["schemas"]["RunOperation"];
+            /** @description The declaring module's operation that enables the feature. */
+            enable: components["schemas"]["RunOperation"];
+            /**
+             * Label
+             * @description The action the person enables or disables.
+             */
+            label: string;
+            /**
+             * Requested
+             * @description The requested state when it differs from verified readiness; never a success claim.
+             */
+            requested?: boolean | null;
+            /**
+             * Sign In Url
+             * @description Computed by the host only: a ready URL whose exact origin is explicitly allowed. Copying a sign-in fragment still requires a separate owner gesture and a session credential.
+             */
+            sign_in_url?: string | null;
+            /**
+             * Url
+             * @description Optional nonsecret link shown alongside the toggle.
+             */
+            url?: string | null;
+        };
+        /**
          * Toggled
          * @description The pause flag after `pause` or `resume`.
          */
@@ -9821,7 +10013,7 @@ export interface components {
              * Icon
              * @description An icon before the label.
              */
-            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "terminal" | "timer" | "users" | "video" | "zap") | null;
+            icon?: ("activity" | "alarm-clock" | "bell" | "bot" | "calendar" | "calendar-clock" | "chart-line" | "circle-alert" | "circle-check" | "clock" | "cloud" | "cloud-drizzle" | "cloud-fog" | "cloud-lightning" | "cloud-rain" | "cloud-snow" | "cloud-sun" | "code" | "file-text" | "git-pull-request" | "globe" | "heart" | "inbox" | "info" | "link" | "list-checks" | "mail" | "message-square" | "play" | "rocket" | "star" | "sun" | "terminal" | "timer" | "users" | "video" | "wind" | "zap") | null;
             /**
              * Label
              * @description What the button says.
@@ -10045,6 +10237,8 @@ export type SchemaLayerList = components['schemas']['LayerList'];
 export type SchemaLayerProblemView = components['schemas']['LayerProblemView'];
 export type SchemaLayerView = components['schemas']['LayerView'];
 export type SchemaLetDoc = components['schemas']['LetDoc'];
+export type SchemaLifecycle = components['schemas']['Lifecycle'];
+export type SchemaLifecycleVerified = components['schemas']['LifecycleVerified'];
 export type SchemaListEntry = components['schemas']['ListEntry'];
 export type SchemaListWidget = components['schemas']['ListWidget'];
 export type SchemaLiveClock = components['schemas']['LiveClock'];
@@ -10099,6 +10293,7 @@ export type SchemaReleaseCheck = components['schemas']['ReleaseCheck'];
 export type SchemaReleaseNotes = components['schemas']['ReleaseNotes'];
 export type SchemaRendererBlock = components['schemas']['RendererBlock'];
 export type SchemaRequirementStatus = components['schemas']['RequirementStatus'];
+export type SchemaResources = components['schemas']['Resources'];
 export type SchemaRestart = components['schemas']['Restart'];
 export type SchemaRestarted = components['schemas']['Restarted'];
 export type SchemaRunCommand = components['schemas']['RunCommand'];
@@ -10153,6 +10348,7 @@ export type SchemaThemeSignalsView = components['schemas']['ThemeSignalsView'];
 export type SchemaThemeVariant = components['schemas']['ThemeVariant'];
 export type SchemaThemeView = components['schemas']['ThemeView'];
 export type SchemaThemeWhen = components['schemas']['ThemeWhen'];
+export type SchemaToggleControl = components['schemas']['ToggleControl'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
@@ -10694,6 +10890,72 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    web_lifecycle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Lifecycle"];
+                };
+            };
+        };
+    };
+    web_lifecycle_verify: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    instance: string;
+                    settings: {
+                        key: string;
+                        section: string;
+                        value: unknown;
+                    }[];
+                    version: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifecycleVerified"];
+                };
+            };
+            /** @description The streamed JSON body exceeds 64 KiB. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The body does not contain bounded, finite JSON expectations. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -11895,6 +12157,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReleaseCheck"];
+                };
+            };
+        };
+    };
+    system_resource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Resources"];
                 };
             };
         };
