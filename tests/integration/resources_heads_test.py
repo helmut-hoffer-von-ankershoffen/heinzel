@@ -16,6 +16,8 @@ pytestmark = pytest.mark.integration
 
 
 def test_resource_sample_is_shared_by_all_heads(make_kernel, monkeypatch):
+    # Exercise several transports and a real MCP session without racing the production one-second cache window.
+    monkeypatch.setattr("heinzel.modules.system.resource.CACHE_SECONDS", 60.0)
     monkeypatch.setattr("heinzel.modules.system.resource.psutil.cpu_percent", lambda **_: 12.5)
     monkeypatch.setattr("heinzel.modules.system.resource.psutil.virtual_memory", lambda: SimpleNamespace(percent=40))
     monkeypatch.setattr("heinzel.modules.system.resource.psutil.getloadavg", lambda: (21.0, 19.0, 18.0))
