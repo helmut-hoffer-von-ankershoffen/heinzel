@@ -98,6 +98,7 @@ const speaker = (name: RegExp) => screen.findByRole("button", { name });
 
 describe("Sound", () => {
   it("switches from the followed theme sound to a manual contributor soundscape and plays its source", async () => {
+    vi.spyOn(page, "reload").mockImplementation(() => undefined);
     const snow: SchemaSoundscapeView = {
       ...rain,
       name: "snow",
@@ -157,7 +158,8 @@ describe("Sound", () => {
 
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Play Snow$/));
+    const snowSpeaker = await speaker(/^Play Snow$/);
+    await user.click(snowSpeaker);
     await waitFor(() =>
       expect(api.calls.some((call) => call.url.includes("/sound-assets/snow/layer-0.ogg"))).toBe(true),
     );
@@ -165,16 +167,20 @@ describe("Sound", () => {
     expect(contexts[0]?.sources).toHaveLength(1);
     expect(soundState()).toMatchObject({ playing: true, started: true });
 
-    await user.click(await speaker(/^Sound options$/));
+    await user.pointer({ keys: "[MouseRight]", target: snowSpeaker });
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
     expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "true");
     await user.click(within(dialog).getByRole("radio", { name: /^Rain/ }));
-    await waitFor(() =>
-      expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "false"),
-    );
-    expect(within(dialog).getByRole("radio", { name: /^Rain/ })).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Sound" })).not.toBeInTheDocument());
     await waitFor(() => expect(soundState()).toMatchObject({ playing: false, started: false }));
     expect(contexts[0]?.close).toHaveBeenCalledOnce();
+
+    await user.pointer({ keys: "[MouseRight]", target: snowSpeaker });
+    const choices = await screen.findByRole("dialog", { name: "Sound" });
+    await waitFor(() =>
+      expect(within(choices).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "false"),
+    );
+    expect(within(choices).getByRole("radio", { name: /^Rain/ })).toHaveAttribute("aria-checked", "true");
 
     await user.click(await speaker(/^Play Rain$/));
     await waitFor(() =>
@@ -188,6 +194,7 @@ describe("Sound", () => {
   it.each(["claude-fm", "rain"])(
     "manual choice %s takes over from the theme, including reselecting its sound",
     async (name) => {
+      vi.spyOn(page, "reload").mockImplementation(() => undefined);
       let manual = false;
       const { calls } = mockApi({
         ...shell,
@@ -201,19 +208,25 @@ describe("Sound", () => {
       });
       const user = userEvent.setup();
       renderAt("/");
-      await user.click(await screen.findByRole("button", { name: "Sound options" }));
+      await user.pointer({ keys: "[MouseRight]", target: await speaker(/^Play Rain$/) });
       const dialog = await screen.findByRole("dialog", { name: "Sound" });
       expect(within(dialog).getByRole("radio", { name: /^Rain/ })).toHaveAttribute("aria-checked", "true");
       await user.click(within(dialog).getByRole("radio", { name: name === "claude-fm" ? /^Claude FM/ : /^Rain/ }));
       await waitFor(() => expect(calls.some((call) => call.url.includes(`/system/sound/use?name=${name}`))).toBe(true));
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Sound" })).not.toBeInTheDocument());
+      await user.pointer({
+        keys: "[MouseRight]",
+        target: await speaker(name === "claude-fm" ? /^Play Claude FM$/ : /^Play Rain$/),
+      });
+      const choices = await screen.findByRole("dialog", { name: "Sound" });
       await waitFor(() =>
-        expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute(
+        expect(within(choices).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute(
           "aria-checked",
           "false",
         ),
       );
       expect(
-        within(dialog).getByRole("radio", { name: name === "claude-fm" ? /^Claude FM/ : /^Rain/ }),
+        within(choices).getByRole("radio", { name: name === "claude-fm" ? /^Claude FM/ : /^Rain/ }),
       ).toHaveAttribute("aria-checked", "true");
     },
   );
@@ -288,31 +301,42 @@ describe("Sound", () => {
       within(group)
         .getAllByRole("radio")
         .map((radio) => radio.textContent),
-    ).toEqual(["Off", "Claude FMBuilt-in · Plays from YouTube", "RainPlugin: heinzel-rain · Sounds by Jo Example"]);
-    expect(within(group).getByRole("radio", { name: /^Off/ })).toHaveAttribute("aria-checked", "true");
+    ).toEqual(["Claude FMBuilt-in · Plays from YouTube", "RainPlugin: heinzel-rain · Sounds by Jo Example"]);
+    expect(within(group).queryByRole("radio", { name: /^Off/ })).not.toBeInTheDocument();
     expect(soundState().playing).toBe(false);
   });
 
-  it("the chevron opens the popover from the keyboard, Escape closes it and gives focus back", async () => {
-    const { calls } = soundApi("claude-fm");
+  it("chooses a soundscape without exposing the Off row or Sound on toggle", async () => {
+    const { calls } = soundApi("off", "claude-fm");
     const user = userEvent.setup();
     renderAt("/");
-    const chevron = (await screen.findAllByRole("button", { name: "Sound options" }))[0] as HTMLElement;
-    chevron.focus();
-    await user.keyboard("{Enter}");
+    await user.click(await speaker(/^Choose a soundscape$/));
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
-    expect(chevron).toHaveAttribute("aria-expanded", "true");
+    expect(within(dialog).queryByRole("switch", { name: "Sound on" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("radio", { name: /^Off/ })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("radio", { name: /^Claude FM/ }));
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/system/sound/use?name=claude-fm"))).toBe(true));
+    expect(soundState().playing).toBe(false);
+  });
+
+  it("the visible speaker opens sound choices from the keyboard and restores focus on Escape", async () => {
+    soundApi("claude-fm");
+    const user = userEvent.setup();
+    renderAt("/");
+    const speakerButton = (await speaker(/^Play Claude FM$/)) as HTMLElement;
+    speakerButton.focus();
+    await user.keyboard("{ArrowDown}");
+    const dialog = await screen.findByRole("dialog", { name: "Sound" });
+    expect(speakerButton).toHaveAttribute("aria-expanded", "true");
     expect(within(dialog).getByRole("slider", { name: "Volume" })).toHaveValue("50");
     expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "false");
     expect(within(dialog).getByRole("switch", { name: "Mute during meetings" })).toHaveAttribute(
       "aria-checked",
       "true",
     );
-    await user.click(within(dialog).getByRole("radio", { name: /^Rain/ }));
-    await waitFor(() => expect(calls.some((call) => call.url.includes("/system/sound/use?name=rain"))).toBe(true));
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Sound" })).toBeNull();
-    expect(chevron).toHaveFocus();
+    expect(speakerButton).toHaveFocus();
   });
 
   it("a right-click on the speaker opens the popover too", async () => {
@@ -328,7 +352,7 @@ describe("Sound", () => {
     soundApi("off");
     renderAt("/?settings=hz");
     const section = await screen.findByRole("region", { name: "Sound" });
-    expect(within(section).getAllByRole("radio")).toHaveLength(3);
+    expect(within(section).getAllByRole("radio")).toHaveLength(2);
     expect(within(section).getByRole("switch", { name: "Softer while I type" })).toBeInTheDocument();
   });
 

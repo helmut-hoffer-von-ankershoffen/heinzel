@@ -98,4 +98,7 @@ def test_frontend_descriptor_hashes_only_installed_assets_and_entrypoints(make_k
 def test_unsafe_or_missing_frontend_cannot_enable_one_click(make_kernel, tmp_path, unsafe):
     app = client(make_kernel, tmp_path, unsafe=unsafe)
     assert app.get("/api/frontend", headers=AUTH).status_code == 409
-    assert not app.get("/api/update-status", headers=AUTH).json()["supported"]
+    status = app.get("/api/update-status", headers=AUTH).json()
+    assert not status["supported"]
+    assert "cannot verify and reload an update safely" in status["reason"]
+    assert "uv tool upgrade heinzel" in status["reason"]

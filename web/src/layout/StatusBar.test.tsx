@@ -127,7 +127,7 @@ describe("Mounted footer measurements", () => {
     renderAt("/doctor");
     const footer = await screen.findByRole("contentinfo");
     expect(await within(footer).findByRole("button", { name: "Daemon running, OK" })).toBeInTheDocument();
-    expect(within(footer).getByRole("button", { name: /CPU Memory Load/ })).toBeInTheDocument();
+    expect(within(footer).getByRole("button", { name: /CPU Mem Load/ })).toBeInTheDocument();
     expect(within(footer).getByRole("button", { name: /System health/ })).toBeInTheDocument();
     expect(within(footer).getByRole("button", { name: "0 Heinzelmännchen, off" })).toBeInTheDocument();
     expect(footer.textContent).not.toContain("🐻");
@@ -166,7 +166,7 @@ describe("Footer items are icons with a state and a pane", () => {
     window.innerWidth = widthBefore;
   });
 
-  it("gives each state its own colour and shape, named for assistive tech, and passes axe", async () => {
+  it("gives each state its own colour and accessible state, and passes axe", async () => {
     mockApi(states);
     window.innerWidth = 1280;
     const { container } = renderAt("/doctor");
@@ -184,7 +184,7 @@ describe("Footer items are icons with a state and a pane", () => {
       });
       expect(button).toHaveClass(colour);
       expect(button.parentElement).toHaveAttribute("data-state", tone);
-      expect(button.querySelectorAll("svg")).toHaveLength(2); // the icon and the shape of the state
+      expect(button.querySelectorAll("svg")).toHaveLength(1); // no secondary state glyph beside the footer icon
     }
     await expectAccessible(container);
   });
@@ -231,7 +231,7 @@ describe("Footer items are icons with a state and a pane", () => {
     expect(await screen.findByRole("dialog", { name: "Settings" })).toBeInTheDocument();
   });
 
-  it("shows what changed in the running release from the installed changelog, with the release on GitHub", async () => {
+  it("shows the installed changelog and a compact GitHub release link", async () => {
     mockApi(states);
     window.innerWidth = 1280;
     const user = userEvent.setup();
@@ -241,14 +241,13 @@ describe("Footer items are icons with a state and a pane", () => {
     const pane = await screen.findByRole("region", { name: "v0.4.0" });
     const about = within(pane).getByRole("region", { name: "About Heinzelmännchen" });
     expect(within(about).getByRole("img", { name: "Heinzelmännchen" })).toBeInTheDocument();
-    const tagline = within(about).getByText("helpers accelerating product teams,");
-    const origin = within(about).getByText("like the little elves from Cologne");
-    expect(tagline.nextElementSibling).toBe(origin);
-    expect(tagline).toHaveClass("block");
-    expect(origin).toHaveClass("block");
+    expect(about).toHaveTextContent("helpers accelerating product teams, like the little elves from Cologne");
+    expect(within(about).getByText(/helpers accelerating/)).toHaveClass("text-xs");
     expect(within(about).queryByText("built with AI in Berlin")).not.toBeInTheDocument();
     expect(await within(pane).findByText("Something new")).toBeInTheDocument();
-    expect(within(pane).getByRole("link", { name: "Release notes on GitHub" })).toHaveAttribute(
+    expect(within(pane).queryByText("What changed in this release")).not.toBeInTheDocument();
+    expect(within(pane).queryByRole("link", { name: "Full changelog" })).not.toBeInTheDocument();
+    expect(within(pane).getByRole("link", { name: "GitHub release" })).toHaveAttribute(
       "href",
       "https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.4.0",
     );

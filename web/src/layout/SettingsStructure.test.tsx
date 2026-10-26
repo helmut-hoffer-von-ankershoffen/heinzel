@@ -459,7 +459,7 @@ describe("Installed plugins by kind", () => {
     const { container } = renderAt("/doctor?settings=plugins");
     const row = (await screen.findByText("GitHub", { selector: "span *, span" })).closest("li") as HTMLElement;
     expect(within(row).getByTitle("Connector: code-host, tracker")).toBeInTheDocument();
-    const acmeRow = screen.getByText("Acme", { selector: "li span" }).closest("li") as HTMLElement;
+    const acmeRow = screen.getByText("ACME", { selector: "li span" }).closest("li") as HTMLElement;
     expect(within(acmeRow).getByTitle("Theme: acme")).toBeInTheDocument();
     expect(within(acmeRow).getByTitle("Playbook: engineering-team")).toBeInTheDocument();
     await expectAccessible(container);

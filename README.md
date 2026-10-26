@@ -73,8 +73,10 @@ You need [uv](https://docs.astral.sh/uv/) (`brew install uv`). Then:
 uv tool install heinzel
 ```
 
-Pin a release with `@vX.Y.Z`; `hz system update` then moves to the latest release in place, keeping plugins
-(`--source <spec>` moves to another version). It follows releases (`--channel main` or setting `update_channel` for the newest commit of `main`); pinned to another branch or a commit, it says which `--source` moves it. Shell completion: `hz --install-completion`.
+Install a specific release with `uv tool install heinzel==X.Y.Z`; `hz system update` then moves to the latest PyPI
+release in place, keeping plugins (`--source <spec>` moves to another source or ref). It follows releases
+(`--channel main` or setting `update_channel` for the newest commit of `main`); pinned to another branch or a commit,
+it says which `--source` moves it. Shell completion: `hz --install-completion`.
 
 **From Claude Code**, add the plugin and let `/hz-init` do everything — install, plugins, configuration, agent
 skills:

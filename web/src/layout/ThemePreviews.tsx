@@ -122,7 +122,7 @@ function Conditions({
         <label className="flex flex-col gap-1">
           <span>{t("settings.previewDaypart")}</span>
           <select
-            className="h-9 rounded-lg border border-border bg-input px-2 text-foreground"
+            className="h-9 rounded-lg border border-border bg-input px-2 pr-8 text-foreground"
             value={signals.daypart ?? ""}
             onChange={(event) =>
               onChange({ ...signals, daypart: DAYPARTS.find((part) => part === event.target.value) })
@@ -139,7 +139,7 @@ function Conditions({
         <label className="flex flex-col gap-1">
           <span>{t("settings.previewWeather")}</span>
           <select
-            className="h-9 rounded-lg border border-border bg-input px-2 text-foreground"
+            className="h-9 rounded-lg border border-border bg-input px-2 pr-8 text-foreground"
             value={signals.weather ?? ""}
             onChange={(event) =>
               onChange({ ...signals, weather: WEATHERS.find((kind) => kind === event.target.value) ?? null })

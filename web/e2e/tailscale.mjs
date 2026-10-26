@@ -177,13 +177,8 @@ try {
   assert.equal(ready.target, `http://127.0.0.1:${new URL(url).port}`);
   await panel.getByRole("button", { name: "Copy URL", exact: true }).click();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
-  assert.equal(copied, "https://workstation.tail-example.ts.net/");
-  assert.ok(!copied.includes("token"));
-  const signIn = panel.getByRole("button", { name: "Copy sign-in link", exact: true });
-  await signIn.click();
-  const signed = await page.evaluate(() => navigator.clipboard.readText());
-  assert.equal(new URL(signed).origin, "https://workstation.tail-example.ts.net");
-  assert.equal(new URL(signed).hash, new URL(url).hash);
+  assert.equal(new URL(copied).origin, "https://workstation.tail-example.ts.net");
+  assert.equal(new URL(copied).hash, new URL(url).hash);
   assert.ok(
     !(await page.locator("body").textContent()).includes(new URL(url).hash),
     "A credential link must stay out of the DOM.",
@@ -221,7 +216,6 @@ try {
   await page.waitForFunction(() => !document.querySelector('[role="switch"][aria-checked="true"]'));
   await page.waitForFunction(() => document.querySelector('[role="switch"][aria-busy="false"]'));
   assert.equal(await panel.getByRole("button", { name: "Copy URL", exact: true }).count(), 0);
-  assert.equal(await panel.getByRole("button", { name: "Copy sign-in link", exact: true }).count(), 0);
   const status = await sharingStatus(page);
   assert.equal(status.state, "off");
   assert.equal(status.desired_enabled, false);

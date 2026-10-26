@@ -35,11 +35,12 @@ export const BINDINGS = "capabilities";
 /** `system.runner` → `system`: the left side lists modules; their sub-sections are headings on the right. */
 export const group = (section: string) => section.split(".")[0] ?? section;
 
-const BRANDS: Record<string, string> = { github: "GitHub", gitlab: "GitLab", hz: "hz" };
+const BRANDS: Record<string, string> = { acme: "ACME", github: "GitHub", gitlab: "GitLab", hz: "hz" };
 /** Words written in capitals wherever they appear in a name: `ai access` → `AI access`, never `Ai access`. */
 const ACRONYMS: Record<string, string> = {
   ai: "AI",
   api: "API",
+  acme: "ACME",
   cli: "CLI",
   mcp: "MCP",
   rest: "REST",

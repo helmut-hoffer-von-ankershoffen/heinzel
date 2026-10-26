@@ -78,7 +78,7 @@ describe("the mini-player docked in the sidebar", () => {
     const precedes = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     expect(precedes(nav, dockSlot())).toBe(true);
     const account = dockSlot().nextElementSibling as HTMLElement;
-    expect(within(account).getAllByRole("button", { name: "Sound options" })).toHaveLength(1);
+    expect(within(account).getAllByRole("button", { name: /^Pause Claude FM$/ })).toHaveLength(1);
     expect(dockSlot().parentElement).toBe(account.parentElement);
   });
 
@@ -222,19 +222,25 @@ describe("the sound popover", () => {
   it("is in the body, above the player, with the controls and a way to Settings", async () => {
     const calls = api().calls;
     const { user } = await play();
-    await user.click((await screen.findAllByRole("button", { name: "Sound options" }))[0] as HTMLElement);
+    const speaker = (await screen.findAllByRole("button")).find(
+      (button) => button.getAttribute("aria-haspopup") === "dialog",
+    );
+    expect(speaker).toBeTruthy();
+    await user.pointer({ keys: "[MouseRight]", target: speaker });
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
     expect(dialog.parentElement).toBe(document.body);
     expect(dialog.className).toContain("z-(--layer-popover)");
     expect(dialog.className).toContain("fixed");
     expect((await player()).className).toContain("z-(--layer-media)");
-    for (const name of ["Sound on", "Softer while I type", "Follow my theme", "Mute during meetings"])
+    for (const name of ["Softer while I type", "Follow my theme", "Mute during meetings"])
       expect(within(dialog).getByRole("switch", { name })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("switch", { name: "Sound on" })).not.toBeInTheDocument();
     expect(
       within(dialog)
         .getAllByRole("radio")
         .map((r) => r.textContent),
-    ).toEqual(["Off", "Claude FMPlays from YouTube", "Die Heinzelmännchen"]);
+    ).toEqual(["Claude FMPlays from YouTube", "Die Heinzelmännchen"]);
+    expect(within(dialog).queryByRole("radio", { name: /^Off/ })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("link", { name: "More in Settings" })).toHaveAttribute("href", "/?settings=hz");
     await user.click(within(dialog).getByRole("switch", { name: "Softer while I type" }));
     await waitFor(() =>
@@ -242,18 +248,16 @@ describe("the sound popover", () => {
         calls.some((c) => c.url.includes("/system/config/set") && c.url.includes("key=system.sound.duck_while_typing")),
       ).toBe(true),
     );
-    await user.click(within(dialog).getByRole("switch", { name: "Sound on" }));
-    await waitFor(() => expect(calls.some((c) => c.url.includes("/system/sound/use?name=off"))).toBe(true));
     await expectAccessible(dialog);
   });
 
-  it("turns sound on with the first real soundscape when it is off", async () => {
+  it("choosing a real soundscape selects it when the configured choice is off", async () => {
     const calls = api("off").calls;
     const user = userEvent.setup();
     renderAt("/");
-    await user.click((await screen.findAllByRole("button", { name: "Sound options" }))[0] as HTMLElement);
+    await user.click(await screen.findByRole("button", { name: "Choose a soundscape" }));
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
-    await user.click(within(dialog).getByRole("switch", { name: "Sound on" }));
+    await user.click(within(dialog).getByRole("radio", { name: /^Claude FM/ }));
     await waitFor(() => expect(calls.some((c) => c.url.includes("/system/sound/use?name=claude-fm"))).toBe(true));
   });
 });
