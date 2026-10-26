@@ -1,6 +1,5 @@
 """Bounded Tailscale CLI calls; no shell, inherited debug settings or interactive login during status reads."""
 
-import contextlib
 import json
 import os
 import selectors
@@ -140,14 +139,26 @@ def _read(process: subprocess.Popen[bytes]) -> Result:
 
 
 def _stop(process: subprocess.Popen[bytes]) -> None:
-    with contextlib.suppress(ProcessLookupError):
+    try:
         os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        # If the session leader exited and its process-group id was reused, never signal that foreign group.
+        if process.poll() is None:
+            process.terminate()
     try:
         process.wait(GRACE)
     except subprocess.TimeoutExpired:
         pass
     finally:
         # The CLI may already have exited while one of its descendants ignored SIGTERM.
-        with contextlib.suppress(ProcessLookupError):
+        # macOS may recycle the exited session leader's pgid; never signal a foreign group.
+        try:
             os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            if process.poll() is None:
+                process.kill()
         process.wait()

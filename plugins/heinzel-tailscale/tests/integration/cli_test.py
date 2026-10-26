@@ -50,6 +50,35 @@ def test_output_overflow_stops_and_reaps_the_client(monkeypatch, stream):
     assert processes[0].poll() is not None
 
 
+def test_cleanup_ignores_permission_error_from_recycled_process_group_id(monkeypatch):
+    monkeypatch.setattr(_cli, "MAX_BYTES", 1024)
+
+    def recycled_group(_pid, _signal):
+        msg = "process group no longer belongs to this user"
+        raise PermissionError(msg)
+
+    monkeypatch.setattr(_cli.os, "killpg", recycled_group)
+    processes = []
+    original = subprocess.Popen
+
+    def start(*args, **kwargs):
+        process = original(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(_cli.subprocess, "Popen", start)
+    with pytest.raises(HeinzelError, match="size limit"):
+        PythonCli().run(
+            (
+                "-I",
+                "-S",
+                "-c",
+                "import sys,threading; sys.stdout.write('x' * 100000); sys.stdout.flush(); threading.Event().wait()",
+            )
+        )
+    assert processes[0].poll() is not None
+
+
 def test_expired_deadline_reaps_a_client_that_never_answers(monkeypatch):
     monkeypatch.setattr(_cli, "TIMEOUT", 0)
     processes = []
