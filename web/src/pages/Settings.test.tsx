@@ -41,7 +41,7 @@ describe("Settings dialog", () => {
     expect(within(dialog).queryByLabelText("Log level")).not.toBeInTheDocument();
   });
 
-  it("uses a readable heading for a TOML section marker and keeps the marker as configuration context", async () => {
+  it("uses a readable heading instead of exposing a TOML section marker", async () => {
     mockApi({
       ...shell,
       "/api/system/config/show": {
@@ -55,12 +55,12 @@ describe("Settings dialog", () => {
     renderAt("/?settings=ai");
 
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    expect(await within(dialog).findByText("Configuration section:")).toBeInTheDocument();
-    expect(within(dialog).getByText("[system.runner]")).toBeInTheDocument();
+    expect(await within(dialog).findByRole("heading", { name: "Runner" })).toBeInTheDocument();
+    expect(within(dialog).queryByText("Configuration section:")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("[system.runner]")).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("heading", { name: "[system.runner]" })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole("heading", { name: "Runner" })).toBeInTheDocument();
     await user.type(within(dialog).getByRole("searchbox"), "ask_max");
-    expect(within(dialog).getByText("[system.runner]")).toBeInTheDocument();
+    expect(within(dialog).queryByText("[system.runner]")).not.toBeInTheDocument();
   });
 
   it("opens searching from an older /settings?q= link", async () => {
