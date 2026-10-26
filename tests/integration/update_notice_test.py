@@ -157,14 +157,14 @@ def test_the_start_screen_shows_plugins_with_versions_and_links_and_the_notice(a
     assert "https://github.com/someone/heinzel-clockwork" in plugins
     assert " ".join(NOTICE.split()) in " ".join(screen.split())
     footer = screen[screen.rindex(f"v{__version__}") :]
-    assert "built with AI in Berlin" in footer
+    assert "built with AI in Berlin" not in footer
     assert "https://" not in footer  # only the version and attribution, no link
 
 
 def test_subcommand_help_keeps_the_footer_without_notice_or_link(app):
     result = runner.invoke(app, ["clockwork", "--help"], env={"COLUMNS": "200"})
     assert f"v{__version__}" in result.stdout
-    assert "built with AI in Berlin" in result.stdout
+    assert "built with AI in Berlin" not in result.stdout
     assert NOTICE not in result.stdout
     assert "https://" not in result.stdout
 

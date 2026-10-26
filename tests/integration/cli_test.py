@@ -153,7 +153,7 @@ def test_help_lists_only_everyday_commands_and_says_how_many_are_hidden(app, mak
     last = screen.strip().splitlines()[-1].strip()
     assert f"{hidden} more commands for experts are hidden; hz system expert on lists them." in screen
     assert last.startswith(f"v{__version__}")
-    assert last.endswith("🐻 built with AI in Berlin")
+    assert last == f"v{__version__}"
 
 
 def test_a_group_that_hides_commands_says_how_many(app):
