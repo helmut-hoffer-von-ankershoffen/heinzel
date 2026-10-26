@@ -181,9 +181,9 @@ export async function verifyLayers(page, shots, screenshot) {
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);
     await park();
-    // Open options through the visible speaker's supported long-press gesture. The sr-only keyboard shortcut
-    // has no pointer position of its own, so clicking it can land on the player and doesn't exercise the UI.
-    await page.getByRole("button", { name: "Pause Layer probe", exact: true }).click({ delay: 600 });
+    // Open options through the visible speaker's supported context-menu gesture. Long-press timers depend on
+    // pointer scheduling and have flaked on macOS runners; context-menu exercises the same visible overlay path.
+    await page.getByRole("button", { name: "Pause Layer probe", exact: true }).click({ button: "right" });
     await front(`${mode}-audio`, page.getByRole("dialog", { name: "Sound", exact: true }));
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);
