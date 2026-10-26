@@ -245,14 +245,14 @@ describe("Settings: Preferences, Customize, This computer", () => {
     expect(within(nav).getByRole("button", { name: "Plugins" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("uses a readable heading for a dynamically contributed plugin section marker", async () => {
+  it("turns a dynamically contributed plugin section marker into a readable heading", async () => {
     mockApi(answers);
     renderAt("/doctor?settings=clock");
 
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
     expect(await within(dialog).findByRole("heading", { name: "Clock" })).toBeInTheDocument();
-    expect(within(dialog).getByText(/Configuration section:/)).toBeInTheDocument();
-    expect(within(dialog).getByText("[clock]")).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Configuration section:/)).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("[clock]")).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("heading", { name: "[clock]" })).not.toBeInTheDocument();
     expect(within(dialog).getByRole("group", { name: "Zones" })).toBeInTheDocument();
   });
