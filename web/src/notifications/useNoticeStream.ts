@@ -9,6 +9,7 @@ import { type NavigateFunction, useNavigate } from "react-router";
 import { api, type SchemaNotice } from "@/api/client";
 import { workerRegistration } from "@/pwa/register";
 import { appRoute, useDesktopState } from "./desktop";
+import { dingForStreamEvent, notificationSoundEnabled, primeNotificationSound } from "./sound";
 import { follow } from "./stream";
 
 /** The notice's screen with its id, so the app opens on it (`?event=<id>`). */
@@ -63,9 +64,28 @@ export function useNoticeStream() {
     return () => worker?.removeEventListener("message", onMessage);
   }, [navigate]);
   useEffect(() => {
+    // A saved preference survives reloads; the first user gesture resumes Web Audio under browser autoplay policy.
+    const prime = () => {
+      if (!notificationSoundEnabled()) return;
+      void primeNotificationSound().then((ready) => {
+        if (ready) {
+          window.removeEventListener("pointerdown", prime);
+          window.removeEventListener("keydown", prime);
+        }
+      });
+    };
+    window.addEventListener("pointerdown", prime);
+    window.addEventListener("keydown", prime);
+    return () => {
+      window.removeEventListener("pointerdown", prime);
+      window.removeEventListener("keydown", prime);
+    };
+  }, []);
+  useEffect(() => {
     const controller = new AbortController();
     void follow(
       (event) => {
+        void dingForStreamEvent(event);
         if (event.event === "changed") {
           window.dispatchEvent(new CustomEvent("hz:notices", { detail: { latest: event.latest } }));
           return;

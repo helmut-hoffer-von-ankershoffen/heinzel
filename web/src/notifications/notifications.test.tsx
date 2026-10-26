@@ -54,6 +54,7 @@ function installNotification(permission: NotificationPermission = "default") {
 }
 
 afterEach(() => {
+  localStorage.removeItem("hz.notification-sound");
   vi.restoreAllMocks();
 });
 
@@ -124,6 +125,30 @@ describe("desktop notifications", () => {
     await expectAccessible(container);
     await user.click(toggle);
     expect(desktopState()).toBe("off");
+  });
+
+  it("lets the person opt into a separate new-notification ding with a user gesture", async () => {
+    class GestureAudioContext {
+      state: AudioContextState = "suspended";
+      resume = vi.fn(async () => {
+        this.state = "running";
+      });
+    }
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: GestureAudioContext });
+    vi.stubGlobal("AudioContext", GestureAudioContext);
+    installNotification();
+    mockApi(shell);
+    const user = userEvent.setup();
+    const { container } = renderSettings();
+    const sound = await screen.findByRole("switch", { name: "Play a sound for new notifications" });
+    expect(sound).not.toBeChecked();
+    expect(
+      screen.getByText("A short ding plays while this app is open. This setting is separate from your music."),
+    ).toBeInTheDocument();
+    await user.click(sound);
+    await waitFor(() => expect(sound).toBeChecked());
+    expect(localStorage.getItem("hz.notification-sound")).toBe("on");
+    await expectAccessible(container);
   });
 
   it("say how to unblock them when the browser denied them", async () => {

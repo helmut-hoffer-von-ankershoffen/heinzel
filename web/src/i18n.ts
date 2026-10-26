@@ -708,6 +708,10 @@ const en = {
   "notify.state.denied":
     "Your browser blocks notifications from this page. Allow them in the browser's site settings, then turn this on.",
   "notify.state.unsupported": "This browser can't show notifications; the daemon pops them up instead.",
+  "notify.sound.toggle": "Play a sound for new notifications",
+  "notify.sound.help": "A short ding plays while this app is open. This setting is separate from your music.",
+  "notify.sound.gesture": "Your browser couldn't start audio. Try enabling this after clicking or tapping the page.",
+  "notify.sound.unsupported": "This browser doesn't support notification sounds.",
   "install.action": "Install app",
   "install.installed": "Installed: it opens from the Dock in a window of its own.",
   "install.safari": "To install it, choose File > Add to Dock in Safari's menu.",
