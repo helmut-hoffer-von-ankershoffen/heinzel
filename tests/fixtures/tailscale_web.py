@@ -11,8 +11,10 @@ import os
 import socket
 import sys
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+
+from local_http import LoopbackThreadingHTTPServer
 
 ROOT = Path(sys.argv[1])
 LIFECYCLE = ROOT / "fixture-lifecycle.jsonl"
@@ -147,7 +149,7 @@ def announce(url):
     sys.stdout.flush()
 
 
-local = ThreadingHTTPServer(("127.0.0.1", 0), LocalAPI)
+local = LoopbackThreadingHTTPServer(("127.0.0.1", 0), LocalAPI)
 threading.Thread(target=local.serve_forever, daemon=True).start()
 record_lifecycle("local-api-started")
 configuration = Config.load(ROOT)
