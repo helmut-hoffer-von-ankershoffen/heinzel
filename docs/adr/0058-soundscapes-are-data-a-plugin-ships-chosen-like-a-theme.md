@@ -12,8 +12,8 @@ related: 0003, 0018, 0026, 0040, 0043, 0044
 
 The maintainer asked for soundscapes in the web app: quiet background sound a person picks the way they pick a theme
 ([ADR 0044](0044-themes-are-data-a-plugin-ships.md)), but on its own, so either can change without the other. Plugins
-contribute them, and the core ships two: CEO mode, a stream from the CEO mode YouTube Live channel, and Claude FM,
-a stream on the official Claude YouTube channel
+contribute them, and the core initially shipped two: CEO mode, a stream from the CEO mode YouTube Live channel, and
+Claude FM, a stream on the official Claude YouTube channel
 (`https://www.youtube.com/watch?v=tRsQsTMvPNg`). There are two kinds. **Layered** soundscapes are licensed audio files
 in the plugin, mixed live, each layer louder or softer with a signal such as rain intensity or the part of the day.
 **Streams** play in the official player of an allowed host. Sound must stay quiet when it should: it is off until the
@@ -166,7 +166,7 @@ themes, and the only third party is one allowlisted host that the person starts 
   - **The sidebar's account row** has a speaker button beside the light/dark toggle, in the collapsed rail too. Its
     click plays or pauses, and `aria-pressed` reflects playing.
   - **A chevron beside it** opens a popover with:
-    - the soundscapes (Off, CEO mode, Claude FM, the plugins'), the current one checked, each stream marked "Plays from YouTube"
+    - the soundscapes (Off, Claude FM, the plugins'), the current one checked, each stream marked "Plays from YouTube"
       and each CC-BY layer with its attribution;
     - the volume;
     - Follow my theme;
@@ -176,7 +176,7 @@ themes, and the only third party is one allowlisted host that the person starts 
     proposed as ADR 0056 (pull request #83), off by default, once that lands.
 - **Amendments.**
   - **ADR 0027.** The core's own contact with a third party gains one case: the stream soundscape in effect, from the
-    person's Play onwards. CEO mode and Claude FM are offered, never on by default.
+    person's Play onwards. Claude FM is offered, never on by default.
   - **ADR 0039, 0046.** The page's CSP stays this origin's only, except for one `frame-src` origin from
     `STREAM_PROVIDERS`, on the HTML page, while a stream soundscape is in effect. `/sound-assets` is a route outside
     `/api`, like the theme routes.
@@ -218,6 +218,10 @@ themes, and the only third party is one allowlisted host that the person starts 
 - `tests/unit/public_api_test.py` checks the new names.
 
 ## More Information
+
+- **Amendment, 2026-10-26.** The built-in CEO mode stream was removed because its YouTube video cannot play embedded.
+  Core no longer lists or installs it; the historical release note below records when it was first added. Claude FM
+  remains the built-in stream.
 
 - Requested by the maintainer, 2026-10-24: soundscapes chosen like a theme; layered and stream kinds; Claude FM as the
   core's default stream; ducking and meeting mute; the control beside the light/dark toggle.

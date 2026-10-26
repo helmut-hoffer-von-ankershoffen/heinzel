@@ -2,7 +2,7 @@
 
 A soundscape is data a plugin offers with `module.soundscape(...)`: licensed audio files the web app mixes live, each
 layer following a signal such as the part of the day, or a stream in the official player of an allowed host. The core
-offers Claude FM and CEO mode, streams on YouTube. Sound is off until the person picks a soundscape and presses Play;
+offers Claude FM, a stream on YouTube. Sound is off until the person picks a soundscape and presses Play;
 `hz system sound use <name>` picks one, `off` is none.
 """
 

@@ -1,7 +1,7 @@
 // One item of the footer: only an icon, in the colour and shape of its state, or a short text; what it says in a pane
 // above it on hover, focus or a click (which pins it), like the clock's. Every footer item is drawn with this, so
 // plugin items get it for free: they declare `tone` as data and the renderer does the rest.
-import { CircleCheck, CircleX, type LucideIcon, Minus, TriangleAlert } from "lucide-react";
+import { Circle, CircleCheck, CircleX, type LucideIcon, TriangleAlert } from "lucide-react";
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { t } from "@/i18n";
@@ -22,7 +22,7 @@ const COLOUR: Record<State, string> = {
   off: "text-muted-foreground",
 };
 /** The shape says the state too, so colour is never the only signal: tick, triangle, cross, dash. */
-const SHAPE: Record<State, LucideIcon> = { ok: CircleCheck, warn: TriangleAlert, bad: CircleX, off: Minus };
+const SHAPE: Record<State, LucideIcon> = { ok: CircleCheck, warn: TriangleAlert, bad: CircleX, off: Circle };
 const WORD: Record<State, string> = {
   ok: "state.ok",
   warn: "state.warn",
@@ -42,6 +42,7 @@ export function FooterItem({
   content,
   children,
   align = "right",
+  className,
 }: {
   /** What it says, as its accessible name and the pane's heading. */
   label: string;
@@ -59,6 +60,8 @@ export function FooterItem({
   /** The pane's body: detail lines, links, buttons. */
   children?: ReactNode;
   align?: "left" | "right";
+  /** Extra trigger styling for a specific status, such as pulsing when an update is ready. */
+  className?: string;
 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -187,6 +190,7 @@ export function FooterItem({
         className={cn(
           "relative flex h-6 min-w-6 items-center justify-center gap-1 rounded px-1 hover:bg-accent/60 disabled:cursor-wait disabled:opacity-60",
           Icon ? COLOUR[state] : "text-ui-sm hover:text-foreground",
+          className,
         )}
       >
         {Icon ? (

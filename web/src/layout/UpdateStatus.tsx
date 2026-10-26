@@ -81,6 +81,7 @@ export function UpdateStatus() {
       label={canUpdate ? t("updates.action") : t("updates.title")}
       state={problem ? "bad" : available ? "warn" : "off"}
       icon={busy ? LoaderCircle : Download}
+      className={available && !problem ? "animate-pulse text-bad" : status && !problem ? "text-ok" : undefined}
       onActivate={canUpdate ? () => void run(false) : undefined}
       disabled={busy}
     >

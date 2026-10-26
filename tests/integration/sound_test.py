@@ -29,6 +29,7 @@ ACME = ("heinzel_acme", "heinzel_acme_payments", "heinzel_acme_lisbon", "heinzel
 TOKEN = "s3ssion-token-for-tests"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 FRAMED = f"{web.CSP}; frame-src https://www.youtube-nocookie.com"
+WEATHER_FRAMED = f"{web.CSP}; frame-src {web.OSM_FRAME_ORIGIN}"
 STREAM = {"kind": "stream", "stream": {"provider": "youtube", "video": "tRsQsTMvPNg"}}
 
 
@@ -87,21 +88,8 @@ def test_sound_is_off_by_default_and_the_list_shows_off_the_core_streams_and_eac
     code, listed = hz(kernel("heinzel_sound_demo"), "system", "sound", "list")
     assert code == 0, listed
     assert (listed["selected"], listed["effective"]) == ("off", "off")
-    off, ceo, fm, focus, demo = listed["soundscapes"]
+    off, fm, focus, demo = listed["soundscapes"]
     assert (off["name"], off["kind"], off["selected"], off["effective"]) == ("off", "off", True, True)
-    assert (ceo["name"], ceo["title"], ceo["module"], ceo["plugin"]) == (
-        "ceo-mode",
-        "CEO mode",
-        "system.sound",
-        "heinzel",
-    )
-    assert ceo["stream"] == {
-        "provider": "youtube",
-        "video": "q770AP07Xqw",
-        "embed_url": "https://www.youtube-nocookie.com/embed/q770AP07Xqw",
-        "frame_origin": "https://www.youtube-nocookie.com",
-        "watch_url": "https://www.youtube.com/watch?v=q770AP07Xqw",
-    }
     assert (fm["name"], fm["title"], fm["module"], fm["plugin"]) == (
         "claude-fm",
         "Claude FM",
@@ -131,7 +119,7 @@ def test_sound_is_off_by_default_and_the_list_shows_off_the_core_streams_and_eac
     assert listed["signals"]["daypart"] in {"dawn", "morning", "day", "dusk", "evening", "night"}
     assert "weather.rain" not in listed["signals"]  # absent until a plugin publishes it
     assert (listed["volume"], listed["follow_theme"], listed["mute_in_meetings"]) == (50, False, True)
-    assert listed["next"] == ["hz system sound use ceo-mode"]
+    assert listed["next"] == ["hz system sound use claude-fm"]
 
 
 def test_sound_use_writes_the_user_setting_refuses_an_unknown_name_and_off_switches_it_off(kernel):
@@ -142,9 +130,7 @@ def test_sound_use_writes_the_user_setting_refuses_an_unknown_name_and_off_switc
     assert '[system.sound]\nname = "claude-fm"' in (user_config_dir() / "config.toml").read_text(encoding="utf-8")
     code, output = hz(hzk, "system", "sound", "use", "nope", json_output=False)
     assert code != 0
-    assert "No soundscape is called 'nope'; available: off, ceo-mode, claude-fm, focus, demo" in " ".join(
-        str(output).split()
-    )
+    assert "No soundscape is called 'nope'; available: off, claude-fm, focus, demo" in " ".join(str(output).split())
     assert hz(hzk, "system", "sound", "use", "off")[1]["effective"] == "off"
 
 
@@ -271,7 +257,7 @@ def test_the_cli_renders_the_soundscapes_with_the_one_in_effect_marked(kernel):
     assert "*  off" in str(output)
     lines = [" ".join(line.split()) for line in str(output).splitlines()]
     assert any("claude-fm Claude FM stream (youtube)" in line for line in lines)
-    assert any("ceo-mode CEO mode stream (youtube)" in line for line in lines)
+    assert not any("CEO mode" in line for line in lines)
     assert any("demo Demo hum 1 layer" in line for line in lines)
 
 
@@ -345,6 +331,20 @@ def test_follow_my_theme_to_a_stream_admits_its_frame_origin(kernel, static):
     hzk = kernel("heinzel_acme", extra=(paired("radio"),))
     configure('[system.theme]\nname = "acme"\n[system.sound]\nfollow_theme = true\n')
     assert client(hzk, static).get("/").headers["content-security-policy"] == FRAMED
+
+
+def test_the_weather_map_frame_is_admitted_only_when_a_weather_module_is_installed(kernel, static):
+    web_client = client(kernel(), static)
+    assert web_client.get("/").headers["content-security-policy"] == web.CSP
+    weather = Module("weather", "Weather for the team's locations.")
+    with_weather = client(kernel(extra=(weather,)), static)
+    assert with_weather.get("/").headers["content-security-policy"] == WEATHER_FRAMED
+    hzk = kernel("heinzel_sound_demo", extra=(weather,))
+    hz(hzk, "system", "sound", "use", "claude-fm")
+    weather_and_stream = client(hzk, static)
+    assert weather_and_stream.get("/").headers["content-security-policy"] == (
+        f"{web.CSP}; frame-src {web.OSM_FRAME_ORIGIN} https://www.youtube-nocookie.com"
+    )
 
 
 def test_the_page_admits_no_frame_when_the_sound_service_fails(kernel, static, monkeypatch):

@@ -100,7 +100,6 @@ const en = {
   "status.about": "About Heinzelmännchen",
   "status.tagline": "helpers accelerating product teams,",
   "status.origin": "like the little elves from Cologne",
-  "status.built": "built with AI in Berlin",
   "worldClock.title": "World Clock",
   "worldClock.panel": "World Clock panel",
   "worldClock.close": "Close World Clock",
