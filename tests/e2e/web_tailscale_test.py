@@ -2,6 +2,8 @@
 
 import json
 import os
+import re
+import select
 import subprocess
 import sys
 import tomllib
@@ -18,18 +20,47 @@ OTHER = {"svc:other": {"TCP": {"3000": {"TCPForward": "127.0.0.1:3000"}}}}
 
 def stop_server(server: subprocess.Popen[str]) -> str:
     """Stop the fixture before reading its stderr, so a failure cannot block waiting for EOF."""
-    server.terminate()
-    try:
-        server.wait(timeout=30)
-    except subprocess.TimeoutExpired:
-        server.kill()
-        server.wait(timeout=30)
-    stderr = server.stderr.read() if server.stderr is not None else ""
-    if server.stdout is not None:
+    if server.poll() is None:
+        server.terminate()
+        try:
+            server.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait(timeout=30)
+    stderr = server.stderr.read() if server.stderr is not None and not server.stderr.closed else ""
+    if server.stdout is not None and not server.stdout.closed:
         server.stdout.close()
-    if server.stderr is not None:
+    if server.stderr is not None and not server.stderr.closed:
         server.stderr.close()
     return stderr
+
+
+def fixture_url(server: subprocess.Popen[str], lifecycle: Path) -> str:
+    """Wait for the fixture's first URL and report why startup failed instead of parsing an empty line as JSON."""
+    assert server.stdout is not None
+    ready, _, _ = select.select([server.stdout], [], [], 30)
+    if not ready:
+        reason = "did not announce its URL within 30 seconds"
+    else:
+        line = server.stdout.readline()
+        if line:
+            try:
+                return json.loads(line)["url"]
+            except (json.JSONDecodeError, KeyError) as error:
+                reason = f"announced an invalid session URL ({type(error).__name__})"
+        else:
+            reason = f"exited before announcing its URL (exit code {server.poll()})"
+
+    stderr = stop_server(server)
+    stderr = re.sub(r"#token=[^\s'\"]+", "#token=<redacted>", stderr)
+    details = [f"tailscale web fixture {reason}"]
+    if stderr:
+        details.append(f"--- fixture stderr ---\n{stderr}")
+    if lifecycle.exists():
+        details.append(
+            f"--- startup stages and socket state (no fd, port, or token) ---\n{lifecycle.read_text(encoding='utf-8')}"
+        )
+    pytest.fail("\n".join(details))
 
 
 @pytest.mark.timeout(300)
@@ -57,7 +88,7 @@ def test_mounted_sharing_restarts_verifies_copies_and_disables_without_os_change
     vendor = tmp_path / "vendor.json"
     vendor.write_text(json.dumps({"version": 0, "writes": 0, "config": {"Services": OTHER}}), encoding="utf-8")
     run = [sys.executable, str(REPO / "scripts" / "web_build.py")]
-    subprocess.run([*run, "build"], cwd=REPO, check=True, capture_output=True, timeout=120)
+    subprocess.run([*run, "ensure"], cwd=REPO, check=True, capture_output=True, timeout=120)
     server = subprocess.Popen(
         [sys.executable, str(REPO / "tests" / "fixtures" / "tailscale_web.py"), str(tmp_path)],
         cwd=REPO,
@@ -73,7 +104,7 @@ def test_mounted_sharing_restarts_verifies_copies_and_disables_without_os_change
     fixture_lifecycle = tmp_path / "fixture-lifecycle.jsonl"
     try:
         assert server.stdout is not None
-        url = json.loads(server.stdout.readline())["url"]
+        url = fixture_url(server, fixture_lifecycle)
         assert url.startswith("http://127.0.0.1:")
         assert "#token=" in url
         driven = subprocess.run(

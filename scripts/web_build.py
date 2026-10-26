@@ -165,6 +165,22 @@ def build(static: Path = STATIC) -> Path:
     return static
 
 
+def ensure_built(static: Path = STATIC, web: Path = WEB) -> Path:
+    """Build the app once when stale, serializing concurrent test and setup processes.
+
+    Vite uses ``--emptyOutDir``; concurrent callers can otherwise observe an empty static directory while another
+    process rebuilds it. Recheck freshness while holding the lock so only the first stale caller rebuilds.
+    """
+    lock = ROOT / ".tools" / "web-build.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    with lock.open("w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            return build(static) if not current(static, web) else static
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
 def allowed_licenses(allowlist: Path = ROOT / ".license-allowlist") -> list[str]:
     """The licenses .license-allowlist allows, one per line, comments left out."""
     lines = (line.strip() for line in allowlist.read_text(encoding="utf-8").splitlines())
@@ -213,6 +229,11 @@ def _build() -> int:
     return 0
 
 
+def _ensure() -> int:
+    print(f"✓ web app ready in {ensure_built().relative_to(ROOT)}")
+    return 0
+
+
 def main(argv: list[str], extra: dict[str, Callable[[list[str]], int]] | None = None) -> int:
     """Run one command; see the module docstring. `extra` adds commands (scripts/web.py's)."""
     command, *arguments = argv or ["--help"]
@@ -221,6 +242,7 @@ def main(argv: list[str], extra: dict[str, Callable[[list[str]], int]] | None = 
         "exec": _exec,
         "install": lambda _: _install(),
         "build": lambda _: _build(),
+        "ensure": lambda _: _ensure(),
         "licenses": lambda args: licenses(as_json="--json" in args),
         **(extra or {}),
     }
