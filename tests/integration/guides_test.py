@@ -32,7 +32,7 @@ BASH_BLOCK = re.compile(r"```bash\n(.*?)\n```", re.DOTALL)
 INLINE = re.compile(r"`(hz(?: [^`\n]*)?)`")
 PLACEHOLDER = re.compile(r"<[^<>\n]+>")
 COMING = "coming in the next release"
-INVITE = "uvx --from git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel heinzel join "
+INVITE = "uvx --from heinzel heinzel join "
 
 
 def _split(line: str) -> list[str]:

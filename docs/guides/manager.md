@@ -14,7 +14,7 @@ You need [uv](https://docs.astral.sh/uv/) (`brew install uv`), the [GitHub CLI](
 [Claude Code](https://docs.claude.com/en/docs/claude-code) CLI installed and signed in (the default agent runner).
 
 ```bash
-uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel
+uv tool install heinzel
 gh auth login                                            # once; hz stores no token
 hz setup                                                 # who you are: found from gh, the rest asked once
 hz system plugin add github --confirm                              # pull requests and issues through gh
@@ -44,7 +44,7 @@ the same path with what you should see, and the choices along the way.
 You need [uv](https://docs.astral.sh/uv/) (`brew install uv`).
 
 ```bash
-uv tool install git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel
+uv tool install heinzel
 hz --version
 ```
 
@@ -304,7 +304,7 @@ release of hz without installing it, says what hz keeps about the person, finds 
 `gws` logins, joins the team and sets up what is still missing:
 
 ```bash
-uvx --from git+https://github.com/helmut-hoffer-von-ankershoffen/heinzel heinzel join https://github.com/acme-example/hz-team-checkout.git
+uvx --from heinzel heinzel join https://github.com/acme-example/hz-team-checkout.git
 ```
 
 The line `hz join` prints is pinned to your release (`heinzel@vX.Y.Z`); this is its shape. Whoever can read the
