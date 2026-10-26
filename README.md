@@ -24,7 +24,7 @@
 | src/heinzel/heads/web/\_lifecycle.py                          |      133 |        7 |       38 |        2 |     95% |83, 99-100, 108-\>103, 110-111, 182-183 |
 | src/heinzel/heads/web/\_shutdown.py                           |       83 |        3 |       14 |        1 |     96% |112, 141-142 |
 | src/heinzel/heads/web/\_stream.py                             |       51 |        2 |       16 |        2 |     94% |85-\>84, 95-96 |
-| src/heinzel/heads/web/\_terminal.py                           |      204 |       12 |       36 |        8 |     92% |35-\>40, 80, 91-\>95, 147-148, 166-167, 169, 217, 245-\>238, 251-\>exit, 259-260, 322-323, 325 |
+| src/heinzel/heads/web/\_terminal.py                           |      204 |       14 |       36 |        8 |     91% |35-\>40, 80, 91-\>95, 147-148, 166-167, 169, 217, 245-\>238, 251-\>exit, 257-260, 322-323, 325 |
 | src/heinzel/heads/web/\_updates.py                            |       84 |        3 |       18 |        2 |     95% | 65-66, 77 |
 | src/heinzel/kernel/\_ai.py                                    |       69 |        1 |        6 |        1 |     97% |        95 |
 | src/heinzel/kernel/\_bindings.py                              |      326 |        6 |       74 |        1 |     98% |171-173, 559-561 |
@@ -94,7 +94,7 @@
 | src/heinzel/modules/system/notify/\_watch.py                  |       34 |        7 |       10 |        4 |     75% |21-29, 40, 43-44, 59, 68 |
 | src/heinzel/modules/system/plugin/\_\_init\_\_.py             |       48 |        3 |        4 |        0 |     94% |84, 102, 127 |
 | src/heinzel/modules/system/plugin/\_render.py                 |       83 |       12 |       30 |        7 |     80% |38, 47, 84, 86, 88-\>87, 104-106, 116-120 |
-| src/heinzel/modules/system/plugin/\_service.py                |      465 |       11 |      138 |       11 |     96% |128-\>130, 176, 189-\>188, 426-427, 468-469, 482-\>487, 691-\>697, 772-\>771, 789-\>788, 880, 883-884, 899, 934-935 |
+| src/heinzel/modules/system/plugin/\_service.py                |      469 |       13 |      136 |       11 |     96% |128-\>130, 176, 189-\>188, 426-427, 468-469, 482-\>487, 697-\>703, 778-\>777, 795-\>794, 886, 889-890, 905, 934-935, 950-951 |
 | src/heinzel/modules/system/plugin/\_sources.py                |      272 |        2 |       90 |        1 |     99% |253-\>255, 427-428 |
 | src/heinzel/modules/system/plugin/docs/\_build.py             |       24 |        0 |        8 |        1 |     97% |   22-\>24 |
 | src/heinzel/modules/system/plugin/docs/\_files.py             |      104 |        6 |       32 |        2 |     94% |51-52, 122-123, 126-127 |
@@ -126,7 +126,7 @@
 | src/heinzel/modules/telemetry/\_\_init\_\_.py                 |       44 |        2 |        0 |        0 |     95% |  110, 164 |
 | src/heinzel/modules/telemetry/\_render.py                     |       15 |       10 |        2 |        0 |     29% |11-17, 22-27 |
 | src/heinzel/modules/telemetry/\_service.py                    |      236 |        8 |       70 |        3 |     96% |146-\>152, 154-\>152, 162, 219-220, 289-291, 344-345 |
-| **TOTAL**                                                     | **28847** |  **725** | **7160** |  **320** | **97%** |           |
+| **TOTAL**                                                     | **28852** |  **729** | **7158** |  **320** | **97%** |           |
 
 160 files skipped due to complete coverage.
 
