@@ -19,8 +19,9 @@ fetches a font for `FontFace` or `@font-face` itself and can't add a header. The
 checks each file again as it reads it (ADR 0044). Themes' logos are served the same way at
 `/theme-assets/<theme>/<light|dark|mark>.svg`, as `image/svg+xml` under a CSP of their own that loads and runs nothing.
 Soundscapes' audio files are served the same way at `/sound-assets/<name>/<layer-n|earcon-kind>.<ext>`, typed by their
-checked signature (ADR 0058). The page itself (`index.html`) admits one frame origin, from `STREAM_PROVIDERS` in code,
-only while the soundscape in effect is a stream: the configuration is read for each page, and any error admits none.
+checked signature (ADR 0058). The page itself (`index.html`) admits only fixed frame origins from code: the map origin
+only while a weather module is installed, and a stream origin only while the soundscape in effect is a stream. The
+configuration is read for each page, and any error admits no stream origin.
 
 `POST /api/restart` restarts the server in place, for changes a running process can't load, such as an added plugin
 (`restart_required`, ADR 0047): the process executes `hz` again with the same arguments, handing over its listening
@@ -256,21 +257,27 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     return app
 
 
-PAGE_CSPS = frozenset(f"{CSP}; frame-src {provider.frame_origin}" for provider in STREAM_PROVIDERS.values())
-"""Every CSP the page may carry besides `CSP`: one per stream provider, its frame origin admitted."""
+OSM_FRAME_ORIGIN = "https://www.openstreetmap.org"
+"""The fixed map document origin, admitted only while a weather module is installed."""
 
 
 def page_csp(kernel: Kernel) -> str:
-    """The CSP of the app's page: `CSP`, with `frame-src` for the one host the stream soundscape in effect plays from.
+    """The page CSP admits only fixed origins needed by currently installed capabilities.
 
-    The origin comes from `STREAM_PROVIDERS`, never from configuration or a plugin; anything going wrong admits none.
+    A map is available only with a weather plugin, and a streaming frame only while a known stream is in effect. No
+    origin comes from plugin, user, or configuration input.
     """
+    origins: list[str] = []
+    if any(record.qualname == "weather" or record.qualname.startswith("weather.") for record in kernel.modules):
+        origins.append(OSM_FRAME_ORIGIN)
     try:
         provider = kernel.resolve(SoundAssets).stream_provider() if kernel.provides(SoundAssets) else None
     except Exception:  # noqa: BLE001 - fail closed: the page loads with the strict CSP, sound just can't stream
         provider = None
     stream = STREAM_PROVIDERS.get(provider) if provider else None
-    return f"{CSP}; frame-src {stream.frame_origin}" if stream else CSP
+    if stream:
+        origins.append(stream.frame_origin)
+    return f"{CSP}; frame-src {' '.join(dict.fromkeys(origins))}" if origins else CSP
 
 
 def secure(response: Response, path: str) -> None:

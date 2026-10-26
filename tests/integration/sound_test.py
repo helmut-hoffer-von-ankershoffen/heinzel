@@ -29,6 +29,7 @@ ACME = ("heinzel_acme", "heinzel_acme_payments", "heinzel_acme_lisbon", "heinzel
 TOKEN = "s3ssion-token-for-tests"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 FRAMED = f"{web.CSP}; frame-src https://www.youtube-nocookie.com"
+WEATHER_FRAMED = f"{web.CSP}; frame-src {web.OSM_FRAME_ORIGIN}"
 STREAM = {"kind": "stream", "stream": {"provider": "youtube", "video": "tRsQsTMvPNg"}}
 
 
@@ -330,6 +331,20 @@ def test_follow_my_theme_to_a_stream_admits_its_frame_origin(kernel, static):
     hzk = kernel("heinzel_acme", extra=(paired("radio"),))
     configure('[system.theme]\nname = "acme"\n[system.sound]\nfollow_theme = true\n')
     assert client(hzk, static).get("/").headers["content-security-policy"] == FRAMED
+
+
+def test_the_weather_map_frame_is_admitted_only_when_a_weather_module_is_installed(kernel, static):
+    web_client = client(kernel(), static)
+    assert web_client.get("/").headers["content-security-policy"] == web.CSP
+    weather = Module("weather", "Weather for the team's locations.")
+    with_weather = client(kernel(extra=(weather,)), static)
+    assert with_weather.get("/").headers["content-security-policy"] == WEATHER_FRAMED
+    hzk = kernel("heinzel_sound_demo", extra=(weather,))
+    hz(hzk, "system", "sound", "use", "claude-fm")
+    weather_and_stream = client(hzk, static)
+    assert weather_and_stream.get("/").headers["content-security-policy"] == (
+        f"{web.CSP}; frame-src {web.OSM_FRAME_ORIGIN} https://www.youtube-nocookie.com"
+    )
 
 
 def test_the_page_admits_no_frame_when_the_sound_service_fails(kernel, static, monkeypatch):

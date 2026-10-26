@@ -19,6 +19,8 @@ type WeatherReport = {
     units: "metric" | "imperial";
     observed_at: string;
     attribution: string;
+    latitude?: number;
+    longitude?: number;
   };
   hours: { at: string; icon: string; temperature: number; rain_chance: number; description: string }[];
   days: { day: string; icon: string; high: number; low: number; rain_chance: number; description: string }[];
@@ -40,6 +42,22 @@ async function report(): Promise<WeatherReport> {
 
 const percent = (value: number) => `${Math.round(value * 100)}%`;
 
+/** The weather provider supplies the location; embed a small OSM map with a marker without accepting a URL from it. */
+export function weatherMapUrl(latitude: number, longitude: number): string | null {
+  if (
+    !Number.isFinite(latitude) ||
+    !Number.isFinite(longitude) ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  )
+    return null;
+  const box = [longitude - 0.2, latitude - 0.12, longitude + 0.2, latitude + 0.12].join(",");
+  const query = new URLSearchParams({ bbox: box, layer: "mapnik", marker: `${latitude},${longitude}` });
+  return `https://www.openstreetmap.org/export/embed.html?${query}`;
+}
+
 export function WeatherPanel({ onClose }: { onClose: () => void }) {
   const query = useQuery({
     queryKey: ["weather", "report"],
@@ -47,6 +65,9 @@ export function WeatherPanel({ onClose }: { onClose: () => void }) {
     refetchInterval: 15 * 60_000,
     retry: false,
   });
+  const mapUrl = query.data
+    ? weatherMapUrl(query.data.now.latitude ?? Number.NaN, query.data.now.longitude ?? Number.NaN)
+    : null;
   return (
     <section aria-label="Weather" className="flex h-full min-h-0 flex-col">
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border px-4">
@@ -64,6 +85,21 @@ export function WeatherPanel({ onClose }: { onClose: () => void }) {
           </p>
         ) : (
           <div className="flex flex-col gap-5">
+            {mapUrl && (
+              <section aria-label="Weather map" className="overflow-hidden rounded-xl border border-border">
+                <iframe
+                  title={`Weather map near ${query.data.now.location}`}
+                  src={mapUrl}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  className="h-56 w-full border-0"
+                />
+                <p className="px-3 py-2 text-xs text-muted-foreground">
+                  {query.data.now.icon} {query.data.now.description} near {query.data.now.location} · © OpenStreetMap
+                  contributors
+                </p>
+              </section>
+            )}
             <section
               aria-label={`Current weather in ${query.data.now.location}`}
               className="rounded-xl border border-border p-4"

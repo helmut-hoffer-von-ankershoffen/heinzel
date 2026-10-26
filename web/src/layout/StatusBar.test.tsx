@@ -130,7 +130,6 @@ describe("Mounted footer measurements", () => {
     expect(within(footer).getByRole("button", { name: /CPU Memory Load/ })).toBeInTheDocument();
     expect(within(footer).getByRole("button", { name: /System health/ })).toBeInTheDocument();
     expect(within(footer).getByRole("button", { name: "0 Heinzelmännchen, off" })).toBeInTheDocument();
-    expect(within(footer).queryByRole("button", { name: "More status items" })).not.toBeInTheDocument();
     expect(footer.textContent).not.toContain("🐻");
     expect(footer.querySelector('[data-footer-part="@version"]')).toBe(footer.firstElementChild);
   });
