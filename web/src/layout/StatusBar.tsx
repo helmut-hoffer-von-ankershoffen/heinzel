@@ -437,10 +437,11 @@ function MeetingItem({ now }: { now: Date }) {
 
 export function StatusBar() {
   const info = useInfo();
+  const clockInstalled = Boolean(info.data?.modules.some((module) => module.qualname === "clock"));
   const clock = useShown(
     "clock:primary-zone",
     "footer",
-    Boolean(info.data?.modules.some((module) => module.qualname === "clock")),
+    clockInstalled,
   );
   const now = useNow();
   return (
@@ -469,7 +470,7 @@ export function StatusBar() {
         <MeetingItem now={now} />
       </FooterPart>
       <FooterPart id="@clock" priority={40} label={t("status.zones")}>
-        {clock && <Clock now={now} />}
+        {clockInstalled && clock && <Clock now={now} />}
       </FooterPart>
       <FooterMore />
     </FooterLayout>

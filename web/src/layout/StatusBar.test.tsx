@@ -18,7 +18,18 @@ describe("The status bar's clock", () => {
     mockApi({
       ...shell,
       "/api/system/info": { version: "0.4.0", modules: [] },
-      "/api/system/ui/status": [],
+      "/api/system/ui/status": [
+        {
+          id: "clock:primary-zone",
+          module: "clock",
+          plugin: "heinzel-clock",
+          order: 900,
+          refresh: 60,
+          problem: null,
+          slots: { footer: true },
+          item: { text: "Berlin", tone: "neutral", icon: "clock" },
+        },
+      ],
     });
     renderAt("/doctor");
     const bar = await screen.findByRole("contentinfo");
