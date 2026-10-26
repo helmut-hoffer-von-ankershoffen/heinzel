@@ -63,6 +63,8 @@ try {
   });
   const page = await context.newPage();
   const errors = [];
+  const failedRequests = [];
+  const verificationResponses = [];
   const mutations = { enable: 0, disable: 0, restart: 0 };
   const instances = new Set();
   const verify = [];
@@ -77,7 +79,16 @@ try {
   });
   await page.route("**/api/lifecycle/verify", async (route) => {
     const response = await route.fetch();
-    if (response.ok() && (await response.json()).matches && !verifying) {
+    let result;
+    if (response.ok()) result = await response.json();
+    verificationResponses.push({
+      status: response.status(),
+      instance: result?.instance,
+      version: result?.version,
+      matches: result?.matches,
+      mismatched: result?.mismatched,
+    });
+    if (response.ok() && result?.matches && !verifying) {
       verifying = true;
       observedVerification();
       await verificationGate;
@@ -85,6 +96,10 @@ try {
     await route.fulfill({ response });
   });
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("requestfailed", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/")) failedRequests.push({ path, error: request.failure()?.errorText });
+  });
   page.on("request", (request) => {
     const path = new URL(request.url()).pathname;
     if (request.method() !== "POST") return;
@@ -113,7 +128,18 @@ try {
       verificationObserved,
       new Promise((_resolve, reject) => {
         verificationTimer = setTimeout(
-          () => reject(new Error("The mounted control must request replacement verification.")),
+          () =>
+            reject(
+              new Error(
+                `The mounted control must request replacement verification: ${JSON.stringify({
+                  verificationResponses,
+                  failedRequests,
+                  errors,
+                  mutations,
+                  instances: [...instances],
+                })}`,
+              ),
+            ),
           15_000,
         );
       }),
