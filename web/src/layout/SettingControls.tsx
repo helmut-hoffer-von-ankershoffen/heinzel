@@ -146,7 +146,7 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
       {staged !== undefined && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-border p-3">
           <RestartAndApply
-            target={t("settings.title")}
+            target="hz ui"
             changes={[title]}
             // Secret values are intentionally excluded: the backend never exposes them in its loaded-settings proof.
             settings={
@@ -165,7 +165,7 @@ export function Row({ setting }: { setting: SchemaSettingInfo }) {
               return true;
             }}
             onUnsupported={persistStaged}
-            deferredMessage="Saved. Restart `hz ui` to apply this setting."
+            deferredMessage={`Saved ${title}. This server cannot restart hz ui. Run \`hz ui\` in a terminal to apply this setting.`}
             onApplied={() => {
               setStaged(undefined);
               setEditorVersion((version) => version + 1);

@@ -26,15 +26,23 @@ vi.mock("@/lifecycle/RestartAndApply", () => ({
     changes,
     settings,
     preserve,
+    onUnsupported,
     onApplied,
+    target,
+    deferredMessage,
   }: {
     changes: string[];
     settings?: { section: string; key: string; value: unknown }[];
     preserve: (signal: AbortSignal) => Promise<void>;
+    onUnsupported: () => Promise<void>;
     onApplied?: () => void;
+    target: string;
+    deferredMessage: string;
   }) => (
     <>
       <output data-testid="expected-settings">{JSON.stringify(settings ?? [])}</output>
+      <output data-testid="restart-target">{target}</output>
+      <output data-testid="deferred-message">{deferredMessage}</output>
       <button
         type="button"
         onClick={async () => {
@@ -43,6 +51,9 @@ vi.mock("@/lifecycle/RestartAndApply", () => ({
         }}
       >
         Restart and apply: {changes.join(", ")}
+      </button>
+      <button type="button" onClick={() => void onUnsupported()}>
+        Unsupported restart
       </button>
     </>
   ),
@@ -155,6 +166,23 @@ describe("Schema setting metadata", () => {
     await user.click(screen.getByRole("switch", { name: "Enabled" }));
     expect(mutateAsync).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: /Restart and apply: Enabled/ }));
+    expect(mutateAsync).toHaveBeenCalledExactlyOnceWith({ key: "sample.enabled", value: "false" });
+  });
+
+  it("identifies hz ui and saves only after the shared unsupported confirmation", async () => {
+    render(
+      <Row
+        setting={{ ...setting("user"), key: "enabled", value: true, default: false, json_schema: { type: "boolean" } }}
+      />,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("switch", { name: "Enabled" }));
+    expect(screen.getByTestId("restart-target")).toHaveTextContent("hz ui");
+    expect(screen.getByTestId("deferred-message")).toHaveTextContent(
+      "Saved Enabled. This server cannot restart hz ui. Run `hz ui` in a terminal to apply this setting.",
+    );
+    expect(mutateAsync).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Unsupported restart" }));
     expect(mutateAsync).toHaveBeenCalledExactlyOnceWith({ key: "sample.enabled", value: "false" });
   });
 

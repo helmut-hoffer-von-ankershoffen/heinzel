@@ -162,8 +162,8 @@ const answersWithRestart = (restartable = true) => {
 
 async function confirmSettingsApply(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole("button", { name: "Restart and apply" }));
-  const dialog = await screen.findByRole("alertdialog", { name: "Restart and apply Settings" });
-  await user.click(within(dialog).getByRole("button", { name: "Restart and apply Settings" }));
+  const dialog = await screen.findByRole("alertdialog", { name: "Restart and apply hz ui" });
+  await user.click(within(dialog).getByRole("button", { name: "Restart and apply hz ui" }));
 }
 
 /** The `value` of the last `config set`. */
@@ -430,7 +430,11 @@ describe("The time zones editor (a list of tables by its schema)", () => {
     await confirmSettingsApply(user);
 
     await waitFor(() => expect(calls.some((call) => call.url.includes("/system/config/set"))).toBe(true));
-    expect(await screen.findByText("Saved. Restart `hz ui` to apply this setting.")).toHaveAttribute("role", "status");
+    expect(
+      await screen.findByText(
+        "Saved Zones. This server cannot restart hz ui. Run `hz ui` in a terminal to apply this setting.",
+      ),
+    ).toHaveAttribute("role", "status");
     expect(lastSet(calls)).toBe('[{ name = "Europe/Berlin", hours = [9, 17] }, { name = "America/New_York" }]');
     expect(calls.some((call) => call.url.endsWith("/api/restart"))).toBe(false);
   });
