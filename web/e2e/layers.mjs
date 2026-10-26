@@ -1,4 +1,6 @@
 // Real CSS hit testing over a live iframe. The local canvas stream avoids external playback/network requirements.
+let stabilityCheck = 0;
+
 export async function verifyLayers(page, shots, screenshot) {
   const stream = {
     provider: "youtube",
@@ -91,18 +93,28 @@ export async function verifyLayers(page, shots, screenshot) {
   async function front(name, pane) {
     await pane.waitFor();
     await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 5000 });
+    const stabilityKey = `__hzStablePane_${++stabilityCheck}`;
+    await pane.evaluate((element, key) => element.setAttribute("data-hz-e2e-stability", key), stabilityKey);
     try {
       await page.waitForFunction(
         (element) => {
           const box = element.getBoundingClientRect();
-          return (
+          const inside =
             box.width > 0 &&
             box.height > 0 &&
             box.x >= 0 &&
             box.y >= 0 &&
             box.right <= innerWidth &&
-            box.bottom <= innerHeight
-          );
+            box.bottom <= innerHeight;
+          const current = { x: box.x, y: box.y, width: box.width, height: box.height };
+          const key = element.getAttribute("data-hz-e2e-stability");
+          const previous = window[key];
+          const same =
+            previous && Object.keys(current).every((name) => Math.abs(current[name] - previous.rect[name]) < 0.5);
+          const since = inside && same ? previous.since : performance.now();
+          window[key] = { rect: current, since };
+          // Wait for final positioning after content has settled, not a transient frame above the footer.
+          return inside && performance.now() - since >= 150;
         },
         await pane.elementHandle(),
         { timeout: 5000 },
@@ -128,12 +140,25 @@ export async function verifyLayers(page, shots, screenshot) {
         }
         return {
           pane: element.getBoundingClientRect().toJSON(),
+          paneStyle: {
+            top: getComputedStyle(element).top,
+            maxHeight: getComputedStyle(element).maxHeight,
+          },
+          trigger: document.querySelector("footer")?.getBoundingClientRect().toJSON(),
           ancestors,
           viewport: { width: innerWidth, height: innerHeight },
           scroll: { x: scrollX, y: scrollY },
         };
       });
+      if (screenshot) await page.screenshot({ path: `${shots}/${name}-unstable.png` });
       throw new Error(`${name}: pane must fit the viewport before overlap is tested: ${JSON.stringify(geometry)}`);
+    } finally {
+      await pane
+        .evaluate((element, key) => {
+          element.removeAttribute("data-hz-e2e-stability");
+          delete window[key];
+        }, stabilityKey)
+        .catch(() => {});
     }
     // Measure, reposition and hit-test in one browser evaluation. Changing a docked card's width would resize its
     // reserved sidebar slot and invalidate a previously captured pane rectangle on the next observer callback.
@@ -188,8 +213,23 @@ export async function verifyLayers(page, shots, screenshot) {
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);
     await park();
+    const changelogResponse =
+      mode === "docked"
+        ? page.waitForResponse((response) => {
+            const url = new URL(response.url());
+            return (
+              url.pathname === "/api/system/changelog" &&
+              url.searchParams.get("newer") === "false" &&
+              response.request().method() === "GET"
+            );
+          })
+        : Promise.resolve();
     await page.getByRole("contentinfo").locator("button").first().click();
-    await front(`${mode}-version`, page.getByRole("region", { name: /^v\d/ }));
+    const versionPane = page.getByRole("region", { name: /^v\d/ });
+    const response = await changelogResponse;
+    await response?.finished();
+    await versionPane.locator('[aria-busy="false"]').waitFor();
+    await front(`${mode}-version`, versionPane);
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);
     await park();

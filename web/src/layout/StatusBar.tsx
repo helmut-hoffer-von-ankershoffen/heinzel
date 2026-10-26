@@ -367,7 +367,7 @@ function ReleaseNotes({ version }: { version: string }) {
   const changelog = useChangelog(false);
   const notes = typeof changelog.data === "string" ? installedReleaseNotes(changelog.data, version) : null;
   return (
-    <div className="px-1.5 pb-1">
+    <div className="px-1.5 pb-1" aria-busy={changelog.isPending}>
       <section aria-label={t("status.about")} className="mb-2 flex items-center gap-2 border-b border-border pb-2">
         <HeinzelAvatar label={t("app.name")} className="h-14 w-9 shrink-0" />
         <p className="min-w-0 flex-1 text-xs leading-tight font-medium">
