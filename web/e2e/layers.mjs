@@ -181,7 +181,9 @@ export async function verifyLayers(page, shots, screenshot) {
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);
     await park();
-    await page.getByRole("button", { name: "Sound options" }).click();
+    // Open options through the visible speaker's supported long-press gesture. The sr-only keyboard shortcut
+    // has no pointer position of its own, so clicking it can land on the player and doesn't exercise the UI.
+    await page.getByRole("button", { name: "Pause Layer probe", exact: true }).click({ delay: 600 });
     await front(`${mode}-audio`, page.getByRole("dialog", { name: "Sound", exact: true }));
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);

@@ -54,6 +54,16 @@ def service_for(make_kernel, prefix, runner=None, kernel=None, settings=None):
     return PluginService(kernel, installation, settings or PluginSettings(github_token=None))
 
 
+def test_installed_plugins_keep_repository_visibility_from_install_history(make_kernel, tmp_path):
+    service = service_for(make_kernel, tmp_path)
+    service._record("add", "heinzel-old", private_repository=True)
+
+    assert service.installed()[0].private_repository is True
+
+    service._record("remove", "heinzel-old")
+    assert service.installed()[0].private_repository is None
+
+
 def test_add_in_tool_env_reinstalls_with_plugins(make_kernel, tool_env):
     assert service_for(make_kernel, tool_env).add_command("git+https://github.com/org/heinzel-new@v1.0.0") == [
         "uv", "tool", "install", "--force", "--python", PYTHON,

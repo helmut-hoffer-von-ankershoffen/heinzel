@@ -110,7 +110,9 @@ def add_updates(app: FastAPI, kernel: Kernel, static: Path | None, *, restartabl
         reason = (
             "Restart this UI with hz ui before updating."
             if not restartable
-            else "This frontend build cannot be verified; update it using its installation method."
+            else "This UI did not load a complete, locally installed web build, so it cannot verify and reload an "
+            "update safely. If you installed Heinzelmännchen with uv, run `uv tool upgrade heinzel`, then restart "
+            "`hz ui`. Otherwise, update it with the installer you used and restart `hz ui`."
             if frontend is None
             else "This installation is deliberately pinned or is not a persistent uv tool; update it where installed."
             if not source_allowed

@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Outlet, useLocation, useSearchParams } from "react-router";
+import { useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { ChatProvider } from "@/chat/ChatContext";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
-import { OPEN_WEATHER_PANEL } from "@/components/Contributions";
 import { t } from "@/i18n";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
@@ -24,7 +24,6 @@ import { StatusBar } from "./StatusBar";
 import { TerminalPanel } from "./TerminalPanel";
 import { ThemeTokens } from "./ThemeTokens";
 import { TopBar } from "./TopBar";
-import { WeatherPanel } from "./WeatherPanel";
 import { WorldClock } from "./WorldClock";
 
 /** A pane's open state, remembered in this browser; without storage it starts from `initial` each time. */
@@ -77,6 +76,11 @@ export function Shell() {
 }
 
 function Layout() {
+  const config = useConfig();
+  const audioVisualizer = config.data?.settings.find(
+    (setting) => setting.section === "system.ui" && setting.key === "audio_visualizer",
+  );
+  const showAudioVisualizer = (audioVisualizer?.value ?? audioVisualizer?.default) === true;
   // Narrow windows start with the navigation as a rail, so the screen keeps its room.
   const [navOpen, setNavOpen] = useRemembered("hz.nav.open", () => window.innerWidth >= 1024);
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
@@ -124,8 +128,7 @@ function Layout() {
   const [params, setParams] = useSearchParams();
   const settings = params.get("settings");
   const clockOpen = params.get("panel") === "world-clock";
-  const weatherOpen = params.get("panel") === "weather";
-  const full = terminalOpen && terminalFull && !clockOpen && !weatherOpen;
+  const full = terminalOpen && terminalFull && !clockOpen;
   const closeClock = () =>
     setParams((current) => {
       const next = new URLSearchParams(current);
@@ -141,16 +144,6 @@ function Layout() {
       } else next.set("settings", section);
       return next;
     });
-  useEffect(() => {
-    const open = () =>
-      setParams((current) => {
-        const next = new URLSearchParams(current);
-        next.set("panel", "weather");
-        return next;
-      });
-    window.addEventListener(OPEN_WEATHER_PANEL, open);
-    return () => window.removeEventListener(OPEN_WEATHER_PANEL, open);
-  }, [setParams]);
   useEffect(() => {
     const open = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -221,7 +214,7 @@ function Layout() {
           </main>
           <div ref={besideFooter} hidden={!beside} className="shrink-0" />
         </div>
-        {(chatOpen || terminalOpen || clockOpen || weatherOpen) && (
+        {(chatOpen || terminalOpen || clockOpen) && (
           // One panel: the chat on top, the terminal under it, each alone when the other is closed. Beside the screen
           // it is a column; below it, the same stack across the width. In full screen the terminal covers the screen
           // and the panel, and the chat stays mounted with its conversation.
@@ -241,24 +234,11 @@ function Layout() {
                 <WorldClock onClose={closeClock} />
               </aside>
             )}
-            {weatherOpen && (
-              <aside aria-label="Weather" className="min-h-0 flex-1">
-                <WeatherPanel
-                  onClose={() =>
-                    setParams((current) => {
-                      const next = new URLSearchParams(current);
-                      next.delete("panel");
-                      return next;
-                    })
-                  }
-                />
-              </aside>
-            )}
             {chatOpen && (
               <aside
-                hidden={full || clockOpen || weatherOpen}
+                hidden={full || clockOpen}
                 aria-label={t("chat.title")}
-                className={cn("min-h-0 flex-1", (full || clockOpen || weatherOpen) && "hidden")}
+                className={cn("min-h-0 flex-1", (full || clockOpen) && "hidden")}
               >
                 <ChatPanel onCollapse={() => setChatOpen(false)} />
               </aside>
@@ -267,7 +247,7 @@ function Layout() {
               <div
                 className={cn(
                   "min-h-0",
-                  (clockOpen || weatherOpen) && "hidden",
+                  clockOpen && "hidden",
                   chatOpen && !full ? "h-1/2 border-t border-border" : "flex-1",
                 )}
               >
@@ -287,9 +267,11 @@ function Layout() {
         {/* One mounted footer: moving its host preserves controls when the side panel moves below. */}
         {createPortal(<StatusBar />, footerHost)}
       </div>
-      <section aria-label="Audio visualizer" className="h-full w-7 shrink-0 border-l border-border">
-        <AudioVisualizer />
-      </section>
+      {showAudioVisualizer && (
+        <section aria-label="Audio visualizer" className="h-dvh w-7 shrink-0 border-l border-border">
+          <AudioVisualizer />
+        </section>
+      )}
       {params.get("panel") === "notifications" && (
         <NotificationPanel
           navOpen={navOpen}

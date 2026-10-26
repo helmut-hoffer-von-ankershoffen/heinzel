@@ -177,7 +177,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
           <select
             value={current}
             onChange={(event) => go(event.target.value)}
-            className="h-9 w-full rounded-lg border border-border bg-input px-2 text-ui"
+            className="h-9 w-full rounded-lg border border-border bg-input px-2 pr-8 text-ui"
           >
             {(["preferences", "customize", "organisation", "computer"] as const).flatMap((heading) =>
               nav.pages

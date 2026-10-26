@@ -135,50 +135,6 @@ describe("Contributions", () => {
     expect(screen.queryByRole("button", { name: "Open weather report" })).not.toBeInTheDocument();
   });
 
-  it("opens the installed weather report in the right panel without running its terminal command", async () => {
-    const { calls } = mockApi({
-      ...answers,
-      "/api/system/ui/actions": [
-        {
-          ...entry,
-          id: "weather:weather-report",
-          slots: { header: true },
-          label: "Open weather report",
-          icon: "cloud-sun",
-          badge: null,
-          effect: { kind: "command", command: "hz weather show", runs: true },
-        },
-      ],
-      "/api/weather/show": {
-        now: {
-          location: "Berlin",
-          icon: "☀️",
-          description: "clear sky",
-          temperature: 21,
-          feels_like: 20,
-          high: 24,
-          low: 13,
-          rain_chance: 0.1,
-          humidity: 42,
-          wind_speed: 3,
-          units: "metric",
-          observed_at: "2026-10-26T10:00:00Z",
-          attribution: "Open-Meteo",
-        },
-        hours: [],
-        days: [],
-        alerts: [],
-      },
-    });
-    const user = userEvent.setup();
-    renderAt("/doctor");
-    await user.click(await screen.findByRole("button", { name: "Open weather report" }));
-    expect(await screen.findByRole("complementary", { name: "Weather" })).toBeInTheDocument();
-    expect(await screen.findByText(/21°C/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Close the terminal" })).not.toBeInTheDocument();
-    expect(calls.some((call) => new URL(call.url).pathname === "/api/weather/show")).toBe(true);
-  });
-
   it("forwards a private contribution's flat JSON body without putting nested or sensitive values in the URL", async () => {
     const body = { name: "Personal draft", appearance: { hat: "blue", accessories: ["scarf"] } };
     const { calls } = mockApi({
