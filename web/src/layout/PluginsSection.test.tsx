@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import { expectAccessible } from "@/test/render";
-import { PluginsSection } from "./PluginsSection";
+import { PluginsSection, sourceLabel } from "./PluginsSection";
 
 const PINNED = `heinzel-crm @ git+https://github.com/acme-example/heinzel-crm@${"b".repeat(40)}`;
 
@@ -40,6 +40,29 @@ const candidate = {
   installed_version: null,
   warnings: ["It is named crm-tools, not heinzel-<name> as plugins are (ADR 0025)."],
 };
+
+describe("plugin source labels", () => {
+  it("labels the actual installed repository instead of a catalog match", () => {
+    const plugin = { first_party: false } as never;
+    expect(sourceLabel(plugin, true, "https://github.com/acme-example/private-fork")).toBe("Private");
+    expect(sourceLabel(plugin, false, "https://github.com/acme-example/public-plugin")).toBe("Custom");
+    expect(
+      sourceLabel(
+        plugin,
+        true,
+        "https://github.com/helmut-hoffer-von-ankershoffen/heinzel-contrib/tree/main/plugins/heinzel-weather",
+      ),
+    ).toBe("Community");
+  });
+
+  it("does not infer community provenance from an unknown or missing source", () => {
+    const plugin = { first_party: false } as never;
+    expect(sourceLabel(plugin, null, null)).toBe("source not reported yet");
+    expect(sourceLabel(plugin, null, "https://github.com/acme-example/heinzel-contrib")).toBe(
+      "source not reported yet",
+    );
+  });
+});
 
 function change(action: string, done: boolean, extra: Record<string, unknown> = {}) {
   return {
@@ -207,8 +230,8 @@ describe("PluginsSection", () => {
     show({ reload: vi.fn(), restartInterval: 1 });
     await user.click(screen.getByRole("tab", { name: "Discover" }));
     const labels = (await screen.findAllByRole("listitem")).map((row) => row.textContent);
-    expect(labels.some((text) => text?.includes("Contrib"))).toBe(true);
-    expect(labels.some((text) => text?.includes("Contrib"))).toBe(true);
+    expect(labels.some((text) => text?.includes("Community"))).toBe(true);
+    expect(labels.some((text) => text?.includes("Custom"))).toBe(true);
     expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
     const adds = () =>
       calls.filter((request) => {

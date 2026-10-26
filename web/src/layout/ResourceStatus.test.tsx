@@ -38,9 +38,9 @@ afterEach(() => {
 describe("footer system resources", () => {
   it("shows one compact accessible trigger and measured details with Doctor and bearer auth", async () => {
     const { container, calls } = show();
-    const trigger = await screen.findByRole("button", { name: "CPU Memory Load: CPU 13%, memory 40%, load 3.00, OK" });
+    const trigger = await screen.findByRole("button", { name: "CPU Mem Load: CPU 13%, mem 40%, load 3.00, OK" });
     expect(trigger.closest("[data-state]")).toHaveAttribute("data-state", "ok");
-    expect(trigger).toHaveTextContent("CPU Memory Load");
+    expect(trigger).toHaveTextContent("CPU Mem Load");
     expect(screen.queryByRole("region")).not.toBeInTheDocument();
     fireEvent.focus(trigger);
     expect(screen.getByRole("region")).toHaveTextContent("1-minute load · 10 logical cores");
@@ -59,7 +59,7 @@ describe("footer system resources", () => {
     [{ load_1m: null }, "warn"],
   ])("distinguishes load capacity and percent thresholds: %j", async (changes, state) => {
     show({ ...sample, ...changes });
-    const trigger = await screen.findByRole("button", { name: /CPU Memory Load: CPU (13|90|75)%/ });
+    const trigger = await screen.findByRole("button", { name: /CPU Mem Load: CPU (13|90|75)%/ });
     expect(trigger.closest("[data-state]")).toHaveAttribute("data-state", state);
   });
   it("never presents unavailable readings as healthy zeroes", async () => {
@@ -72,7 +72,7 @@ describe("footer system resources", () => {
       problems: ["CPU usage is unavailable."],
     });
     const trigger = await screen.findByRole("button", {
-      name: "CPU Memory Load: CPU Unavailable, memory Unavailable, load Unavailable, off",
+      name: "CPU Mem Load: CPU Unavailable, mem Unavailable, load Unavailable, off",
     });
     fireEvent.click(trigger);
     expect(trigger.closest("[data-state]")).toHaveAttribute("data-state", "off");

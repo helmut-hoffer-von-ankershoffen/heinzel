@@ -265,7 +265,6 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
                   style={{ left: `${hover.x}%`, top: `${hover.y}%` }}
                 >
                   {city(hover.zone)} · {hover.zone}
-                  <span className="block text-muted-foreground">{t("worldClock.representative")}</span>
                 </div>
               )}
             </div>
@@ -292,7 +291,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
                     >
                       <span className="block font-medium">
                         {city(zone.zone)}
-                        {index === 0 ? t("worldClock.yours") : ""}
+                        {index === 0 ? ` · ${t("settings.primary")}` : ""}
                       </span>
                       <span className="block text-xs text-muted-foreground">
                         {zone.zone}

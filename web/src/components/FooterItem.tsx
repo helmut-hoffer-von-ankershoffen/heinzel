@@ -21,7 +21,7 @@ const COLOUR: Record<State, string> = {
   bad: "text-bad",
   off: "text-muted-foreground",
 };
-/** The shape says the state too, so colour is never the only signal: tick, triangle, cross, dash. */
+/** A small state mark for the detail pane; footer triggers use only their own icon. */
 const SHAPE: Record<State, LucideIcon> = { ok: CircleCheck, warn: TriangleAlert, bad: CircleX, off: Circle };
 const WORD: Record<State, string> = {
   ok: "state.ok",
@@ -196,7 +196,6 @@ export function FooterItem({
         {Icon ? (
           <>
             <Icon aria-hidden className="size-4" />
-            <Shape aria-hidden className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full bg-background" />
             <span className="sr-only">
               {label}, {t(WORD[state] as "state.ok")}
             </span>
@@ -204,10 +203,7 @@ export function FooterItem({
         ) : content === undefined ? (
           <span>{text}</span>
         ) : (
-          <>
-            {content}
-            <Shape aria-hidden className={cn("size-2.5 shrink-0", COLOUR[state])} />
-          </>
+          content
         )}
       </button>
       {open &&

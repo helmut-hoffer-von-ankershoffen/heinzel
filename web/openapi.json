@@ -7945,6 +7945,18 @@
             "description": "The plugin changed, when known.",
             "title": "Distribution"
           },
+          "private_repository": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the GitHub repository was private when it was installed.",
+            "title": "Private Repository"
+          },
           "publisher": {
             "anyOf": [
               {
@@ -8106,6 +8118,18 @@
             },
             "title": "Playbooks",
             "type": "array"
+          },
+          "private_repository": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether the GitHub repository is private, when its visibility was checked before installation.",
+            "title": "Private Repository"
           },
           "revision": {
             "anyOf": [

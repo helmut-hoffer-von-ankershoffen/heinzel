@@ -265,6 +265,7 @@ function Saved({ state, error }: { state: "idle" | "pending" | "success" | "erro
 }
 
 const field = "h-8 w-full rounded-lg border border-border bg-input px-2.5 text-sm";
+const selectField = cn(field, "pr-8");
 
 function You() {
   const profile = useProfile();
@@ -299,7 +300,7 @@ function YouForm({ me }: { me: SchemaProfile }) {
         </label>
         <select
           id={ids.role}
-          className={field}
+          className={selectField}
           value={me.role ?? ""}
           onChange={(event) => event.target.value && save("org.role", event.target.value)}
         >
@@ -434,7 +435,7 @@ function TeamForm({ onClose }: { onClose: () => void }) {
         </label>
         <select
           id={ids.layer}
-          className={field}
+          className={selectField}
           value={layer}
           disabled={!layers.data?.layers.length}
           onChange={(event) => set.mutate({ key: "team.layer", value: event.target.value || null })}
