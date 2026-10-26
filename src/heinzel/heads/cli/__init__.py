@@ -52,7 +52,7 @@ HELP = (
     "Every operation accepts [bold]--json[/bold]. Start with [bold]hz setup[/bold], then [bold]hz system doctor[/bold]."
 )
 PLAIN_HELP = (
-    f"Heinzelmännchen: {TAGLINE}. Every operation accepts --json. Commands marked (expert) run like any other "
+    "Every operation accepts --json. Commands marked (expert) run like any other "
     "but are listed in help and completion only in expert mode: hz system expert on."
 )
 CORE_PANEL = "Core"
