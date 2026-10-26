@@ -28,6 +28,8 @@ log = logging.getLogger(__name__)
 _SINK: contextvars.ContextVar[Emit | None] = contextvars.ContextVar("hz_stream_sink", default=None)
 END = "end"
 HEADERS = {"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
+HEARTBEAT_SECONDS = 15
+"""Keep authenticated operation streams alive across proxies while their work is quiet."""
 
 
 class StreamProgress(Progress):
@@ -90,7 +92,13 @@ def streamed(
 
     async def events() -> AsyncGenerator[str]:
         while True:
-            kind, data = await queue.get()
+            try:
+                kind, data = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_SECONDS)
+            except TimeoutError:
+                # A task event starts the response promptly; comments keep an otherwise quiet, long install alive
+                # without exposing synthetic progress to the operation's event consumer.
+                yield ": keep-alive\n\n"
+                continue
             if kind == END:
                 return
             yield frame(kind, data)

@@ -114,6 +114,23 @@ def test_confirmed_the_shown_requirement_is_installed_recorded_and_a_restart_ask
     assert [(e["action"], e["requirement"]) for e in history] == [("add", "heinzel-crm==1.1.0")]
 
 
+def test_a_confirmed_plugin_install_streams_progress_and_its_result(client, kernel):
+    """The UI's long-running install path uses the authenticated operation stream, not a timed REST request."""
+    # The fixture constructs PluginService before the web head replaces Progress with its request-scoped stream sink.
+    kernel.resolve(PluginService)._installation._progress = kernel.resolve(Progress)
+    response = client.post(
+        "/api/stream/system/plugin/add",
+        params={"spec": "heinzel-crm==1.1.0", "confirm": True},
+        headers=AUTH,
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert 'event: task\ndata: {"text": "Adding plugin heinzel-crm"}' in response.text
+    assert 'event: result\ndata: {"data": {"action": "add", "done": true' in response.text
+    assert kernel.runs[0][-1] == "heinzel-crm==1.1.0"
+
+
 def test_a_first_party_catalog_entry_installs_through_the_add_endpoint_by_its_install_spec(client, kernel):
     entry = next(p for p in kernel.resolve(PluginService).search("clock").plugins if p.short_name == "clock")
     assert (entry.source, entry.install_spec) == ("first-party", "clock")

@@ -77,6 +77,7 @@ type Tone = SchemaStatusItem["tone"];
 type Live = NonNullable<SchemaStatusItem["live"]>;
 type Widget = NonNullable<SchemaWidgetEntry["widget"]>;
 type Slot = "footer" | "sidebar" | "header" | "today";
+export const OPEN_WEATHER_PANEL = "hz:open-weather-panel";
 
 /** Every icon a contribution may name; the type makes the map complete, so a new server icon fails the build. */
 export const ICONS: Record<Icon, LucideIcon> = {
@@ -569,12 +570,17 @@ function ActionButton({
   const Component = ICONS[current.icon];
   const badge = current.badge === 0 || current.badge == null ? null : String(current.badge);
   const effect = current.effect;
+  const weatherReport = current.id === "weather:weather-report";
   return (
     <Button
       variant="ghost"
       size="icon"
       disabled={!effect}
-      onClick={() => effect && run(effect)}
+      onClick={() => {
+        if (!effect) return;
+        if (weatherReport) window.dispatchEvent(new Event(OPEN_WEATHER_PANEL));
+        else run(effect);
+      }}
       aria-label={badge ? `${current.label} (${badge})` : current.label}
       title={current.problem ?? current.label}
       className="relative"
