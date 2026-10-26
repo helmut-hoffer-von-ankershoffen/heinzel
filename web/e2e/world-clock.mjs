@@ -103,10 +103,17 @@ try {
     const label = await ticker.getAttribute("aria-label");
     assert.match(label ?? "", /Berlin \d{2}:\d{2}:\d{2}/);
     assert.match(label ?? "", /Berlin \d{2}:\d{2}:\d{2} · (Working|Starts in|Ends in|Weekend|Work hours unavailable)/);
-    assert.match(label ?? "", /New York \d{2}:\d{2}:\d{2} · (Working|Starts in|Ends in|Weekend|Work hours unavailable)/);
+    assert.match(
+      label ?? "",
+      /New York \d{2}:\d{2}:\d{2} · (Working|Starts in|Ends in|Weekend|Work hours unavailable)/,
+    );
     assert.ok((label?.indexOf("Berlin ") ?? -1) < (label?.indexOf("New York ") ?? -1), "primary zone comes first");
     assert.equal(await ticker.locator("svg").count(), 0, "the ticker has no globe icon");
-    assert.match((await ticker.getAttribute("title")) ?? "", /Berlin .* New York/, "hover text names all configured zones");
+    assert.match(
+      (await ticker.getAttribute("title")) ?? "",
+      /Berlin .* New York/,
+      "hover text names all configured zones",
+    );
     return label;
   };
   assert.equal(await track.evaluate((element) => getComputedStyle(element).animationPlayState), "running");
