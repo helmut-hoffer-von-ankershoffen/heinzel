@@ -438,11 +438,7 @@ function MeetingItem({ now }: { now: Date }) {
 export function StatusBar() {
   const info = useInfo();
   const clockInstalled = Boolean(info.data?.modules.some((module) => module.qualname === "clock"));
-  const clock = useShown(
-    "clock:primary-zone",
-    "footer",
-    clockInstalled,
-  );
+  const clock = useShown("clock:primary-zone", "footer", clockInstalled);
   const now = useNow();
   return (
     <FooterLayout className="h-[60px] shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
