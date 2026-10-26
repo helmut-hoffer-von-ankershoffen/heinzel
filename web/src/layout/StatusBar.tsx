@@ -10,15 +10,7 @@ import { useChangelog, useInfo } from "@/api/queries";
 import { token } from "@/api/token";
 import { NATIVE_FOOTER, StatusItems, useShown } from "@/components/Contributions";
 import { FooterItem } from "@/components/FooterItem";
-import {
-  FOOTER_CREDIT,
-  FOOTER_RELOCATED,
-  FooterCredit,
-  FooterLayout,
-  FooterMore,
-  FooterPart,
-  useFooterVisibility,
-} from "@/components/FooterLayout";
+import { FOOTER_RELOCATED, FooterLayout, FooterMore, FooterPart, useFooterVisibility } from "@/components/FooterLayout";
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Prose } from "@/components/Prose";
 import { SettingsShortcut } from "@/components/SettingsShortcut";
@@ -370,7 +362,6 @@ function ReleaseNotes({ version }: { version: string }) {
             <span className="block">{t("status.origin")}</span>
           </p>
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">{t("status.built")}</p>
       </section>
       <p className="mb-1 text-xs text-muted-foreground">{t("status.whatChanged")}</p>
       {typeof changelog.data === "string" && (
@@ -446,7 +437,11 @@ function MeetingItem({ now }: { now: Date }) {
 
 export function StatusBar() {
   const info = useInfo();
-  const clock = useShown("clock:primary-zone", "footer");
+  const clock = useShown(
+    "clock:primary-zone",
+    "footer",
+    Boolean(info.data?.modules.some((module) => module.qualname === "clock")),
+  );
   const now = useNow();
   return (
     <FooterLayout className="h-[60px] shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
@@ -475,9 +470,6 @@ export function StatusBar() {
       </FooterPart>
       <FooterPart id="@clock" priority={40} label={t("status.zones")}>
         {clock && <Clock now={now} />}
-      </FooterPart>
-      <FooterPart id={FOOTER_CREDIT}>
-        <FooterCredit>{t("status.built")}</FooterCredit>
       </FooterPart>
       <FooterMore />
     </FooterLayout>

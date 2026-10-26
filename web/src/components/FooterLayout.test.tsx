@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { type ReactNode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FooterItem } from "./FooterItem";
-import { FOOTER_CREDIT, FOOTER_MORE, FooterCredit, FooterLayout, FooterMore, FooterPart } from "./FooterLayout";
+import { FOOTER_MORE, FooterLayout, FooterMore, FooterPart } from "./FooterLayout";
 
 function Counter({ mounted }: { mounted: () => void }) {
   const [count, setCount] = useState(0);
@@ -35,11 +35,6 @@ function measuredFooter(initialWidth: number, daemon?: ReactNode) {
       this.tagName === "FOOTER"
         ? width
         : (sizes[this.getAttribute("data-footer-content") ?? this.getAttribute("data-footer-part") ?? ""] ?? 0);
-    if (this.getAttribute("data-footer-content") === FOOTER_CREDIT) {
-      value =
-        this.querySelector<HTMLElement>("[data-footer-credit-text]")?.parentElement?.style.width === "0px" ? 0 : 160;
-    }
-    if (this.hasAttribute("data-footer-credit-text")) value = 160;
     if (this.hasAttribute("data-footer-content") && !this.childElementCount) value = 0;
     return new DOMRect(0, 0, value, 24);
   });
@@ -83,9 +78,6 @@ function measuredFooter(initialWidth: number, daemon?: ReactNode) {
       <FooterPart id="clock" pinned>
         <button type="button">Clock</button>
       </FooterPart>
-      <FooterPart id={FOOTER_CREDIT}>
-        <FooterCredit>built with AI in Berlin</FooterCredit>
-      </FooterPart>
       <FooterMore />
     </FooterLayout>,
   );
@@ -103,18 +95,14 @@ function measuredFooter(initialWidth: number, daemon?: ReactNode) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("measured footer controls", () => {
-  it("keeps fitting controls even in a narrow parent and compacts credit before any icon", async () => {
+  it("keeps fitting controls in a narrow parent without an attribution item", async () => {
     const { container, observed } = measuredFooter(375);
-    await waitFor(() =>
-      expect(container.querySelector<HTMLElement>("[data-footer-credit-text]")?.parentElement).toHaveStyle({
-        width: 0,
-      }),
-    );
+    await waitFor(() => expect(screen.queryByRole("button", { name: "More status items" })).not.toBeInTheDocument());
     for (const name of ["Version", "Daemon", "Update", "Health", "Clock"])
       expect(screen.getByRole("button", { name })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "More status items" })).not.toBeInTheDocument();
-    expect(observed.has(container.querySelector("[data-footer-credit-text]") as Element)).toBe(true);
-    expect(screen.getAllByText("built with AI in Berlin")).toHaveLength(1);
+    expect(container.querySelector("[data-footer-credit-text]")).toBeNull();
+    expect(observed.size).toBeGreaterThan(0);
   });
 
   it("keeps keyboard focus reachable when resize moves a control into More and restores it when space returns", async () => {

@@ -14,6 +14,18 @@ const answers = {
 };
 
 describe("The status bar's clock", () => {
+  it("does not render a clock when the clock plugin is absent", async () => {
+    mockApi({
+      ...shell,
+      "/api/system/info": { version: "0.4.0", modules: [] },
+      "/api/system/ui/status": [],
+    });
+    renderAt("/doctor");
+    const bar = await screen.findByRole("contentinfo");
+    expect(within(bar).queryByRole("button", { description: /World Clock/ })).not.toBeInTheDocument();
+    expect(bar.textContent).not.toMatch(/\b\d{2}:\d{2}:\d{2}\b/);
+  });
+
   it("keeps the zones open while the pointer moves up to them, and their link opens the clock's settings", async () => {
     mockApi(answers);
     const user = userEvent.setup();
@@ -150,7 +162,7 @@ describe("Footer items are icons with a state and a pane", () => {
     const { container } = renderAt("/doctor");
     const bar = (await screen.findByRole("contentinfo")) as HTMLElement;
     expect(within(bar).queryByText("helpers accelerating product teams")).not.toBeInTheDocument();
-    expect(within(bar).getByText("built with AI in Berlin")).toBeInTheDocument();
+    expect(within(bar).queryByText("built with AI in Berlin")).not.toBeInTheDocument();
     for (const [tone, word, colour] of [
       ["ok", "OK", "text-ok"],
       ["warn", "warning", "text-warn"],
@@ -224,7 +236,7 @@ describe("Footer items are icons with a state and a pane", () => {
     expect(tagline.nextElementSibling).toBe(origin);
     expect(tagline).toHaveClass("block");
     expect(origin).toHaveClass("block");
-    expect(within(about).getByText("built with AI in Berlin")).toBeInTheDocument();
+    expect(within(about).queryByText("built with AI in Berlin")).not.toBeInTheDocument();
     expect(await within(pane).findByText("Something new")).toBeInTheDocument();
     expect(within(pane).getByRole("link", { name: "Release notes on GitHub" })).toHaveAttribute(
       "href",
