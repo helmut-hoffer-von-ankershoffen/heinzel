@@ -24,6 +24,13 @@ DNS = "workstation.tail-example.ts.net"
 PASSWORD = "isolated-fake-local-api"
 ROOT = Path(sys.argv[1])
 STATE = ROOT / "vendor.json"
+LIFECYCLE = ROOT / "fixture-lifecycle.jsonl"
+
+
+def record_lifecycle(event):
+    """Record replacement readiness without copying the announced URL or session token."""
+    with LIFECYCLE.open("a", encoding="utf-8") as events:
+        events.write(json.dumps({"event": event, "pid": os.getpid()}) + "\n")
 
 
 def state():
@@ -97,12 +104,14 @@ class FakeCli(TailscaleCli):
 def execute(executable, _command, environment):
     local.shutdown()
     local.server_close()
+    record_lifecycle("exec")
     os.execve(  # noqa: S606 - the current interpreter and this fixture; no vendor executable or shell
         executable, [executable, str(Path(__file__).resolve()), str(ROOT)], environment
     )
 
 
 def announce(url):
+    record_lifecycle("ready")
     sys.stdout.write(json.dumps({"url": url}) + "\n")
     sys.stdout.flush()
 
