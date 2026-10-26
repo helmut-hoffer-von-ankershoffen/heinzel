@@ -89,6 +89,12 @@ def test_every_setting_has_a_schema_a_plain_title_and_a_plain_description(settin
     assert len(setting.description) <= 320, "one or two sentences; the reference docs have room for more"
 
 
+def test_default_text_does_not_expose_raw_toml_section_markers(setting):
+    default = (setting.json_schema or {}).get("default")
+    if isinstance(default, str):
+        assert not re.search(r"\[[a-z_]+(\.[a-z_]+)*\]", default), "use the Settings page name, not a TOML table"
+
+
 def test_known_values_are_in_the_schema_not_only_in_the_prose(setting):
     """A setting whose values are known offers them as choices: a Literal, `enum` or an `x-options` source."""
     schema = setting.json_schema or {}

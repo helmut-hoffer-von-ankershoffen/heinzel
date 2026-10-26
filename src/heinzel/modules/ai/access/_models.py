@@ -33,7 +33,7 @@ class AccessSettings(ModuleSettings):
         json_schema_extra={"x-expert": True},
     )
     gateway_summary: str = Field(
-        default="Your company's AI gateway CLI, set up in [ai.access].",
+        default="Your company's AI gateway CLI, set up in AI access settings.",
         max_length=200,
         title="Gateway summary",
         description="One sentence on how the gateway reaches AI.",
