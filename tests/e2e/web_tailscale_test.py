@@ -98,7 +98,7 @@ def test_mounted_sharing_restarts_verifies_copies_and_disables_without_os_change
             diagnostics += f"\n--- fixture backend stderr ---\n{backend_stderr}"
         if fixture_lifecycle.exists():
             events = fixture_lifecycle.read_text(encoding="utf-8")
-            diagnostics += f"\n--- fixture lifecycle events (event and pid only) ---\n{events}"
+            diagnostics += f"\n--- fixture startup stages and socket state (no fd, port, or token) ---\n{events}"
         pytest.fail(diagnostics)
     assert result is not None
     assert result["replacements"] == 2

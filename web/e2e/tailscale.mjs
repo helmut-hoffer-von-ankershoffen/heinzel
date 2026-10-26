@@ -67,6 +67,7 @@ try {
   const verificationResponses = [];
   const mutations = { enable: 0, disable: 0, restart: 0 };
   const instances = new Set();
+  const lifecycleResponses = [];
   const verify = [];
   let verifying = false;
   let observedVerification = () => {};
@@ -109,7 +110,14 @@ try {
   });
   page.on("response", async (response) => {
     const path = new URL(response.url()).pathname;
-    if (response.ok() && path === "/api/lifecycle") instances.add((await response.json()).instance);
+    if (path === "/api/lifecycle") {
+      let instance;
+      if (response.ok()) {
+        instance = (await response.json()).instance;
+        instances.add(instance);
+      }
+      lifecycleResponses.push({ status: response.status(), instance });
+    }
     if (response.ok() && path === "/api/lifecycle/verify") verify.push(await response.json());
   });
   await page.goto(url);
@@ -136,6 +144,7 @@ try {
                   failedRequests,
                   errors,
                   mutations,
+                  lifecycleResponses,
                   instances: [...instances],
                 })}`,
               ),

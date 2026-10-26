@@ -8,29 +8,60 @@ restarts this fixture so the replacement has the same fake bindings and the prod
 import base64
 import json
 import os
+import socket
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from heinzel_tailscale import module
-from heinzel_tailscale._cli import Result, TailscaleCli
-
-from heinzel import Config, Kernel, ModuleRecord, Settings
-from heinzel.heads import web
-from heinzel.kernel import Origin, discover
-
-DNS = "workstation.tail-example.ts.net"
-PASSWORD = "isolated-fake-local-api"
 ROOT = Path(sys.argv[1])
-STATE = ROOT / "vendor.json"
 LIFECYCLE = ROOT / "fixture-lifecycle.jsonl"
 
 
-def record_lifecycle(event):
-    """Record replacement readiness without copying the announced URL or session token."""
+def record_lifecycle(event, **details):
+    """Record process startup without copying the announced URL or session token."""
     with LIFECYCLE.open("a", encoding="utf-8") as events:
-        events.write(json.dumps({"event": event, "pid": os.getpid()}) + "\n")
+        events.write(json.dumps({"event": event, "pid": os.getpid(), **details}) + "\n")
+
+
+def resume_socket_state():
+    """Record whether the restart descriptor is listening; never log its fd, port or token."""
+    descriptor, _, _ = os.environ.get("HEINZEL_UI_RESUME", "").partition(":")
+    if not descriptor.isdigit():
+        return {"resume_present": False, "resume_socket": False, "resume_listening": False}
+    try:
+        sock = socket.fromfd(int(descriptor), socket.AF_INET, socket.SOCK_STREAM)
+    except OSError:
+        return {"resume_present": True, "resume_socket": False, "resume_listening": False}
+    try:
+        try:
+            listening = bool(sock.getsockopt(socket.SOL_SOCKET, socket.SO_ACCEPTCONN))
+        except OSError:
+            try:
+                sock.getpeername()
+            except OSError:
+                listening = True
+            else:
+                listening = False
+        return {"resume_present": True, "resume_socket": True, "resume_listening": listening}
+    finally:
+        sock.close()
+
+
+record_lifecycle("boot", **resume_socket_state())
+
+from heinzel_tailscale import module  # noqa: E402 - log a boot event before app imports to find startup hangs
+from heinzel_tailscale._cli import Result, TailscaleCli  # noqa: E402
+
+from heinzel import Config, Kernel, ModuleRecord, Settings  # noqa: E402
+from heinzel.heads import web  # noqa: E402
+from heinzel.kernel import Origin, discover  # noqa: E402
+
+record_lifecycle("imports-ready")
+
+DNS = "workstation.tail-example.ts.net"
+PASSWORD = "isolated-fake-local-api"
+STATE = ROOT / "vendor.json"
 
 
 def state():
@@ -118,9 +149,11 @@ def announce(url):
 
 local = ThreadingHTTPServer(("127.0.0.1", 0), LocalAPI)
 threading.Thread(target=local.serve_forever, daemon=True).start()
+record_lifecycle("local-api-started")
 configuration = Config.load(ROOT)
 records = discover(plugins=False)[0]
 records.append(ModuleRecord("tailscale", module, Origin("heinzel-tailscale", "0.0.0", builtin=False)))
 kernel = Kernel(configuration.settings(Settings, "hz"), records, config=configuration)
 kernel.bind(TailscaleCli, FakeCli())
+record_lifecycle("kernel-ready")
 web.serve(kernel, browser=False, announce=announce, execute=execute)
