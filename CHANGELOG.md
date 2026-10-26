@@ -4,11 +4,17 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.7.15](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.7.15) - 2026-10-26
 
-Clearer settings restart guidance and a shorter CLI help header.
+Clearer settings and live plugin controls, a cleaner footer, and a more dependable Tailscale and sound experience.
 
 ### 🐛 Bug fixes
 
 - **web:** Explain deferred settings restart clearly ([#196](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/196)) ([96494c3](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/96494c3ac85d3180d668c4f5f5bef90d30593263))
+- Complete footer, weather panel, soundscape and plugin install UI ([#199](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/199)) ([1101332](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/110133210952c0e0cf452a2e3b0f6da48c83b994))
+- Polish settings, footer and plugin lifecycle ([#201](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/201)) ([d4e8752](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/d4e8752ca0479f913868015ad4428770deb6b994))
+
+### 📚 Documentation
+
+- Simplify PyPI install instructions ([#195](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/pull/195)) ([df33b25](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/commit/df33b2595db594b159e5a4436052402ee13e46a9))
 
 ## [0.7.14](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.7.14) - 2026-10-26
 
