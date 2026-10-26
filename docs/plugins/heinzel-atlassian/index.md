@@ -7,7 +7,7 @@ Read Jira issues and Confluence pages through acli: the tracker and documents ca
 | | |
 | --- | --- |
 | Kind | **connector** |
-| Version | `0.7.13` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.14` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-atlassian> |
 | Licence | MIT |
 | Install | `hz system plugin add atlassian --confirm` |
