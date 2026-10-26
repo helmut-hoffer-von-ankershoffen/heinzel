@@ -6,11 +6,24 @@ import { chromium } from "playwright-core";
 
 async function openSharing(page) {
   const trigger = page.locator('[data-footer-content="tailscale:sharing"] button').first();
-  const container = page.locator('[data-footer-part="tailscale:sharing"]');
-  if ((await container.getAttribute("data-footer-hidden")) === "overflow") {
-    const more = page.getByRole("region", { name: "More status items", exact: true });
-    if (!(await more.isVisible())) await page.getByRole("button", { name: "More status items", exact: true }).click();
-  }
+  const more = page.getByRole("button", { name: "More status items", exact: true });
+  const popup = page.getByRole("region", { name: "More status items", exact: true });
+  // Footer overflow is measured after fonts, plugin controls and the viewport settle. During that first layout,
+  // an item's anchor can briefly report `overflow` even though the follow-up measurement puts it inline. Wait
+  // for an actionable, visible state instead of trusting that transient data attribute.
+  await page.waitForFunction(() => {
+    const visible = (element) => {
+      if (!element) return false;
+      const box = element.getBoundingClientRect();
+      return box.width > 0 && box.height > 0 && getComputedStyle(element).visibility !== "hidden";
+    };
+    return (
+      visible(document.querySelector('[data-footer-content="tailscale:sharing"] button')) ||
+      visible(document.querySelector('button[aria-label="More status items"]')) ||
+      visible(document.querySelector('[role="region"][aria-label="More status items"]'))
+    );
+  });
+  if (!(await trigger.isVisible()) && !(await popup.isVisible())) await more.click();
   await trigger.click();
   const panel = page.getByRole("region", { name: "Tailscale", exact: true });
   await panel.waitFor();
