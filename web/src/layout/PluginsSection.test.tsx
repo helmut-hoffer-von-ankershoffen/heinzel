@@ -67,6 +67,13 @@ function serve(answer: Answer) {
       const url = new URL(request.url);
       const found = answer(url, request);
       if (!found) return Response.json({ error: `no answer for ${url.pathname}` }, { status: 404 });
+      if (url.pathname.startsWith("/api/stream/")) {
+        const events = [
+          `event: task\ndata: ${JSON.stringify({ text: "Adding plugin heinzel-crm" })}\n\n`,
+          `event: result\ndata: ${JSON.stringify({ data: found.body })}\n\n`,
+        ].join("");
+        return new Response(events, { status: found.status ?? 200, headers: { "Content-Type": "text/event-stream" } });
+      }
       return Response.json(found.body, { status: found.status ?? 200 });
     }),
   );
@@ -111,7 +118,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("PluginsSection", () => {
   it("shows what a spec would install first, and installs the pinned requirement only on confirm", async () => {
     const calls = serve((url) => {
-      if (url.pathname === "/api/system/plugin/add") {
+      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
         return {
           body: change("add", url.searchParams.get("confirm") === "true"),
         };
@@ -126,7 +133,11 @@ describe("PluginsSection", () => {
     await user.click(screen.getByRole("button", { name: "Install" }));
 
     const preview = await screen.findByRole("group", { name: /Install this plugin/ });
-    const adds = () => calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/add");
+    const adds = () =>
+      calls.filter((request) => {
+        const path = new URL(request.url).pathname;
+        return path === "/api/system/plugin/add" || path === "/api/stream/system/plugin/add";
+      });
     expect(adds()).toHaveLength(1);
     expect(new URL(adds()[0]?.url ?? "").searchParams.get("spec")).toBe(candidate.spec);
     expect(new URL(adds()[0]?.url ?? "").searchParams.get("confirm")).toBeNull();
@@ -147,6 +158,7 @@ describe("PluginsSection", () => {
     await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
     expect(calls.some((request) => new URL(request.url).pathname === "/api/restart")).toBe(true);
     const confirmed = new URL(adds()[1]?.url ?? "");
+    expect(confirmed.pathname).toBe("/api/stream/system/plugin/add");
     expect(confirmed.searchParams.get("spec")).toBe(PINNED);
     expect(confirmed.searchParams.get("confirm")).toBe("true");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
@@ -175,7 +187,7 @@ describe("PluginsSection", () => {
           },
         };
       }
-      if (url.pathname === "/api/system/plugin/add") {
+      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
         const first =
           url.searchParams.get("spec") === "zoom" || url.searchParams.get("spec") === "heinzel-zoom @ git+x";
         return {
@@ -198,7 +210,11 @@ describe("PluginsSection", () => {
     expect(labels.some((text) => text?.includes("Contrib"))).toBe(true);
     expect(labels.some((text) => text?.includes("Contrib"))).toBe(true);
     expect(labels.some((text) => text?.includes("First-party"))).toBe(true);
-    const adds = () => calls.filter((request) => new URL(request.url).pathname === "/api/system/plugin/add");
+    const adds = () =>
+      calls.filter((request) => {
+        const path = new URL(request.url).pathname;
+        return path === "/api/system/plugin/add" || path === "/api/stream/system/plugin/add";
+      });
     const spec = (index: number) => new URL(adds()[index]?.url ?? "").searchParams.get("spec");
 
     const installs = await screen.findAllByRole("button", {

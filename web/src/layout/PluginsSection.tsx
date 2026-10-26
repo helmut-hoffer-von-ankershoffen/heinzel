@@ -219,6 +219,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const [adding, setAdding] = useState(false);
   const [spec, setSpec] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
+  const [pluginProgress, setPluginProgress] = useState<string | null>(null);
   const pluginRestartRequired = useRef(false);
   const preview = usePluginPreview();
   const change = useChangePlugin();
@@ -229,6 +230,7 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     );
   const show = (value: string) => {
     change.reset();
+    setPluginProgress(null);
     preview.mutate(value, {
       onSuccess: (answer) => {
         if (answer.candidate) setPending({ action: "add", candidate: answer.candidate });
@@ -237,12 +239,17 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   };
   const ask = (value: Pending) => {
     change.reset();
+    setPluginProgress(null);
     preview.reset();
     setPending(value);
   };
   const confirm = async () => {
     if (!pending) return false;
-    const answer = await change.mutateAsync(request(pending));
+    setPluginProgress(null);
+    const operation = request(pending);
+    const answer = await change.mutateAsync(
+      "add" in operation ? { ...operation, onProgress: setPluginProgress } : operation,
+    );
     pluginRestartRequired.current = answer.restart_required;
     setPending(null);
     setAdding(false);
@@ -347,6 +354,11 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
           {change.error && (
             <p role="alert" className="mt-1 text-xs text-bad">
               {change.error.message}
+            </p>
+          )}
+          {change.isPending && pluginProgress && (
+            <p role="status" className="mt-1 text-xs text-muted-foreground">
+              {pluginProgress}
             </p>
           )}
           <div className="mt-2">
