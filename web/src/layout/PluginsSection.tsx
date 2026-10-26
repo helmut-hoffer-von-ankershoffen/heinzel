@@ -36,32 +36,39 @@ import { displayName } from "./settingsSections";
 
 type PluginKind = NonNullable<SchemaPluginInfo["kinds"]>[number];
 
-/** Label the repository that supplied a plugin; unknown non-core sources are custom plugins by default. */
+/** Label the actual source repository; catalog membership and reserved package names establish no provenance. */
 export function sourceLabel(
-  plugin: SchemaPluginInfo,
+  plugin: Pick<SchemaPluginInfo, "source_url" | "homepage">,
   privateRepository?: boolean | null,
   sourceUrl?: string | null,
 ): string {
-  if (plugin.first_party) return t("plugins.firstParty");
-  if (isCommunityRepository(sourceUrl)) return t("plugins.community");
+  const repository = knownRepository(sourceUrl ?? plugin.source_url ?? plugin.homepage);
+  if (repository === "heinzel") return t("plugins.firstParty");
+  if (repository === "heinzel-contrib") return t("plugins.community");
   if (privateRepository === true) return t("plugins.private");
   if (privateRepository === false) return t("plugins.custom");
   return t("plugins.sourceUnknown");
 }
 
-/** Community provenance comes from the installed source repository, never a catalog match on package name. */
-function isCommunityRepository(sourceUrl: string | null | undefined): boolean {
-  if (!sourceUrl) return false;
+/** Compare complete GitHub repository identities; a similarly prefixed fork is a different source. */
+function knownRepository(sourceUrl: string | null | undefined): string | null {
+  if (!sourceUrl) return null;
   try {
     const source = new URL(sourceUrl);
-    const [owner, repository] = source.pathname.split("/").filter(Boolean);
-    return (
-      source.hostname.toLowerCase() === "github.com" &&
-      owner?.toLowerCase() === "helmut-hoffer-von-ankershoffen" &&
-      repository?.replace(/\.git$/i, "").toLowerCase() === "heinzel-contrib"
-    );
+    const [owner, repository] = source.pathname.slice(1).toLowerCase().split("/");
+    if (
+      source.protocol !== "https:" ||
+      source.hostname !== "github.com" ||
+      source.port ||
+      source.username ||
+      source.password ||
+      owner !== "helmut-hoffer-von-ankershoffen"
+    )
+      return null;
+    const name = repository?.replace(/\.git$/, "");
+    return name === "heinzel" || name === "heinzel-contrib" ? name : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -142,7 +149,7 @@ function repositoryOfEntry(entry: {
   repository_url?: string | null;
 }): string | null {
   if (entry.repository_url) return entry.repository_url;
-  return entry.source === "first-party" ? `${CORE}/tree/main/plugins/${entry.name}` : repositoryOf(entry.install_spec);
+  return repositoryOf(entry.install_spec);
 }
 
 /** `https://github.com/o/r/tree/main/plugins/x` → `github.com/o/r`: which repository it comes from. */
@@ -208,13 +215,7 @@ function CandidateDetails({ candidate }: { candidate: SchemaPluginCandidate }) {
     [t("plugins.field.publisher"), candidate.publisher ?? t("plugins.unknown")],
     [
       t("plugins.field.source"),
-      candidate.first_party
-        ? `${t("plugins.firstParty")}, ${candidate.source}`
-        : candidate.private === true
-          ? `${t("plugins.private")}, ${t("plugins.privateRepository")}`
-          : candidate.private === false
-            ? t("plugins.custom")
-            : candidate.source,
+      `${sourceLabel({ source_url: candidate.url }, candidate.private)}${candidate.private === true ? `, ${t("plugins.privateRepository")}` : ""}`,
     ],
   ];
   if (candidate.installed_version) rows.push([t("plugins.field.replaces"), candidate.installed_version]);
@@ -622,11 +623,7 @@ function Discover({ query, onInstall }: { query: string; onInstall: (spec: strin
                 </span>
                 <span className="flex shrink-0 items-center gap-2">
                   <span className="rounded-md border border-border px-1.5 text-[11px] text-muted-foreground">
-                    {plugin.source === "first-party"
-                      ? t("plugins.firstParty")
-                      : plugin.source === "contrib"
-                        ? t("plugins.community")
-                        : t("plugins.custom")}
+                    {sourceLabel({ source_url: repositoryOfEntry(plugin) }, plugin.private_repository)}
                   </span>
                   <span aria-hidden className={VERSION} />
                 </span>
