@@ -40,7 +40,7 @@ async function viewportFacts(page, name) {
       documentWidth: root.scrollWidth,
       bodyWidth: document.body.scrollWidth,
       shell: shell?.getBoundingClientRect().toJSON(),
-        shellClientHeight: shell?.clientHeight,
+      shellClientHeight: shell?.clientHeight,
       safeAreaEnvSupported: CSS.supports("padding-bottom: env(safe-area-inset-bottom)"),
       safeAreaBottom,
       dynamicViewportUnitSupported: CSS.supports("height: 100dvh"),
@@ -207,8 +207,15 @@ try {
       offsetTop: window.visualViewport?.offsetTop,
       shell: document.querySelector('[data-testid="app-shell"]')?.getBoundingClientRect().toJSON(),
     }));
-    assert.equal(keyboardViewport.visual, keyboardViewport.layout, `${spec.name}: emulated visual viewport should track the resized layout viewport`);
-    assert.ok(keyboardComposerBox && keyboardComposerBox.y >= (keyboardViewport.offsetTop ?? 0), `${spec.name}: composer is above the visual viewport`);
+    assert.equal(
+      keyboardViewport.visual,
+      keyboardViewport.layout,
+      `${spec.name}: emulated visual viewport should track the resized layout viewport`,
+    );
+    assert.ok(
+      keyboardComposerBox && keyboardComposerBox.y >= (keyboardViewport.offsetTop ?? 0),
+      `${spec.name}: composer is above the visual viewport`,
+    );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-chat.png`) });
     result.cases.push({
       ...spec,
@@ -252,10 +259,24 @@ try {
     fade_seconds: 0,
   };
   await soundPage.route("**/api/system/sound/list", (route) =>
-    route.fulfill({ json: { selected: sound.name, effective: sound.name, soundscapes: [sound], signals: {}, volume: 50, follow_theme: false, mute_in_meetings: false, duck_while_typing: false } }),
+    route.fulfill({
+      json: {
+        selected: sound.name,
+        effective: sound.name,
+        soundscapes: [sound],
+        signals: {},
+        volume: 50,
+        follow_theme: false,
+        mute_in_meetings: false,
+        duck_while_typing: false,
+      },
+    }),
   );
   await soundPage.route("https://www.youtube-nocookie.com/embed/**", (route) =>
-    route.fulfill({ contentType: "text/html", body: `<!doctype html><html><body style="margin:0"><video muted autoplay playsinline></video><script>const c=document.createElement('canvas');c.width=320;c.height=180;const x=c.getContext('2d');setInterval(()=>{x.fillStyle='#308090';x.fillRect(0,0,320,180)},40);const v=document.querySelector('video');v.srcObject=c.captureStream(25);v.play();</script></body></html>` }),
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><html><body style="margin:0"><video muted autoplay playsinline></video><script>const c=document.createElement('canvas');c.width=320;c.height=180;const x=c.getContext('2d');setInterval(()=>{x.fillStyle='#308090';x.fillRect(0,0,320,180)},40);const v=document.querySelector('video');v.srcObject=c.captureStream(25);v.play();</script></body></html>`,
+    }),
   );
   await soundPage.goto(url);
   await soundPage.getByRole("heading", { name: "Today" }).waitFor();
@@ -265,17 +286,30 @@ try {
   await soundPage.getByRole("button", { name: "Play Mobile dock probe", exact: true }).click();
   const player = soundPage.getByRole("region", { name: "Mobile dock probe player" });
   await player.waitFor();
-  assert.equal(await player.getAttribute("data-dock"), "docked", "wide-portrait: stream player should be docked in the sidebar");
+  assert.equal(
+    await player.getAttribute("data-dock"),
+    "docked",
+    "wide-portrait: stream player should be docked in the sidebar",
+  );
   const playerBox = await player.boundingBox();
   const popOut = soundPage.getByRole("button", { name: "Pop the player out of the sidebar" });
   const popOutBox = await assertTouchTarget(popOut, "docked player pop-out control", "wide-portrait");
   assert.ok(
-    playerBox && playerBox.x >= 0 && playerBox.y >= 0 && playerBox.x + playerBox.width <= 430 + 1 && playerBox.y + playerBox.height <= 932 + 1,
+    playerBox &&
+      playerBox.x >= 0 &&
+      playerBox.y >= 0 &&
+      playerBox.x + playerBox.width <= 430 + 1 &&
+      playerBox.y + playerBox.height <= 932 + 1,
     `wide-portrait: docked player must fit viewport: ${JSON.stringify(playerBox)}`,
   );
   await popOut.tap();
   await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
-  result.dockedPlayer = { viewport: { width: 430, height: 932 }, dockedBox: playerBox, popOutTarget: popOutBox, popOutUsable: true };
+  result.dockedPlayer = {
+    viewport: { width: 430, height: 932 },
+    dockedBox: playerBox,
+    popOutTarget: popOutBox,
+    popOutUsable: true,
+  };
   await soundPage.close();
 } finally {
   await browser.close();
