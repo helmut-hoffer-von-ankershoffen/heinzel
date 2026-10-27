@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import os
+import secrets
 import stat
 import sys
 import tempfile
@@ -149,8 +150,93 @@ def _open_nofollow(path: Path) -> int:
         os.close(directory_fd)
 
 
+def _open_directory_nofollow(path: Path) -> int:
+    """Open a directory by walking absolute path components without symlinks.
+
+    Raises:
+        OSError: A component cannot be safely opened.
+        SandboxArchiveError: The path is not absolute and normalized.
+    """
+    if not path.is_absolute() or ".." in path.parts:
+        message = "Electron sandbox directory path must be absolute and normalized"
+        raise SandboxArchiveError(message)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    descriptor = os.open(path.anchor, flags)
+    try:
+        for component in path.parts[1:]:
+            next_descriptor = os.open(component, flags, dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = next_descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+    else:
+        return descriptor
+
+
+def _read_verified_source(descriptor: int, expected: str) -> bytes:
+    """Read a bounded regular-file descriptor and verify its pinned digest.
+
+    Raises:
+        OSError: The descriptor cannot be read.
+        SandboxArchiveError: The file is not regular or does not match the digest.
+    """
+    metadata = os.fstat(descriptor)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > MAX_HELPER_BYTES:
+        message = "Electron sandbox helper must be a regular file"
+        raise SandboxArchiveError(message)
+    chunks = []
+    size = 0
+    while size <= MAX_HELPER_BYTES:
+        chunk = os.read(descriptor, min(65536, MAX_HELPER_BYTES + 1 - size))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        size += len(chunk)
+    contents = b"".join(chunks)
+    if size > MAX_HELPER_BYTES or hashlib.sha256(contents).hexdigest() != expected:
+        message = "Electron sandbox helper content does not match the pinned release"
+        raise SandboxArchiveError(message)
+    return contents
+
+
+def _configure_staged_inode(descriptor: int, contents: bytes, expected: str) -> None:
+    """Write, verify and configure the fresh root-private staging inode.
+
+    Raises:
+        OSError: A descriptor operation fails.
+        SandboxArchiveError: The staged bytes or metadata are invalid.
+    """
+    view = memoryview(contents)
+    while view:
+        written = os.write(descriptor, view)
+        view = view[written:]
+    os.lseek(descriptor, 0, os.SEEK_SET)
+    staged_contents = os.read(descriptor, MAX_HELPER_BYTES + 1)
+    staged_stat = os.fstat(descriptor)
+    if (
+        staged_stat.st_nlink != 1
+        or len(staged_contents) != len(contents)
+        or hashlib.sha256(staged_contents).hexdigest() != expected
+    ):
+        message = "Staged Electron sandbox helper failed pinned-content verification"
+        raise SandboxArchiveError(message)
+    os.fchown(descriptor, 0, 0)
+    os.fchmod(descriptor, 0o4755)
+    result = os.fstat(descriptor)
+    if (result.st_uid, result.st_gid, stat.S_IMODE(result.st_mode)) != (0, 0, 0o4755):
+        message = "Electron sandbox helper must be root-owned with mode 4755"
+        raise SandboxArchiveError(message)
+    os.fsync(descriptor)
+
+
 def configure_helper_permissions(electron_root: Path, version: str) -> None:
-    """Set root ownership and the setuid mode on the digest-pinned helper descriptor.
+    """Install a verified root-owned inode, never changing metadata on user files.
+
+    The extracted helper and its parent are user-writable, so privileged metadata
+    operations must never target that inode. A root-private staging directory
+    supplies a fresh inode; bytes are copied and reverified there, configured,
+    then atomically renamed into the already-open Electron dist directory.
 
     Raises:
         OSError: The path cannot be safely opened or configured.
@@ -160,36 +246,59 @@ def configure_helper_permissions(electron_root: Path, version: str) -> None:
     if expected is None:
         message = f"Electron {version} has no pinned sandbox helper digest"
         raise SandboxArchiveError(message)
-    helper_path = electron_root / "dist" / "chrome-sandbox"
-    descriptor = _open_nofollow(helper_path)
+    source_path = electron_root / "dist" / "chrome-sandbox"
+    source_descriptor = _open_nofollow(source_path)
+    stage_name: str | None = None
+    stage_directory_fd: int | None = None
+    stage_descriptor: int | None = None
+    dist_directory_fd: int | None = None
     try:
-        before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_HELPER_BYTES:
-            message = "Electron sandbox helper must be a regular file"
+        dist_directory_fd = _open_directory_nofollow(source_path.parent)
+        contents = _read_verified_source(source_descriptor, expected)
+        stage_name = f".heinzel-electron-sandbox-{secrets.token_hex(16)}"
+        os.mkdir(stage_name, 0o700, dir_fd=dist_directory_fd)
+        stage_directory_fd = os.open(
+            stage_name,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+            dir_fd=dist_directory_fd,
+        )
+        stage_stat = os.fstat(stage_directory_fd)
+        if (stage_stat.st_uid, stat.S_IMODE(stage_stat.st_mode)) != (0, 0o700):
+            message = "Electron sandbox staging directory must be root-owned with mode 700"
             raise SandboxArchiveError(message)
-        if before.st_nlink != 1:
-            message = "Electron sandbox helper must have exactly one hard link"
-            raise SandboxArchiveError(message)
-        chunks = []
-        size = 0
-        while size <= MAX_HELPER_BYTES:
-            chunk = os.read(descriptor, min(65536, MAX_HELPER_BYTES + 1 - size))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            size += len(chunk)
-        contents = b"".join(chunks)
-        if size > MAX_HELPER_BYTES or hashlib.sha256(contents).hexdigest() != expected:
-            message = "Electron sandbox helper content does not match the pinned release"
-            raise SandboxArchiveError(message)
-        os.fchown(descriptor, 0, 0)
-        os.fchmod(descriptor, 0o4755)
-        result = os.fstat(descriptor)
-        if (result.st_uid, result.st_gid, stat.S_IMODE(result.st_mode)) != (0, 0, 0o4755):
-            message = "Electron sandbox helper must be root-owned with mode 4755"
-            raise SandboxArchiveError(message)
+        stage_descriptor = os.open(
+            "chrome-sandbox",
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+            0o600,
+            dir_fd=stage_directory_fd,
+        )
+        _configure_staged_inode(stage_descriptor, contents, expected)
+        os.rename(
+            "chrome-sandbox",
+            "chrome-sandbox",
+            src_dir_fd=stage_directory_fd,
+            dst_dir_fd=dist_directory_fd,
+        )
     finally:
-        os.close(descriptor)
+        if stage_name is not None and dist_directory_fd is not None:
+            try:
+                if stage_directory_fd is not None:
+                    os.unlink("chrome-sandbox", dir_fd=stage_directory_fd)
+            except FileNotFoundError:
+                pass
+            try:
+                staged_dir_stat = os.fstat(stage_directory_fd) if stage_directory_fd is not None else None
+                current_dir_stat = os.stat(stage_name, dir_fd=dist_directory_fd, follow_symlinks=False)
+                if staged_dir_stat is not None and (staged_dir_stat.st_dev, staged_dir_stat.st_ino) == (
+                    current_dir_stat.st_dev,
+                    current_dir_stat.st_ino,
+                ):
+                    os.rmdir(stage_name, dir_fd=dist_directory_fd)
+            except FileNotFoundError:
+                pass
+        for descriptor in (source_descriptor, stage_descriptor, stage_directory_fd, dist_directory_fd):
+            if descriptor is not None:
+                os.close(descriptor)
 
 
 def main() -> int:

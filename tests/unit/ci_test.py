@@ -3,6 +3,7 @@
 import hashlib
 import importlib.util
 import io
+import os
 import re
 import stat
 import tomllib
@@ -230,36 +231,65 @@ def test_electron_sandbox_install_bounds_archive_read(tmp_path, monkeypatch):
 
 def test_electron_sandbox_permissions_use_nofollow_descriptor_operations(tmp_path, monkeypatch):
     electron_root = tmp_path / "electron"
-    electron_root.mkdir()
-    opened = {}
-    file_stat = SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=1000, st_gid=1000, st_size=6, st_nlink=1)
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    source = dist / "chrome-sandbox"
+    source.write_bytes(b"helper")
+    source_inode = source.stat().st_ino
+    state = {"stage_dir": None, "stage_file": None, "owner": 1000, "group": 1000, "mode": 0o600}
+    original_open = os.open
+    original_fstat = os.fstat
 
-    def open_helper(path):
-        opened["path"] = path
-        return 47
+    def open_file(path, flags, mode=0o777, *, dir_fd=None):
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        if isinstance(path, str) and path.startswith(".heinzel-electron-sandbox-"):
+            state["stage_dir"] = descriptor
+        elif path == "chrome-sandbox" and dir_fd == state["stage_dir"]:
+            state["stage_file"] = descriptor
+        return descriptor
+
+    def fake_fstat(descriptor):
+        if descriptor == state["stage_dir"]:
+            result = original_fstat(descriptor)
+            return SimpleNamespace(
+                st_uid=0,
+                st_mode=stat.S_IFDIR | 0o700,
+                st_dev=result.st_dev,
+                st_ino=result.st_ino,
+            )
+        if descriptor == state["stage_file"]:
+            return SimpleNamespace(
+                st_uid=state["owner"],
+                st_gid=state["group"],
+                st_mode=stat.S_IFREG | state["mode"],
+                st_size=6,
+                st_nlink=1,
+                st_ino=source_inode + 100,
+            )
+        return original_fstat(descriptor)
 
     def set_owner(descriptor, uid, gid):
-        assert descriptor == 47
-        file_stat.st_uid = uid
-        file_stat.st_gid = gid
+        assert descriptor == state["stage_file"]
+        assert fake_fstat(descriptor).st_ino != source_inode
+        state["owner"], state["group"] = uid, gid
 
     def set_mode(descriptor, mode):
-        assert descriptor == 47
-        file_stat.st_mode = stat.S_IFREG | mode
+        assert descriptor == state["stage_file"]
+        assert fake_fstat(descriptor).st_ino != source_inode
+        state["mode"] = mode
 
-    chunks = iter([b"helper", b""])
     monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"helper").hexdigest())
-    monkeypatch.setattr(electron_linux_sandbox, "_open_nofollow", open_helper)
-    monkeypatch.setattr(electron_linux_sandbox.os, "fstat", lambda _descriptor: file_stat)
+    monkeypatch.setattr(electron_linux_sandbox.os, "open", open_file)
+    monkeypatch.setattr(electron_linux_sandbox.os, "fstat", fake_fstat)
     monkeypatch.setattr(electron_linux_sandbox.os, "fchown", set_owner)
     monkeypatch.setattr(electron_linux_sandbox.os, "fchmod", set_mode)
-    monkeypatch.setattr(electron_linux_sandbox.os, "read", lambda _descriptor, _limit: next(chunks))
-    monkeypatch.setattr(electron_linux_sandbox.os, "close", lambda _descriptor: None)
 
     electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
 
-    assert opened["path"] == electron_root / "dist" / "chrome-sandbox"
-    assert (file_stat.st_uid, file_stat.st_gid, stat.S_IMODE(file_stat.st_mode)) == (0, 0, 0o4755)
+    installed = source.stat()
+    assert installed.st_ino != source_inode
+    assert (state["owner"], state["group"], state["mode"]) == (0, 0, 0o4755)
+    assert source.read_bytes() == b"helper"
 
 
 def test_electron_sandbox_permissions_reject_symlink_parent(tmp_path, monkeypatch):
@@ -314,42 +344,79 @@ def test_electron_sandbox_permissions_reject_replaced_regular_file(tmp_path, mon
     assert not fchown_called
 
 
-def test_electron_sandbox_permissions_reject_hard_linked_helper(tmp_path, monkeypatch):
+def test_electron_sandbox_permissions_never_changes_source_after_hard_link_race(tmp_path, monkeypatch):
     electron_root = tmp_path / "electron"
     dist = electron_root / "dist"
     dist.mkdir(parents=True)
     helper = dist / "chrome-sandbox"
     helper.write_bytes(b"trusted")
     second_link = tmp_path / "linked-helper"
-    second_link.hardlink_to(helper)
     monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"trusted").hexdigest())
     metadata_before = helper.stat()
-    fchown_called = False
-    fchmod_called = False
+    metadata_targets = []
 
-    def fchown(*_args):
-        nonlocal fchown_called
-        fchown_called = True
+    # Fake only the metadata result of privileged operations; the descriptor's
+    # inode remains the newly staged inode, separate from the extracted source.
+    original_fstat = os.fstat
+    staged = set()
+    stage_fd = {"dir": None}
+    linked_after_stat = False
 
-    def fchmod(*_args):
-        nonlocal fchmod_called
-        fchmod_called = True
+    def fake_fstat(descriptor):
+        nonlocal linked_after_stat
+        result = original_fstat(descriptor)
+        if not linked_after_stat:
+            # Model a same-UID attacker adding a hard link immediately after
+            # validation of the extracted source descriptor.
+            second_link.hardlink_to(helper)
+            linked_after_stat = True
+        if descriptor == stage_fd["dir"]:
+            return SimpleNamespace(st_uid=0, st_mode=stat.S_IFDIR | 0o700, st_dev=result.st_dev, st_ino=result.st_ino)
+        if descriptor in staged:
+            return SimpleNamespace(
+                st_uid=0,
+                st_gid=0,
+                st_mode=stat.S_IFREG | 0o4755,
+                st_size=result.st_size,
+                st_nlink=result.st_nlink,
+                st_ino=result.st_ino,
+            )
+        return result
+
+    def fchown(descriptor, *_args):
+        metadata_targets.append(fake_fstat(descriptor).st_ino)
+
+    def fchmod(descriptor, *_args):
+        metadata_targets.append(fake_fstat(descriptor).st_ino)
 
     monkeypatch.setattr(electron_linux_sandbox.os, "fchown", fchown)
     monkeypatch.setattr(electron_linux_sandbox.os, "fchmod", fchmod)
 
-    with pytest.raises(ValueError, match="exactly one hard link"):
-        electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+    original_open = os.open
 
-    metadata_after = helper.stat()
-    assert not fchown_called
-    assert not fchmod_called
+    def open_file(path, flags, mode=0o777, *, dir_fd=None):
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        if isinstance(path, str) and path.startswith(".heinzel-electron-sandbox-"):
+            stage_fd["dir"] = descriptor
+        elif path == "chrome-sandbox" and dir_fd == stage_fd["dir"]:
+            staged.add(descriptor)
+        return descriptor
+
+    monkeypatch.setattr(electron_linux_sandbox.os, "open", open_file)
+    monkeypatch.setattr(electron_linux_sandbox.os, "fstat", fake_fstat)
+
+    electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    metadata_after = second_link.stat()
     assert (metadata_after.st_uid, metadata_after.st_gid, metadata_after.st_mode) == (
         metadata_before.st_uid,
         metadata_before.st_gid,
         metadata_before.st_mode,
     )
-    assert helper.stat().st_nlink == second_link.stat().st_nlink == 2
+    assert helper.stat().st_nlink == second_link.stat().st_nlink == 1
+    assert second_link.stat().st_ino == metadata_before.st_ino
+    assert len(metadata_targets) == 2
+    assert all(inode != metadata_before.st_ino for inode in metadata_targets)
 
 
 def test_electron_sandbox_ci_restores_and_verifies_setuid_helper():
@@ -362,8 +429,9 @@ def test_electron_sandbox_ci_restores_and_verifies_setuid_helper():
     assert 'if [ -L "$$sandbox" ]' in makefile
     assert 'if [ ! -f "$$sandbox" ]' in makefile
     assert "sudo python3 desktop/ci/restore_linux_sandbox.py --configure" in makefile
-    assert "os.fchown(descriptor, 0, 0)" in (REPO / "desktop/ci/restore_linux_sandbox.py").read_text()
-    assert "os.fchmod(descriptor, 0o4755)" in (REPO / "desktop/ci/restore_linux_sandbox.py").read_text()
+    sandbox_script = (REPO / "desktop/ci/restore_linux_sandbox.py").read_text()
+    assert "os.fchown(descriptor, 0, 0)" in sandbox_script
+    assert "os.fchmod(descriptor, 0o4755)" in sandbox_script
     assert "stat -c '%u:%a'" in makefile
     assert "$$electron_root" in target
 
