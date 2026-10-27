@@ -58,6 +58,8 @@ options are in [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 - The pre-push hook runs `make check-fast`. On a heavily loaded machine its unit step can hit the session
   timeout; wait for the load to drop and push again. `NO_PREFLIGHT=1 make pr` skips only the preflight, never a
   hook, and is for timeouts in tests you didn't touch, after review.
+- UI changes must follow [Mobile UI](docs/CODING_STANDARDS.md#mobile-ui): use the shared viewport primitives and
+  extend the automatic route/settings mobile sweep for new interactions; test Chromium and WebKit phone layouts.
 - Web end-to-end tests run axe: fix contrast and target-size findings in tokens and components, never by
   relaxing a rule.
 

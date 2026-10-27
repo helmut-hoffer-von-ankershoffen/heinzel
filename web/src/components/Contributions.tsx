@@ -242,7 +242,7 @@ export function useEffectRunner(): { run: (effect: Effect) => void; dialog: Reac
           aria-modal="true"
           aria-labelledby="contrib-confirm"
           onKeyDown={(event) => event.key === "Escape" && setPending(null)}
-          className="fixed inset-x-0 bottom-20 z-(--layer-modal) mx-auto w-[min(28rem,calc(100%-2rem))] rounded-xl border border-border bg-popover p-4 text-sm shadow-xl"
+          className="confirmation-dialog fixed z-(--layer-modal) max-h-[calc(var(--hz-viewport-height,100dvh)-2rem)] w-[min(28rem,calc(var(--hz-viewport-width,100vw)-2rem))] overflow-y-auto rounded-xl border border-border bg-popover p-4 text-sm shadow-xl"
         >
           <p id="contrib-confirm" className="font-medium">
             {pending.summary}

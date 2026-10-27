@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { chatKey, chatListKey, type ModelChoice, openChat, sendChat, useChatSession, useDecide } from "@/api/chat";
 import type { SchemaChatSession } from "@/api/client";
+import { OPEN_CHAT } from "@/lib/chatIntent";
 
 const KEY = "hz.chat";
 
@@ -72,6 +73,7 @@ export function useChat() {
     const context = params.get("chat-context");
     const linked = params.get("chat");
     if (!linked && !context) return;
+    window.dispatchEvent(new Event(OPEN_CHAT));
     if (linked) {
       setSessionId(linked);
       remember(linked);
@@ -83,6 +85,7 @@ export function useChat() {
     const next = new URLSearchParams(params);
     next.delete("chat");
     next.delete("chat-context");
+    if (next.get("panel") === "world-clock") next.delete("panel");
     setParams(next, { replace: true });
   }, [params, setParams, openAbout]);
 

@@ -1,3 +1,4 @@
+import { AnchoredPopover } from "@/components/AnchoredPopover";
 // Which conversation the chat shows: its title with a chevron that opens a searchable list of the sessions hz keeps
 // (`hz chat list`), a general "Workshop" chat and "New chat". The list is grouped, so the durable Heinzelmännchen of
 // ADR 0049 (`hz heinzel list`) become one more group of items with their own fields, not a new component.
@@ -105,10 +106,12 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
         <ChevronDown aria-hidden className="size-4 shrink-0 text-icon" />
       </button>
       {open && (
-        <div
+        <AnchoredPopover
+          focusFirst
+          anchor={trigger}
           role="dialog"
           aria-label={t("chat.sessions")}
-          className="absolute top-full left-0 z-(--layer-popover) mt-1 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-border bg-popover p-1.5 shadow-xl"
+          className="w-[22rem]"
         >
           <SearchField
             quietFocus
@@ -150,7 +153,7 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
               </section>
             ))}
           </div>
-        </div>
+        </AnchoredPopover>
       )}
     </div>
   );

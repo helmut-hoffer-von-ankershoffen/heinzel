@@ -14,7 +14,7 @@ export function InfoDialog({ panel, onClose }: { panel: Panel; onClose: () => vo
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes it; Escape and the close button do for keyboards
     <div
-      className="fixed inset-0 z-(--layer-modal) flex items-center justify-center bg-black/50 p-4"
+      className="viewport-overlay fixed z-(--layer-modal) flex items-center justify-center bg-black/50 p-4"
       onMouseDown={onClose}
     >
       <div
@@ -23,7 +23,7 @@ export function InfoDialog({ panel, onClose }: { panel: Panel; onClose: () => vo
         aria-labelledby={titleId}
         onKeyDown={(event) => event.key === "Escape" && onClose()}
         onMouseDown={(event) => event.stopPropagation()}
-        className="flex h-[min(48rem,calc(100vh-2rem))] w-[min(48rem,100%)] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl"
+        className="flex h-[min(48rem,100%)] w-[min(48rem,100%)] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl"
       >
         <header className="flex h-12 shrink-0 items-center border-b border-border pr-2 pl-5">
           <h2 id={titleId} className="text-ui font-medium">

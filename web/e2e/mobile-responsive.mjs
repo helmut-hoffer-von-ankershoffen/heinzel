@@ -1,13 +1,17 @@
 // Focused mobile/touch viewport proof for the app served by `hz ui` (tests/e2e/web_ui_test.py).
 // This is Chromium emulation, not physical iPhone Safari. Usage: node e2e/mobile-responsive.mjs URL SCREENSHOT_DIR.
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { chromium } from "playwright-core";
+import { chromium, webkit } from "playwright-core";
+import ts from "typescript";
 
 const [url, shots] = process.argv.slice(2);
 mkdirSync(shots, { recursive: true });
-const browser = await chromium.launch().catch(() => chromium.launch({ channel: "chrome" }));
+const useWebKit = process.env.PLAYWRIGHT_BROWSER === "webkit";
+const browser = useWebKit
+  ? await webkit.launch()
+  : await chromium.launch().catch(() => chromium.launch({ channel: "chrome" }));
 const cases = [
   { name: "narrow-portrait", width: 360, height: 780 },
   { name: "wide-portrait", width: 430, height: 932 },
@@ -16,8 +20,30 @@ const cases = [
   { name: "wide-landscape", width: 932, height: 430 },
   { name: "short-landscape", width: 844, height: 320 },
 ];
+// Discover route literals from the real router so new screens join the mobile sweep automatically.
+const routeSource = ts.createSourceFile(
+  "App.tsx",
+  readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8"),
+  ts.ScriptTarget.Latest,
+  true,
+  ts.ScriptKind.TSX,
+);
+const routePaths = new Set(["/"]);
+function discoverRoutes(node) {
+  if (
+    ts.isPropertyAssignment(node) &&
+    node.name.getText(routeSource) === "path" &&
+    ts.isStringLiteral(node.initializer)
+  ) {
+    const path = node.initializer.text;
+    if (!path.includes(":") && path !== "*" && path !== "settings" && path !== "notifications")
+      routePaths.add(`/${path}`);
+  }
+  ts.forEachChild(node, discoverRoutes);
+}
+discoverRoutes(routeSource);
 const result = {
-  engine: `Chromium ${browser.version()}`,
+  engine: `${useWebKit ? "WebKit" : "Chromium"} ${browser.version()}`,
   evidence: "mobile/touch emulation; not physical iPhone Safari",
   cases: [],
 };
@@ -85,6 +111,58 @@ async function assertTouchTarget(locator, description, name) {
   return box;
 }
 
+async function assertContained(page, locator, name) {
+  await locator.waitFor();
+  await page.waitForFunction(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  await page.waitForFunction(
+    (element) => {
+      const box = element.getBoundingClientRect(),
+        viewport = visualViewport;
+      return (
+        box.left >= (viewport?.offsetLeft ?? 0) - 1 &&
+        box.top >= (viewport?.offsetTop ?? 0) - 1 &&
+        box.right <= (viewport?.offsetLeft ?? 0) + (viewport?.width ?? innerWidth) + 1 &&
+        box.bottom <= (viewport?.offsetTop ?? 0) + (viewport?.height ?? innerHeight) + 1
+      );
+    },
+    await locator.elementHandle(),
+    { timeout: 5000 },
+  );
+  // DOM and visualViewport share layout coordinates; Playwright boundingBox can normalize pinch-pan offsets.
+  const box = await locator.evaluate((element) => element.getBoundingClientRect().toJSON());
+  const visible = await page.evaluate(() => ({
+    left: visualViewport?.offsetLeft ?? 0,
+    top: visualViewport?.offsetTop ?? 0,
+    width: visualViewport?.width ?? innerWidth,
+    height: visualViewport?.height ?? innerHeight,
+  }));
+  assert.ok(
+    box &&
+      box.x >= visible.left - 1 &&
+      box.y >= visible.top - 1 &&
+      box.x + box.width <= visible.left + visible.width + 1 &&
+      box.y + box.height <= visible.top + visible.height + 1,
+    `${name}: outside visible viewport ${JSON.stringify({ box, visible })}`,
+  );
+  return box;
+}
+
+async function showPage(page) {
+  const tab = page.getByRole("tab", { name: "Page", exact: true });
+  if (await tab.isVisible()) await tab.click();
+}
+
+async function footerPane(page, id, label) {
+  const trigger = page.locator(`[data-footer-content="${id}"] button`).first();
+  if (!(await trigger.isVisible())) {
+    await page.locator('[data-footer-content="@more"] button').click();
+  }
+  await trigger.tap();
+  return page.getByRole("region", { name: label, exact: true }).locator("..");
+}
+
 try {
   for (const spec of cases) {
     const context = await browser.newContext({
@@ -94,9 +172,30 @@ try {
       hasTouch: true,
       deviceScaleFactor: 2,
       isLandscape: spec.width > spec.height,
-      colorScheme: "light",
+      colorScheme: spec.width >= 390 ? "dark" : "light",
     });
     const page = await context.newPage();
+    // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.
+    await page.route("**/api/ai/access/list", async (route) => {
+      const response = await route.fetch();
+      const listing = await response.json();
+      listing.options.push({
+        name: "mobile-overflow-probe",
+        title: "AnExtremelyLongProviderNameThatMustWrapOnAPhone",
+        summary: "A provider with an installation command.",
+        module: "ai.access",
+        plugin: null,
+        in_use: false,
+        status: "not installed",
+        detail: "",
+        fix: "uv tool install an-extremely-long-provider-distribution-name-for-mobile-layout",
+        models: [],
+        runner: null,
+        hosts: [],
+        last_test: null,
+      });
+      await route.fulfill({ response, json: listing });
+    });
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
@@ -114,6 +213,24 @@ try {
     await page.getByRole("heading", { name: "Heinzelmännchen", exact: true }).waitFor();
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-navigation.png`) });
 
+    // Exercise every everyday navigation screen at this phone size, beyond just the Home shell.
+    const destinations = await navigation
+      .getByRole("link")
+      .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+    const visitedRoutes = new Set([...destinations, ...routePaths]);
+    for (const destination of visitedRoutes) {
+      await page.goto(`${new URL(destination, url).href}${new URL(url).hash}`);
+      await page.locator("main").waitFor();
+      for (const detail of await page
+        .locator('main a[href^="/contracts/"]')
+        .evaluateAll((links) => links.map((link) => link.getAttribute("href"))))
+        visitedRoutes.add(detail);
+      const horizontal = await page.evaluate(() => ({
+        width: innerWidth,
+        content: document.documentElement.scrollWidth,
+      }));
+      assert.ok(horizontal.content <= horizontal.width + 1, `${spec.name}: ${destination} overflows horizontally`);
+    }
     // The account menu is a portal/popover anchored at the bottom edge on phones; keep its full box visible.
     const accountButton = page.getByRole("button", { name: /Mira/ });
     await assertTouchTarget(accountButton, "account menu button", spec.name);
@@ -138,16 +255,138 @@ try {
     const settingsItem = menu.getByRole("menuitem", { name: "Settings" });
     const settingsTarget = await assertTouchTarget(settingsItem, "Settings menu item", spec.name);
     await settingsItem.click();
-    await page.getByRole("dialog", { name: "Settings" }).waitFor();
-    await page.getByRole("searchbox", { name: "Filter settings" }).waitFor();
+    await page.getByRole("dialog", { name: "Settings", exact: true }).waitFor();
+    const settingsDialog = page.getByRole("dialog", { name: "Settings", exact: true });
+    await assertContained(page, settingsDialog, `${spec.name}: settings`);
+    await assertContained(
+      page,
+      settingsDialog.getByRole("button", { name: "Close settings" }),
+      `${spec.name}: settings close`,
+    );
+    const searchField = page.getByRole("searchbox", { name: "Filter settings" });
+    assert.ok(
+      (await searchField.evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize))) >= 16,
+      `${spec.name}: focused phone form text must not trigger Safari zoom`,
+    );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-settings.png`) });
+    const settingsPages = await settingsDialog
+      .locator("select option")
+      .evaluateAll((options) => options.map((option) => ({ id: option.value, title: option.textContent.trim() })));
+    assert.ok(settingsPages.length > 5, `${spec.name}: the complete settings registry must be exercised`);
+    for (const settingsPage of settingsPages) {
+      if (spec.width < 640)
+        await settingsDialog.getByLabel("Settings page", { exact: true }).selectOption(settingsPage.id);
+      else
+        await settingsDialog
+          .getByRole("navigation", { name: "Settings", exact: true })
+          .getByRole("button", { name: settingsPage.title, exact: true })
+          .click();
+      await assertContained(page, settingsDialog, `${spec.name}: settings ${settingsPage.id}`);
+      const content = settingsDialog.locator("[data-settings-content]");
+      await content.evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      const sizing = await content.evaluate((element) => ({
+        width: element.clientWidth,
+        content: element.scrollWidth,
+      }));
+      assert.ok(
+        sizing.content <= sizing.width + 1,
+        `${spec.name}: settings ${settingsPage.id} clips horizontally ${JSON.stringify(sizing)}`,
+      );
+      await page.screenshot({
+        path: join(shots, `mobile-${spec.name}-settings-${settingsPage.id.replaceAll(/[^a-z0-9-]/gi, "-")}.png`),
+      });
+    }
+
     await page.getByRole("button", { name: "Close settings" }).click();
+
+    // Every footer pane must fit, including the wide release notes and controls moved into More.
+    for (const [id, label] of [
+      ["@resources", "System resources"],
+      ["@version", /^v/],
+    ]) {
+      const pane = await footerPane(page, id, label);
+      await assertContained(page, pane, `${spec.name}: ${id}`);
+      await page.screenshot({ path: join(shots, `mobile-${spec.name}-${id.slice(1)}.png`) });
+      await page.mouse.click(spec.width - 4, 4);
+    }
+    await page.goto(url);
+    await page.getByRole("heading", { name: "Today" }).waitFor();
+    await page.getByRole("button", { name: /^Notifications/ }).click();
+    const notifications = page.getByRole("region", { name: "Notifications", exact: true });
+    await assertContained(page, notifications, `${spec.name}: notifications`);
+    await page.getByRole("button", { name: "Close notifications" }).click();
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await assertContained(page, page.getByRole("dialog"), `${spec.name}: search`);
+    await page.keyboard.press("Escape");
 
     // The home chat opens automatically. Check the composer is inside the screen and can be focused by touch.
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
+    // Both sides of the workspace: full navigation, top menu, chat switcher and terminal menus/full screen.
+    await page.getByRole("button", { name: "Expand navigation" }).click();
+    await assertContained(
+      page,
+      page.getByRole("navigation", { name: "Main" }),
+      `${spec.name}: expanded left navigation`,
+    );
+    await page.getByRole("button", { name: "Collapse navigation" }).click();
+    await page.getByRole("button", { name: "Home", exact: true }).click();
+    await assertContained(page, page.getByRole("menu"), `${spec.name}: screen menu`);
+    await page.keyboard.press("Escape");
+    const initialChatTab = page.getByRole("tab", { name: "Chat", exact: true });
+    if (await initialChatTab.isVisible()) await initialChatTab.click();
+    await page.getByRole("button", { name: /switch chats$/ }).click();
+    await assertContained(
+      page,
+      page.getByRole("dialog", { name: "Your chats", exact: true }),
+      `${spec.name}: chat switcher`,
+    );
+    await page.keyboard.press("Escape");
+    await page.getByRole("textbox", { name: "Your message" }).fill("A draft to keep.");
+    await showPage(page);
+    await page.getByRole("button", { name: "Open a terminal", exact: true }).click();
+    const terminal = page.getByRole("region", { name: "Terminal", exact: true });
+    await assertContained(page, terminal, `${spec.name}: terminal`);
+    await terminal.evaluate((element) => {
+      window.mobileTerminal = element;
+    });
+    await page.evaluate(() => {
+      history.pushState({}, "", "?panel=world-clock");
+      dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await assertContained(
+      page,
+      page.getByRole("region", { name: "World clock", exact: true }),
+      `${spec.name}: world clock with chat and terminal open`,
+    );
+    await page.getByRole("tab", { name: "Chat", exact: true }).click();
+    assert.equal(await page.getByRole("textbox", { name: "Your message" }).inputValue(), "A draft to keep.");
+    await page
+      .getByRole("tablist", { name: "Workspace panels" })
+      .getByRole("tab", { name: "Terminal", exact: true })
+      .click();
+    assert.ok(
+      await terminal.evaluate((element) => element === window.mobileTerminal),
+      "switching panels must preserve the terminal instance",
+    );
+    await terminal.getByRole("button", { name: "Terminal options", exact: true }).click();
+    const terminalMenu = page.getByRole("menu");
+    await assertContained(page, terminalMenu, `${spec.name}: terminal options`);
+    await terminalMenu.getByRole("menuitem", { name: /^Cursor style/ }).click();
+    await assertContained(page, terminalMenu, `${spec.name}: expanded terminal options`);
+    await page.keyboard.press("Escape");
+    await terminal.getByRole("button", { name: "Full screen", exact: true }).click();
+    await assertContained(page, terminal, `${spec.name}: full-screen terminal`);
+    await terminal.getByRole("button", { name: "Leave full screen", exact: true }).click();
+    await terminal.getByRole("button", { name: "Close the terminal", exact: true }).click();
+    await page.getByRole("button", { name: "Close the chat", exact: true }).first().click();
+    await showPage(page);
+    await page.getByRole("button", { name: "Chat with your Heinzelmännchen", exact: true }).click();
     const composer = page.getByRole("textbox", { name: "Your message" });
     await composer.waitFor();
+    await composer.fill("");
     const composerBox = await composer.boundingBox();
     assert.ok(composerBox, `${spec.name}: composer has no box`);
     assert.ok(
@@ -162,6 +401,13 @@ try {
       composerBox.y + composerBox.height <= spec.height + 1,
       `${spec.name}: composer exceeds viewport height: ${JSON.stringify(composerBox)}`,
     );
+    const modelPicker = page.getByRole("button", { name: /^Model and effort:/ });
+    if (await modelPicker.isVisible()) {
+      await modelPicker.click();
+      const modelMenu = page.getByRole("group", { name: /^Models of/ }).locator("..");
+      await assertContained(page, modelMenu, `${spec.name}: model and effort menu`);
+      await page.keyboard.press("Escape");
+    }
     await composer.tap();
     assert.equal(
       await composer.evaluate((element) => element === document.activeElement),
@@ -193,6 +439,16 @@ try {
     });
     assert.equal(safePadding.top, "47px", `${spec.name}: shell must respect the top safe area`);
     assert.equal(safePadding.bottom, "34px", `${spec.name}: shell must respect the home-indicator safe area`);
+    await showPage(page);
+    await page.getByRole("button", { name: /^Notifications/ }).click();
+    const safeNotices = page.getByRole("region", { name: "Notifications", exact: true });
+    const safeBox = await assertContained(page, safeNotices, `${spec.name}: safe-area notifications`);
+    assert.ok(
+      safeBox.y >= 47 && safeBox.y + safeBox.height <= spec.height - 34 + 1,
+      `${spec.name}: notifications must respect device safe areas`,
+    );
+    await page.getByRole("button", { name: "Close notifications" }).click();
+    await page.getByRole("tab", { name: "Chat", exact: true }).click();
     await page.setViewportSize({ width: spec.width, height: Math.max(240, spec.height - 180) });
     await page.waitForTimeout(100);
     const keyboardComposerBox = await composer.boundingBox();
@@ -224,12 +480,44 @@ try {
       targets: { navigation: navTarget, settings: settingsTarget },
       composer: composerBox,
       navigationSettingsChat: true,
+      routes: [...visitedRoutes],
+      settingsPages: settingsPages.map((entry) => entry.id),
       visualViewportAfterFocus,
       safeAreaPadding: safePadding,
       keyboardReducedViewportComposer: keyboardComposerBox,
       keyboardViewport,
       touch: context.pages()[0].viewportSize(),
     });
+    // Unlike setViewportSize, this keyboard probe shrinks only visualViewport, as Safari's keyboard does.
+    await page.setViewportSize({ width: spec.width, height: spec.height });
+    await page.evaluate(() => {
+      window.originalVisualViewport = Object.getOwnPropertyDescriptor(window, "visualViewport");
+      const viewport = Object.assign(new EventTarget(), {
+        width: innerWidth,
+        height: Math.max(240, innerHeight - 250),
+        offsetLeft: 0,
+        offsetTop: 0,
+        scale: 1,
+      });
+      Object.defineProperty(window, "visualViewport", { configurable: true, value: viewport });
+      window.dispatchEvent(new Event("resize"));
+    });
+    await assertContained(page, composer, `${spec.name}: visual-only keyboard composer`);
+    await page.evaluate(() => {
+      Object.defineProperty(window, "visualViewport", window.originalVisualViewport);
+      visualViewport.dispatchEvent(new Event("resize"));
+    });
+    // A real visual viewport zoom exercises fixed panels independently of layout viewport size.
+    await page.goto(`${url.split("#")[0]}?settings=hz${new URL(url).hash}`);
+    if (!useWebKit) {
+      const session = await context.newCDPSession(page);
+      await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1.4 });
+      assert.ok(await page.evaluate(() => visualViewport.scale > 1 && visualViewport.width < innerWidth));
+      const zoomedSettings = page.getByRole("dialog", { name: "Settings", exact: true });
+      await assertContained(page, zoomedSettings, `${spec.name}: zoomed settings`);
+      await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 1 });
+      await session.detach();
+    }
     await context.close();
   }
   // The full sidebar retains its dock slot at a phone-sized width. Check the player itself and its controls fit and
@@ -307,8 +595,17 @@ try {
       playerBox.y + playerBox.height <= 932 + 1,
     `wide-portrait: docked player must fit viewport: ${JSON.stringify(playerBox)}`,
   );
+  await soundPage.getByRole("button", { name: "Collapse navigation" }).click();
+  await soundPage.getByRole("button", { name: "Pause Mobile dock probe", exact: true }).tap();
+  await soundPage.getByRole("button", { name: "Play Mobile dock probe", exact: true }).tap();
+  assert.equal(await player.isVisible(), false, "collapsed dock must not cover the workspace");
+  await soundPage.screenshot({ path: join(shots, "mobile-compact-sound.png") });
+  await soundPage.getByRole("button", { name: "Expand navigation" }).click();
+  await player.waitFor();
   await popOut.tap();
   await soundPage.waitForFunction(() => document.querySelector('[data-dock="floating"]'));
+  await soundPage.setViewportSize({ width: 360, height: 400 });
+  await assertContained(soundPage, player, "rotated floating player");
   result.dockedPlayer = {
     viewport: { width: 430, height: 932 },
     dockedBox: playerBox,
@@ -316,6 +613,21 @@ try {
     popOutUsable: true,
   };
   await soundPage.close();
+} catch (error) {
+  for (const context of browser.contexts())
+    for (const page of context.pages()) {
+      await page.screenshot({ path: join(shots, "mobile-failure.png") }).catch(() => {});
+      const geometry = await page.evaluate(() =>
+        [...document.querySelectorAll(".viewport-popover,[data-footer-content] button")].map((element) => ({
+          label: element.getAttribute("aria-label"),
+          id: element.id,
+          bounds: element.getBoundingClientRect().toJSON(),
+          style: element.getAttribute("style"),
+        })),
+      );
+      writeFileSync(join(shots, "mobile-failure.json"), JSON.stringify(geometry, null, 2));
+    }
+  throw error;
 } finally {
   await browser.close();
 }

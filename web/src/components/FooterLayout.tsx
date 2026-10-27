@@ -13,15 +13,16 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { t } from "@/i18n";
+import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
-import { placePopover } from "@/sound/dock";
+import { watchViewport } from "@/lib/viewport";
 import { fitFooter, footerWidths } from "./footerFit";
 
 export const FOOTER_MORE = "@more";
 export const FOOTER_CREDIT = "@credit";
 export const FOOTER_RELOCATED = "hz:footer-relocated";
 type Registered = { element: HTMLElement; host: HTMLElement; priority: number; pinned: boolean };
-type Layout = { hidden: string[]; empty: string[]; compactCredit: boolean };
+type Layout = { hidden: string[]; empty: string[]; compactCredit: boolean; width: number };
 type Context = Layout & {
   register: (id: string, item: Registered) => () => void;
   overflowOpen: boolean;
@@ -50,7 +51,7 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
   const lastFocused = useRef<string | null>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [overflowTarget, setOverflowTarget] = useState<HTMLElement | null>(null);
-  const [layout, setLayout] = useState<Layout>({ hidden: [], empty: [], compactCredit: false });
+  const [layout, setLayout] = useState<Layout>({ hidden: [], empty: [], compactCredit: false, width: 0 });
   const queue = useCallback(() => {
     if (pending.current !== null) return;
     pending.current = requestAnimationFrame(() => {
@@ -135,11 +136,12 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
           : (next.visible.find((id) => id !== FOOTER_CREDIT) ?? null);
     }
     setLayout((current) =>
+      current.width === available &&
       current.compactCredit === variants.compactCredit &&
       current.hidden.join("\0") === next.hidden.join("\0") &&
       current.empty.join("\0") === empty.join("\0")
         ? current
-        : { hidden: next.hidden, empty, compactCredit: variants.compactCredit },
+        : { hidden: next.hidden, empty, compactCredit: variants.compactCredit, width: available },
     );
   };
   useLayoutEffect(() => {
@@ -158,6 +160,8 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
         attributeFilter: ["data-state"],
       });
     }
+    const relocated = () => measurement.current();
+    window.addEventListener(FOOTER_RELOCATED, relocated);
     window.addEventListener("resize", queue);
     document.fonts?.addEventListener("loadingdone", queue);
     queue();
@@ -166,6 +170,7 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
       observer.current = null;
       changes.current?.disconnect();
       changes.current = null;
+      window.removeEventListener(FOOTER_RELOCATED, relocated);
       window.removeEventListener("resize", queue);
       document.fonts?.removeEventListener("loadingdone", queue);
       if (pending.current !== null) cancelAnimationFrame(pending.current);
@@ -191,7 +196,12 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
   }, [layout.hidden, overflowTarget, overflowOpen]);
   return (
     <FooterContext value={{ ...layout, register, overflowOpen, setOverflowOpen, overflowTarget, setOverflowTarget }}>
-      <footer {...props} ref={root} className={cn("relative flex min-w-0 items-center", className)}>
+      <footer
+        {...props}
+        data-footer-width={layout.width}
+        ref={root}
+        className={cn("relative flex min-w-0 items-center", className)}
+      >
         {children}
       </footer>
     </FooterContext>
@@ -325,7 +335,7 @@ export function FooterMore() {
     const position = () => {
       if (!trigger.current) return;
       const size = panel.getBoundingClientRect();
-      const maxHeight = Math.max(1, window.innerHeight - 16);
+      const maxHeight = popoverHeight(trigger.current.getBoundingClientRect());
       const next = {
         ...placePopover(
           trigger.current.getBoundingClientRect(),
@@ -340,7 +350,7 @@ export function FooterMore() {
     position();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(position);
     observer?.observe(panel);
-    window.addEventListener("resize", position);
+    const unwatchViewport = watchViewport(position);
     window.addEventListener(FOOTER_RELOCATED, position);
     window.addEventListener("scroll", position, true);
     const frame = requestAnimationFrame(() => panel.querySelector<HTMLElement>("button,a,input")?.focus());
@@ -361,7 +371,7 @@ export function FooterMore() {
       reposition.current = null;
       observer?.disconnect();
       cancelAnimationFrame(frame);
-      window.removeEventListener("resize", position);
+      unwatchViewport();
       window.removeEventListener(FOOTER_RELOCATED, position);
       window.removeEventListener("scroll", position, true);
       window.removeEventListener("mousedown", outside);
@@ -391,7 +401,7 @@ export function FooterMore() {
             id={id}
             ref={panelRef}
             aria-label={t("status.more")}
-            className="fixed z-(--layer-popover) flex w-72 max-w-[calc(100vw-2rem)] flex-col overflow-y-auto rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
+            className="viewport-popover fixed z-(--layer-popover) flex w-72 max-w-[calc(var(--hz-viewport-width,100vw)-2rem)] flex-col overflow-y-auto rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
             style={at}
           />,
           document.body,

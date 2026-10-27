@@ -2,13 +2,16 @@
 // and popping out never move it in the DOM: a moved iframe reloads and the stream would restart. Docked it is laid
 // over the sidebar's dock slot (its position and width follow the slot, and the slot keeps the card's height, so
 // nothing overlaps); floating it is a card over the content that can be dragged, moved with the arrow keys, and
-// snapped back by letting go near the dock spot.
+// snapped back by letting go near the dock spot. In the collapsed rail the docked card is hidden, with playback
+// controlled by the rail button; the same iframe remains mounted when the full sidebar returns.
 import { ExternalLink, GripHorizontal, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { type KeyboardEvent, type PointerEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { t } from "@/i18n";
+import { clampToWindow } from "@/lib/placement";
 import { cn } from "@/lib/utils";
-import { clampToWindow, nearSlot, setDocked, setFloating, useDockPref, useDockSlot } from "./dock";
+import { watchViewport } from "@/lib/viewport";
+import { nearSlot, setDocked, setFloating, useDockPref, useDockSlot } from "./dock";
 import { stop } from "./store";
 
 const WIDTH = 288;
@@ -25,6 +28,7 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
   const pref = useDockPref();
   const slot = useDockSlot();
   const docked = pref.docked && slot !== null;
+  const compact = docked && slot?.dataset.soundCompact === "true";
   const card = useRef<HTMLElement>(null);
   const drag = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
   // While dragging: how far the card is from where it began.
@@ -62,7 +66,7 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
   // Docked, the slot keeps the card's height, so what follows it in the sidebar stays below the card.
   useLayoutEffect(() => {
     const element = card.current;
-    if (!docked || !slot || !element) return;
+    if (!docked || compact || !slot || !element) return;
     const reserve = () => {
       slot.style.height = `${element.offsetHeight}px`;
       // Resizing the slot can move its top as the sidebar's flex navigation gives up space. Read again now,
@@ -81,7 +85,19 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
       watch?.disconnect();
       slot.style.height = "";
     };
-  }, [docked, slot]);
+  }, [docked, compact, slot]);
+
+  useLayoutEffect(() => {
+    if (pref.docked) return;
+    const keepVisible = () => {
+      const rect = card.current?.getBoundingClientRect();
+      if (!rect) return;
+      const next = clampToWindow(rect.left, rect.top, rect);
+      if (next.x !== rect.left || next.y !== rect.top) setFloating(next.x, next.y);
+    };
+    keepVisible();
+    return watchViewport(keepVisible);
+  }, [pref.docked]);
 
   const size = () => {
     const rect = card.current?.getBoundingClientRect();
@@ -155,9 +171,12 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
       aria-label={t("sound.player", { title })}
       data-dock={docked ? "docked" : "floating"}
       style={style}
+      hidden={compact}
       className={cn(
-        "fixed z-(--layer-media) overflow-hidden bg-popover",
-        docked ? "border-y border-border" : "w-72 max-w-[calc(100vw-1rem)] rounded-xl border border-border shadow-xl",
+        "viewport-popover fixed z-(--layer-media) overflow-y-auto bg-popover",
+        docked
+          ? "border-y border-border"
+          : "w-72 max-w-[calc(var(--hz-viewport-width,100vw)-1rem)] rounded-xl border border-border shadow-xl",
       )}
     >
       <header

@@ -84,7 +84,7 @@ export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenCha
           event.clientY <= box.bottom;
         if (!inside || box.width === 0) onOpenChange(false);
       }}
-      className="top-[15%] mx-auto w-[min(36rem,92vw)] overflow-hidden rounded-xl border border-border bg-popover p-0 text-foreground shadow-2xl backdrop:bg-black/40"
+      className="search-dialog open:flex max-h-[calc(var(--hz-viewport-height,100dvh)-2rem)] w-[min(36rem,calc(var(--hz-viewport-width,100vw)-2rem))] flex-col overflow-hidden rounded-xl border border-border bg-popover p-0 text-foreground shadow-2xl backdrop:bg-black/40"
     >
       {open && (
         <>
@@ -112,7 +112,7 @@ export function SearchPalette({ open, onOpenChange }: { open: boolean; onOpenCha
             id="search-results"
             role="listbox"
             aria-label={t("search.label")}
-            className="max-h-80 overflow-x-hidden overflow-y-auto p-1"
+            className="min-h-0 max-h-80 overflow-x-hidden overflow-y-auto p-1"
           >
             {matches.length === 0 && (
               <div role="presentation" className="flex items-center gap-3 p-3">

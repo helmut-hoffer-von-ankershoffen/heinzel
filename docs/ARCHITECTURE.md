@@ -223,3 +223,14 @@ locations of IANA time-zone names, never people's locations. No map service is c
 The fallback land outline is simplified [Natural Earth land](https://www.naturalearthdata.com/about/terms-of-use/)
 (public domain), and representative zone points are from IANA's public-domain `zone.tab`. See
 [ADR 0063](adr/0063-world-clock-is-a-local-interactive-globe.md).
+
+### Phone overlays
+
+The web head sizes dialogs and positions footer popovers against the visual viewport, including keyboard and zoom
+changes. Floating controls respect device safe areas; touch form fields use at least 16px text to avoid focus zoom.
+`web/e2e/mobile-responsive.mjs` checks phone portrait/landscape layouts, dialog and footer bounds, navigation,
+keyboard-sized heights and zoom. The collapsed sidebar keeps direct play/pause; see [ADR 0088](adr/0088-collapsed-sidebar-keeps-sound-controls.md).
+
+The workspace uses descriptor-driven tabs for Chat, Terminal and World Clock on desktop and phone. Hidden contents
+stay mounted; Page restores the main screen and footer on phones. New panels use the same renderer rather than
+adding another stack or viewport rule; [ADR 0089](adr/0089-one-selected-workspace-panel.md) records the boundary.

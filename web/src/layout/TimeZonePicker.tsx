@@ -2,6 +2,7 @@
 // offset ("Berlin · Europe/Berlin · UTC+2"). A combobox: type to filter, arrows to move, Enter to take, Escape to close.
 import { ChevronDown } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { AnchoredPopover } from "@/components/AnchoredPopover";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +83,7 @@ export function TimeZonePicker({ id, value, disabled, label, onChange }: Props) 
         <ChevronDown aria-hidden className="ml-auto size-4 shrink-0 text-icon" />
       </button>
       {open && (
-        <div className="absolute top-full left-0 z-(--layer-popover) mt-1 w-72 rounded-xl border border-border bg-popover p-1.5 shadow-xl">
+        <AnchoredPopover focusFirst anchor={trigger} className="w-72">
           <input
             role="combobox"
             aria-expanded
@@ -139,7 +140,7 @@ export function TimeZonePicker({ id, value, disabled, label, onChange }: Props) 
             ))}
             {matches.length === 0 && <p className="px-2.5 py-1.5 text-sm text-muted-foreground">{t("zones.none")}</p>}
           </div>
-        </div>
+        </AnchoredPopover>
       )}
     </div>
   );

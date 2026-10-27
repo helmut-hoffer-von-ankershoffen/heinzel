@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
-import { base } from "@/test/chat";
+import { base, empty } from "@/test/chat";
 import { expectAccessible, mockApi, renderAt } from "@/test/render";
 import { fitsBeside } from "./Shell";
 
@@ -19,7 +19,7 @@ function widthOf(px: number) {
 }
 
 /** The one panel with the chat and the terminal, and where it is. */
-const panel = () => screen.getByRole("complementary", { name: "Chat" }).parentElement as HTMLElement;
+const panel = () => document.querySelector("[data-placement]") as HTMLElement;
 
 describe("The chat and terminal panel", () => {
   it("fits beside the screen only while the screen keeps 30rem next to its 24rem", () => {
@@ -27,7 +27,7 @@ describe("The chat and terminal panel", () => {
     expect(fitsBeside(54 * 16 - 1, 16)).toBe(false);
   });
 
-  it("is beside Home when wide, chat on top and the terminal under it", async () => {
+  it("is beside Home when wide, with open panels selected by tabs", async () => {
     widthOf(1400);
     mockApi(base);
     const user = userEvent.setup();
@@ -35,13 +35,20 @@ describe("The chat and terminal panel", () => {
     expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open a terminal" }));
     expect(panel()).toHaveAttribute("data-placement", "beside");
-    const [chat, terminal] = [...panel().children];
-    expect(chat).toHaveAttribute("aria-label", "Chat");
-    expect(within(terminal as HTMLElement).getByRole("button", { name: "Close the terminal" })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("tablist", { name: "Workspace panels" })).getByRole("tab", { name: "Terminal" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(screen.getByRole("region", { name: "Terminal" })).getByRole("button", {
+        name: "Close the terminal",
+      }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Chat" }));
+    expect(screen.getByRole("complementary", { name: "Chat" })).toBeVisible();
     await expectAccessible(container);
   });
 
-  it("goes below the screen when narrow, the terminal still under the chat, never beside", async () => {
+  it("goes below the screen when narrow, with one selected panel", async () => {
     widthOf(700);
     mockApi(base);
     const user = userEvent.setup();
@@ -49,9 +56,16 @@ describe("The chat and terminal panel", () => {
     await user.click(await screen.findByRole("button", { name: "Open a terminal" }));
     expect(panel()).toHaveAttribute("data-placement", "below");
     expect(document.querySelectorAll("[data-placement]")).toHaveLength(1);
-    const [chat, terminal] = [...panel().children];
-    expect(chat).toHaveAttribute("aria-label", "Chat");
-    expect(within(terminal as HTMLElement).getByRole("button", { name: "Close the terminal" })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("tablist", { name: "Workspace panels" })).getByRole("tab", { name: "Terminal" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(screen.getByRole("region", { name: "Terminal" })).getByRole("button", {
+        name: "Close the terminal",
+      }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Chat" }));
+    expect(screen.getByRole("complementary", { name: "Chat" })).toBeVisible();
     // Getting wide again moves the same panel beside the screen.
     widthOf(1400);
     await waitFor(() => expect(panel()).toHaveAttribute("data-placement", "beside"));
@@ -84,5 +98,39 @@ describe("The search palette", () => {
     expect(within(palette).getByRole("combobox")).toBeInTheDocument();
     fireEvent.mouseDown(palette, { clientX: 5, clientY: 5 });
     await waitFor(() => expect(within(palette).queryByRole("combobox")).not.toBeInTheDocument());
+  });
+});
+
+describe("phone workspace entry and closing", () => {
+  it.each(["chat=0123456789abcdef", "chat-context=event:notice"])("selects chat for %s", async (query) => {
+    widthOf(390);
+    mockApi({ ...base, "/api/system/runner/chat/show": empty, "/api/system/runner/chat/open": empty });
+    renderAt(`/doctor?${query}`);
+    expect(await screen.findByRole("textbox", { name: "Your message" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Chat", selected: true })).toBeInTheDocument();
+  });
+
+  it("keeps the covered page inert and restores it through Page without closing the terminal", async () => {
+    widthOf(390);
+    mockApi(base);
+    const user = userEvent.setup();
+    renderAt("/doctor");
+    await user.click(await screen.findByRole("button", { name: "Open a terminal" }));
+    const terminal = screen.getByRole("region", { name: "Terminal" });
+    const main = document.getElementById("content");
+    expect(main).toHaveAttribute("inert");
+    expect(main).toHaveAttribute("aria-hidden", "true");
+    await user.click(screen.getByRole("tab", { name: "Page" }));
+    expect(main).not.toHaveAttribute("inert");
+    expect(main).not.toHaveAttribute("aria-hidden");
+    await user.click(
+      within(screen.getByRole("tablist", { name: "Workspace panels" })).getByRole("tab", {
+        name: "Terminal",
+      }),
+    );
+    expect(screen.getByRole("region", { name: "Terminal" })).toBe(terminal);
+    await user.click(within(terminal).getByRole("button", { name: "Close the terminal" }));
+    expect(screen.queryByRole("region", { name: "Terminal" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Chat", selected: true })).toBeInTheDocument();
   });
 });
