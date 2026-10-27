@@ -17,10 +17,6 @@ export function createInstanceLifecycle({ app, parseConnection, createWindow, fo
 
   function setReady() {
     ready = true;
-    if (focusWhenReady) {
-      focusWhenReady = false;
-      void open();
-    }
   }
 
   function acquire(args) {
