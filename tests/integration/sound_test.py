@@ -88,7 +88,7 @@ def test_sound_is_off_by_default_and_the_list_shows_off_the_core_streams_and_eac
     code, listed = hz(kernel("heinzel_sound_demo"), "system", "sound", "list")
     assert code == 0, listed
     assert (listed["selected"], listed["effective"]) == ("off", "off")
-    off, fm, focus, demo = listed["soundscapes"]
+    off, fm, focus, hyper_focus, demo = listed["soundscapes"]
     assert (off["name"], off["kind"], off["selected"], off["effective"]) == ("off", "off", True, True)
     assert (fm["name"], fm["title"], fm["module"], fm["plugin"]) == (
         "claude-fm",
@@ -105,6 +105,12 @@ def test_sound_is_off_by_default_and_the_list_shows_off_the_core_streams_and_eac
     }
     assert (focus["name"], focus["title"], focus["plugin"]) == ("focus", "Die Heinzelmännchen", "heinzel")
     assert focus["stream"]["video"] == "5Le8Mrx3uA0"
+    assert (hyper_focus["name"], hyper_focus["title"], hyper_focus["plugin"]) == (
+        "hyper-focus",
+        "Hyper Focus",
+        "heinzel",
+    )
+    assert hyper_focus["stream"]["video"] == "uNw_a7HFwvg"
     assert (demo["name"], demo["kind"], demo["plugin"], demo["pairs_with"]) == (
         "demo",
         "layers",
@@ -130,7 +136,9 @@ def test_sound_use_writes_the_user_setting_refuses_an_unknown_name_and_off_switc
     assert '[system.sound]\nname = "claude-fm"' in (user_config_dir() / "config.toml").read_text(encoding="utf-8")
     code, output = hz(hzk, "system", "sound", "use", "nope", json_output=False)
     assert code != 0
-    assert "No soundscape is called 'nope'; available: off, claude-fm, focus, demo" in " ".join(str(output).split())
+    assert "No soundscape is called 'nope'; available: off, claude-fm, focus, hyper-focus, demo" in " ".join(
+        str(output).split()
+    )
     assert hz(hzk, "system", "sound", "use", "off")[1]["effective"] == "off"
 
 
@@ -257,6 +265,7 @@ def test_the_cli_renders_the_soundscapes_with_the_one_in_effect_marked(kernel):
     assert "*  off" in str(output)
     lines = [" ".join(line.split()) for line in str(output).splitlines()]
     assert any("claude-fm Claude FM stream (youtube)" in line for line in lines)
+    assert any("hyper-focus Hyper Focus stream (youtube)" in line for line in lines)
     assert not any("CEO mode" in line for line in lines)
     assert any("demo Demo hum 1 layer" in line for line in lines)
 
