@@ -134,8 +134,46 @@ export async function verifyFooter(page, shots) {
         const bounds = button.getBoundingClientRect();
         return visible && bounds.width > 0 && bounds.height > 0 && !anchor.hasAttribute("inert");
       });
+      // The role query proves the control is exposed to assistive technology. Keep the actual action scoped to
+      // its stable source marker so Chromium does not have to resolve the same accessible name again mid-click.
+      const markedMore = footer.locator('[data-footer-content="@more"] button');
+      const accessible = await markedMore.evaluate((button) => {
+        const ancestors = [];
+        for (let element = button; element; element = element.parentElement) {
+          const style = getComputedStyle(element);
+          ancestors.push({
+            tag: element.tagName,
+            inert: element.hasAttribute("inert"),
+            ariaHidden: element.getAttribute("aria-hidden"),
+            display: style.display,
+            visibility: style.visibility,
+            opacity: style.opacity,
+            visible: element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }),
+          });
+        }
+        return {
+          tag: button.tagName,
+          role: button.getAttribute("role") ?? (button.tagName === "BUTTON" ? "button" : null),
+          name: button.getAttribute("aria-label"),
+          ancestors,
+        };
+      });
+      assert.equal(accessible.tag, "BUTTON");
+      assert.equal(accessible.role, "button");
+      assert.equal(accessible.name, "More status items");
+      assert.ok(
+        accessible.ancestors.every((ancestor) => !ancestor.inert && ancestor.ariaHidden !== "true" && ancestor.visible),
+        `More control has a hidden/inert ancestor at ${width}px: ${JSON.stringify(accessible)}`,
+      );
+      const roleHandle = await more.elementHandle();
+      assert.ok(roleHandle, `More control lost its accessible role/name at ${width}px`);
+      assert.equal(
+        await markedMore.evaluate((button, resolvedByRole) => button === resolvedByRole, roleHandle),
+        true,
+        "The accessible More button and its stable footer marker must identify the same mounted control.",
+      );
       try {
-        await more.click({ timeout: 3000 });
+        await markedMore.click({ timeout: 3000 });
       } catch (error) {
         const domState = await footer.evaluate((bar) => {
           const describe = (element) => {
@@ -148,21 +186,26 @@ export async function verifyFooter(page, shots) {
               visibility: style.visibility,
               display: style.display,
               opacity: style.opacity,
+              role: element.getAttribute("role") ?? (element.tagName === "BUTTON" ? "button" : null),
+              label: element.getAttribute("aria-label"),
+              title: element.getAttribute("title"),
               inert: element.hasAttribute("inert"),
               ariaHidden: element.getAttribute("aria-hidden"),
+              visible: element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }),
             };
           };
           const anchor = bar.querySelector('[data-footer-part="@more"]');
           const button = bar.querySelector('[data-footer-content="@more"] button');
+          const ancestors = [];
+          for (let element = button; element; element = element.parentElement) ancestors.push(describe(element));
           return {
             viewport: { width: innerWidth, height: innerHeight },
             footer: describe(bar),
             overflow: [...bar.querySelectorAll('[data-footer-hidden="overflow"]')].map(
               (item) => item.dataset.footerPart,
             ),
-            chain: button
-              ? [button, button.parentElement, button.parentElement?.parentElement, anchor].map(describe)
-              : null,
+            ancestors,
+            anchor: describe(anchor),
             hit: button
               ? document
                   .elementFromPoint(
