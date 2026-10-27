@@ -14,6 +14,10 @@ captureCheck.append(Buffer.from("012345"));
 assert.equal(captureCheck.read().byteLength, 4);
 assert.equal(captureCheck.read().truncated, true);
 assert.equal(captureCheck.read().text, "2345");
+assert.equal(
+  escapeTerminalControls("safe\n\u001b[31mred\u001b[0m\r\u0007\u009b"),
+  "safe\n\\x1b[31mred\\x1b[0m\\x0d\\x07\\x9b",
+);
 let resolveRequest;
 const request = new Promise((resolve) => {
   resolveRequest = resolve;
@@ -123,7 +127,7 @@ function boundedCapture(limit) {
 function childDiagnostics(stdoutResult, stderrResult) {
   const output = (name, result) => {
     const note = result.truncated ? `[earlier ${name} omitted; showing last ${OUTPUT_LIMIT} bytes]` : "";
-    return `--- Electron ${name} ---\n${note}\n${result.text}`;
+    return `--- Electron ${name} ---\n${note}\n${escapeTerminalControls(result.text)}`;
   };
   return [
     "",
@@ -131,4 +135,11 @@ function childDiagnostics(stdoutResult, stderrResult) {
     output("stdout", stdoutResult),
     output("stderr", stderrResult),
   ].join("\n");
+}
+
+function escapeTerminalControls(value) {
+  return value.replace(/[\u0000-\u001f\u007f-\u009f]/g, (character) => {
+    if (character === "\n") return "\n";
+    return `\\x${character.charCodeAt(0).toString(16).padStart(2, "0")}`;
+  });
 }

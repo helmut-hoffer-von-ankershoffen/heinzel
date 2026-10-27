@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-native build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -119,6 +119,21 @@ managed-backend-check: ## Check sealed helpers, strict Node types and owned proc
 desktop-electron-test: ## Install the locked Electron runtime and run its unit suite
 	pnpm --dir desktop install --frozen-lockfile
 	pnpm --dir desktop test
+
+desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and mode for CI smoke tests
+	@sandbox=desktop/node_modules/electron/dist/chrome-sandbox; \
+	if [ ! -f "$$sandbox" ]; then \
+		echo "::error::Expected Electron sandbox helper not found at $$sandbox"; \
+		exit 1; \
+	fi; \
+	if ! sudo chown root:root -- "$$sandbox" || ! sudo chmod 4755 -- "$$sandbox"; then \
+		echo "::error::Could not configure Electron sandbox helper at $$sandbox"; \
+		exit 1; \
+	fi; \
+	if [ "$$(stat -c '%u:%a' "$$sandbox")" != "0:4755" ]; then \
+		echo "::error::Electron sandbox helper must be root-owned with mode 4755: $$sandbox"; \
+		exit 1; \
+	fi
 
 desktop-electron-native: ## Launch the Electron window against a temporary authenticated local service
 	@if [ "$$(uname -s)" = Linux ]; then xvfb-run --auto-servernum pnpm --dir desktop test:native; else pnpm --dir desktop test:native; fi
