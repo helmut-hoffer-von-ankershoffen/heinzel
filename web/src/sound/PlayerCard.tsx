@@ -65,6 +65,14 @@ export function PlayerCard({ title, watchUrl, host, children }: Props) {
     if (!docked || !slot || !element) return;
     const reserve = () => {
       slot.style.height = `${element.offsetHeight}px`;
+      // Resizing the slot can move its top as the sidebar's flex navigation gives up space. Read again now,
+      // before paint, so the portal card follows the reserved box on its first docked frame.
+      const rect = slot.getBoundingClientRect();
+      setAt((was) =>
+        was && was.left === rect.left && was.top === rect.top && was.width === rect.width
+          ? was
+          : { left: rect.left, top: rect.top, width: rect.width },
+      );
     };
     reserve();
     const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(reserve);
