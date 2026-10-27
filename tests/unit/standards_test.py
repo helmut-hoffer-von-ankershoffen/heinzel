@@ -101,6 +101,7 @@ CORE_ONLY = {  # path: why plugins don't get it
     ".claude/skills/scaffold-plugin/SKILL.md": "creates plugins; a plugin updates itself with update-template",
     "scripts/attributions.py": "writes ATTRIBUTIONS.md of the core and its web app; plugins bundle nothing",
     "scripts/demo_tape.py": "assembles the README demo from the core intro and its modules' snippets",
+    "scripts/electron_linux_sandbox.py": "restores the core Electron CI sandbox helper; plugins ship no desktop app",
     "scripts/generate_docs.py": "generates Heinzelmännchen's CLI, module and configuration reference",
     "scripts/notifier.py": "builds Heinzel Notifier, the core's macOS notifier app (ADR 0043); plugins have none",
     "scripts/terminal_art.py": "draws Heinzelmännchen for the terminal from the web app's drawing; plugins bring none",

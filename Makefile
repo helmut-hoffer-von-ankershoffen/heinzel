@@ -125,7 +125,9 @@ desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and m
 		echo "::error::Could not resolve the installed Electron package"; \
 		exit 1; \
 	}; \
-	sandbox=$$(dirname "$$electron_entry")/dist/chrome-sandbox; \
+	electron_root=$$(dirname "$$electron_entry"); \
+	uv run --script scripts/electron_linux_sandbox.py "$$electron_root" || exit $$?; \
+	sandbox=$$electron_root/dist/chrome-sandbox; \
 	if [ ! -f "$$sandbox" ]; then \
 		echo "::error::Expected Electron sandbox helper not found at $$sandbox"; \
 		exit 1; \

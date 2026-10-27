@@ -1,7 +1,12 @@
 """CI runs what developers run locally."""
 
+import hashlib
+import importlib.util
+import io
 import re
+import stat
 import tomllib
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -10,6 +15,13 @@ import yaml
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
+
+_SANDBOX_SCRIPT = REPO / "scripts" / "electron_linux_sandbox.py"
+_SANDBOX_SPEC = importlib.util.spec_from_file_location("electron_linux_sandbox", _SANDBOX_SCRIPT)
+assert _SANDBOX_SPEC is not None
+assert _SANDBOX_SPEC.loader is not None
+electron_linux_sandbox = importlib.util.module_from_spec(_SANDBOX_SPEC)
+_SANDBOX_SPEC.loader.exec_module(electron_linux_sandbox)
 
 WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 # Steps that legitimately don't go through make, by workflow: setup, checks that only exist in CI, and release
@@ -110,6 +122,57 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
     assert runs.index("make managed-backend-setup managed-backend-check") < runs.index("make typecheck")
     for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
         assert "managed-backend" not in (REPO / "template" / name).read_text()
+
+
+def test_electron_sandbox_archive_hash_mismatch_is_rejected():
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        electron_linux_sandbox.verified_helper(b"tampered", "45.0.0")
+
+
+def test_electron_sandbox_extracts_only_regular_helper_from_verified_archive(monkeypatch):
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as release:
+        helper = zipfile.ZipInfo("chrome-sandbox")
+        helper.external_attr = (stat.S_IFREG | 0o755) << 16
+        release.writestr(helper, b"helper")
+        release.writestr("electron", b"unrelated binary")
+    data = archive.getvalue()
+    monkeypatch.setitem(electron_linux_sandbox.ARCHIVE_SHA256, "test", hashlib.sha256(data).hexdigest())
+
+    assert electron_linux_sandbox.verified_helper(data, "test") == b"helper"
+
+    with pytest.raises(ValueError, match="no pinned"):
+        electron_linux_sandbox.verified_helper(data, "46.0.0")
+
+
+def test_electron_sandbox_install_creates_only_verified_helper(tmp_path, monkeypatch):
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as release:
+        helper = zipfile.ZipInfo("chrome-sandbox")
+        helper.external_attr = (stat.S_IFREG | 0o755) << 16
+        release.writestr(helper, b"helper")
+    data = archive.getvalue()
+    monkeypatch.setitem(electron_linux_sandbox.ARCHIVE_SHA256, "test", hashlib.sha256(data).hexdigest())
+    electron_root = tmp_path / "electron"
+    electron_root.mkdir()
+    (electron_root / "package.json").write_text('{"version":"test"}', encoding="utf-8")
+
+    installed = electron_linux_sandbox.install_helper(
+        electron_root, open_url=lambda *_args, **_kwargs: io.BytesIO(data)
+    )
+
+    assert installed == electron_root / "dist" / "chrome-sandbox"
+    assert installed.read_bytes() == b"helper"
+
+
+def test_electron_sandbox_ci_restores_and_verifies_setuid_helper():
+    makefile = (REPO / "Makefile").read_text()
+    target = next(line for line in makefile.splitlines() if "uv run --script scripts/electron_linux_sandbox.py" in line)
+    assert 'if [ ! -f "$$sandbox" ]' in makefile
+    assert "sudo chown root:root" in makefile
+    assert "sudo chmod 4755" in makefile
+    assert "stat -c '%u:%a'" in makefile
+    assert "$$electron_root" in target
 
 
 def test_every_not_make_exemption_is_used():
