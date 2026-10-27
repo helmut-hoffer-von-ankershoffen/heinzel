@@ -459,7 +459,7 @@ export function StatusBar() {
             state="off"
             text={`v${info.data.version}`}
             align="left"
-            popoverClassName="w-[min(28rem,calc(100vw-2rem))]"
+            popoverClassName="w-[min(28rem,calc(100vw_-_2rem))]"
           >
             <ReleaseNotes version={info.data.version} />
           </FooterItem>
