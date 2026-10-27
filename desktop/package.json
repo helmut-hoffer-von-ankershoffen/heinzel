@@ -6,7 +6,7 @@
   "description": "Electron window that launches and owns the local Heinzelmännchen CLI service.",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/*.test.js",
+    "test": "node --test test/*.test.js catalog/test/*.test.js",
     "test:native": "node e2e/native-startup.mjs",
     "build": "node ci/package.mjs",
     "verify:package": "node ci/verify-package.mjs"

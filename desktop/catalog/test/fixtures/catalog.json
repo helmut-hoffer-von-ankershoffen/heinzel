@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "platform": "darwin",
+      "architecture": "arm64",
+      "app_version": "0.7.24",
+      "core_version": "0.7.24",
+      "url": "https://github.com/example/heinzel/releases/download/v0.7.24/Heinzel-darwin-arm64.zip",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "platform": "linux",
+      "architecture": "x64",
+      "app_version": "0.7.24",
+      "core_version": "0.7.24",
+      "url": "https://github.com/example/heinzel/releases/download/v0.7.24/Heinzel-linux-x64.tar.gz",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ]
+}
