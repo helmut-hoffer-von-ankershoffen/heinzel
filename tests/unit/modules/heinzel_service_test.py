@@ -351,6 +351,7 @@ def test_active_check_in_compiles_a_local_deduplicated_job_and_pause_wins_a_stal
         assert len(notices) == 1
         assert notices[0].kind is NoticeKind.HEINZEL
         assert notices[0].title == "Five-minute helper checked in"
+        assert notices[0].route == f"/heinzel?chat={created.session_id}"
         assert notices[0].key.startswith(f"heinzel:{created.session_id}:check-in:")
     assert runner.runs == []
 

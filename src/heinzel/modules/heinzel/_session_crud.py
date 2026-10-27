@@ -472,7 +472,7 @@ class SessionCrud:
                 NoticeKind.HEINZEL,
                 f"{profile.name} checked in",
                 "Your scheduled five-minute check-in is due.",
-                route="/heinzel",
+                route=f"/heinzel?chat={session_id}",
                 command="hz heinzel sessions",
                 key=f"heinzel:{session_id}:check-in:{slot.isoformat()}",
             )
