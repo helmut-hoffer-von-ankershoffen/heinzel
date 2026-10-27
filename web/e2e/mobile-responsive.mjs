@@ -283,7 +283,12 @@ try {
   await soundPage.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });
   await soundPage.getByRole("button", { name: "Expand navigation" }).click();
   await soundPage.getByRole("button", { name: "Collapse navigation" }).waitFor();
-  await soundPage.getByRole("button", { name: "Play Mobile dock probe", exact: true }).click();
+  await soundPage.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
+  await soundPage
+    .getByRole("dialog", { name: "Sound" })
+    .getByRole("button", { name: "Play Mobile dock probe", exact: true })
+    .click();
+  await soundPage.keyboard.press("Escape");
   const player = soundPage.getByRole("region", { name: "Mobile dock probe player" });
   await player.waitFor();
   assert.equal(

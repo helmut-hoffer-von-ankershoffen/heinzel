@@ -1,6 +1,7 @@
 """Managing plugins from the web app (ADR 0047): behind the session token, never on the REST head, confirmed first."""
 
 import asyncio
+import json
 import os
 import subprocess
 import threading
@@ -10,10 +11,12 @@ import httpx
 import pytest
 import uvicorn
 from fastapi.testclient import TestClient
+from typer.testing import CliRunner
 
 from heinzel import Config, Module, Progress, Settings
 from heinzel.heads import api, web
 from heinzel.heads._exposure import exposed
+from heinzel.heads.cli import build as cli_app
 from heinzel.kernel import Installation, user_config_dir
 from heinzel.modules.system.plugin import PluginService, _sources
 
@@ -87,6 +90,67 @@ def test_the_web_head_manages_plugins_and_the_rest_head_only_lists_and_searches(
 def test_adding_needs_the_token(client, kernel):
     assert client.post("/api/system/plugin/add", params={"spec": "heinzel-crm", "confirm": True}).status_code == 401
     assert kernel.runs == []
+
+
+def test_public_rest_cannot_spawn_a_fresh_plugin_inventory_process(kernel, monkeypatch):
+    calls = []
+    service = kernel.resolve(PluginService)
+    monkeypatch.setattr(service._installation, "hz", lambda *args: calls.append(args) or "[]")
+    rest = TestClient(api.build(kernel, port=8000), base_url=BASE)
+    response = rest.get("/system/plugin/list", params={"fresh": True})
+    assert response.status_code >= 400
+    assert calls == []
+    assert kernel.runs == []
+
+
+def test_web_inventory_refresh_is_authenticated_and_does_not_replace_loaded_kernel_state(client, kernel, monkeypatch):
+    service = kernel.resolve(PluginService)
+    cached = service.installed()
+    fresh = [cached[0].model_dump(mode="json") | {"version": "9.8.7"}]
+    calls = []
+
+    def current(*args):
+        calls.append(args)
+        return json.dumps(fresh)
+
+    monkeypatch.setattr(service._installation, "hz", current)
+    assert client.get("/api/system/plugin/list", params={"fresh": True}).status_code == 401
+    assert client.get("/api/system/plugin/list", headers=AUTH).json() == [p.model_dump(mode="json") for p in cached]
+    assert calls == []
+    response = client.get("/api/system/plugin/list", params={"fresh": True}, headers=AUTH)
+    assert response.status_code == 200
+    assert response.json() == fresh
+    assert calls == [("system", "plugin", "list", "--json")]
+    assert service.installed() == cached
+    assert kernel.runs == []
+
+
+def test_cli_inventory_refresh_uses_the_same_explicit_read_only_contract(kernel, monkeypatch):
+    service = kernel.resolve(PluginService)
+    fresh = [service.installed()[0].model_dump(mode="json") | {"version": "9.8.7"}]
+    calls = []
+
+    def current(*args):
+        calls.append(args)
+        return json.dumps(fresh)
+
+    monkeypatch.setattr(service._installation, "hz", current)
+    response = CliRunner().invoke(cli_app(kernel), ["system", "plugin", "list", "--fresh", "--json"])
+    assert response.exit_code == 0, response.output
+    assert json.loads(response.output) == fresh
+    assert calls == [("system", "plugin", "list", "--json")]
+    assert kernel.runs == []
+
+
+def test_inventory_schema_declares_optional_fresh_boolean_without_a_mutation_route(kernel):
+    paths = api.build(kernel, port=8000).openapi()["paths"]
+    endpoint = paths["/system/plugin/list"]
+    assert set(endpoint) == {"get"}
+    parameter = next(value for value in endpoint["get"]["parameters"] if value["name"] == "fresh")
+    assert parameter["in"] == "query"
+    assert parameter["required"] is False
+    assert parameter["schema"]["type"] == "boolean"
+    assert parameter["schema"]["default"] is False
 
 
 def test_without_confirm_the_web_app_gets_what_to_show_and_nothing_is_installed(client, kernel):

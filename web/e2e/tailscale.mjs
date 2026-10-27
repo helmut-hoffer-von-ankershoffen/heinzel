@@ -132,8 +132,8 @@ try {
   assert.equal(new URL(copied).origin, "https://workstation.tail-example.ts.net");
   assert.equal(new URL(copied).hash, new URL(url).hash);
   assert.ok(
-    !(await page.locator("body").textContent()).includes(new URL(url).hash),
-    "A credential link must stay out of the DOM.",
+    (await panel.textContent()).includes(new URL(copied).hash),
+    "The displayed authenticated URL includes the token a person needs to share it.",
   );
   const layouts = [];
   for (const [width, height] of [

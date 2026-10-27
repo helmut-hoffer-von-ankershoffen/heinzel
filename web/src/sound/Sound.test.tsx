@@ -95,6 +95,14 @@ afterEach(() => {
 });
 
 const speaker = (name: RegExp) => screen.findByRole("button", { name });
+const openSoundChoices = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await speaker(/^Choose a soundscape$/));
+  return screen.findByRole("dialog", { name: "Sound" });
+};
+const playSound = async (user: ReturnType<typeof userEvent.setup>, title: string) => {
+  const dialog = screen.queryByRole("dialog", { name: "Sound" }) ?? (await openSoundChoices(user));
+  await user.click(within(dialog).getByRole("button", { name: `Play ${title}` }));
+};
 
 describe("Sound", () => {
   it("switches from the followed theme sound to a manual contributor soundscape and plays its source", async () => {
@@ -158,8 +166,8 @@ describe("Sound", () => {
 
     const user = userEvent.setup();
     renderAt("/");
-    const snowSpeaker = await speaker(/^Play Snow$/);
-    await user.click(snowSpeaker);
+    const snowSpeaker = await speaker(/^Choose a soundscape$/);
+    await playSound(user, "Snow");
     await waitFor(() =>
       expect(api.calls.some((call) => call.url.includes("/sound-assets/snow/layer-0.ogg"))).toBe(true),
     );
@@ -167,7 +175,6 @@ describe("Sound", () => {
     expect(contexts[0]?.sources).toHaveLength(1);
     expect(soundState()).toMatchObject({ playing: true, started: true });
 
-    await user.pointer({ keys: "[MouseRight]", target: snowSpeaker });
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
     expect(within(dialog).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "true");
     await user.click(within(dialog).getByRole("radio", { name: /^Rain/ }));
@@ -175,14 +182,14 @@ describe("Sound", () => {
     await waitFor(() => expect(soundState()).toMatchObject({ playing: false, started: false }));
     expect(contexts[0]?.close).toHaveBeenCalledOnce();
 
-    await user.pointer({ keys: "[MouseRight]", target: snowSpeaker });
+    await user.click(snowSpeaker);
     const choices = await screen.findByRole("dialog", { name: "Sound" });
     await waitFor(() =>
       expect(within(choices).getByRole("switch", { name: "Follow my theme" })).toHaveAttribute("aria-checked", "false"),
     );
     expect(within(choices).getByRole("radio", { name: /^Rain/ })).toHaveAttribute("aria-checked", "true");
 
-    await user.click(await speaker(/^Play Rain$/));
+    await playSound(user, "Rain");
     await waitFor(() =>
       expect(api.calls.some((call) => call.url.includes("/sound-assets/rain/layer-0.ogg"))).toBe(true),
     );
@@ -208,7 +215,7 @@ describe("Sound", () => {
       });
       const user = userEvent.setup();
       renderAt("/");
-      await user.pointer({ keys: "[MouseRight]", target: await speaker(/^Play Rain$/) });
+      await user.click(await speaker(/^Choose a soundscape$/));
       const dialog = await screen.findByRole("dialog", { name: "Sound" });
       expect(within(dialog).getByRole("radio", { name: /^Rain/ })).toHaveAttribute("aria-checked", "true");
       await user.click(within(dialog).getByRole("radio", { name: name === "claude-fm" ? /^Claude FM/ : /^Rain/ }));
@@ -216,7 +223,7 @@ describe("Sound", () => {
       await waitFor(() => expect(screen.queryByRole("dialog", { name: "Sound" })).not.toBeInTheDocument());
       await user.pointer({
         keys: "[MouseRight]",
-        target: await speaker(name === "claude-fm" ? /^Play Claude FM$/ : /^Play Rain$/),
+        target: await speaker(/^Choose a soundscape$/),
       });
       const choices = await screen.findByRole("dialog", { name: "Sound" });
       await waitFor(() =>
@@ -242,8 +249,7 @@ describe("Sound", () => {
     });
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Choose a soundscape$/));
-    const dialog = await screen.findByRole("dialog", { name: "Sound" });
+    const dialog = await openSoundChoices(user);
     expect(await within(dialog).findByText("Theme: Acme · Sounds by Jo Example")).toBeInTheDocument();
     expect(within(dialog).getByText("Built-in · Plays from YouTube")).toBeInTheDocument();
   });
@@ -259,8 +265,7 @@ describe("Sound", () => {
     });
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Choose a soundscape$/));
-    const dialog = await screen.findByRole("dialog", { name: "Sound" });
+    const dialog = await openSoundChoices(user);
     expect(await within(dialog).findByText("Plugin: heinzel-acme · Sounds by Jo Example")).toBeInTheDocument();
     expect(within(dialog).queryByText(/Theme: Acme/)).not.toBeInTheDocument();
   });
@@ -269,12 +274,11 @@ describe("Sound", () => {
     const { calls } = soundApi("claude-fm");
     const user = userEvent.setup();
     const { container } = renderAt("/");
-    const button = await speaker(/^Play Claude FM$/);
-    expect(button).toHaveAttribute("aria-pressed", "false");
+    await speaker(/^Choose a soundscape$/);
     expect(document.querySelector("iframe")).toBeNull();
     expect(calls.some((call) => !call.url.startsWith(window.location.origin))).toBe(false);
     await expectAccessible(container); // before Play: axe can't look into a cross-origin frame in jsdom
-    await user.click(button);
+    await playSound(user, "Claude FM");
     const frame = (await screen.findByTitle("Claude FM player")) as HTMLIFrameElement;
     expect(new URL(frame.src).origin).toBe(ORIGIN);
     expect(new URL(frame.src).searchParams.get("origin")).toBe(window.location.origin);
@@ -285,7 +289,8 @@ describe("Sound", () => {
     expect(frame.getAttribute("allow")).toBe("autoplay; encrypted-media");
     expect(frame.getAttribute("loading")).toBeNull();
     expect(screen.getByText("Plays from YouTube")).toBeInTheDocument();
-    expect(await speaker(/^Pause Claude FM$/)).toHaveAttribute("aria-pressed", "true");
+    const activeDialog = await screen.findByRole("dialog", { name: "Sound" });
+    expect(within(activeDialog).getByRole("button", { name: "Pause Claude FM" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Stop and close the player" }));
     expect(document.querySelector("iframe")).toBeNull();
   });
@@ -294,8 +299,7 @@ describe("Sound", () => {
     soundApi("off");
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Choose a soundscape$/));
-    const dialog = await screen.findByRole("dialog", { name: "Sound" });
+    const dialog = await openSoundChoices(user);
     const group = within(dialog).getByRole("radiogroup", { name: "Sound" });
     expect(
       within(group)
@@ -310,8 +314,7 @@ describe("Sound", () => {
     const { calls } = soundApi("off", "claude-fm");
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Choose a soundscape$/));
-    const dialog = await screen.findByRole("dialog", { name: "Sound" });
+    const dialog = await openSoundChoices(user);
     expect(within(dialog).queryByRole("switch", { name: "Sound on" })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("radio", { name: /^Off/ })).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole("radio", { name: /^Claude FM/ }));
@@ -323,7 +326,7 @@ describe("Sound", () => {
     soundApi("claude-fm");
     const user = userEvent.setup();
     renderAt("/");
-    const speakerButton = (await speaker(/^Play Claude FM$/)) as HTMLElement;
+    const speakerButton = (await speaker(/^Choose a soundscape$/)) as HTMLElement;
     speakerButton.focus();
     await user.keyboard("{ArrowDown}");
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
@@ -343,7 +346,7 @@ describe("Sound", () => {
     soundApi("claude-fm");
     const user = userEvent.setup();
     renderAt("/");
-    await user.pointer({ keys: "[MouseRight]", target: await speaker(/^Play Claude FM$/) });
+    await user.click(await speaker(/^Choose a soundscape$/));
     expect(await screen.findByRole("dialog", { name: "Sound" })).toBeInTheDocument();
     expect(soundState().playing).toBe(false);
   });
@@ -360,7 +363,7 @@ describe("Sound", () => {
     soundApi("claude-fm");
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Play Claude FM$/));
+    await playSound(user, "Claude FM");
     const input = await screen.findByRole("textbox", { name: /message/i });
     await user.type(input, "hi");
     expect(soundState().typing).toBe(true);
@@ -384,8 +387,7 @@ describe("the page's frame origin", () => {
     soundApi("off", "claude-fm");
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Choose a soundscape$/));
-    const dialog = await screen.findByRole("dialog", { name: "Sound" });
+    const dialog = await openSoundChoices(user);
     await act(async () => {
       await user.click(within(dialog).getByRole("radio", { name: /^Claude FM/ }));
     });
@@ -418,15 +420,17 @@ describe("a layered soundscape", () => {
     const { calls } = layeredApi();
     const user = userEvent.setup();
     renderAt("/");
-    const button = await speaker(/^Play Rain$/);
+    await speaker(/^Choose a soundscape$/);
     expect(calls.some((call) => call.url.includes("/sound-assets/"))).toBe(false);
     expect(contexts).toHaveLength(0);
-    await user.click(button);
+    await playSound(user, "Rain");
     await waitFor(() => expect(calls.some((call) => call.url.includes("/sound-assets/rain/layer-0.ogg"))).toBe(true));
     const context = contexts.at(-1) as FakeContext;
     await waitFor(() => expect(context.gains[0]?.gain.target).toBeCloseTo(0.5)); // the master, to the volume
     expect(context.sources[0]?.loop).toBe(true);
-    await user.click(await speaker(/^Pause Rain$/));
+    await user.click(
+      within(await screen.findByRole("dialog", { name: "Sound" })).getByRole("button", { name: "Pause Rain" }),
+    );
     await waitFor(() => expect(context.gains[0]?.gain.target).toBe(0));
     await act(async () => {
       window.dispatchEvent(new CustomEvent("hz:notice", { detail: { kind: "draft" } }));
@@ -439,7 +443,7 @@ describe("a layered soundscape", () => {
     layeredApi();
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Play Rain$/));
+    await playSound(user, "Rain");
     await waitFor(() => expect(soundState().problem).toBe("This browser can't play layered sound."));
     expect(soundState()).toMatchObject({ playing: false, started: false });
   });
@@ -450,7 +454,7 @@ describe("a layered soundscape", () => {
     layeredApi();
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Play Rain$/));
+    await playSound(user, "Rain");
     await waitFor(() => expect(soundState().problem).toBe("Rain couldn't be loaded."));
     await waitFor(() => expect(contexts.at(-1)?.close).toHaveBeenCalled());
   });
@@ -461,7 +465,7 @@ describe("a stream's fades", () => {
     soundApi("claude-fm");
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Play Claude FM$/));
+    await playSound(user, "Claude FM");
     const frame = (await screen.findByTitle("Claude FM player")) as HTMLIFrameElement;
     const post = vi.spyOn(frame.contentWindow as Window, "postMessage");
     const sent = () => post.mock.calls.map(([data, target]) => [JSON.parse(String(data)).func, target]);
@@ -480,7 +484,9 @@ describe("a stream's fades", () => {
     expect(JSON.parse(String(post.mock.calls[0]?.[0])).args).toEqual([0]);
     expect(sent()[1]).toEqual(["playVideo", ORIGIN]);
     await waitFor(() => expect(JSON.parse(String(post.mock.calls.at(-1)?.[0])).args).toEqual([50]), { timeout: 6000 });
-    await user.click(await speaker(/^Pause Claude FM$/));
+    await user.click(
+      within(await screen.findByRole("dialog", { name: "Sound" })).getByRole("button", { name: "Pause Claude FM" }),
+    );
     await waitFor(() => expect(sent().at(-1)).toEqual(["pauseVideo", ORIGIN]), { timeout: 6000 });
     expect(post.mock.calls.every((call) => (call as unknown[])[1] === ORIGIN)).toBe(true);
   }, 20_000);
@@ -489,7 +495,7 @@ describe("a stream's fades", () => {
     soundApi("claude-fm");
     const user = userEvent.setup();
     renderAt("/");
-    await user.click(await speaker(/^Play Claude FM$/));
+    await playSound(user, "Claude FM");
     await screen.findByTitle("Claude FM player");
     const reload = vi.spyOn(page, "reload").mockImplementation(() => undefined);
     await act(async () => {

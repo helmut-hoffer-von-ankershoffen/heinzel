@@ -170,6 +170,121 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("PluginsSection", () => {
+  it("does not call an uncompleted backend reply an installed plugin or restart the server", async () => {
+    const calls = serve((url) =>
+      url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add"
+        ? { body: change("add", false) }
+        : base(url),
+    );
+    const user = userEvent.setup();
+    show();
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
+    await user.click(screen.getByRole("button", { name: "Install" }));
+    await user.click(
+      within(await screen.findByRole("group", { name: /Install this plugin/ })).getByRole("button", {
+        name: "Restart and apply",
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("not confirmed complete");
+    expect(screen.queryByRole("button", { name: "Remove heinzel-crm" })).not.toBeInTheDocument();
+    expect(calls.filter((request) => new URL(request.url).pathname === "/api/restart")).toHaveLength(0);
+    await user.click(await screen.findByRole("button", { name: "Restart and apply" }));
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("request result is unknown");
+    expect(calls.filter((request) => new URL(request.url).searchParams.get("confirm") === "true")).toHaveLength(1);
+  });
+
+  it("moves a completed install to Installed and reconciles a stale Discover snapshot without restarting", async () => {
+    let done = false;
+    const crm = { ...installed, distribution: "heinzel-crm", name: "crm", version: "1.2.0", summary: "CRM notes." };
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/list") return { body: done ? [installed, crm] : [installed] };
+      if (url.pathname === "/api/system/plugin/search")
+        return {
+          body: {
+            plugins: [
+              {
+                name: "heinzel-crm",
+                short_name: "crm",
+                description: "CRM notes.",
+                source: "github",
+                install_spec: candidate.spec,
+                installed: false,
+                community: true,
+              },
+            ],
+            warnings: [],
+          },
+        };
+      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
+        done = url.searchParams.get("confirm") === "true";
+        return {
+          body: change("add", done, { plugins: done ? [installed, crm] : [installed], restart_required: false }),
+        };
+      }
+      return base(url);
+    });
+    const reload = vi.fn();
+    const user = userEvent.setup();
+    show({ reload });
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    await user.click(await screen.findByRole("button", { name: "Install" }));
+    await user.click(
+      within(await screen.findByRole("group", { name: /Install this plugin/ })).getByRole("button", {
+        name: "Restart and apply",
+      }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    expect(await screen.findByText("CRM", { exact: true })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Installed" })).toHaveAttribute("aria-selected", "true");
+    expect(
+      within(screen.getByText("CRM", { exact: true }).closest("li") as HTMLElement).getByText("v1.2.0"),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Install" })).not.toBeInTheDocument());
+    const inventory = calls.filter((call) => new URL(call.url).pathname === "/api/system/plugin/list");
+    expect(inventory.every((call) => new URL(call.url).searchParams.get("fresh") === "true")).toBe(true);
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(0);
+    expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("keeps the installation result visible after a refused restart and never replays the confirmed add", async () => {
+    let installedNow = false;
+    const crm = { ...installed, distribution: "heinzel-crm", name: "crm", summary: "CRM notes." };
+    const calls = serve((url) => {
+      if (url.pathname === "/api/system/plugin/list") return { body: installedNow ? [installed, crm] : [installed] };
+      if (url.pathname === "/api/restart") return { status: 400, body: { error: "Restart refused fixture" } };
+      if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
+        installedNow = url.searchParams.get("confirm") === "true";
+        return { body: change("add", installedNow, { plugins: installedNow ? [installed, crm] : [installed] }) };
+      }
+      return base(url);
+    });
+    const user = userEvent.setup();
+    show();
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    await user.type(screen.getByLabelText(/A plugin's name/), candidate.spec);
+    await user.click(screen.getByRole("button", { name: "Install" }));
+    const confirm = async () => {
+      await user.click(
+        within(screen.getByRole("group", { name: /Install this plugin/ })).getByRole("button", {
+          name: "Restart and apply",
+        }),
+      );
+      await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
+    };
+    await screen.findByRole("group", { name: /Install this plugin/ });
+    await confirm();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Restart refused fixture");
+    expect(screen.getByText("CRM", { exact: true })).toBeInTheDocument();
+    await confirm();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Restart refused fixture");
+    expect(calls.filter((call) => new URL(call.url).searchParams.get("confirm") === "true")).toHaveLength(1);
+    expect(calls.filter((call) => new URL(call.url).pathname === "/api/restart")).toHaveLength(2);
+  });
+
   it("shows what a spec would install first, and installs the pinned requirement only on confirm", async () => {
     const calls = serve((url) => {
       if (url.pathname === "/api/system/plugin/add" || url.pathname === "/api/stream/system/plugin/add") {
@@ -302,6 +417,9 @@ describe("PluginsSection", () => {
     await user.click(await screen.findByRole("button", { name: "Restart and apply Plugins" }));
     await waitFor(() => expect(adds()).toHaveLength(2));
     expect(spec(1)).toBe("zoom");
+
+    await waitFor(() => expect(screen.queryByRole("group", { name: /Install/ })).not.toBeInTheDocument());
+    await user.click(screen.getByRole("tab", { name: "Discover" }));
 
     await user.click((await screen.findAllByRole("button", { name: "Install" }))[1] as HTMLElement);
     expect(spec(2)).toBe(git);
