@@ -1,7 +1,7 @@
 ---
 status: accepted
 date: 2026-10-23
-amended-by: 0047
+amended-by: 0047, 0078
 ---
 
 # 0006: Plugins are installed through the uv tool receipt
