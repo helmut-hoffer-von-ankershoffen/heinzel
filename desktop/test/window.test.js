@@ -6,13 +6,19 @@ const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
 const preload = await readFile(new URL("../src/preload.cjs", import.meta.url), "utf8");
 
 test("startup acquires the single-instance guard and validates a connection before readiness", () => {
-  assert.ok(main.indexOf("instance.acquire(process.argv") < main.indexOf("await app.whenReady()"));
+  assert.ok(main.indexOf("instance.acquire(process.argv") < main.indexOf("app.whenReady()"));
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /sandbox: true/);
   assert.match(main, /setWindowOpenHandler\(\(\) => \(\{ action: "deny" \}\)\)/);
   assert.match(preload, /lifecycle: \(\) => ipcRenderer\.invoke\("hz:lifecycle"\)/);
   assert.doesNotMatch(preload, /token|send\(|sendSync|process|require\("node:/);
+});
+
+test("Electron readiness is continued by a promise instead of top-level await", () => {
+  assert.doesNotMatch(main, /await\s+app\.whenReady\(\)/);
+  assert.match(main, /void app\.whenReady\(\)\.then\(\(\) => \{/);
+  assert.match(main, /return instance\.open\(\);\s*\}\)\.catch\(\(\) => app\.quit\(\)\);/);
 });
 
 test("shutdown has no child process or autostart integration to leave running", () => {
