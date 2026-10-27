@@ -3,7 +3,7 @@ status: proposed
 date: 2026-10-24
 decision-makers: maintainer
 amends: 0020, 0039
-amended-by: 0046
+amended-by: 0046, 0078
 related: 0003, 0021, 0024, 0026, 0027, 0028, 0036, 0038
 ---
 
