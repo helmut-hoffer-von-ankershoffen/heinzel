@@ -1,0 +1,12 @@
+{
+  "name": "heinzel-desktop",
+  "private": true,
+  "type": "module",
+  "main": "src/main.js",
+  "description": "Electron window for an explicitly supplied local Heinzelmännchen API.",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": { "electron": "45.0.0" }
+}
