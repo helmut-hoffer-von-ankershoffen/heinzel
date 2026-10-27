@@ -230,6 +230,28 @@ def _configure_staged_inode(descriptor: int, contents: bytes, expected: str) -> 
     os.fsync(descriptor)
 
 
+def _cleanup_staging_directory(name: str, directory_fd: int | None, dist_fd: int) -> None:
+    """Remove private staging entries without following or recursively deleting paths."""
+    try:
+        if directory_fd is None:
+            # rmdir can only remove an empty directory. The random, root-created
+            # name may have been swapped, so avoid recursive/path-following cleanup.
+            os.rmdir(name, dir_fd=dist_fd)
+            return
+        os.unlink("chrome-sandbox", dir_fd=directory_fd)
+    except OSError:
+        pass
+    if directory_fd is None:
+        return
+    try:
+        staged_dir_stat = os.fstat(directory_fd)
+        current_dir_stat = os.stat(name, dir_fd=dist_fd, follow_symlinks=False)
+        if (staged_dir_stat.st_dev, staged_dir_stat.st_ino) == (current_dir_stat.st_dev, current_dir_stat.st_ino):
+            os.rmdir(name, dir_fd=dist_fd)
+    except OSError:
+        pass
+
+
 def configure_helper_permissions(electron_root: Path, version: str) -> None:
     """Install a verified root-owned inode, never changing metadata on user files.
 
@@ -281,21 +303,7 @@ def configure_helper_permissions(electron_root: Path, version: str) -> None:
         )
     finally:
         if stage_name is not None and dist_directory_fd is not None:
-            try:
-                if stage_directory_fd is not None:
-                    os.unlink("chrome-sandbox", dir_fd=stage_directory_fd)
-            except FileNotFoundError:
-                pass
-            try:
-                staged_dir_stat = os.fstat(stage_directory_fd) if stage_directory_fd is not None else None
-                current_dir_stat = os.stat(stage_name, dir_fd=dist_directory_fd, follow_symlinks=False)
-                if staged_dir_stat is not None and (staged_dir_stat.st_dev, staged_dir_stat.st_ino) == (
-                    current_dir_stat.st_dev,
-                    current_dir_stat.st_ino,
-                ):
-                    os.rmdir(stage_name, dir_fd=dist_directory_fd)
-            except FileNotFoundError:
-                pass
+            _cleanup_staging_directory(stage_name, stage_directory_fd, dist_directory_fd)
         for descriptor in (source_descriptor, stage_descriptor, stage_directory_fd, dist_directory_fd):
             if descriptor is not None:
                 os.close(descriptor)

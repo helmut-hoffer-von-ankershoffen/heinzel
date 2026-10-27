@@ -240,7 +240,7 @@ def test_electron_sandbox_permissions_use_nofollow_descriptor_operations(tmp_pat
     original_open = os.open
     original_fstat = os.fstat
 
-    def open_file(path, flags, mode=0o777, *, dir_fd=None):
+    def open_file(path, flags, mode=0o600, *, dir_fd=None):
         descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
         if isinstance(path, str) and path.startswith(".heinzel-electron-sandbox-"):
             state["stage_dir"] = descriptor
@@ -394,7 +394,7 @@ def test_electron_sandbox_permissions_never_changes_source_after_hard_link_race(
 
     original_open = os.open
 
-    def open_file(path, flags, mode=0o777, *, dir_fd=None):
+    def open_file(path, flags, mode=0o600, *, dir_fd=None):
         descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
         if isinstance(path, str) and path.startswith(".heinzel-electron-sandbox-"):
             stage_fd["dir"] = descriptor
@@ -417,6 +417,28 @@ def test_electron_sandbox_permissions_never_changes_source_after_hard_link_race(
     assert second_link.stat().st_ino == metadata_before.st_ino
     assert len(metadata_targets) == 2
     assert all(inode != metadata_before.st_ino for inode in metadata_targets)
+
+
+def test_electron_sandbox_permissions_cleans_up_staging_dir_if_open_fails(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    (dist / "chrome-sandbox").write_bytes(b"trusted")
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"trusted").hexdigest())
+    original_open = os.open
+
+    def fail_open_after_mkdir(path, flags, mode=0o600, *, dir_fd=None):
+        if isinstance(path, str) and path.startswith(".heinzel-electron-sandbox-"):
+            message = "simulated staging directory open failure"
+            raise OSError(message)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(electron_linux_sandbox.os, "open", fail_open_after_mkdir)
+
+    with pytest.raises(OSError, match="simulated staging directory open failure"):
+        electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    assert list(dist.glob(".heinzel-electron-sandbox-*")) == []
 
 
 def test_electron_sandbox_ci_restores_and_verifies_setuid_helper():
