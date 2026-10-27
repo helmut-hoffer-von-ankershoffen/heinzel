@@ -337,6 +337,9 @@ jobs:
           run_install: false
       - name: Install the locked Electron package and native runtime
         run: make desktop-electron-test
+      - name: Configure Linux Electron sandbox helper
+        if: runner.os == 'Linux'
+        run: make desktop-electron-sandbox
       - name: Linux Electron native window smoke test
         if: runner.os == 'Linux'
         run: make desktop-electron-native

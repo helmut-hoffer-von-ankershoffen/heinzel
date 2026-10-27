@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-native build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -118,7 +118,33 @@ managed-backend-check: ## Check sealed helpers, strict Node types and owned proc
 
 desktop-electron-test: ## Install the locked Electron runtime and run its unit suite
 	pnpm --dir desktop install --frozen-lockfile
+	pnpm --dir desktop exec node -p 'require("electron")'
 	pnpm --dir desktop test
+
+desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and mode for CI smoke tests
+	@electron_entry=$$(node -p 'require.resolve("electron", { paths: [require("node:path").resolve("desktop")] })') || { \
+		echo "::error::Could not resolve the installed Electron package"; \
+		exit 1; \
+	}; \
+	electron_root=$$(dirname "$$electron_entry"); \
+	python3 desktop/ci/restore_linux_sandbox.py "$$electron_root" || exit $$?; \
+	sandbox=$$electron_root/dist/chrome-sandbox; \
+	if [ -L "$$sandbox" ]; then \
+		echo "::error::Refusing to configure a symlinked Electron sandbox helper"; \
+		exit 1; \
+	fi; \
+	if [ ! -f "$$sandbox" ]; then \
+		echo "::error::Expected Electron sandbox helper not found at $$sandbox"; \
+		exit 1; \
+	fi; \
+	if ! sudo python3 desktop/ci/restore_linux_sandbox.py --configure "$$electron_root"; then \
+		echo "::error::Could not configure Electron sandbox helper at $$sandbox"; \
+		exit 1; \
+	fi; \
+	if [ "$$(stat -c '%u:%a' "$$sandbox")" != "0:4755" ]; then \
+		echo "::error::Electron sandbox helper must be root-owned with mode 4755: $$sandbox"; \
+		exit 1; \
+	fi
 
 desktop-electron-native: ## Launch the Electron window against a temporary authenticated local service
 	@if [ "$$(uname -s)" = Linux ]; then xvfb-run --auto-servernum pnpm --dir desktop test:native; else pnpm --dir desktop test:native; fi

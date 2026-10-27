@@ -1,8 +1,15 @@
 """CI runs what developers run locally."""
 
+import hashlib
+import importlib.util
+import io
+import os
 import re
+import stat
 import tomllib
+import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -10,6 +17,13 @@ import yaml
 pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
+
+_SANDBOX_SCRIPT = REPO / "desktop" / "ci" / "restore_linux_sandbox.py"
+_SANDBOX_SPEC = importlib.util.spec_from_file_location("electron_linux_sandbox", _SANDBOX_SCRIPT)
+assert _SANDBOX_SPEC is not None
+assert _SANDBOX_SPEC.loader is not None
+electron_linux_sandbox = importlib.util.module_from_spec(_SANDBOX_SPEC)
+_SANDBOX_SPEC.loader.exec_module(electron_linux_sandbox)
 
 WORKFLOWS = sorted((REPO / ".github" / "workflows").glob("*.yml"))
 # Steps that legitimately don't go through make, by workflow: setup, checks that only exist in CI, and release
@@ -110,6 +124,338 @@ def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templ
     assert runs.index("make managed-backend-setup managed-backend-check") < runs.index("make typecheck")
     for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
         assert "managed-backend" not in (REPO / "template" / name).read_text()
+
+
+def test_electron_sandbox_archive_hash_mismatch_is_rejected():
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        electron_linux_sandbox.verified_helper(b"tampered", "45.0.0")
+
+
+def test_electron_sandbox_extracts_only_regular_helper_from_verified_archive(monkeypatch):
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as release:
+        helper = zipfile.ZipInfo("chrome-sandbox")
+        helper.external_attr = (stat.S_IFREG | 0o755) << 16
+        release.writestr(helper, b"helper")
+        release.writestr("electron", b"unrelated binary")
+    data = archive.getvalue()
+    monkeypatch.setitem(electron_linux_sandbox.ARCHIVE_SHA256, "test", hashlib.sha256(data).hexdigest())
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"helper").hexdigest())
+
+    assert electron_linux_sandbox.verified_helper(data, "test") == b"helper"
+
+    with pytest.raises(ValueError, match="no pinned"):
+        electron_linux_sandbox.verified_helper(data, "46.0.0")
+
+
+def test_electron_sandbox_install_creates_only_verified_helper(tmp_path, monkeypatch):
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as release:
+        helper = zipfile.ZipInfo("chrome-sandbox")
+        helper.external_attr = (stat.S_IFREG | 0o755) << 16
+        release.writestr(helper, b"helper")
+    data = archive.getvalue()
+    monkeypatch.setitem(electron_linux_sandbox.ARCHIVE_SHA256, "test", hashlib.sha256(data).hexdigest())
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"helper").hexdigest())
+    electron_root = tmp_path / "electron"
+    electron_root.mkdir()
+    (electron_root / "dist").mkdir()
+    (electron_root / "package.json").write_text('{"version":"test"}', encoding="utf-8")
+
+    installed = electron_linux_sandbox.install_helper(
+        electron_root, open_url=lambda *_args, **_kwargs: io.BytesIO(data)
+    )
+
+    assert installed == electron_root / "dist" / "chrome-sandbox"
+    assert installed.read_bytes() == b"helper"
+
+
+def test_electron_sandbox_install_does_not_follow_stale_temp_symlink(tmp_path, monkeypatch):
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as release:
+        helper = zipfile.ZipInfo("chrome-sandbox")
+        helper.external_attr = (stat.S_IFREG | 0o755) << 16
+        release.writestr(helper, b"helper")
+    data = archive.getvalue()
+    monkeypatch.setitem(electron_linux_sandbox.ARCHIVE_SHA256, "test", hashlib.sha256(data).hexdigest())
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"helper").hexdigest())
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    unrelated = tmp_path / "unrelated"
+    unrelated.write_bytes(b"untouched")
+    (dist / "chrome-sandbox.tmp").symlink_to(unrelated)
+    (electron_root / "package.json").write_text('{"version":"test"}', encoding="utf-8")
+
+    installed = electron_linux_sandbox.install_helper(
+        electron_root, open_url=lambda *_args, **_kwargs: io.BytesIO(data)
+    )
+
+    assert installed.read_bytes() == b"helper"
+    assert unrelated.read_bytes() == b"untouched"
+
+
+def test_electron_sandbox_install_rejects_symlink_destination(tmp_path, monkeypatch):
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as release:
+        helper = zipfile.ZipInfo("chrome-sandbox")
+        helper.external_attr = (stat.S_IFREG | 0o755) << 16
+        release.writestr(helper, b"helper")
+    data = archive.getvalue()
+    monkeypatch.setitem(electron_linux_sandbox.ARCHIVE_SHA256, "test", hashlib.sha256(data).hexdigest())
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"helper").hexdigest())
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    unrelated = tmp_path / "unrelated"
+    unrelated.write_bytes(b"untouched")
+    (dist / "chrome-sandbox").symlink_to(unrelated)
+    (electron_root / "package.json").write_text('{"version":"test"}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="symlinked"):
+        electron_linux_sandbox.install_helper(electron_root, open_url=lambda *_args, **_kwargs: io.BytesIO(data))
+
+    assert unrelated.read_bytes() == b"untouched"
+
+
+def test_electron_sandbox_install_bounds_archive_read(tmp_path, monkeypatch):
+    monkeypatch.setattr(electron_linux_sandbox, "MAX_ARCHIVE_BYTES", 16)
+    electron_root = tmp_path / "electron"
+    electron_root.mkdir()
+    (electron_root / "package.json").write_text('{"version":"45.0.0"}', encoding="utf-8")
+    oversized = io.BytesIO(b"x" * 17)
+
+    with pytest.raises(ValueError, match="size limit"):
+        electron_linux_sandbox.install_helper(electron_root, open_url=lambda *_args, **_kwargs: oversized)
+
+
+def test_electron_sandbox_permissions_use_nofollow_descriptor_operations(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    source = dist / "chrome-sandbox"
+    source.write_bytes(b"helper")
+    source_inode = source.stat().st_ino
+    state = {"stage_dir": None, "stage_file": None, "owner": 1000, "group": 1000, "mode": 0o600}
+    original_open = os.open
+    original_fstat = os.fstat
+
+    def open_file(path, flags, mode=0o600, *, dir_fd=None):
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        if isinstance(path, str) and path.startswith(".heinzel-electron-sandbox-"):
+            state["stage_dir"] = descriptor
+        elif path == "chrome-sandbox" and dir_fd == state["stage_dir"]:
+            state["stage_file"] = descriptor
+        return descriptor
+
+    def fake_fstat(descriptor):
+        if descriptor == state["stage_dir"]:
+            result = original_fstat(descriptor)
+            return SimpleNamespace(
+                st_uid=0,
+                st_mode=stat.S_IFDIR | 0o700,
+                st_dev=result.st_dev,
+                st_ino=result.st_ino,
+            )
+        if descriptor == state["stage_file"]:
+            return SimpleNamespace(
+                st_uid=state["owner"],
+                st_gid=state["group"],
+                st_mode=stat.S_IFREG | state["mode"],
+                st_size=6,
+                st_nlink=1,
+                st_ino=source_inode + 100,
+            )
+        return original_fstat(descriptor)
+
+    def set_owner(descriptor, uid, gid):
+        assert descriptor == state["stage_file"]
+        assert fake_fstat(descriptor).st_ino != source_inode
+        state["owner"], state["group"] = uid, gid
+
+    def set_mode(descriptor, mode):
+        assert descriptor == state["stage_file"]
+        assert fake_fstat(descriptor).st_ino != source_inode
+        state["mode"] = mode
+
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"helper").hexdigest())
+    monkeypatch.setattr(electron_linux_sandbox.os, "open", open_file)
+    monkeypatch.setattr(electron_linux_sandbox.os, "fstat", fake_fstat)
+    monkeypatch.setattr(electron_linux_sandbox.os, "fchown", set_owner)
+    monkeypatch.setattr(electron_linux_sandbox.os, "fchmod", set_mode)
+
+    electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    installed = source.stat()
+    assert installed.st_ino != source_inode
+    assert (state["owner"], state["group"], state["mode"]) == (0, 0, 0o4755)
+    assert source.read_bytes() == b"helper"
+
+
+def test_electron_sandbox_permissions_reject_symlink_parent(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    electron_root.mkdir()
+    outside = tmp_path / "outside"
+    (outside / "dist").mkdir(parents=True)
+    target = outside / "dist" / "chrome-sandbox"
+    target.write_bytes(b"untouched")
+    (electron_root / "dist").symlink_to(outside / "dist", target_is_directory=True)
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"untouched").hexdigest())
+
+    with pytest.raises(OSError, match=r"(symbolic link|Not a directory)"):
+        electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    assert target.read_bytes() == b"untouched"
+
+
+def test_electron_sandbox_permissions_reject_symlink_helper(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    target = tmp_path / "target"
+    target.write_bytes(b"untouched")
+    (dist / "chrome-sandbox").symlink_to(target)
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"untouched").hexdigest())
+
+    with pytest.raises(OSError, match=r"(symbolic link|Not a directory)"):
+        electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    assert target.read_bytes() == b"untouched"
+
+
+def test_electron_sandbox_permissions_reject_replaced_regular_file(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    helper = dist / "chrome-sandbox"
+    helper.write_bytes(b"attacker")
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"trusted").hexdigest())
+    fchown_called = False
+
+    def fchown(*_args):
+        nonlocal fchown_called
+        fchown_called = True
+
+    monkeypatch.setattr(electron_linux_sandbox.os, "fchown", fchown)
+
+    with pytest.raises(ValueError, match="does not match"):
+        electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    assert not fchown_called
+
+
+def test_electron_sandbox_permissions_never_changes_source_after_hard_link_race(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    helper = dist / "chrome-sandbox"
+    helper.write_bytes(b"trusted")
+    second_link = tmp_path / "linked-helper"
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"trusted").hexdigest())
+    metadata_before = helper.stat()
+    metadata_targets = []
+
+    # Fake only the metadata result of privileged operations; the descriptor's
+    # inode remains the newly staged inode, separate from the extracted source.
+    original_fstat = os.fstat
+    staged = set()
+    stage_fd = {"dir": None}
+    linked_after_stat = False
+
+    def fake_fstat(descriptor):
+        nonlocal linked_after_stat
+        result = original_fstat(descriptor)
+        if not linked_after_stat:
+            # Model a same-UID attacker adding a hard link immediately after
+            # validation of the extracted source descriptor.
+            second_link.hardlink_to(helper)
+            linked_after_stat = True
+        if descriptor == stage_fd["dir"]:
+            return SimpleNamespace(st_uid=0, st_mode=stat.S_IFDIR | 0o700, st_dev=result.st_dev, st_ino=result.st_ino)
+        if descriptor in staged:
+            return SimpleNamespace(
+                st_uid=0,
+                st_gid=0,
+                st_mode=stat.S_IFREG | 0o4755,
+                st_size=result.st_size,
+                st_nlink=result.st_nlink,
+                st_ino=result.st_ino,
+            )
+        return result
+
+    def fchown(descriptor, *_args):
+        metadata_targets.append(fake_fstat(descriptor).st_ino)
+
+    def fchmod(descriptor, *_args):
+        metadata_targets.append(fake_fstat(descriptor).st_ino)
+
+    monkeypatch.setattr(electron_linux_sandbox.os, "fchown", fchown)
+    monkeypatch.setattr(electron_linux_sandbox.os, "fchmod", fchmod)
+
+    original_open = os.open
+
+    def open_file(path, flags, mode=0o600, *, dir_fd=None):
+        descriptor = original_open(path, flags, mode, dir_fd=dir_fd)
+        if isinstance(path, str) and path.startswith(".heinzel-electron-sandbox-"):
+            stage_fd["dir"] = descriptor
+        elif path == "chrome-sandbox" and dir_fd == stage_fd["dir"]:
+            staged.add(descriptor)
+        return descriptor
+
+    monkeypatch.setattr(electron_linux_sandbox.os, "open", open_file)
+    monkeypatch.setattr(electron_linux_sandbox.os, "fstat", fake_fstat)
+
+    electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    metadata_after = second_link.stat()
+    assert (metadata_after.st_uid, metadata_after.st_gid, metadata_after.st_mode) == (
+        metadata_before.st_uid,
+        metadata_before.st_gid,
+        metadata_before.st_mode,
+    )
+    assert helper.stat().st_nlink == second_link.stat().st_nlink == 1
+    assert second_link.stat().st_ino == metadata_before.st_ino
+    assert len(metadata_targets) == 2
+    assert all(inode != metadata_before.st_ino for inode in metadata_targets)
+
+
+def test_electron_sandbox_permissions_cleans_up_staging_dir_if_open_fails(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    (dist / "chrome-sandbox").write_bytes(b"trusted")
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"trusted").hexdigest())
+    original_open = os.open
+
+    def fail_open_after_mkdir(path, flags, mode=0o600, *, dir_fd=None):
+        if isinstance(path, str) and path.startswith(".heinzel-electron-sandbox-"):
+            message = "simulated staging directory open failure"
+            raise OSError(message)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(electron_linux_sandbox.os, "open", fail_open_after_mkdir)
+
+    with pytest.raises(OSError, match="simulated staging directory open failure"):
+        electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    assert list(dist.glob(".heinzel-electron-sandbox-*")) == []
+
+
+def test_electron_sandbox_ci_restores_and_verifies_setuid_helper():
+    makefile = (REPO / "Makefile").read_text()
+    target = next(line for line in makefile.splitlines() if "python3 desktop/ci/restore_linux_sandbox.py" in line)
+    electron_test = makefile.split("desktop-electron-test:", maxsplit=1)[1].split("\n\n", maxsplit=1)[0]
+    assert electron_test.index("pnpm --dir desktop exec node -p 'require(\"electron\")'") < electron_test.index(
+        "pnpm --dir desktop test"
+    )
+    assert 'if [ -L "$$sandbox" ]' in makefile
+    assert 'if [ ! -f "$$sandbox" ]' in makefile
+    assert "sudo python3 desktop/ci/restore_linux_sandbox.py --configure" in makefile
+    sandbox_script = (REPO / "desktop/ci/restore_linux_sandbox.py").read_text()
+    assert "os.fchown(descriptor, 0, 0)" in sandbox_script
+    assert "os.fchmod(descriptor, 0o4755)" in sandbox_script
+    assert "stat -c '%u:%a'" in makefile
+    assert "$$electron_root" in target
 
 
 def test_every_not_make_exemption_is_used():
@@ -367,7 +713,7 @@ def test_claude_review_prefers_the_api_key():
         assert step["with"]["claude_code_oauth_token"].startswith("${{ secrets.ANTHROPIC_API_KEY == '' && ")
 
 
-def _generated_plugin_ci() -> dict:
+def _template_sync_module():
     import importlib.util
 
     path = REPO / "scripts" / "sync_template.py"
@@ -376,10 +722,26 @@ def _generated_plugin_ci() -> dict:
     assert spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    text = module.ci_workflow()
+    return module
+
+
+def _generated_plugin_ci() -> dict:
+    text = _template_sync_module().ci_workflow()
     assert "notifier" not in text
     assert "changes" not in text.replace("upstream changes", "")
     return yaml.safe_load(text.replace("[[ package_name ]]", "x"))
+
+
+def test_plugin_template_makefile_excludes_all_electron_only_targets():
+    """Electron's install, sandbox and native-smoke targets stay out of generated plugin Makefiles."""
+    generated = _template_sync_module().makefile()
+    checked_in = (REPO / "template" / "Makefile").read_text(encoding="utf-8")
+    assert generated == checked_in
+    for target in ("desktop-electron-test", "desktop-electron-sandbox", "desktop-electron-native"):
+        assert target not in generated
+        assert target not in checked_in
+    assert "chrome-sandbox" not in generated
+    assert "sudo chown root:root" not in generated
 
 
 def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
@@ -408,3 +770,13 @@ def test_electron_ci_runs_when_its_trigger_or_make_target_changes():
     assert "Makefile$" in script
     assert "scripts/sync_template\\.py$" in script
     assert "\\.github/workflows/ci\\.yml$" in script
+
+
+def test_linux_electron_sandbox_target_resolves_the_pnpm_package_location():
+    """pnpm's Electron package may live under .pnpm, so derive its helper from Node resolution."""
+    makefile = (REPO / "Makefile").read_text(encoding="utf-8")
+    recipe = makefile.split("desktop-electron-sandbox:", 1)[1].split("\ndesktop-electron-native:", 1)[0]
+    assert 'require.resolve("electron"' in recipe
+    assert 'require("node:path").resolve("desktop")' in recipe
+    assert 'dirname "$$electron_entry"' in recipe
+    assert "/dist/chrome-sandbox" in recipe
