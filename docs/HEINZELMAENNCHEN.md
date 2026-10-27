@@ -29,7 +29,10 @@ hz heinzel profile <session-id> change-look 1 --appearance '{"hat":"teal","acces
 Profile changes name the revision displayed in the snapshot. If another change arrived first, reload before
 saving. Retrying an identical request id and payload returns its durable result; changing that payload is refused.
 Omitted personal fields inherit the renderer's defaults, including theme colours. To restore those defaults, send
-an empty appearance object. A profile update does not replace an already queued message or approve a contract.
+an empty appearance object. The web app's Heinzelmännchen page also lets you create a personal Heinzel, choose its
+name and look, and preview it with the active theme. If a save cannot be confirmed, retry the same request or reload
+the saved profile before making further changes. A profile update does not replace an already queued message or
+approve a contract; the personal profile editor does not connect the existing chat to a durable session.
 
 `hz heinzel chat <session-id> <request-id> <message> --json` currently acknowledges a durable inbox entry. A queued
 receipt confirms acceptance, not a completed model response. The same `request_id` appears on the user message,
