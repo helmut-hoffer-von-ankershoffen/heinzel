@@ -448,9 +448,7 @@ def test_electron_sandbox_ci_restores_and_verifies_setuid_helper():
     assert electron_test.index("pnpm --dir desktop exec node -p 'require(\"electron\")'") < electron_test.index(
         "pnpm --dir desktop test"
     )
-    assert 'if [ -L "$$sandbox" ]' in makefile
-    assert 'if [ ! -f "$$sandbox" ]' in makefile
-    assert "sudo python3 desktop/ci/restore_linux_sandbox.py --configure" in makefile
+    assert 'if [ ! -f "$$packaged_sandbox" ] || [ -L "$$packaged_sandbox" ]' in makefile
     assert '--configure-file "$$packaged_sandbox"' in makefile
     assert "desktop/dist/Heinzelmaennchen-linux-$$(node -p 'process.arch')/chrome-sandbox" in makefile
     native_target = makefile.split("desktop-electron-native:", maxsplit=1)[1].split("\n\n", maxsplit=1)[0]
@@ -460,7 +458,11 @@ def test_electron_sandbox_ci_restores_and_verifies_setuid_helper():
     assert "os.fchown(descriptor, 0, 0)" in sandbox_script
     assert "os.fchmod(descriptor, 0o4755)" in sandbox_script
     assert "stat -c '%u:%a'" in makefile
-    assert "$$electron_root" in target
+    assert "$$packaged_sandbox" in target
+    assert "$$electron_root" not in makefile
+    package_lock = (REPO / "desktop/pnpm-lock.yaml").read_text()
+    assert "@electron-internal/extract-zip@1.0.6" in package_lock
+    assert "extract-zip@2.0.1" not in package_lock
 
 
 def test_every_not_make_exemption_is_used():
@@ -777,11 +779,11 @@ def test_electron_ci_runs_when_its_trigger_or_make_target_changes():
     assert "\\.github/workflows/ci\\.yml$" in script
 
 
-def test_linux_electron_sandbox_target_resolves_the_pnpm_package_location():
-    """pnpm's Electron package may live under .pnpm, so derive its helper from Node resolution."""
+def test_linux_electron_sandbox_target_configures_only_the_packaged_helper():
+    """Configure the packaged app's verified sandbox helper, without assuming a source dist exists."""
     makefile = (REPO / "Makefile").read_text(encoding="utf-8")
     recipe = makefile.split("desktop-electron-sandbox:", 1)[1].split("\ndesktop-electron-native:", 1)[0]
-    assert 'require.resolve("electron"' in recipe
-    assert 'require("node:path").resolve("desktop")' in recipe
-    assert 'dirname "$$electron_entry"' in recipe
-    assert "/dist/chrome-sandbox" in recipe
+    assert "desktop/dist/Heinzelmaennchen-linux-" in recipe
+    assert '--configure-file "$$packaged_sandbox"' in recipe
+    assert 'require.resolve("electron"' not in recipe
+    assert 'python3 desktop/ci/restore_linux_sandbox.py "$$electron_root"' not in recipe

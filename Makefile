@@ -127,29 +127,6 @@ desktop-electron-package: ## Build and verify an unsigned Electron artifact for 
 	pnpm --dir desktop verify:package
 
 desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and mode for CI smoke tests
-	@electron_entry=$$(node -p 'require.resolve("electron", { paths: [require("node:path").resolve("desktop")] })') || { \
-		echo "::error::Could not resolve the installed Electron package"; \
-		exit 1; \
-	}; \
-	electron_root=$$(dirname "$$electron_entry"); \
-	python3 desktop/ci/restore_linux_sandbox.py "$$electron_root" || exit $$?; \
-	sandbox=$$electron_root/dist/chrome-sandbox; \
-	if [ -L "$$sandbox" ]; then \
-		echo "::error::Refusing to configure a symlinked Electron sandbox helper"; \
-		exit 1; \
-	fi; \
-	if [ ! -f "$$sandbox" ]; then \
-		echo "::error::Expected Electron sandbox helper not found at $$sandbox"; \
-		exit 1; \
-	fi; \
-	if ! sudo python3 desktop/ci/restore_linux_sandbox.py --configure "$$electron_root"; then \
-		echo "::error::Could not configure Electron sandbox helper at $$sandbox"; \
-		exit 1; \
-	fi; \
-	if [ "$$(stat -c '%u:%a' "$$sandbox")" != "0:4755" ]; then \
-		echo "::error::Electron sandbox helper must be root-owned with mode 4755: $$sandbox"; \
-		exit 1; \
-	fi; \
 	packaged_sandbox="$$PWD/desktop/dist/Heinzelmaennchen-linux-$$(node -p 'process.arch')/chrome-sandbox"; \
 	if [ ! -f "$$packaged_sandbox" ] || [ -L "$$packaged_sandbox" ]; then \
 		echo "::error::Expected packaged Electron sandbox helper not found: $$packaged_sandbox"; \

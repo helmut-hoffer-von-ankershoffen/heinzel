@@ -2,7 +2,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
-import packager from "electron-packager";
+import { packager } from "@electron/packager";
 
 if (process.versions.node !== "24.19.0") {
   throw new Error(`Electron packaging requires Node.js 24.19.0; found ${process.versions.node}.`);
