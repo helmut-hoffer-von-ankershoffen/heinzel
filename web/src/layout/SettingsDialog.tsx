@@ -210,7 +210,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
       </nav>
       <div
         data-settings-content
-        className="min-w-0 flex-1 overflow-y-auto border-l border-border px-6 pt-5 pb-10 max-sm:border-l-0 max-sm:px-4"
+        className="min-w-0 flex-1 overflow-y-auto [overflow-wrap:anywhere] border-l border-border px-6 pt-5 pb-10 max-sm:border-l-0 max-sm:px-4"
       >
         {needle ? (
           <>

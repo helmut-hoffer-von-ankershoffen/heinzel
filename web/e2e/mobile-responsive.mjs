@@ -130,7 +130,8 @@ async function assertContained(page, locator, name) {
     await locator.elementHandle(),
     { timeout: 5000 },
   );
-  const box = await locator.boundingBox();
+  // DOM and visualViewport share layout coordinates; Playwright boundingBox can normalize pinch-pan offsets.
+  const box = await locator.evaluate((element) => element.getBoundingClientRect().toJSON());
   const visible = await page.evaluate(() => ({
     left: visualViewport?.offsetLeft ?? 0,
     top: visualViewport?.offsetTop ?? 0,
@@ -174,6 +175,27 @@ try {
       colorScheme: spec.width >= 390 ? "dark" : "light",
     });
     const page = await context.newPage();
+    // Platform-specific CLI paths and provider names must wrap rather than widen their settings pane.
+    await page.route("**/api/ai/access/list", async (route) => {
+      const response = await route.fetch();
+      const listing = await response.json();
+      listing.options.push({
+        name: "mobile-overflow-probe",
+        title: "AnExtremelyLongProviderNameThatMustWrapOnAPhone",
+        summary: "A provider with an installation command.",
+        module: "ai.access",
+        plugin: null,
+        in_use: false,
+        status: "not installed",
+        detail: "",
+        fix: "uv tool install an-extremely-long-provider-distribution-name-for-mobile-layout",
+        models: [],
+        runner: null,
+        hosts: [],
+        last_test: null,
+      });
+      await route.fulfill({ response, json: listing });
+    });
     await page.goto(url);
     await page.getByRole("heading", { name: "Today" }).waitFor();
     await page.locator("#splash").waitFor({ state: "hidden", timeout: 15_000 });

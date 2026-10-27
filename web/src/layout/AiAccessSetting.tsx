@@ -65,7 +65,7 @@ function Option({ option, busy, testing, result, onSelect, onTest }: OptionProps
   return (
     <div
       className={cn(
-        "flex items-start gap-3 rounded-lg border border-border px-3 py-2",
+        "flex flex-col items-start gap-2 rounded-lg border border-border px-3 py-2 sm:flex-row sm:gap-3",
         option.in_use && "border-primary bg-accent/40",
       )}
     >
@@ -77,7 +77,7 @@ function Option({ option, busy, testing, result, onSelect, onTest }: OptionProps
         aria-describedby={detailId}
         disabled={busy || (!usable && !option.in_use)}
         onClick={onSelect}
-        className="min-w-0 flex-1 text-left disabled:opacity-60"
+        className="w-full min-w-0 flex-1 text-left [overflow-wrap:anywhere] disabled:opacity-60"
       >
         <span className="flex flex-wrap items-baseline gap-x-2">
           <span className="text-ui font-medium">{option.title}</span>
