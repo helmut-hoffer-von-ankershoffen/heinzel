@@ -7,7 +7,7 @@ Google Docs, Sheets, Drive, Calendar and Gmail: the documents, calendar and mail
 | | |
 | --- | --- |
 | Kind | **connector**, **capability** |
-| Version | `0.7.24` (first-party, released with Heinzelmännchen) |
+| Version | `0.7.25` (first-party, released with Heinzelmännchen) |
 | Source | <https://github.com/helmut-hoffer-von-ankershoffen/heinzel/tree/main/plugins/heinzel-google> |
 | Licence | MIT |
 | Install | `hz system plugin add google --confirm` |
