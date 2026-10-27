@@ -17,7 +17,7 @@ const HEADER = 44;
 const DRAG_PX = 6;
 const STEP = 16;
 
-const iconButton = "flex size-7 items-center justify-center rounded-lg text-icon hover:bg-accent";
+const iconButton = "flex size-7 shrink-0 items-center justify-center rounded-lg text-icon hover:bg-accent";
 
 type Props = { title: string; watchUrl: string; host: string; children: ReactNode };
 
