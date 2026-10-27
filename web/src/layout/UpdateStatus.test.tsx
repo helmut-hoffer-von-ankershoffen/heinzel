@@ -28,7 +28,7 @@ it("offers a compact one-click update only after a deliberate gesture", async ()
 it("shows a green update control when the installed version is current", async () => {
   mockApi({ ...shell, "/api/update-status": { ...status, latest: status.current, available: false } });
   renderAt("/");
-  const icon = await screen.findByRole("button", { name: "Updates, off" });
+  const icon = await screen.findByRole("button", { name: "Updates, OK" });
   await waitFor(() => {
     expect(icon).toHaveClass("text-ok");
     expect(icon).not.toHaveClass("animate-pulse", "text-bad");
