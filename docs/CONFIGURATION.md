@@ -170,6 +170,7 @@ Plugins add their own tables.
 | --- | --- | --- | --- |
 | `enabled` | `HZ_SYSTEM_NOTIFY__ENABLED` | `True` | Keep a list of notices at all; off turns every kind off. Never read from a project's hz.toml. |
 | `draft` | `HZ_SYSTEM_NOTIFY__DRAFT` | `True` | Notify when a draft is ready to read and approve. Never read from a project's hz.toml. |
+| `heinzel` | `HZ_SYSTEM_NOTIFY__HEINZEL` | `True` | Notify when a personal Heinzel checks in. Never read from a project's hz.toml. |
 | `failed` | `HZ_SYSTEM_NOTIFY__FAILED` | `True` | Notify when a contract run on your daemon failed. Never read from a project's hz.toml. |
 | `doctor` | `HZ_SYSTEM_NOTIFY__DOCTOR` | `True` | Notify when a health check finds something degraded or down. Never read from a project's hz.toml. |
 | `release` | `HZ_SYSTEM_NOTIFY__RELEASE` | `False` | Notify when a newer release of Heinzelmännchen is out. Never read from a project's hz.toml. |

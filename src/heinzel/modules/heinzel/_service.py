@@ -32,8 +32,10 @@ from heinzel import (
     Check,
     Config,
     ConfigEditor,
+    CurrentUser,
     Documents,
     HeinzelError,
+    JobInactive,
     JobLet,
     Kernel,
     NoticeKind,
@@ -98,6 +100,7 @@ from heinzel.modules.heinzel._models import (
     Step,
 )
 from heinzel.modules.heinzel._retention import Sweep, expired
+from heinzel.modules.heinzel._session_crud import SessionCrud
 from heinzel.modules.heinzel._starter import from_template, is_name, slug, starter
 
 logger = logging.getLogger(__name__)
@@ -528,7 +531,7 @@ class HeinzelService:
         requirements = tuple(frontmatter.hz.requirements().values())
         return Requester(module=MODULE, kind="job", name=self.job_name(contract), requires=requirements)
 
-    def compiled(self) -> CompiledJobs:
+    def compiled(self, *, sessions: SessionCrud | None = None) -> CompiledJobs:
         """The daemon jobs: one per valid contract with a schedule that your daemon runs, read afresh."""
         jobs: list[JobLet] = []
         for contract in self.contracts():
@@ -538,7 +541,70 @@ class HeinzelService:
                 jobs.append(self._job_let(contract))
             except Exception:
                 logger.exception("compiling %s failed; the other contracts still run", contract.qualified)
+        if sessions is not None:
+            jobs.extend(self._check_in_jobs(sessions))
         return CompiledJobs(jobs=tuple(jobs))
+
+    def _check_in_jobs(self, sessions: SessionCrud) -> list[JobLet]:
+        """Compile only the current owner's approved five-minute notification records."""
+        if not self._kernel.provides(CurrentUser):
+            return []
+        try:
+            self._kernel.resolve(CurrentUser).context()
+            heads = sessions.repository.heads()
+        except HeinzelError:
+            return []
+        jobs: list[JobLet] = []
+        for head in heads:
+            if head.problem:
+                continue
+            try:
+                snapshot = sessions.snapshot(head.session)
+            except HeinzelError:
+                continue
+            schedule = snapshot.schedule
+            if schedule is None or schedule.status != "active" or schedule.cron != "*/5 * * * *":
+                continue
+            jobs.append(
+                self._check_in_job(
+                    sessions,
+                    snapshot.session_id,
+                    snapshot.name,
+                    schedule.contract_version,
+                    schedule.revision,
+                )
+            )
+        return jobs
+
+    def _check_in_job(
+        self, sessions: SessionCrud, session_id: str, name: str, contract_version: int, schedule_revision: int
+    ) -> JobLet:
+        """Create a deduplicated local check-in notice; this job has no model or external capability."""
+
+        def notify() -> JsonValue | JobInactive:
+            if not self._kernel.provides(Notifications):
+                return JobInactive(reason="local notifications are unavailable")
+            now = self._clock().astimezone(UTC).replace(second=0, microsecond=0)
+            slot = now.replace(minute=now.minute - now.minute % 5)
+            return sessions.emit_check_in(
+                session_id,
+                contract_version,
+                schedule_revision,
+                slot,
+                self._kernel.resolve(Notifications),
+            )
+
+        notify.__qualname__ = f"heinzel:check-in-{session_id}"
+        notify.__doc__ = f"Send a local scheduled check-in notice for {session_id}."
+        return JobLet(
+            name=f"check-in-{session_id.lower()}",
+            func=notify,
+            summary=f"Scheduled check-in for {name}",
+            schedule="*/5 * * * *",
+            timeout=timedelta(seconds=10),
+            retries=1,
+            catch_up=CatchUp.LATEST,
+        )
 
     def _job_let(self, contract: Contract) -> JobLet:
         """The daemon job of a valid contract with a schedule.

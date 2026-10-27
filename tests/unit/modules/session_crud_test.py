@@ -23,7 +23,7 @@ AT = datetime(2026, 10, 25, tzinfo=UTC)
 def services(tmp_path):
     current = CurrentUser(tmp_path / "state" / "identity")
     repository = PersonalSessionRepository(current, clock=lambda: AT)
-    service = SessionCrud(repository, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2))
+    service = SessionCrud(repository, lambda: SessionCosts(session_max_usd=2, message_max_usd=0.2), clock=lambda: AT)
     with current.local("cli"):
         yield service, repository, current
 
@@ -64,6 +64,64 @@ def test_profile_exact_replay_precedes_stale_revision_and_restore_default_roundt
     restored = service.profile(first.session_id, "edit-3", 2, appearance=HeinzelAppearance())
     assert restored.appearance.hat is restored.appearance.shirt is restored.appearance.beard is None
     assert restored.name == "Named helper"
+
+
+def test_check_in_contract_and_schedule_are_private_inactive_versioned_and_restartable(services):
+    service, repository, current = services
+    created = service.new_chat("create-1", "Five-minute helper", HeinzelAppearance(hat="teal"))
+    proposed = service.propose_check_in(created.session_id, "check-in-v1", "Europe/Berlin")
+    assert proposed.schedule is not None
+    assert proposed.schedule.status == "proposed"
+    assert proposed.schedule.cron == "*/5 * * * *"
+    assert proposed.contract_version is None
+    assert proposed.contracts[0].version == 1
+    assert proposed.contracts[0].status == "proposed"
+    assert proposed.contracts[0].text
+    assert service.propose_check_in(created.session_id, "check-in-v1", "Europe/Berlin") == proposed
+
+    spine = json.dumps([event.model_dump(mode="json") for event in repository.control_read(created.session_id).events])
+    assert "Five-minute check-in" not in spine
+    assert "At each explicitly approved" not in spine
+    assert "Five-minute helper" not in spine
+
+    active = service.schedule_control(created.session_id, "activate-v1", 1, "activate")
+    assert active.schedule is not None
+    assert active.schedule.status == "active"
+    assert active.contract_version == 1
+    assert active.contracts[0].status == "approved"
+    assert active.state == "awake"
+    with pytest.raises(HeinzelError, match="different schedule control"):
+        service.schedule_control(created.session_id, "activate-v1", 1, "pause")
+    with pytest.raises(HeinzelError, match="schedule changed"):
+        service.schedule_control(created.session_id, "stale-pause", 1, "pause")
+    paused = service.schedule_control(created.session_id, "pause-v1", 2, "pause")
+    assert paused.schedule is not None
+    assert paused.schedule.status == "paused"
+    assert paused.state == "paused"
+    resumed = service.schedule_control(created.session_id, "resume-v1", 3, "resume")
+    assert resumed.schedule is not None
+    assert resumed.schedule.status == "active"
+    assert resumed.appearance == HeinzelAppearance(hat="teal")
+
+    restarted = SessionCrud(PersonalSessionRepository(current), service.costs, clock=lambda: AT)
+    reopened = restarted.snapshot(created.session_id)
+    assert reopened.schedule == resumed.schedule
+    assert reopened.contracts == resumed.contracts
+    assert reopened.name == resumed.name
+    assert restarted.listing().sessions[0].state == "awake"
+
+
+def test_check_in_schedule_requires_valid_timezone_and_explicit_transition(services):
+    service, _repository, _current = services
+    created = service.new_chat("create-1")
+    with pytest.raises(HeinzelError, match="Unknown IANA time zone"):
+        service.propose_check_in(created.session_id, "check-in-v1", "Mars/Olympus")
+    assert service.snapshot(created.session_id).schedule is None
+    proposed = service.propose_check_in(created.session_id, "check-in-v1")
+    assert proposed.schedule is not None
+    assert proposed.schedule.status == "proposed"
+    with pytest.raises(HeinzelError, match="Cannot pause"):
+        service.schedule_control(created.session_id, "premature-pause", 1, "pause")
 
 
 def test_identity_is_required_each_call_and_other_principal_cannot_read_or_change_a_known_id(services):

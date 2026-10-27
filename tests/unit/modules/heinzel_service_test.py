@@ -14,6 +14,7 @@ import pytest
 from heinzel import (
     AgentResult,
     Config,
+    CurrentUser,
     Event,
     FreeBusy,
     HeinzelError,
@@ -37,6 +38,9 @@ from heinzel import (
 )
 from heinzel.modules.heinzel import HeinzelService, HeinzelSettings
 from heinzel.modules.heinzel import _service as service_module
+from heinzel.modules.heinzel._session_crud import SessionCrud
+from heinzel.modules.heinzel._session_models import HeinzelAppearance, SessionCosts
+from heinzel.modules.heinzel._session_repository import PersonalSessionRepository
 
 pytestmark = pytest.mark.unit
 
@@ -310,6 +314,84 @@ def test_the_kernel_hands_the_daemon_the_compiled_jobs(make, dirs):
     put(dirs[0])
     kernel = make()._kernel
     assert [(module, job.name) for module, job in kernel.compiled_jobs()] == [("heinzel", "me-weekly-digest")]
+
+
+def test_active_check_in_compiles_a_local_deduplicated_job_and_pause_wins_a_stale_compilation(make, runner):
+    service = make()
+    kernel = service._kernel
+    current = kernel.resolve(CurrentUser)
+    sessions = SessionCrud(
+        PersonalSessionRepository(current),
+        lambda: SessionCosts(session_max_usd=service._workflow.session_max_usd, message_max_usd=0.2),
+        clock=lambda: NOW,
+    )
+    with current.local("cli"):
+        created = sessions.new_chat("check-in-create", "Five-minute helper", HeinzelAppearance(hat="teal"))
+        sessions.propose_check_in(created.session_id, "check-in-proposal", "UTC")
+        sessions.schedule_control(created.session_id, "check-in-activate", 1, "activate")
+
+    with current.local("daemon"):
+        job = next(
+            item
+            for item in service.compiled(sessions=sessions).jobs
+            if item.name == f"check-in-{created.session_id.lower()}"
+        )
+        assert job.schedule == "*/5 * * * *"
+        first = job.func()
+        duplicate = job.func()
+        assert first["notice"] is True
+        assert duplicate["notice"] is True
+
+        paused = sessions.schedule_control(created.session_id, "check-in-pause", 2, "pause")
+        assert paused.schedule is not None
+        assert paused.schedule.status == "paused"
+        assert job.func().__class__.__name__ == "JobInactive"
+
+        notices = kernel.resolve(Notifications).recent()
+        assert len(notices) == 1
+        assert notices[0].kind is NoticeKind.HEINZEL
+        assert notices[0].title == "Five-minute helper checked in"
+        assert notices[0].key.startswith(f"heinzel:{created.session_id}:check-in:")
+    assert runner.runs == []
+
+
+def test_check_in_notice_deduplicates_after_reopening_session_and_notification_services(make, runner):
+    service = make()
+    user = service._kernel.resolve(CurrentUser)
+    sessions = SessionCrud(
+        PersonalSessionRepository(user),
+        lambda: SessionCosts(session_max_usd=service._workflow.session_max_usd, message_max_usd=0.2),
+        clock=lambda: NOW,
+    )
+    with user.local("cli"):
+        created = sessions.new_chat("restart-create", "Persistent check-in")
+        sessions.propose_check_in(created.session_id, "restart-proposal")
+        sessions.schedule_control(created.session_id, "restart-activate", 1, "activate")
+    with user.local("daemon"):
+        first_job = next(job for job in service.compiled(sessions=sessions).jobs if job.schedule == "*/5 * * * *")
+        first_job.func()
+        assert len(service._kernel.resolve(Notifications).recent()) == 1
+
+    restarted = make()
+    restarted_user = restarted._kernel.resolve(CurrentUser)
+    restarted_sessions = SessionCrud(
+        PersonalSessionRepository(restarted_user),
+        lambda: SessionCosts(session_max_usd=restarted._workflow.session_max_usd, message_max_usd=0.2),
+        clock=lambda: NOW,
+    )
+    with restarted_user.local("daemon"):
+        reopened = restarted_sessions.snapshot(created.session_id)
+        assert reopened.appearance == created.appearance
+        assert reopened.schedule is not None
+        assert reopened.schedule.status == "active"
+        resumed_job = next(
+            job for job in restarted.compiled(sessions=restarted_sessions).jobs if job.schedule == "*/5 * * * *"
+        )
+        resumed_job.func()
+        notices = restarted._kernel.resolve(Notifications).recent()
+        assert len(notices) == 1
+        assert notices[0].key.startswith(f"heinzel:{created.session_id}:check-in:")
+    assert runner.runs == []
 
 
 def test_a_compiled_job_renders_its_contract_and_its_result_holds_the_drafts_hash_not_its_text(make, dirs, runner):

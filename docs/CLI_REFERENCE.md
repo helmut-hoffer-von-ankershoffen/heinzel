@@ -531,7 +531,9 @@ $ hz heinzel [OPTIONS] COMMAND [ARGS]...
 * `new-chat`: Create a durable personal Heinzel with an...
 * `playbooks`: (expert) List the playbooks plugins...
 * `profile`: Save this Heinzel&#x27;s name or look against...
+* `propose-check-in`: Propose a local check-in notification...
 * `prune`: (expert) Delete drafts and records older...
+* `schedule-control`: Control this Heinzel&#x27;s schedule against...
 * `sent`: (expert) Record how much of a draft you...
 * `session`: Open one durable Heinzel and an ordered...
 * `sessions`: List your durable personal Heinzels,...
@@ -734,6 +736,28 @@ $ hz heinzel profile [OPTIONS] {session_id} {request_id} {expected_revision}
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.
 
+### `hz heinzel propose-check-in`
+
+Propose a local check-in notification every five minutes; it remains inactive until explicitly activated.
+
+**Usage**:
+
+```console
+$ hz heinzel propose-check-in [OPTIONS] {session_id} {request_id}
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+
+**Options**:
+
+* `--timezone <str>`: The IANA time zone for the schedule preview.  [default: UTC]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
 ### `hz heinzel prune`
 
 (expert) Delete drafts and records older than ` retention_days` (default 90); receipts are kept.
@@ -747,6 +771,29 @@ $ hz heinzel prune [OPTIONS]
 **Options**:
 
 * `--dry-run / --no-dry-run`: Only list what would be deleted; delete nothing.  [default: no-dry-run]
+* `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
+* `--json`: Shorthand for --format json, for scripts and agents.
+* `--help`: Show this message and exit.
+
+### `hz heinzel schedule-control`
+
+Control this Heinzel&#x27;s schedule against the exact revision you last inspected.
+
+**Usage**:
+
+```console
+$ hz heinzel schedule-control [OPTIONS] {session_id} {request_id} {expected_revision} {action}:<activate|pause|resume>
+```
+
+**Arguments**:
+
+* `session_id`: [required]
+* `request_id`: [required]
+* `expected_revision`: The schedule revision you last inspected.  [required]
+* `action:<activate|pause|resume>`: Explicitly activate the proposal, pause it, or resume a paused schedule.  [required]
+
+**Options**:
+
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

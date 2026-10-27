@@ -91,6 +91,34 @@ def register_session_operations(module: Module) -> None:
         return service.profile(session_id, request_id, expected_revision, name=name, appearance=appearance)
 
     @module.operation(private=True, read_only=False, audience="everyday")
+    def propose_check_in(
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        timezone: Annotated[
+            str, Field(description="The IANA time zone for the schedule preview.", min_length=1, max_length=128)
+        ] = "UTC",
+    ) -> SessionSnapshot:
+        """Propose a local check-in notification every five minutes; it remains inactive until explicitly activated."""
+        return service.propose_check_in(session_id, request_id, timezone)
+
+    @module.operation(private=True, read_only=False, audience="everyday")
+    def schedule_control(
+        service: SessionCrud,
+        session_id: Identity,
+        request_id: Request,
+        expected_revision: Annotated[
+            int, Field(description="The schedule revision you last inspected.", strict=True, ge=1)
+        ],
+        action: Annotated[
+            Literal["activate", "pause", "resume"],
+            Field(description="Explicitly activate the proposal, pause it, or resume a paused schedule."),
+        ],
+    ) -> SessionSnapshot:
+        """Control this Heinzel's schedule against the exact revision you last inspected."""
+        return service.schedule_control(session_id, request_id, expected_revision, action)
+
+    @module.operation(private=True, read_only=False, audience="everyday")
     def chat(
         service: SessionCrud,
         session_id: Identity,

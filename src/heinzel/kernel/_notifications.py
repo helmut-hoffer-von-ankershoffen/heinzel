@@ -27,6 +27,8 @@ class NoticeKind(StrEnum):
     """A newer release of Heinzelmännchen is available."""
     TEST = "test"
     """`hz system notify test`: to see that notifications reach you."""
+    HEINZEL = "heinzel"
+    """A scheduled durable personal Heinzel checked in."""
 
 
 class Delivery(StrEnum):

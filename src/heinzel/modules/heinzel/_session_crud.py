@@ -4,12 +4,16 @@ import base64
 import hashlib
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime
+from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, field_validator
 
-from heinzel import HeinzelError, SessionEvent
+from heinzel import HeinzelError, JobInactive, NoticeKind, Notifications, SessionEvent
 from heinzel.modules.heinzel._session_bodies import BodyRef, immutable_body
 from heinzel.modules.heinzel._session_models import (
+    ContractVersion,
     HeinzelAppearance,
     MessageAccepted,
     MessageRequest,
@@ -19,13 +23,23 @@ from heinzel.modules.heinzel._session_models import (
     SessionMessage,
     SessionSnapshot,
     SessionSummary,
+    WakeScheduleView,
 )
 from heinzel.modules.heinzel._session_protocol import SessionRepository
+from heinzel.modules.system.daemon._schedule import next_slot
+from heinzel.modules.system.daemon._schedule import problem as schedule_problem
 
 _REQUEST = TypeAdapter(RequestId)
 _REVISION = TypeAdapter(int)
 MAX_CURSOR = 1024
 MAX_PAGE = 200
+CHECK_IN_CRON = "*/5 * * * *"
+CHECK_IN_TITLE = "Five-minute check-in"
+CHECK_IN_CONTRACT = (
+    "At each explicitly approved five-minute schedule slot, create one local check-in notification for the owner. "
+    "Do not call a model, use external services, or perform other effects."
+)
+MAX_TIMEZONE_LENGTH = 128
 
 
 def _json(value: JsonValue) -> bytes:
@@ -64,13 +78,43 @@ class _Cursor(BaseModel):
     after: int = Field(ge=0)
 
 
+class _ScheduleState(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    contract_version: int = Field(ge=1)
+    cron: str
+    timezone: str
+    status: Literal["proposed", "active", "paused"]
+    preview_hash: str
+
+
+class _CheckInRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    contract: ContractVersion
+    schedule: _ScheduleState
+
+
+def _validate_schedule_state(state: _ScheduleState, contracts: list[ContractVersion]) -> _ScheduleState:
+    if state.cron != CHECK_IN_CRON or schedule_problem(state.cron):
+        raise ValueError
+    ZoneInfo(state.timezone)
+    if not any(item.version == state.contract_version for item in contracts):
+        raise ValueError
+    return state
+
+
 class SessionCrud:
     """Persist acceptance before acknowledgement; no provider calls or approval grants happen here."""
 
-    def __init__(self, repository: SessionRepository, costs: Callable[[], SessionCosts]) -> None:
+    def __init__(
+        self,
+        repository: SessionRepository,
+        costs: Callable[[], SessionCosts],
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
         """Use trusted per-call ownership and current policy; never cache another request's principal."""
         self.repository = repository
         self.costs = costs
+        self.clock = clock
 
     def new_chat(
         self, request_id: str, name: str = "New Heinzel", appearance: HeinzelAppearance | None = None
@@ -208,6 +252,226 @@ class SessionCrud:
             request_id=request.request_id, session_id=session_id, disposition="queued", inbox_position=event.seq
         )
 
+    def _contracts(self, session_id: str, events: list[SessionEvent]) -> list[ContractVersion]:
+        versions: list[ContractVersion] = []
+        for event in events:
+            if event.kind not in {"contract.proposed", "schedule.activated"}:
+                continue
+            try:
+                contract = _CheckInRecord.model_validate(self._body(session_id, event)).contract
+            except (TypeError, ValueError, ValidationError):
+                msg = "This Heinzel's saved contract version is invalid; restore its private snapshot"
+                raise HeinzelError(msg) from None
+            if event.kind == "contract.proposed":
+                versions.append(contract)
+            else:
+                versions = [contract if item.version == contract.version else item for item in versions]
+        return versions
+
+    def _schedule_state(self, session_id: str, events: list[SessionEvent]) -> _ScheduleState | None:
+        event = next(
+            (
+                item
+                for item in reversed(events)
+                if item.kind == "contract.proposed" or item.kind.startswith("schedule.")
+            ),
+            None,
+        )
+        if event is None:
+            return None
+        try:
+            if event.kind in {"contract.proposed", "schedule.activated"}:
+                state = _CheckInRecord.model_validate(self._body(session_id, event)).schedule
+            else:
+                state = _ScheduleState.model_validate(self._body(session_id, event))
+            return _validate_schedule_state(state, self._contracts(session_id, events))
+        except (KeyError, TypeError, ValueError, ZoneInfoNotFoundError, ValidationError):
+            msg = "This Heinzel's saved schedule is invalid; restore its private snapshot"
+            raise HeinzelError(msg) from None
+
+    def _schedule_view(self, session_id: str, events: list[SessionEvent]) -> WakeScheduleView | None:
+        state = self._schedule_state(session_id, events)
+        if state is None:
+            return None
+        contract = next(item for item in self._contracts(session_id, events) if item.version == state.contract_version)
+        revision = self._schedule_revision(events)
+        try:
+            zone = ZoneInfo(state.timezone)
+        except (ValueError, ZoneInfoNotFoundError):
+            msg = "This Heinzel's saved schedule has an unknown time zone; propose it again"
+            raise HeinzelError(msg) from None
+        return WakeScheduleView(
+            summary=contract.title,
+            cron=state.cron,
+            timezone=state.timezone,
+            status=state.status,
+            contract_version=state.contract_version,
+            revision=revision,
+            preview_hash=state.preview_hash,
+            next_wake=next_slot(state.cron, self.clock(), zone) if state.status == "active" else None,
+        )
+
+    @staticmethod
+    def _schedule_revision(events: list[SessionEvent]) -> int:
+        return sum(event.kind == "contract.proposed" or event.kind.startswith("schedule.") for event in events)
+
+    def propose_check_in(self, session_id: str, request_id: str, timezone: str = "UTC") -> "SessionSnapshot":
+        """Store a proposal for one local five-minute check-in; it remains inert until activated by the person.
+
+        Raises:
+            HeinzelError: The time zone is invalid or this session already has a check-in contract.
+        """
+        _REQUEST.validate_python(request_id)
+        if len(timezone) > MAX_TIMEZONE_LENGTH or not timezone.strip():
+            msg = "Choose an IANA time zone for this schedule"
+            raise HeinzelError(msg)
+        try:
+            ZoneInfo(timezone)
+        except (ValueError, ZoneInfoNotFoundError):
+            msg = f"Unknown IANA time zone {timezone!r}"
+            raise HeinzelError(msg) from None
+        payload: JsonValue = {
+            "title": CHECK_IN_TITLE,
+            "text": CHECK_IN_CONTRACT,
+            "cron": CHECK_IN_CRON,
+            "timezone": timezone,
+        }
+        request_hash = _digest(payload)
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next(
+                (event for event in events if event.kind == "contract.proposed" and event.key == request_id), None
+            )
+            if prior is not None:
+                if prior.data.get("request_hash") != request_hash:
+                    msg = "This request already identifies a different contract proposal"
+                    raise HeinzelError(msg)
+            else:
+                if any(event.kind == "contract.proposed" for event in events):
+                    msg = "This first slice supports one immutable check-in contract per Heinzel"
+                    raise HeinzelError(msg)
+                contract = ContractVersion(
+                    id="check-in-v1",
+                    version=1,
+                    sha256=request_hash,
+                    status="proposed",
+                    title=CHECK_IN_TITLE,
+                    text=CHECK_IN_CONTRACT,
+                    created_at=self.clock(),
+                )
+                state = _ScheduleState(
+                    contract_version=1,
+                    cron=CHECK_IN_CRON,
+                    timezone=timezone,
+                    status="proposed",
+                    preview_hash=request_hash,
+                )
+                body = immutable_body(
+                    writer,
+                    "check-in",
+                    _CheckInRecord(contract=contract, schedule=state).model_dump(mode="json"),
+                    control=True,
+                )
+                writer.append(
+                    "contract.proposed",
+                    key=request_id,
+                    data={"request_hash": request_hash, **body.model_dump(mode="json")},
+                )
+        return self.snapshot(session_id)
+
+    def schedule_control(
+        self, session_id: str, request_id: str, expected_revision: int, action: Literal["activate", "pause", "resume"]
+    ) -> "SessionSnapshot":
+        """Activate the exact proposal or pause/resume it against the schedule revision the person inspected.
+
+        Raises:
+            HeinzelError: The action is invalid, stale, or not allowed in the current state.
+        """
+        _REQUEST.validate_python(request_id)
+        if action not in {"activate", "pause", "resume"}:
+            msg = "Choose activate, pause or resume"
+            raise HeinzelError(msg)
+        if type(expected_revision) is not int or expected_revision < 1:
+            msg = "Reload the schedule before changing it"
+            raise HeinzelError(msg)
+        request_hash = _digest({"expected_revision": expected_revision, "action": action})
+        key = f"schedule-control-{request_id}"
+        with self.repository.control_writer(session_id) as writer:
+            events = self.repository.control_read(session_id).events
+            prior = next((item for item in events if item.key == key), None)
+            if prior is not None:
+                if prior.data.get("request_hash") != request_hash:
+                    msg = "This request already identifies a different schedule control"
+                    raise HeinzelError(msg)
+            else:
+                state = self._schedule_state(session_id, events)
+                if state is None:
+                    msg = "Propose a check-in before activating its schedule"
+                    raise HeinzelError(msg)
+                revision = self._schedule_revision(events)
+                if expected_revision != revision:
+                    msg = "This schedule changed; reload before controlling it"
+                    raise HeinzelError(msg)
+                transitions = {
+                    "activate": ("proposed", "active"),
+                    "pause": ("active", "paused"),
+                    "resume": ("paused", "active"),
+                }
+                expected, target = transitions[action]
+                if state.status != expected:
+                    msg = f"Cannot {action} a schedule that is {state.status}"
+                    raise HeinzelError(msg)
+                if action == "activate":
+                    contracts = self._contracts(session_id, events)
+                    current = next(item for item in contracts if item.version == state.contract_version)
+                    approved = current.model_copy(update={"status": "approved", "approved_at": self.clock()})
+                    state = state.model_copy(update={"status": target})
+                    body_value = _CheckInRecord(contract=approved, schedule=state).model_dump(mode="json")
+                    body = immutable_body(writer, "check-in", body_value, control=True)
+                    writer.append(
+                        "schedule.activated",
+                        key=key,
+                        data={"request_hash": request_hash, **body.model_dump(mode="json")},
+                    )
+                else:
+                    state = state.model_copy(update={"status": target})
+                    body = immutable_body(writer, "schedule", state.model_dump(mode="json"), control=True)
+                    writer.append(
+                        f"schedule.{action}",
+                        key=key,
+                        data={"request_hash": request_hash, **body.model_dump(mode="json")},
+                    )
+        return self.snapshot(session_id)
+
+    def emit_check_in(
+        self,
+        session_id: str,
+        contract_version: int,
+        schedule_revision: int,
+        slot: datetime,
+        notifications: Notifications,
+    ) -> JsonValue | JobInactive:
+        """Recheck active state under its control lock, then emit a deterministic owner-only notice."""
+        with self.repository.control_writer(session_id):
+            events = self.repository.control_read(session_id).events
+            state = self._schedule_state(session_id, events)
+            revision = self._schedule_revision(events)
+            if state is None or state.status != "active" or state.contract_version != contract_version:
+                return JobInactive(reason="the check-in schedule is no longer active")
+            if revision != schedule_revision:
+                return JobInactive(reason="the check-in schedule changed before this slot ran")
+            profile, _profile_revision = self._profile(session_id, events)
+            slot = slot.astimezone(UTC).replace(second=0, microsecond=0)
+            notice = notifications.emit(
+                NoticeKind.HEINZEL,
+                f"{profile.name} checked in",
+                "Your scheduled five-minute check-in is due.",
+                route="/heinzel",
+                command="hz heinzel sessions",
+                key=f"heinzel:{session_id}:check-in:{slot.isoformat()}",
+            )
+            return {"session_id": session_id, "slot": slot.isoformat(), "notice": notice is not None}
+
     @staticmethod
     def _after(session_id: str, cursor: str | None) -> int:
         if cursor is None:
@@ -276,6 +540,9 @@ class SessionCrud:
             msg = "This message cursor is ahead of the committed conversation; reopen the session"
             raise HeinzelError(msg)
         profile, revision = self._profile(session_id, events)
+        contracts = self._contracts(session_id, events)
+        schedule = self._schedule_view(session_id, events)
+        approved = next((item.version for item in reversed(contracts) if item.status == "approved"), None)
         messages = [
             event for event in events if event.seq > after and event.kind in {"message.accepted", "message.replied"}
         ]
@@ -291,6 +558,10 @@ class SessionCrud:
             name=profile.name,
             appearance=profile.appearance,
             profile_revision=revision,
+            contract_version=approved,
+            state="awake" if schedule and schedule.status == "active" else "paused" if schedule else "proposed",
+            contracts=contracts,
+            schedule=schedule,
             last_seq=events[-1].seq if events else 0,
             messages=[self._message(session_id, event) for event in page],
             costs=self.costs(),
@@ -312,14 +583,18 @@ class SessionCrud:
                 raise HeinzelError(msg)
             events = self.repository.control_read(head.session).events
             profile, _revision = self._profile(head.session, events)
+            contracts = self._contracts(head.session, events)
+            schedule = self._schedule_view(head.session, events)
+            approved = next((item.version for item in reversed(contracts) if item.status == "approved"), None)
             summaries.append(
                 SessionSummary(
                     session_id=head.session,
                     name=profile.name,
                     appearance=profile.appearance,
-                    state="proposed",
+                    state="awake" if schedule and schedule.status == "active" else "paused" if schedule else "proposed",
                     last_seq=events[-1].seq,
                     updated_at=events[-1].ts,
+                    contract_version=approved,
                 )
             )
         return SessionList(

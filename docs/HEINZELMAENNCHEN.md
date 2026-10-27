@@ -31,6 +31,23 @@ saving. Retrying an identical request id and payload returns its durable result;
 Omitted personal fields inherit the renderer's defaults, including theme colours. To restore those defaults, send
 an empty appearance object. A profile update does not replace an already queued message or approve a contract.
 
+### Five-minute check-in
+
+The first scheduled personal Heinzel stores one immutable versioned check-in contract and its five-minute schedule in
+the same private control journal as its identity. Proposing it does not start work. Inspect the returned contract and
+schedule, then explicitly activate the exact schedule revision:
+
+```bash
+hz heinzel propose-check-in <session-id> check-in-v1 --timezone Europe/Berlin --json
+hz heinzel schedule-control <session-id> activate-v1 1 activate --json
+hz heinzel schedule-control <session-id> pause-v1 2 pause --json
+hz heinzel schedule-control <session-id> resume-v1 3 resume --json
+```
+
+An active check-in creates one local `system.notify` notice per due five-minute slot. The daemon uses its existing
+installation and pause controls; creating a personal Heinzel never installs or enables background work or requests
+notification permission. This first slice does not run an agent model turn or execute user-authored contract text.
+
 `hz heinzel chat <session-id> <request-id> <message> --json` currently acknowledges a durable inbox entry. A queued
 receipt confirms acceptance, not a completed model response. The same `request_id` appears on the user message,
 so a lost network acknowledgement can be reconciled without submitting another message. Session snapshots page

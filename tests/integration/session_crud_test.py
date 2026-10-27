@@ -85,6 +85,66 @@ def test_authenticated_creation_omits_optional_name_and_appearance_and_uses_serv
     assert schema["components"]["schemas"]["heinzel_new_chat_Input"]["required"] == ["request_id"]
 
 
+def test_propose_activate_pause_and_resume_five_minute_check_in_through_private_api(kernel):
+    client, auth = protected(kernel)
+    created = client.post(
+        "/heinzel/new-chat",
+        headers=auth,
+        json={"request_id": "check-in-create", "name": "Local helper", "appearance": {"hat": "teal"}},
+    ).json()
+    proposal = client.post(
+        "/heinzel/propose-check-in",
+        headers=auth,
+        json={"session_id": created["session_id"], "request_id": "check-in-proposal", "timezone": "UTC"},
+    )
+    assert proposal.status_code == 200, proposal.text
+    proposed = proposal.json()
+    assert proposed["contracts"][0]["version"] == 1
+    assert proposed["contracts"][0]["status"] == "proposed"
+    assert proposed["schedule"]["status"] == "proposed"
+    assert proposed["schedule"]["cron"] == "*/5 * * * *"
+
+    activated = client.post(
+        "/heinzel/schedule-control",
+        headers=auth,
+        json={
+            "session_id": created["session_id"],
+            "request_id": "check-in-activate",
+            "expected_revision": 1,
+            "action": "activate",
+        },
+    )
+    assert activated.status_code == 200, activated.text
+    assert activated.json()["schedule"]["status"] == "active"
+    assert activated.json()["contracts"][0]["status"] == "approved"
+
+    paused = client.post(
+        "/heinzel/schedule-control",
+        headers=auth,
+        json={
+            "session_id": created["session_id"],
+            "request_id": "check-in-pause",
+            "expected_revision": 2,
+            "action": "pause",
+        },
+    )
+    assert paused.status_code == 200, paused.text
+    assert paused.json()["state"] == "paused"
+    resumed = client.post(
+        "/heinzel/schedule-control",
+        headers=auth,
+        json={
+            "session_id": created["session_id"],
+            "request_id": "check-in-resume",
+            "expected_revision": 3,
+            "action": "resume",
+        },
+    )
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["state"] == "awake"
+    assert resumed.json()["schedule"]["status"] == "active"
+
+
 def test_cli_stdio_mcp_and_private_http_share_the_same_saved_personal_look(kernel):
     client, auth = protected(kernel)
     result = client.post(
