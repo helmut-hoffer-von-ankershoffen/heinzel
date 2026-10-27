@@ -3,12 +3,14 @@
 import copy
 import json
 import os
+import time
 import tomllib
 from pathlib import Path
 
 import anyio
 import pytest
 from fastapi.testclient import TestClient
+from fastapi.websockets import WebSocketDisconnect
 from heinzel_tailscale import module
 from heinzel_tailscale._cli import TailscaleCli
 from heinzel_tailscale._localapi import Connection, ServeStore, Snapshot
@@ -159,6 +161,56 @@ def test_running_web_enable_returns_apply_expectations_until_a_fresh_owner_loads
     assert store.writes == 1  # A separate CLI preserves the observed override; it cannot prove a replacement.
     ready = client(fresh(), port=9123).get("/api/tailscale/status", headers=AUTH)
     assert ready.json()["state"] == "ready"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the terminal needs a POSIX pseudo-terminal")
+def test_disabling_tailscale_closes_external_terminal_and_keeps_local_terminal_open(setup, monkeypatch, tmp_path):
+    fresh, _store = setup
+    monkeypatch.setenv("SHELL", "/bin/sh")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    web_client = client(fresh(), port=9123)
+    enabled = web_client.post("/api/tailscale/enable", json={}, headers=AUTH)
+    assert enabled.status_code == 200, enabled.text
+    assert enabled.json()["state"] == "ready"
+
+    ticks_file = tmp_path / "external-shell.ticks"
+    quoted_ticks_file = str(ticks_file).replace("'", "'\\''")
+    external_headers = {"host": "workstation.tail-example.ts.net", "origin": ORIGIN}
+    with web_client.websocket_connect("/api/terminal", headers=external_headers) as external:
+        external.send_text(json.dumps({"token": TOKEN}))
+        external.send_bytes(f"while :; do printf x >> '{quoted_ticks_file}'; sleep 0.05; done\n".encode())
+        deadline = time.monotonic() + 5
+        while not ticks_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert ticks_file.exists(), "the external terminal shell did not start"
+
+        local_origin = "http://127.0.0.1:9123"
+        with web_client.websocket_connect(
+            "/api/terminal", headers={"host": "127.0.0.1:9123", "origin": local_origin}
+        ) as local:
+            local.send_text(json.dumps({"token": TOKEN}))
+            disabled = web_client.post("/api/tailscale/disable", json={}, headers=AUTH)
+            assert disabled.status_code == 200, disabled.text
+            assert disabled.json()["state"] == "off"
+
+            def receive_until_closed() -> None:
+                while True:
+                    external.receive_bytes()
+
+            with pytest.raises(WebSocketDisconnect) as closed:
+                receive_until_closed()
+            assert closed.value.code == 1008
+
+            local.send_bytes(b"echo local-terminal-still-open\n")
+            output = b""
+            deadline = time.monotonic() + 3
+            while b"local-terminal-still-open" not in output and time.monotonic() < deadline:
+                output += local.receive_bytes()
+            assert b"local-terminal-still-open" in output
+
+        ticks_after_close = ticks_file.read_bytes()
+        time.sleep(0.3)
+        assert ticks_file.read_bytes() == ticks_after_close, "the shell kept running after its terminal was revoked"
 
 
 def test_a_new_bound_port_replaces_only_the_previous_exact_owned_target(setup):

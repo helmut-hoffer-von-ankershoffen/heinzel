@@ -23,6 +23,7 @@ import signal
 import struct
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -72,6 +73,33 @@ _open: set["_Terminal"] = set()
 """The terminals open now, to cap how many run at once."""
 
 
+class OriginSessions:
+    """Track terminals owned by one web server and revoke those whose approved origin was removed."""
+
+    def __init__(self) -> None:
+        """Start with no connected terminals."""
+        self._terminals: set[_Terminal] = set()
+        self._lock = threading.Lock()
+
+    def add(self, terminal: "_Terminal") -> None:
+        """Track one authenticated terminal."""
+        with self._lock:
+            self._terminals.add(terminal)
+
+    def discard(self, terminal: "_Terminal") -> None:
+        """Stop tracking a disconnected terminal."""
+        with self._lock:
+            self._terminals.discard(terminal)
+
+    def revoke_origins(self, removed: frozenset[str]) -> None:
+        """Close only active terminals whose external origin is no longer permitted."""
+        with self._lock:
+            terminals = tuple(self._terminals)
+        for terminal in terminals:
+            if terminal.origin in removed:
+                terminal.revoke()
+
+
 def shell() -> str:
     """The user's login shell: `$SHELL` when it is an absolute, executable path, else `/bin/sh`."""
     candidate = os.environ.get("SHELL", "")
@@ -100,16 +128,23 @@ def add_route(  # noqa: PLR0913 - the app plus explicit terminal authentication,
     *,
     token: str,
     port: int | None,
-    allowed_origins: frozenset[str] = frozenset(),
+    allowed_origins: frozenset[str] | Callable[[], frozenset[str]] = frozenset(),
     accept: Callable[[str], object],
     stopping: Stopping | None = None,
+    sessions: OriginSessions | None = None,
 ) -> None:
     """Serve the terminal at `/api/terminal` on `app`; register it before mounting the API there."""
 
     @app.websocket("/api/terminal")
     async def terminal(websocket: WebSocket) -> None:
         await session(
-            websocket, token=token, port=port, allowed_origins=allowed_origins, accept=accept, stopping=stopping
+            websocket,
+            token=token,
+            port=port,
+            allowed_origins=allowed_origins,
+            accept=accept,
+            stopping=stopping,
+            sessions=sessions,
         )
 
 
@@ -118,9 +153,10 @@ async def session(  # noqa: PLR0913 - the socket plus explicit terminal authenti
     *,
     token: str,
     port: int | None,
-    allowed_origins: frozenset[str] = frozenset(),
+    allowed_origins: frozenset[str] | Callable[[], frozenset[str]] = frozenset(),
     accept: Callable[[str], object] | None = None,
     stopping: Stopping | None = None,
+    sessions: OriginSessions | None = None,
 ) -> None:
     """Serve one terminal on `websocket` until either side closes it, or the server stops.
 
@@ -129,11 +165,12 @@ async def session(  # noqa: PLR0913 - the socket plus explicit terminal authenti
     """
     headers = websocket.headers
     origin = headers.get("origin")
+    request_origins = allowed_origins() if callable(allowed_origins) else allowed_origins
     problem = api.request_refusal(
         headers,
         api.LOOPBACK,
         port,
-        allowed_origins=allowed_origins,
+        allowed_origins=request_origins,
         host_help=api.WEB_HOST_HELP,
     )
     if problem or origin is None:
@@ -149,14 +186,28 @@ async def session(  # noqa: PLR0913 - the socket plus explicit terminal authenti
     if len(_open) >= SHELLS:
         await websocket.close(code=TRY_AGAIN_LATER, reason=f"{SHELLS} terminals are open; close one and try again.")
         return
-    terminal = _Terminal(websocket)
+    active_origins = allowed_origins() if callable(allowed_origins) else allowed_origins
+    origin = _external_origin(headers.get("host", ""), origin, active_origins)
+    terminal = _Terminal(websocket, origin=origin)
     _open.add(terminal)
+    if sessions is not None:
+        sessions.add(terminal)
     try:
         stopping = stopping or Stopping()
         with stopping.watch() as stopped:
             await terminal.run(stopped, stopping)
     finally:
         _open.discard(terminal)
+        if sessions is not None:
+            sessions.discard(terminal)
+
+
+def _external_origin(host: str, origin: str | None, allowed_origins: frozenset[str]) -> str | None:
+    """Mark only a configured non-loopback authority for later revocation; local browser sessions stay local."""
+    if origin not in allowed_origins:
+        return None
+    name = host.lower().split("]", maxsplit=1)[0] + "]" if host.startswith("[") else host.partition(":")[0].lower()
+    return origin if name not in api.LOOPBACK else None
 
 
 async def _authenticated(websocket: WebSocket, token: str, accept: Callable[[str], object] | None) -> bool:
@@ -173,8 +224,9 @@ async def _authenticated(websocket: WebSocket, token: str, accept: Callable[[str
 class _Terminal:
     """One shell on one pseudo-terminal, joined to one WebSocket with bounded buffers both ways."""
 
-    def __init__(self, websocket: WebSocket) -> None:
+    def __init__(self, websocket: WebSocket, *, origin: str | None = None) -> None:
         self.websocket = websocket
+        self.origin = origin
         self.loop = asyncio.get_running_loop()
         self.output: asyncio.Queue[bytes] = asyncio.Queue(maxsize=OUTPUT_CHUNKS)
         self.paused = False
@@ -184,24 +236,54 @@ class _Terminal:
         self.drained = asyncio.Event()
         self.drained.set()
         self.main = -1
+        self.revoked = asyncio.Event()
+        self._revoked = False
+        self._revocation_task: asyncio.Task[None] | None = None
+
+    def revoke(self) -> None:
+        """Close this socket on its own event loop so the receiver hangs up the shell process group."""
+        with contextlib.suppress(RuntimeError):
+            self.loop.call_soon_threadsafe(self._schedule_revocation)
+
+    def _schedule_revocation(self) -> None:
+        if not self._revoked:
+            self._revoked = True
+            self.revoked.set()
+            self._revocation_task = self.loop.create_task(self._close_for_revoked_origin())
+
+    async def _close_for_revoked_origin(self) -> None:
+        with contextlib.suppress(RuntimeError, WebSocketDisconnect):
+            await self.websocket.close(code=POLICY_VIOLATION, reason="This origin is no longer allowed.")
 
     async def run(self, stopped: asyncio.Event, stopping: Stopping) -> None:
         self.main, process = _spawn()
         self.loop.add_reader(self.main, self._readable)
         sender = asyncio.create_task(self._send())
         closer = asyncio.create_task(self._close_when(stopped, stopping))
+        receiver = asyncio.create_task(self._receive())
+        revoked = asyncio.create_task(self.revoked.wait())
         try:
-            await self._receive()
+            done, _ = await asyncio.wait((receiver, revoked), return_when=asyncio.FIRST_COMPLETED)
+            if revoked in done and not receiver.done():
+                receiver.cancel()
+            with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError, OSError):
+                await receiver
         finally:
             self.loop.remove_reader(self.main)
             self.loop.remove_writer(self.main)
             sender.cancel()
             closer.cancel()
+            revoked.cancel()
             try:
                 with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError, OSError):
                     await sender
                 with contextlib.suppress(asyncio.CancelledError, RuntimeError, OSError):
                     await closer
+                with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError, OSError):
+                    await revoked
+                if self._revocation_task is not None:
+                    with contextlib.suppress(WebSocketDisconnect, RuntimeError, OSError):
+                        await self._revocation_task
             finally:
                 await _hang_up(process, self.main)
 
