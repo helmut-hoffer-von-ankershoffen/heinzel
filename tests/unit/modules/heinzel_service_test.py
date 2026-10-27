@@ -356,6 +356,34 @@ def test_active_check_in_compiles_a_local_deduplicated_job_and_pause_wins_a_stal
     assert runner.runs == []
 
 
+@pytest.mark.parametrize("resume", [False, True])
+def test_compiled_check_in_does_not_notify_after_pause_or_revision_change(make, resume):
+    service = make()
+    user = service._kernel.resolve(CurrentUser)
+    sessions = SessionCrud(
+        PersonalSessionRepository(user),
+        lambda: SessionCosts(session_max_usd=service._workflow.session_max_usd, message_max_usd=0.2),
+        clock=lambda: NOW,
+    )
+    with user.local("daemon"):
+        created = sessions.new_chat("race-create", "Race check-in")
+        sessions.propose_check_in(created.session_id, "race-proposal")
+        sessions.schedule_control(created.session_id, "race-activate", 1, "activate")
+        stale = next(job for job in service.compiled(sessions=sessions).jobs if job.schedule == "*/5 * * * *")
+        sessions.schedule_control(created.session_id, "race-pause", 2, "pause")
+        if resume:
+            sessions.schedule_control(created.session_id, "race-resume", 3, "resume")
+
+        outcome = stale.func()
+        assert outcome.__class__.__name__ == "JobInactive"
+        assert service._kernel.resolve(Notifications).recent() == []
+
+        if resume:
+            fresh = next(job for job in service.compiled(sessions=sessions).jobs if job.schedule == "*/5 * * * *")
+            assert fresh.func()["notice"] is True
+            assert len(service._kernel.resolve(Notifications).recent()) == 1
+
+
 def test_check_in_notice_deduplicates_after_reopening_session_and_notification_services(make, runner):
     service = make()
     user = service._kernel.resolve(CurrentUser)
