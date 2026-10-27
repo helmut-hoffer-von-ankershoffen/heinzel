@@ -36,14 +36,14 @@ const github = plugin({
 });
 const clock = plugin({
   name: "clock",
-  summary: "World Clock: what time it is for everyone on the team.",
+  summary: "World clock: what time it is for everyone on the team.",
   kinds: ["capability"],
 });
 const clockNav: SchemaNavEntry = {
   id: "clock:main",
   module: "clock",
   plugin: "heinzel-clock",
-  title: "World Clock",
+  title: "World clock",
   icon: "globe",
   declared: true,
   order: 900,
@@ -474,7 +474,7 @@ describe("Installed plugins by kind", () => {
 describe("Where settings live", () => {
   it("keeps the capitals of acronyms in module and setting names", () => {
     expect(displayName("ai")).toBe("AI");
-    expect(displayName("clock", "World Clock: what time it is.")).toBe("Clock");
+    expect(displayName("clock", "World clock: what time it is.")).toBe("World clock");
     expect(displayName("mcp")).toBe("MCP");
     expect(displayName("cli")).toBe("CLI");
     expect(displayName("github")).toBe("GitHub");
@@ -573,7 +573,7 @@ describe("Settings: one place for everything", () => {
     expect(screen.queryByText("AI access")).not.toBeInTheDocument();
   });
 
-  it("shows each placement of World Clock in plain words with a live preview and a switch", async () => {
+  it("shows each placement of World clock in plain words with a live preview and a switch", async () => {
     const { calls } = mockApi(ui);
     const user = userEvent.setup();
     const { container } = renderAt("/doctor?settings=clock");

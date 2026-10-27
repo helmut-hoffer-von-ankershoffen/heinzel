@@ -36,7 +36,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("World Clock", () => {
+describe("World clock", () => {
   it("shows every zone in order, marks the primary, keeps UTC readable without a marker and uses 24 hours", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const { container } = show();
@@ -147,9 +147,9 @@ describe("World Clock", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     mockApi(answers);
     renderAt("/?panel=world-clock");
-    expect(await screen.findByRole("region", { name: "World Clock" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "World clock" })).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: "Chat" })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Close World Clock" }));
+    await userEvent.click(screen.getByRole("button", { name: "Close World clock" }));
     expect(screen.getByRole("complementary", { name: "Chat" })).toBeInTheDocument();
   });
   it("repaints the asynchronously decoded map on the clock tick without a pointer event", async () => {

@@ -30,7 +30,7 @@ from heinzel import (
     StatusItem,
 )
 
-module = Module("clock", "World Clock: what time it is for everyone on the team.")
+module = Module("clock", "World clock: what time it is for everyone on the team.")
 
 module.nav(
     title="World clock",
@@ -194,7 +194,7 @@ def working(times: list[ZoneTime]) -> int:
 
 module.action(
     "team-clock",
-    label="World Clock",
+    label="World clock",
     icon="globe",
     effect=Navigate(path="/?panel=world-clock"),
     source="clock",
