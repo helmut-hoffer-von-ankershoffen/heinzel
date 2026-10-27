@@ -321,7 +321,7 @@ def test_active_check_in_compiles_a_local_deduplicated_job_and_pause_wins_a_stal
     kernel = service._kernel
     current = kernel.resolve(CurrentUser)
     sessions = SessionCrud(
-        PersonalSessionRepository(current),
+        PersonalSessionRepository(current, clock=lambda: NOW),
         lambda: SessionCosts(session_max_usd=service._workflow.session_max_usd, message_max_usd=0.2),
         clock=lambda: NOW,
     )
@@ -352,7 +352,7 @@ def test_active_check_in_compiles_a_local_deduplicated_job_and_pause_wins_a_stal
         assert notices[0].kind is NoticeKind.HEINZEL
         assert notices[0].title == "Five-minute helper checked in"
         assert notices[0].route == f"/heinzel?chat={created.session_id}"
-        assert notices[0].key.startswith(f"heinzel:{created.session_id}:check-in:")
+        assert notices[0].key.startswith(f"heinzel:{current.principal().id}:{created.session_id}:1:check-in:")
     assert runner.runs == []
 
 
@@ -361,7 +361,7 @@ def test_compiled_check_in_does_not_notify_after_pause_or_revision_change(make, 
     service = make()
     user = service._kernel.resolve(CurrentUser)
     sessions = SessionCrud(
-        PersonalSessionRepository(user),
+        PersonalSessionRepository(user, clock=lambda: NOW),
         lambda: SessionCosts(session_max_usd=service._workflow.session_max_usd, message_max_usd=0.2),
         clock=lambda: NOW,
     )
@@ -388,7 +388,7 @@ def test_check_in_notice_deduplicates_after_reopening_session_and_notification_s
     service = make()
     user = service._kernel.resolve(CurrentUser)
     sessions = SessionCrud(
-        PersonalSessionRepository(user),
+        PersonalSessionRepository(user, clock=lambda: NOW),
         lambda: SessionCosts(session_max_usd=service._workflow.session_max_usd, message_max_usd=0.2),
         clock=lambda: NOW,
     )
@@ -404,7 +404,7 @@ def test_check_in_notice_deduplicates_after_reopening_session_and_notification_s
     restarted = make()
     restarted_user = restarted._kernel.resolve(CurrentUser)
     restarted_sessions = SessionCrud(
-        PersonalSessionRepository(restarted_user),
+        PersonalSessionRepository(restarted_user, clock=lambda: NOW),
         lambda: SessionCosts(session_max_usd=restarted._workflow.session_max_usd, message_max_usd=0.2),
         clock=lambda: NOW,
     )
@@ -419,7 +419,7 @@ def test_check_in_notice_deduplicates_after_reopening_session_and_notification_s
         resumed_job.run_for_slot(NOW)
         notices = restarted._kernel.resolve(Notifications).recent()
         assert len(notices) == 1
-        assert notices[0].key.startswith(f"heinzel:{created.session_id}:check-in:")
+        assert notices[0].key.startswith(f"heinzel:{restarted_user.principal().id}:{created.session_id}:1:check-in:")
     assert runner.runs == []
 
 

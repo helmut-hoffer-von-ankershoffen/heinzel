@@ -6,6 +6,9 @@ import { useSearchParams } from "react-router";
 import { chatKey, chatListKey, type ModelChoice, openChat, sendChat, useChatSession, useDecide } from "@/api/chat";
 import type { SchemaChatSession } from "@/api/client";
 
+/** Personal session ids belong to the durable chat, not the legacy 16-hex chat service. */
+export const isDurableSession = (id: string) => /^hz-[0-9A-HJKMNP-TV-Z]{26}$/.test(id);
+
 const KEY = "hz.chat";
 
 function remembered(): string | null {
@@ -30,7 +33,10 @@ export type Live = { message: string; text: string; tools: string[] };
 
 export function useChat() {
   const [params, setParams] = useSearchParams();
-  const [sessionId, setSessionId] = useState<string | null>(() => params.get("chat") ?? remembered());
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    const linked = params.get("chat");
+    return linked && !isDurableSession(linked) ? linked : remembered();
+  });
   const [live, setLive] = useState<Live | null>(null);
   const [error, setError] = useState<string | null>(null);
   const chat = useChatSession(sessionId);
@@ -71,6 +77,7 @@ export function useChat() {
   useEffect(() => {
     const context = params.get("chat-context");
     const linked = params.get("chat");
+    if (linked && isDurableSession(linked)) return;
     if (!linked && !context) return;
     if (linked) {
       setSessionId(linked);

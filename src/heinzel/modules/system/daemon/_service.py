@@ -34,7 +34,7 @@ from heinzel import (
     Status,
     __version__,
 )
-from heinzel.kernel import KERNEL_SECTION
+from heinzel.kernel import KERNEL_SECTION, tick_interval
 from heinzel.modules.system.daemon import _schedule as schedule
 from heinzel.modules.system.daemon._ledger import Ledger
 from heinzel.modules.system.daemon._models import (
@@ -527,10 +527,17 @@ class DaemonService:
             HeinzelError: If the job's receipts are damaged.
         """
         if manual is not None:
-            return [Due(now, Wake.MANUAL)]
+            skip = "this job only runs on its scheduled slots" if job.let.scheduled_only else None
+            return [Due(now, Wake.MANUAL, skip)]
         if schedule.problem(job.let.schedule):
             return []
         interval = timedelta(minutes=self._interval())
+        cadence = tick_interval() or interval
+        if job.let.max_tick_interval is not None and cadence > job.let.max_tick_interval:
+            msg = (
+                f"{job.id} needs daemon ticks at least every {job.let.max_tick_interval}; current cadence is {cadence}"
+            )
+            raise HeinzelError(msg)
         last = ledger.last(job.id, Wake.SCHEDULE)
         start = max(filter(None, (self._last_tick(), now - interval)))
         if last is not None and last.as_of > now + interval:

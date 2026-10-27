@@ -4,7 +4,7 @@ import base64
 import hashlib
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -98,14 +98,6 @@ def _validate_schedule_state(state: _ScheduleState, contracts: list[ContractVers
     if not any(item.version == state.contract_version for item in contracts):
         raise ValueError
     return state
-
-
-def _next_check_in(now: datetime, zone: ZoneInfo) -> datetime:
-    """Return the next UTC five-minute boundary, displayed in the selected time zone."""
-    current = now.astimezone(UTC)
-    minute = current.minute - current.minute % 5 + 5
-    current = current.replace(minute=0, second=0, microsecond=0) + timedelta(minutes=minute)
-    return current.astimezone(zone)
 
 
 def _session_state(schedule: WakeScheduleView | None) -> Literal["proposed", "awake", "paused"]:
@@ -309,7 +301,7 @@ class SessionCrud:
         contract = next(item for item in self._contracts(session_id, events) if item.version == state.contract_version)
         revision = self._schedule_revision(events)
         try:
-            zone = ZoneInfo(state.timezone)
+            ZoneInfo(state.timezone)
         except (ValueError, ZoneInfoNotFoundError):
             msg = "This Heinzel's saved schedule has an unknown time zone; propose it again"
             raise HeinzelError(msg) from None
@@ -321,7 +313,11 @@ class SessionCrud:
             contract_version=state.contract_version,
             revision=revision,
             preview_hash=state.preview_hash,
-            next_wake=_next_check_in(self.clock(), zone) if state.status == "active" else None,
+            # A cron boundary is not an actual wake: the daemon may be stopped or ticking too slowly.
+            next_wake=None,
+            blocked_reason="Wake timing is not verified; check daemon status and cadence"
+            if state.status == "active"
+            else None,
         )
 
     @staticmethod
@@ -469,7 +465,7 @@ class SessionCrud:
         Raises:
             HeinzelError: If the notification cannot be recorded.
         """
-        with self.repository.control_writer(session_id):
+        with self.repository.control_writer(session_id) as writer:
             events = self.repository.control_read(session_id).events
             state = self._schedule_state(session_id, events)
             revision = self._schedule_revision(events)
@@ -477,19 +473,54 @@ class SessionCrud:
                 return JobInactive(reason="the check-in schedule is no longer active")
             if revision != schedule_revision:
                 return JobInactive(reason="the check-in schedule changed before this slot ran")
+            active_since = next(
+                (event.ts for event in reversed(events) if event.kind in {"schedule.activated", "schedule.resume"}),
+                None,
+            )
+            if slot.tzinfo is None or slot.utcoffset() is None or active_since is None:
+                return JobInactive(reason="the check-in slot or activation time is unavailable")
+            if slot.astimezone(UTC) < active_since.astimezone(UTC):
+                return JobInactive(reason="the check-in slot predates this active schedule")
             profile, _profile_revision = self._profile(session_id, events)
             slot = slot.astimezone(UTC).replace(second=0, microsecond=0)
-            notice = notifications.emit(
-                NoticeKind.HEINZEL,
-                f"{profile.name} checked in",
-                "Your scheduled five-minute check-in is due.",
-                route=f"/heinzel?chat={session_id}",
-                command="hz heinzel sessions",
-                key=f"heinzel:{session_id}:check-in:{slot.isoformat()}",
+            notice_key = (
+                f"heinzel:{self.repository.principal_id}:{session_id}:{contract_version}:check-in:{slot.isoformat()}"
             )
-            if notice is None:
-                msg = "The scheduled check-in notification could not be recorded"
+            legacy_key = f"heinzel:{session_id}:check-in:{slot.isoformat()}"
+            outbox_key = _digest({"notice_key": notice_key})
+            intent = next(
+                (event for event in events if event.kind == "check-in.intent" and event.key == outbox_key), None
+            )
+            recorded = next(
+                (event for event in events if event.kind == "check-in.recorded" and event.key == outbox_key), None
+            )
+            if recorded:
+                return {"session_id": session_id, "slot": slot.isoformat(), "notice": True}
+            prior = next(
+                (notice for notice in notifications.recent(200) if notice.key in {notice_key, legacy_key}), None
+            )
+            if intent is not None and prior is None:
+                msg = "The scheduled check-in outcome is unknown; inspect notifications before reconciling this slot"
                 raise HeinzelError(msg)
+            if intent is None:
+                writer.append(
+                    "check-in.intent",
+                    key=outbox_key,
+                    data={"slot": slot.isoformat(), "contract_version": contract_version, "notice_key": notice_key},
+                )
+            if prior is None:
+                prior = notifications.emit(
+                    NoticeKind.HEINZEL,
+                    f"{profile.name} checked in",
+                    "Your scheduled five-minute check-in is due.",
+                    route=f"/heinzel?chat={session_id}",
+                    command="hz heinzel sessions",
+                    key=notice_key,
+                )
+            if prior is None:
+                msg = "The scheduled check-in could not be confirmed; its outcome requires reconciliation"
+                raise HeinzelError(msg)
+            writer.append("check-in.recorded", key=outbox_key, data={"notice_id": prior.id})
             return {"session_id": session_id, "slot": slot.isoformat(), "notice": True}
 
     @staticmethod

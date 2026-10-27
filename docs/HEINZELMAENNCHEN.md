@@ -44,9 +44,17 @@ hz heinzel schedule-control <session-id> pause-v1 2 pause --json
 hz heinzel schedule-control <session-id> resume-v1 3 resume --json
 ```
 
-An active check-in creates one local `system.notify` notice per due five-minute slot. The daemon uses its existing
-installation and pause controls; creating a personal Heinzel never installs or enables background work or requests
-notification permission. This first slice does not run an agent model turn or execute user-authored contract text.
+An active check-in attempts one local `system.notify` notice for each eligible five-minute slot after activation or
+resume. The daemon must tick at least every five minutes; a slower configured or foreground cadence reports a failed
+check-in instead of silently skipping slots. The reported next wake remains unknown until runtime timing can be
+verified. A manual daemon wake does not run this scheduled-only check-in.
+
+A per-slot journal intent lets a replay recognize a recorded notice even if ordinary repeat filtering is disabled or
+older notices leave the display list. If the process stopped before it could confirm the notice and that notice is no
+longer present, the outcome is unknown and the slot is not blindly sent again. Inspect the notification history and
+daemon logs; automatic reconciliation is not yet implemented. The daemon uses its existing installation and pause
+controls; creating a personal Heinzel never installs or enables background work or requests notification permission.
+This first slice does not run an agent model turn or execute user-authored contract text.
 
 `hz heinzel chat <session-id> <request-id> <message> --json` currently acknowledges a durable inbox entry. A queued
 receipt confirms acceptance, not a completed model response. The same `request_id` appears on the user message,

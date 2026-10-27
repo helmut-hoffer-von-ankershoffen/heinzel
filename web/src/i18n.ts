@@ -1,5 +1,13 @@
 // Every string the app shows, in one catalogue (ADR 0039): adding a language is a file, not a refactor.
 const en = {
+  "durable.title": "Personal conversation",
+  "durable.close": "Back to chat",
+  "durable.unavailable": "This personal conversation could not be loaded.",
+  "durable.queued": "Messages are queued. Replies are not yet available here.",
+  "durable.message": "Message your Heinzel",
+  "durable.send": "Queue message",
+  "durable.retry": "Retry the same message",
+  "durable.failed": "The message could not be confirmed. Retry the same message or reopen this conversation.",
   "daemon.controls": "Daemon status and controls",
   "daemon.version": "Daemon version",
   "daemon.jobs": "Jobs",

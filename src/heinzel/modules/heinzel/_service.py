@@ -602,6 +602,8 @@ class HeinzelService:
             name=f"check-in-{session_id.lower()}",
             func=unavailable,
             run_for_slot=notify,
+            scheduled_only=True,
+            max_tick_interval=timedelta(minutes=5),
             summary=f"Scheduled check-in for {name}",
             schedule="*/5 * * * *",
             timeout=timedelta(seconds=10),

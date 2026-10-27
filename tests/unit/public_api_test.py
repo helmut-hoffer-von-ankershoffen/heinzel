@@ -461,8 +461,10 @@ KERNEL = [
     "skill_tools",
     "skills_in",
     "subprocess_environment",
+    "tick_interval",
     "toml_value",
     "user_config_dir",
+    "using_tick_interval",
     "walk",
 ]
 HINT = "the public API changed: update the snapshot in tests/unit/public_api_test.py on purpose (see ADR 0026)"
