@@ -265,7 +265,7 @@ function Saved({ state, error }: { state: "idle" | "pending" | "success" | "erro
 }
 
 const field = "h-8 w-full rounded-lg border border-border bg-input px-2.5 text-sm";
-const selectField = cn(field, "pr-8");
+const selectField = cn(field, "min-w-0 max-w-full pr-8");
 
 function You() {
   const profile = useProfile();

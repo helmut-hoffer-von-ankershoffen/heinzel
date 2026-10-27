@@ -147,7 +147,9 @@ pinch zoom and device safe areas. New UI uses the shared `AnchoredPopover` for d
 modal backdrops, and `lib/viewport.ts` / `lib/placement.ts` for measured overlays. Full-height layouts use the shell's
 scale-normalized visual height. Form fields on touch devices retain at least 16px text; do not disable user zoom.
 Keep one scroll owner per pane, make flex children shrink with `min-h-0` / `min-w-0`, and scroll oversized content
-inside its pane. An expanded menu must not hide its own trigger or dismiss control.
+inside its pane. Settings rows wrap to the available pane width; native selectors must cap their intrinsic width,
+including long provider labels. Exercise advanced settings as well as basic settings in the mobile sweep.
+An expanded menu must not hide its own trigger or dismiss control.
 
 `mobile-standards.test.ts` rejects layout-viewport heights and independent absolute dropdowns. The mobile browser
 sweep discovers static router paths and settings sections automatically; add interactive flows there when introducing a
