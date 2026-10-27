@@ -186,7 +186,58 @@ describe("Footer items are icons with a state and a pane", () => {
       expect(button.parentElement).toHaveAttribute("data-state", tone);
       expect(button.querySelectorAll("svg")).toHaveLength(1); // no secondary state glyph beside the footer icon
     }
+    expect(bar.textContent).not.toContain("_"); // no literal underscore badges beside footer icons
     await expectAccessible(container);
+  });
+
+  it("offers the safe terminal install action only while the daemon is not installed", async () => {
+    const notInstalled = {
+      ...answers,
+      "/api/system/ui/status": [
+        {
+          id: "system:daemon",
+          module: "system",
+          plugin: null,
+          order: 700,
+          refresh: 60,
+          problem: null,
+          slots: { footer: true },
+          item: {
+            text: "Daemon not installed",
+            tone: "neutral",
+            icon: "bot",
+            actions: [
+              { label: "Install", icon: "play", effect: { kind: "command", command: "hz system daemon install" } },
+            ],
+          },
+        },
+      ],
+    };
+    mockApi(notInstalled);
+    const user = userEvent.setup();
+    const notInstalledView = renderAt("/doctor");
+    const footer = await screen.findByRole("contentinfo");
+    const daemon = await within(footer).findByRole("button", { name: "Daemon not installed, off" });
+    await user.click(daemon);
+    expect(await screen.findByRole("button", { name: "Install" })).toBeInTheDocument();
+    notInstalledView.unmount();
+
+    const installed = {
+      ...notInstalled,
+      "/api/system/ui/status": [
+        {
+          ...notInstalled["/api/system/ui/status"][0],
+          item: { text: "Daemon running", tone: "ok", icon: "bot", actions: [] },
+        },
+      ],
+    };
+    mockApi(installed);
+    renderAt("/doctor");
+    const installedDaemon = await within(await screen.findByRole("contentinfo")).findByRole("button", {
+      name: "Daemon running, OK",
+    });
+    await user.click(installedDaemon);
+    expect(screen.queryByRole("button", { name: "Install" })).not.toBeInTheDocument();
   });
 
   it("opens the pane on hover and focus, closes it on Escape and on blur, and pins it on click, by keyboard too", async () => {
@@ -242,9 +293,9 @@ describe("Footer items are icons with a state and a pane", () => {
     const pane = await screen.findByRole("region", { name: "v0.4.0" });
     const about = within(pane).getByRole("region", { name: "About Heinzelmännchen" });
     expect(within(about).getByRole("img", { name: "Heinzelmännchen" })).toBeInTheDocument();
-    expect(about).toHaveTextContent("helpers accelerating product teams, like the little elves from Cologne");
-    expect(within(about).getByText(/helpers accelerating/).parentElement).toHaveClass("text-[11px]");
-    expect(about.querySelectorAll("p > span")).toHaveLength(2);
+    const tagline = within(about).getByText("helpers accelerating product teams,");
+    expect(tagline.parentElement).toHaveClass("text-[10px]");
+    expect(within(about).getByText("like the little elves from Cologne")).toBeInTheDocument();
     expect(within(about).queryByText("built with AI in Berlin")).not.toBeInTheDocument();
     expect(await within(pane).findByText("Something new")).toBeInTheDocument();
     expect(within(pane).queryByText("What changed in this release")).not.toBeInTheDocument();

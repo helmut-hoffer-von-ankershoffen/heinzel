@@ -362,16 +362,20 @@ function installedReleaseNotes(changelog: string, version: string): string | nul
   return changelog.slice(start, end).trim() || null;
 }
 
-/** The installed version, its concise branding and the release link. */
+/** The installed version, its mascot, concise tagline and release link. */
 function ReleaseNotes({ version }: { version: string }) {
   const changelog = useChangelog(false);
   const notes = typeof changelog.data === "string" ? installedReleaseNotes(changelog.data, version) : null;
   return (
     <div className="px-1.5 pb-1" aria-busy={changelog.isPending}>
-      <section aria-label={t("status.about")} className="mb-2 flex items-center gap-2 border-b border-border pb-2">
-        <HeinzelAvatar label={t("app.name")} className="h-14 w-9 shrink-0" />
-        <p className="min-w-0 flex-1 text-[11px] leading-tight font-medium">
-          <span className="block">{t("status.tagline")}</span> <span className="block">{t("status.origin")}</span>
+      <section
+        aria-label={t("status.about")}
+        className="mb-2 flex items-center justify-between gap-2 border-b border-border pb-2"
+      >
+        <HeinzelAvatar label={t("app.name")} className="h-10 w-7 shrink-0" />
+        <p className="min-w-0 flex-1 text-[10px] leading-tight font-medium">
+          <span className="block">{t("status.tagline")}</span>
+          <span className="block">{t("status.origin")}</span>
         </p>
         <a
           href={`${RELEASES}/v${version}`}

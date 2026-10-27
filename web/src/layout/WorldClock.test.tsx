@@ -41,8 +41,11 @@ describe("World Clock", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const { container } = show();
     expect(await screen.findByText("Berlin · Primary")).toBeInTheDocument();
-    expect(screen.getByText("UTC · No map location")).toBeInTheDocument();
     const list = screen.getByRole("list");
+    const utc = within(list).getAllByRole("listitem")[2] as HTMLElement;
+    expect(utc).toHaveTextContent("UTC");
+    expect(utc).not.toHaveTextContent("map");
+    expect(within(utc).getAllByText("UTC")).toHaveLength(1);
     expect(
       within(list)
         .getAllByRole("listitem")
