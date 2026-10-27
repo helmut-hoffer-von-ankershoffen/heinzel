@@ -288,6 +288,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/heinzel/propose-check-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose a local check-in notification every five minutes; it remains inactive until explicitly activated.
+         * @description Propose a local check-in notification every five minutes; it remains inactive until explicitly activated.
+         */
+        post: operations["heinzel_propose_check_in"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/heinzel/schedule-control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Control this Heinzel's schedule against the exact revision you last inspected.
+         * @description Control this Heinzel's schedule against the exact revision you last inspected.
+         */
+        post: operations["heinzel_schedule_control"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/heinzel/session": {
         parameters: {
             query?: never;
@@ -6059,7 +6099,7 @@ export interface components {
          * @description What a notice is about; each kind can be switched off in `[system.notify]`.
          * @enum {string}
          */
-        NoticeKind: "draft" | "failed" | "doctor" | "release" | "test";
+        NoticeKind: "draft" | "failed" | "doctor" | "release" | "test" | "heinzel";
         /**
          * NoticeList
          * @description The latest notices, and how they reach you on this machine.
@@ -10149,6 +10189,49 @@ export interface components {
              */
             session_id: string;
         };
+        /** heinzel_propose_check_in_Input */
+        heinzel_propose_check_in_Input: {
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+            /**
+             * Timezone
+             * @description The IANA time zone for the schedule preview.
+             * @default UTC
+             */
+            timezone: string;
+        };
+        /** heinzel_schedule_control_Input */
+        heinzel_schedule_control_Input: {
+            /**
+             * Action
+             * @description Explicitly activate the proposal, pause it, or resume a paused schedule.
+             * @enum {string}
+             */
+            action: "activate" | "pause" | "resume";
+            /**
+             * Expected Revision
+             * @description The schedule revision you last inspected.
+             */
+            expected_revision: number;
+            /**
+             * Request Id
+             * @description A stable client request id; reuse it only for an exact retry.
+             */
+            request_id: string;
+            /**
+             * Session Id
+             * @description The stable personal session id returned by new-chat or sessions.
+             */
+            session_id: string;
+        };
         /** system_state_push_Input */
         system_state_push_Input: Record<string, never>;
         /** system_state_reset_Input */
@@ -10381,6 +10464,8 @@ export type SchemaWidgetEntry = components['schemas']['WidgetEntry'];
 export type SchemaHeinzelChatInput = components['schemas']['heinzel_chat_Input'];
 export type SchemaHeinzelNewChatInput = components['schemas']['heinzel_new_chat_Input'];
 export type SchemaHeinzelProfileInput = components['schemas']['heinzel_profile_Input'];
+export type SchemaHeinzelProposeCheckInInput = components['schemas']['heinzel_propose_check_in_Input'];
+export type SchemaHeinzelScheduleControlInput = components['schemas']['heinzel_schedule_control_Input'];
 export type SchemaSystemStatePushInput = components['schemas']['system_state_push_Input'];
 export type SchemaSystemStateResetInput = components['schemas']['system_state_reset_Input'];
 export type $defs = Record<string, never>;
@@ -10798,6 +10883,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["heinzel_profile_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_propose_check_in: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_propose_check_in_Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    heinzel_schedule_control: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["heinzel_schedule_control_Input"];
             };
         };
         responses: {

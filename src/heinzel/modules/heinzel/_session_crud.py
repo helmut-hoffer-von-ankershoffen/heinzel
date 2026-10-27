@@ -4,7 +4,7 @@ import base64
 import hashlib
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -26,8 +26,6 @@ from heinzel.modules.heinzel._session_models import (
     WakeScheduleView,
 )
 from heinzel.modules.heinzel._session_protocol import SessionRepository
-from heinzel.modules.system.daemon._schedule import next_slot
-from heinzel.modules.system.daemon._schedule import problem as schedule_problem
 
 _REQUEST = TypeAdapter(RequestId)
 _REVISION = TypeAdapter(int)
@@ -94,12 +92,20 @@ class _CheckInRecord(BaseModel):
 
 
 def _validate_schedule_state(state: _ScheduleState, contracts: list[ContractVersion]) -> _ScheduleState:
-    if state.cron != CHECK_IN_CRON or schedule_problem(state.cron):
+    if state.cron != CHECK_IN_CRON:
         raise ValueError
     ZoneInfo(state.timezone)
     if not any(item.version == state.contract_version for item in contracts):
         raise ValueError
     return state
+
+
+def _next_check_in(now: datetime, zone: ZoneInfo) -> datetime:
+    """Return the next UTC five-minute boundary, displayed in the selected time zone."""
+    current = now.astimezone(UTC)
+    minute = current.minute - current.minute % 5 + 5
+    current = current.replace(minute=0, second=0, microsecond=0) + timedelta(minutes=minute)
+    return current.astimezone(zone)
 
 
 class SessionCrud:
@@ -308,7 +314,7 @@ class SessionCrud:
             contract_version=state.contract_version,
             revision=revision,
             preview_hash=state.preview_hash,
-            next_wake=next_slot(state.cron, self.clock(), zone) if state.status == "active" else None,
+            next_wake=_next_check_in(self.clock(), zone) if state.status == "active" else None,
         )
 
     @staticmethod
