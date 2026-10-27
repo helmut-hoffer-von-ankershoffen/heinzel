@@ -502,7 +502,7 @@ const en = {
   "plugins.modules": "Modules: {modules}",
   "plugins.community": "Community",
   "plugins.custom": "Custom",
-  "plugins.firstParty": "First-party",
+  "plugins.firstParty": "First-Party",
   "plugins.installed": "Installed",
   "plugins.private": "Private",
   "plugins.plugin": "Plugin",

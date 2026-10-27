@@ -234,7 +234,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const plugin = await screen.findByTitle("Show it under Plugins");
     const header = (plugin.closest("div") as HTMLElement).parentElement as HTMLElement;
     expect(within(header).getByTitle("Capability: hz clock")).toBeInTheDocument();
-    expect(header).toHaveTextContent("First-party");
+    expect(header).toHaveTextContent("First-Party");
     expect(header).toHaveTextContent("v0.3.0");
     expect(
       within(header).getByRole("link", { name: "github.com/helmut-hoffer-von-ankershoffen/heinzel" }),
@@ -260,7 +260,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
   it("heads a built-in module's settings with hz and its version", async () => {
     mockApi({ ...answers, "/api/system/info": { version: "0.4.0", modules: [] } });
     renderAt("/doctor?settings=org");
-    expect(await screen.findByRole("link", { name: "First-party" })).toHaveAttribute(
+    expect(await screen.findByRole("link", { name: "First-Party" })).toHaveAttribute(
       "href",
       "https://github.com/helmut-hoffer-von-ankershoffen/heinzel",
     );
@@ -322,7 +322,9 @@ describe("The time zones editor (a list of tables by its schema)", () => {
       within(zones).getByRole("button", { name: /^Name \(Berlin\): Berlin · Europe\/Berlin/ }),
     ).toBeInTheDocument();
     // A plain name is a zone with the default hours.
-    expect(within(zones).getByRole("combobox", { name: "Hours (New York) from" })).toHaveValue("9");
+    const from = within(zones).getByRole("combobox", { name: "Hours (New York) from" });
+    expect(from).toHaveValue("9");
+    expect(from.parentElement).toHaveClass("gap-3");
     await expectAccessible(container);
 
     await user.selectOptions(within(zones).getByRole("combobox", { name: "Hours (Berlin) to" }), "17");

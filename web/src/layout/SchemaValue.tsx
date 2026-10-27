@@ -104,7 +104,7 @@ export function SchemaValue({ id, label, schema, control = controlFor(schema), v
       const [from, to] = pair as [number, number];
       const choice = { kind: "choice", options: control.options } as const;
       return (
-        <span className="flex items-center gap-2">
+        <span className="flex items-center gap-3">
           <SchemaValue
             label={t("settings.from", { what: label })}
             schema={schema}

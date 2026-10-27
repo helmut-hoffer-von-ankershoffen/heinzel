@@ -25,8 +25,10 @@ Chosen option: **original artwork with plain text branding**, because the app's 
 - Use the name Heinzelmännchen without a generic elf emoji in CLI help and API/MCP titles.
 - The tagline is "helpers accelerating product teams", beside the original artwork. CLI help does not repeat the
   brand description below Usage. About information explains the elves from Cologne.
-- The footer shows `vX.Y.Z`, with a bear icon and "built with AI in Berlin" aligned right when space permits.
-  Narrow layouts retain the information through wrapping or the version pane.
+- The CLI footer shows `vX.Y.Z`, with a bear icon and "built with AI in Berlin" aligned right when space permits.
+  Narrow CLI layouts retain that information through wrapping.
+- The web UI footer shows `vX.Y.Z` only. The version pane carries the product description and release details without
+  the AI attribution.
 - Keep the original terminal artwork and UI avatar. Historical ADRs and embedded-workflow markers retain their
   recorded meaning; this changes branding rather than artifact discovery.
 
@@ -37,5 +39,6 @@ Chosen option: **original artwork with plain text branding**, because the app's 
 
 ### Confirmation
 
-`tests/unit/heads/cli_branding_test.py` checks the footer's width and wording and refuses the generic elf emoji in
-head source. The UI footer tests check the same description and attribution.
+`tests/unit/heads/cli_branding_test.py` checks the CLI footer's width and wording and refuses the generic elf emoji in
+head source. The UI footer and version-pane tests check that neither the footer nor the version pane shows the AI
+attribution.
