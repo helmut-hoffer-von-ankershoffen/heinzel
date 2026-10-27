@@ -22,6 +22,10 @@ def test_blank_summary_cannot_start_a_release(tmp_path: Path, intro: str | None,
         stub.chmod(0o755)
     env = dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", CALLS=str(calls))
     env.pop("INTRO", None)
+    # The release target invokes the hook under a parent `make ... INTRO=...`. Do not let GNU make's recursive
+    # command-line overrides make this fresh, intentionally argument-free invocation look like it got a summary.
+    env.pop("MAKEFLAGS", None)
+    env.pop("MAKEOVERRIDES", None)
     if intro is not None:
         env["INTRO"] = intro
     if entry == "workflow":
