@@ -149,19 +149,25 @@ def test_missing_client_does_not_forget_the_persisted_requested_state(setup, mon
     assert result["desired_enabled"]
 
 
-def test_running_web_enable_returns_apply_expectations_until_a_fresh_owner_loads_them(setup):
+def test_running_web_enable_hot_applies_origins_without_a_backend_restart(setup):
     fresh, store = setup
     web_client = client(fresh(), port=9123)
+    external = AUTH | {"host": "workstation.tail-example.ts.net", "origin": ORIGIN}
+    assert web_client.get("/api/tailscale/status", headers=external).status_code == 403
     response = web_client.post("/api/tailscale/enable", json={}, headers=AUTH)
     assert response.status_code == 200, response.text
-    pending = response.json()
-    assert pending["state"] == "apply-required"
-    assert pending["apply_settings"] == {"hz.ui_allowed_origins": [ORIGIN]}
-    assert pending["target"] == "http://127.0.0.1:9123"
+    ready = response.json()
+    assert ready["state"] == "ready"
+    assert ready["apply_settings"] == {}
+    assert ready["target"] == "http://127.0.0.1:9123"
     assert command(fresh(), "enable")["target"] == "http://127.0.0.1:9123"
     assert store.writes == 1  # A separate CLI preserves the observed override; it cannot prove a replacement.
-    ready = client(fresh(), port=9123).get("/api/tailscale/status", headers=AUTH)
-    assert ready.json()["state"] == "ready"
+    assert web_client.get("/api/tailscale/status", headers=external).status_code == 200
+    disabled = web_client.post("/api/tailscale/disable", json={}, headers=AUTH)
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["state"] == "off"
+    assert disabled.json()["apply_settings"] == {}
+    assert web_client.get("/api/tailscale/status", headers=external).status_code == 403
 
 
 @pytest.mark.skipif(os.name != "posix", reason="the terminal needs a POSIX pseudo-terminal")
@@ -288,7 +294,7 @@ def test_disable_removes_only_the_origin_the_plugin_added_and_reads_never_reenab
     response = web_client.post("/api/tailscale/disable", json={}, headers=AUTH)
     assert response.status_code == 200, response.text
     assert response.json()["state"] == "off"
-    assert response.json()["apply_settings"] == {"hz.ui_allowed_origins": [OTHER]}
+    assert response.json()["apply_settings"] == {}
     assert saved()["hz"]["ui_allowed_origins"] == [OTHER]
     assert not saved()["tailscale"]["intent"]["enabled"]
     before = copy.deepcopy(store.config)
