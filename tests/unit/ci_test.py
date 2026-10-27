@@ -424,3 +424,13 @@ def test_electron_ci_runs_when_its_trigger_or_make_target_changes():
     assert "Makefile$" in script
     assert "scripts/sync_template\\.py$" in script
     assert "\\.github/workflows/ci\\.yml$" in script
+
+
+def test_linux_electron_sandbox_target_resolves_the_pnpm_package_location():
+    """pnpm's Electron package may live under .pnpm, so derive its helper from Node resolution."""
+    makefile = (REPO / "Makefile").read_text(encoding="utf-8")
+    recipe = makefile.split("desktop-electron-sandbox:", 1)[1].split("\ndesktop-electron-native:", 1)[0]
+    assert 'require.resolve("electron"' in recipe
+    assert 'require("node:path").resolve("desktop")' in recipe
+    assert 'dirname "$$electron_entry"' in recipe
+    assert "/dist/chrome-sandbox" in recipe

@@ -121,7 +121,11 @@ desktop-electron-test: ## Install the locked Electron runtime and run its unit s
 	pnpm --dir desktop test
 
 desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and mode for CI smoke tests
-	@sandbox=desktop/node_modules/electron/dist/chrome-sandbox; \
+	@electron_entry=$$(node -p 'require.resolve("electron", { paths: [require("node:path").resolve("desktop")] })') || { \
+		echo "::error::Could not resolve the installed Electron package"; \
+		exit 1; \
+	}; \
+	sandbox=$$(dirname "$$electron_entry")/dist/chrome-sandbox; \
 	if [ ! -f "$$sandbox" ]; then \
 		echo "::error::Expected Electron sandbox helper not found at $$sandbox"; \
 		exit 1; \
