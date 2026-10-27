@@ -282,7 +282,7 @@ function Clock({ now }: { now: Date }) {
                           <span className="flex items-baseline gap-2">
                             <span className="truncate text-foreground">{city(zone.zone)}</span>
                             {index === 0 ? (
-                              <span className="rounded-md border border-primary/40 px-1.5 text-[11px] text-primary">
+                              <span className="rounded-md border border-primary/40 px-2 py-0.5 text-[11px] text-primary">
                                 {t("settings.primary")}
                               </span>
                             ) : (

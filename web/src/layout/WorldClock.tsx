@@ -294,7 +294,7 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
                         <span className="inline-flex items-center gap-2">
                           {city(zone.zone)}
                           {index === 0 && (
-                            <span className="rounded-md border border-primary/40 px-1.5 text-[11px] text-primary">
+                            <span className="rounded-md border border-primary/40 px-2 py-0.5 text-[11px] text-primary">
                               {t("settings.primary")}
                             </span>
                           )}
