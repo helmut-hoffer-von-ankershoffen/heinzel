@@ -109,7 +109,56 @@ export async function verifyFooter(page, shots) {
         await more.isVisible(),
         `Hidden footer controls need a visible More button at ${width}px: ${JSON.stringify(hidden.map((part) => part.id))}`,
       );
-      await more.click();
+      await page.waitForFunction(() => {
+        const bar = document.querySelector("footer");
+        const button = bar?.querySelector('[data-footer-content="@more"] button');
+        const anchor = bar?.querySelector('[data-footer-part="@more"]');
+        if (!bar || !button || !anchor || !bar.querySelector('[data-footer-hidden="overflow"]')) return false;
+        const visible = button.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+        const bounds = button.getBoundingClientRect();
+        return visible && bounds.width > 0 && bounds.height > 0 && !anchor.hasAttribute("inert");
+      });
+      try {
+        await more.click({ timeout: 3000 });
+      } catch (error) {
+        const domState = await footer.evaluate((bar) => {
+          const describe = (element) => {
+            if (!(element instanceof HTMLElement)) return null;
+            const style = getComputedStyle(element);
+            return {
+              tag: element.tagName,
+              className: element.className,
+              rect: element.getBoundingClientRect().toJSON(),
+              visibility: style.visibility,
+              display: style.display,
+              opacity: style.opacity,
+              inert: element.hasAttribute("inert"),
+              ariaHidden: element.getAttribute("aria-hidden"),
+            };
+          };
+          const anchor = bar.querySelector('[data-footer-part="@more"]');
+          const button = bar.querySelector('[data-footer-content="@more"] button');
+          return {
+            viewport: { width: innerWidth, height: innerHeight },
+            footer: describe(bar),
+            overflow: [...bar.querySelectorAll('[data-footer-hidden="overflow"]')].map(
+              (item) => item.dataset.footerPart,
+            ),
+            chain: button
+              ? [button, button.parentElement, button.parentElement?.parentElement, anchor].map(describe)
+              : null,
+            hit: button
+              ? document
+                  .elementFromPoint(
+                    button.getBoundingClientRect().x + button.getBoundingClientRect().width / 2,
+                    button.getBoundingClientRect().y + button.getBoundingClientRect().height / 2,
+                  )
+                  ?.outerHTML.slice(0, 300)
+              : null,
+          };
+        });
+        assert.fail(`Could not open footer overflow at ${width}px: ${JSON.stringify(domState)}; ${error.message}`);
+      }
       const popup = page.getByRole("region", { name: "More status items" });
       await popup.waitFor();
       await page.waitForFunction(() => {
