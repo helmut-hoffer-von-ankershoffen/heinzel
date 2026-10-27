@@ -15,6 +15,7 @@ export function createOwnedCli({
   forceStopTimeoutMs = FORCE_STOP_TIMEOUT_MS,
 } = {}) {
   let child = null;
+  let childClosed = false;
   let connection = null;
   let startPromise = null;
   let stopPromise = null;
@@ -49,6 +50,7 @@ export function createOwnedCli({
         reject(error);
       };
       try {
+        childClosed = false;
         child = spawn("hz", ["ui", "--port", "0", "--no-browser"], {
           shell: false,
           windowsHide: true,
@@ -59,6 +61,7 @@ export function createOwnedCli({
         return;
       }
       const ownedChild = child;
+      ownedChild.once("close", () => { childClosed = true; });
       timer = setTimeout(() => fail(new Error("Heinzelmännchen took too long to start its local service.")), startupTimeoutMs);
       onError = () => fail();
       onExit = (code, signal) => {
@@ -98,18 +101,34 @@ export function createOwnedCli({
 
   function stop() {
     if (stopPromise) return stopPromise;
-    stopPromise = (async () => {
+    const stopping = (async () => {
       const ownedChild = child;
-      if (!ownedChild) return;
+      if (!ownedChild) return Object.freeze({ outcome: "not-started", code: null, signal: null, processError: false });
 
-      let closed = ownedChild.closed === true;
+      const hasExitStatus = () => (ownedChild.exitCode !== null && ownedChild.exitCode !== undefined)
+        || (ownedChild.signalCode !== null && ownedChild.signalCode !== undefined);
+      const wasAlreadyExited = childClosed || hasExitStatus();
+      if (wasAlreadyExited) {
+        const priorExit = exitResult && !exitResult.failedToStart ? exitResult : null;
+        return Object.freeze({
+          outcome: "already-exited",
+          code: priorExit?.code ?? ownedChild.exitCode,
+          signal: priorExit?.signal ?? ownedChild.signalCode,
+          processError: Boolean(priorExit?.processError),
+        });
+      }
+
+      let closed = childClosed;
+      let processError = false;
+      let forcedStop = false;
       let resolveClosed;
       const closedPromise = new Promise((resolve) => { resolveClosed = resolve; });
       // Node may emit an asynchronous ChildProcess `error` if a process exits between a status check
       // and kill(). Keep this listener until `close`, including after the bounded wait returns.
-      const onError = () => {};
+      const onError = () => { processError = true; };
       const onClose = () => {
         closed = true;
+        childClosed = true;
         ownedChild.removeListener("error", onError);
         resolveClosed();
       };
@@ -118,7 +137,7 @@ export function createOwnedCli({
         ownedChild.once("close", onClose);
       } else resolveClosed();
 
-      const exited = () => ownedChild.exitCode !== null || ownedChild.signalCode !== null;
+      const exited = hasExitStatus;
       const waitForClose = async (timeoutMs) => {
         if (closed) return true;
         let timer;
@@ -131,18 +150,42 @@ export function createOwnedCli({
         try {
           ownedChild.kill(value);
         } catch {
+          processError = true;
           // The bounded wait below still allows the child to exit or receive the forced signal.
         }
       };
 
       if (!closed && !exited()) signal("SIGTERM");
       if (!(await waitForClose(stopTimeoutMs))) {
-        if (!closed && !exited()) signal("SIGKILL");
+        if (!closed && !exited()) {
+          forcedStop = true;
+          signal("SIGKILL");
+        }
         if (!(await waitForClose(forceStopTimeoutMs))) {
           throw new Error("The local service did not stop after a forced shutdown.");
         }
       }
-    })().catch((error) => {
+
+      const processExit = exitResult && !exitResult.failedToStart
+        ? exitResult
+        : { code: ownedChild.exitCode, signal: ownedChild.signalCode };
+      const code = processExit.code ?? null;
+      const signalCode = processExit.signal ?? null;
+      const outcome = forcedStop
+        ? "forced"
+        : !processError && code === 0 && signalCode === null
+          ? "graceful"
+          : "abnormal";
+      const result = Object.freeze({ outcome, code, signal: signalCode, processError });
+      exitResult = Object.freeze({ code, signal: signalCode, processError });
+      return result;
+    })();
+    stopPromise = stopping.then((result) => {
+      // An abnormal exit has stopped the child, but the caller can retry once to close the app
+      // after reporting it. The retry returns `already-exited`, never a false graceful result.
+      if (result.outcome === "abnormal") stopPromise = null;
+      return result;
+    }).catch((error) => {
       stopPromise = null;
       throw error;
     });
