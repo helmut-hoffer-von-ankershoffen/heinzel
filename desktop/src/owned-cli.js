@@ -120,7 +120,6 @@ export function createOwnedCli({
 
       let closed = childClosed;
       let processError = false;
-      let forcedStop = false;
       let resolveClosed;
       const closedPromise = new Promise((resolve) => { resolveClosed = resolve; });
       // Node may emit an asynchronous ChildProcess `error` if a process exits between a status check
@@ -158,7 +157,6 @@ export function createOwnedCli({
       if (!closed && !exited()) signal("SIGTERM");
       if (!(await waitForClose(stopTimeoutMs))) {
         if (!closed && !exited()) {
-          forcedStop = true;
           signal("SIGKILL");
         }
         if (!(await waitForClose(forceStopTimeoutMs))) {
@@ -171,7 +169,7 @@ export function createOwnedCli({
         : { code: ownedChild.exitCode, signal: ownedChild.signalCode };
       const code = processExit.code ?? null;
       const signalCode = processExit.signal ?? null;
-      const outcome = forcedStop
+      const outcome = signalCode === "SIGKILL"
         ? "forced"
         : !processError && code === 0 && signalCode === null
           ? "graceful"

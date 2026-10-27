@@ -149,6 +149,32 @@ test("shutdown signals only the owned child and escalates after the grace period
   });
 });
 
+test("classifies shutdown from the observed exit when SIGKILL races with a clean exit", async () => {
+  const child = makeChild();
+  child.kill = (signal) => {
+    child.kills.push(signal);
+    if (signal === "SIGKILL") {
+      child.exitCode = 0;
+      child.emit("exit", 0, null);
+      child.emit("close", 0, null);
+      return false;
+    }
+    return true;
+  };
+  const owned = createOwnedCli({ spawn: () => child, stopTimeoutMs: 2, forceStopTimeoutMs: 50 });
+  const starting = owned.start();
+  child.stdout.write(`${url}\n`);
+  await starting;
+
+  assert.deepEqual(await owned.stop(), {
+    outcome: "graceful",
+    code: 0,
+    signal: null,
+    processError: false,
+  });
+  assert.deepEqual(child.kills, ["SIGTERM", "SIGKILL"]);
+});
+
 test("classifies nonzero exit, signal exit and already-exited abnormal child", async (t) => {
   for (const scenario of [
     {
