@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.7.18](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.7.18) - 2026-10-27
 
-Polished footer controls, World Clock presentation, and status panel behavior.
+Added shared managed-runtime authority and polished footer controls, World Clock presentation, and status panels.
 
 ### ✨ Features
 
