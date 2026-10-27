@@ -4,6 +4,8 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { chromium } from "playwright-core";
 
+const ORIGIN = "https://workstation.tail-example.ts.net";
+
 async function openSharing(page) {
   const trigger = page.locator('[data-footer-content="tailscale:sharing"] button').first();
   const more = page.getByRole("button", { name: "More status items", exact: true });
@@ -43,6 +45,18 @@ async function sharingStatus(page) {
     });
     if (!response.ok) throw new Error("Authenticated sharing status must succeed.");
     return response.json();
+  });
+}
+
+async function externalStatus(request, url) {
+  const session = new URLSearchParams(new URL(url).hash.slice(1)).get("token");
+  assert.ok(session);
+  return request.get(new URL("/api/tailscale/status", url).href, {
+    headers: {
+      Authorization: `Bearer ${session}`,
+      Host: new URL(ORIGIN).host,
+      Origin: ORIGIN,
+    },
   });
 }
 
@@ -94,6 +108,7 @@ try {
   await loaded(page);
   const anonymous = await context.request.get(new URL("/api/tailscale/status", url).href);
   assert.equal(anonymous.status(), 401);
+  assert.equal((await externalStatus(context.request, url)).status(), 403);
   let panel = await openSharing(page);
   let control = panel.getByRole("switch", { name: "Share over Tailscale", exact: true });
   assert.equal(await control.getAttribute("aria-checked"), "false");
@@ -111,6 +126,7 @@ try {
   const ready = await sharingStatus(page);
   assert.equal(ready.state, "ready");
   assert.equal(ready.target, `http://127.0.0.1:${new URL(url).port}`);
+  assert.equal((await externalStatus(context.request, url)).status(), 200);
   await panel.getByRole("button", { name: "Copy URL", exact: true }).click();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   assert.equal(new URL(copied).origin, "https://workstation.tail-example.ts.net");
@@ -155,6 +171,7 @@ try {
   const status = await sharingStatus(page);
   assert.equal(status.state, "off");
   assert.equal(status.desired_enabled, false);
+  assert.equal((await externalStatus(context.request, url)).status(), 403);
   assert.deepEqual(status.apply_settings, {});
   assert.deepEqual(mutations, { enable: 1, disable: 1, restart: 0 });
   assert.deepEqual(errors, []);
