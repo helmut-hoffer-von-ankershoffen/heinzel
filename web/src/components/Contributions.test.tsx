@@ -98,6 +98,15 @@ const widgets = [
     refresh: 300,
     widget: { kind: "card", title: "Roadmap", body: "Three things", size: "wide", icon: "cloud-rain" },
   },
+  {
+    ...entry,
+    module: "weather",
+    plugin: "heinzel-weather",
+    id: "weather:today",
+    slots: { today: true },
+    refresh: 900,
+    widget: { kind: "card", title: "Weather", body: "Clear · 18°", icon: "cloud-sun" },
+  },
 ];
 
 const answers = {
@@ -199,6 +208,7 @@ describe("Contributions", () => {
     renderAt("/");
     const card = (await screen.findByText("2/3")).closest("li") as HTMLElement;
     expect(within(card).getByText("Zones at work now")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Weather" })).toBeInTheDocument();
     await user.click(within(card).getByRole("button", { name: "Dismiss Zones at work now" }));
     expect(screen.queryByText("2/3")).not.toBeInTheDocument();
   });

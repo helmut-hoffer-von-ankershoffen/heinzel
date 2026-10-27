@@ -85,7 +85,7 @@ export function TopBar({ chatOpen, onToggleChat, terminalOpen, onToggleTerminal 
           onClick={() => setMenu((open) => !open)}
           aria-haspopup="menu"
           aria-expanded={menu}
-          className="flex max-w-full items-center gap-1.5 rounded-lg px-2 py-1 text-ui font-medium transition-colors hover:bg-accent/70"
+          className="flex max-w-full items-center gap-1.5 rounded-lg py-1 pr-3 pl-2 text-ui font-medium transition-colors hover:bg-accent/70"
         >
           <span className="truncate">{title}</span>
           <ChevronDown aria-hidden className="size-4 shrink-0 text-icon" />

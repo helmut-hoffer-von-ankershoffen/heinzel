@@ -201,6 +201,7 @@ describe("Footer items are icons with a state and a pane", () => {
     const pane = await screen.findByRole("region", { name: "Thing ok" });
     expect(within(pane).getByText("Jobs: 3")).toBeInTheDocument();
     expect(within(pane).getByRole("button", { name: "Logs" })).toBeInTheDocument();
+    expect(pane.querySelector("section > p svg")).toBeNull(); // the trigger color and accessible state already convey status
     await expectAccessible(container);
     fireEvent.mouseLeave(button.parentElement as HTMLElement);
     await new Promise((resolve) => setTimeout(resolve, 250));

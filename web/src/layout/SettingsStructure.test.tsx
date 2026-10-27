@@ -318,9 +318,9 @@ describe("The time zones editor (a list of tables by its schema)", () => {
     const user = userEvent.setup();
     const { container } = renderAt("/doctor?settings=clock");
     const zones = await screen.findByRole("group", { name: "Zones" });
-    expect(
-      within(zones).getByRole("button", { name: /^Name \(Berlin\): Berlin · Europe\/Berlin/ }),
-    ).toBeInTheDocument();
+    expect(within(zones).getByRole("button", { name: /^Name \(Berlin\): Berlin · Europe\/Berlin/ })).toHaveClass(
+      "pr-3.5",
+    );
     // A plain name is a zone with the default hours.
     const from = within(zones).getByRole("combobox", { name: "Hours (New York) from" });
     expect(from).toHaveValue("9");

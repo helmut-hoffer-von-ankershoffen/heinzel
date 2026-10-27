@@ -99,7 +99,7 @@ export function SessionSwitcher({ chat, onNew }: { chat: Chat; onNew: () => void
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label={t("chat.switch", { title: current })}
-        className="flex max-w-full items-center gap-1 rounded-lg px-1.5 py-1 text-ui font-medium transition-colors hover:bg-accent/70 "
+        className="flex max-w-full items-center gap-1 py-1 pr-2.5 pl-1.5 text-ui font-medium transition-colors hover:bg-accent/70 "
       >
         <span className="truncate">{current}</span>
         <ChevronDown aria-hidden className="size-4 shrink-0 text-icon" />
