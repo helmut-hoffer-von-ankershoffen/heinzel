@@ -54,7 +54,9 @@ const dockSlot = () => document.querySelector("[data-sound-dock]") as HTMLElemen
 async function play() {
   const user = userEvent.setup();
   renderAt("/");
-  await user.click(await screen.findByRole("button", { name: /^Play Claude FM$/ }));
+  await user.click(await screen.findByRole("button", { name: /^Choose a soundscape$/ }));
+  const dialog = await screen.findByRole("dialog", { name: "Sound" });
+  await user.click(within(dialog).getByRole("button", { name: "Play Claude FM" }));
   return { user, card: await player() };
 }
 
@@ -78,7 +80,7 @@ describe("the mini-player docked in the sidebar", () => {
     const precedes = (a: Node, b: Node) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
     expect(precedes(nav, dockSlot())).toBe(true);
     const account = dockSlot().nextElementSibling as HTMLElement;
-    expect(within(account).getAllByRole("button", { name: /^Pause Claude FM$/ })).toHaveLength(1);
+    expect(within(account).getAllByRole("button", { name: /^Choose a soundscape$/ })).toHaveLength(1);
     expect(dockSlot().parentElement).toBe(account.parentElement);
   });
 

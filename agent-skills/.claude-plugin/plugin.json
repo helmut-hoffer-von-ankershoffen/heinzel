@@ -1,6 +1,6 @@
 {
   "name": "heinzel",
-  "version": "0.7.18",
+  "version": "0.7.21",
   "description": "Install and use the Heinzelmännchen CLI from your agent: /hz-init sets Heinzelmännchen up, the hz skill teaches agents to drive it.",
   "author": { "name": "Helmut Hoffer von Ankershoffen", "email": "helmuthva@gmail.com" },
   "homepage": "https://github.com/helmut-hoffer-von-ankershoffen/heinzel",

@@ -402,6 +402,11 @@ def test_heinzel_settings_are_guarded_even_without_registered_setting_metadata(o
     assert refusal("system.config", operation, {"key": key}) is not None
 
 
+@pytest.mark.parametrize("operation", ["install", "uninstall"])
+def test_daemon_persistence_cannot_be_confirmed_from_chat(operation):
+    assert refusal("system.daemon", operation, {}) is not None
+
+
 def test_what_the_person_reads_is_built_from_what_runs_and_only_parameters_run(service, store, seen):
     chat = service.open(None)
     forged = ProposedCall(

@@ -257,13 +257,16 @@ def test_mobile_touch_viewports_keep_navigation_settings_and_chat_reachable(envi
             ui.stderr.close()
 
     assert result["evidence"] == "mobile/touch emulation; not physical iPhone Safari"
-    assert len(result["cases"]) == 4
+    assert len(result["cases"]) == 6
     assert {case["name"] for case in result["cases"]} == {
         "narrow-portrait",
         "wide-portrait",
+        "short-portrait",
         "narrow-landscape",
         "wide-landscape",
+        "short-landscape",
     }
+    assert result["dockedPlayer"]["popOutUsable"] is True
 
 
 @pytest.mark.timeout(600)

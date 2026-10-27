@@ -2301,6 +2301,7 @@ $ hz system plugin list [OPTIONS]
 
 **Options**:
 
+* `--fresh / --no-fresh`: Read the installed environment in a fresh interpreter, without reloading this server.  [default: no-fresh]
 * `--format <text|json>`: Output format; defaults to the output_format setting (HZ_OUTPUT_FORMAT), which is text.
 * `--json`: Shorthand for --format json, for scripts and agents.
 * `--help`: Show this message and exit.

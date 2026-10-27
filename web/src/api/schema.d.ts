@@ -795,6 +795,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/daemon/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install and load the launchd agent or systemd timer that ticks every few minutes.
+         * @description Install and load the launchd agent or systemd timer that ticks every few minutes.
+         */
+        post: operations["system_daemon_install"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/daemon/jobs": {
         parameters: {
             query?: never;
@@ -909,6 +929,26 @@ export interface paths {
         get: operations["system_daemon_status"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/daemon/uninstall": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unload and remove the daemon's unit; receipts and logs stay.
+         * @description Unload and remove the daemon's unit; receipts and logs stay.
+         */
+        post: operations["system_daemon_uninstall"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1280,6 +1320,12 @@ export interface paths {
         /**
          * List installed plugins, enabled or not, with their source and the modules and adapters they bring.
          * @description List installed plugins, enabled or not, with their source and the modules and adapters they bring.
+         *
+         *     `fresh` reads the installed environment in a separate interpreter; the default keeps this process's loaded
+         *     inventory. Reading fresh metadata does not load new plugin code into this server or remove a required restart.
+         *
+         *     Raises:
+         *         HeinzelError: If the requested fresh interpreter cannot read the installed environment.
          */
         get: operations["system_plugin_list"];
         put?: never;
@@ -5017,6 +5063,50 @@ export interface components {
              * @description How far back it reads, for methods with a time window.
              */
             window: string | null;
+        };
+        /**
+         * Installed
+         * @description What `install` wrote, or would write, and how it was loaded.
+         */
+        Installed: {
+            /**
+             * Commands
+             * @description Commands run to load the unit; none in a dry run.
+             */
+            commands: string[][];
+            /**
+             * Dry Run
+             * @description Whether nothing was written or loaded.
+             */
+            dry_run: boolean;
+            /**
+             * Executable
+             * Format: path
+             * @description The stable uv tool shim the unit runs.
+             */
+            executable: string;
+            /**
+             * Files
+             * @description Unit files and their content.
+             */
+            files: {
+                [key: string]: string;
+            };
+            /**
+             * Hint
+             * @description What to do next, if anything.
+             */
+            hint?: string | null;
+            /**
+             * Interval Minutes
+             * @description Minutes between ticks.
+             */
+            interval_minutes: number;
+            /**
+             * Platform
+             * @description darwin (launchd) or linux (systemd).
+             */
+            platform: string;
         };
         /**
          * InstalledSkill
@@ -9693,6 +9783,22 @@ export interface components {
             summary: string;
         };
         /**
+         * Uninstalled
+         * @description What `uninstall` removed.
+         */
+        Uninstalled: {
+            /**
+             * Commands
+             * @description Commands run to unload the unit.
+             */
+            commands: string[][];
+            /**
+             * Removed
+             * @description Unit files removed.
+             */
+            removed: string[];
+        };
+        /**
          * Unmaintained
          * @description An input that reads a contract's output no contract maintains.
          */
@@ -10242,6 +10348,7 @@ export type SchemaHeinzelList = components['schemas']['HeinzelList'];
 export type SchemaHeinzelSummary = components['schemas']['HeinzelSummary'];
 export type SchemaHintProblem = components['schemas']['HintProblem'];
 export type SchemaHintView = components['schemas']['HintView'];
+export type SchemaInstalled = components['schemas']['Installed'];
 export type SchemaInstalledSkill = components['schemas']['InstalledSkill'];
 export type SchemaJobDoc = components['schemas']['JobDoc'];
 export type SchemaJobInfo = components['schemas']['JobInfo'];
@@ -10367,6 +10474,7 @@ export type SchemaToggleControl = components['schemas']['ToggleControl'];
 export type SchemaToggled = components['schemas']['Toggled'];
 export type SchemaTokenUsage = components['schemas']['TokenUsage'];
 export type SchemaTool = components['schemas']['Tool'];
+export type SchemaUninstalled = components['schemas']['Uninstalled'];
 export type SchemaUnmaintained = components['schemas']['Unmaintained'];
 export type SchemaUpdateResult = components['schemas']['UpdateResult'];
 export type SchemaUsageReport = components['schemas']['UsageReport'];
@@ -11478,6 +11586,40 @@ export interface operations {
             };
         };
     };
+    system_daemon_install: {
+        parameters: {
+            query?: {
+                /** @description Minutes between ticks, dividing an hour: 1m … 30m, or 1h. */
+                interval?: string;
+                /** @description Only show the unit that would be written. */
+                dry_run?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Installed"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_daemon_jobs: {
         parameters: {
             query?: never;
@@ -11606,6 +11748,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DaemonStatus"];
+                };
+            };
+        };
+    };
+    system_daemon_uninstall: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Uninstalled"];
                 };
             };
         };
@@ -12074,7 +12236,10 @@ export interface operations {
     };
     system_plugin_list: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Read the installed environment in a fresh interpreter, without reloading this server. */
+                fresh?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -12088,6 +12253,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

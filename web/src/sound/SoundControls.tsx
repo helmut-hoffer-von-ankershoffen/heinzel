@@ -1,6 +1,6 @@
-// The sound's controls (ADR 0058): one visible speaker beside the light/dark toggle (a click plays or pauses; a
-// right-click or a long press opens the popover), and the same choices in Settings → General.
-import { Check, Volume, Volume2, VolumeX } from "lucide-react";
+// The sound's controls (ADR 0058): one visible speaker beside the light/dark toggle opens the soundscape picker; the
+// picker also has Play/Pause, and Settings → General exposes the same choices.
+import { Check, Pause, Play, Volume, Volume2, VolumeX } from "lucide-react";
 import { type ReactNode, type RefObject, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { SchemaSoundList, SchemaSoundscapeView } from "@/api/client";
@@ -207,17 +207,35 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
       window.removeEventListener("keydown", onKey);
     };
   }, [open]);
-  const label = !current
-    ? t("sound.choose")
-    : sound.playing
-      ? t("sound.pause", { title: current.title })
-      : t("sound.play", { title: current.title });
+  const label = t("sound.choose");
   const size = compact ? "size-7" : "size-9";
   return (
     <div ref={ref} className={cn("relative flex items-center", compact && "flex-col")}>
       {open && list.data && (
         <Popover anchor={ref} side={compact ? "right" : "above"} dialog={dialog}>
-          <p className="px-2.5 pt-1 pb-1.5 text-ui-sm text-muted-foreground">{t("sound.title")}</p>
+          <div className="flex items-center gap-2 px-2.5 pt-1 pb-1.5">
+            <p className="flex-1 text-ui-sm text-muted-foreground">{t("sound.title")}</p>
+            <button
+              type="button"
+              disabled={!current}
+              onClick={() => {
+                toggle();
+              }}
+              aria-label={
+                current
+                  ? sound.playing
+                    ? t("sound.pause", { title: current.title })
+                    : t("sound.play", { title: current.title })
+                  : t("sound.choose")
+              }
+              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-ui-sm hover:bg-accent disabled:opacity-50"
+            >
+              {sound.playing ? <Pause aria-hidden className="size-4" /> : <Play aria-hidden className="size-4" />}
+              {sound.playing
+                ? t("sound.pause", { title: current?.title ?? "" })
+                : t("sound.play", { title: current?.title ?? "" })}
+            </button>
+          </div>
           <SoundChoices list={list.data} onPicked={() => setOpen(false)} />
           <Notes list={list.data} />
           <hr className="mx-2 my-1 border-border" />
@@ -240,8 +258,7 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
             pressed.current = false; // the long press opened the options: this click doesn't also play
             return;
           }
-          if (!current) setOpen((value) => !value);
-          else toggle();
+          setOpen((value) => !value);
         }}
         onContextMenu={(event) => {
           event.preventDefault();
@@ -262,7 +279,6 @@ export function SoundButton({ compact = false }: { compact?: boolean }) {
         }}
         onPointerUp={() => clearTimeout(press.current)}
         onPointerLeave={() => clearTimeout(press.current)}
-        aria-pressed={current ? sound.playing : undefined}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-keyshortcuts="ArrowDown"
