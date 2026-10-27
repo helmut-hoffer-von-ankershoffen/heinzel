@@ -153,7 +153,7 @@ def api_app(
     app = api.build(
         kernel,
         port=port,
-        allowed_origins=kernel.settings.ui_allowed_origins,
+        allowed_origins=lambda: kernel.resolve(LocalWebRuntime).loaded_origins,
         head=HEAD,
         token=token,
         docs=False,
@@ -191,7 +191,13 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
     if static is not None and not (static / "index.html").is_file():
         raise HeinzelError(NOT_BUILT)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
-    kernel.bind(LocalWebRuntime, LocalWebRuntime(port=port, loaded_origins=kernel.settings.ui_allowed_origins))
+    terminal_sessions = _terminal.OriginSessions()
+    runtime = LocalWebRuntime(
+        port=port,
+        loaded_origins=kernel.settings.ui_allowed_origins,
+        _on_origins_removed=terminal_sessions.revoke_origins,
+    )
+    kernel.bind(LocalWebRuntime, runtime)
     kernel.bind(Progress, StreamProgress())  # operations' events reach the stream of the request that runs them
 
     @app.middleware("http")
@@ -201,7 +207,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
             headers,
             api.LOOPBACK,
             port,
-            allowed_origins=kernel.settings.ui_allowed_origins,
+            allowed_origins=runtime.loaded_origins,
             host_help=api.WEB_HOST_HELP,
         ):
             response: Response = JSONResponse(status_code=api.FORBIDDEN, content={"error": problem})
@@ -216,9 +222,11 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         app,
         token=token,
         port=port,
-        allowed_origins=kernel.settings.ui_allowed_origins,
+        allowed_origins=lambda: runtime.loaded_origins,
         accept=paired.check,
         stopping=stopping,
+        sessions=terminal_sessions,
+        register_origin=runtime.register_if_origin_allowed,
     )  # before the mount, which takes /api
 
     endpoints = api_app(

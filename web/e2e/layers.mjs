@@ -92,7 +92,8 @@ export async function verifyLayers(page, shots, screenshot) {
   const results = [];
   async function front(name, pane) {
     await pane.waitFor();
-    await page.waitForFunction(() => document.fonts.status === "loaded", null, { timeout: 5000 });
+    // The layer assertion is about geometry and hit testing. Some CI hosts keep an optional font request
+    // pending even after the UI is usable; the stable-rectangle check below is the relevant readiness gate.
     const stabilityKey = `__hzStablePane_${++stabilityCheck}`;
     await pane.evaluate((element, key) => element.setAttribute("data-hz-e2e-stability", key), stabilityKey);
     try {
@@ -229,6 +230,32 @@ export async function verifyLayers(page, shots, screenshot) {
     const response = await changelogResponse;
     await response?.finished();
     await versionPane.locator('[aria-busy="false"]').waitFor();
+    const about = versionPane.getByRole("region", { name: "About Heinzelmännchen" });
+    const tagline = about.locator("p");
+    const taglineLayout = await tagline.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      const spans = Array.from(element.querySelectorAll("span"), (span) => {
+        const range = document.createRange();
+        range.selectNodeContents(span);
+        const box = span.getBoundingClientRect();
+        return {
+          text: span.textContent,
+          lines: range.getClientRects().length,
+          width: box.width,
+          height: box.height,
+          display: getComputedStyle(span).display,
+        };
+      });
+      return {
+        lines: spans.reduce((total, span) => total + span.lines, 0),
+        width: rect.width,
+        font: style.font,
+        spans,
+      };
+    });
+    if (taglineLayout.lines !== 2)
+      throw new Error(`Version tagline should occupy two lines, found ${JSON.stringify(taglineLayout)}`);
     await front(`${mode}-version`, versionPane);
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);

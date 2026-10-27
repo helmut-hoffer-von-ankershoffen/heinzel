@@ -171,6 +171,29 @@ try {
           }
         : null,
     );
+    // Simulate the reduced visual viewport a software keyboard creates, and inject a representative iPhone safe
+    // area. Chromium does not expose iOS Safari's keyboard or hardware insets, so this verifies our layout response.
+    await page.evaluate(() => {
+      const root = document.documentElement;
+      root.style.setProperty("--hz-safe-area-top", "47px");
+      root.style.setProperty("--hz-safe-area-right", "0px");
+      root.style.setProperty("--hz-safe-area-bottom", "34px");
+      root.style.setProperty("--hz-safe-area-left", "0px");
+    });
+    const safePadding = await page.getByTestId("app-shell").evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { top: style.paddingTop, bottom: style.paddingBottom };
+    });
+    assert.equal(safePadding.top, "47px", `${spec.name}: shell must respect the top safe area`);
+    assert.equal(safePadding.bottom, "34px", `${spec.name}: shell must respect the home-indicator safe area`);
+    await page.setViewportSize({ width: spec.width, height: Math.max(320, spec.height - 300) });
+    await page.waitForTimeout(100);
+    const keyboardComposerBox = await composer.boundingBox();
+    const reducedViewportHeight = await page.evaluate(() => window.visualViewport?.height ?? innerHeight);
+    assert.ok(
+      keyboardComposerBox && keyboardComposerBox.y + keyboardComposerBox.height <= reducedViewportHeight + 1,
+      `${spec.name}: composer must remain visible after a keyboard-sized viewport reduction: ${JSON.stringify({ keyboardComposerBox, reducedViewportHeight })}`,
+    );
     await page.screenshot({ path: join(shots, `mobile-${spec.name}-chat.png`) });
     result.cases.push({
       ...spec,
@@ -180,6 +203,8 @@ try {
       composer: composerBox,
       navigationSettingsChat: true,
       visualViewportAfterFocus,
+      safeAreaPadding: safePadding,
+      keyboardReducedViewportComposer: keyboardComposerBox,
       touch: context.pages()[0].viewportSize(),
     });
     await context.close();

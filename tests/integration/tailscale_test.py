@@ -3,12 +3,14 @@
 import copy
 import json
 import os
+import time
 import tomllib
 from pathlib import Path
 
 import anyio
 import pytest
 from fastapi.testclient import TestClient
+from fastapi.websockets import WebSocketDisconnect
 from heinzel_tailscale import module
 from heinzel_tailscale._cli import TailscaleCli
 from heinzel_tailscale._localapi import Connection, ServeStore, Snapshot
@@ -20,6 +22,7 @@ from typer.testing import CliRunner
 from heinzel import Config, ConfigEditor, CurrentUser, HeinzelError, Settings
 from heinzel.heads import api, mcp, web
 from heinzel.heads.cli import build
+from heinzel.heads.web import _terminal
 
 pytestmark = pytest.mark.integration
 DNS = "workstation.tail-example.ts.net."
@@ -146,19 +149,104 @@ def test_missing_client_does_not_forget_the_persisted_requested_state(setup, mon
     assert result["desired_enabled"]
 
 
-def test_running_web_enable_returns_apply_expectations_until_a_fresh_owner_loads_them(setup):
+def test_running_web_enable_hot_applies_origins_without_a_backend_restart(setup):
     fresh, store = setup
     web_client = client(fresh(), port=9123)
+    external = AUTH | {"host": "workstation.tail-example.ts.net", "origin": ORIGIN}
+    assert web_client.get("/api/tailscale/status", headers=external).status_code == 403
     response = web_client.post("/api/tailscale/enable", json={}, headers=AUTH)
     assert response.status_code == 200, response.text
-    pending = response.json()
-    assert pending["state"] == "apply-required"
-    assert pending["apply_settings"] == {"hz.ui_allowed_origins": [ORIGIN]}
-    assert pending["target"] == "http://127.0.0.1:9123"
+    ready = response.json()
+    assert ready["state"] == "ready"
+    assert ready["apply_settings"] == {}
+    assert ready["target"] == "http://127.0.0.1:9123"
     assert command(fresh(), "enable")["target"] == "http://127.0.0.1:9123"
     assert store.writes == 1  # A separate CLI preserves the observed override; it cannot prove a replacement.
-    ready = client(fresh(), port=9123).get("/api/tailscale/status", headers=AUTH)
-    assert ready.json()["state"] == "ready"
+    assert web_client.get("/api/tailscale/status", headers=external).status_code == 200
+    disabled = web_client.post("/api/tailscale/disable", json={}, headers=AUTH)
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["state"] == "off"
+    assert disabled.json()["apply_settings"] == {}
+    assert web_client.get("/api/tailscale/status", headers=external).status_code == 403
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the terminal needs a POSIX pseudo-terminal")
+def test_disabling_tailscale_closes_external_terminal_and_keeps_local_terminal_open(setup, monkeypatch, tmp_path):
+    fresh, _store = setup
+    monkeypatch.setenv("SHELL", "/bin/sh")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    web_client = client(fresh(), port=9123)
+    enabled = web_client.post("/api/tailscale/enable", json={}, headers=AUTH)
+    assert enabled.status_code == 200, enabled.text
+    assert enabled.json()["state"] == "ready"
+
+    ticks_file = tmp_path / "external-shell.ticks"
+    quoted_ticks_file = str(ticks_file).replace("'", "'\\''")
+    external_headers = {"host": "workstation.tail-example.ts.net", "origin": ORIGIN}
+    with web_client.websocket_connect("/api/terminal", headers=external_headers) as external:
+        external.send_text(json.dumps({"token": TOKEN}))
+        external.send_bytes(f"while :; do printf x >> '{quoted_ticks_file}'; sleep 0.05; done\n".encode())
+        deadline = time.monotonic() + 5
+        while not ticks_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert ticks_file.exists(), "the external terminal shell did not start"
+
+        local_origin = "http://127.0.0.1:9123"
+        with web_client.websocket_connect(
+            "/api/terminal", headers={"host": "127.0.0.1:9123", "origin": local_origin}
+        ) as local:
+            local.send_text(json.dumps({"token": TOKEN}))
+            disabled = web_client.post("/api/tailscale/disable", json={}, headers=AUTH)
+            assert disabled.status_code == 200, disabled.text
+            assert disabled.json()["state"] == "off"
+
+            def receive_until_closed() -> None:
+                while True:
+                    external.receive_bytes()
+
+            with pytest.raises(WebSocketDisconnect) as closed:
+                receive_until_closed()
+            assert closed.value.code == 1008
+
+            local.send_bytes(b"echo local-terminal-still-open\n")
+            output = b""
+            deadline = time.monotonic() + 3
+            while b"local-terminal-still-open" not in output and time.monotonic() < deadline:
+                output += local.receive_bytes()
+            assert b"local-terminal-still-open" in output
+
+        ticks_after_close = ticks_file.read_bytes()
+        time.sleep(0.3)
+        assert ticks_file.read_bytes() == ticks_after_close, "the shell kept running after its terminal was revoked"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the terminal needs a POSIX pseudo-terminal")
+def test_disabling_tailscale_during_terminal_auth_does_not_start_a_shell(setup, monkeypatch):
+    fresh, _store = setup
+    spawned = False
+
+    def spawn() -> tuple[int, object]:
+        nonlocal spawned
+        spawned = True
+        message = "a shell must not start after its external origin was removed"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(_terminal, "_spawn", spawn)
+    web_client = client(fresh(), port=9123)
+    enabled = web_client.post("/api/tailscale/enable", json={}, headers=AUTH)
+    assert enabled.status_code == 200, enabled.text
+    assert enabled.json()["state"] == "ready"
+
+    external_headers = {"host": "workstation.tail-example.ts.net", "origin": ORIGIN}
+    with web_client.websocket_connect("/api/terminal", headers=external_headers) as external:
+        disabled = web_client.post("/api/tailscale/disable", json={}, headers=AUTH)
+        assert disabled.status_code == 200, disabled.text
+        assert disabled.json()["state"] == "off"
+        external.send_text(json.dumps({"token": TOKEN}))
+        with pytest.raises(WebSocketDisconnect) as closed:
+            external.receive_text()
+        assert closed.value.code == 1008
+    assert not spawned
 
 
 def test_a_new_bound_port_replaces_only_the_previous_exact_owned_target(setup):
@@ -206,7 +294,7 @@ def test_disable_removes_only_the_origin_the_plugin_added_and_reads_never_reenab
     response = web_client.post("/api/tailscale/disable", json={}, headers=AUTH)
     assert response.status_code == 200, response.text
     assert response.json()["state"] == "off"
-    assert response.json()["apply_settings"] == {"hz.ui_allowed_origins": [OTHER]}
+    assert response.json()["apply_settings"] == {}
     assert saved()["hz"]["ui_allowed_origins"] == [OTHER]
     assert not saved()["tailscale"]["intent"]["enabled"]
     before = copy.deepcopy(store.config)

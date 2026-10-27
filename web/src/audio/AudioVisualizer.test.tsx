@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AudioVisualizer } from "./AudioVisualizer";
+import { AudioVisualizer, spectrumGeometry, spectrumLevel } from "./AudioVisualizer";
 import { captureAudio } from "./capture";
 
 vi.mock("./capture", () => ({ captureAudio: vi.fn() }));
@@ -19,6 +19,28 @@ const captured = {
 afterEach(() => vi.clearAllMocks());
 
 describe("AudioVisualizer", () => {
+  it("uses most of the available height for spectrum marks on tall displays", () => {
+    for (const height of [600, 900, 1440]) {
+      const { rows, barHeight } = spectrumGeometry(height);
+      expect((rows * barHeight) / height).toBeGreaterThanOrEqual(0.67);
+    }
+  });
+
+  it("keeps spectrum marks inside the visualizer at short heights", () => {
+    for (const height of [24, 320]) {
+      const { rows, rowHeight, barHeight } = spectrumGeometry(height);
+      expect(rows * rowHeight).toBeLessThanOrEqual(height);
+      expect(barHeight).toBeLessThanOrEqual(rowHeight);
+    }
+  });
+
+  it("makes quiet frequency bins visible without letting levels exceed the scale", () => {
+    expect(spectrumLevel(16)).toBeCloseTo(0.25, 2);
+    expect(spectrumLevel(255)).toBe(1);
+    expect(spectrumLevel(-10)).toBe(0);
+    expect(spectrumLevel(300)).toBe(1);
+  });
+
   it("does not request capture until clicked, then exposes a stop control and stops the stream on unmount", async () => {
     vi.mocked(captureAudio).mockResolvedValue(captured);
     const view = render(<AudioVisualizer />);

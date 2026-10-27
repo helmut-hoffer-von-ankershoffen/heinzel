@@ -18,6 +18,7 @@ from heinzel import (
     HeinzelError,
     Kernel,
     ListWidget,
+    LocalWebRuntime,
     ModuleRecord,
     NavLet,
     NavSettings,
@@ -436,10 +437,19 @@ class UiService:
     def _with_effects[T: BaseModel](self, record: ModuleRecord, value: T) -> tuple[T | None, str | None]:
         """`value` with every effect in it resolved; None and why when one can't work."""
         try:
+            # A web-owned operation can hot-apply settings without changing the startup Settings snapshot. Project
+            # sign-in links only for origins the live listener currently accepts; CLI/MCP keep their configured set.
+            sign_in_origins = self._kernel.settings.ui_allowed_origins
+            try:
+                runtime = self._kernel.resolve(LocalWebRuntime)
+                if runtime.port is not None:
+                    sign_in_origins = runtime.loaded_origins
+            except HeinzelError:
+                pass  # This kernel hosts no web listener, so only its configured origins are valid.
             return _map_effects(
                 value,
                 lambda effect: self.resolve(record, effect),
-                sign_in_origins=self._kernel.settings.ui_allowed_origins,
+                sign_in_origins=sign_in_origins,
             ), None
         except Unusable as exc:
             return None, f"{record.qualname}: {exc}"

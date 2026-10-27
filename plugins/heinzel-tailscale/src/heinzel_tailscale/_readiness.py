@@ -20,3 +20,12 @@ class SharingReadiness:
             return self.user.context().authentication in {"web-session", "web-device"}
         except HeinzelError:
             return False
+
+    def apply_origins(self, origins: frozenset[str]) -> None:
+        """Apply policy only in the process that owns the live web listener.
+
+        CLI and MCP services have no bound listener and must only persist requested state. The web-owned service
+        supplies its current validated origins here after each completed Serve transaction, before reporting status.
+        """
+        if self.runtime.port is not None:
+            self.runtime.apply_origins(origins)

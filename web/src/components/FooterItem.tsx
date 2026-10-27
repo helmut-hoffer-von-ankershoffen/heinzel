@@ -43,6 +43,7 @@ export function FooterItem({
   children,
   align = "right",
   className,
+  popoverClassName,
 }: {
   /** What it says, as its accessible name and the pane's heading. */
   label: string;
@@ -62,6 +63,8 @@ export function FooterItem({
   align?: "left" | "right";
   /** Extra trigger styling for a specific status, such as pulsing when an update is ready. */
   className?: string;
+  /** Optional pane width for content that needs more room than the standard compact footer popover. */
+  popoverClassName?: string;
 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -227,7 +230,10 @@ export function FooterItem({
           >
             <section
               aria-label={label}
-              className="w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
+              className={cn(
+                "w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl",
+                popoverClassName,
+              )}
             >
               <p className="flex items-center gap-2 px-1.5 py-1 font-medium">
                 {Icon && <Shape aria-hidden className={cn("size-3.5 shrink-0", COLOUR[state])} />}

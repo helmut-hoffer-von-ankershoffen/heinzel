@@ -5,6 +5,23 @@ import { join } from "node:path";
 import { chromium } from "playwright-core";
 import { verifyLayers } from "./layers.mjs";
 
+export function navigationFolded() {
+  const sidebar = document.querySelector("aside");
+  // The final animated pixel can make a hidden clock fit again between the geometry snapshot and More's click.
+  return (
+    sidebar.getBoundingClientRect().width <= 57 &&
+    sidebar
+      .getAnimations()
+      .every((animation) => !animation.pending && !["running", "paused"].includes(animation.playState))
+  );
+}
+
+export async function waitForNavigationFold(page) {
+  await page.waitForFunction(navigationFolded);
+  // ResizeObserver queues FooterLayout's measurement in rAF; let the final width reach that React commit too.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+}
+
 export async function verifyFooter(page, shots) {
   await page.locator("#splash").waitFor({ state: "hidden" });
   await page.waitForFunction(() => !document.querySelector("#root")?.hasAttribute("inert"));
@@ -28,8 +45,7 @@ export async function verifyFooter(page, shots) {
   const samples = [];
   for (const width of [1440, 900, 640, 360, 240]) {
     await page.setViewportSize({ width, height: 900 });
-    if (width < 1024)
-      await page.waitForFunction(() => document.querySelector("aside").getBoundingClientRect().width <= 57);
+    if (width < 1024) await waitForNavigationFold(page);
     await page.waitForFunction(() => {
       const bar = document.querySelector("footer");
       if (!bar) return false;

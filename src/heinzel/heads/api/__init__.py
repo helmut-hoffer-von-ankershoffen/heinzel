@@ -59,7 +59,7 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
     *,
     port: int | None = None,
     allowed_hosts: Iterable[str] = (),
-    allowed_origins: frozenset[str] = frozenset(),
+    allowed_origins: frozenset[str] | Callable[[], frozenset[str]] = frozenset(),
     head: str = HEAD,
     token: str | None = None,
     docs: bool = True,
@@ -108,11 +108,12 @@ def build(  # noqa: PLR0913 - the head, where it listens and its credential, all
     @app.middleware("http")
     async def local_only(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         headers = request.headers
+        active_origins = allowed_origins() if callable(allowed_origins) else allowed_origins
         if problem := request_refusal(
             headers,
             hosts,
             port,
-            allowed_origins=allowed_origins,
+            allowed_origins=active_origins,
             host_help=WEB_HOST_HELP if head == "web" else API_HOST_HELP,
         ):
             return JSONResponse(status_code=FORBIDDEN, content={"error": problem})

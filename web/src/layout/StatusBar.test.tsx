@@ -242,7 +242,8 @@ describe("Footer items are icons with a state and a pane", () => {
     const about = within(pane).getByRole("region", { name: "About Heinzelmännchen" });
     expect(within(about).getByRole("img", { name: "Heinzelmännchen" })).toBeInTheDocument();
     expect(about).toHaveTextContent("helpers accelerating product teams, like the little elves from Cologne");
-    expect(within(about).getByText(/helpers accelerating/)).toHaveClass("text-xs");
+    expect(within(about).getByText(/helpers accelerating/).parentElement).toHaveClass("text-[11px]");
+    expect(about.querySelectorAll("p > span")).toHaveLength(2);
     expect(within(about).queryByText("built with AI in Berlin")).not.toBeInTheDocument();
     expect(await within(pane).findByText("Something new")).toBeInTheDocument();
     expect(within(pane).queryByText("What changed in this release")).not.toBeInTheDocument();

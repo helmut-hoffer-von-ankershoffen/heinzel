@@ -370,8 +370,8 @@ function ReleaseNotes({ version }: { version: string }) {
     <div className="px-1.5 pb-1" aria-busy={changelog.isPending}>
       <section aria-label={t("status.about")} className="mb-2 flex items-center gap-2 border-b border-border pb-2">
         <HeinzelAvatar label={t("app.name")} className="h-14 w-9 shrink-0" />
-        <p className="min-w-0 flex-1 text-xs leading-tight font-medium">
-          {t("status.tagline")} {t("status.origin")}
+        <p className="min-w-0 flex-1 text-[11px] leading-tight font-medium">
+          <span className="block">{t("status.tagline")}</span> <span className="block">{t("status.origin")}</span>
         </p>
         <a
           href={`${RELEASES}/v${version}`}
@@ -454,7 +454,13 @@ export function StatusBar() {
     <FooterLayout className="h-[60px] shrink-0 gap-2 overflow-visible border-t-[0.5px] border-foreground/20 px-4 text-ui text-muted-foreground">
       <FooterPart id="@version" pinned className="mr-auto">
         {info.data && (
-          <FooterItem label={`v${info.data.version}`} state="off" text={`v${info.data.version}`} align="left">
+          <FooterItem
+            label={`v${info.data.version}`}
+            state="off"
+            text={`v${info.data.version}`}
+            align="left"
+            popoverClassName="w-[min(28rem,calc(100vw_-_2rem))]"
+          >
             <ReleaseNotes version={info.data.version} />
           </FooterItem>
         )}

@@ -599,10 +599,13 @@ function ActionButton({
 export function HeaderActions() {
   const { entries, updatedAt } = useEntries("actions", "header");
   const { run, dialog } = useEffectRunner();
-  if (!entries.length) return null;
+  // Weather is available through its Preferences section and Today widget; it
+  // does not contribute a header action or weather-map panel.
+  const headerEntries = entries.filter((entry) => entry.module !== "weather");
+  if (!headerEntries.length) return null;
   return (
     <>
-      {entries.map((entry) => (
+      {headerEntries.map((entry) => (
         <ActionButton key={entry.id} entry={entry} updatedAt={updatedAt} run={run} />
       ))}
       {dialog}

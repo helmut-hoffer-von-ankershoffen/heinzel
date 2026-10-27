@@ -218,6 +218,7 @@ class SharingActions:
                 msg = "The exact sharing mapping is not verified; inspect Tailscale before trying again."
                 raise HeinzelError(msg)
             self.editor.write("tailscale.intent", intent.model_copy(update={"phase": "owned"}))
+            self.sharing.readiness.apply_origins(self.sharing.origins())
             return self.sharing.status()
 
     def disable(self) -> SharingState:
@@ -258,6 +259,7 @@ class SharingActions:
                 self.editor.change_list("hz.ui_allowed_origins", remove=(mapping.origin,))
                 # Released mappings are never retried; a later manual mapping/grant cannot become ours again.
                 self.editor.write("tailscale.intent", intent.model_copy(update={"added_origin": False}))
+            self.sharing.readiness.apply_origins(self.sharing.origins())
             return self.sharing.status()
 
 
