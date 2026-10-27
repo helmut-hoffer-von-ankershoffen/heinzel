@@ -8,9 +8,11 @@ import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { ChatProvider } from "@/chat/ChatContext";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
 import { t } from "@/i18n";
+import { OPEN_CHAT } from "@/lib/chatIntent";
 import { OPEN_TERMINAL } from "@/lib/terminal";
 import { useWidth } from "@/lib/useWidth";
 import { cn } from "@/lib/utils";
+import { useVisualViewport } from "@/lib/viewport";
 import { useNoticeStream } from "@/notifications/useNoticeStream";
 import { Onboarding } from "@/onboarding/OnboardingWizard";
 import { SoundEngine } from "@/sound/SoundEngine";
@@ -24,6 +26,7 @@ import { StatusBar } from "./StatusBar";
 import { TerminalPanel } from "./TerminalPanel";
 import { ThemeTokens } from "./ThemeTokens";
 import { TopBar } from "./TopBar";
+import { WorkspacePanels } from "./WorkspacePanels";
 import { WorldClock } from "./WorldClock";
 
 /** A pane's open state, remembered in this browser; without storage it starts from `initial` each time. */
@@ -66,6 +69,7 @@ export function fitsBeside(areaPx: number, remPx: number): boolean {
 }
 
 export function Shell() {
+  useVisualViewport();
   return (
     <ChatProvider>
       <AvatarThemeProvider>
@@ -86,23 +90,19 @@ function Layout() {
   const [chatOpen, setChatOpen] = useRemembered("hz.chat.open", () => true);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalFull, setTerminalFull] = useState(false);
+  const [activePanel, setActivePanel] = useState(() => (window.innerWidth < 1024 ? "page" : "chat"));
+  const [clockRetained, setClockRetained] = useState(false);
   // Getting narrower folds the navigation; getting wider leaves it as the person set it. The chat moves below instead.
   useEffect(() => {
     const fold = () => {
-      if (window.innerWidth < 1024) setNavOpen(false);
+      if (window.innerWidth < 1024) {
+        setNavOpen(false);
+        if (document.activeElement?.closest("footer")) setActivePanel("page");
+      }
     };
     window.addEventListener("resize", fold);
     return () => window.removeEventListener("resize", fold);
   }, [setNavOpen]);
-  // A command chip's "Run" opens the terminal under the chat.
-  useEffect(() => {
-    const open = () => {
-      setChatOpen(true);
-      setTerminalOpen(true);
-    };
-    window.addEventListener(OPEN_TERMINAL, open);
-    return () => window.removeEventListener(OPEN_TERMINAL, open);
-  }, [setChatOpen]);
   const [searchOpen, setSearchOpen] = useState(false);
   useNoticeStream();
   // Home is where the chat is (ADR 0045): going there opens it, beside Today or below it.
@@ -128,13 +128,75 @@ function Layout() {
   const [params, setParams] = useSearchParams();
   const settings = params.get("settings");
   const clockOpen = params.get("panel") === "world-clock";
-  const full = terminalOpen && terminalFull && !clockOpen;
-  const closeClock = () =>
+  useEffect(() => {
+    if (clockOpen) {
+      setClockRetained(true);
+      setActivePanel("world-clock");
+    }
+  }, [clockOpen]);
+  const selectedPanel = clockOpen
+    ? "world-clock"
+    : activePanel === "page" && !beside
+      ? "page"
+      : activePanel === "chat" && chatOpen
+        ? "chat"
+        : activePanel === "terminal" && terminalOpen
+          ? "terminal"
+          : activePanel === "world-clock" && clockRetained
+            ? "world-clock"
+            : chatOpen
+              ? "chat"
+              : terminalOpen
+                ? "terminal"
+                : !beside
+                  ? "page"
+                  : "chat";
+  const route = useLocation().pathname;
+  const previousRoute = useRef(route);
+  useEffect(() => {
+    if (previousRoute.current !== route && !beside) setActivePanel("page");
+    previousRoute.current = route;
+  }, [route, beside]);
+  const full = terminalOpen && terminalFull && selectedPanel === "terminal";
+  const selectPanel = useCallback(
+    (id: string) => {
+      setActivePanel(id);
+      setTerminalFull(false);
+      setParams((current) => {
+        const next = new URLSearchParams(current);
+        if (id === "world-clock") next.set("panel", "world-clock");
+        else if (next.get("panel") === "world-clock") next.delete("panel");
+        return next;
+      });
+    },
+    [setParams],
+  );
+  const closeClock = () => {
+    setClockRetained(false);
     setParams((current) => {
       const next = new URLSearchParams(current);
       next.delete("panel");
       return next;
     });
+  };
+  // Commands select the terminal without discarding the other open workspace panels.
+  useEffect(() => {
+    const open = () => {
+      setChatOpen(true);
+      setTerminalOpen(true);
+      selectPanel("terminal");
+    };
+    const openChat = () => {
+      setChatOpen(true);
+      selectPanel("chat");
+    };
+    window.addEventListener(OPEN_TERMINAL, open);
+    window.addEventListener(OPEN_CHAT, openChat);
+    return () => {
+      window.removeEventListener(OPEN_TERMINAL, open);
+      window.removeEventListener(OPEN_CHAT, openChat);
+    };
+  }, [setChatOpen, selectPanel]);
   const setSettings = (section: string | null) =>
     setParams((current) => {
       const next = new URLSearchParams(current);
@@ -161,7 +223,7 @@ function Layout() {
   return (
     <div
       data-testid="app-shell"
-      className="relative box-border flex h-dvh overflow-clip pt-[var(--hz-safe-area-top,env(safe-area-inset-top,0px))] pr-[var(--hz-safe-area-right,env(safe-area-inset-right,0px))] pb-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))] pl-[var(--hz-safe-area-left,env(safe-area-inset-left,0px))]"
+      className="relative box-border flex h-[min(100dvh,var(--hz-layout-height,100dvh))] overflow-clip pt-[var(--hz-safe-area-top,env(safe-area-inset-top,0px))] pr-[var(--hz-safe-area-right,env(safe-area-inset-right,0px))] pb-[var(--hz-safe-area-bottom,env(safe-area-inset-bottom,0px))] pl-[var(--hz-safe-area-left,env(safe-area-inset-left,0px))]"
     >
       <a
         href="#content"
@@ -190,26 +252,32 @@ function Layout() {
           }
         />
       </aside>
-      <div ref={area} className={cn("relative flex min-w-0 flex-1", beside ? "flex-row" : "flex-col")}>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div ref={area} className={cn("workspace-area relative flex min-w-0 flex-1", beside ? "flex-row" : "flex-col")}>
+        <div inert={full} aria-hidden={full || undefined} className="flex min-h-0 min-w-0 flex-1 flex-col">
           <TopBar
-            chatOpen={chatOpen && !clockOpen}
+            chatOpen={chatOpen && selectedPanel === "chat"}
             onToggleChat={() => {
-              if (clockOpen) {
-                closeClock();
+              if (chatOpen && selectedPanel === "chat") setChatOpen(false);
+              else {
                 setChatOpen(true);
-              } else setChatOpen((open) => !open);
+                selectPanel("chat");
+              }
             }}
-            terminalOpen={terminalOpen && !clockOpen}
+            terminalOpen={terminalOpen && selectedPanel === "terminal"}
             onToggleTerminal={() => {
-              if (clockOpen) {
-                closeClock();
+              if (terminalOpen && selectedPanel === "terminal") {
+                setTerminalOpen(false);
+                setTerminalFull(false);
+              } else {
                 setTerminalOpen(true);
-              } else setTerminalOpen((open) => !open);
+                selectPanel("terminal");
+              }
             }}
           />
           <main
             id="content"
+            inert={!beside && selectedPanel !== "page"}
+            aria-hidden={!beside && selectedPanel !== "page" ? true : undefined}
             tabIndex={-1}
             className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]"
           >
@@ -217,56 +285,76 @@ function Layout() {
           </main>
           <div ref={besideFooter} hidden={!beside} className="shrink-0" />
         </div>
-        {(chatOpen || terminalOpen || clockOpen) && (
-          // One panel: the chat on top, the terminal under it, each alone when the other is closed. Beside the screen
-          // it is a column; below it, the same stack across the width. In full screen the terminal covers the screen
-          // and the panel, and the chat stays mounted with its conversation.
+        {(chatOpen || terminalOpen || clockOpen || clockRetained) && (
+          // One selected workspace panel; the same mounted contents move between desktop and phone layouts.
           <div
             data-placement={beside ? "beside" : "below"}
+            data-active={selectedPanel}
             className={cn(
-              "flex flex-col bg-background",
+              "workspace-panel flex min-h-0 flex-col bg-background",
               full
                 ? "absolute inset-0"
                 : beside
                   ? "w-96 shrink-0 border-l border-border"
-                  : "h-[min(36rem,55%)] shrink-0 border-t border-border",
+                  : selectedPanel === "page"
+                    ? "shrink-0 border-t border-border"
+                    : "absolute inset-x-0 top-12 bottom-0 border-t border-border",
             )}
           >
-            {clockOpen && (
-              <aside aria-label={t("worldClock.panel")} className="min-h-0 flex-1">
-                <WorldClock onClose={closeClock} />
-              </aside>
-            )}
-            {chatOpen && (
-              <aside
-                hidden={full || clockOpen}
-                aria-label={t("chat.title")}
-                className={cn("min-h-0 flex-1", (full || clockOpen) && "hidden")}
-              >
-                <ChatPanel onCollapse={() => setChatOpen(false)} />
-              </aside>
-            )}
-            {terminalOpen && (
-              <div
-                className={cn(
-                  "min-h-0",
-                  clockOpen && "hidden",
-                  chatOpen && !full ? "h-1/2 border-t border-border" : "flex-1",
-                )}
-              >
-                <TerminalPanel
-                  full={terminalFull}
-                  onToggleFull={() => setTerminalFull((value) => !value)}
-                  onClose={() => {
-                    setTerminalOpen(false);
-                    setTerminalFull(false);
-                  }}
-                />
-              </div>
-            )}
+            <WorkspacePanels
+              active={selectedPanel}
+              onSelect={selectPanel}
+              panels={[
+                ...(!beside ? [{ id: "page", title: t("workspace.page"), content: null }] : []),
+                ...(chatOpen
+                  ? [
+                      {
+                        id: "chat",
+                        title: t("chat.title"),
+                        content: (
+                          <aside aria-label={t("chat.title")} className="h-full min-h-0">
+                            <ChatPanel onCollapse={() => setChatOpen(false)} />
+                          </aside>
+                        ),
+                      },
+                    ]
+                  : []),
+                ...(terminalOpen
+                  ? [
+                      {
+                        id: "terminal",
+                        title: t("terminal.title"),
+                        content: (
+                          <TerminalPanel
+                            full={terminalFull}
+                            onToggleFull={() => setTerminalFull((value) => !value)}
+                            onClose={() => {
+                              setTerminalOpen(false);
+                              setTerminalFull(false);
+                            }}
+                          />
+                        ),
+                      },
+                    ]
+                  : []),
+                ...(clockOpen || clockRetained
+                  ? [
+                      {
+                        id: "world-clock",
+                        title: t("worldClock.title"),
+                        content: (
+                          <aside aria-label={t("worldClock.panel")} className="h-full min-h-0">
+                            <WorldClock onClose={closeClock} />
+                          </aside>
+                        ),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </div>
         )}
-        <div ref={belowFooter} hidden={beside} className="shrink-0" />
+        <div ref={belowFooter} hidden={beside || selectedPanel !== "page"} className="shrink-0" />
         {/* One mounted footer: moving its host preserves controls when the side panel moves below. */}
         {createPortal(<StatusBar />, footerHost)}
       </div>

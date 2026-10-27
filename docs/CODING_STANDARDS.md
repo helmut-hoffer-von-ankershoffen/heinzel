@@ -139,3 +139,21 @@ The `heinzel.testing` pytest plugin enforces the markers and the timeouts below,
 - Every significant decision is an [ADR](adr/) in MADR format, numbered, never rewritten once accepted — superseded.
 - README explains how to use Heinzelmännchen; AGENTS.md how to work on it; this file how to write code for it.
 - Docs are part of the change: a pull request that changes behaviour updates the docs in the same commit.
+
+## Mobile UI
+
+Every screen and overlay must remain usable at phone portrait and landscape sizes, including a software keyboard,
+pinch zoom and device safe areas. New UI uses the shared `AnchoredPopover` for dropdowns, `viewport-overlay` for
+modal backdrops, and `lib/viewport.ts` / `lib/placement.ts` for measured overlays. Full-height layouts use the shell's
+scale-normalized visual height. Form fields on touch devices retain at least 16px text; do not disable user zoom.
+Keep one scroll owner per pane, make flex children shrink with `min-h-0` / `min-w-0`, and scroll oversized content
+inside its pane. An expanded menu must not hide its own trigger or dismiss control.
+
+`mobile-standards.test.ts` rejects layout-viewport heights and independent absolute dropdowns. The mobile browser
+sweep discovers static router paths and settings sections automatically; add interactive flows there when introducing a
+new panel, menu or control. Right-side content uses `WorkspacePanels` descriptors with stable ids: one selected
+view, mounted state preserved while hidden, and Page available on phones; see ADR 0089. Exercise both navigation widths, chat, terminal, all settings, footer panes, safe areas,
+zoom and visual-only keyboard shrink at the six phone viewports. Inspect saved screenshots as well as assertions.
+Run `HZ_SCREENSHOTS=/tmp/hz-mobile-proof uv run pytest tests/e2e/web_ui_test.py -q`; also run the mobile test with
+`HZ_BROWSER_ENGINE=webkit` after installing WebKit with `uv run --script scripts/web_build.py exec playwright-core install webkit`.
+These are browser-engine emulations; physical iPhone Safari remains a separate verification when available.

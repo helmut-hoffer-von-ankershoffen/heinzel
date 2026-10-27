@@ -13,8 +13,9 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { t } from "@/i18n";
+import { placePopover, popoverHeight } from "@/lib/placement";
 import { cn } from "@/lib/utils";
-import { placePopover } from "@/sound/dock";
+import { watchViewport } from "@/lib/viewport";
 import { fitFooter, footerWidths } from "./footerFit";
 
 export const FOOTER_MORE = "@more";
@@ -325,7 +326,7 @@ export function FooterMore() {
     const position = () => {
       if (!trigger.current) return;
       const size = panel.getBoundingClientRect();
-      const maxHeight = Math.max(1, window.innerHeight - 16);
+      const maxHeight = popoverHeight(trigger.current.getBoundingClientRect());
       const next = {
         ...placePopover(
           trigger.current.getBoundingClientRect(),
@@ -340,7 +341,7 @@ export function FooterMore() {
     position();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(position);
     observer?.observe(panel);
-    window.addEventListener("resize", position);
+    const unwatchViewport = watchViewport(position);
     window.addEventListener(FOOTER_RELOCATED, position);
     window.addEventListener("scroll", position, true);
     const frame = requestAnimationFrame(() => panel.querySelector<HTMLElement>("button,a,input")?.focus());
@@ -361,7 +362,7 @@ export function FooterMore() {
       reposition.current = null;
       observer?.disconnect();
       cancelAnimationFrame(frame);
-      window.removeEventListener("resize", position);
+      unwatchViewport();
       window.removeEventListener(FOOTER_RELOCATED, position);
       window.removeEventListener("scroll", position, true);
       window.removeEventListener("mousedown", outside);
@@ -391,7 +392,7 @@ export function FooterMore() {
             id={id}
             ref={panelRef}
             aria-label={t("status.more")}
-            className="fixed z-(--layer-popover) flex w-72 max-w-[calc(100vw-2rem)] flex-col overflow-y-auto rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
+            className="viewport-popover fixed z-(--layer-popover) flex w-72 max-w-[calc(var(--hz-viewport-width,100vw)-2rem)] flex-col overflow-y-auto rounded-xl border border-border bg-popover p-2 text-sm text-foreground shadow-xl"
             style={at}
           />,
           document.body,

@@ -6,6 +6,7 @@ import { Check, ChevronDown } from "lucide-react";
 import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import type { ModelChoice } from "@/api/chat";
 import { useAiModels } from "@/api/queries";
+import { AnchoredPopover } from "@/components/AnchoredPopover";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -98,12 +99,14 @@ export function ModelPicker({ value, onChange, disabled }: Props) {
         <ChevronDown aria-hidden />
       </button>
       {open && (
-        // biome-ignore lint/a11y/noStaticElementInteractions: Escape closes the popover from anywhere inside it
-        <div
-          ref={panel}
+        <AnchoredPopover
+          focusFirst
+          anchor={trigger}
+          side="above"
+          contentRef={panel}
           id={panelId}
           onKeyDown={onEscape}
-          className="absolute bottom-7 left-0 z-(--layer-popover) w-64 rounded-lg border border-border bg-popover p-1 shadow-md"
+          className="w-64 p-1"
         >
           <fieldset aria-label={t("chat.modelMenu", { access: list.title })}>
             <Option label={t("chat.modelDefault")} chosen={!value.model} onPick={() => pick({ model: "" })} />
@@ -162,7 +165,7 @@ export function ModelPicker({ value, onChange, disabled }: Props) {
               </form>
             )}
           </div>
-        </div>
+        </AnchoredPopover>
       )}
     </div>
   );

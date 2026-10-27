@@ -120,14 +120,14 @@ export function OnboardingWizard({ progress, onProgress, onClose }: Props) {
     }
   };
   return (
-    <div className="fixed inset-0 z-(--layer-modal) flex items-center justify-center bg-black/50 p-4">
+    <div className="viewport-overlay fixed z-(--layer-modal) flex items-center justify-center bg-black/50 p-4">
       <div
         ref={dialog}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         onKeyDown={keys}
-        className="flex h-[min(44rem,calc(100vh-2rem))] w-[min(56rem,100%)] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
+        className="flex h-[min(44rem,100%)] w-[min(56rem,100%)] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
       >
         <nav
           aria-label={t("onboarding.steps")}

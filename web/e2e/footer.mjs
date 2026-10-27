@@ -45,7 +45,11 @@ export async function verifyFooter(page, shots) {
   const samples = [];
   for (const width of [1440, 900, 640, 360, 240]) {
     await page.setViewportSize({ width, height: 900 });
-    if (width < 1024) await waitForNavigationFold(page);
+    if (width < 1024) {
+      await waitForNavigationFold(page);
+      const pageTab = page.getByRole("tab", { name: "Page", exact: true });
+      if (await pageTab.isVisible()) await pageTab.click();
+    }
     await page.waitForFunction(() => {
       const bar = document.querySelector("footer");
       if (!bar) return false;

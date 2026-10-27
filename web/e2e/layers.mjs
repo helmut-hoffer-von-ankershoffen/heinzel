@@ -85,12 +85,12 @@ export async function verifyLayers(page, shots, screenshot) {
   // The application uses its main/nav scrollers. A browser must never scroll the whole shell and strand its
   // account menu above the viewport (the Linux runner reproduced scrollY=710 after starting docked playback).
   await page.evaluate(() => {
-    const shell = document.querySelector("main").closest(".h-dvh");
+    const shell = document.querySelector("main").closest('[data-testid="app-shell"]');
     shell.scrollTop = 710;
     window.scrollTo(0, document.documentElement.scrollHeight);
   });
   await page.waitForFunction(
-    () => scrollY === 0 && document.querySelector("main").closest(".h-dvh").scrollTop === 0,
+    () => scrollY === 0 && document.querySelector("main").closest('[data-testid="app-shell"]').scrollTop === 0,
     null,
     { timeout: 5000 },
   );

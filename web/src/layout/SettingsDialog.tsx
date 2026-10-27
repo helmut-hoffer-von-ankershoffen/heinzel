@@ -54,7 +54,7 @@ export function SettingsDialog({ section, initialQuery, onSection, onClose }: Pr
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a click on the backdrop closes it; Escape and the close button do for keyboards
     <div
-      className="fixed inset-0 z-(--layer-modal) flex items-center justify-center bg-black/50 p-4"
+      className="viewport-overlay fixed z-(--layer-modal) flex items-center justify-center bg-black/50 p-4"
       onMouseDown={onClose}
     >
       <div
@@ -63,7 +63,7 @@ export function SettingsDialog({ section, initialQuery, onSection, onClose }: Pr
         aria-labelledby={titleId}
         onKeyDown={onKeyDown}
         onMouseDown={(event) => event.stopPropagation()}
-        className="flex h-[min(52rem,calc(100vh-2rem))] w-[min(64rem,100%)] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl"
+        className="flex h-[min(52rem,100%)] w-[min(64rem,100%)] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl"
       >
         <header className="flex h-12 shrink-0 items-center border-b border-border pr-2 pl-5">
           <h2 id={titleId} className="text-ui font-medium">
@@ -176,6 +176,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
         <label className="mb-2 flex flex-col gap-1 text-sm sm:hidden">
           <span>{t("settings.page")}</span>
           <select
+            aria-label={t("settings.page")}
             value={current}
             onChange={(event) => go(event.target.value)}
             className="h-9 w-full rounded-lg border border-border bg-input px-2 pr-8 text-ui"
@@ -207,7 +208,10 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
           {heading("computer", "settings.thisComputer")}
         </div>
       </nav>
-      <div className="min-w-0 flex-1 overflow-y-auto border-l border-border px-6 pt-5 pb-10 max-sm:border-l-0 max-sm:px-4">
+      <div
+        data-settings-content
+        className="min-w-0 flex-1 overflow-y-auto border-l border-border px-6 pt-5 pb-10 max-sm:border-l-0 max-sm:px-4"
+      >
         {needle ? (
           <>
             {pageHits.length > 0 && (

@@ -677,6 +677,8 @@ const en = {
   "chat.untitled": "Untitled chat",
   "chat.start": "Start",
   "chat.recent": "Recent chats",
+  "workspace.page": "Page",
+  "workspace.panels": "Workspace panels",
   "chat.sessions": "Your chats",
   "chat.switch": "{title}: switch chats",
   "chat.searchSessions": "Search chats",

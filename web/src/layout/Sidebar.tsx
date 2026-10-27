@@ -1,3 +1,4 @@
+import { viewportBounds, watchViewport } from "@/lib/viewport";
 // The left sidebar: home and search on top, the navigation tree in the middle, profile and settings at the bottom.
 // Collapsed, it becomes a rail of icons with the same screens in the same order.
 
@@ -27,9 +28,10 @@ import { useContracts, useExpert, useNavigation, useProfile, useSetExpert } from
 import { ICONS, StatusItems, useEffectRunner } from "@/components/Contributions";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
+import { placePopover } from "@/lib/placement";
 import { cn } from "@/lib/utils";
 import { InstallApp } from "@/pwa/InstallApp";
-import { placePopover, registerSlot } from "@/sound/dock";
+import { registerSlot } from "@/sound/dock";
 import { SoundButton } from "@/sound/SoundControls";
 import { Branding } from "./Branding";
 import { BellButton } from "./NotificationCenter";
@@ -242,6 +244,7 @@ function Rail({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
         ))}
         <ProviderNavigation compact />
       </nav>
+      <div ref={registerSlot} data-sound-dock data-sound-compact="true" className="shrink-0" />
       <Footer compact />
     </div>
   );
@@ -341,7 +344,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
     if (!anchor || !pane) return;
     const place = () => {
       const box = pane.getBoundingClientRect();
-      const maxHeight = Math.max(1, window.innerHeight - 16);
+      const maxHeight = Math.max(1, viewportBounds().height - 16);
       setAt({
         ...placePopover(
           anchor.getBoundingClientRect(),
@@ -356,11 +359,11 @@ function Footer({ compact = false }: { compact?: boolean }) {
     observer?.observe(pane);
     observer?.observe(anchor);
     if (ref.current?.parentElement) observer?.observe(ref.current.parentElement);
-    window.addEventListener("resize", place);
+    const unwatchViewport = watchViewport(place);
     window.addEventListener("scroll", place, true);
     return () => {
       observer?.disconnect();
-      window.removeEventListener("resize", place);
+      unwatchViewport();
       window.removeEventListener("scroll", place, true);
     };
   }, [open, compact]);
@@ -399,7 +402,7 @@ function Footer({ compact = false }: { compact?: boolean }) {
             ref={menu}
             role="menu"
             style={at ?? { left: 0, top: 0, visibility: "hidden" }}
-            className="fixed z-(--layer-popover) w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl"
+            className="viewport-popover fixed z-(--layer-popover) w-64 max-w-[calc(var(--hz-viewport-width,100vw)-1rem)] overflow-y-auto rounded-xl border border-border bg-popover p-1.5 shadow-xl"
           >
             {me?.email && <p className="truncate px-2.5 pt-1 pb-1.5 text-ui-sm text-muted-foreground">{me.email}</p>}
             <MenuLink to="?settings=" icon={Settings} onSelect={close} shortcut="⌘,">
