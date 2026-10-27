@@ -163,6 +163,7 @@ function Layout() {
     previousRoute.current = route;
   }, [route, beside]);
   const full = terminalOpen && terminalFull && selectedPanel === "terminal";
+  const flowingClock = !beside && !full && selectedPanel === "world-clock";
   const selectPanel = useCallback(
     (id: string) => {
       setActivePanel(id);
@@ -257,8 +258,18 @@ function Layout() {
           }
         />
       </aside>
-      <div ref={area} className={cn("workspace-area relative flex min-w-0 flex-1", beside ? "flex-row" : "flex-col")}>
-        <div inert={full} aria-hidden={full || undefined} className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        ref={area}
+        className={cn(
+          "workspace-area relative flex min-w-0 flex-1",
+          beside ? "flex-row" : flowingClock ? "flex-col overflow-y-auto" : "flex-col",
+        )}
+      >
+        <div
+          inert={full}
+          aria-hidden={full || undefined}
+          className={cn("flex min-w-0 flex-col", flowingClock ? "min-h-full shrink-0" : "min-h-0 flex-1")}
+        >
           <TopBar
             chatOpen={chatOpen && selectedPanel === "chat"}
             onToggleChat={() => {
@@ -281,10 +292,13 @@ function Layout() {
           />
           <main
             id="content"
-            inert={!beside && selectedPanel !== "page"}
-            aria-hidden={!beside && selectedPanel !== "page" ? true : undefined}
+            inert={!beside && selectedPanel !== "page" && !flowingClock}
+            aria-hidden={!beside && selectedPanel !== "page" && !flowingClock ? true : undefined}
             tabIndex={-1}
-            className="min-h-0 flex-1 overflow-y-auto bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]"
+            className={cn(
+              "flex-1 bg-[linear-gradient(to_bottom,var(--color-main-tint),transparent_18rem),var(--theme-backdrop)]",
+              !flowingClock && "min-h-0 overflow-y-auto",
+            )}
           >
             <Outlet />
           </main>
@@ -301,12 +315,13 @@ function Layout() {
                 ? "absolute inset-0"
                 : beside
                   ? "w-96 shrink-0 border-l border-border"
-                  : selectedPanel === "page"
+                  : selectedPanel === "page" || flowingClock
                     ? "shrink-0 border-t border-border"
                     : "absolute inset-x-0 top-12 bottom-0 border-t border-border",
             )}
           >
             <WorkspacePanels
+              flowing={flowingClock}
               active={selectedPanel}
               onSelect={selectPanel}
               panels={[
@@ -348,8 +363,8 @@ function Layout() {
                         id: "world-clock",
                         title: t("worldClock.title"),
                         content: (
-                          <aside aria-label={t("worldClock.panel")} className="h-full min-h-0">
-                            <WorldClock onClose={closeClock} />
+                          <aside aria-label={t("worldClock.panel")} className={flowingClock ? "" : "h-full min-h-0"}>
+                            <WorldClock onClose={closeClock} flowing={flowingClock} />
                           </aside>
                         ),
                       },
@@ -359,7 +374,7 @@ function Layout() {
             />
           </div>
         )}
-        <div ref={belowFooter} hidden={beside || selectedPanel !== "page"} className="shrink-0" />
+        <div ref={belowFooter} hidden={beside || (selectedPanel !== "page" && !flowingClock)} className="shrink-0" />
         {/* One mounted footer: moving its host preserves controls when the side panel moves below. */}
         {createPortal(<StatusBar />, footerHost)}
       </div>

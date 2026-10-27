@@ -5,9 +5,9 @@ import { cn } from "@/lib/utils";
 
 export type WorkspacePanel = { id: string; title: string; content: ReactNode };
 
-type Props = { panels: WorkspacePanel[]; active: string; onSelect: (id: string) => void };
+type Props = { panels: WorkspacePanel[]; active: string; onSelect: (id: string) => void; flowing?: boolean };
 
-export function WorkspacePanels({ panels, active, onSelect }: Props) {
+export function WorkspacePanels({ panels, active, onSelect, flowing = false }: Props) {
   const prefix = useId();
   const tabs = useRef(new Map<string, HTMLButtonElement>());
   const previous = useRef<string | undefined>(undefined);
@@ -83,7 +83,11 @@ export function WorkspacePanels({ panels, active, onSelect }: Props) {
           aria-labelledby={panels.length > 1 ? `${prefix}-${panel.id}-tab` : undefined}
           aria-label={panels.length === 1 ? panel.title : undefined}
           hidden={panel.id !== selected}
-          className={cn("min-h-0 min-w-0 flex-1 overflow-hidden", panel.id !== selected && "hidden")}
+          className={cn(
+            "min-w-0",
+            flowing ? "shrink-0" : "min-h-0 flex-1 overflow-hidden",
+            panel.id !== selected && "hidden",
+          )}
         >
           {panel.content}
         </div>
