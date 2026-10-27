@@ -5,7 +5,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from heinzel import Module, Prompter
+from heinzel import CurrentUser, HeinzelError, Module, Prompter
 from heinzel.modules.system.plugin._models import (
     AvailablePlugin,
     PluginCandidate,
@@ -31,9 +31,29 @@ Distribution = Annotated[str, Field(description="Distribution name, as `hz syste
 
 
 @module.operation(name="list", render=render_list)
-def list_(service: PluginService) -> list[PluginInfo]:
-    """List installed plugins, enabled or not, with their source and the modules and adapters they bring."""
-    return service.installed()
+def list_(
+    service: PluginService,
+    user: CurrentUser,
+    fresh: Annotated[
+        bool,
+        Field(description="Read the installed environment in a fresh interpreter, without reloading this server."),
+    ] = False,
+) -> list[PluginInfo]:
+    """List installed plugins, enabled or not, with their source and the modules and adapters they bring.
+
+    `fresh` reads the installed environment in a separate interpreter; the default keeps this process's loaded
+    inventory. Reading fresh metadata does not load new plugin code into this server or remove a required restart.
+
+    Raises:
+        HeinzelError: If the requested fresh interpreter cannot read the installed environment.
+    """
+    if fresh:
+        try:
+            user.context()
+        except HeinzelError as error:
+            message = "Refreshing the installed plugin inventory requires an authenticated head"
+            raise HeinzelError(message) from error
+    return service.installed(fresh=fresh)
 
 
 @module.operation(read_only=False, heads=CHANGES, render=render_change)

@@ -1280,6 +1280,12 @@ export interface paths {
         /**
          * List installed plugins, enabled or not, with their source and the modules and adapters they bring.
          * @description List installed plugins, enabled or not, with their source and the modules and adapters they bring.
+         *
+         *     `fresh` reads the installed environment in a separate interpreter; the default keeps this process's loaded
+         *     inventory. Reading fresh metadata does not load new plugin code into this server or remove a required restart.
+         *
+         *     Raises:
+         *         HeinzelError: If the requested fresh interpreter cannot read the installed environment.
          */
         get: operations["system_plugin_list"];
         put?: never;
@@ -12074,7 +12080,10 @@ export interface operations {
     };
     system_plugin_list: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Read the installed environment in a fresh interpreter, without reloading this server. */
+                fresh?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -12088,6 +12097,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginInfo"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -33,7 +33,7 @@ from heinzel import (
 module = Module("clock", "World Clock: what time it is for everyone on the team.")
 
 module.nav(
-    title="World Clock",
+    title="World clock",
     icon="clock",
     settings=NavSettings(sections=("clock",), group="preferences"),
     sidebar=Navigate(path="/?panel=world-clock"),

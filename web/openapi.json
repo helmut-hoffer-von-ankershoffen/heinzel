@@ -16803,8 +16803,22 @@
     },
     "/system/plugin/list": {
       "get": {
-        "description": "List installed plugins, enabled or not, with their source and the modules and adapters they bring.",
+        "description": "List installed plugins, enabled or not, with their source and the modules and adapters they bring.\n\n`fresh` reads the installed environment in a separate interpreter; the default keeps this process's loaded\ninventory. Reading fresh metadata does not load new plugin code into this server or remove a required restart.\n\nRaises:\n    HeinzelError: If the requested fresh interpreter cannot read the installed environment.",
         "operationId": "system_plugin_list",
+        "parameters": [
+          {
+            "description": "Read the installed environment in a fresh interpreter, without reloading this server.",
+            "in": "query",
+            "name": "fresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Read the installed environment in a fresh interpreter, without reloading this server.",
+              "title": "Fresh",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -16819,6 +16833,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List installed plugins, enabled or not, with their source and the modules and adapters they bring.",

@@ -17,7 +17,7 @@ it("offers a compact one-click update only after a deliberate gesture", async ()
   mockApi({ ...shell, "/api/update-status": status });
   const user = userEvent.setup();
   renderAt("/");
-  const icon = await screen.findByRole("button", { name: "Update hz and plugins, warning" });
+  const icon = await screen.findByRole("button", { name: "Update hz and plugins · Update available, warning" });
   expect(icon).toHaveClass("animate-pulse", "text-bad");
   await user.hover(icon);
   expect(startUpdate).not.toHaveBeenCalled();
@@ -28,7 +28,7 @@ it("offers a compact one-click update only after a deliberate gesture", async ()
 it("shows a green update control when the installed version is current", async () => {
   mockApi({ ...shell, "/api/update-status": { ...status, latest: status.current, available: false } });
   renderAt("/");
-  const icon = await screen.findByRole("button", { name: "Updates, OK" });
+  const icon = await screen.findByRole("button", { name: "Up to date, OK" });
   await waitFor(() => {
     expect(icon).toHaveClass("text-ok");
     expect(icon).not.toHaveClass("animate-pulse", "text-bad");
@@ -44,7 +44,7 @@ it("shows a manual-install reason instead of overriding a deliberate pin", async
   });
   const user = userEvent.setup();
   renderAt("/");
-  await user.click(await screen.findByRole("button", { name: "Updates, warning" }));
+  await user.click(await screen.findByRole("button", { name: "Update available, warning" }));
   expect(await screen.findByText(/Deliberate pin/)).toBeInTheDocument();
   expect(startUpdate).not.toHaveBeenCalled();
 });
@@ -61,7 +61,7 @@ it("does not start by itself and keeps the mounted Composer draft across the upd
     preserveUpdateWork();
     return "Reloading";
   });
-  await user.click(await screen.findByRole("button", { name: "Update hz and plugins, warning" }));
+  await user.click(await screen.findByRole("button", { name: "Update hz and plugins · Update available, warning" }));
   expect(sessionStorage.getItem("hz.update.composer")).toContain("Keep this draft through the update");
   first.unmount();
 
@@ -74,7 +74,7 @@ it("reports an installer failure and never retries installation without another 
   vi.mocked(startUpdate).mockRejectedValueOnce(new Error("Installer failed before changing hz."));
   const user = userEvent.setup();
   renderAt("/");
-  await user.click(await screen.findByRole("button", { name: "Update hz and plugins, warning" }));
+  await user.click(await screen.findByRole("button", { name: "Update hz and plugins · Update available, warning" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Installer failed before changing hz.");
   expect(startUpdate).toHaveBeenCalledTimes(1);
 });

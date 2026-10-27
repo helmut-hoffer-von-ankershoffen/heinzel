@@ -15,6 +15,7 @@ import { NotificationSettings } from "@/notifications/NotificationSettings";
 import { SoundSettings } from "@/sound/SoundControls";
 import { AiAccessSetting } from "./AiAccessSetting";
 import { ConnectorsSection } from "./ConnectorsSection";
+import { DaemonSettings } from "./DaemonSettings";
 import { FROM_CLAUDE, FromClaudeSection } from "./FromClaudeSection";
 import { ModuleHeader, PluginsSection } from "./PluginsSection";
 import { Row, Switch } from "./SettingControls";
@@ -86,6 +87,7 @@ export function SettingsDialog({ section, initialQuery, onSection, onClose }: Pr
               searchRef={searchRef}
               section={section}
               onSection={onSection}
+              onTerminal={onClose}
             />
           )}
         </Loaded>
@@ -101,9 +103,10 @@ type BodyProps = {
   searchRef: React.RefObject<HTMLInputElement | null>;
   section: string | null;
   onSection: (section: string) => void;
+  onTerminal: () => void;
 };
 
-function Body({ report, query, setQuery, searchRef, section, onSection }: BodyProps) {
+function Body({ report, query, setQuery, searchRef, section, onSection, onTerminal }: BodyProps) {
   const plugins = usePlugins();
   const navigation = useNavigation();
   const info = useInfo();
@@ -264,13 +267,17 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
             )}
             {current === "ai" && <AiAccessSetting />}
             {current === "notifications" && <NotificationSettings />}
-            {(matching.length > 0 || !["appearance", "ai", "notifications"].includes(current)) && (
+            {current === "daemon" && (
+              <>
+                {header}
+                <DaemonSettings onTerminal={onTerminal} />
+              </>
+            )}
+            {(matching.length > 0 || !["appearance", "ai", "notifications", "daemon"].includes(current)) && (
               <Sections
                 settings={matching}
-                heading={page.title}
-                header={
-                  current === "appearance" || current === "ai" || current === "notifications" ? undefined : header
-                }
+                heading={current === "daemon" ? t("daemon.configuration") : page.title}
+                header={["appearance", "ai", "notifications", "daemon"].includes(current) ? undefined : header}
                 summary={page.plugin?.summary ? plainSummary(page.plugin.summary) : undefined}
               />
             )}
