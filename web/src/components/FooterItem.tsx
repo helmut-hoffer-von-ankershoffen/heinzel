@@ -1,7 +1,7 @@
 // One item of the footer: only an icon, in the colour and shape of its state, or a short text; what it says in a pane
 // above it on hover, focus or a click (which pins it), like the clock's. Every footer item is drawn with this, so
 // plugin items get it for free: they declare `tone` as data and the renderer does the rest.
-import { Circle, CircleCheck, CircleX, type LucideIcon, TriangleAlert } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { type ReactNode, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { t } from "@/i18n";
@@ -21,8 +21,6 @@ const COLOUR: Record<State, string> = {
   bad: "text-bad",
   off: "text-muted-foreground",
 };
-/** A small state mark for the detail pane; footer triggers use only their own icon. */
-const SHAPE: Record<State, LucideIcon> = { ok: CircleCheck, warn: TriangleAlert, bad: CircleX, off: Circle };
 const WORD: Record<State, string> = {
   ok: "state.ok",
   warn: "state.warn",
@@ -78,7 +76,6 @@ export function FooterItem({
   const visible = useFooterVisibility();
   const id = useId();
   const open = visible && (hovered || focused || pinned);
-  const Shape = SHAPE[state];
   useEffect(() => {
     if (!visible) {
       setHovered(false);
@@ -235,8 +232,7 @@ export function FooterItem({
                 popoverClassName,
               )}
             >
-              <p className="flex items-center gap-2 px-1.5 py-1 font-medium">
-                {Icon && <Shape aria-hidden className={cn("size-3.5 shrink-0", COLOUR[state])} />}
+              <p className="px-1.5 py-1 font-medium">
                 <span className="min-w-0">{label}</span>
               </p>
               {children}

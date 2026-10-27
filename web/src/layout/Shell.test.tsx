@@ -36,7 +36,8 @@ describe("Shell", () => {
     };
     mockApi({ ...answers, "/api/system/config/show": enabled });
     renderAt("/doctor");
-    expect(await screen.findByRole("region", { name: "Audio visualizer" })).toBeInTheDocument();
+    const visualizer = await screen.findByRole("region", { name: "Audio visualizer" });
+    expect(visualizer).toHaveClass("self-stretch", "min-h-0");
   });
 
   it("keeps one mounted footer and its focus when the side panel moves below and back", async () => {

@@ -271,7 +271,7 @@ function Layout() {
         {createPortal(<StatusBar />, footerHost)}
       </div>
       {showAudioVisualizer && (
-        <section aria-label="Audio visualizer" className="h-dvh w-7 shrink-0 border-l border-border">
+        <section aria-label="Audio visualizer" className="min-h-0 w-7 shrink-0 self-stretch border-l border-border">
           <AudioVisualizer />
         </section>
       )}

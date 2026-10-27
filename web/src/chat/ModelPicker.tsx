@@ -92,7 +92,7 @@ export function ModelPicker({ value, onChange, disabled }: Props) {
         aria-controls={panelId}
         aria-label={t("chat.modelPicker", { choice: label })}
         onClick={() => (open ? close() : setOpen(true))}
-        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent/70 disabled:opacity-60 [&_svg]:size-3"
+        className="inline-flex items-center gap-1 rounded-md py-0.5 pr-2.5 pl-1.5 text-xs text-muted-foreground hover:bg-accent/70 disabled:opacity-60 [&_svg]:size-3"
       >
         {label}
         <ChevronDown aria-hidden />

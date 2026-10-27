@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AudioVisualizer, spectrumGeometry, spectrumLevel } from "./AudioVisualizer";
 import { captureAudio } from "./capture";
@@ -19,18 +19,68 @@ const captured = {
 afterEach(() => vi.clearAllMocks());
 
 describe("AudioVisualizer", () => {
-  it("uses most of the available height for spectrum marks on tall displays", () => {
+  it("scales the visible spectrum to one third of its available height", () => {
     for (const height of [600, 900, 1440]) {
-      const { rows, barHeight } = spectrumGeometry(height);
-      expect((rows * barHeight) / height).toBeGreaterThanOrEqual(0.67);
+      expect(spectrumGeometry(28, height).maxBarHeight).toBe(height / 3);
     }
   });
 
-  it("keeps spectrum marks inside the visualizer at short heights", () => {
-    for (const height of [24, 320]) {
-      const { rows, rowHeight, barHeight } = spectrumGeometry(height);
-      expect(rows * rowHeight).toBeLessThanOrEqual(height);
-      expect(barHeight).toBeLessThanOrEqual(rowHeight);
+  it("keeps the spectrum within the visible strip, even when it is narrow or short", () => {
+    const sizes: [number, number][] = [
+      [1, 1],
+      [28, 24],
+      [28, 320],
+    ];
+    for (const [width, height] of sizes) {
+      const geometry = spectrumGeometry(width, height);
+      expect(geometry.columns * geometry.columnWidth + geometry.gap * (geometry.columns - 1)).toBeLessThanOrEqual(
+        width + 1,
+      );
+      expect(geometry.maxBarHeight).toBeLessThanOrEqual(Math.max(1, height / 3));
+    }
+  });
+
+  it("draws full-scale audio bins up to one third of the actual canvas height", async () => {
+    vi.mocked(captureAudio).mockResolvedValue({
+      ...captured,
+      analyser: {
+        frequencyBinCount: 32,
+        getByteFrequencyData: (data: Uint8Array) => data.fill(255),
+      },
+    } as unknown as Awaited<ReturnType<typeof captureAudio>>);
+    const draw = { clearRect: vi.fn(), setTransform: vi.fn(), fillRect: vi.fn(), globalAlpha: 1 };
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(draw as unknown as CanvasRenderingContext2D);
+    const oldWidth = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "clientWidth");
+    const oldHeight = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "clientHeight");
+    const oldVisibility = Object.getOwnPropertyDescriptor(document, "visibilityState");
+    Object.defineProperty(HTMLCanvasElement.prototype, "clientWidth", { configurable: true, value: 28 });
+    Object.defineProperty(HTMLCanvasElement.prototype, "clientHeight", { configurable: true, value: 900 });
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    const frames: FrameRequestCallback[] = [];
+    const raf = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    try {
+      render(<AudioVisualizer />);
+      fireEvent.click(screen.getByRole("button", { name: "Start audio visualization" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: /Stop audio visualization/ })).toBeInTheDocument());
+      act(() => frames.shift()?.(0));
+      const heights = draw.fillRect.mock.calls.map((call) => Number(call[3]));
+      expect(heights.length).toBeGreaterThan(0);
+      expect(Math.max(...heights)).toBe(300);
+      expect(heights.every((height) => height <= 300)).toBe(true);
+    } finally {
+      raf.mockRestore();
+      getContext.mockRestore();
+      if (oldWidth) Object.defineProperty(HTMLCanvasElement.prototype, "clientWidth", oldWidth);
+      else delete (HTMLCanvasElement.prototype as { clientWidth?: number }).clientWidth;
+      if (oldHeight) Object.defineProperty(HTMLCanvasElement.prototype, "clientHeight", oldHeight);
+      else delete (HTMLCanvasElement.prototype as { clientHeight?: number }).clientHeight;
+      if (oldVisibility) Object.defineProperty(document, "visibilityState", oldVisibility);
+      else delete (document as { visibilityState?: DocumentVisibilityState }).visibilityState;
     }
   });
 

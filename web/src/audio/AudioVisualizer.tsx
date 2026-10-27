@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type CapturedAudio, captureAudio } from "./capture";
 
-export function spectrumGeometry(height: number) {
-  const rows = Math.max(8, Math.min(128, Math.floor(height / 4)));
-  const rowHeight = height / rows;
-  return { rows, rowHeight, barHeight: Math.max(2, rowHeight * 0.68) };
+export function spectrumGeometry(width: number, height: number) {
+  const columns = Math.max(1, Math.min(16, Math.floor(width / 3)));
+  const gap = width >= columns * 2 ? 1 : 0;
+  const columnWidth = Math.max(1, (width - gap * (columns - 1)) / columns);
+  return { columns, gap, columnWidth, maxBarHeight: Math.max(1, height / 3) };
 }
 
 export function spectrumLevel(value: number) {
@@ -106,16 +107,17 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
       drawing.clearRect(0, 0, width, height);
       drawing.fillStyle = getComputedStyle(element).color;
       session.analyser.getByteFrequencyData(data);
-      const { rows, rowHeight, barHeight } = spectrumGeometry(height);
-      for (let row = 0; row < rows; row += 1) {
-        const from = Math.floor(((rows - 1 - row) * data.length) / rows);
-        const to = Math.max(from + 1, Math.floor(((rows - row) * data.length) / rows));
+      const { columns, gap, columnWidth, maxBarHeight } = spectrumGeometry(width, height);
+      for (let column = 0; column < columns; column += 1) {
+        const from = Math.floor((column * data.length) / columns);
+        const to = Math.max(from + 1, Math.floor(((column + 1) * data.length) / columns));
         let peak = 0;
         for (let index = from; index < to; index += 1) peak = Math.max(peak, data[index] ?? 0);
         const level = spectrumLevel(peak);
-        const bar = 1 + level * (width - 1);
+        const bar = level * maxBarHeight;
+        if (bar <= 0) continue;
         drawing.globalAlpha = 0.2 + level * 0.8;
-        drawing.fillRect((width - bar) / 2, row * rowHeight, bar, barHeight);
+        drawing.fillRect(column * (columnWidth + gap), height - bar, columnWidth, bar);
       }
       drawing.globalAlpha = 1;
     };
@@ -139,7 +141,7 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
   return (
     <button
       type="button"
-      className="relative flex h-dvh min-h-6 w-6 shrink-0 items-stretch justify-center px-1 text-muted-foreground hover:text-foreground"
+      className="relative flex h-full min-h-0 w-6 shrink-0 items-stretch justify-center px-1 text-muted-foreground hover:text-foreground"
       aria-label={label}
       aria-pressed={Boolean(session)}
       aria-describedby="audio-visualizer-help"

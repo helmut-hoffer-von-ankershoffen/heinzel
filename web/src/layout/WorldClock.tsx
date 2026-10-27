@@ -293,10 +293,9 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
                         {city(zone.zone)}
                         {index === 0 ? ` · ${t("settings.primary")}` : ""}
                       </span>
-                      <span className="block text-xs text-muted-foreground">
-                        {zone.zone}
-                        {!zoneLocation(zone.zone) ? t("worldClock.unmapped") : ""}
-                      </span>
+                      {zone.zone !== city(zone.zone) && (
+                        <span className="block text-xs text-muted-foreground">{zone.zone}</span>
+                      )}
                       <span title={work.detail} className="mt-1 block text-xs text-muted-foreground">
                         {work.summary}
                       </span>

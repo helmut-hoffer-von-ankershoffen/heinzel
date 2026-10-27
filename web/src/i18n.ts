@@ -114,7 +114,6 @@ const en = {
   "worldClock.drag": "Drag to turn · ",
   "worldClock.explanation":
     "Approximate daylight. Markers locate time-zone names, not people. Orange is your primary zone.",
-  "worldClock.unmapped": " · No map location",
   "worldClock.unavailable": "Time unavailable in this browser",
   "worldClock.choose": "Choose time zones",
   "app.name": "Heinzelmännchen",

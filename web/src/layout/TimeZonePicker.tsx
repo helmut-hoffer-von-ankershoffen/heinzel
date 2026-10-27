@@ -76,7 +76,7 @@ export function TimeZonePicker({ id, value, disabled, label, onChange }: Props) 
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`${label}: ${value ? zoneLabel(value) : t("settings.notSet")}`}
-        className="flex h-8 w-full min-w-0 items-center gap-1.5 rounded-lg border border-border bg-input px-2.5 text-left text-sm disabled:opacity-50"
+        className="flex h-8 w-full min-w-0 items-center gap-1.5 rounded-lg border border-border bg-input py-0 pr-3.5 pl-2.5 text-left text-sm disabled:opacity-50"
       >
         <span className="truncate">{value ? zoneLabel(value) : t("settings.notSet")}</span>
         <ChevronDown aria-hidden className="ml-auto size-4 shrink-0 text-icon" />
