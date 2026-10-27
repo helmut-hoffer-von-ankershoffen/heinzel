@@ -90,7 +90,7 @@ export function TerminalPanel({ onClose, full, onToggleFull }: Props) {
                 role="tab"
                 aria-selected={tab.id === active}
                 onClick={() => setActive(tab.id)}
-                className="py-1 pr-1 pl-2.5"
+                className="py-1 px-2.5"
               >
                 {tab.title}
               </button>

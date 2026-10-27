@@ -33,6 +33,8 @@ it("shows a green update control when the installed version is current", async (
     expect(icon).toHaveClass("text-ok");
     expect(icon).not.toHaveClass("animate-pulse", "text-bad");
   });
+  await userEvent.setup().hover(icon);
+  expect(await screen.findByText("Up to date · hz 0.1.0")).toBeInTheDocument();
 });
 
 it("shows a manual-install reason instead of overriding a deliberate pin", async () => {

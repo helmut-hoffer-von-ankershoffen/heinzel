@@ -831,7 +831,7 @@ const en = {
   "fromClaude.source.code-plugin": "Claude Code, plugin",
   "updates.action": "Update hz and plugins",
   "updates.available": "hz {version} is available.",
-  "updates.current": "Running hz {version}.",
+  "updates.current": "Up to date · hz {version}",
   "updates.unknown": "Update availability is unavailable.",
   "updates.help":
     "Click the update icon to update core and plugins, restart, and reload. Your chat draft is preserved.",
