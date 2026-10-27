@@ -5,8 +5,9 @@ import test from "node:test";
 const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
 const preload = await readFile(new URL("../src/preload.cjs", import.meta.url), "utf8");
 
-test("startup acquires the single-instance guard and validates a connection before readiness", () => {
+test("startup acquires the single-instance guard before launching the owned CLI", () => {
   assert.ok(main.indexOf("instance.acquire(process.argv") < main.indexOf("app.whenReady()"));
+  assert.match(main, /instance\.setConnection\(connection\)/);
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /sandbox: true/);
@@ -15,14 +16,16 @@ test("startup acquires the single-instance guard and validates a connection befo
   assert.doesNotMatch(preload, /token|send\(|sendSync|process|require\("node:/);
 });
 
-test("Electron readiness is continued by a promise instead of top-level await", () => {
+test("Electron readiness starts the CLI and reports startup errors", () => {
   assert.doesNotMatch(main, /await\s+app\.whenReady\(\)/);
   assert.match(main, /void app\.whenReady\(\)\.then\(\(\) => \{/);
-  assert.match(main, /return instance\.open\(\);\s*\}\)\.catch\(\(\) => app\.quit\(\)\);/);
+  assert.match(main, /return ownedCli\.start\(\)\.then\(\(connection\) =>/);
+  assert.match(main, /showErrorBox\("Heinzelmännchen could not open", message\)/);
 });
 
-test("shutdown has no child process or autostart integration to leave running", () => {
-  assert.match(main, /app\.on\("before-quit", \(\) => \{ quitting = true; \}\)/);
+test("Quit stops the owned CLI without adding background integration", () => {
+  assert.match(main, /app\.on\("before-quit", \(event\) =>/);
+  assert.match(main, /ownedCli\.stop\(\)/);
   assert.match(main, /window\.on\("closed", \(\) => \{ if \(!quitting\) app\.quit\(\); \}\)/);
-  assert.doesNotMatch(main, /child_process|spawn\(|execFile|setLoginItemSettings|systemPreferences|Notification/);
+  assert.doesNotMatch(main, /setLoginItemSettings|systemPreferences|Notification/);
 });
