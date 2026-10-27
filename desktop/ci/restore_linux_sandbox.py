@@ -167,6 +167,9 @@ def configure_helper_permissions(electron_root: Path, version: str) -> None:
         if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_HELPER_BYTES:
             message = "Electron sandbox helper must be a regular file"
             raise SandboxArchiveError(message)
+        if before.st_nlink != 1:
+            message = "Electron sandbox helper must have exactly one hard link"
+            raise SandboxArchiveError(message)
         chunks = []
         size = 0
         while size <= MAX_HELPER_BYTES:

@@ -118,6 +118,7 @@ managed-backend-check: ## Check sealed helpers, strict Node types and owned proc
 
 desktop-electron-test: ## Install the locked Electron runtime and run its unit suite
 	pnpm --dir desktop install --frozen-lockfile
+	pnpm --dir desktop exec node -p 'require("electron")'
 	pnpm --dir desktop test
 
 desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and mode for CI smoke tests

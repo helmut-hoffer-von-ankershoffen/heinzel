@@ -232,7 +232,7 @@ def test_electron_sandbox_permissions_use_nofollow_descriptor_operations(tmp_pat
     electron_root = tmp_path / "electron"
     electron_root.mkdir()
     opened = {}
-    file_stat = SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=1000, st_gid=1000, st_size=6)
+    file_stat = SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=1000, st_gid=1000, st_size=6, st_nlink=1)
 
     def open_helper(path):
         opened["path"] = path
@@ -314,9 +314,51 @@ def test_electron_sandbox_permissions_reject_replaced_regular_file(tmp_path, mon
     assert not fchown_called
 
 
+def test_electron_sandbox_permissions_reject_hard_linked_helper(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    helper = dist / "chrome-sandbox"
+    helper.write_bytes(b"trusted")
+    second_link = tmp_path / "linked-helper"
+    second_link.hardlink_to(helper)
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"trusted").hexdigest())
+    metadata_before = helper.stat()
+    fchown_called = False
+    fchmod_called = False
+
+    def fchown(*_args):
+        nonlocal fchown_called
+        fchown_called = True
+
+    def fchmod(*_args):
+        nonlocal fchmod_called
+        fchmod_called = True
+
+    monkeypatch.setattr(electron_linux_sandbox.os, "fchown", fchown)
+    monkeypatch.setattr(electron_linux_sandbox.os, "fchmod", fchmod)
+
+    with pytest.raises(ValueError, match="exactly one hard link"):
+        electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    metadata_after = helper.stat()
+    assert not fchown_called
+    assert not fchmod_called
+    assert (metadata_after.st_uid, metadata_after.st_gid, metadata_after.st_mode) == (
+        metadata_before.st_uid,
+        metadata_before.st_gid,
+        metadata_before.st_mode,
+    )
+    assert helper.stat().st_nlink == second_link.stat().st_nlink == 2
+
+
 def test_electron_sandbox_ci_restores_and_verifies_setuid_helper():
     makefile = (REPO / "Makefile").read_text()
     target = next(line for line in makefile.splitlines() if "python3 desktop/ci/restore_linux_sandbox.py" in line)
+    electron_test = makefile.split("desktop-electron-test:", maxsplit=1)[1].split("\n\n", maxsplit=1)[0]
+    assert electron_test.index("pnpm --dir desktop exec node -p 'require(\"electron\")'") < electron_test.index(
+        "pnpm --dir desktop test"
+    )
     assert 'if [ -L "$$sandbox" ]' in makefile
     assert 'if [ ! -f "$$sandbox" ]' in makefile
     assert "sudo python3 desktop/ci/restore_linux_sandbox.py --configure" in makefile
