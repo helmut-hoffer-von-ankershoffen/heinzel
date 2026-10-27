@@ -108,6 +108,13 @@ def _next_check_in(now: datetime, zone: ZoneInfo) -> datetime:
     return current.astimezone(zone)
 
 
+def _session_state(schedule: WakeScheduleView | None) -> Literal["proposed", "awake", "paused"]:
+    """Project an unapproved schedule as proposed, not as a schedule the person paused."""
+    if schedule is None or schedule.status == "proposed":
+        return "proposed"
+    return "awake" if schedule.status == "active" else "paused"
+
+
 class SessionCrud:
     """Persist acceptance before acknowledgement; no provider calls or approval grants happen here."""
 
@@ -565,7 +572,7 @@ class SessionCrud:
             appearance=profile.appearance,
             profile_revision=revision,
             contract_version=approved,
-            state="awake" if schedule and schedule.status == "active" else "paused" if schedule else "proposed",
+            state=_session_state(schedule),
             contracts=contracts,
             schedule=schedule,
             last_seq=events[-1].seq if events else 0,
@@ -597,7 +604,7 @@ class SessionCrud:
                     session_id=head.session,
                     name=profile.name,
                     appearance=profile.appearance,
-                    state="awake" if schedule and schedule.status == "active" else "paused" if schedule else "proposed",
+                    state=_session_state(schedule),
                     last_seq=events[-1].seq,
                     updated_at=events[-1].ts,
                     contract_version=approved,

@@ -74,6 +74,9 @@ def makefile() -> str:
     text = re.sub(r" \$\(MANAGED_(CHECK|TYPES)\)", "", text)
     text = text.replace("\n\t@$(MAKE) --no-print-directory managed-backend-setup", "")
     text = re.sub(r"\n(managed-backend-setup|managed-backend-check):.*?\n(?:\t.*\n)+", "\n", text)
+    # The native application is core-only; plugins do not carry the Electron window.
+    text = text.replace(" desktop-electron-test desktop-electron-native", "")
+    text = re.sub(r"\n(desktop-electron-test|desktop-electron-native):.*?\n(?:\t.*\n)+", "\n", text)
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
     text = re.sub(r"\nnotifier:.*?\n(?:\t.*\n)+", "\n", text)
@@ -107,6 +110,8 @@ def ci_workflow() -> str:
     text = text.replace("      - run: uv build --all-packages\n", "      - run: uv build\n")
     # Heinzel Notifier (ADR 0043): only the core builds and ships it.
     text = re.sub(r"\n  notifier:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
+    # The Electron window and its native runtime are core-only; plugins carry no desktop app.
+    text = re.sub(r"\n  electron:\n.*?(?=\n  build:)", "\n", text, flags=re.DOTALL)
     text = re.sub(r"\n  changes:\n.*?(?=\n  dependency-review:)", "", text, flags=re.DOTALL)
     # The template has no changed-path job; keep its original E2E matrix policy without core-only gating.
     text = text.replace("    needs: changes\n", "")
@@ -126,7 +131,7 @@ def ci_workflow() -> str:
     )
     text = re.sub(r"\n      - name: Unpack Heinzel Notifier into the package\n[^\n]*\n[^\n]*", "", text)
     text = re.sub(r"\n      - name: Check the wheel ships Heinzel Notifier\n[^\n]*\n[^\n]*", "", text)
-    text = text.replace(", notifier, build]", ", build]")
+    text = text.replace(", notifier, electron, build]", ", build]")
     # The core's CI covers every platform of the shared scripts/tools.toml; a plugin, possibly private and paying for
     # its minutes, sets up on the two most contributors use.
     text = re.sub(

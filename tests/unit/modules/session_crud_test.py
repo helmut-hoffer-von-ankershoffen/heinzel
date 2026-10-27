@@ -72,6 +72,7 @@ def test_check_in_contract_and_schedule_are_private_inactive_versioned_and_resta
     proposed = service.propose_check_in(created.session_id, "check-in-v1", "Europe/Berlin")
     assert proposed.schedule is not None
     assert proposed.schedule.status == "proposed"
+    assert proposed.state == "proposed"
     assert proposed.schedule.cron == "*/5 * * * *"
     assert proposed.contract_version is None
     assert proposed.contracts[0].version == 1
@@ -120,6 +121,7 @@ def test_check_in_schedule_requires_valid_timezone_and_explicit_transition(servi
     proposed = service.propose_check_in(created.session_id, "check-in-v1")
     assert proposed.schedule is not None
     assert proposed.schedule.status == "proposed"
+    assert proposed.state == "proposed"
     with pytest.raises(HeinzelError, match="Cannot pause"):
         service.schedule_control(created.session_id, "premature-pause", 1, "pause")
 
