@@ -67,7 +67,9 @@ describe("AudioVisualizer", () => {
       render(<AudioVisualizer />);
       fireEvent.click(screen.getByRole("button", { name: "Start audio visualization" }));
       await waitFor(() => expect(screen.getByRole("button", { name: /Stop audio visualization/ })).toBeInTheDocument());
-      act(() => frames.shift()?.(0));
+      // The session button updates before its passive effect schedules the first animation frame.
+      await waitFor(() => expect(frames.length).toBeGreaterThan(0));
+      act(() => frames.at(-1)?.(1000));
       const heights = draw.fillRect.mock.calls.map((call) => Number(call[3]));
       expect(heights.length).toBeGreaterThan(0);
       expect(Math.max(...heights)).toBe(300);

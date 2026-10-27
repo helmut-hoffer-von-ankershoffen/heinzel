@@ -38,7 +38,7 @@ def _tick_exit_code(report: TickReport) -> int:
 
 # Installing persistence that runs code at every login is a deliberate human act, not something an agent does over
 # MCP or a client over REST.
-@module.operation(read_only=False, render=render_installed, heads={"cli"})
+@module.operation(read_only=False, render=render_installed, heads={"cli", "web"})
 def install(
     service: DaemonService,
     interval: Annotated[
@@ -50,7 +50,7 @@ def install(
     return service.install(parse_duration(interval), dry_run=dry_run)
 
 
-@module.operation(read_only=False, heads={"cli"})
+@module.operation(read_only=False, heads={"cli", "web"})
 def uninstall(service: DaemonService) -> Uninstalled:
     """Unload and remove the daemon's unit; receipts and logs stay."""
     return service.uninstall()
@@ -68,7 +68,7 @@ def status(service: DaemonService) -> DaemonStatus:
     return service.status()
 
 
-# In the web app's status bar (ADR 0056): installing stays a command the person runs, pausing a confirmed call.
+# In the web app's status bar (ADR 0056): persistence changes require explicit confirmation in the app.
 module.status(source="status", name="daemon", order=700)(status_item)
 
 

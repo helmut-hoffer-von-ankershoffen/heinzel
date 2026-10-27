@@ -18,9 +18,10 @@ import {
   Users,
 } from "lucide-react";
 import { useRef, useState } from "react";
-import type { SchemaPluginCandidate, SchemaPluginInfo } from "@/api/client";
+import type { SchemaPluginCandidate, SchemaPluginChange, SchemaPluginInfo } from "@/api/client";
 import {
   type PluginChangeRequest,
+  pluginIdentity,
   useChangePlugin,
   usePluginPreview,
   usePluginSearch,
@@ -249,6 +250,8 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
   const [pending, setPending] = useState<Pending | null>(null);
   const [pluginProgress, setPluginProgress] = useState<string | null>(null);
   const pluginRestartRequired = useRef(false);
+  const completed = useRef<SchemaPluginChange | null>(null);
+  const attempted = useRef(false);
   const preview = usePluginPreview();
   const change = useChangePlugin();
   const tabClass = (active: boolean) =>
@@ -257,7 +260,10 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
       active ? "bg-accent text-foreground" : "text-muted-foreground",
     );
   const show = (value: string) => {
+    if (change.isPending) return;
     change.reset();
+    completed.current = null;
+    attempted.current = false;
     setPluginProgress(null);
     preview.mutate(value, {
       onSuccess: (answer) => {
@@ -266,22 +272,28 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
     });
   };
   const ask = (value: Pending) => {
+    if (change.isPending) return;
     change.reset();
+    completed.current = null;
+    attempted.current = false;
     setPluginProgress(null);
     preview.reset();
     setPending(value);
   };
   const confirm = async () => {
     if (!pending) return false;
+    if (completed.current) return completed.current.restart_required;
+    if (attempted.current) throw new Error(t("plugins.resultUnknown"));
+    attempted.current = true;
     setPluginProgress(null);
     const operation = request(pending);
     const answer = await change.mutateAsync(
       "add" in operation ? { ...operation, onProgress: setPluginProgress } : operation,
     );
+    if (!answer.done) throw new Error(t("plugins.notCompleted"));
+    completed.current = answer;
     pluginRestartRequired.current = answer.restart_required;
-    setPending(null);
-    setAdding(false);
-    setSpec("");
+    if (pending.action === "add") setTab("yours");
     return answer.restart_required;
   };
   const confirmText = () => {
@@ -397,6 +409,9 @@ export function PluginsSection({ reload, restartInterval }: { reload?: () => voi
               ]}
               preserve={confirm}
               onApplied={() => {
+                setPending(null);
+                setAdding(false);
+                setSpec("");
                 if (pluginRestartRequired.current) (reload ?? (() => window.location.reload()))();
               }}
               options={{
@@ -595,10 +610,16 @@ function KindFilter({ kind, onKind }: { kind: PluginKind | null; onKind: (kind: 
 
 function Discover({ query, onInstall }: { query: string; onInstall: (spec: string) => void }) {
   const search = usePluginSearch(query);
+  const installed = usePlugins();
   return (
     <Loaded query={search}>
       {(result) => {
-        const available = result.plugins.filter((plugin) => !plugin.installed);
+        const installedNames = installed.data
+          ? new Set(installed.data.map((plugin) => pluginIdentity(plugin.distribution)))
+          : null;
+        const available = result.plugins.filter((plugin) =>
+          installedNames ? !installedNames.has(pluginIdentity(plugin.name)) : !plugin.installed,
+        );
         return available.length === 0 ? (
           <p className="py-6 text-center text-sm text-muted-foreground">
             {query ? t("plugins.noneFound") : t("plugins.haveAll")}

@@ -188,11 +188,15 @@ export const useCapabilities = () =>
 
 /** `hz system plugin list` and `search`: what's installed, and what can be. */
 export const usePlugins = () =>
-  useQuery({ queryKey: ["system", "plugin", "list"], queryFn: () => unwrap(api.GET("/system/plugin/list")) });
+  useQuery({
+    queryKey: ["system", "plugin", "list"],
+    queryFn: ({ signal }) => unwrap(api.GET("/system/plugin/list", { params: { query: { fresh: true } }, signal })),
+  });
 export const usePluginSearch = (text: string) =>
   useQuery({
     queryKey: ["system", "plugin", "search", text],
-    queryFn: () => unwrap(api.GET("/system/plugin/search", { params: { query: { text: text || undefined } } })),
+    queryFn: ({ signal }) =>
+      unwrap(api.GET("/system/plugin/search", { params: { query: { text: text || undefined } }, signal })),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -233,12 +237,37 @@ export const useChangePlugin = () => {
       }
       return unwrap(api.POST("/system/plugin/disable", { params: { query: { distribution: variables.disable } } }));
     },
-    onSettled: () => {
+    onSuccess: async (answer) => {
+      if (!answer.done) return;
+      // A query started before the installation must not replace its authoritative after-state.
+      await client.cancelQueries({ queryKey: ["system", "plugin"] });
+      client.setQueryData(["system", "plugin", "list"], answer.plugins);
+      const installed = new Set(answer.plugins.map((plugin) => pluginIdentity(plugin.distribution)));
+      client.setQueriesData<components["schemas"]["PluginSearch"]>(
+        { queryKey: ["system", "plugin", "search"] },
+        (current) =>
+          current
+            ? {
+                ...current,
+                plugins: current.plugins.map((plugin) => ({
+                  ...plugin,
+                  installed: installed.has(pluginIdentity(plugin.name)),
+                })),
+              }
+            : current,
+      );
       void client.invalidateQueries({ queryKey: ["system", "plugin"] });
       void client.invalidateQueries({ queryKey: ["ui"] });
     },
+    onError: () => {
+      // A lost response is uncertain; reconcile reads without replaying an installation.
+      void client.invalidateQueries({ queryKey: ["system", "plugin"] });
+    },
   });
 };
+
+/** PEP 503 distribution identity; presentation casing and separators do not identify a different installation. */
+export const pluginIdentity = (name: string) => name.toLowerCase().replace(/[-_.]+/g, "-");
 
 /** Wait until `hz ui` answers again after a restart: `/system/info` with the same token, every `interval` ms. */
 export async function waitForServer(interval = 500, attempts = 120): Promise<boolean> {

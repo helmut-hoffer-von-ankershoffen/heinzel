@@ -1,4 +1,4 @@
-// Cold-open the World Clock in the real app. The API is fixed here so the browser check does not depend on a user's
+// Cold-open the World clock in the real app. The API is fixed here so the browser check does not depend on a user's
 // installed plugins or configured zones; COBE still initializes its real WebGL canvas and embedded map texture.
 // Usage: node e2e/world-clock.mjs SESSION_URL
 import assert from "node:assert/strict";
@@ -48,7 +48,7 @@ try {
   const target = new URL(sessionUrl);
   target.searchParams.set("panel", "world-clock");
   await page.goto(target.href, { waitUntil: "domcontentloaded" });
-  const panel = page.getByRole("region", { name: "World Clock" });
+  const panel = page.getByRole("region", { name: "World clock" });
   await panel.waitFor();
   const setup = page.getByRole("dialog");
   if (await setup.isVisible()) {
@@ -60,7 +60,7 @@ try {
   // Cobe draws asynchronously. Wait for a painted frame instead of treating canvas creation as a loaded map.
   await page.waitForFunction(
     () => {
-      const canvas = document.querySelector('[aria-label="World Clock"] canvas');
+      const canvas = document.querySelector('[aria-label="World clock"] canvas');
       if (!(canvas instanceof HTMLCanvasElement) || !canvas.width || !canvas.height) return false;
       const gl = canvas.getContext("webgl2") ?? canvas.getContext("webgl");
       if (!gl) return false;

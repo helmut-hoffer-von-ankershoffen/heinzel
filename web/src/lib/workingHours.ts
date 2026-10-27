@@ -6,6 +6,7 @@ type Zone = { zone: string; hours: [number, number] };
 type Wall = { year: number; month: number; day: number; hour: number; minute: number; second: number };
 export type WorkingHours = {
   working: boolean;
+  state: "working" | "off-duty" | "sleeping" | "unavailable";
   summary: string;
   detail: string;
   start?: Date;
@@ -62,7 +63,12 @@ function duration(milliseconds: number, remaining = false): string {
 }
 
 export function workingHours(zone: Zone, now: Date): WorkingHours {
-  const unknown = { working: false, summary: t("work.unavailable"), detail: t("work.unavailable") };
+  const unknown = {
+    working: false,
+    state: "unavailable" as const,
+    summary: t("work.unavailable"),
+    detail: t("work.unavailable"),
+  };
   const [from, until] = zone.hours;
   if (
     !Number.isFinite(now.getTime()) ||
@@ -114,6 +120,7 @@ export function workingHours(zone: Zone, now: Date): WorkingHours {
   if (active)
     return {
       working: true,
+      state: "working",
       start: active.start,
       end: active.end,
       summary: t("work.active", {
@@ -124,6 +131,7 @@ export function workingHours(zone: Zone, now: Date): WorkingHours {
     };
   return {
     working: false,
+    state: current.hour < 6 || current.hour >= 22 ? "sleeping" : "off-duty",
     nextStart: next?.start,
     previousEnd: previous?.end,
     summary: [

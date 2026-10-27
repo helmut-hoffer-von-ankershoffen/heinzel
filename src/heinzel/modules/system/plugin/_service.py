@@ -168,8 +168,19 @@ class PluginService:
 
     # Listing.
 
-    def installed(self) -> list[PluginInfo]:
-        """Every installed plugin, enabled or not, with where it came from and what it brings."""
+    def installed(self, *, fresh: bool = False) -> list[PluginInfo]:
+        """Read this process's loaded plugin inventory, or explicitly reconcile the installed environment.
+
+        Raises:
+            HeinzelError: If the requested fresh interpreter cannot read the installed environment.
+        """
+        if fresh:
+            # The child uses the default snapshot path; forwarding --fresh would recursively spawn interpreters.
+            return self._fresh_list()
+        return self._loaded_inventory()
+
+    def _loaded_inventory(self) -> list[PluginInfo]:
+        """Describe the plugins and modules already loaded by this kernel."""
         visibility: dict[str, bool | None] = {}
         for event in self.history():
             if not event.distribution:
