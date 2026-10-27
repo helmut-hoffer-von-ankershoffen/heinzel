@@ -241,7 +241,9 @@ describe("the sound popover", () => {
         .map((r) => r.textContent),
     ).toEqual(["Claude FMPlays from YouTube", "Die Heinzelmännchen"]);
     expect(within(dialog).queryByRole("radio", { name: /^Off/ })).not.toBeInTheDocument();
-    expect(within(dialog).getByRole("link", { name: "More in Settings" })).toHaveAttribute("href", "/?settings=hz");
+    const settingsShortcut = within(dialog).getByRole("link", { name: "More in Settings" });
+    expect(settingsShortcut).toHaveAttribute("href", "/?settings=hz");
+    expect(settingsShortcut.querySelector("svg")).toBeInTheDocument();
     await user.click(within(dialog).getByRole("switch", { name: "Softer while I type" }));
     await waitFor(() =>
       expect(
