@@ -99,7 +99,7 @@ def register_session_operations(module: Module) -> None:
             str, Field(description="The IANA time zone for the schedule preview.", min_length=1, max_length=128)
         ] = "UTC",
     ) -> SessionSnapshot:
-        """Propose a local check-in notification every five minutes; it remains inactive until explicitly activated."""
+        """Propose local five-minute check-ins; the schedule stays inactive until activated."""
         return service.propose_check_in(session_id, request_id, timezone)
 
     @module.operation(private=True, read_only=False, audience="everyday")

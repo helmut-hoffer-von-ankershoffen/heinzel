@@ -298,8 +298,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Propose a local check-in notification every five minutes; it remains inactive until explicitly activated.
-         * @description Propose a local check-in notification every five minutes; it remains inactive until explicitly activated.
+         * Propose local five-minute check-ins; the schedule stays inactive until activated.
+         * @description Propose local five-minute check-ins; the schedule stays inactive until activated.
          */
         post: operations["heinzel_propose_check_in"];
         delete?: never;

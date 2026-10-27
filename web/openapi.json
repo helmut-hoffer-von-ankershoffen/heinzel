@@ -15087,7 +15087,7 @@
     },
     "/heinzel/propose-check-in": {
       "post": {
-        "description": "Propose a local check-in notification every five minutes; it remains inactive until explicitly activated.",
+        "description": "Propose local five-minute check-ins; the schedule stays inactive until activated.",
         "operationId": "heinzel_propose_check_in",
         "requestBody": {
           "content": {
@@ -15121,7 +15121,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Propose a local check-in notification every five minutes; it remains inactive until explicitly activated.",
+        "summary": "Propose local five-minute check-ins; the schedule stays inactive until activated.",
         "tags": [
           "heinzel"
         ]
