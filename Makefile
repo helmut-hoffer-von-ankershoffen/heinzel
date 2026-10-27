@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check desktop-electron-test desktop-electron-sandbox desktop-electron-native desktop-electron-package build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -121,33 +121,34 @@ desktop-electron-test: ## Install the locked Electron runtime and run its unit s
 	pnpm --dir desktop exec node -p 'require("electron")'
 	pnpm --dir desktop test
 
+desktop-electron-package: ## Build and verify an unsigned Electron artifact for this CI host
+	pnpm --dir desktop install --node-linker=hoisted --frozen-lockfile
+	pnpm --dir desktop build
+	pnpm --dir desktop verify:package
+
 desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and mode for CI smoke tests
-	@electron_entry=$$(node -p 'require.resolve("electron", { paths: [require("node:path").resolve("desktop")] })') || { \
-		echo "::error::Could not resolve the installed Electron package"; \
-		exit 1; \
-	}; \
-	electron_root=$$(dirname "$$electron_entry"); \
-	python3 desktop/ci/restore_linux_sandbox.py "$$electron_root" || exit $$?; \
-	sandbox=$$electron_root/dist/chrome-sandbox; \
-	if [ -L "$$sandbox" ]; then \
-		echo "::error::Refusing to configure a symlinked Electron sandbox helper"; \
+	packaged_sandbox="$$PWD/desktop/dist/Heinzelmaennchen-linux-$$(node -p 'process.arch')/chrome-sandbox"; \
+	if [ ! -f "$$packaged_sandbox" ] || [ -L "$$packaged_sandbox" ]; then \
+		echo "::error::Expected packaged Electron sandbox helper not found: $$packaged_sandbox"; \
 		exit 1; \
 	fi; \
-	if [ ! -f "$$sandbox" ]; then \
-		echo "::error::Expected Electron sandbox helper not found at $$sandbox"; \
+	if ! sudo python3 desktop/ci/restore_linux_sandbox.py --configure-file "$$packaged_sandbox" "$$(pnpm --dir desktop exec node -p 'require("electron/package.json").version')"; then \
+		echo "::error::Could not configure packaged Electron sandbox helper at $$packaged_sandbox"; \
 		exit 1; \
 	fi; \
-	if ! sudo python3 desktop/ci/restore_linux_sandbox.py --configure "$$electron_root"; then \
-		echo "::error::Could not configure Electron sandbox helper at $$sandbox"; \
-		exit 1; \
-	fi; \
-	if [ "$$(stat -c '%u:%a' "$$sandbox")" != "0:4755" ]; then \
-		echo "::error::Electron sandbox helper must be root-owned with mode 4755: $$sandbox"; \
+	if [ "$$(stat -c '%u:%a' "$$packaged_sandbox")" != "0:4755" ]; then \
+		echo "::error::Packaged Electron sandbox helper must be root-owned with mode 4755: $$packaged_sandbox"; \
 		exit 1; \
 	fi
 
 desktop-electron-native: ## Launch the Electron window against a temporary authenticated local service
-	@if [ "$$(uname -s)" = Linux ]; then xvfb-run --auto-servernum pnpm --dir desktop test:native; else pnpm --dir desktop test:native; fi
+	@case "$$(uname -s)" in \
+		Linux) target="linux-$$(node -p 'process.arch')"; executable="$$PWD/desktop/dist/Heinzelmaennchen-$$target/Heinzelmaennchen"; runner='xvfb-run --auto-servernum' ;; \
+		Darwin) target="darwin-$$(node -p 'process.arch')"; executable="$$PWD/desktop/dist/Heinzelmaennchen-$$target/Heinzelmaennchen.app/Contents/MacOS/Heinzelmaennchen"; runner='' ;; \
+		*) echo "Unsupported Electron native smoke-test host: $$(uname -s)"; exit 2 ;; \
+	esac; \
+	if [ ! -x "$$executable" ]; then echo "Packaged Electron executable is missing or not executable: $$executable"; exit 1; fi; \
+	HEINZEL_ELECTRON_EXECUTABLE="$$executable" $$runner pnpm --dir desktop test:native
 
 test: ## Run unit and integration tests with coverage on 4 workers (offline; what the CI Coverage job runs)
 	$(STEPS) \

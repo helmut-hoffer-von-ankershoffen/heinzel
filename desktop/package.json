@@ -3,11 +3,19 @@
   "private": true,
   "type": "module",
   "main": "src/main.js",
-  "description": "Electron window for an explicitly supplied local Heinzelmännchen API.",
+  "description": "Electron window that launches and owns the local Heinzelmännchen CLI service.",
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
-    "test:native": "node e2e/native-startup.mjs"
+    "test:native": "node e2e/native-startup.mjs",
+    "build": "node ci/package.mjs",
+    "verify:package": "node ci/verify-package.mjs"
   },
-  "devDependencies": { "electron": "45.0.0" }
+  "devDependencies": {
+    "@electron-internal/extract-zip": "1.0.6",
+    "@electron/asar": "3.4.1",
+    "@electron/get": "5.1.0",
+    "electron": "45.0.0",
+    "@electron/packager": "20.0.1"
+  }
 }

@@ -337,6 +337,8 @@ jobs:
           run_install: false
       - name: Install the locked Electron package and native runtime
         run: make desktop-electron-test
+      - name: Build and verify unsigned native package
+        run: make desktop-electron-package
       - name: Configure Linux Electron sandbox helper
         if: runner.os == 'Linux'
         run: make desktop-electron-sandbox
