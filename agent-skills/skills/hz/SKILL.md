@@ -11,6 +11,7 @@ command accepts `--json` — always use it when you read results.
 ## Discover
 
 ```bash
+hz --command-tree                   # all commands, arguments, options, input/output schemas as JSON
 HZ_EXPERT=1 hz --help                # top-level modules, all of them
 hz system modules --json             # every module, submodule and what it advertises
 HZ_EXPERT=1 hz <module> --help       # its commands; parameters and their descriptions

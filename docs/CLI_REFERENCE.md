@@ -1,6 +1,6 @@
 # CLI reference
 
-Every operation accepts --json. Commands marked (expert) run like any other but are listed in help and completion only in expert mode: hz system expert on.
+Discover every command and its schemas with hz --command-tree (JSON). Every operation accepts --json. Commands marked (expert) run like any other but are listed in help and completion only in expert mode: hz system expert on.
 
 **Usage**:
 
@@ -10,6 +10,7 @@ $ hz [OPTIONS] COMMAND [ARGS]...
 
 **Options**:
 
+* `--command-tree`: Print every command, argument, option and operation schema as JSON, including expert commands.
 * `-V, --version`: Show the version and repository, Python, platform, installation and plugins, then exit.
 * `--install-completion`: Install completion for the current shell.
 * `--show-completion`: Show completion for the current shell, to copy it or customize the installation.
