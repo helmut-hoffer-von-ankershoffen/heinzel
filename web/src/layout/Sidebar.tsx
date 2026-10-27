@@ -128,7 +128,7 @@ function Full({ onToggle, onSearch, onNotifications }: Omit<Props, "collapsed">)
                     type="button"
                     onClick={() => toggle(section.label)}
                     aria-expanded={!folded.has(section.label)}
-                    className="group mt-5 mb-1.5 flex items-center gap-1 rounded-md px-2.5 text-ui-sm text-muted-foreground hover:text-foreground"
+                    className="group mt-5 mb-1.5 flex items-center gap-1 rounded-md py-0 pr-3 pl-2.5 text-ui-sm text-muted-foreground hover:text-foreground"
                   >
                     {t(section.label)}
                     <ChevronDown
