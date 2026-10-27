@@ -22,7 +22,7 @@ export const FOOTER_MORE = "@more";
 export const FOOTER_CREDIT = "@credit";
 export const FOOTER_RELOCATED = "hz:footer-relocated";
 type Registered = { element: HTMLElement; host: HTMLElement; priority: number; pinned: boolean };
-type Layout = { hidden: string[]; empty: string[]; compactCredit: boolean };
+type Layout = { hidden: string[]; empty: string[]; compactCredit: boolean; width: number };
 type Context = Layout & {
   register: (id: string, item: Registered) => () => void;
   overflowOpen: boolean;
@@ -51,7 +51,7 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
   const lastFocused = useRef<string | null>(null);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [overflowTarget, setOverflowTarget] = useState<HTMLElement | null>(null);
-  const [layout, setLayout] = useState<Layout>({ hidden: [], empty: [], compactCredit: false });
+  const [layout, setLayout] = useState<Layout>({ hidden: [], empty: [], compactCredit: false, width: 0 });
   const queue = useCallback(() => {
     if (pending.current !== null) return;
     pending.current = requestAnimationFrame(() => {
@@ -136,11 +136,12 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
           : (next.visible.find((id) => id !== FOOTER_CREDIT) ?? null);
     }
     setLayout((current) =>
+      current.width === available &&
       current.compactCredit === variants.compactCredit &&
       current.hidden.join("\0") === next.hidden.join("\0") &&
       current.empty.join("\0") === empty.join("\0")
         ? current
-        : { hidden: next.hidden, empty, compactCredit: variants.compactCredit },
+        : { hidden: next.hidden, empty, compactCredit: variants.compactCredit, width: available },
     );
   };
   useLayoutEffect(() => {
@@ -159,6 +160,8 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
         attributeFilter: ["data-state"],
       });
     }
+    const relocated = () => measurement.current();
+    window.addEventListener(FOOTER_RELOCATED, relocated);
     window.addEventListener("resize", queue);
     document.fonts?.addEventListener("loadingdone", queue);
     queue();
@@ -167,6 +170,7 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
       observer.current = null;
       changes.current?.disconnect();
       changes.current = null;
+      window.removeEventListener(FOOTER_RELOCATED, relocated);
       window.removeEventListener("resize", queue);
       document.fonts?.removeEventListener("loadingdone", queue);
       if (pending.current !== null) cancelAnimationFrame(pending.current);
@@ -192,7 +196,12 @@ export function FooterLayout({ children, className, ...props }: ComponentPropsWi
   }, [layout.hidden, overflowTarget, overflowOpen]);
   return (
     <FooterContext value={{ ...layout, register, overflowOpen, setOverflowOpen, overflowTarget, setOverflowTarget }}>
-      <footer {...props} ref={root} className={cn("relative flex min-w-0 items-center", className)}>
+      <footer
+        {...props}
+        data-footer-width={layout.width}
+        ref={root}
+        className={cn("relative flex min-w-0 items-center", className)}
+      >
         {children}
       </footer>
     </FooterContext>

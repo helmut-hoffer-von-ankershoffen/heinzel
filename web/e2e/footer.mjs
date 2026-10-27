@@ -69,6 +69,19 @@ export async function verifyFooter(page, shots) {
         style.visibility !== "hidden" && style.display !== "none" && more.getBoundingClientRect().width > 0;
       return hidden === visible;
     });
+    // Await the committed capacity for this host, rather than a stale hidden-footer measurement.
+    await page.waitForFunction(() => {
+      const bar = document.querySelector("footer");
+      if (!bar) return false;
+      const style = getComputedStyle(bar);
+      const available =
+        bar.getBoundingClientRect().width -
+        parseFloat(style.paddingLeft) -
+        parseFloat(style.paddingRight) -
+        (parseFloat(style.borderLeftWidth) || 0) -
+        (parseFloat(style.borderRightWidth) || 0);
+      return Math.abs(Number(bar.dataset.footerWidth) - available) <= 1;
+    });
     const geometry = await footer.evaluate((bar) => {
       const bounds = bar.getBoundingClientRect();
       const style = getComputedStyle(bar);
@@ -100,10 +113,12 @@ export async function verifyFooter(page, shots) {
     assert.equal(shown[0]?.id, "@version");
     const hidden = geometry.parts.filter((part) => part.overflow);
     const more = footer.getByRole("button", { name: "More status items" });
-    if (hidden.length) {
+    const inspectOverflow = async () => {
       try {
         await more.waitFor({ state: "visible", timeout: 1500 });
       } catch {
+        // Live text/font measurements can make every item fit after the geometry snapshot. That needs no More.
+        if (!(await footer.locator('[data-footer-hidden="overflow"]').count())) return;
         const domState = await footer.evaluate((bar) => {
           const button = bar.querySelector('[data-footer-content="@more"] button');
           const anchor = bar.querySelector('[data-footer-part="@more"]');
@@ -179,6 +194,7 @@ export async function verifyFooter(page, shots) {
       try {
         await markedMore.click({ timeout: 3000 });
       } catch (error) {
+        if (!(await footer.locator('[data-footer-hidden="overflow"]').count())) return;
         const domState = await footer.evaluate((bar) => {
           const describe = (element) => {
             if (!(element instanceof HTMLElement)) return null;
@@ -272,7 +288,9 @@ export async function verifyFooter(page, shots) {
       if (await popup.isVisible()) await page.keyboard.press("Escape");
       await popup.waitFor({ state: "hidden" });
       await more.focus();
-    } else assert.equal(await more.count(), 0);
+    };
+    if (hidden.length) await inspectOverflow();
+    else assert.equal(await more.count(), 0);
     samples.push({ width, visible: shown.map((part) => part.id), hidden: hidden.map((part) => part.id) });
     const changed = await page.evaluate(() =>
       [...window.footerProofNodes]

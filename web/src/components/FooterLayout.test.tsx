@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { type ReactNode, useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FooterItem } from "./FooterItem";
-import { FOOTER_MORE, FooterLayout, FooterMore, FooterPart } from "./FooterLayout";
+import { FOOTER_MORE, FOOTER_RELOCATED, FooterLayout, FooterMore, FooterPart } from "./FooterLayout";
 
 function Counter({ mounted }: { mounted: () => void }) {
   const [count, setCount] = useState(0);
@@ -84,6 +84,10 @@ function measuredFooter(initialWidth: number, daemon?: ReactNode) {
   return {
     ...view,
     observed,
+    relocate: (next: number) => {
+      width = next;
+      act(() => window.dispatchEvent(new Event(FOOTER_RELOCATED)));
+    },
     resize: async (next: number) => {
       width = next;
       await act(() => {
@@ -103,6 +107,16 @@ describe("measured footer controls", () => {
     expect(screen.queryByRole("button", { name: "More status items" })).not.toBeInTheDocument();
     expect(container.querySelector("[data-footer-credit-text]")).toBeNull();
     expect(observed.size).toBeGreaterThan(0);
+  });
+
+  it("updates overflow immediately when a retained footer is revealed in another host", async () => {
+    const { relocate } = measuredFooter(220);
+    await screen.findByRole("button", { name: "More status items" });
+    relocate(500);
+    expect(screen.queryByRole("button", { name: "More status items" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Daemon" })).toBeInTheDocument();
+    relocate(220);
+    expect(screen.getByRole("button", { name: "More status items" })).toBeInTheDocument();
   });
 
   it("keeps keyboard focus reachable when resize moves a control into More and restores it when space returns", async () => {

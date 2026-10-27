@@ -7,6 +7,7 @@ import { useConfig } from "@/api/queries";
 import { AudioVisualizer } from "@/audio/AudioVisualizer";
 import { ChatProvider } from "@/chat/ChatContext";
 import { AvatarThemeProvider } from "@/components/AvatarTheme";
+import { FOOTER_RELOCATED } from "@/components/FooterLayout";
 import { t } from "@/i18n";
 import { OPEN_CHAT } from "@/lib/chatIntent";
 import { OPEN_TERMINAL } from "@/lib/terminal";
@@ -151,6 +152,10 @@ function Layout() {
                 : !beside
                   ? "page"
                   : "chat";
+  // Page selection can reveal the same footer at a new capacity without a viewport resize.
+  useLayoutEffect(() => {
+    if (beside || selectedPanel === "page") window.dispatchEvent(new Event(FOOTER_RELOCATED));
+  }, [beside, selectedPanel]);
   const route = useLocation().pathname;
   const previousRoute = useRef(route);
   useEffect(() => {
