@@ -328,6 +328,8 @@ describe("Sound", () => {
     renderAt("/");
     const speakerButton = (await speaker(/^Choose a soundscape$/)) as HTMLElement;
     speakerButton.focus();
+    await act(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+    expect(speakerButton).toHaveFocus();
     await user.keyboard("{ArrowDown}");
     const dialog = await screen.findByRole("dialog", { name: "Sound" });
     expect(speakerButton).toHaveAttribute("aria-expanded", "true");

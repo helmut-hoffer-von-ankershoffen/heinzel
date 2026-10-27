@@ -16,11 +16,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     chat,
     inputRef,
     focus: () => {
-      if (!inputRef.current?.closest("[hidden]")) inputRef.current?.focus();
+      const input = inputRef.current;
+      const alreadyVisible = input && !input.closest("[hidden]");
       window.dispatchEvent(new Event(OPEN_CHAT));
-      requestAnimationFrame(() => {
-        if (!inputRef.current?.closest("[hidden]")) inputRef.current?.focus();
-      });
+      if (alreadyVisible) input.focus();
+      else
+        requestAnimationFrame(() => {
+          if (!inputRef.current?.closest("[hidden]")) inputRef.current?.focus();
+        });
     },
   };
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
