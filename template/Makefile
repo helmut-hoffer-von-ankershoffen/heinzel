@@ -86,8 +86,9 @@ test: ## Run unit and integration tests with coverage on 4 workers (offline; wha
 		"coverage-xml=uv run coverage xml -q"
 	@uv run --quiet coverage report --format=total | xargs printf '  coverage %s%%\n'
 
+# Leave headroom under CI's 10-minute job timeout for the full unit/integration suite on slower runners.
 test-parallel: ## Unit and integration tests on 4 workers, stopping at the first failure; no coverage (the CI test matrix)
-	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=300"
+	$(STEPS) "tests=uv run pytest -m '(unit or integration) and not perf' -n 4 -x -q --session-timeout=420"
 
 commits: ## Commit messages since BASE, and $$TITLE and $$BRANCH when set: conventional, no confidential terms
 	$(STEPS) \

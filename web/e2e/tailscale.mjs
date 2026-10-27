@@ -10,22 +10,16 @@ async function openSharing(page) {
   const trigger = page.locator('[data-footer-content="tailscale:sharing"] button').first();
   const more = page.getByRole("button", { name: "More status items", exact: true });
   const popup = page.getByRole("region", { name: "More status items", exact: true });
-  // Footer overflow is measured after fonts, plugin controls and the viewport settle. During that first layout,
-  // an item's anchor can briefly report `overflow` even though the follow-up measurement puts it inline. Wait
-  // for an actionable, visible state instead of trusting that transient data attribute.
-  await page.waitForFunction(() => {
-    const visible = (element) => {
-      if (!element) return false;
-      const box = element.getBoundingClientRect();
-      return box.width > 0 && box.height > 0 && getComputedStyle(element).visibility !== "hidden";
-    };
-    return (
-      visible(document.querySelector('[data-footer-content="tailscale:sharing"] button')) ||
-      visible(document.querySelector('button[aria-label="More status items"]')) ||
-      visible(document.querySelector('[role="region"][aria-label="More status items"]'))
-    );
+  // Footer widths are measured after fonts and viewport changes settle. Wait for that pass before deciding
+  // whether the control is inline or in More, then wait for the portal to move the same live control there.
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   });
-  if (!(await trigger.isVisible()) && !(await popup.isVisible())) await more.click();
+  if (!(await trigger.isVisible()) && !(await popup.isVisible())) {
+    await more.click();
+    await trigger.waitFor({ state: "visible" });
+  }
   await trigger.click();
   const panel = page.getByRole("region", { name: "Tailscale", exact: true });
   await panel.waitFor();

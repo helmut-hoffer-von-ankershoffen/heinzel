@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Heinzelmännchen</title></head>
+  <body>
+    <main><h1>Heinzelmännchen</h1><p id="status" role="status">Checking the local service…</p></main>
+    <script>
+      window.heinzelDesktop.lifecycle().then((state) => {
+        document.querySelector("#status").textContent = `Connected · version ${state.version}`;
+      }).catch(() => {
+        document.querySelector("#status").textContent = "Could not authenticate with the local service. Close and reopen with its current UI URL.";
+      });
+    </script>
+  </body>
+</html>

@@ -74,9 +74,19 @@ def makefile() -> str:
     text = re.sub(r" \$\(MANAGED_(CHECK|TYPES)\)", "", text)
     text = text.replace("\n\t@$(MAKE) --no-print-directory managed-backend-setup", "")
     text = re.sub(r"\n(managed-backend-setup|managed-backend-check):.*?\n(?:\t.*\n)+", "\n", text)
-    # The native application is core-only; plugins do not carry the Electron window.
-    text = text.replace(" desktop-electron-test desktop-electron-native", "")
-    text = re.sub(r"\n(desktop-electron-test|desktop-electron-native):.*?\n(?:\t.*\n)+", "\n", text)
+    # The native application is core-only; plugins do not carry the Electron window or Linux sandbox setup.
+    electron_targets = {
+        "desktop-electron-test",
+        "desktop-electron-sandbox",
+        "desktop-electron-native",
+        "desktop-electron-package",
+    }
+    text = re.sub(
+        r"(?m)^\.PHONY:.*$",
+        lambda match: " ".join(name for name in match.group(0).split() if name not in electron_targets),
+        text,
+    )
+    text = re.sub(r"(?m)^desktop-electron-(?:test|sandbox|native|package):[^\n]*\n(?:\t[^\n]*\n)*", "", text)
     # Heinzel Notifier, the core's macOS notifier app (ADR 0043): plugins have none.
     text = re.sub(r"(?m)^(\.PHONY:.*?) notifier\b", r"\1", text)
     text = re.sub(r"\nnotifier:.*?\n(?:\t.*\n)+", "\n", text)
