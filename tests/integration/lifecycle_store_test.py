@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from heinzel import HeinzelError
 from heinzel.modules.system.lifecycle import _store
-from heinzel.modules.system.lifecycle._models import Activation, RuntimeManifest, RuntimeProof
+from heinzel.modules.system.lifecycle._models import Activation, HighWater, RuntimeManifest, RuntimeProof
 from heinzel.modules.system.lifecycle._store import LifecycleStore
 
 pytestmark = pytest.mark.integration
@@ -133,6 +133,132 @@ def test_prepared_or_stale_receipt_cannot_complete_the_current_intent(inventory)
         assert store.pending().id == plan.id
         assert store.active() == active
         store.complete(plan.id, proof(active, manifest))
+
+
+@pytest.mark.parametrize("backend", [False, True])
+def test_publicly_writable_authority_or_backend_lock_never_admits_a_switch(inventory, backend):
+    store, publish, _ = inventory
+    candidate, _, _ = publish()
+    path = store.directory.parent / "backend.lock" if backend else store.directory / "lifecycle.lock"
+    path.touch(mode=0o644)
+    path.chmod(0o644)
+
+    def switch_runtime():
+        with store.lock():
+            plan = store.prepare(candidate)
+            store.switch(plan.id)
+
+    with pytest.raises(HeinzelError):
+        switch_runtime()
+    assert store.active() is None
+
+
+def test_first_install_cannot_reuse_cancelled_history_or_remove_an_empty_profile(inventory):
+    store, publish, _ = inventory
+    candidate, _, _ = publish()
+    with store.lock():
+        with pytest.raises(HeinzelError, match="no runtime"):
+            store.prepare(None)
+        plan = store.prepare(candidate, first_install=True)
+        store.cancel(plan.id)
+        with pytest.raises(HeinzelError, match="history"):
+            store.prepare(candidate, first_install=True)
+        assert store.active() is None
+        assert store.pending() is None
+
+
+def test_recovery_retains_prepared_intent_and_refuses_a_changed_generation_fence(inventory):
+    store, publish, _ = inventory
+    candidate, _, _ = publish()
+    with store.lock():
+        plan = store.prepare(candidate)
+        assert store.recover() == "prepared"
+        active = store.switch(plan.id)
+        _store.atomic_record(store.directory / "generation.json", HighWater(generation=active.generation + 1))
+        with pytest.raises(HeinzelError, match="disagree"):
+            store.recover()
+        assert store.active() == active
+        assert store.pending().id == plan.id
+
+
+def test_recovery_finishes_a_verified_marker_left_by_interrupted_journal_removal(inventory, monkeypatch):
+    store, publish, _ = inventory
+    candidate, _, manifest = publish()
+    unlink = Path.unlink
+
+    def interrupted(path, *args, **kwargs):
+        if path == store.directory / "transition.json":
+            message = "injected journal-removal boundary"
+            raise OSError(message)
+        return unlink(path, *args, **kwargs)
+
+    with store.lock():
+        plan = store.prepare(candidate)
+        active = store.switch(plan.id)
+        with monkeypatch.context() as failure:
+            failure.setattr(Path, "unlink", interrupted)
+            with pytest.raises(OSError, match="journal-removal"):
+                store.complete(plan.id, proof(active, manifest))
+        assert store.pending().phase == "verified"
+        assert store.recover() == "settled"
+        assert store.pending() is None
+        assert store.active() == active
+
+
+@pytest.mark.parametrize("grows", [False, True])
+def test_regular_metadata_is_bounded_even_if_it_grows_after_descriptor_stat(tmp_path, monkeypatch, grows):
+    path = tmp_path / "metadata.json"
+    path.write_bytes(b"x" if grows else b"oversized")
+    path.chmod(0o600)
+    actual = os.fstat
+
+    def changed(descriptor):
+        before = actual(descriptor)
+        path.write_bytes(b"oversized")
+        return before
+
+    with monkeypatch.context() as race:
+        if grows:
+            race.setattr(os, "fstat", changed)
+        with pytest.raises(HeinzelError):
+            _store.regular_bytes(path, limit=2)
+
+
+@pytest.mark.parametrize("change", ["foreign-file", "orphan-environment", "extra-directory", "missing-file"])
+def test_cleanup_refuses_unowned_or_changed_inventory_before_erasing_any_tree(inventory, monkeypatch, change):
+    store, publish, _ = inventory
+    candidate, runtime, manifest = publish()
+    retained = store.directory.parent / "work.txt"
+    retained.write_text("keep user work")
+    original = _store.atomic_record
+
+    def changed(path, value):
+        original(path, value)
+        if path.name == "cleanup.json":
+            if change == "extra-directory":
+                (runtime / "unexpected").mkdir(mode=0o700)
+            elif change == "missing-file":
+                (runtime / "worker.py").unlink()
+
+    with store.lock():
+        plan = store.prepare(candidate)
+        active = store.switch(plan.id)
+        store.complete(plan.id, proof(active, manifest))
+        removal = store.prepare(None)
+        store.switch(removal.id)
+        store.complete(removal.id)
+        if change == "foreign-file":
+            (store.directory / "deployments" / "retained.txt").write_text("unknown payload")
+        elif change == "orphan-environment":
+            (store.directory / "environments" / ("a" * 32)).mkdir(mode=0o700, parents=True)
+            (store.directory / "environments").chmod(0o700)
+        with monkeypatch.context() as race:
+            race.setattr(_store, "atomic_record", changed)
+            with pytest.raises(HeinzelError):
+                store.purge_uninstalled_runtime()
+        assert runtime.is_dir()
+        assert retained.read_text() == "keep user work"
+        assert not list(runtime.parent.glob(".cleanup-*"))
 
 
 def test_pointer_rename_before_journal_failure_is_recovered_without_claiming_runtime_success(inventory, monkeypatch):

@@ -261,7 +261,9 @@ def test_profile_lookup_reads_existing_identity_without_creating_a_missing_profi
     assert not (root / "stable" / "default").exists()
 
 
-@pytest.mark.parametrize("change", [None, "owner", "name", "channel", "link", "hardlink", "mode", "invalid"])
+@pytest.mark.parametrize(
+    "change", [None, "owner", "name", "channel", "link", "hardlink", "mode", "directory-mode", "invalid"]
+)
 def test_profile_lookup_never_adopts_a_changed_or_foreign_identity(installed, change):
     from heinzel.modules.system.lifecycle import profile_directory
 
@@ -281,6 +283,8 @@ def test_profile_lookup_never_adopts_a_changed_or_foreign_identity(installed, ch
             os.link(other, path)
     elif change == "mode":
         path.chmod(0o644)
+    elif change == "directory-mode":
+        profile.chmod(0o755)
     elif change == "invalid":
         path.write_text("not-json: rejected-fixture")
     if change is None:
