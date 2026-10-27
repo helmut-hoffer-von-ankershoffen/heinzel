@@ -26,6 +26,14 @@ describe("AudioVisualizer", () => {
     }
   });
 
+  it("keeps spectrum marks inside the visualizer at short heights", () => {
+    for (const height of [24, 320]) {
+      const { rows, rowHeight, barHeight } = spectrumGeometry(height);
+      expect(rows * rowHeight).toBeLessThanOrEqual(height);
+      expect(barHeight).toBeLessThanOrEqual(rowHeight);
+    }
+  });
+
   it("does not request capture until clicked, then exposes a stop control and stops the stream on unmount", async () => {
     vi.mocked(captureAudio).mockResolvedValue(captured);
     const view = render(<AudioVisualizer />);
