@@ -4,7 +4,7 @@ All notable changes to Heinzelmännchen, newest first. Versions follow [Semantic
 
 ## [0.7.16](https://github.com/helmut-hoffer-von-ankershoffen/heinzel/releases/tag/v0.7.16) - 2026-10-27
 
-This release tightens World Clock settings spacing and clarifies plugin source labels.
+This release tightens World Clock settings spacing, clarifies plugin source labels, and makes the opt-in audio visualizer fill the screen edge more clearly.
 
 ### 🐛 Bug fixes
 

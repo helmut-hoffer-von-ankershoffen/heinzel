@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type CapturedAudio, captureAudio } from "./capture";
 
+export function spectrumGeometry(height: number) {
+  const rows = Math.max(8, Math.min(128, Math.floor(height / 4)));
+  const rowHeight = height / rows;
+  return { rows, rowHeight, barHeight: Math.max(2, rowHeight * 0.68) };
+}
+
 /** A real spectrum at the right edge. Showing the control never starts capture; the person clicks to share. */
 export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
   const [session, setSession] = useState<CapturedAudio | null>(null);
@@ -96,7 +102,7 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
       drawing.clearRect(0, 0, width, height);
       drawing.fillStyle = getComputedStyle(element).color;
       session.analyser.getByteFrequencyData(data);
-      const rows = Math.max(8, Math.min(128, Math.floor(height / 8)));
+      const { rows, rowHeight, barHeight } = spectrumGeometry(height);
       for (let row = 0; row < rows; row += 1) {
         const from = Math.floor(((rows - 1 - row) * data.length) / rows);
         const to = Math.max(from + 1, Math.floor(((rows - row) * data.length) / rows));
@@ -104,7 +110,7 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
         for (let index = from; index < to; index += 1) peak = Math.max(peak, data[index] ?? 0);
         const bar = 1 + (peak / 255) * (width - 1);
         drawing.globalAlpha = 0.2 + (peak / 255) * 0.8;
-        drawing.fillRect((width - bar) / 2, (row * height) / rows, bar, 2);
+        drawing.fillRect((width - bar) / 2, row * rowHeight, bar, barHeight);
       }
       drawing.globalAlpha = 1;
     };
