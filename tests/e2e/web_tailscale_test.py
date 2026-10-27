@@ -1,4 +1,4 @@
-"""The real mounted sharing control changes only an isolated fake vendor and verifies a replacement web process."""
+"""The mounted sharing control hot-applies policy against an isolated fake vendor."""
 
 import json
 import os
@@ -64,7 +64,7 @@ def fixture_url(server: subprocess.Popen[str], lifecycle: Path) -> str:
 
 
 @pytest.mark.timeout(300)
-def test_mounted_sharing_restarts_verifies_copies_and_disables_without_os_changes(tmp_path):
+def test_mounted_sharing_hot_applies_copies_and_disables_without_os_changes(tmp_path):
     environment = {key: value for key, value in os.environ.items() if key in {"PATH", "LANG", "LC_ALL", "TMPDIR"}}
     environment |= {
         "HOME": str(tmp_path),
@@ -132,8 +132,7 @@ def test_mounted_sharing_restarts_verifies_copies_and_disables_without_os_change
             diagnostics += f"\n--- fixture startup stages and socket state (no fd, port, or token) ---\n{events}"
         pytest.fail(diagnostics)
     assert result is not None
-    assert result["replacements"] == 2
-    assert result["mutations"] == {"enable": 1, "disable": 1, "restart": 2}
+    assert result["mutations"] == {"enable": 1, "disable": 1, "restart": 0}
     assert result["copied"] == ORIGIN
     assert result["errors"] == []
     assert {(sample["width"], sample["height"]) for sample in result["layouts"]} == {
