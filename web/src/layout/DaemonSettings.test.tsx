@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers, queryClient } from "@/App";
 import type { SchemaDaemonStatus } from "@/api/client";
-import { connectTerminal } from "@/lib/terminal";
 import { config, shell } from "@/test/fixtures";
 import { expectAccessible, mockApi } from "@/test/render";
 import { DaemonSettings } from "./DaemonSettings";
@@ -25,9 +24,23 @@ const running: SchemaDaemonStatus = {
 
 function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false) {
   let status = { ...running, ...initial };
-  const onTerminal = vi.fn();
   const { calls } = mockApi({
     "/api/system/daemon/status": () => status,
+    "/api/system/daemon/install": () => {
+      status = { ...status, installed: true, loaded: true, version: "1.2.3" };
+      return {
+        platform: "darwin",
+        executable: "/usr/bin/hz",
+        interval_minutes: 5,
+        files: {},
+        commands: [],
+        dry_run: false,
+      };
+    },
+    "/api/system/daemon/uninstall": () => {
+      status = { ...status, installed: false, loaded: false, version: null };
+      return { removed: [], commands: [] };
+    },
     "/api/system/daemon/pause": () => {
       if (failed) return { status: 400, body: { error: "Pause refused fixture" } };
       status = { ...status, paused: true };
@@ -44,29 +57,32 @@ function show(initial: Partial<SchemaDaemonStatus> = {}, failed = false) {
   });
   const view = render(
     <Providers client={queryClient()}>
-      <DaemonSettings onTerminal={onTerminal} />
+      <DaemonSettings />
     </Providers>,
   );
-  return { ...view, calls, onTerminal, user: userEvent.setup() };
+  return { ...view, calls, user: userEvent.setup() };
 }
 
 beforeEach(() => {
   sessionStorage.setItem("hz.token", "test-token");
-  connectTerminal(null);
 });
 afterEach(() => {
-  connectTerminal(null);
   vi.unstubAllGlobals();
 });
 
 describe("Daemon Settings", () => {
   it.each([true, false])("mounts actual status and safe controls in Settings, installed=%s", async (installed) => {
-    const sent: string[] = [];
-    connectTerminal((text) => sent.push(text));
-    const onClose = vi.fn();
     const { calls } = mockApi({
       ...shell,
       "/api/system/daemon/status": { ...running, installed, loaded: installed },
+      "/api/system/daemon/install": {
+        platform: "darwin",
+        executable: "/usr/bin/hz",
+        interval_minutes: 5,
+        files: {},
+        commands: [],
+        dry_run: false,
+      },
       "/api/system/config/show": {
         ...config,
         settings: [
@@ -86,7 +102,7 @@ describe("Daemon Settings", () => {
     });
     render(
       <Providers client={queryClient()}>
-        <SettingsDialog section="daemon" initialQuery="" onSection={vi.fn()} onClose={onClose} />
+        <SettingsDialog section="daemon" initialQuery="" onSection={vi.fn()} onClose={vi.fn()} />
       </Providers>,
     );
     const controls = await screen.findByRole("region", { name: "Daemon status and controls" });
@@ -98,11 +114,12 @@ describe("Daemon Settings", () => {
     else {
       const user = userEvent.setup();
       await user.click(within(controls).getByRole("button", { name: "Install" }));
-      await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Open terminal" }));
-      expect(onClose).toHaveBeenCalledTimes(1);
-      expect(sent).toEqual(["hz system daemon install"]);
+      expect(within(screen.getByRole("alertdialog")).getByText(/starts automatically/)).toBeInTheDocument();
+      await user.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Install" }));
+      await waitFor(() =>
+        expect(calls.some((request) => new URL(request.url).pathname.endsWith("/install"))).toBe(true),
+      );
     }
-    expect(calls.some((request) => new URL(request.url).pathname === "/api/system/daemon/install")).toBe(false);
   });
 
   it("shows actual daemon version, job count and last tick without exposing service-folder configuration", async () => {
@@ -140,32 +157,36 @@ describe("Daemon Settings", () => {
   });
 
   it.each(["install", "uninstall"] as const)(
-    "keeps %s CLI-only, with an explicit terminal handoff that never presses Enter",
+    "runs confirmed %s in the web API and refreshes daemon status",
     async (action) => {
-      const sent: string[] = [];
-      connectTerminal((text) => sent.push(text));
-      const { user, calls, onTerminal } = show(
+      const { user, calls } = show(
         action === "install" ? { installed: false, loaded: false, version: null, jobs: 0 } : {},
       );
       const label = action === "install" ? "Install" : "Uninstall";
       await user.click(await screen.findByRole("button", { name: label }));
       const dialog = screen.getByRole("alertdialog", { name: `${label} the daemon?` });
       expect(dialog).toHaveTextContent(`hz system daemon ${action}`);
-      expect(dialog).toHaveTextContent("press Enter");
-      expect(sent).toEqual([]);
-      await user.click(within(dialog).getByRole("button", { name: "Open terminal" }));
-      expect(sent).toEqual([`hz system daemon ${action}`]);
-      expect(onTerminal).toHaveBeenCalledTimes(1);
-      expect(calls.every((request) => request.method === "GET")).toBe(true);
+      expect(dialog).toHaveTextContent("starts automatically");
+      expect(calls.filter((request) => request.method === "POST")).toHaveLength(0);
+      await user.click(within(dialog).getByRole("button", { name: label }));
+      await waitFor(() => expect(calls.filter((request) => request.method === "POST")).toHaveLength(1));
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent(action === "install" ? "Running" : "Not installed"),
+      );
+      const postRequest = calls.find((request) => request.method === "POST");
+      expect(postRequest).toBeDefined();
+      if (postRequest) expect(new URL(postRequest.url).pathname).toBe(`/api/system/daemon/${action}`);
+      expect(
+        calls.filter((request) => request.method === "GET" && new URL(request.url).pathname.endsWith("/status")).length,
+      ).toBeGreaterThan(1);
     },
   );
 
   it("Escape cancels the confirmation without running or closing the host Settings dialog", async () => {
-    const { user, calls, onTerminal } = show();
+    const { user, calls } = show();
     await user.click(await screen.findByRole("button", { name: "Uninstall" }));
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(onTerminal).not.toHaveBeenCalled();
     expect(calls.every((request) => request.method === "GET")).toBe(true);
   });
 

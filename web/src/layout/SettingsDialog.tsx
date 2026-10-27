@@ -87,7 +87,6 @@ export function SettingsDialog({ section, initialQuery, onSection, onClose }: Pr
               searchRef={searchRef}
               section={section}
               onSection={onSection}
-              onTerminal={onClose}
             />
           )}
         </Loaded>
@@ -103,10 +102,9 @@ type BodyProps = {
   searchRef: React.RefObject<HTMLInputElement | null>;
   section: string | null;
   onSection: (section: string) => void;
-  onTerminal: () => void;
 };
 
-function Body({ report, query, setQuery, searchRef, section, onSection, onTerminal }: BodyProps) {
+function Body({ report, query, setQuery, searchRef, section, onSection }: BodyProps) {
   const plugins = usePlugins();
   const navigation = useNavigation();
   const info = useInfo();
@@ -270,7 +268,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection, onTermin
             {current === "daemon" && (
               <>
                 {header}
-                <DaemonSettings onTerminal={onTerminal} />
+                <DaemonSettings />
               </>
             )}
             {(matching.length > 0 || !["appearance", "ai", "notifications", "daemon"].includes(current)) && (

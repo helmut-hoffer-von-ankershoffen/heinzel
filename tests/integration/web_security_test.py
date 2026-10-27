@@ -215,8 +215,6 @@ def test_the_openapi_document_is_behind_the_token_and_the_cdn_docs_are_off(clien
 NEVER_ON_THE_WEB = {
     "heinzel_wake",
     "system_daemon_tick",
-    "system_daemon_install",
-    "system_daemon_uninstall",
     "system_credential_set",
     "system_credential_remove",
     "system_plugin_new",
@@ -226,6 +224,9 @@ NEVER_ON_THE_WEB = {
 def test_the_web_head_exposes_what_the_token_protects_and_never_what_spends_or_asks(kernel):
     names = {item.name for item in exposed(kernel, web.HEAD)}
     assert not names & NEVER_ON_THE_WEB
+    # Installing/removing the daemon is available to the person in confirmed Settings actions,
+    # while the chat policy still refuses an agent-proposed persistence change.
+    assert {"system_daemon_install", "system_daemon_uninstall"} <= names
     assert {"org_show", "heinzel_discover", "system_runner_ask", "notes_private"} <= names
 
 

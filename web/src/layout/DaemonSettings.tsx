@@ -3,12 +3,11 @@ import { type DaemonAction, useChangeDaemon, useDaemonStatus } from "@/api/daemo
 import { Loaded } from "@/components/common";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
-import { typeInTerminal } from "@/lib/terminal";
 
-type Action = DaemonAction | "install" | "uninstall";
+type Action = DaemonAction;
 
-/** Controls the existing daemon; CLI-only persistence changes are typed for the person to review and execute. */
-export function DaemonSettings({ onTerminal }: { onTerminal?: () => void }) {
+/** Controls the daemon after explicit confirmation; install and uninstall change persistent login behavior. */
+export function DaemonSettings() {
   const status = useDaemonStatus();
   const change = useChangeDaemon();
   const [pending, setPending] = useState<Action | null>(null);
@@ -21,10 +20,7 @@ export function DaemonSettings({ onTerminal }: { onTerminal?: () => void }) {
     if (!pending || change.isPending) return;
     const selected = pending;
     setPending(null);
-    if (selected === "install" || selected === "uninstall") {
-      typeInTerminal(`hz system daemon ${selected}`);
-      onTerminal?.();
-    } else change.mutate(selected);
+    change.mutate(selected);
   };
   return (
     <section aria-label={t("daemon.controls")} className="space-y-3 text-sm">
@@ -109,13 +105,13 @@ export function DaemonSettings({ onTerminal }: { onTerminal?: () => void }) {
         >
           <p>{t("daemon.confirm", { action: label(pending) })}</p>
           <code className="block break-all">hz system daemon {pending}</code>
-          {(pending === "install" || pending === "uninstall") && <p>{t("daemon.terminalHint")}</p>}
+          {(pending === "install" || pending === "uninstall") && <p>{t("daemon.persistenceHint")}</p>}
           <div className="flex gap-2">
             <Button size="sm" variant="outline" autoFocus onClick={() => setPending(null)}>
               {t("contrib.cancel")}
             </Button>
             <Button size="sm" disabled={change.isPending} onClick={confirm}>
-              {pending === "install" || pending === "uninstall" ? t("daemon.openTerminal") : label(pending)}
+              {label(pending)}
             </Button>
           </div>
         </div>

@@ -299,8 +299,8 @@ Run modules' jobs in the background, supervised by launchd or systemd.
 
 | Operation | CLI | MCP tool | REST | Web | Changes state | Expert |
 | --- | --- | --- | --- | --- | --- | --- |
-| Install and load the launchd agent or systemd timer that ticks every few minutes. | `hz system daemon install` | — | — | — | yes | expert |
-| Unload and remove the daemon's unit; receipts and logs stay. | `hz system daemon uninstall` | — | — | — | yes | expert |
+| Install and load the launchd agent or systemd timer that ticks every few minutes. | `hz system daemon install` | — | — | `POST /api/system/daemon/install` | yes | expert |
+| Unload and remove the daemon's unit; receipts and logs stay. | `hz system daemon uninstall` | — | — | `POST /api/system/daemon/uninstall` | yes | expert |
 | Restart the daemon so it runs with the installed hz. | `hz system daemon restart` | `system_daemon_restart` | `POST /system/daemon/restart` | `POST /api/system/daemon/restart` | yes | expert |
 | Show whether the daemon is installed, loaded and paused, its last tick and failing jobs. | `hz system daemon status` | `system_daemon_status` | `GET /system/daemon/status` | `GET /api/system/daemon/status` |  | expert |
 | Show the latest lines of the daemon's log. | `hz system daemon logs` | `system_daemon_logs` | `GET /system/daemon/logs` | `GET /api/system/daemon/logs` |  | expert |

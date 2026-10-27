@@ -82,7 +82,8 @@ hide outside expert mode (`audience="expert"`, ADR 0041) is still a tool. In cha
   `system.agent.*`, `system.changelog.*`, `system.plugin.*`, `workflow.*` and `team.*`, and of every setting a project
   `hz.toml` may not set (`ignored_in_project`, in any module, plugins' too: what a repository someone else controls may
   not decide, an agent may not either; your profile is among them) (`system.runner.chat._policy`). They are refused
-  when proposed and again at confirm; the person runs them in a terminal.
+  when proposed and again at confirm; the person runs them in a terminal. Daemon install and uninstall may also be
+  initiated from the daemon Settings page, which has its own explicit confirmation and is not a chat action (ADR 0039).
 
 The kernel gains `ActionGate` and `ProposedCall` (`heinzel.kernel._chat`; not `ChatGate`, since `Chat` is the
 messaging capability), `McpServer`, `ToolProfile.mcp_servers` and `ToolProfile.read_files` in the agent runner

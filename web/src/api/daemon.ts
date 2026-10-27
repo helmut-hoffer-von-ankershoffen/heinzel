@@ -1,10 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type SchemaDaemonStatus, type SchemaRestarted, type SchemaToggled, unwrap } from "./client";
+import {
+  api,
+  type SchemaDaemonStatus,
+  type SchemaInstalled,
+  type SchemaRestarted,
+  type SchemaToggled,
+  type SchemaUninstalled,
+  unwrap,
+} from "./client";
 
 export const daemonStatusKey = ["system", "daemon", "status"] as const;
-export type DaemonAction = "pause" | "resume" | "restart";
+export type DaemonAction = "install" | "uninstall" | "pause" | "resume" | "restart";
 
-/** The existing daemon's facts; terminal installation is observed without assuming a command succeeded. */
+/** The daemon's current facts; refreshed after every confirmed change. */
 export const useDaemonStatus = () =>
   useQuery({
     queryKey: daemonStatusKey,
@@ -17,9 +25,15 @@ export const useDaemonStatus = () =>
 export function useChangeDaemon() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (action: DaemonAction): Promise<SchemaToggled | SchemaRestarted> => {
-      const signal = AbortSignal.timeout(15_000);
+    mutationFn: async (
+      action: DaemonAction,
+    ): Promise<SchemaInstalled | SchemaUninstalled | SchemaToggled | SchemaRestarted> => {
+      const signal = AbortSignal.timeout(30_000);
       switch (action) {
+        case "install":
+          return unwrap(api.POST("/system/daemon/install", { signal }));
+        case "uninstall":
+          return unwrap(api.POST("/system/daemon/uninstall", { signal }));
         case "pause":
           return unwrap(api.POST("/system/daemon/pause", { signal }));
         case "resume":
@@ -36,9 +50,11 @@ export function useChangeDaemon() {
           status ? { ...status, paused: answer.paused } : status,
         );
     },
-    onSettled: () => {
-      void client.invalidateQueries({ queryKey: daemonStatusKey });
-      void client.invalidateQueries({ queryKey: ["ui", "status"] });
+    onSettled: async () => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: daemonStatusKey, refetchType: "all" }),
+        client.invalidateQueries({ queryKey: ["ui", "status"], refetchType: "all" }),
+      ]);
     },
   });
 }
