@@ -13,9 +13,11 @@ export async function verifyFooter(page, shots) {
   await footer.locator('[data-footer-content="@version"] button').waitFor();
   await footer.evaluate((bar) => {
     window.footerSyntheticResizes = 0;
-    window.addEventListener("resize", (event) => {
-      if (!event.isTrusted) window.footerSyntheticResizes++;
-    });
+    const dispatch = window.dispatchEvent;
+    window.dispatchEvent = function (event) {
+      if (event.type === "resize") window.footerSyntheticResizes++;
+      return dispatch.call(this, event);
+    };
     window.footerProofNodes = new Map(
       [...bar.querySelectorAll("[data-footer-content]")].flatMap((part) => {
         const button = part.querySelector("button");
@@ -79,16 +81,31 @@ export async function verifyFooter(page, shots) {
     const hidden = geometry.parts.filter((part) => part.overflow);
     const more = footer.getByRole("button", { name: "More status items" });
     if (hidden.length) {
+      try {
+        await more.waitFor({ state: "visible", timeout: 1500 });
+      } catch {
+        const domState = await footer.evaluate((bar) => {
+          const button = bar.querySelector('[data-footer-content="@more"] button');
+          const anchor = bar.querySelector('[data-footer-part="@more"]');
+          return {
+            button: button && {
+              rect: button.getBoundingClientRect().toJSON(),
+              label: button.getAttribute("aria-label"),
+              inert: button.closest("[inert]") !== null,
+              ariaHidden: button.closest('[aria-hidden="true"]') !== null,
+            },
+            anchor: anchor && {
+              ariaHidden: anchor.getAttribute("aria-hidden"),
+              inert: anchor.hasAttribute("inert"),
+              hidden: anchor.getAttribute("data-footer-hidden"),
+            },
+          };
+        });
+        assert.fail(`Overflow items are present but the accessible More control is not visible at ${width}px: ${JSON.stringify(domState)}`);
+      }
       assert.ok(
         await more.isVisible(),
-        `Hidden footer controls need a visible More button at ${width}px: ${JSON.stringify({
-          hidden: hidden.map((part) => part.id),
-          more: await more.evaluate((button) => ({
-            rect: button.getBoundingClientRect().toJSON(),
-            style: getComputedStyle(button).cssText,
-            parent: button.parentElement?.parentElement?.getAttribute("class"),
-          })),
-        })}`,
+        `Hidden footer controls need a visible More button at ${width}px: ${JSON.stringify(hidden.map((part) => part.id))}`,
       );
       await more.click();
       const popup = page.getByRole("region", { name: "More status items" });
