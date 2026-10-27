@@ -5,8 +5,8 @@ import test from "node:test";
 const main = await readFile(new URL("../src/main.js", import.meta.url), "utf8");
 const preload = await readFile(new URL("../src/preload.cjs", import.meta.url), "utf8");
 
-test("startup creates a sandboxed window only after parsing an explicit connection", () => {
-  assert.ok(main.indexOf("parseConnection(process.argv") < main.indexOf("await app.whenReady()"));
+test("startup acquires the single-instance guard and validates a connection before readiness", () => {
+  assert.ok(main.indexOf("instance.acquire(process.argv") < main.indexOf("await app.whenReady()"));
   assert.match(main, /contextIsolation: true/);
   assert.match(main, /nodeIntegration: false/);
   assert.match(main, /sandbox: true/);
