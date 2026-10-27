@@ -451,6 +451,11 @@ def test_electron_sandbox_ci_restores_and_verifies_setuid_helper():
     assert 'if [ -L "$$sandbox" ]' in makefile
     assert 'if [ ! -f "$$sandbox" ]' in makefile
     assert "sudo python3 desktop/ci/restore_linux_sandbox.py --configure" in makefile
+    assert '--configure-file "$$packaged_sandbox"' in makefile
+    assert "desktop/dist/Heinzelmaennchen-linux-$$(node -p 'process.arch')/chrome-sandbox" in makefile
+    native_target = makefile.split("desktop-electron-native:", maxsplit=1)[1].split("\n\n", maxsplit=1)[0]
+    assert 'HEINZEL_ELECTRON_EXECUTABLE="$$executable"' in native_target
+    assert "desktop/dist/Heinzelmaennchen-$$target" in native_target
     sandbox_script = (REPO / "desktop/ci/restore_linux_sandbox.py").read_text()
     assert "os.fchown(descriptor, 0, 0)" in sandbox_script
     assert "os.fchmod(descriptor, 0o4755)" in sandbox_script

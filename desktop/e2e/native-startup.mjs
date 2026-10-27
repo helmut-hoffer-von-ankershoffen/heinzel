@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const electronCli = join(packageRoot, "node_modules", "electron", "cli.js");
+const packagedExecutable = process.env.HEINZEL_ELECTRON_EXECUTABLE;
 const OUTPUT_LIMIT = 8192;
 const token = randomBytes(24).toString("base64url");
 const controlToken = randomBytes(24).toString("base64url");
@@ -92,8 +93,8 @@ try {
   await writeFile(fixtureCli, `#!/usr/bin/env node\nimport { createConnection } from "node:net";\nconst expected = ["ui", "--port", "0", "--no-browser"];\nif (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(expected)) process.exit(64);\nconst control = createConnection({ host: "127.0.0.1", port: Number(process.env.HZ_TEST_CONTROL_PORT) });\ncontrol.once("connect", () => { control.write("HELLO " + process.env.HZ_TEST_CONTROL_TOKEN + "\\n"); });\nlet input = "";\ncontrol.on("data", (chunk) => { input += chunk.toString("utf8"); if (input.includes("READY " + process.env.HZ_TEST_CONTROL_TOKEN + "\\n")) { process.stdout.write(process.env.HZ_TEST_URL + "\\n"); input = ""; } });\ncontrol.on("close", () => process.exit(0));\nsetInterval(() => {}, 1000);\n`, { mode: 0o700 });
   await chmod(fixtureCli, 0o700);
   child = spawn(
-    process.execPath,
-    [electronCli, packageRoot],
+    packagedExecutable ?? process.execPath,
+    packagedExecutable ? [] : [electronCli, packageRoot],
     {
       cwd: packageRoot,
       env: {

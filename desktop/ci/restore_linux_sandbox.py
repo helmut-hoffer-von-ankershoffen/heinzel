@@ -31,6 +31,7 @@ MAX_ARCHIVE_BYTES = 160 * 1024 * 1024
 MAX_HELPER_BYTES = 1024 * 1024
 ARGUMENT_COUNT = 2
 CONFIGURE_ARGUMENT_COUNT = 3
+CONFIGURE_FILE_ARGUMENT_COUNT = 4
 USAGE_ERROR = 2
 
 
@@ -252,7 +253,12 @@ def _cleanup_staging_directory(name: str, directory_fd: int | None, dist_fd: int
         pass
 
 
-def configure_helper_permissions(electron_root: Path, version: str) -> None:
+def configure_helper_permissions(
+    electron_root: Path,
+    version: str,
+    *,
+    helper_path: Path | None = None,
+) -> None:
     """Install a verified root-owned inode, never changing metadata on user files.
 
     The extracted helper and its parent are user-writable, so privileged metadata
@@ -268,7 +274,7 @@ def configure_helper_permissions(electron_root: Path, version: str) -> None:
     if expected is None:
         message = f"Electron {version} has no pinned sandbox helper digest"
         raise SandboxArchiveError(message)
-    source_path = electron_root / "dist" / "chrome-sandbox"
+    source_path = helper_path or electron_root / "dist" / "chrome-sandbox"
     source_descriptor = _open_nofollow(source_path)
     stage_name: str | None = None
     stage_directory_fd: int | None = None
@@ -309,17 +315,40 @@ def configure_helper_permissions(electron_root: Path, version: str) -> None:
                 os.close(descriptor)
 
 
+def configure_packaged_helper(helper_path: Path, version: str) -> None:
+    """Configure a packaged helper from the exact sibling sandbox binary.
+
+    Raises:
+        SandboxArchiveError: The helper path has an unexpected file name.
+    """
+    if helper_path.name != "chrome-sandbox":
+        message = "Packaged Electron sandbox helper must be named chrome-sandbox"
+        raise SandboxArchiveError(message)
+    configure_helper_permissions(helper_path.parent, version, helper_path=helper_path)
+
+
 def main() -> int:
-    """Install the Linux helper under the installed Electron package."""
-    if len(sys.argv) == CONFIGURE_ARGUMENT_COUNT and sys.argv[1] == "--configure":
+    """Install or configure a verified Linux Electron sandbox helper."""
+    configure_mode = (len(sys.argv) == CONFIGURE_ARGUMENT_COUNT and sys.argv[1] == "--configure") or (
+        len(sys.argv) == CONFIGURE_FILE_ARGUMENT_COUNT and sys.argv[1] == "--configure-file"
+    )
+    if configure_mode:
         try:
-            electron_root = Path(sys.argv[2])
-            package = json.loads((electron_root / "package.json").read_text(encoding="utf-8"))
-            configure_helper_permissions(electron_root, package["version"])
+            if len(sys.argv) == CONFIGURE_ARGUMENT_COUNT and sys.argv[1] == "--configure":
+                electron_root = Path(sys.argv[2])
+                package = json.loads((electron_root / "package.json").read_text(encoding="utf-8"))
+                configure_helper_permissions(electron_root, package["version"])
+                configured = f"Electron sandbox helper under: {electron_root}"
+            elif len(sys.argv) == CONFIGURE_FILE_ARGUMENT_COUNT and sys.argv[1] == "--configure-file":
+                helper_path = Path(sys.argv[2])
+                configure_packaged_helper(helper_path, sys.argv[3])
+                configured = f"packaged Electron sandbox helper: {helper_path}"
+            else:
+                configured = ""
         except (OSError, SandboxArchiveError, KeyError) as error:
             print(f"::error::Could not configure Electron sandbox helper: {error}", file=sys.stderr)  # noqa: T201
             return 1
-        print(f"Configured Electron sandbox helper under: {electron_root}")  # noqa: T201
+        print(f"Configured {configured}")  # noqa: T201
         return 0
     if len(sys.argv) != ARGUMENT_COUNT:
         print("usage: python3 desktop/ci/restore_linux_sandbox.py ELECTRON_PACKAGE_ROOT", file=sys.stderr)  # noqa: T201
