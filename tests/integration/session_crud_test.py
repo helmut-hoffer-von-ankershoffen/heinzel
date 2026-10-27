@@ -102,6 +102,7 @@ def test_propose_activate_pause_and_resume_five_minute_check_in_through_private_
     assert proposed["contracts"][0]["version"] == 1
     assert proposed["contracts"][0]["status"] == "proposed"
     assert proposed["schedule"]["status"] == "proposed"
+    assert proposed["state"] == "proposed"
     assert proposed["schedule"]["cron"] == "*/5 * * * *"
 
     activated = client.post(
