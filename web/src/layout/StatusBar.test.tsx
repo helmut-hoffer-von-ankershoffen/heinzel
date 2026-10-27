@@ -33,7 +33,7 @@ describe("The status bar's clock", () => {
     });
     renderAt("/doctor");
     const bar = await screen.findByRole("contentinfo");
-    expect(within(bar).queryByRole("button", { description: /World Clock/ })).not.toBeInTheDocument();
+    expect(within(bar).queryByRole("button", { description: /World clock/ })).not.toBeInTheDocument();
     expect(bar.textContent).not.toMatch(/\b\d{2}:\d{2}:\d{2}\b/);
   });
 
@@ -41,10 +41,10 @@ describe("The status bar's clock", () => {
     mockApi(answers);
     const user = userEvent.setup();
     const { container } = renderAt("/doctor");
-    const clock = await screen.findByRole("button", { description: "World Clock: time for the team and stakeholders" });
+    const clock = await screen.findByRole("button", { description: "World clock: time for the team and stakeholders" });
     const wrapper = clock.parentElement as HTMLElement;
     fireEvent.mouseEnter(wrapper);
-    const zones = await screen.findByRole("region", { name: "World Clock: time for the team and stakeholders" });
+    const zones = await screen.findByRole("region", { name: "World clock: time for the team and stakeholders" });
     expect(await within(zones).findByText("New York")).toBeInTheDocument();
     // The first zone is yours: the clock shows its time, and the panel lists it first, marked, then the others, all on
     // the 24-hour clock.
@@ -71,14 +71,14 @@ describe("The status bar's clock", () => {
     mockApi(answers);
     const user = userEvent.setup();
     renderAt("/doctor");
-    const clock = await screen.findByRole("button", { description: "World Clock: time for the team and stakeholders" });
+    const clock = await screen.findByRole("button", { description: "World clock: time for the team and stakeholders" });
     const wrapper = clock.parentElement as HTMLElement;
     fireEvent.mouseEnter(wrapper);
     fireEvent.mouseLeave(wrapper);
-    expect(screen.getByRole("region", { name: "World Clock: time for the team and stakeholders" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "World clock: time for the team and stakeholders" })).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 250));
     expect(
-      screen.queryByRole("region", { name: "World Clock: time for the team and stakeholders" }),
+      screen.queryByRole("region", { name: "World clock: time for the team and stakeholders" }),
     ).not.toBeInTheDocument();
     await user.click(clock);
     expect(clock).toHaveAttribute("aria-expanded", "true");

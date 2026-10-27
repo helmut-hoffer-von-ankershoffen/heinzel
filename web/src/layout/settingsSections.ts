@@ -35,7 +35,13 @@ export const BINDINGS = "capabilities";
 /** `system.runner` → `system`: the left side lists modules; their sub-sections are headings on the right. */
 export const group = (section: string) => section.split(".")[0] ?? section;
 
-const BRANDS: Record<string, string> = { acme: "ACME", github: "GitHub", gitlab: "GitLab", hz: "hz" };
+const BRANDS: Record<string, string> = {
+  acme: "ACME",
+  clock: "World clock",
+  github: "GitHub",
+  gitlab: "GitLab",
+  hz: "hz",
+};
 /** Words written in capitals wherever they appear in a name: `ai access` → `AI access`, never `Ai access`. */
 const ACRONYMS: Record<string, string> = {
   ai: "AI",
@@ -61,7 +67,7 @@ export function inWords(name: string): string {
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" ");
 }
 
-/** A plugin's name as its authors write it: the casing its summary uses (`GitHub`), else `Clock`; a known brand (`World Clock`) first. */
+/** A plugin's name as its authors write it: the casing its summary uses (`GitHub`), else `Clock`; known names first. */
 export function displayName(name: string, summary = ""): string {
   const words = name.replaceAll("-", " ").replaceAll("_", " ");
   const escaped = words.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -184,6 +190,13 @@ const ALIASES: Record<string, string> = { hz: "appearance", org: "you", heinzel:
 
 const owns = (page: Page, section: string) => page.owns.some((own) => section === own || section.startsWith(`${own}.`));
 
+/** Legacy display providers remain preferences; identify their capability/kind, never their package name. */
+function preferenceIcon(plugin: SchemaPluginInfo | undefined): LucideIcon | undefined {
+  if (plugin?.capabilities?.some((capability) => capability.split(":").at(-1) === "weather")) return ICONS["cloud-sun"];
+  if (plugin?.kinds?.includes("theme") || plugin?.themes?.length) return Palette;
+  return undefined;
+}
+
 /** The page that owns a setting section: the longest matching prefix, else a plugin module's own page, else System. */
 export function pageOf(section: string, pages: Page[]): Page | undefined {
   let best: Page | undefined;
@@ -233,14 +246,15 @@ export function settingsNav(
     // Legacy provider metadata must not move host settings out of their existing conceptual pages.
     if (
       !entry.declared &&
-      (connects(plugin) || entry.settings.sections.every((section) => PAGES.some((page) => owns(page, section))))
+      ((connects(plugin) && !preferenceIcon(plugin)) ||
+        entry.settings.sections.every((section) => PAGES.some((page) => owns(page, section))))
     )
       return [];
     return [
       {
         id: entry.id,
-        title: entry.title,
-        icon: ICONS[entry.icon],
+        title: entry.module === "clock" ? "World clock" : displayName(entry.title, entry.title),
+        icon: !entry.declared && entry.icon === "code" ? (preferenceIcon(plugin) ?? ICONS.code) : ICONS[entry.icon],
         heading: entry.settings.group,
         owns: entry.settings.sections,
         plugin,

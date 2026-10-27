@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
+.PHONY: help install setup release-local doctor tools-verify check check-fast preflight fix lint format typecheck test test-parallel commits test-all-pythons test-unit test-integration test-perf test-e2e audit licenses secrets template-test template-sync docs attributions fuzz demo terminal-art notifier icons web-build web-dev test-web managed-backend-setup managed-backend-check build pypi-clean-build-marker changelog ci-logs pr sync docs-plugins docs-record docs-site release clean
 
 # Quiet by default: one line per passing step, the tail of a failing one. VERBOSE=1 streams everything.
 # A step starting with & runs concurrently with the one before it; the first failure cancels the rest.
@@ -40,6 +40,10 @@ WEB_LINT := "&web-lint=$(WEB) exec biome ci ." "&web-client=$(WEB_PROJECT_CLEAN)
 # Keep the native TypeScript CLI distinct from the compiler API openapi-typescript imports.
 WEB_TYPES := "&web-types=$(WEB) exec node node_modules/@typescript/native/bin/tsc --noEmit -p ."
 WEB_TESTS := "&web-tests=$(WEB) exec vitest run"
+# The managed backend has no Electron dependency; plugins do not carry its private verification package.
+MANAGED := $(WEB) pnpm --dir ../desktop/managed
+MANAGED_CHECK := "managed-backend=$(MANAGED) run check"
+MANAGED_TYPES := "&managed-types=$(MANAGED) exec tsc --noEmit --project ."
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
@@ -48,6 +52,7 @@ install: ## Install what the build needs: Python with every dependency group (.v
 	@uv sync --all-groups --quiet && echo "✓ .venv: Python and every dependency group, as locked in uv.lock"
 	@$(TOOLS) install build web
 	@$(WEB) install
+	@$(MAKE) --no-print-directory managed-backend-setup
 
 setup: install ## Install what the build needs, and the git hooks (prek: lint on commit, conventional commits)
 	@uv run --quiet prek install --hook-type pre-commit --hook-type commit-msg --hook-type pre-push >/dev/null
@@ -60,7 +65,7 @@ tools-verify: ## Download every pinned tool for every platform and check its che
 	@$(TOOLS) verify
 
 check: ## Everything CI checks that runs offline, in parallel: lint, import contracts, types, tests
-	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(TESTS) $(WEB_TESTS)
+	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(TESTS) $(WEB_TESTS) $(MANAGED_CHECK)
 
 check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts, generated files, unit tests
 	$(STEPS) \
@@ -72,14 +77,14 @@ check-fast: ## Seconds-fast feedback for the edit loop: format, lint, contracts,
 		"&demo=uv run --script scripts/demo_tape.py --check" \
 		"&attributions=uv run --quiet --script scripts/attributions.py --check" \
 		$(WEB_LINT) $(WEB_TYPES) \
-		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(WEB_TESTS)
+		"unit=uv run pytest -m 'unit and not perf' -n auto -x -q --session-timeout=120" $(WEB_TESTS) $(MANAGED_CHECK)
 
 preflight: ## What CI checks, before you push: check with coverage, template, build, commits (PREFLIGHT=full adds e2e, audit)
 	$(STEPS) $(GATE) $(LINT) $(WEB_LINT) $(TYPES) $(WEB_TYPES) $(WEB_TESTS) \
 		"&tests=$(COVERED) -x && uv run coverage combine --quiet && uv run coverage report --format=total --fail-under=90" \
 		"&template=TEMPLATE_AUDIT=$(if $(filter full,$(PREFLIGHT)),1) bash scripts/template-test.sh" \
 		"&build=uv build --all-packages --quiet --out-dir .preflight-dist && rm -rf .preflight-dist" \
-		"&commits=$(MAKE) --no-print-directory commits"
+		"&commits=$(MAKE) --no-print-directory commits" $(MANAGED_CHECK)
 	@if [ "$(PREFLIGHT)" = full ]; then $(MAKE) --no-print-directory audit test-e2e; fi
 
 fix: ## Fix what tools can fix: lockfile, formatting, lint autofixes, generated files; then list changed files
@@ -102,7 +107,14 @@ format: ## Format and autofix
 	uv run ruff check --fix .
 
 typecheck: ## Type-check with mypy and pyright (both strict)
-	$(STEPS) "mypy=uv run mypy" "&pyright=uv run pyright" $(WEB_TYPES)
+	$(STEPS) "mypy=uv run mypy" "&pyright=uv run pyright" $(WEB_TYPES) $(MANAGED_TYPES)
+
+managed-backend-setup: ## Install locked private backend verification tools; no application or OS service
+	@$(MANAGED) install --frozen-lockfile --ignore-scripts --prefer-offline --reporter=silent
+	@echo "✓ managed backend: locked verification dependencies"
+
+managed-backend-check: ## Check sealed helpers, strict Node types and owned process/inventory behavior
+	$(STEPS) $(MANAGED_CHECK)
 
 test: ## Run unit and integration tests with coverage on 4 workers (offline; what the CI Coverage job runs)
 	$(STEPS) \

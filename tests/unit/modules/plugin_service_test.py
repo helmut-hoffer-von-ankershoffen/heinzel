@@ -65,6 +65,23 @@ def test_installed_plugins_keep_repository_visibility_from_install_history(make_
     assert service.installed()[0].private_repository is None
 
 
+def test_fresh_inventory_is_explicit_and_does_not_recurse_or_change_loaded_modules(make_kernel, tmp_path, monkeypatch):
+    service = service_for(make_kernel, tmp_path)
+    cached = service.installed()[0]
+    calls = []
+
+    def fresh(*args):
+        calls.append(args)
+        return json.dumps([cached.model_dump(mode="json") | {"version": "2.0.0"}])
+
+    monkeypatch.setattr(service._installation, "hz", fresh)
+    assert service.installed()[0].version == "1.0.0"
+    assert calls == []
+    assert service.installed(fresh=True)[0].version == "2.0.0"
+    assert calls == [("system", "plugin", "list", "--json")]
+    assert service.installed()[0].version == "1.0.0"
+
+
 @pytest.mark.parametrize("action", ["add", "develop"])
 def test_replacing_a_source_without_visibility_does_not_inherit_its_private_badge(make_kernel, tmp_path, action):
     service = service_for(make_kernel, tmp_path)

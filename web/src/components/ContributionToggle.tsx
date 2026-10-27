@@ -117,6 +117,7 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
   const requested = !control.checked && control.requested === true;
   const operation = (control.checked || requested ? control.disable : control.enable).call;
   const url = control.checked && !pending ? publicUrl(control.url) : null;
+  const displayUrl = url ? (authenticatedUrl(control) ?? url) : null;
   const copied = control.checked && !!control.url && copiedUrl === control.url;
 
   const change = async () => {
@@ -230,14 +231,14 @@ export function ContributionToggle({ control, refresh, applySettings }: Props) {
       </p>
       {url && (
         <div className="space-y-2">
-          <p className="break-all font-mono text-xs">{control.url}</p>
+          <p className="break-all font-mono text-xs">{displayUrl}</p>
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant="outline" onClick={() => void copy()}>
               {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
               {t("contrib.toggle.copyUrl")}
             </Button>
             <Button size="sm" variant="outline" asChild>
-              <a href={url} target="_blank" rel="noopener noreferrer">
+              <a href={displayUrl ?? url} target="_blank" rel="noopener noreferrer">
                 <ExternalLink aria-hidden />
                 {t("status.open")}
               </a>

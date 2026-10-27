@@ -182,3 +182,4 @@ of inventing them. Two factual corrections came with it: ADR 0004 names the plug
 | [0079](0079-core-pypi-trusted-publishing-is-isolated-from-builds.md) | Core PyPI trusted publishing is isolated from builds | proposed | 2026-10-25 |
 | [0085](0085-web-updates-verify-the-reloaded-frontend.md) | Web updates verify the reloaded frontend | proposed | 2026-10-26 |
 | [0078](0078-native-desktop-uses-the-shared-lifecycle-and-daemon.md) | Native desktop uses the shared lifecycle service and existing daemon | proposed | 2026-10-25 |
+| [0087](0087-managed-backend-ownership-is-independent-of-the-window.md) | Managed backend ownership is independent of the native window | proposed | 2026-10-27 |
