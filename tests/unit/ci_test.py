@@ -8,6 +8,7 @@ import stat
 import tomllib
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -16,7 +17,7 @@ pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
 
-_SANDBOX_SCRIPT = REPO / "scripts" / "electron_linux_sandbox.py"
+_SANDBOX_SCRIPT = REPO / "desktop" / "ci" / "restore_linux_sandbox.py"
 _SANDBOX_SPEC = importlib.util.spec_from_file_location("electron_linux_sandbox", _SANDBOX_SCRIPT)
 assert _SANDBOX_SPEC is not None
 assert _SANDBOX_SPEC.loader is not None
@@ -138,6 +139,7 @@ def test_electron_sandbox_extracts_only_regular_helper_from_verified_archive(mon
         release.writestr("electron", b"unrelated binary")
     data = archive.getvalue()
     monkeypatch.setitem(electron_linux_sandbox.ARCHIVE_SHA256, "test", hashlib.sha256(data).hexdigest())
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"helper").hexdigest())
 
     assert electron_linux_sandbox.verified_helper(data, "test") == b"helper"
 
@@ -153,8 +155,10 @@ def test_electron_sandbox_install_creates_only_verified_helper(tmp_path, monkeyp
         release.writestr(helper, b"helper")
     data = archive.getvalue()
     monkeypatch.setitem(electron_linux_sandbox.ARCHIVE_SHA256, "test", hashlib.sha256(data).hexdigest())
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"helper").hexdigest())
     electron_root = tmp_path / "electron"
     electron_root.mkdir()
+    (electron_root / "dist").mkdir()
     (electron_root / "package.json").write_text('{"version":"test"}', encoding="utf-8")
 
     installed = electron_linux_sandbox.install_helper(
@@ -165,12 +169,159 @@ def test_electron_sandbox_install_creates_only_verified_helper(tmp_path, monkeyp
     assert installed.read_bytes() == b"helper"
 
 
+def test_electron_sandbox_install_does_not_follow_stale_temp_symlink(tmp_path, monkeypatch):
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as release:
+        helper = zipfile.ZipInfo("chrome-sandbox")
+        helper.external_attr = (stat.S_IFREG | 0o755) << 16
+        release.writestr(helper, b"helper")
+    data = archive.getvalue()
+    monkeypatch.setitem(electron_linux_sandbox.ARCHIVE_SHA256, "test", hashlib.sha256(data).hexdigest())
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"helper").hexdigest())
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    unrelated = tmp_path / "unrelated"
+    unrelated.write_bytes(b"untouched")
+    (dist / "chrome-sandbox.tmp").symlink_to(unrelated)
+    (electron_root / "package.json").write_text('{"version":"test"}', encoding="utf-8")
+
+    installed = electron_linux_sandbox.install_helper(
+        electron_root, open_url=lambda *_args, **_kwargs: io.BytesIO(data)
+    )
+
+    assert installed.read_bytes() == b"helper"
+    assert unrelated.read_bytes() == b"untouched"
+
+
+def test_electron_sandbox_install_rejects_symlink_destination(tmp_path, monkeypatch):
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as release:
+        helper = zipfile.ZipInfo("chrome-sandbox")
+        helper.external_attr = (stat.S_IFREG | 0o755) << 16
+        release.writestr(helper, b"helper")
+    data = archive.getvalue()
+    monkeypatch.setitem(electron_linux_sandbox.ARCHIVE_SHA256, "test", hashlib.sha256(data).hexdigest())
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"helper").hexdigest())
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    unrelated = tmp_path / "unrelated"
+    unrelated.write_bytes(b"untouched")
+    (dist / "chrome-sandbox").symlink_to(unrelated)
+    (electron_root / "package.json").write_text('{"version":"test"}', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="symlinked"):
+        electron_linux_sandbox.install_helper(electron_root, open_url=lambda *_args, **_kwargs: io.BytesIO(data))
+
+    assert unrelated.read_bytes() == b"untouched"
+
+
+def test_electron_sandbox_install_bounds_archive_read(tmp_path, monkeypatch):
+    monkeypatch.setattr(electron_linux_sandbox, "MAX_ARCHIVE_BYTES", 16)
+    electron_root = tmp_path / "electron"
+    electron_root.mkdir()
+    (electron_root / "package.json").write_text('{"version":"45.0.0"}', encoding="utf-8")
+    oversized = io.BytesIO(b"x" * 17)
+
+    with pytest.raises(ValueError, match="size limit"):
+        electron_linux_sandbox.install_helper(electron_root, open_url=lambda *_args, **_kwargs: oversized)
+
+
+def test_electron_sandbox_permissions_use_nofollow_descriptor_operations(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    electron_root.mkdir()
+    opened = {}
+    file_stat = SimpleNamespace(st_mode=stat.S_IFREG | 0o600, st_uid=1000, st_gid=1000, st_size=6)
+
+    def open_helper(path):
+        opened["path"] = path
+        return 47
+
+    def set_owner(descriptor, uid, gid):
+        assert descriptor == 47
+        file_stat.st_uid = uid
+        file_stat.st_gid = gid
+
+    def set_mode(descriptor, mode):
+        assert descriptor == 47
+        file_stat.st_mode = stat.S_IFREG | mode
+
+    chunks = iter([b"helper", b""])
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"helper").hexdigest())
+    monkeypatch.setattr(electron_linux_sandbox, "_open_nofollow", open_helper)
+    monkeypatch.setattr(electron_linux_sandbox.os, "fstat", lambda _descriptor: file_stat)
+    monkeypatch.setattr(electron_linux_sandbox.os, "fchown", set_owner)
+    monkeypatch.setattr(electron_linux_sandbox.os, "fchmod", set_mode)
+    monkeypatch.setattr(electron_linux_sandbox.os, "read", lambda _descriptor, _limit: next(chunks))
+    monkeypatch.setattr(electron_linux_sandbox.os, "close", lambda _descriptor: None)
+
+    electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    assert opened["path"] == electron_root / "dist" / "chrome-sandbox"
+    assert (file_stat.st_uid, file_stat.st_gid, stat.S_IMODE(file_stat.st_mode)) == (0, 0, 0o4755)
+
+
+def test_electron_sandbox_permissions_reject_symlink_parent(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    electron_root.mkdir()
+    outside = tmp_path / "outside"
+    (outside / "dist").mkdir(parents=True)
+    target = outside / "dist" / "chrome-sandbox"
+    target.write_bytes(b"untouched")
+    (electron_root / "dist").symlink_to(outside / "dist", target_is_directory=True)
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"untouched").hexdigest())
+
+    with pytest.raises(OSError, match=r"(symbolic link|Not a directory)"):
+        electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    assert target.read_bytes() == b"untouched"
+
+
+def test_electron_sandbox_permissions_reject_symlink_helper(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    target = tmp_path / "target"
+    target.write_bytes(b"untouched")
+    (dist / "chrome-sandbox").symlink_to(target)
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"untouched").hexdigest())
+
+    with pytest.raises(OSError, match=r"(symbolic link|Not a directory)"):
+        electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    assert target.read_bytes() == b"untouched"
+
+
+def test_electron_sandbox_permissions_reject_replaced_regular_file(tmp_path, monkeypatch):
+    electron_root = tmp_path / "electron"
+    dist = electron_root / "dist"
+    dist.mkdir(parents=True)
+    helper = dist / "chrome-sandbox"
+    helper.write_bytes(b"attacker")
+    monkeypatch.setitem(electron_linux_sandbox.HELPER_SHA256, "test", hashlib.sha256(b"trusted").hexdigest())
+    fchown_called = False
+
+    def fchown(*_args):
+        nonlocal fchown_called
+        fchown_called = True
+
+    monkeypatch.setattr(electron_linux_sandbox.os, "fchown", fchown)
+
+    with pytest.raises(ValueError, match="does not match"):
+        electron_linux_sandbox.configure_helper_permissions(electron_root, "test")
+
+    assert not fchown_called
+
+
 def test_electron_sandbox_ci_restores_and_verifies_setuid_helper():
     makefile = (REPO / "Makefile").read_text()
-    target = next(line for line in makefile.splitlines() if "uv run --script scripts/electron_linux_sandbox.py" in line)
+    target = next(line for line in makefile.splitlines() if "python3 desktop/ci/restore_linux_sandbox.py" in line)
+    assert 'if [ -L "$$sandbox" ]' in makefile
     assert 'if [ ! -f "$$sandbox" ]' in makefile
-    assert "sudo chown root:root" in makefile
-    assert "sudo chmod 4755" in makefile
+    assert "sudo python3 desktop/ci/restore_linux_sandbox.py --configure" in makefile
+    assert "os.fchown(descriptor, 0, 0)" in (REPO / "desktop/ci/restore_linux_sandbox.py").read_text()
+    assert "os.fchmod(descriptor, 0o4755)" in (REPO / "desktop/ci/restore_linux_sandbox.py").read_text()
     assert "stat -c '%u:%a'" in makefile
     assert "$$electron_root" in target
 

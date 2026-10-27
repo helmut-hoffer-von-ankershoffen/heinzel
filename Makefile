@@ -126,13 +126,17 @@ desktop-electron-sandbox: ## Set Electron's Linux sandbox helper ownership and m
 		exit 1; \
 	}; \
 	electron_root=$$(dirname "$$electron_entry"); \
-	uv run --script scripts/electron_linux_sandbox.py "$$electron_root" || exit $$?; \
+	python3 desktop/ci/restore_linux_sandbox.py "$$electron_root" || exit $$?; \
 	sandbox=$$electron_root/dist/chrome-sandbox; \
+	if [ -L "$$sandbox" ]; then \
+		echo "::error::Refusing to configure a symlinked Electron sandbox helper"; \
+		exit 1; \
+	fi; \
 	if [ ! -f "$$sandbox" ]; then \
 		echo "::error::Expected Electron sandbox helper not found at $$sandbox"; \
 		exit 1; \
 	fi; \
-	if ! sudo chown root:root -- "$$sandbox" || ! sudo chmod 4755 -- "$$sandbox"; then \
+	if ! sudo python3 desktop/ci/restore_linux_sandbox.py --configure "$$electron_root"; then \
 		echo "::error::Could not configure Electron sandbox helper at $$sandbox"; \
 		exit 1; \
 	fi; \
