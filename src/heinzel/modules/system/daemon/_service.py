@@ -485,7 +485,7 @@ class DaemonService:
         previous = self._abandoned.get(job.id)
         if skip is None and previous is not None and previous.is_alive():
             skip = "its previous run timed out and is still running"
-        outcome = Outcome(error=skip) if skip is not None else self._execute(job)
+        outcome = Outcome(error=skip) if skip is not None else self._execute(job, due.slot)
         if isinstance(outcome.value, JobInactive) and outcome.error is None:
             return JobRun(
                 job=job.id, as_of=due.slot, wake=due.wake, disposition=Disposition.SKIPPED, error=outcome.value.reason
@@ -553,7 +553,7 @@ class DaemonService:
             return [Due(slot, Wake.SCHEDULE, "missed slot; catch_up is skip")]
         return [Due(slot, Wake.SCHEDULE)]
 
-    def _execute(self, job: Job) -> Outcome:
+    def _execute(self, job: Job, slot: datetime) -> Outcome:
         """Run a job through kernel injection with its timeout, retrying failures but never a timeout.
 
         A job that timed out may still be running, so running it again could do its work twice; its thread is
@@ -561,7 +561,10 @@ class DaemonService:
         """
         outcome = Outcome()
         for _ in range(job.let.retries + 1):
-            outcome = self._time_limit(lambda: self._kernel.call(job.let.func), job.let.timeout.total_seconds())
+            outcome = self._time_limit(
+                lambda: job.let.run_for_slot(slot) if job.let.run_for_slot else self._kernel.call(job.let.func),
+                job.let.timeout.total_seconds(),
+            )
             if outcome.abandoned is not None:
                 self._abandoned[job.id] = outcome.abandoned
                 return outcome

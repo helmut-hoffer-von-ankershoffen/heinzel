@@ -337,15 +337,15 @@ def test_active_check_in_compiles_a_local_deduplicated_job_and_pause_wins_a_stal
             if item.name == f"check-in-{created.session_id.lower()}"
         )
         assert job.schedule == "*/5 * * * *"
-        first = job.func()
-        duplicate = job.func()
+        first = job.run_for_slot(NOW)
+        duplicate = job.run_for_slot(NOW)
         assert first["notice"] is True
         assert duplicate["notice"] is True
 
         paused = sessions.schedule_control(created.session_id, "check-in-pause", 2, "pause")
         assert paused.schedule is not None
         assert paused.schedule.status == "paused"
-        assert job.func().__class__.__name__ == "JobInactive"
+        assert job.run_for_slot(NOW).__class__.__name__ == "JobInactive"
 
         notices = kernel.resolve(Notifications).recent()
         assert len(notices) == 1
@@ -374,13 +374,13 @@ def test_compiled_check_in_does_not_notify_after_pause_or_revision_change(make, 
         if resume:
             sessions.schedule_control(created.session_id, "race-resume", 3, "resume")
 
-        outcome = stale.func()
+        outcome = stale.run_for_slot(NOW)
         assert outcome.__class__.__name__ == "JobInactive"
         assert service._kernel.resolve(Notifications).recent() == []
 
         if resume:
             fresh = next(job for job in service.compiled(sessions=sessions).jobs if job.schedule == "*/5 * * * *")
-            assert fresh.func()["notice"] is True
+            assert fresh.run_for_slot(NOW)["notice"] is True
             assert len(service._kernel.resolve(Notifications).recent()) == 1
 
 
@@ -398,7 +398,7 @@ def test_check_in_notice_deduplicates_after_reopening_session_and_notification_s
         sessions.schedule_control(created.session_id, "restart-activate", 1, "activate")
     with user.local("daemon"):
         first_job = next(job for job in service.compiled(sessions=sessions).jobs if job.schedule == "*/5 * * * *")
-        first_job.func()
+        first_job.run_for_slot(NOW)
         assert len(service._kernel.resolve(Notifications).recent()) == 1
 
     restarted = make()
@@ -416,7 +416,7 @@ def test_check_in_notice_deduplicates_after_reopening_session_and_notification_s
         resumed_job = next(
             job for job in restarted.compiled(sessions=restarted_sessions).jobs if job.schedule == "*/5 * * * *"
         )
-        resumed_job.func()
+        resumed_job.run_for_slot(NOW)
         notices = restarted._kernel.resolve(Notifications).recent()
         assert len(notices) == 1
         assert notices[0].key.startswith(f"heinzel:{created.session_id}:check-in:")

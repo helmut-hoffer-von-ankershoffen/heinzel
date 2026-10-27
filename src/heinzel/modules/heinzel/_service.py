@@ -581,11 +581,9 @@ class HeinzelService:
     ) -> JobLet:
         """Create a deduplicated local check-in notice; this job has no model or external capability."""
 
-        def notify() -> JsonValue | JobInactive:
+        def notify(slot: datetime) -> JsonValue | JobInactive:
             if not self._kernel.provides(Notifications):
                 return JobInactive(reason="local notifications are unavailable")
-            now = self._clock().astimezone(UTC).replace(second=0, microsecond=0)
-            slot = now.replace(minute=now.minute - now.minute % 5)
             return sessions.emit_check_in(
                 session_id,
                 contract_version,
@@ -594,11 +592,16 @@ class HeinzelService:
                 self._kernel.resolve(Notifications),
             )
 
-        notify.__qualname__ = f"heinzel:check-in-{session_id}"
-        notify.__doc__ = f"Send a local scheduled check-in notice for {session_id}."
+        def unavailable() -> JsonValue | JobInactive:
+            msg = "A check-in requires a daemon schedule slot"
+            raise HeinzelError(msg)
+
+        unavailable.__qualname__ = f"heinzel:check-in-{session_id}"
+        unavailable.__doc__ = f"Send a local scheduled check-in notice for {session_id}."
         return JobLet(
             name=f"check-in-{session_id.lower()}",
-            func=notify,
+            func=unavailable,
+            run_for_slot=notify,
             summary=f"Scheduled check-in for {name}",
             schedule="*/5 * * * *",
             timeout=timedelta(seconds=10),

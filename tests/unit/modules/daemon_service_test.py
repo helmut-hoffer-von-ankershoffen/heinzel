@@ -843,3 +843,17 @@ def test_a_daemon_started_by_an_older_hz_is_flagged_and_restart_mends_it(make, t
 
 def test_restarting_a_daemon_that_is_not_installed_does_nothing(make):
     assert make(runner=Refuses()).restart().restarted is False
+
+
+def test_worker_thread_inherits_only_the_callers_context():
+    from contextvars import ContextVar
+
+    owner = ContextVar("test_owner", default="none")
+    token = owner.set("first")
+    try:
+        assert within(owner.get, 1).value == "first"
+        owner.set("second")
+        assert within(owner.get, 1).value == "second"
+    finally:
+        owner.reset(token)
+    assert within(owner.get, 1).value == "none"

@@ -288,6 +288,8 @@ class JobLet(Let):
     catch_up: CatchUp = CatchUp.LATEST
     idempotency: Callable[[datetime], str] | None = None
     """The key of the run for a schedule slot; `<job>@<slot>` when None. A slot with a rendered key never reruns."""
+    run_for_slot: Callable[[datetime], Any] | None = None
+    """Optional slot-aware execution for compiled jobs; the daemon passes the intended scheduled time."""
     requires: tuple[Requirement, ...] = ()
     """Capabilities the job asks for by type, besides its module's (ADR 0028); always read-only."""
 

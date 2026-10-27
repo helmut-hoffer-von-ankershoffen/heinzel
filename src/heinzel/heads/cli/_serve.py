@@ -12,7 +12,7 @@ from rich.console import Console
 from typer.core import TyperGroup
 
 from heinzel.heads.cli._render import message
-from heinzel.kernel import HeinzelError, Kernel, parse_duration
+from heinzel.kernel import CurrentUser, HeinzelError, Kernel, parse_duration
 
 if TYPE_CHECKING:
     from heinzel.heads.web._devices import Devices
@@ -116,7 +116,8 @@ def serve_group(
             elif isinstance(result, BaseModel):
                 out_console.print(result.model_dump_json(), soft_wrap=True, highlight=False, markup=False)
 
-        head.serve(kernel, parse_duration(interval), report)
+        with kernel.resolve(CurrentUser).local("daemon"):
+            head.serve(kernel, parse_duration(interval), report)
 
     return serve
 

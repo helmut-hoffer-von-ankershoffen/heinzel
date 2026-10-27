@@ -464,7 +464,11 @@ class SessionCrud:
         slot: datetime,
         notifications: Notifications,
     ) -> JsonValue | JobInactive:
-        """Recheck active state under its control lock, then emit a deterministic owner-only notice."""
+        """Recheck active state under its control lock, then emit a deterministic owner-only notice.
+
+        Raises:
+            HeinzelError: If the notification cannot be recorded.
+        """
         with self.repository.control_writer(session_id):
             events = self.repository.control_read(session_id).events
             state = self._schedule_state(session_id, events)
@@ -483,7 +487,10 @@ class SessionCrud:
                 command="hz heinzel sessions",
                 key=f"heinzel:{session_id}:check-in:{slot.isoformat()}",
             )
-            return {"session_id": session_id, "slot": slot.isoformat(), "notice": notice is not None}
+            if notice is None:
+                msg = "The scheduled check-in notification could not be recorded"
+                raise HeinzelError(msg)
+            return {"session_id": session_id, "slot": slot.isoformat(), "notice": True}
 
     @staticmethod
     def _after(session_id: str, cursor: str | None) -> int:
