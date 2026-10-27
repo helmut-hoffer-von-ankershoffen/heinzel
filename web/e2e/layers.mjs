@@ -230,6 +230,14 @@ export async function verifyLayers(page, shots, screenshot) {
     const response = await changelogResponse;
     await response?.finished();
     await versionPane.locator('[aria-busy="false"]').waitFor();
+    const about = versionPane.getByRole("region", { name: "About Heinzelmännchen" });
+    const tagline = about.locator("p");
+    const taglineLines = await tagline.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return range.getClientRects().length;
+    });
+    if (taglineLines !== 2) throw new Error(`Version tagline should occupy two lines, found ${taglineLines}`);
     await front(`${mode}-version`, versionPane);
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);
