@@ -3,9 +3,11 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { lifecycle } from "./connection.js";
 import { createInstanceLifecycle } from "./instance-lifecycle.js";
+import { createLifecycleHandler } from "./lifecycle-ipc.js";
 import { createOwnedCli } from "./owned-cli.js";
 
 app.setName("Heinzelmännchen");
+const windows = new WeakSet();
 const instance = createInstanceLifecycle({
   app,
   parseConnection: () => null,
@@ -26,6 +28,7 @@ const instance = createInstanceLifecycle({
         webviewTag: false,
       },
     });
+    windows.add(window);
     window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     window.webContents.on("will-navigate", (event) => event.preventDefault());
     window.on("closed", () => { if (!quitting) app.quit(); });
@@ -39,10 +42,12 @@ const instance = createInstanceLifecycle({
 let quitting = false;
 const ownedCli = createOwnedCli();
 if (instance.acquire(process.argv.slice(app.isPackaged ? 1 : 2))) {
-  ipcMain.handle("hz:lifecycle", async (event) => {
-    if (!BrowserWindow.fromWebContents(event.sender)) throw new Error("Unknown window.");
-    return lifecycle(instance.currentConnection());
-  });
+  ipcMain.handle("hz:lifecycle", createLifecycleHandler({
+    windows,
+    fromWebContents: (contents) => BrowserWindow.fromWebContents(contents),
+    connection: () => instance.currentConnection(),
+    lifecycle,
+  }));
   let stopping = false;
   let serviceStarted = false;
   void ownedCli.exited().then(() => {
