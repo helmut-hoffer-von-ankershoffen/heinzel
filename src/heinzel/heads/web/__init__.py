@@ -226,6 +226,7 @@ def build(  # noqa: PLR0913 - all but the kernel by keyword
         accept=paired.check,
         stopping=stopping,
         sessions=terminal_sessions,
+        register_origin=runtime.register_if_origin_allowed,
     )  # before the mount, which takes /api
 
     endpoints = api_app(

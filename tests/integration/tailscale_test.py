@@ -22,6 +22,7 @@ from typer.testing import CliRunner
 from heinzel import Config, ConfigEditor, CurrentUser, HeinzelError, Settings
 from heinzel.heads import api, mcp, web
 from heinzel.heads.cli import build
+from heinzel.heads.web import _terminal
 
 pytestmark = pytest.mark.integration
 DNS = "workstation.tail-example.ts.net."
@@ -211,6 +212,35 @@ def test_disabling_tailscale_closes_external_terminal_and_keeps_local_terminal_o
         ticks_after_close = ticks_file.read_bytes()
         time.sleep(0.3)
         assert ticks_file.read_bytes() == ticks_after_close, "the shell kept running after its terminal was revoked"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the terminal needs a POSIX pseudo-terminal")
+def test_disabling_tailscale_during_terminal_auth_does_not_start_a_shell(setup, monkeypatch):
+    fresh, _store = setup
+    spawned = False
+
+    def spawn() -> tuple[int, object]:
+        nonlocal spawned
+        spawned = True
+        message = "a shell must not start after its external origin was removed"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(_terminal, "_spawn", spawn)
+    web_client = client(fresh(), port=9123)
+    enabled = web_client.post("/api/tailscale/enable", json={}, headers=AUTH)
+    assert enabled.status_code == 200, enabled.text
+    assert enabled.json()["state"] == "ready"
+
+    external_headers = {"host": "workstation.tail-example.ts.net", "origin": ORIGIN}
+    with web_client.websocket_connect("/api/terminal", headers=external_headers) as external:
+        disabled = web_client.post("/api/tailscale/disable", json={}, headers=AUTH)
+        assert disabled.status_code == 200, disabled.text
+        assert disabled.json()["state"] == "off"
+        external.send_text(json.dumps({"token": TOKEN}))
+        with pytest.raises(WebSocketDisconnect) as closed:
+            external.receive_text()
+        assert closed.value.code == 1008
+    assert not spawned
 
 
 def test_a_new_bound_port_replaces_only_the_previous_exact_owned_target(setup):

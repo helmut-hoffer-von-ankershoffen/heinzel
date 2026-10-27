@@ -132,6 +132,7 @@ def add_route(  # noqa: PLR0913 - the app plus explicit terminal authentication,
     accept: Callable[[str], object],
     stopping: Stopping | None = None,
     sessions: OriginSessions | None = None,
+    register_origin: Callable[[str, Callable[[], None]], bool] | None = None,
 ) -> None:
     """Serve the terminal at `/api/terminal` on `app`; register it before mounting the API there."""
 
@@ -145,6 +146,7 @@ def add_route(  # noqa: PLR0913 - the app plus explicit terminal authentication,
             accept=accept,
             stopping=stopping,
             sessions=sessions,
+            register_origin=register_origin,
         )
 
 
@@ -157,6 +159,7 @@ async def session(  # noqa: PLR0913 - the socket plus explicit terminal authenti
     accept: Callable[[str], object] | None = None,
     stopping: Stopping | None = None,
     sessions: OriginSessions | None = None,
+    register_origin: Callable[[str, Callable[[], None]], bool] | None = None,
 ) -> None:
     """Serve one terminal on `websocket` until either side closes it, or the server stops.
 
@@ -180,17 +183,32 @@ async def session(  # noqa: PLR0913 - the socket plus explicit terminal authenti
     if not await _authenticated(websocket, token, accept):
         await websocket.close(code=POLICY_VIOLATION, reason="Refused: the session token is missing or wrong.")
         return
+    active_origins = allowed_origins() if callable(allowed_origins) else allowed_origins
+    problem = api.request_refusal(
+        headers,
+        api.LOOPBACK,
+        port,
+        allowed_origins=active_origins,
+        host_help=api.WEB_HOST_HELP,
+    )
+    if problem:
+        await websocket.close(code=POLICY_VIOLATION, reason="This origin is no longer allowed.")
+        return
     if os.name != "posix":
         await websocket.close(code=UNSUPPORTED, reason="The terminal needs macOS or Linux.")
         return
     if len(_open) >= SHELLS:
         await websocket.close(code=TRY_AGAIN_LATER, reason=f"{SHELLS} terminals are open; close one and try again.")
         return
-    active_origins = allowed_origins() if callable(allowed_origins) else allowed_origins
     origin = _external_origin(headers.get("host", ""), origin, active_origins)
     terminal = _Terminal(websocket, origin=origin)
     _open.add(terminal)
-    if sessions is not None:
+    if origin is not None and register_origin is not None:
+        if not register_origin(origin, lambda: sessions.add(terminal) if sessions is not None else None):
+            _open.discard(terminal)
+            await websocket.close(code=POLICY_VIOLATION, reason="This origin is no longer allowed.")
+            return
+    elif sessions is not None:
         sessions.add(terminal)
     try:
         stopping = stopping or Stopping()
