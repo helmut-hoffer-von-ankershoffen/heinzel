@@ -69,5 +69,12 @@ export function createInstanceLifecycle({ app, parseConnection, createWindow, fo
     return connection;
   }
 
-  return Object.freeze({ acquire, open, currentConnection, focus, setReady });
+  function setConnection(value) {
+    if (connection) throw new Error("The authenticated local connection is already set.");
+    if (!value || typeof value.origin !== "string" || typeof value.token !== "string")
+      throw new Error("A verified local Heinzelmännchen connection is required.");
+    connection = value;
+  }
+
+  return Object.freeze({ acquire, open, currentConnection, focus, setReady, setConnection });
 }
