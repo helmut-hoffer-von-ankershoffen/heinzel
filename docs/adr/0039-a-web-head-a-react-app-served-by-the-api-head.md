@@ -101,7 +101,9 @@ addition, the token, that the browser can prove and another page cannot forge. D
   local REST server" (`drafts`, `discover`, `org show`, `prune --dry-run`, `sent`) adds `web` to its `heads=`, because
   the token closes that hole. Operations that spend money stay off the web head (`workflow run`, `system daemon tick`)
   except the chat operation below, which carries its own cap; interactive ones (`setup`, `credential set`, `plugin
-  new`, `daemon install`) stay CLI-only. Every change to an operation's `heads=` names its reason in a comment, as
+  new`) stay CLI-only. Daemon install and uninstall are available in the authenticated Settings UI behind a separate
+  explicit confirmation; the chat policy continues to refuse these operations, and MCP and REST never expose them.
+  Every change to an operation's `heads=` names its reason in a comment, as
   today, and a test lists what the web head must not expose. This amends ADR 0019's rule from "not REST endpoints at
   all" to "not endpoints of the unauthenticated REST head".
 
@@ -186,7 +188,8 @@ addition, the token, that the browser can prove and another page cannot forge. D
 - `tests/integration/web_security_test.py` (to write with the head): a `/api` request without the token or with a
   wrong one gets `401`; the right token works; the REST head's Host, Origin and `Sec-Fetch-Site` refusals still
   apply under `/api`; every response carries the CSP and the other headers above; `workflow run`, `system daemon
-  tick`, `credential set`, `credential remove`, `plugin new` and `daemon install` are not web endpoints; `hz system
+  tick`, `credential set`, `credential remove` and `plugin new` are not web endpoints; daemon install and uninstall
+  are web endpoints only for the human-confirmed Settings controls, and remain unavailable to chat/MCP; `hz system
   serve api` has no token and exposes the same set as before (`tests/integration/rest_security_test.py`).
 - `tests/unit/heads/exposure_test.py`: `web` is a head name `heads=` restricts like the others.
 - `make check`: the regenerated `web/openapi.json` and `schema.d.ts` equal the committed ones; `biome ci`, `tsc

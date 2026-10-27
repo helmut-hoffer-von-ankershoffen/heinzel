@@ -8,6 +8,7 @@ describe("shared working-hour status", () => {
   it("shows elapsed and remaining time during the configured working day", () => {
     const status = at("2026-10-19T10:00:00Z");
     expect(status.working).toBe(true);
+    expect(status.state).toBe("working");
     expect(status.summary).toBe("Working · 3h since start · 6h left");
     expect(status.detail).toBe("Mon–Fri 09:00–18:00 · Ends Mon 18:00");
     expect(status.start?.toISOString()).toBe("2026-10-19T07:00:00.000Z");
@@ -21,6 +22,7 @@ describe("shared working-hour status", () => {
   it("counts down before work and after work using the previous and next real weekday", () => {
     expect(at("2026-10-19T06:00:00Z").summary).toBe("Starts in 1h · 2d 14h since end");
     const after = at("2026-10-19T18:00:00Z");
+    expect(after.state).toBe("off-duty");
     expect(after.summary).toBe("Starts in 13h · 2h since end");
     expect(after.detail).toBe("Mon–Fri 09:00–18:00 · Starts Tue 09:00");
     expect(after.nextStart?.toISOString()).toBe("2026-10-20T07:00:00.000Z");
@@ -31,11 +33,15 @@ describe("shared working-hour status", () => {
     expect(status.nextStart?.toISOString()).toBe("2026-10-26T08:00:00.000Z");
     expect(status.previousEnd?.toISOString()).toBe("2026-10-23T16:00:00.000Z");
     expect(status.working).toBe(false);
+    expect(status.state).toBe("off-duty");
   });
   it("uses the shorter spring weekend instead of adding fixed 24-hour days", () => {
     const status = at("2026-03-27T17:00:00Z");
     expect(status.nextStart?.toISOString()).toBe("2026-03-30T07:00:00.000Z");
     expect(status.summary).toBe("Starts in 2d 14h · 0m since end");
+  });
+  it("marks late local night as likely sleeping", () => {
+    expect(at("2026-10-19T21:00:00Z").state).toBe("sleeping");
   });
   it("uses each zone's configured hours and fractional offset", () => {
     const status = workingHours({ zone: "Asia/Kolkata", hours: [10, 19] }, new Date("2026-10-19T05:00:00Z"));
@@ -55,6 +61,7 @@ describe("shared working-hour status", () => {
     ]) {
       expect(workingHours(zone, new Date("2026-10-19T12:00:00Z"))).toEqual({
         working: false,
+        state: "unavailable",
         summary: "Working hours unavailable",
         detail: "Working hours unavailable",
       });

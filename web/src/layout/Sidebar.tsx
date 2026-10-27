@@ -255,7 +255,7 @@ function ProviderNavigation({ compact = false }: { compact?: boolean }) {
   if (!entries.length) return null;
   return (
     <>
-      <ul className={cn("flex gap-0.5", compact ? "flex-col items-center" : "flex-col")}>
+      <ul className={cn("mt-5 flex gap-0.5", compact ? "flex-col items-center" : "flex-col")}>
         {entries.map((entry) => {
           const Icon = ICONS[entry.icon];
           const effect = entry.sidebar;

@@ -5315,6 +5315,76 @@
         "title": "HintView",
         "type": "object"
       },
+      "Installed": {
+        "description": "What `install` wrote, or would write, and how it was loaded.",
+        "properties": {
+          "commands": {
+            "description": "Commands run to load the unit; none in a dry run.",
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Commands",
+            "type": "array"
+          },
+          "dry_run": {
+            "description": "Whether nothing was written or loaded.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "executable": {
+            "description": "The stable uv tool shim the unit runs.",
+            "format": "path",
+            "title": "Executable",
+            "type": "string"
+          },
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Unit files and their content.",
+            "propertyNames": {
+              "format": "path"
+            },
+            "title": "Files",
+            "type": "object"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What to do next, if anything.",
+            "title": "Hint"
+          },
+          "interval_minutes": {
+            "description": "Minutes between ticks.",
+            "title": "Interval Minutes",
+            "type": "integer"
+          },
+          "platform": {
+            "description": "darwin (launchd) or linux (systemd).",
+            "title": "Platform",
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "executable",
+          "interval_minutes",
+          "files",
+          "commands",
+          "dry_run"
+        ],
+        "title": "Installed",
+        "type": "object"
+      },
       "InstalledSkill": {
         "description": "A skill copied into an agent's skill directory.",
         "properties": {
@@ -13406,6 +13476,37 @@
         "title": "Tool",
         "type": "object"
       },
+      "Uninstalled": {
+        "description": "What `uninstall` removed.",
+        "properties": {
+          "commands": {
+            "description": "Commands run to unload the unit.",
+            "items": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Commands",
+            "type": "array"
+          },
+          "removed": {
+            "description": "Unit files removed.",
+            "items": {
+              "format": "path",
+              "type": "string"
+            },
+            "title": "Removed",
+            "type": "array"
+          }
+        },
+        "required": [
+          "removed",
+          "commands"
+        ],
+        "title": "Uninstalled",
+        "type": "object"
+      },
       "Unmaintained": {
         "description": "An input that reads a contract's output no contract maintains.",
         "properties": {
@@ -16137,6 +16238,64 @@
         ]
       }
     },
+    "/system/daemon/install": {
+      "post": {
+        "description": "Install and load the launchd agent or systemd timer that ticks every few minutes.",
+        "operationId": "system_daemon_install",
+        "parameters": [
+          {
+            "description": "Minutes between ticks, dividing an hour: 1m … 30m, or 1h.",
+            "in": "query",
+            "name": "interval",
+            "required": false,
+            "schema": {
+              "default": "5m",
+              "description": "Minutes between ticks, dividing an hour: 1m … 30m, or 1h.",
+              "title": "Interval",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only show the unit that would be written.",
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only show the unit that would be written.",
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Installed"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Install and load the launchd agent or systemd timer that ticks every few minutes.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/system/daemon/jobs": {
       "get": {
         "description": "List every job with its schedule, next slot and last run.",
@@ -16296,6 +16455,28 @@
           }
         },
         "summary": "Show whether the daemon is installed, loaded and paused, its last tick and failing jobs.",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/system/daemon/uninstall": {
+      "post": {
+        "description": "Unload and remove the daemon's unit; receipts and logs stay.",
+        "operationId": "system_daemon_uninstall",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Uninstalled"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Unload and remove the daemon's unit; receipts and logs stay.",
         "tags": [
           "system"
         ]
@@ -16960,8 +17141,22 @@
     },
     "/system/plugin/list": {
       "get": {
-        "description": "List installed plugins, enabled or not, with their source and the modules and adapters they bring.",
+        "description": "List installed plugins, enabled or not, with their source and the modules and adapters they bring.\n\n`fresh` reads the installed environment in a separate interpreter; the default keeps this process's loaded\ninventory. Reading fresh metadata does not load new plugin code into this server or remove a required restart.\n\nRaises:\n    HeinzelError: If the requested fresh interpreter cannot read the installed environment.",
         "operationId": "system_plugin_list",
+        "parameters": [
+          {
+            "description": "Read the installed environment in a fresh interpreter, without reloading this server.",
+            "in": "query",
+            "name": "fresh",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Read the installed environment in a fresh interpreter, without reloading this server.",
+              "title": "Fresh",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -16976,6 +17171,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List installed plugins, enabled or not, with their source and the modules and adapters they bring.",

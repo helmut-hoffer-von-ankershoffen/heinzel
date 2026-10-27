@@ -36,14 +36,14 @@ const github = plugin({
 });
 const clock = plugin({
   name: "clock",
-  summary: "World Clock: what time it is for everyone on the team.",
+  summary: "World clock: what time it is for everyone on the team.",
   kinds: ["capability"],
 });
 const clockNav: SchemaNavEntry = {
   id: "clock:main",
   module: "clock",
   plugin: "heinzel-clock",
-  title: "World Clock",
+  title: "World clock",
   icon: "globe",
   declared: true,
   order: 900,
@@ -179,7 +179,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const nav = await screen.findByRole("navigation", { name: "Settings" });
     for (const name of [
       "Appearance",
-      "World Clock",
+      "World clock",
       "Notifications",
       "AI",
       "Connectors",
@@ -199,7 +199,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const names = within(nav)
       .getAllByRole("button")
       .map((button) => button.textContent);
-    expect(names.slice(0, 3)).toEqual(["Appearance", "Notifications", "World Clock"]);
+    expect(names.slice(0, 3)).toEqual(["Appearance", "Notifications", "World clock"]);
     // Every entry has its own icon, never a shared generic one, and AI is only under Customize.
     expect(names.filter((name) => name === "AI")).toHaveLength(1);
     expect(within(nav).queryByRole("button", { name: "General" })).not.toBeInTheDocument();
@@ -230,7 +230,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const user = userEvent.setup();
     const { container } = renderAt("/doctor?settings=clock");
     const nav = await screen.findByRole("navigation", { name: "Settings" });
-    expect(await within(nav).findByRole("button", { name: "World Clock" })).toHaveAttribute("aria-current", "page");
+    expect(await within(nav).findByRole("button", { name: "World clock" })).toHaveAttribute("aria-current", "page");
     const plugin = await screen.findByTitle("Show it under Plugins");
     const header = (plugin.closest("div") as HTMLElement).parentElement as HTMLElement;
     expect(within(header).getByTitle("Capability: hz clock")).toBeInTheDocument();
@@ -474,7 +474,7 @@ describe("Installed plugins by kind", () => {
 describe("Where settings live", () => {
   it("keeps the capitals of acronyms in module and setting names", () => {
     expect(displayName("ai")).toBe("AI");
-    expect(displayName("clock", "World Clock: what time it is.")).toBe("Clock");
+    expect(displayName("clock", "World clock: what time it is.")).toBe("World clock");
     expect(displayName("mcp")).toBe("MCP");
     expect(displayName("cli")).toBe("CLI");
     expect(displayName("github")).toBe("GitHub");
@@ -573,7 +573,7 @@ describe("Settings: one place for everything", () => {
     expect(screen.queryByText("AI access")).not.toBeInTheDocument();
   });
 
-  it("shows each placement of World Clock in plain words with a live preview and a switch", async () => {
+  it("shows each placement of World clock in plain words with a live preview and a switch", async () => {
     const { calls } = mockApi(ui);
     const user = userEvent.setup();
     const { container } = renderAt("/doctor?settings=clock");

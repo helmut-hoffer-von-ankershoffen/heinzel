@@ -100,6 +100,18 @@ def test_workflows_run_checks_through_make(workflow):
     assert not_through_make(workflow) == [], "run these through a make target, or add them to NOT_MAKE with a reason"
 
 
+def test_managed_backend_verification_gates_ci_without_leaking_into_plugin_templates():
+    """The source-only native owner is checked by required CI; plugins never install its private Node toolchain."""
+    workflow = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text())
+    jobs = workflow["jobs"]
+    assert "lint" in jobs["ci-ok"]["needs"]
+    assert any(step.get("run") == "make managed-backend-setup managed-backend-check" for step in jobs["lint"]["steps"])
+    runs = [step.get("run") for step in jobs["lint"]["steps"]]
+    assert runs.index("make managed-backend-setup managed-backend-check") < runs.index("make typecheck")
+    for name in ("Makefile", ".github/workflows/ci.yml.jinja"):
+        assert "managed-backend" not in (REPO / "template" / name).read_text()
+
+
 def test_every_not_make_exemption_is_used():
     runs = {workflow.name: commands(workflow) for workflow in WORKFLOWS}
     runs["*"] = [run for each in runs.values() for run in each]
@@ -386,3 +398,13 @@ def test_pull_requests_run_one_macos_python_and_ci_ok_waits_for_changes():
     assert "pull_request" in include
     assert '[{"os":"macos-latest","python":"3.15"}]' in include
     assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])
+
+
+def test_electron_ci_runs_when_its_trigger_or_make_target_changes():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
+    assert "[ -f desktop/package.json ]" in script
+    assert "desktop/" in script
+    assert "Makefile$" in script
+    assert "scripts/sync_template\\.py$" in script
+    assert "\\.github/workflows/ci\\.yml$" in script

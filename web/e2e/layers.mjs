@@ -67,7 +67,12 @@ export async function verifyLayers(page, shots, screenshot) {
     }),
   );
   await page.reload();
-  await page.getByRole("button", { name: "Play Layer probe", exact: true }).click();
+  await page.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Sound" })
+    .getByRole("button", { name: "Play Layer probe", exact: true })
+    .click();
+  await page.keyboard.press("Escape");
   const card = page.getByRole("region", { name: "Layer probe player" });
   const iframe = card.locator("iframe");
   await iframe.waitFor();
@@ -207,9 +212,8 @@ export async function verifyLayers(page, shots, screenshot) {
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);
     await park();
-    // Open options through the visible speaker's supported context-menu gesture. Long-press timers depend on
-    // pointer scheduling and have flaked on macOS runners; context-menu exercises the same visible overlay path.
-    await page.getByRole("button", { name: "Pause Layer probe", exact: true }).click({ button: "right" });
+    // Open options through the visible speaker. The picker now owns Play/Pause, so the speaker always opens it.
+    await page.getByRole("button", { name: "Choose a soundscape", exact: true }).click();
     await front(`${mode}-audio`, page.getByRole("dialog", { name: "Sound", exact: true }));
     await page.keyboard.press("Escape");
     await page.mouse.move(0, 0);

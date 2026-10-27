@@ -30,6 +30,7 @@ jobs:
     outputs:
       notifier: ${{ steps.paths.outputs.notifier }}
       mounted_tailscale: ${{ steps.paths.outputs.mounted_tailscale }}
+      electron: ${{ steps.paths.outputs.electron }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,6 +54,12 @@ jobs:
             echo "mounted_tailscale=true" >> "$GITHUB_OUTPUT"
           else
             echo "mounted_tailscale=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ -f desktop/package.json ] && { [ "$EVENT" != pull_request ] \
+            || grep -qE '^(desktop/|Makefile$|scripts/sync_template\.py$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
+            echo "electron=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "electron=false" >> "$GITHUB_OUTPUT"
           fi
 
   dependency-review:
@@ -109,6 +116,7 @@ jobs:
       - run: make lint
         env:
           CONFIDENTIAL_TERMS: ${{ secrets.CONFIDENTIAL_TERMS }}
+      - run: make managed-backend-setup managed-backend-check # private Node process owner; core only
       - run: make typecheck
       - run: make test-web # the web app's component tests (Vitest with axe); core only
 
@@ -306,6 +314,36 @@ jobs:
           name: notifier
           path: notifier.tar.gz
 
+  electron:
+    name: Electron (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.electron == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.19.0
+      - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+        with:
+          version: 12.15.0
+          run_install: false
+      - name: Install the locked Electron package and native runtime
+        run: make desktop-electron-test
+      - name: Linux Electron native window smoke test
+        if: runner.os == 'Linux'
+        run: make desktop-electron-native
+      - name: macOS Electron native window smoke test
+        if: runner.os == 'macOS'
+        run: make desktop-electron-native
+
   build:
     name: Build
     needs: notifier
@@ -342,7 +380,7 @@ jobs:
   ci-ok:
     name: CI OK
     if: always()
-    needs: [dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, e2e, template, notifier, build]
+    needs: [dependency-review, commits, changes, lint, secrets, setup, audit, test, coverage, perf, e2e, template, notifier, electron, build]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

@@ -1,0 +1,19 @@
+{
+  "name": "heinzel-managed-backend",
+  "private": true,
+  "type": "module",
+  "description": "Private process ownership for the shared managed runtime, independent of a native window.",
+  "packageManager": "pnpm@12.15.0",
+  "engines": {
+    "node": "24.19.0"
+  },
+  "scripts": {
+    "build": "node tools/runtime-code.mjs && tsc --project .",
+    "check": "node tools/runtime-code.mjs --check && biome ci . && tsc --project . && node --test build/test/*.test.js"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.2",
+    "@types/node": "24.19.2",
+    "typescript": "5.9.3"
+  }
+}
