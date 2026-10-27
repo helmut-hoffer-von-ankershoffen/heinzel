@@ -367,7 +367,7 @@ def test_claude_review_prefers_the_api_key():
         assert step["with"]["claude_code_oauth_token"].startswith("${{ secrets.ANTHROPIC_API_KEY == '' && ")
 
 
-def _generated_plugin_ci() -> dict:
+def _template_sync_module():
     import importlib.util
 
     path = REPO / "scripts" / "sync_template.py"
@@ -376,10 +376,26 @@ def _generated_plugin_ci() -> dict:
     assert spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    text = module.ci_workflow()
+    return module
+
+
+def _generated_plugin_ci() -> dict:
+    text = _template_sync_module().ci_workflow()
     assert "notifier" not in text
     assert "changes" not in text.replace("upstream changes", "")
     return yaml.safe_load(text.replace("[[ package_name ]]", "x"))
+
+
+def test_plugin_template_makefile_excludes_all_electron_only_targets():
+    """Electron's install, sandbox and native-smoke targets stay out of generated plugin Makefiles."""
+    generated = _template_sync_module().makefile()
+    checked_in = (REPO / "template" / "Makefile").read_text(encoding="utf-8")
+    assert generated == checked_in
+    for target in ("desktop-electron-test", "desktop-electron-sandbox", "desktop-electron-native"):
+        assert target not in generated
+        assert target not in checked_in
+    assert "chrome-sandbox" not in generated
+    assert "sudo chown root:root" not in generated
 
 
 def test_plugin_ci_has_no_core_only_jobs_and_every_need_exists():
