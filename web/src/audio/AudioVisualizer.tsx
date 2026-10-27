@@ -7,6 +7,10 @@ export function spectrumGeometry(height: number) {
   return { rows, rowHeight, barHeight: Math.max(2, rowHeight * 0.68) };
 }
 
+export function spectrumLevel(value: number) {
+  return Math.sqrt(Math.max(0, Math.min(255, value)) / 255);
+}
+
 /** A real spectrum at the right edge. Showing the control never starts capture; the person clicks to share. */
 export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
   const [session, setSession] = useState<CapturedAudio | null>(null);
@@ -108,8 +112,9 @@ export function AudioVisualizer({ enabled = true }: { enabled?: boolean }) {
         const to = Math.max(from + 1, Math.floor(((rows - row) * data.length) / rows));
         let peak = 0;
         for (let index = from; index < to; index += 1) peak = Math.max(peak, data[index] ?? 0);
-        const bar = 1 + (peak / 255) * (width - 1);
-        drawing.globalAlpha = 0.2 + (peak / 255) * 0.8;
+        const level = spectrumLevel(peak);
+        const bar = 1 + level * (width - 1);
+        drawing.globalAlpha = 0.2 + level * 0.8;
         drawing.fillRect((width - bar) / 2, row * rowHeight, bar, barHeight);
       }
       drawing.globalAlpha = 1;
