@@ -398,3 +398,13 @@ def test_pull_requests_run_one_macos_python_and_ci_ok_waits_for_changes():
     assert "pull_request" in include
     assert '[{"os":"macos-latest","python":"3.15"}]' in include
     assert {"changes", "notifier", "build"} <= set(jobs["ci-ok"]["needs"])
+
+
+def test_electron_ci_runs_when_its_trigger_or_make_target_changes():
+    jobs = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))["jobs"]
+    script = next(step["run"] for step in jobs["changes"]["steps"] if step.get("id") == "paths")
+    assert "[ -f desktop/package.json ]" in script
+    assert "desktop/" in script
+    assert "Makefile$" in script
+    assert "scripts/sync_template\\.py$" in script
+    assert "\\.github/workflows/ci\\.yml$" in script

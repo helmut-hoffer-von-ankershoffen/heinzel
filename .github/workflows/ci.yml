@@ -56,7 +56,7 @@ jobs:
             echo "mounted_tailscale=false" >> "$GITHUB_OUTPUT"
           fi
           if [ -f desktop/package.json ] && { [ "$EVENT" != pull_request ] \
-            || grep -qE '^desktop/' <<< "$changed"; }; then
+            || grep -qE '^(desktop/|Makefile$|scripts/sync_template\.py$|\.github/workflows/ci\.yml$)' <<< "$changed"; }; then
             echo "electron=true" >> "$GITHUB_OUTPUT"
           else
             echo "electron=false" >> "$GITHUB_OUTPUT"
