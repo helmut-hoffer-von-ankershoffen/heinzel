@@ -14,8 +14,8 @@ import { FOOTER_RELOCATED, FooterLayout, FooterMore, FooterPart, useFooterVisibi
 import { HeinzelAvatar } from "@/components/HeinzelAvatar";
 import { Prose } from "@/components/Prose";
 import { SettingsShortcut } from "@/components/SettingsShortcut";
+import { WorkStateIcon } from "@/components/WorkStateIcon";
 import { t } from "@/i18n";
-import { cn } from "@/lib/utils";
 import { workingHours } from "@/lib/workingHours";
 import { zoneClock, zoneTime } from "@/lib/zoneTime";
 import { placePopover } from "@/sound/dock";
@@ -278,13 +278,6 @@ function Clock({ now }: { now: Date }) {
                     const work = workingHours(zone, now);
                     return (
                       <li key={zone.zone} className="flex items-center gap-3 rounded-lg px-2.5 py-2">
-                        <span
-                          aria-hidden
-                          className={cn(
-                            "size-2 shrink-0 rounded-full",
-                            work.working ? "bg-ok" : "bg-muted-foreground/40",
-                          )}
-                        />
                         <span className="min-w-0 flex-1">
                           <span className="flex items-baseline gap-2">
                             <span className="truncate text-foreground">{city(zone.zone)}</span>
@@ -298,13 +291,8 @@ function Clock({ now }: { now: Date }) {
                               </span>
                             )}
                           </span>
-                          <span
-                            title={work.detail}
-                            className={cn("block text-xs", work.working ? "text-ok" : "text-muted-foreground")}
-                          >
-                            {work.summary}
-                          </span>
                         </span>
+                        <WorkStateIcon work={work} />
                         <span className="shrink-0 font-mono text-foreground tabular-nums">
                           {sameDay ? "" : `${at?.day} `}
                           {at ? zoneTime(now, zone.zone) : t("worldClock.unavailable")}

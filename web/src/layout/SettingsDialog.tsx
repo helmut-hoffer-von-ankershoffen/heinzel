@@ -145,7 +145,7 @@ function Body({ report, query, setQuery, searchRef, section, onSection }: BodyPr
       type="button"
       onClick={() => go(entry.id)}
       aria-current={current === entry.id && !needle ? "page" : undefined}
-      className={item(current === entry.id)}
+      className={cn(item(current === entry.id), entry.module === "clock" && "mt-2")}
     >
       <entry.icon aria-hidden />
       {entry.title}

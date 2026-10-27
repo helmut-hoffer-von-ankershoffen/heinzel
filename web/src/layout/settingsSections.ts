@@ -239,7 +239,7 @@ export function settingsNav(
     return [
       {
         id: entry.id,
-        title: entry.title,
+        title: entry.module === "clock" ? "World clock" : entry.title,
         icon: ICONS[entry.icon],
         heading: entry.settings.group,
         owns: entry.settings.sections,

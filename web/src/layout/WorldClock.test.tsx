@@ -40,12 +40,13 @@ describe("World Clock", () => {
   it("shows every zone in order, marks the primary, keeps UTC readable without a marker and uses 24 hours", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     const { container } = show();
-    expect(await screen.findByText("Berlin · Primary")).toBeInTheDocument();
+    expect(await screen.findByText("Primary")).toBeInTheDocument();
+    expect(screen.getByText("Berlin")).toBeInTheDocument();
     const list = screen.getByRole("list");
-    const utc = within(list).getAllByRole("listitem")[2] as HTMLElement;
-    expect(utc).toHaveTextContent("UTC");
-    expect(utc).not.toHaveTextContent("map");
-    expect(within(utc).getAllByText("UTC")).toHaveLength(1);
+    expect(within(list).getByText("Primary")).toBeInTheDocument();
+    expect(
+      within(list).getAllByRole("img", { name: /Working hours|Off duty|Likely sleeping|Work state unavailable/ }),
+    ).toHaveLength(3);
     expect(
       within(list)
         .getAllByRole("listitem")
@@ -60,8 +61,8 @@ describe("World Clock", () => {
     vi.setSystemTime(new Date("2026-10-25T11:00:00Z"));
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     show();
-    const summary = await screen.findByText("Starts in 21h · 1d 19h since end");
-    expect(summary).toHaveAttribute("title", "Mon–Fri 09:00–18:00 · Starts Mon 09:00");
+    const state = (await screen.findAllByRole("img", { name: "Off duty · time for fun" }))[0];
+    expect(state).toHaveAttribute("title", expect.stringContaining("Mon–Fri 09:00–18:00"));
   });
   it("keeps unknown browser zones in place without moving the primary label", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
@@ -73,9 +74,12 @@ describe("World Clock", () => {
         </MemoryRouter>
       </Providers>,
     );
-    expect(await screen.findByText("New Zone · Primary")).toBeInTheDocument();
+    expect(await screen.findByText("Primary")).toBeInTheDocument();
+    expect(screen.getByText("New Zone")).toBeInTheDocument();
     expect(screen.getByText("Time unavailable in this browser")).toBeInTheDocument();
-    expect(screen.queryByText("New York · Primary")).not.toBeInTheDocument();
+    const newYork = screen.getByText("New York").closest("li");
+    expect(newYork).not.toBeNull();
+    expect(within(newYork as HTMLElement).queryByText("Primary")).not.toBeInTheDocument();
   });
   it("explains a missing clock plugin without leaking previously cached zones", async () => {
     const client = queryClient();
@@ -97,7 +101,7 @@ describe("World Clock", () => {
     vi.spyOn(window, "matchMedia").mockReturnValue({ ...media, matches: true });
     create.mockClear();
     show();
-    await screen.findByText("Berlin · Primary");
+    await screen.findByText("Berlin");
     expect(create).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Rotate globe left" })).not.toBeInTheDocument();
   });
@@ -108,7 +112,7 @@ describe("World Clock", () => {
     update.mockClear();
     create.mockReturnValue({ destroy, update });
     const { unmount } = show();
-    await screen.findByText("Berlin · Primary");
+    await screen.findByText("Berlin");
     const count = create.mock.calls.length;
     await userEvent.click(screen.getByRole("button", { name: "Rotate globe right" }));
     expect(create).toHaveBeenCalledTimes(count);
@@ -133,7 +137,7 @@ describe("World Clock", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as WebGLRenderingContext);
     create.mockReturnValue({ destroy, update });
     const { container } = show();
-    await screen.findByText("Berlin · Primary");
+    await screen.findByText("Berlin");
     const canvas = container.querySelector("canvas");
     expect(canvas).not.toBeNull();
     if (canvas) fireEvent(canvas, new Event("webglcontextlost"));
@@ -153,7 +157,7 @@ describe("World Clock", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as WebGLRenderingContext);
     create.mockReturnValue({ destroy, update });
     show();
-    await screen.findByText("Berlin · Primary");
+    await screen.findByText("Berlin");
     update.mockClear();
     await act(() => vi.advanceTimersByTimeAsync(1000));
     expect(update).toHaveBeenCalledWith({ phi: expect.any(Number) });

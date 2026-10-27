@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Globe, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { SettingsShortcut } from "@/components/SettingsShortcut";
 import { Button } from "@/components/ui/button";
+import { WorkStateIcon } from "@/components/WorkStateIcon";
 import { t } from "@/i18n";
 import { workingHours } from "@/lib/workingHours";
 import { initialPhi, markerPosition, nightPath, sunLocation, zoneLocation } from "@/lib/worldClock";
@@ -290,16 +291,20 @@ export function WorldClock({ onClose }: { onClose: () => void }) {
                       }}
                     >
                       <span className="block font-medium">
-                        {city(zone.zone)}
-                        {index === 0 ? ` · ${t("settings.primary")}` : ""}
+                        <span className="inline-flex items-center gap-2">
+                          {city(zone.zone)}
+                          {index === 0 && (
+                            <span className="rounded-md border border-primary/40 px-1.5 text-[11px] text-primary">
+                              {t("settings.primary")}
+                            </span>
+                          )}
+                        </span>
                       </span>
                       {zone.zone !== city(zone.zone) && (
                         <span className="block text-xs text-muted-foreground">{zone.zone}</span>
                       )}
-                      <span title={work.detail} className="mt-1 block text-xs text-muted-foreground">
-                        {work.summary}
-                      </span>
                     </button>
+                    <WorkStateIcon work={work} />
                     {knownZone(zone.zone) ? (
                       <time dateTime={now.toISOString()} className="font-mono tabular-nums">
                         {zoneClock(now, zone.zone)}

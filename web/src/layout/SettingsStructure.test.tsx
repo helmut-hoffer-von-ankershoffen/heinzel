@@ -179,7 +179,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const nav = await screen.findByRole("navigation", { name: "Settings" });
     for (const name of [
       "Appearance",
-      "World Clock",
+      "World clock",
       "Notifications",
       "AI",
       "Connectors",
@@ -199,7 +199,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const names = within(nav)
       .getAllByRole("button")
       .map((button) => button.textContent);
-    expect(names.slice(0, 3)).toEqual(["Appearance", "Notifications", "World Clock"]);
+    expect(names.slice(0, 3)).toEqual(["Appearance", "Notifications", "World clock"]);
     // Every entry has its own icon, never a shared generic one, and AI is only under Customize.
     expect(names.filter((name) => name === "AI")).toHaveLength(1);
     expect(within(nav).queryByRole("button", { name: "General" })).not.toBeInTheDocument();
@@ -230,7 +230,7 @@ describe("Settings: Preferences, Customize, This computer", () => {
     const user = userEvent.setup();
     const { container } = renderAt("/doctor?settings=clock");
     const nav = await screen.findByRole("navigation", { name: "Settings" });
-    expect(await within(nav).findByRole("button", { name: "World Clock" })).toHaveAttribute("aria-current", "page");
+    expect(await within(nav).findByRole("button", { name: "World clock" })).toHaveAttribute("aria-current", "page");
     const plugin = await screen.findByTitle("Show it under Plugins");
     const header = (plugin.closest("div") as HTMLElement).parentElement as HTMLElement;
     expect(within(header).getByTitle("Capability: hz clock")).toBeInTheDocument();
